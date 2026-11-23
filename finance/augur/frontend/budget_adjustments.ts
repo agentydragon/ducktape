@@ -18,7 +18,7 @@ export type Adjustment = { kind: "hidden" } | { kind: "override"; monthly: Decim
 // bucketId -> adjustment. Buckets in their default "actual" state are simply absent.
 export type Adjustments = Map<string, Adjustment>;
 
-export interface AdjustableRow {
+interface AdjustableRow {
   bucketId: string;
   kind: string;
   windowAvg: Decimal;

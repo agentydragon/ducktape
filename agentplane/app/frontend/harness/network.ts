@@ -1,31 +1,6 @@
-/**
- * The harness's stand-in for the network, installed at import time. `openapi-fetch` captures
- * `globalThis.fetch` when `client.ts` creates its client, which happens as the app is imported, so
- * this module must be imported before the app: the harness lists it first. Routes are registered
- * afterwards, since a request cannot arrive before the app has mounted. The ledger is what the
- * sweep's `assert_network_settled` reads.
- */
+/** Electric Shape, event stream and watch responses for the app harness. */
 
-/** An answer is a JSON body, `undefined` for 404, a ready `Response` for any other status, or
- * `UNANSWERED`. */
-export type Route = [
-  method: string,
-  pattern: RegExp,
-  answer: (
-    match: RegExpMatchArray,
-    query: URLSearchParams,
-    signal: AbortSignal | undefined,
-    body: string | undefined
-  ) => unknown,
-];
-
-export const routes: Route[] = [];
-
-/**
- * An answer that never comes, as for a request queued behind the browser's connection limit: the
- * fetch stays pending until its signal aborts, and the ledger does not wait for it.
- */
-export const UNANSWERED: unique symbol = Symbol("unanswered");
+import { ELECTRIC_SCHEMAS } from "../sessions/testing/electric_entity";
 
 /** A real Electric HTTP shape batch: row operations followed by a completed-snapshot control. */
 export interface ElectricShapeMessage {
@@ -35,30 +10,6 @@ export interface ElectricShapeMessage {
   key?: string;
   value?: Record<string, unknown>;
 }
-
-const ELECTRIC_SCHEMAS: Record<string, Record<string, Record<string, string | boolean | number>>> = {
-  thread_entity: {
-    cursor: { type: "int8", not_null: true },
-    entity_id: { type: "text", not_null: true, pk_index: 3 },
-    entity_index: { type: "int8", not_null: true },
-    entity_kind: { type: "text", not_null: true, pk_index: 2 },
-    pending: { type: "bool", not_null: true },
-    projection_epoch: { type: "text", not_null: true, pk_index: 1 },
-    revision_cursor: { type: "int8", not_null: true },
-    state: { type: "jsonb", not_null: true },
-    thread_id: { type: "uuid", not_null: true, pk_index: 0 },
-  },
-  thread_payload_chunk: {
-    chunk_index: { type: "int8", not_null: true, pk_index: 6 },
-    field: { type: "text", not_null: true, pk_index: 4 },
-    generation: { type: "int8", not_null: true, pk_index: 5 },
-    owner_cursor: { type: "int8", not_null: true, pk_index: 2 },
-    owner_id: { type: "text", not_null: true, pk_index: 3 },
-    projection_epoch: { type: "text", not_null: true, pk_index: 1 },
-    text: { type: "json", not_null: true },
-    thread_id: { type: "uuid", not_null: true, pk_index: 0 },
-  },
-};
 
 /**
  * Build the same JSON and protocol headers Electric's `ShapeStream` consumes in production, so the
@@ -72,7 +23,7 @@ function relationSchema(rows: readonly ElectricShapeMessage[], fallback = "threa
   return schema;
 }
 
-function shapeHeaders(handle: string, schema: Record<string, Record<string, string | boolean | number>>): HeadersInit {
+function shapeHeaders(handle: string, schema: (typeof ELECTRIC_SCHEMAS)[string]): HeadersInit {
   return {
     "content-type": "application/json",
     "electric-cursor": "1674440",
@@ -150,13 +101,11 @@ export function liveNdjsonWatch(
   signal: AbortSignal | undefined,
   drop = false
 ): Response {
-  const text = (results: readonly unknown[]): string =>
-    results.map((result) => `${JSON.stringify({ result })}\n`).join("");
   return streamResponse(
     "application/x-ndjson",
-    text(initial),
+    ndjson(initial),
     signal,
-    drop ? null : { path, updates: () => text(updates()) },
+    drop ? null : { path, updates: () => ndjson(updates()) },
     drop
   );
 }
@@ -270,47 +219,3 @@ export function electricSubset(rows: readonly ElectricShapeMessage[], handle: st
     }
   );
 }
-
-interface Ledger {
-  pending: string[];
-  violations: string[];
-}
-
-const ledger: Ledger = { pending: [], violations: [] };
-(window as unknown as { __visualNetworkLedger__: Ledger }).__visualNetworkLedger__ = ledger;
-
-window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-  const url = new URL(
-    typeof input === "string" ? input : input instanceof Request ? input.url : input.href,
-    "http://harness"
-  );
-  const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
-  const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
-  const key = `${method} ${url.pathname}${url.search}`;
-  ledger.pending.push(key);
-  try {
-    for (const [routeMethod, pattern, answer] of routes) {
-      const match = url.pathname.match(pattern);
-      if (routeMethod !== method || !match) continue;
-      const requestBody =
-        typeof init?.body === "string"
-          ? init.body
-          : input instanceof Request && input.body !== null
-            ? await input.clone().text()
-            : undefined;
-      const body = answer(match, url.searchParams, signal, requestBody);
-      if (body === UNANSWERED) {
-        return new Promise<Response>((_resolve, reject) => {
-          if (signal) signal.addEventListener("abort", () => reject(signal.reason), { once: true });
-        });
-      }
-      if (body instanceof Response) return body;
-      if (body === undefined) return Response.json({ detail: `no such sandbox ${match[1]}` }, { status: 404 });
-      return Response.json(body);
-    }
-    ledger.violations.push(`unmatched ${key}`);
-    return Response.json({ detail: "not in the harness" }, { status: 503 });
-  } finally {
-    ledger.pending.splice(ledger.pending.indexOf(key), 1);
-  }
-};

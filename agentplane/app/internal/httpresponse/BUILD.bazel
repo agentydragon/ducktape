@@ -1,0 +1,9 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+package(default_visibility = ["//agentplane/app:__subpackages__"])
+
+go_library(
+    name = "httpresponse",
+    srcs = ["response.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/app/internal/httpresponse",
+)

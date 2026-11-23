@@ -30,5 +30,3 @@ export {
   IconMessage as MessageSquare,
   IconSettings as Settings,
 };
-
-export type { IconProps } from "./icon_types";

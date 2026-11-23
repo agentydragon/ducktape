@@ -140,22 +140,20 @@ Completed here:
 
 - Model SSD expanded to 1 TiB and renamed `/var/lib/llm-models-ssd` (#7893).
   Dense Q8 and all four Flash Q4 shards are downloaded and SHA256 verified.
-- Dense Qwen3.8-27B Q8: about 51 tokens/s on GPU1, 50 with equal layer splitting;
-  tensor splitting with a container-only NCCL update gives 68–72 tokens/s.
-  Both GPUs demonstrably help dense decode with the right split.
-- Flash-Next Q4: 32.73 tokens/s on the short prompt; at 24,132 actual input tokens,
-  126.703 s fresh prefill and 30.72 tokens/s decode. One synthetic tool-result
-  grounding failure was retained; seeded repeats were clean. These are smoke
-  measurements, not a coding pass rate. See [results](results.md).
+- Dense Qwen3.8-27B Q8 and Flash-Next Q4 smoke measurements:
+  [dense](results.md#september-resident-control-initial-screen) and
+  [Flash-Next](results.md#september-larger-model-feasibility). Both GPUs
+  demonstrably help dense decode with the right split (tensor splitting with a
+  container-only NCCL update). One Flash-Next synthetic tool-result grounding
+  failure was retained; seeded repeats were clean. These are not a coding pass rate.
 - The operator subsequently ran Harbor/mini-swe-agent, apparently with 128K
   configured context, and reported 1 success in 11 completed tasks after 11h49m.
-  Configuration, errors, and partial-result interpretation belong in the
-  [bounded Harbor audit](runs/2026-09-26_harbor_review/README.md). The saved job now
-  has 12 completed trials, one pass and six context-overflow exits at a 131,072-token
-  limit. It records 1,326,739 output tokens and about 98.1% of input tokens cached.
-  At 30 tokens/s, that output alone takes about 12.3 hours: long reasoning/output
-  trajectories can explain hour-scale tasks without a broken timeout. These are
-  recorded harness counters, not independently validated server accounting.
+  Configuration, errors, counts, token counters and partial-result interpretation
+  belong in the [bounded Harbor audit](runs/2026-09-26_harbor_review/README.md).
+  At the measured decode rate the saved job's recorded output alone takes hours, so
+  long reasoning/output trajectories can explain hour-scale tasks without a broken
+  timeout; the counters are harness records, not independently validated server
+  accounting.
 
 Historical state checked September 26: no host Docker experiment containers running;
 Ollama was re-enabled by #8000 and ran image `ollama/ollama:0.34.4`, context
@@ -208,11 +206,10 @@ an experiment-allocation policy, not a claim that either model will win.
 
 September 27: [cluster SSD serving acceptance](runs/2026-09-27_ollama_ssd/README.md)
 now passes 24/24 LiteLLM text/tool probes across both 128K/256K routes and all three
-API shapes. With 4/2 GiB fit targets, short 1,024-token generations measured 50.21 /
-60.01 tok/s at 128K and 44.39 / 49.48 tok/s at 256K (first / repeat); the 145K
-continuation measured 29.07 tok/s. A 145K input passes at 256K. The 2/0 GiB target
-passes short requests but OOMs during that long prefill. Full-window reasoning quality
-and parallel slots remain untested. The [updated tradeoff plan](runs/2026-09-27_ollama_ssd/tradeoffs.md)
+API shapes (decode rates: [results](results.md#september-cluster-ollama-serving-screen)).
+With 4/2 GiB fit targets a 145K input passes at 256K. The 2/0 GiB target passes short
+requests but OOMs during that long prefill. Full-window reasoning quality and parallel
+slots remain untested. The [updated tradeoff plan](runs/2026-09-27_ollama_ssd/tradeoffs.md)
 separates measured capacity from projections and records Ollama's native-context clamp.
 
 Reuse the demonstrated SSD configuration for these measurements.
@@ -265,9 +262,10 @@ frozen task at 128K/Q8 with Q4 and Terminus-2:
 in 7h 40m total. Q5 and IQ4_XS downloads finished at 04:48 Pacific. The matched
 [IQ4_XS attempt](runs/2026-09-26_qwen38_iq4_terminus_result/README.md) also passed all
 six verifier tests after three compactions, but exhausted its eight-hour agent limit
-while still testing. Its wrapper exited cleanly; decode averaged 40.79 tokens/s
-versus Q4's 24.74, without earlier agent completion. The KV sweep, filled-window
-256K task quality and Q5 comparison remain follow-ups. Desktop RAM/VRAM reserves remain enforced; overlapping
+while still testing. Its wrapper exited cleanly; its faster decode
+([results](results.md#september-agentic-task-completion)) did not bring earlier agent
+completion. The KV sweep, filled-window 256K task quality and Q5 comparison remain
+follow-ups. Desktop RAM/VRAM reserves remain enforced; overlapping
 download traffic in Q4's first hour is a latency confounder. Its wrapper guard failed
 after the passing result because the Kubernetes API was unreachable; distinguish
 that cleanup outcome from the completed evaluation.

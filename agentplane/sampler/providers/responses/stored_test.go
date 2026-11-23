@@ -1,46 +1,17 @@
 package responses
 
 import (
-	"bytes"
 	"encoding/json"
-	"fmt"
 	"reflect"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/content"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/sampler/testing/providerfixture"
 )
 
-type memoryContent struct {
-	byID map[content.ContentID]content.StoredContent
-}
-
-func newMemoryContent() *memoryContent {
-	return &memoryContent{byID: make(map[content.ContentID]content.StoredContent)}
-}
-
-func (memory *memoryContent) PutContent(kind content.ContentKind, payload json.RawMessage) (content.ContentID, error) {
-	stored, err := content.CanonicalContent(kind, payload)
-	if err != nil {
-		return "", err
-	}
-	if existing, ok := memory.byID[stored.ID]; ok && !bytes.Equal(existing.Payload, stored.Payload) {
-		return "", fmt.Errorf("content ID collision: %s", stored.ID)
-	}
-	memory.byID[stored.ID] = stored
-	return stored.ID, nil
-}
-
-func (memory *memoryContent) GetContent(id content.ContentID) (content.StoredContent, error) {
-	stored, ok := memory.byID[id]
-	if !ok {
-		return content.StoredContent{}, fmt.Errorf("content %s not found", id)
-	}
-	return stored, nil
-}
-
 func TestStoreRecordSharesCompleteNativeItemsAndPreservesProviderFields(t *testing.T) {
-	memory := newMemoryContent()
+	memory := providerfixture.MemoryContent{}
 	originals := []json.RawMessage{
 		json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"shared payload"}],"encrypted_content":"opaque-reasoning","provider_sequence":9007199254740993}`),
 		json.RawMessage(`{"type":"custom_tool_call","call_id":"call_custom","name":"exec","input":"shared payload","provider_call_number":9007199254740993}`),
@@ -54,24 +25,24 @@ func TestStoreRecordSharesCompleteNativeItemsAndPreservesProviderFields(t *testi
 		if err != nil {
 			t.Fatal(err)
 		}
-		assertResponsesJSONEqual(t, original, memory.byID[id].Payload)
+		providerfixture.AssertJSONEqual(t, original, memory[id].Payload)
 		roundTripped, err := RestoreRecord(memory, id)
 		if err != nil {
 			t.Fatal(err)
 		}
-		assertResponsesJSONEqual(t, original, roundTripped)
+		providerfixture.AssertJSONEqual(t, original, roundTripped)
 		repeatedID, err := StoreRecord(memory, original)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if repeatedID != id || len(memory.byID) != index+1 {
-			t.Fatalf("repeated item added storage: first=%s second=%s rows=%d", id, repeatedID, len(memory.byID))
+		if repeatedID != id || len(memory) != index+1 {
+			t.Fatalf("repeated item added storage: first=%s second=%s rows=%d", id, repeatedID, len(memory))
 		}
 	}
 }
 
 func TestStoreRequestSharesProfileContentAcrossCallsAndRendersNativeRequest(t *testing.T) {
-	memory := newMemoryContent()
+	memory := providerfixture.MemoryContent{}
 	items := []json.RawMessage{
 		json.RawMessage(`{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"shared payload"}],"encrypted_content":"opaque","provider_number":9007199254740993}`),
 		json.RawMessage(`{"type":"custom_tool_call","call_id":"call_custom","name":"exec","input":"shared payload"}`),
@@ -119,10 +90,10 @@ func TestStoreRequestSharesProfileContentAcrossCallsAndRendersNativeRequest(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertResponsesJSONEqual(t, want, rendered)
+	providerfixture.AssertJSONEqual(t, want, rendered)
 
 	var firstProfile storedRequestProfile
-	mustUnmarshal(t, memory.byID[profileID].Payload, &firstProfile)
+	mustUnmarshal(t, memory[profileID].Payload, &firstProfile)
 	if firstProfile.Instructions != findStringContent(t, memory, content.ContentText, "shared payload") {
 		t.Fatalf("request instructions did not share the existing text content ID: %+v", firstProfile)
 	}
@@ -130,7 +101,7 @@ func TestStoreRequestSharesProfileContentAcrossCallsAndRendersNativeRequest(t *t
 		t.Fatalf("stored tool refs = %d, want one", len(firstProfile.Tools))
 	}
 	var tool AdditionalTool
-	mustUnmarshal(t, memory.byID[firstProfile.Tools[0]].Payload, &tool)
+	mustUnmarshal(t, memory[firstProfile.Tools[0]].Payload, &tool)
 	if tool.Name != "exec" {
 		t.Fatalf("restored tool name = %q, want exec", tool.Name)
 	}
@@ -144,7 +115,7 @@ func TestStoreRequestSharesProfileContentAcrossCallsAndRendersNativeRequest(t *t
 		t.Fatal(err)
 	}
 	var secondProfile storedRequestProfile
-	mustUnmarshal(t, memory.byID[secondID].Payload, &secondProfile)
+	mustUnmarshal(t, memory[secondID].Payload, &secondProfile)
 	if secondID == profileID {
 		t.Fatal("per-call client metadata did not produce a distinct profile")
 	}
@@ -157,7 +128,7 @@ func TestStoreRequestSharesProfileContentAcrossCallsAndRendersNativeRequest(t *t
 }
 
 func TestRestoreRecordRejectsWrongContentKind(t *testing.T) {
-	memory := newMemoryContent()
+	memory := providerfixture.MemoryContent{}
 	id, err := memory.PutContent(content.ContentText, json.RawMessage(`"not an item"`))
 	if err != nil {
 		t.Fatal(err)
@@ -213,29 +184,9 @@ func TestContentReferencesRejectsEmptyReference(t *testing.T) {
 	}
 }
 
-func assertResponsesJSONEqual(t *testing.T, want, got []byte) {
+func findStringContent(t *testing.T, memory providerfixture.MemoryContent, kind content.ContentKind, expected string) content.ContentID {
 	t.Helper()
-	wantValue := decodeJSON(t, want)
-	gotValue := decodeJSON(t, got)
-	if !reflect.DeepEqual(gotValue, wantValue) {
-		t.Fatalf("JSON differs\n got: %s\nwant: %s", got, want)
-	}
-}
-
-func decodeJSON(t *testing.T, raw []byte) any {
-	t.Helper()
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.UseNumber()
-	var value any
-	if err := decoder.Decode(&value); err != nil {
-		t.Fatal(err)
-	}
-	return value
-}
-
-func findStringContent(t *testing.T, memory *memoryContent, kind content.ContentKind, expected string) content.ContentID {
-	t.Helper()
-	for id, content := range memory.byID {
+	for id, content := range memory {
 		if content.Kind != kind {
 			continue
 		}
@@ -278,7 +229,7 @@ func TestIncrementalProjectionRecognizesOutputsInRetainedPrefix(t *testing.T) {
 				if len(suffix) != 1 {
 					t.Fatalf("suffix has %d records", len(suffix))
 				}
-				assertResponsesJSONEqual(t, all[2], suffix[0])
+				providerfixture.AssertJSONEqual(t, all[2], suffix[0])
 				var item Item
 				if err := json.Unmarshal(suffix[0], &item); err != nil {
 					t.Fatal(err)

@@ -267,7 +267,7 @@ mod binding_id_tests {
 
 /// A planned module produced from the spec for the current chunk.
 /// Projection of `ModulePlan` carrying the fields downstream emit
-/// helpers consume (`cross_module_imports_for_body`,
+/// helpers consume (`cross_module_imports_for_plan`,
 /// `source_chunk_imports_for_moved_body`, etc.).
 #[derive(Debug, Clone)]
 pub struct PlannedModule {

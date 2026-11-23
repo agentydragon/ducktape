@@ -10,7 +10,7 @@ HumanEval+ / BFCL) deferred to a later pass.
 ## What ran
 
 - **Job manifest**: <job.yaml>
-- **Bench script**: <bench.py> (reasoning-aware, JSONL output, reasoning_effort=low); shared prompt and metrics helpers: <../ollama_bench_helpers.py>
+- **Bench script**: <bench.py> (reasoning-aware, JSONL output, reasoning_effort=low); shared streaming benchmark: <../ollama_bench.py>
 - **Driver**: <run.sh> (creates the ConfigMap from `bench.py` and the shared helper, applies the Job, and tails logs to `raw_output.jsonl`)
 - **Endpoint**: `http://ollama.ollama:11434/v1/chat/completions` (in-cluster, no auth-proxy hop)
 - **Configs measured**: `c-gpt20`, `c-gpt120`, `c-gemma31` (see <../../benchmarks.md#live-in-cluster-k8s-wyrm2>)
@@ -192,8 +192,7 @@ kubectl -n ollama exec ollama-764d8ffbdf-8hbgf -c ollama -- \
 ```
 
 (The `--noproxy '*'` and zeroed `HTTP_PROXY` env vars work around the
-mitmproxy auto-injection in `claude-sandbox`. See
-<../../../../k8s/TODO.md#reconsider-mitmproxy-auto-injection-in-claude-sandbox>.)
+mitmproxy auto-injection in `claude-sandbox`.)
 
 ## Next pass
 

@@ -111,7 +111,7 @@ func (s *sidecar) closeWorkloadRoutes() {
 // exchangeWorkloadConnectRoute carries native h2c gRPC frames through the caller's existing HTTP
 // CONNECT authority. The sidecar adds destination TLS and its Runner SVID after central admission;
 // the central proxy sees only opaque service TLS bytes.
-func (s *sidecar) exchangeWorkloadConnectRoute(w http.ResponseWriter, request *http.Request, route *workloadRoute) {
+func (s *sidecar) exchangeWorkloadConnectRoute(w http.ResponseWriter, route *workloadRoute) {
 	ctx, cancel := context.WithTimeout(s.workloadContext, 10*time.Second)
 	defer cancel()
 	upstream, err := s.dialTLSRoute(ctx, route.config.Upstream, route.security)
@@ -135,8 +135,4 @@ func (s *sidecar) exchangeWorkloadConnectRoute(w http.ResponseWriter, request *h
 	}); err != nil {
 		slog.Warn("workload CONNECT route ended with connection error", "upstream", route.config.Upstream, "error", err)
 	}
-}
-
-func (s *sidecar) exchangeWorkloadRoute(w http.ResponseWriter, request *http.Request, route *workloadRoute) {
-	route.handler.ServeHTTP(w, request)
 }

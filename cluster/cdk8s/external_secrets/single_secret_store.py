@@ -9,19 +9,16 @@ from cluster.cdk8s.external_secrets.kubernetes_store import cluster_secret_store
 
 
 def single_secret_store(
-    scope: Construct,
-    name: str,
-    *,
-    reader: ServiceAccount,
-    source_namespace: str,
-    source_secret: str,
-    consumer_namespace: str,
+    scope: Construct, name: str, *, reader: ServiceAccount, source_namespace: str, source_secret: str
 ) -> str:
-    """A ClusterSecretStore through which `consumer_namespace` reads `source_secret` out of
+    """A ClusterSecretStore through which the reader's namespace reads `source_secret` out of
     `source_namespace`, returning the store's name. It authenticates as the consumer namespace's
     own `reader` (ESO referent auth), which a Role in `source_namespace` lets get that one Secret
     and nothing else -- unlike a store on ESO's own ServiceAccount, which reads the whole
     `source_namespace`."""
+    consumer_namespace = reader.metadata.namespace
+    if consumer_namespace is None:
+        raise ValueError("The store reader needs an explicit namespace for ESO referent authentication")
     reader_role = f"{name}-reader"
     source_role = Role(
         scope,

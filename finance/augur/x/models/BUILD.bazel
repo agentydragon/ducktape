@@ -177,7 +177,6 @@ py_library(
 py_test(
     name = "observation_config_test",
     srcs = ["observation_config_test.py"],
-    data = ["//finance/augur/x/models/calibrated:trained_vecm_provider"],
     deps = [
         ":conftest",
         ":vecm",
@@ -190,8 +189,6 @@ py_test(
         "@pypi//numpy",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pyyaml",
-        "@rules_python//python/runfiles",
     ],
 )
 
@@ -322,6 +319,7 @@ py_test(
         ":private_equity_fit",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur:dates",
         "//finance/augur/model:series",
         "@pypi//pytest",
     ],
@@ -337,6 +335,7 @@ py_test(
         ":private_equity_fit",
         "//:conftest",
         "//finance/augur:conftest",
+        "//finance/augur:dates",
         "//finance/augur/model:series",
         "@pypi//pytest",
     ],
@@ -372,6 +371,7 @@ py_library(
     srcs = ["bayes_dilution.py"],
     deps = [
         ":private_equity_fit",
+        "//finance/augur:dates",
         "@pypi//jax",
         "@pypi//numpy",
         "@pypi//numpyro",
@@ -383,6 +383,7 @@ py_library(
     srcs = ["bayes_mint_streams.py"],
     deps = [
         ":private_equity_fit",
+        "//finance/augur:dates",
         "@pypi//jax",
         "@pypi//numpy",
         "@pypi//numpyro",
@@ -458,20 +459,11 @@ py_library(
 )
 
 py_library(
-    name = "ornstein_uhlenbeck",
-    srcs = ["ornstein_uhlenbeck.py"],
-    deps = [
-        ":structural_macro",
-        "//finance/evidence:loading",
-        "@pypi//numpy",
-    ],
-)
-
-py_library(
     name = "private_equity_fit",
     srcs = ["private_equity_fit.py"],
     deps = [
         ":trained_private_equity",
+        "//finance/augur:config_paths",
         "//finance/augur:dates",
         "//finance/augur/model:schemas",
         "//finance/augur/model:series",
@@ -507,6 +499,7 @@ py_library(
     deps = [
         ":private_equity_fit",
         ":state_space",
+        "//finance/augur:config_paths",
         "//finance/augur:dates",
         "//finance/augur/fit:evidence_data",
         "//finance/augur/model:asset_key",
@@ -656,22 +649,6 @@ py_test(
         "//finance/augur/model:exogenous",
         "//finance/augur/model:series",
         "//finance/augur/model:testing",
-        "@pypi//numpy",
-        "@pypi//pytest",
-    ],
-)
-
-py_test(
-    name = "ornstein_uhlenbeck_test",
-    srcs = ["ornstein_uhlenbeck_test.py"],
-    deps = [
-        ":conftest",
-        ":ornstein_uhlenbeck",
-        ":structural_macro",
-        ":synthetic_rates",
-        "//:conftest",
-        "//finance/augur:conftest",
-        "//finance/evidence:loading",
         "@pypi//numpy",
         "@pypi//pytest",
     ],

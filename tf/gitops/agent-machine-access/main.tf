@@ -17,7 +17,7 @@ terraform {
   }
 }
 
-# Read the Authentik bootstrap token from the K8s Secret (populated by ESO from Vault).
+# K8s Secret holding the Authentik bootstrap token (cluster/k8s/authentik/app/bootstrap-token.sops.yaml).
 data "kubernetes_secret" "authentik_bootstrap" {
   metadata {
     name      = "authentik-bootstrap"
@@ -29,8 +29,6 @@ provider "authentik" {
   url   = "http://authentik-server.authentik.svc.cluster.local"
   token = data.kubernetes_secret.authentik_bootstrap.data["AUTHENTIK_BOOTSTRAP_TOKEN"]
 }
-
-# --- Shared data sources ---
 
 data "authentik_flow" "authentication" {
   slug = "default-authentication-flow"
@@ -44,8 +42,6 @@ data "authentik_flow" "invalidation" {
   slug = "default-provider-invalidation-flow"
 }
 
-# Signing key + OIDC scope property mappings for the grocy-mcp user-login
-# OAuth2 provider below.
 data "authentik_certificate_key_pair" "self_signed" {
   name = "authentik Self-signed Certificate"
 }
@@ -65,7 +61,3 @@ data "authentik_property_mapping_provider_scope" "profile" {
 data "authentik_property_mapping_provider_scope" "offline_access" {
   managed = "goauthentik.io/providers/oauth2/scope-offline_access"
 }
-
-# --- Service Account ---
-# Shared service account for Claude/OpenClaw sandbox agents.
-# Used for Authentik API access (e.g., querying user info).

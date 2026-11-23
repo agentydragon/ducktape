@@ -1,8 +1,10 @@
 # gazelle:exclude test_visual.py
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
+
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
-load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
+load("//testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
 
 npm_link_all_packages(name = "node_modules")
 
@@ -10,8 +12,8 @@ npm_link_all_packages(name = "node_modules")
 # visual-regression test harness. The two woff2 files are latin-subset
 # variable fonts (Playfair Display v40 / Outfit v15, OFL-licensed); fonts.css
 # wires them into @font-face declarations the React component expects. The
-# files live under public/ so Vite copies them to dist/ verbatim during the
-# production build.
+# files live under public/ so `spa_bundle` copies them to dist/ verbatim during
+# the production build.
 filegroup(
     name = "casino_fonts",
     srcs = [
@@ -21,8 +23,6 @@ filegroup(
     ],
     visibility = ["//study_casino:__subpackages__"],
 )
-
-# ── Per-file source libraries ──────────────────────────────────────────────────
 
 js_library(
     name = "sync",
@@ -79,6 +79,7 @@ js_library(
     deps = [
         ":node_modules/react",
         ":shared",
+        "//study_casino:game_rules",
     ],
 )
 
@@ -88,6 +89,7 @@ js_library(
     deps = [
         ":node_modules/react",
         ":shared",
+        "//study_casino:game_rules",
     ],
 )
 
@@ -189,37 +191,35 @@ js_library(
     ],
 )
 
-# ── Production bundle (esbuild) ────────────────────────────────────────────────
-#
 # esbuild bundles main.jsx → dist/main.js; index.html (referencing /main.js) and
-# the public/ tree (manifest, icon, fonts) are copied in alongside. The .js files
-# carry JSX, so the loader treats them as such. Served verbatim by the FastAPI
-# app's StaticFiles mount.
+# the public/ tree (manifest, icon, fonts) are copied in alongside. Served
+# verbatim by the FastAPI app's StaticFiles mount.
 
 spa_bundle(
     name = "bundle",
     entry_point = "main.jsx",
     jsx = "automatic",
-    loader = {".js": "jsx"},
     public = glob(["public/**/*"]),
-    visibility = [
-        "//study_casino:__pkg__",
-        "//study_casino/tests:__pkg__",
-    ],
+    visibility = ["//study_casino:__pkg__"],
     deps = [":main"],
 )
 
-# ── Visual render-health tests ───────────────────────────────────────────────
-#
 # Renders the StudyCasino component with mocked state and publishes the
 # screenshot for PR visual review (publishOnly — no checked-in baselines).
 # Python tests in test_visual.py own readiness and capture.
 # Casino fonts above are wired in so the test captures the same typography users see in production.
 
-js_library(
-    name = "visual_harness_lib",
-    srcs = ["tests/harness/harness.jsx"],
-    tags = ["no-lint"],
+esbuild(
+    name = "visual_harness_bundle",
+    testonly = True,
+    config = {"jsx": "automatic"},
+    entry_point = "tests/harness/harness.jsx",
+    format = "iife",
+    minify = False,
+    output = "tests/harness/dist/harness.js",
+    platform = "browser",
+    sourcemap = False,
+    target = ["es2022"],
     deps = [
         ":changelog_modal",
         ":node_modules/react",
@@ -231,38 +231,6 @@ js_library(
     ],
 )
 
-js_binary(
-    name = "build_visual_harness",
-    data = [
-        "tests/harness/esbuild.config.mjs",
-        ":casino_fonts",
-        ":node_modules",
-        ":visual_harness_lib",
-    ],
-    entry_point = "tests/harness/esbuild.config.mjs",
-)
-
-js_run_binary(
-    name = "visual_harness_bundle",
-    srcs = [
-        "tests/harness/esbuild.config.mjs",
-        ":casino_fonts",
-        ":visual_harness_lib",
-    ],
-    outs = [
-        "tests/harness/dist/harness.js",
-    ],
-    args = ["tests/harness/dist"],
-    chdir = package_name(),
-    tool = ":build_visual_harness",
-)
-
-# Single-file alias so $(rootpath) resolves to one path the test can read.
-filegroup(
-    name = "visual_harness_js",
-    srcs = ["tests/harness/dist/harness.js"],
-)
-
 # BUILD carries a shard count, not a scenario list. Run one with `--test_filter=<scenario>`.
 py_visual_test(
     name = "visual",
@@ -270,11 +238,11 @@ py_visual_test(
     assets = ["tests/harness/index.html"],
     font_family = "Outfit",
     fonts = ":casino_fonts",
-    harness = ":visual_harness_js",
+    harness = "tests/harness/dist/harness.js",
     shard_count = 2,
     test_deps = [
-        "//util/testing/frontend_visual:capture",
-        "//util/testing/frontend_visual:viewports",
+        "//testing/frontend_visual:capture",
+        "//testing/frontend_visual:viewports",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

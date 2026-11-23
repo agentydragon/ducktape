@@ -103,7 +103,6 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		current.Sealed = false
 		current.SealUID = ""
 		current.SealCursor = 0
-		current.Delivered = false
 		current.AcknowledgementPresent = false
 		current.AcknowledgementSealed = false
 		current.AcknowledgementCursor = 0
@@ -123,11 +122,11 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			return op.Err()
 		}
 	}
-	if input.SetupRequested && current.SetupOperationID == "" {
+	if input.Setup == sessionpb.SetupState_SETUP_STATE_RUNNING && current.SetupOperationID == "" {
 		s.mu.Lock()
 		script, job := string(s.record.SetupScript), s.setupJob
 		s.mu.Unlock()
-		if script != "" && job == nil && input.Setup == sessionpb.SetupState_SETUP_STATE_RUNNING {
+		if script != "" && job == nil {
 			op, startErr := s.startOperation(&s.setupJob, func(ctx context.Context) error { return s.runSetup(ctx, script) })
 			if op != nil {
 				current.SetupOperationID = op.ID()
@@ -200,7 +199,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			}
 			report, err := pending.adapter.Reconcile(ctx, pending.turnID, false)
 			if err == nil {
-				err = s.Emit(ctx, observation(report), pending.sources)
+				err = s.Emit(ctx, harness.Observation(report), pending.sources)
 			}
 			if err != nil {
 				s.mu.Lock()
@@ -327,7 +326,6 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 		current.Sealed = false
 		current.SealUID = ""
 		current.SealCursor = 0
-		current.Delivered = false
 		current.AcknowledgementPresent = false
 		current.AcknowledgementSealed = false
 		current.AcknowledgementCursor = 0
@@ -342,7 +340,6 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 			current.AcknowledgementPresent = found
 			current.AcknowledgementSealed = ack.Sealed
 			current.AcknowledgementCursor = ack.Cursor
-			current.Delivered = found && ack.Sealed && ack.Cursor == seal.Cursor
 		}
 		return write()
 	}
@@ -390,7 +387,7 @@ func (c *sessionLifecycleController) Reconcile(ctx context.Context, _ *zap.Logge
 						s.deps.fail(failure)
 						return failure
 					}
-					if failure := s.Emit(s.deps.ctx, observation(&eventpb.HarnessLaunchFailed{Reason: err.Error()}), nil); failure != nil {
+					if failure := s.Emit(s.deps.ctx, harness.Observation(&eventpb.HarnessLaunchFailed{Reason: err.Error()}), nil); failure != nil {
 						s.deps.fail(failure)
 						return failure
 					}

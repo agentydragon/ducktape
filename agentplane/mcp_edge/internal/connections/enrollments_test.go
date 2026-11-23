@@ -10,6 +10,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -184,10 +185,7 @@ func TestAnAllowIsRecordedOnceAndEveryDecisionAfterItIsRefused(t *testing.T) {
 		t.Errorf("recorded %+v", got)
 	}
 	// An allow creates no Connection: the authorization server does, once the client exchanges its code.
-	var connections int
-	if err := s.db.QueryRowContext(t.Context(), `SELECT count(*) FROM external_connection`).Scan(&connections); err != nil {
-		t.Fatal(err)
-	}
+	connections := postgres.Count(t, s.db, `SELECT count(*) FROM external_connection`)
 	if connections != 0 {
 		t.Errorf("%d Connections after an allow", connections)
 	}

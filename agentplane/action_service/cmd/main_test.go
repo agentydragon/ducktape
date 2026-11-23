@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -17,7 +16,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/linkage_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/callers"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/policies"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/linkage"
@@ -40,6 +38,7 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -48,7 +47,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -155,23 +153,10 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 			}
 		}
 	}
-	connection, err := grpc.NewClient(rpcListener.Addr().String(), grpc.WithTransportCredentials(clientCredentials))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { connection.Close() })
+	connection := dialService(t, rpcListener.Addr().String(), clientCredentials)
 	var reader action_servicepb.ActionServiceClient
 	if c.RPC.TLS.CertFile == serving.CertFile {
-		readerCredentials, err := ca.Issue(t, peertls.NotificationsURI).ClientCredentials(peertls.ActionsURI)
-		if err != nil {
-			t.Fatal(err)
-		}
-		readerConnection, err := grpc.NewClient(rpcListener.Addr().String(), grpc.WithTransportCredentials(readerCredentials))
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { readerConnection.Close() })
-		reader = action_servicepb.NewActionServiceClient(readerConnection)
+		reader = action_servicepb.NewActionServiceClient(dialServiceAs(t, rpcListener.Addr().String(), ca, peertls.NotificationsURI))
 	}
 	return running{
 		ca: ca, reader: reader, health: healthpb.NewHealthClient(connection), actions: action_servicepb.NewActionServiceClient(connection),
@@ -179,6 +164,27 @@ func startConfigured(t *testing.T, kubeConfig *rest.Config, groups *catalog.Cata
 		linkages:  linkage_servicepb.NewLinkageServiceClient(connection),
 		address:   rpcListener.Addr().String(), store: store.New(db), updates: updates, stop: stop,
 	}
+}
+
+// dialService connects to the service at address with creds until the test ends.
+func dialService(t *testing.T, address string, creds credentials.TransportCredentials) *grpc.ClientConn {
+	t.Helper()
+	connection, err := grpc.NewClient(address, grpc.WithNoProxy(), grpc.WithTransportCredentials(creds))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = connection.Close() })
+	return connection
+}
+
+// dialServiceAs connects to the service at address with a certificate ca issues for the SPIFFE ID actor.
+func dialServiceAs(t *testing.T, address string, ca *transporttesting.CA, actor string) *grpc.ClientConn {
+	t.Helper()
+	creds, err := ca.Issue(t, actor).ClientCredentials(peertls.ActionsURI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dialService(t, address, creds)
 }
 
 func checkHealth(t *testing.T, client healthpb.HealthClient, service string) (healthpb.HealthCheckResponse_ServingStatus, error) {
@@ -443,7 +449,6 @@ func TestTheServiceRunsAnMCPGroupsActionOnceItsServerIsBack(t *testing.T) {
 	}
 }
 
-// fetch is the answer to a GET of address.
 // The service finishes a link at its callback, and a group the linkage authorizes follows it: a change another replica
 // commits reaches the group at once, not at its next refresh minutes later. The service also serves the shared Client
 // ID Metadata Document.
@@ -560,22 +565,6 @@ func TestTheServiceGatesTheOperatorServicesOverGRPC(t *testing.T) {
 	}
 }
 
-// setCallerLabel sets or removes the caller label on the account's ServiceAccount, which it creates when absent.
-func setCallerLabel(t *testing.T, account auth.Account, labeled bool) {
-	t.Helper()
-	if _, err := kube.ServiceAccount(t.Context(), account); err != nil {
-		t.Fatal(err)
-	}
-	value := "null"
-	if labeled {
-		value = fmt.Sprintf("%q", callers.ServiceAccountLabelValue)
-	}
-	if _, err := kube.Clientset.CoreV1().ServiceAccounts(account.Namespace).Patch(t.Context(), account.Name, types.MergePatchType,
-		fmt.Appendf(nil, `{"metadata":{"labels":{%q:%s}}}`, callers.ServiceAccountLabelKey, value), metav1.PatchOptions{}); err != nil {
-		t.Fatal(err)
-	}
-}
-
 // listOverGRPC lists the requests the bearer's account may read, until the call answers code.
 func listOverGRPC(t *testing.T, service running, bearer string, code codes.Code) *action_servicepb.ListActionRequestsResponse {
 	t.Helper()
@@ -682,7 +671,7 @@ func TestTheServiceAnswersActionPolicyFromItsPolicyIndexOverGRPC(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// Once the policy index has listed, it admits the labeled caller and resolves its binding.
+	// Once the policy index has listed, it admits the caller and resolves its binding.
 	waitReady(t, service)
 
 	authorized := ctx

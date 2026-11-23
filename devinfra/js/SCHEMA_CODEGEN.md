@@ -41,9 +41,9 @@ declaration for type checking and does not emit it as JavaScript source.
 
 ## OpenAPI Zod source
 
-`openapi_zod_ts_library` generates Zod TypeScript using a local Hey API config and compiles it as a
-`ts_library`. The config and every local schema/config reference are declared inputs. The caller
-declares the shared tsconfig and runtime dependencies; the named target is the compiled library:
+`openapi_zod_ts_library` generates and compiles Zod validators from a declared OpenAPI document.
+Supply the consuming package's tsconfig and declare local schema references in `schema_files`.
+The generator selects the Hey API Zod plugin, and the macro supplies the generated library’s Zod dependency.
 
 ```starlark
 load("//devinfra/js:openapi_zod_ts_library.bzl", "openapi_zod_ts_library")
@@ -51,11 +51,8 @@ load("//devinfra/js:openapi_zod_ts_library.bzl", "openapi_zod_ts_library")
 openapi_zod_ts_library(
     name = "schema_zod",
     schema = ":openapi_schema",
-    config = "openapi-ts.config.mjs",
     tsconfig = ":tsconfig",
-    deps = ["//:node_modules/zod"],
     schema_files = [":referenced_schema"],
-    config_files = [":local_config_helper"],
 )
 ```
 
@@ -63,10 +60,6 @@ The raw generated source is also available by file label, `:schema_zod.ts` by de
 consumers import the compiled `schema_zod.js`; TypeScript consumers resolve `schema_zod.d.ts`.
 Set `out` to choose another source path. An `.mts` output selects `.mjs` and `.d.mts` when an
 integration specifically requires those extensions.
-
-The config is an ES module with one default-exported configuration object. List local modules it
-imports in `config_files` and imported runtime packages in `config_deps`. The converter uses Hey
-API's config-file API with the declared schema path; plugin settings stay in the config.
 
 Both OpenAPI launchers use the shared remote-reference guard. They fail closed if a generator
 attempts HTTP resolution during the build. The repository-wide map of schema mechanisms and when to

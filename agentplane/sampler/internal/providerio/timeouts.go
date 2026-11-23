@@ -2,7 +2,6 @@ package providerio
 
 import (
 	"context"
-	"errors"
 	"io"
 	"net/http"
 	"sync"
@@ -14,7 +13,7 @@ import (
 // WithProviderIdleTimeout starts the idle budget after the response head is durably recorded and
 // resets it only after the provider parser reports durable semantic progress. The returned stop
 // function cancels and joins its timer goroutine.
-func WithProviderIdleTimeout(parent context.Context, timeout time.Duration, progress protocol.ProviderProgress) (context.Context, protocol.ProviderHooks, func()) {
+func WithProviderIdleTimeout(parent context.Context, timeout time.Duration) (context.Context, protocol.ProviderHooks, func()) {
 	ctx, cancel := context.WithCancelCause(parent)
 	responseHeads := make(chan chan struct{})
 	semanticProgress := make(chan chan error)
@@ -86,7 +85,7 @@ func WithProviderIdleTimeout(parent context.Context, timeout time.Duration, prog
 			case <-ctx.Done():
 			}
 		},
-		Progress: func(progressCtx context.Context) error {
+		Progress: func() error {
 			if cause := context.Cause(ctx); cause != nil {
 				return cause
 			}
@@ -98,21 +97,10 @@ func WithProviderIdleTimeout(parent context.Context, timeout time.Duration, prog
 			}
 			select {
 			case err := <-ack:
-				if err != nil {
-					return err
-				}
+				return err
 			case <-ctx.Done():
 				return context.Cause(ctx)
 			}
-			if progress != nil {
-				if err := progress(progressCtx); err != nil {
-					if progressCtx.Err() != nil && (errors.Is(err, progressCtx.Err()) || errors.Is(err, context.Canceled) && errors.Is(progressCtx.Err(), context.Canceled)) {
-						return context.Cause(progressCtx)
-					}
-					return &protocol.ProviderProgressError{Cause: err}
-				}
-			}
-			return nil
 		},
 	}
 	stop := func() {

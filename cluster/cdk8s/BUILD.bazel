@@ -1,4 +1,6 @@
 # gazelle:ignore
+# Subpackages inherit these generated import mappings. Add a local directive only
+# for a mapping the subpackage does not already inherit.
 # gazelle:resolve py cnpg_cluster_crds //cluster/cdk8s/providers/cnpg:cluster
 # gazelle:resolve py cnpg_database_crds //cluster/cdk8s/providers/cnpg:database
 # gazelle:resolve py external_secret_store_crds //cluster/cdk8s/providers/external_secrets:clustersecretstore
@@ -59,12 +61,13 @@ py_library(
     srcs = ["buildbuddy_provider.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":crossplane",
         ":flux",
         ":manifest_roots",
+        ":public_web_pki",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/crossplane:deploymentruntimeconfig",
         "//cluster/cdk8s/providers/crossplane:provider",
-        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
     ],
 )
@@ -72,7 +75,6 @@ py_library(
 py_library(
     name = "buildbuddy_executor",
     srcs = ["buildbuddy_executor.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":flux",
         ":manifest_roots",
@@ -86,15 +88,16 @@ py_library(
     name = "buildbuddy_kvm_worker",
     srcs = ["buildbuddy_kvm_worker.py"],
     data = ["//devinfra/buildbuddy/kvm/worker:config"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":cilium",
         ":config_format",
         ":flux",
         ":manifest_roots",
-        ":piraeus",
+        ":piraeus_storage",
+        ":service_ref",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/kubevirt:virtual_machine_pool",
+        "//cluster/cdk8s/monitoring:alloy_endpoints",
         "//cluster/cdk8s/monitoring:mimir",
         "//cluster/cdk8s/oci_cache:zot",
         "//cluster/cdk8s/providers/cilium:network_policy",
@@ -117,6 +120,7 @@ py_library(
     srcs = ["conftest.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        "//cluster/cdk8s/testing:promtool",
         "//cluster/cdk8s/testing:scratch",
         "//cluster/scripts:nebula_mesh_fixtures",
         "@pypi//pytest",
@@ -125,10 +129,22 @@ py_library(
 )
 
 py_library(
+    name = "api_objects",
+    srcs = ["api_objects.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "flux",
     srcs = ["flux.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":api_objects",
+        ":manifest_roots",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
@@ -177,21 +193,19 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":flux",
-        ":generation",
         ":manifest_roots",
         ":namespaces",
-        ":node_scheduling",
         "//cluster/cdk8s/cnpg:backup",
         "//cluster/cdk8s/cnpg:cluster",
+        "//cluster/cdk8s/cnpg:health",
+        "//cluster/cdk8s/cnpg:role_credentials",
         "//cluster/cdk8s/external_secrets:kubernetes_store",
-        "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/cnpg:cluster",
         "//cluster/cdk8s/providers/cnpg:database",
         "//cluster/cdk8s/providers/external_secrets:clustersecretstore",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/flux:kustomization",
-        "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -215,7 +229,18 @@ py_library(
     srcs = ["rotator_cron_job.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        "@pypi//cdk8s",
+        ":container_resources",
+        ":public_web_pki",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
+    name = "public_web_pki",
+    srcs = ["public_web_pki.py"],
+    visibility = ["//cluster/cdk8s:deployment_consumers"],
+    deps = [
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
@@ -232,6 +257,33 @@ py_library(
 )
 
 py_test(
+    name = "test_cluster_secret_store_admission",
+    size = "medium",
+    srcs = ["test_cluster_secret_store_admission.py"],
+    data = [
+        "@external_secrets_crds_bundle//file",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {
+        "ESO_CRDS": "$(rlocationpath @external_secrets_crds_bundle//file)",
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+    },
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane/testing:kubernetes_apiserver",
+        "//cluster/cdk8s/external_secrets:operator",
+        "@pypi//cdk8s",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pyyaml",
+        "@pypi//tenacity",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
     name = "test_secret_ref",
     srcs = ["test_secret_ref.py"],
     data = ["@nodejs_linux_amd64//:bin/node"],
@@ -241,8 +293,17 @@ py_test(
         ":helm",
         ":secret_ref",
         "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "disruption_budget",
+    srcs = ["disruption_budget.py"],
+    visibility = ["//cluster/cdk8s:deployment_consumers"],
+    deps = [
+        ":service_ref",
         "@pypi//cdk8s_plus_34",
-        "@pypi//pytest",
+        "@pypi//constructs",
     ],
 )
 
@@ -268,10 +329,8 @@ py_test(
         ":conftest",
         ":service_ref",
         "//:conftest",
-        "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
-        "@pypi//cdk8s",
-        "@pypi//cdk8s_plus_34",
+        "@pypi//more_itertools",
     ],
 )
 
@@ -332,7 +391,10 @@ py_test(
         ":conftest",
         ":flux",
         ":generation",
+        ":namespaces",
+        ":vpa_policy",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//pytest",
         "@pypi//pyyaml",
     ],
@@ -367,21 +429,18 @@ py_test(
 py_library(
     name = "cilium_rule_sections",
     srcs = ["cilium_rule_sections.py"],
-    visibility = [
-        "//cluster/cdk8s:__subpackages__",
-        "//cluster/validation:__subpackages__",
-    ],
+    visibility = ["//cluster/validation:__subpackages__"],
 )
 
 py_library(
     name = "fleet_rules",
     srcs = ["fleet_rules.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":api_objects",
         ":cilium_rule_sections",
         ":namespaces",
         ":pod_policy",
-        "@pypi//cdk8s",
+        ":vpa_policy",
         "@pypi//constructs",
         "@pypi//jsii",
     ],
@@ -393,10 +452,7 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        ":conftest",
         ":fleet_rules",
-        ":namespaces",
-        "@pypi//cdk8s",
         "@pypi//pytest",
     ],
 )
@@ -420,7 +476,10 @@ py_library(
     name = "node_scheduling",
     srcs = ["node_scheduling.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = ["@pypi//cdk8s_plus_34"],
+    deps = [
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+    ],
 )
 
 py_library(
@@ -429,10 +488,18 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":namespace_access",
+        ":vpa_policy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
     ],
+)
+
+py_library(
+    name = "vpa_policy",
+    srcs = ["vpa_policy.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = ["@pypi//pydantic"],
 )
 
 py_test(
@@ -444,6 +511,7 @@ py_test(
         ":conftest",
         ":namespace_access",
         ":namespaces",
+        ":vpa_policy",
         "@pypi//cdk8s",
         "@pypi//pytest",
     ],
@@ -464,14 +532,11 @@ py_library(
     srcs = ["external_creds.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        ":artifact_generators",
         ":manifest_roots",
+        ":secret_ref",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
-        "//cluster/cdk8s/providers/external_secrets:externalsecret",
-        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
     ],
 )
 
@@ -482,6 +547,7 @@ py_library(
     deps = [
         ":service_ref",
         "//cluster/cdk8s/providers/cilium:ciliumclusterwidenetworkpolicy",
+        "//cluster/cdk8s/providers/cilium:ciliumenvoyconfig",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",
@@ -505,6 +571,7 @@ py_library(
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/volsync:replication_source",
         "//cluster/cdk8s/providers/volsync:replicationsource",
+        "//cluster/cdk8s/seaweedfs:endpoints",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -514,14 +581,16 @@ py_library(
 py_library(
     name = "session_archive",
     srcs = ["session_archive.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":cilium",
+        ":container_resources",
+        ":disruption_budget",
         ":flux",
         ":gateway",
         ":manifest_roots",
         ":node_scheduling",
         ":pod_policy",
+        ":probes",
         ":secret_ref",
         ":service_ref",
         ":session_backup",
@@ -533,18 +602,16 @@ py_library(
         "//util:settings_contract",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
     ],
 )
 
 py_library(
     name = "session_backup",
     srcs = ["session_backup.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        ":cilium",
         ":flux",
         ":namespaces",
+        ":piraeus_storage",
         ":pod_policy",
         ":service_ref",
         "//cluster/cdk8s:gateway",
@@ -553,7 +620,6 @@ py_library(
         "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
     ],
 )
 
@@ -583,6 +649,35 @@ py_test(
 )
 
 py_library(
+    name = "container_resources",
+    srcs = ["container_resources.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = ["@pypi//cdk8s_plus_34"],
+)
+
+py_test(
+    name = "test_container_resources",
+    srcs = ["test_container_resources.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":conftest",
+        ":container_resources",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "volume_claim",
+    srcs = ["volume_claim.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "probes",
     srcs = ["probes.py"],
     visibility = ["//cluster/cdk8s:deployment_consumers"],
@@ -595,7 +690,6 @@ py_library(
 py_library(
     name = "vm_image_restart",
     srcs = ["vm_image_restart.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":api_resource",
         ":cilium",
@@ -608,7 +702,6 @@ py_library(
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
-        "@pypi//jsii",
     ],
 )
 
@@ -617,11 +710,8 @@ py_library(
     srcs = ["gateway.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        ":artifact_generators",
         ":manifest_roots",
         ":namespaces",
-        ":pod_policy",
-        ":probes",
         ":service_ref",
         "//cluster/cdk8s/cert_manager:config",
         "//cluster/cdk8s/providers/gateway_api:gateway",
@@ -630,7 +720,33 @@ py_library(
         "//cluster/cdk8s/providers/gateway_api:listener",
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+    ],
+)
+
+py_test(
+    name = "test_agent_gateway_admission",
+    size = "medium",
+    srcs = ["test_agent_gateway_admission.py"],
+    data = [
+        "@gateway_api_httproute_crd//file",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {
+        "GATEWAY_API_HTTPROUTE_CRD": "$(rlocationpath @gateway_api_httproute_crd//file)",
+        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
+    },
+    deps = [
+        ":conftest",
+        ":gateway",
+        "//:conftest",
+        "//agentplane/testing:kubernetes_apiserver",
+        "@pypi//cdk8s",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//more_itertools",
+        "@pypi//pyyaml",
+        "@rules_python//python/runfiles",
     ],
 )
 
@@ -673,7 +789,9 @@ py_library(
         ":manifest_roots",
         ":namespaces",
         "//cluster/cdk8s/forgejo:secret_copy",
+        "//cluster/cdk8s/plaid_mcp:spend",
         "//cluster/cdk8s/providers/flux:gitrepository",
+        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -717,8 +835,10 @@ py_library(
         ":namespaces",
         ":pod_policy",
         ":probes",
+        ":public_web_pki",
         ":secret_ref",
         ":service_ref",
+        ":vpa_policy",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
@@ -739,8 +859,6 @@ py_library(
     visibility = ["//cluster/cdk8s/public_coder:__pkg__"],
     deps = [
         ":agent_access_profiles",
-        ":artifact_generators",
-        ":flux",
         ":manifest_roots",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -756,10 +874,12 @@ py_library(
         "//cluster/cdk8s/gatus:__pkg__",
     ],
     deps = [
+        ":container_resources",
         ":gateway",
         ":manifest_roots",
         ":namespaces",
         ":service_ref",
+        ":vpa_policy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@rules_python//python/runfiles",
@@ -770,8 +890,6 @@ py_library(
     name = "alloy_otlp_bearer",
     srcs = ["alloy_otlp_bearer.py"],
     deps = [
-        ":artifact_generators",
-        ":flux",
         ":manifest_roots",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "@pypi//cdk8s",
@@ -782,7 +900,7 @@ py_library(
     name = "claude_sandbox_secrets",
     srcs = ["claude_sandbox_secrets.py"],
     deps = [
-        ":artifact_generators",
+        ":agent_rbac_base",
         ":external_creds",
         ":manifest_roots",
         ":reflector",
@@ -798,10 +916,12 @@ py_library(
     name = "roaming_node_controller",
     srcs = ["roaming_node_controller.py"],
     deps = [
+        ":container_resources",
         ":manifest_roots",
         ":namespaces",
         ":node_scheduling",
         ":pod_policy",
+        ":vpa_policy",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",
@@ -814,10 +934,13 @@ py_library(
     srcs = ["loki_read_proxy.py"],
     deps = [
         ":cilium",
+        ":container_resources",
         ":manifest_roots",
         ":namespaces",
         ":service_ref",
+        ":vpa_policy",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
+        "//cluster/cdk8s/monitoring:loki_endpoints",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -829,17 +952,19 @@ py_library(
     srcs = ["airlock.py"],
     deps = [
         ":config_format",
+        ":container_resources",
         ":flux",
         ":gateway",
         ":manifest_roots",
         ":namespaces",
+        ":public_web_pki",
         ":secret_ref",
         ":service_ref",
+        ":vpa_policy",
         "//airlock:settings",
         "//airlock/oauth:config",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
-        "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
@@ -852,6 +977,7 @@ py_library(
 py_library(
     name = "google_mcp",
     srcs = ["google_mcp.py"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
     deps = [
         ":cilium",
         ":manifest_roots",
@@ -860,6 +986,9 @@ py_library(
         ":probes",
         ":secret_ref",
         ":service_ref",
+        ":vpa_policy",
+        "//cluster/cdk8s/agentplane:actions",
+        "//cluster/cdk8s/agentplane:namespaces",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/cilium:network_policy",
@@ -885,11 +1014,9 @@ py_library(
     name = "agent_machine_access",
     srcs = ["agent_machine_access.py"],
     data = ["//tf/gitops/agent-machine-access:inline_source"],
-    visibility = ["//cluster/cdk8s/authentik:__pkg__"],
     deps = [
         ":manifest_roots",
         ":opentofu",
-        ":terraform",
         "@pypi//cdk8s",
     ],
 )
@@ -901,7 +1028,6 @@ py_library(
     deps = [
         ":manifest_roots",
         ":opentofu",
-        ":terraform",
         "@pypi//cdk8s",
     ],
 )
@@ -916,44 +1042,35 @@ py_library(
     name = "descheduler",
     srcs = ["descheduler.py"],
     deps = [
-        ":artifact_generators",
         ":helm",
         ":manifest_roots",
-        ":piraeus",
+        ":piraeus_storage",
         ":stateful_infra",
-        ":tana_mcp",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
     ],
 )
 
 py_library(
     name = "aiquota",
     srcs = ["aiquota.py"],
-    visibility = [
-        "//cluster/cdk8s/agentplane:__pkg__",
-        "//cluster/cdk8s/public_coder:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
     deps = [
         ":flux",
         ":gateway",
         ":manifest_roots",
         ":pod_policy",
         ":probes",
+        ":reflector",
         ":secret_ref",
         ":service_ref",
         "//aiquota:config",
         "//aiquota:settings",
-        "//aiquota/providers:anthropic_platform_lib",
-        "//aiquota/providers:claude_lib",
-        "//aiquota/providers:codex_lib",
-        "//aiquota/providers:openai_platform_lib",
-        "//aiquota/providers:zai_lib",
         "//cluster/cdk8s/agentplane:egress_credentials",
         "//cluster/cdk8s/cli_proxy_api",
         "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
+        "//cluster/cdk8s/platform_sessions:app",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
@@ -971,11 +1088,9 @@ py_library(
     srcs = ["dns_automation.py"],
     deps = [
         ":external_creds",
-        ":flux",
         ":manifest_roots",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
-        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -991,10 +1106,10 @@ py_library(
         ":namespaces",
         ":node_scheduling",
         ":route53",
+        ":vpa_policy",
         "//cluster/cdk8s/providers/external_dns:dnsendpoint",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
-        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -1004,7 +1119,9 @@ py_library(
 py_library(
     name = "tana_mcp",
     srcs = ["tana_mcp.py"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
     deps = [
+        ":container_resources",
         ":external_creds",
         ":flux",
         ":gateway",
@@ -1013,8 +1130,10 @@ py_library(
         ":mcp_oauth_state",
         ":namespaces",
         ":node_scheduling",
+        ":public_web_pki",
         ":secret_ref",
         ":service_ref",
+        ":vpa_policy",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
@@ -1037,36 +1156,12 @@ py_library(
         ":ducktape_flux",
         ":flux",
         ":secret_ref",
+        ":tofu_state",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "//cluster/cdk8s/providers/tofu_controller:terraform",
-        "//cluster/cdk8s/tofu_state:db",
         "@pypi//cdk8s",
         "@pypi//constructs",
         "@pypi//pydantic",
-    ],
-)
-
-py_test(
-    name = "test_terraform_vars",
-    srcs = ["test_terraform_vars.py"],
-    data = [
-        "//tf/gitops/cdviz-github-webhook:variables.tf",
-        "//tf/gitops/forgejo-images:variables.tf",
-        "//tf/gitops/home-switch:variables.tf",
-        "//tf/gitops/route53-domain-delegation:variables.tf",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":route53_domain_delegation",
-        "//:conftest",
-        "//cluster/cdk8s/cdviz:github_webhook",
-        "//cluster/cdk8s/forgejo_registry:chart",
-        "//cluster/cdk8s/monitoring:home_switch",
-        "@pypi//pydantic",
-        "@pypi//pygohcl",
-        "@pypi//pytest",
-        "@rules_python//python/runfiles",
     ],
 )
 
@@ -1090,23 +1185,25 @@ py_library(
     srcs = ["etcd.py"],
     deps = [
         ":service_ref",
-        "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
     ],
 )
 
 py_test(
     name = "test_etcd",
     srcs = ["test_etcd.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
+    data = [
+        "//:nebula-mesh.json",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":conftest",
         ":etcd",
+        "//:conftest",
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
@@ -1118,7 +1215,7 @@ py_library(
     srcs = ["agent_rbac_base.py"],
     visibility = ["//cluster/cdk8s/public_coder:__pkg__"],
     deps = [
-        ":artifact_generators",
+        ":container_resources",
         ":flux",
         ":manifest_roots",
         ":namespaces",
@@ -1132,10 +1229,11 @@ py_library(
 py_library(
     name = "agent_sandbox",
     srcs = ["agent_sandbox.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":container_resources",
         ":manifest_roots",
         ":namespaces",
+        ":vpa_policy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -1154,7 +1252,7 @@ py_library(
 py_library(
     name = "ntfy",
     srcs = ["ntfy.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
+    visibility = ["//cluster/cdk8s/monitoring:__pkg__"],
     deps = [
         ":gateway",
         ":manifest_roots",
@@ -1166,6 +1264,7 @@ py_library(
         "//cluster/cdk8s/cnpg:backup",
         "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/external_secrets:kubernetes_store",
+        "//cluster/cdk8s/monitoring:namespace",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
@@ -1179,11 +1278,11 @@ py_library(
     name = "kube_system",
     srcs = ["kube_system.py"],
     deps = [
-        ":artifact_generators",
         ":flux",
         ":manifest_roots",
         ":namespaces",
         "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
     ],
 )
 
@@ -1191,7 +1290,6 @@ py_library(
     name = "user_agentydragon",
     srcs = ["user_agentydragon.py"],
     deps = [
-        ":artifact_generators",
         ":manifest_roots",
         ":namespaces",
         "@pypi//cdk8s",
@@ -1202,7 +1300,6 @@ py_library(
     name = "nvidia_runtimeclass",
     srcs = ["nvidia_runtimeclass.py"],
     deps = [
-        ":artifact_generators",
         ":flux",
         ":manifest_roots",
         "@pypi//cdk8s",
@@ -1225,9 +1322,10 @@ py_library(
     name = "metrics_server",
     srcs = ["metrics_server.py"],
     deps = [
-        ":artifact_generators",
         ":helm",
         ":manifest_roots",
+        ":namespaces",
+        ":node_scheduling",
         "@pypi//cdk8s",
     ],
 )
@@ -1237,7 +1335,6 @@ py_library(
     srcs = ["reflector.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        ":artifact_generators",
         ":helm",
         ":manifest_roots",
         ":namespaces",
@@ -1249,10 +1346,12 @@ py_library(
     name = "keda",
     srcs = ["keda.py"],
     deps = [
-        ":artifact_generators",
+        ":config_format",
         ":helm",
         ":manifest_roots",
         ":namespaces",
+        ":node_scheduling",
+        ":vpa_policy",
         "//cluster/cdk8s/haku_ci:runner",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "@pypi//cdk8s",
@@ -1267,13 +1366,14 @@ py_library(
         ":helm",
         ":manifest_roots",
         ":namespaces",
+        ":node_scheduling",
         ":opentofu_runtime",
+        ":vpa_policy",
         "//cluster/cdk8s/external_secrets:single_secret_store",
-        "//cluster/cdk8s/forgejo_registry:chart",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/crossplane:provider",
-        "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
+        "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -1287,7 +1387,7 @@ py_library(
     deps = [
         ":flux",
         ":secret_ref",
-        ":terraform",
+        ":tofu_state",
         "//cluster/cdk8s/providers/crossplane:opentofu_providerconfig",
         "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
         "//cluster/cdk8s/providers/flux:kustomization",
@@ -1295,6 +1395,7 @@ py_library(
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
+        "@pypi//pydantic",
         "@rules_python//python/runfiles",
     ],
 )
@@ -1316,14 +1417,10 @@ py_library(
     name = "route53_domain_delegation",
     srcs = ["route53_domain_delegation.py"],
     data = ["//tf/gitops/route53-domain-delegation:inline_source"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        ":flux",
         ":opentofu",
         ":route53",
         ":secret_ref",
-        ":terraform",
-        "//cluster/cdk8s/providers/crossplane:opentofu_workspace",
         "@pypi//cdk8s",
         "@pypi//pydantic",
     ],
@@ -1333,11 +1430,8 @@ py_library(
     name = "crossplane_forgejo_agentydragon",
     srcs = ["crossplane_forgejo_agentydragon.py"],
     data = ["//tf/gitops/forgejo-agentydragon:inline_source"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        ":flux",
         ":opentofu",
-        ":terraform",
         "@pypi//cdk8s",
     ],
 )
@@ -1347,14 +1441,13 @@ py_library(
     srcs = ["valkey.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        ":artifact_generators",
-        ":flux",
+        ":disruption_budget",
         ":helm",
         ":manifest_roots",
         ":namespaces",
         ":node_scheduling",
+        ":service_ref",
         "//cluster/cdk8s/providers/flux:helmrelease",
-        "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/redis_operator:redisreplication",
         "//cluster/cdk8s/providers/redis_operator:replication",
         "@pypi//cdk8s",
@@ -1381,7 +1474,6 @@ py_library(
     srcs = ["headlamp.py"],
     visibility = ["//cluster/cdk8s/gatus:__pkg__"],
     deps = [
-        ":artifact_generators",
         ":helm",
         ":manifest_roots",
         ":namespaces",
@@ -1400,6 +1492,7 @@ py_library(
     data = ["proxmox-proxy.conf"],
     visibility = ["//cluster/cdk8s/gatus:__pkg__"],
     deps = [
+        ":container_resources",
         ":flux",
         ":manifest_roots",
         ":namespaces",
@@ -1415,7 +1508,6 @@ py_library(
     name = "volsync",
     srcs = ["volsync.py"],
     deps = [
-        ":artifact_generators",
         ":flux",
         ":helm",
         ":manifest_roots",
@@ -1434,9 +1526,18 @@ py_library(
     name = "reloader",
     srcs = ["reloader.py"],
     deps = [
-        ":artifact_generators",
         ":helm",
         ":manifest_roots",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "flux_system_vpa",
+    srcs = ["flux_system_vpa.py"],
+    deps = [
+        ":manifest_roots",
+        "//cluster/cdk8s/providers/vpa:policy",
         "@pypi//cdk8s",
     ],
 )
@@ -1445,9 +1546,10 @@ py_library(
     name = "vpa",
     srcs = ["vpa.py"],
     deps = [
-        ":artifact_generators",
         ":helm",
         ":manifest_roots",
+        ":node_scheduling",
+        "//cluster/cdk8s/providers/flux:helmrelease",
         "@pypi//cdk8s",
     ],
 )
@@ -1455,13 +1557,11 @@ py_library(
 py_library(
     name = "node_feature_discovery",
     srcs = ["node_feature_discovery.py"],
-    visibility = ["//cluster/cdk8s/monitoring:__pkg__"],
     deps = [
-        ":artifact_generators",
         ":helm",
         ":manifest_roots",
         ":namespaces",
-        "//cluster/cdk8s/providers/flux:helmrelease",
+        ":vpa_policy",
         "@pypi//cdk8s",
     ],
 )
@@ -1470,7 +1570,6 @@ py_library(
     name = "nvidia_device_plugin",
     srcs = ["nvidia_device_plugin.py"],
     deps = [
-        ":artifact_generators",
         ":helm",
         ":manifest_roots",
         ":namespaces",
@@ -1482,9 +1581,6 @@ py_library(
     name = "talos_cloud_controller_manager",
     srcs = ["talos_cloud_controller_manager.py"],
     deps = [
-        ":artifact_generators",
-        ":flux",
-        ":generation",
         ":helm",
         ":manifest_roots",
         ":node_scheduling",
@@ -1497,12 +1593,13 @@ py_library(
     srcs = ["kube_api_proxy.py"],
     data = ["kube-api-proxy.conf"],
     deps = [
-        ":artifact_generators",
-        ":flux",
+        ":container_resources",
         ":gateway",
         ":manifest_roots",
+        ":namespaces",
+        ":node_scheduling",
         ":service_ref",
-        "//cluster/cdk8s/providers/flux:kustomization",
+        ":vpa_policy",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@rules_python//python/runfiles",
@@ -1518,7 +1615,6 @@ py_library(
         "//ssh_keys:rugged-host-ed25519.pub",
         "//ssh_keys:wyrm2-host-ed25519.pub",
     ],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":agent_machine_access",
         ":agent_namespace_rbac",
@@ -1548,6 +1644,7 @@ py_library(
         ":flux_image_automation_ghcr",
         ":flux_monitoring",
         ":flux_sources",
+        ":flux_system_vpa",
         ":flux_webhook",
         ":flux_webhook_token",
         ":github_branch_protection",
@@ -1581,8 +1678,10 @@ py_library(
         ":session_archive",
         ":session_backup",
         ":talos_cloud_controller_manager",
+        ":tana_mcp",
         ":terraform",
         ":tofu_controller_release",
+        ":tofu_state",
         ":user_agentydragon",
         ":valkey",
         ":volsync",
@@ -1594,9 +1693,10 @@ py_library(
         "//cluster/cdk8s/activitywatch:app",
         "//cluster/cdk8s/agentplane:binding_delegation",
         "//cluster/cdk8s/agentplane:db_backups",
+        "//cluster/cdk8s/agentplane:gaffer_archive",
         "//cluster/cdk8s/agentplane:generation",
         "//cluster/cdk8s/agentplane:staging",
-        "//cluster/cdk8s/agents:flux_kustomizations",
+        "//cluster/cdk8s/agentplane:staging_vpa",
         "//cluster/cdk8s/att_gateway_exporter:access_code",
         "//cluster/cdk8s/att_gateway_exporter:app",
         "//cluster/cdk8s/atuin:server",
@@ -1676,6 +1776,7 @@ py_library(
         "//cluster/cdk8s/kubevirt:app",
         "//cluster/cdk8s/kubevirt:cdi",
         "//cluster/cdk8s/kubevirt:operators",
+        "//cluster/cdk8s/kubevirt:vpa",
         "//cluster/cdk8s/kyverno:app",
         "//cluster/cdk8s/kyverno:policies",
         "//cluster/cdk8s/litellm:buildbuddy_crossplane",
@@ -1734,8 +1835,6 @@ py_library(
         "//cluster/cdk8s/ssh_mcp:generation",
         "//cluster/cdk8s/sshpiper_crds:flux_kustomizations",
         "//cluster/cdk8s/study_casino:app",
-        "//cluster/cdk8s/tofu_state:db",
-        "//cluster/cdk8s/tofu_state:namespace",
         "//cluster/scripts:nebula_mesh",
         "//devinfra/bazel:workspace",
         "@pypi//cdk8s",
@@ -1746,18 +1845,21 @@ py_library(
 py_library(
     name = "claude_session_sync",
     srcs = ["claude_session_sync.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":cilium",
+        ":container_resources",
+        ":disruption_budget",
         ":flux",
         ":gateway",
         ":manifest_roots",
         ":namespaces",
         ":node_scheduling",
+        ":piraeus_storage",
         ":pod_policy",
-        ":probes",
         ":secret_ref",
         ":service_ref",
+        ":vpa_policy",
+        "//cluster/cdk8s:volume_claim",
         "//cluster/cdk8s/cnpg:backup",
         "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
@@ -1771,21 +1873,36 @@ py_library(
     ],
 )
 
+py_test(
+    name = "test_cpap_sync",
+    srcs = ["test_cpap_sync.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":conftest",
+        ":cpap_sync",
+        "//:conftest",
+        "@pypi//cdk8s",
+    ],
+)
+
 py_library(
     name = "cpap_sync",
     srcs = ["cpap_sync.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":cilium",
+        ":container_resources",
         ":manifest_roots",
         ":namespaces",
         ":node_scheduling",
+        ":public_web_pki",
         ":secret_ref",
         ":service_ref",
         ":vm_image_restart",
         "//cluster/cdk8s/forgejo:secret_copy",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/kubevirt:virtual_machine",
+        "//cluster/cdk8s/monitoring:alloy_endpoints",
         "//cluster/cdk8s/providers/cilium:ciliumnetworkpolicy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/kubevirt:virtualmachine",
@@ -1801,13 +1918,9 @@ py_library(
 py_library(
     name = "flux_image_automation_ghcr",
     srcs = ["flux_image_automation_ghcr.py"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/forgejo_registry:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s/forgejo_registry:__pkg__"],
     deps = [
         ":ducktape_flux",
-        ":flux",
         ":image_automation",
         ":manifest_roots",
         "@pypi//cdk8s",
@@ -1817,10 +1930,7 @@ py_library(
 py_library(
     name = "flux_webhook",
     srcs = ["flux_webhook.py"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/forgejo_registry:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s/forgejo_registry:__pkg__"],
     deps = [
         ":config_format",
         ":flux",
@@ -1846,11 +1956,9 @@ py_library(
     name = "flux_webhook_token",
     srcs = ["flux_webhook_token.py"],
     data = ["//tf/gitops/flux-webhook-token:inline_source"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":manifest_roots",
         ":opentofu",
-        ":terraform",
         "@pypi//cdk8s",
     ],
 )
@@ -1858,10 +1966,7 @@ py_library(
 py_library(
     name = "langfuse",
     srcs = ["langfuse.py"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/gatus:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s/gatus:__pkg__"],
     deps = [
         ":flux",
         ":gateway",
@@ -1869,6 +1974,7 @@ py_library(
         ":manifest_roots",
         ":namespaces",
         ":node_scheduling",
+        ":piraeus_storage",
         ":secret_ref",
         ":service_ref",
         ":valkey",
@@ -1877,6 +1983,7 @@ py_library(
         "//cluster/cdk8s/cnpg:cluster",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/seaweedfs:endpoints",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
@@ -1887,7 +1994,6 @@ py_library(
 py_library(
     name = "seaweedfs_csi",
     srcs = ["seaweedfs_csi.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":helm",
         ":manifest_roots",
@@ -1901,11 +2007,41 @@ py_library(
     ],
 )
 
+py_test(
+    name = "test_tofu_controller_release",
+    srcs = ["test_tofu_controller_release.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":conftest",
+        ":terraform",
+        ":tofu_controller_release",
+        "//:conftest",
+        "@pypi//cdk8s",
+    ],
+)
+
+py_library(
+    name = "tofu_state",
+    srcs = ["tofu_state.py"],
+    deps = [
+        ":flux",
+        ":manifest_roots",
+        ":namespaces",
+        ":secret_ref",
+        "//cluster/cdk8s/cnpg:backup",
+        "//cluster/cdk8s/cnpg:cluster",
+        "//cluster/cdk8s/cnpg:health",
+        "//cluster/cdk8s/providers/cnpg:cluster",
+        "//cluster/cdk8s/providers/flux:kustomization",
+        "@pypi//cdk8s",
+    ],
+)
+
 py_library(
     name = "tofu_controller_release",
     srcs = ["tofu_controller_release.py"],
-    data = ["@ducktape_tofu_controller//:terraform_crd"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
+    data = ["@tofu_controller_crd//file"],
     deps = [
         ":helm",
         ":image_automation",
@@ -1913,6 +2049,7 @@ py_library(
         ":terraform",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:imagerepository",
+        "//cluster/cdk8s/providers/vpa:policy",
         "@pypi//cdk8s",
         "@rules_python//python/runfiles",
     ],
@@ -1921,15 +2058,15 @@ py_library(
 py_library(
     name = "website",
     srcs = ["website.py"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/gatus:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s/gatus:__pkg__"],
     deps = [
-        ":flux",
+        ":disruption_budget",
         ":gateway",
         ":manifest_roots",
         ":namespaces",
+        ":node_scheduling",
+        ":pod_policy",
+        ":probes",
         ":service_ref",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/gateway_api:http_route",
@@ -1942,7 +2079,6 @@ py_library(
 py_library(
     name = "artifact_generators",
     srcs = ["artifact_generators.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":flux",
         ":generation",
@@ -1988,26 +2124,39 @@ py_test(
     data = [
         ":synthesized_manifests",
         "//:MODULE.bazel",
-        "//:session_backup_sops_source",
         "//agentplane/crds:manifests",
         "//cluster:generated_manifests",
-        "//cluster:parked_generated_manifests",
+        "//cluster:haku_openclaw_spike_backup_sources",
+        "//cluster:parked_yaml_manifests",
         "//cluster/k8s:cluster_all_files",
         "//cluster/k8s/agentplane-staging:manifests",
         "//cluster/k8s/cli-proxy-api:manifests",
         "//cluster/k8s/home-assistant/app:manifests",
         "//cluster/k8s/litellm/app:manifests",
-        "//tf/gitops/forgejo-agentydragon:inline_source",
+        "//tf/gitops/gitlab-spike:variables.tf",
+        "//tf/gitops/home-switch:variables.tf",
     ],
-    env = {"GENERATED_MANIFESTS_RLOCATION": "$(rlocationpath :synthesized_manifests)"},
+    env = {
+        "GENERATED_MANIFESTS_RLOCATION": "$(rlocationpath :synthesized_manifests)",
+    },
     deps = [
+        ":agent_rbac_test_support",
         ":manifest_roots",
+        ":namespace_access",
         "//:conftest",
+        "//cluster/cdk8s/testing:manifests",
         "//devinfra/testing:undeclared_outputs",
+        "@pypi//pygohcl",
         "@pypi//pytest",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
+)
+
+py_library(
+    name = "piraeus_storage",
+    srcs = ["piraeus_storage.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 py_library(
@@ -2017,14 +2166,15 @@ py_library(
         "piraeus-drbd-metrics.alloy",
         "piraeus-reactor-patch.yaml",
     ],
-    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":container_resources",
         ":flux",
         ":helm",
         ":manifest_roots",
         ":namespaces",
         ":node_scheduling",
         ":piraeus_metrics",
+        ":piraeus_storage",
         "//cluster/cdk8s/monitoring:mimir",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
@@ -2039,10 +2189,10 @@ py_library(
     name = "piraeus_metrics",
     srcs = ["piraeus_metrics.py"],
     data = ["piraeus-lvm-metrics.sh"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        ":cilium",
+        ":container_resources",
         ":node_scheduling",
+        "//cluster/cdk8s/monitoring:alloy_endpoints",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
@@ -2060,20 +2210,35 @@ py_test(
     srcs = ["test_buildbuddy_scaling.py"],
     data = [
         "testdata/buildbuddy_scaling_rules.yaml",
+        "//cluster:generated/buildbuddy-kvm-worker-autoscaler/buildbuddy-kvm-worker-autoscaler.k8s.yaml",
+        "//cluster/k8s:buildbuddy-kvm-worker/buildbuddy-kvm-worker.k8s.yaml",
         "@multitool//tools/promtool",
-        "@nodejs_linux_amd64//:bin/node",
     ],
     env = {
-        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
         "PROMTOOL_RLOCATION": "$(rlocationpath @multitool//tools/promtool)",
     },
     deps = [
-        ":buildbuddy_kvm_worker",
-        ":conftest",
         "//:conftest",
-        "@pypi//cdk8s",
+        "//cluster/cdk8s/testing:manifests",
+        "//cluster/cdk8s/testing:promtool",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
+    ],
+)
+
+py_test(
+    name = "test_piraeus_storage",
+    srcs = ["test_piraeus_storage.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":conftest",
+        ":descheduler",
+        ":piraeus",
+        "//:conftest",
+        "@pypi//cdk8s",
+        "@pypi//pytest",
+        "@pypi//pyyaml",
     ],
 )
 
@@ -2082,18 +2247,16 @@ py_test(
     srcs = ["test_piraeus_metrics_rules.py"],
     data = [
         "testdata/piraeus_roaming_rules.yaml",
+        "//cluster:generated/piraeus/cluster/cluster.k8s.yaml",
         "@multitool//tools/promtool",
-        "@nodejs_linux_amd64//:bin/node",
     ],
     env = {
-        "JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)",
         "PROMTOOL_RLOCATION": "$(rlocationpath @multitool//tools/promtool)",
     },
     deps = [
-        ":conftest",
-        ":piraeus_metrics",
         "//:conftest",
-        "@pypi//cdk8s",
+        "//cluster/cdk8s/testing:manifests",
+        "//cluster/cdk8s/testing:promtool",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
@@ -2120,7 +2283,6 @@ py_library(
 py_library(
     name = "namespace_access",
     srcs = ["namespace_access.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
 )
 
 py_library(
@@ -2132,7 +2294,6 @@ py_library(
         ":generation",
         ":manifest_roots",
         ":namespace_access",
-        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
@@ -2146,10 +2307,8 @@ py_test(
     deps = [
         ":agent_namespace_rbac",
         ":conftest",
-        ":flux",
         ":namespace_access",
         ":namespaces",
-        "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
         "@pypi//pytest",
     ],
@@ -2159,6 +2318,10 @@ py_library(
     name = "agent_rbac_test_support",
     testonly = True,
     srcs = ["agent_rbac_test_support.py"],
+    visibility = [
+        "//cluster/cdk8s/agentplane:__pkg__",
+        "//cluster/cdk8s/ssh_mcp:__pkg__",
+    ],
 )
 
 py_test(
@@ -2168,7 +2331,6 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
-        ":agent_access_profiles",
         ":agent_namespace_rbac",
         ":agent_rbac_base",
         ":agent_rbac_test_support",
@@ -2180,16 +2342,16 @@ py_test(
         "//cluster/cdk8s/agentplane:egress",
         "//cluster/cdk8s/agentplane:namespaces",
         "//cluster/cdk8s/agentplane:staging",
+        "//cluster/cdk8s/agentplane/testing:fixtures",  # keep: pytest_plugins
         "//cluster/cdk8s/clickhouse:installation",
         "//cluster/cdk8s/haku:charts",
         "//cluster/cdk8s/haku:rbac",
         "//cluster/cdk8s/plaid_mcp:db",
         "//cluster/cdk8s/plaid_mcp:spend",
         "//cluster/cdk8s/public_coder:app",
+        "//cluster/cdk8s/testing:manifests",
         "@pypi//cdk8s",
-        "@pypi//more_itertools",
         "@pypi//pytest",
-        "@pypi//pyyaml",
     ],
 )
 
@@ -2200,32 +2362,16 @@ py_test(
     data = ["@nodejs_linux_amd64//:bin/node"],
     env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
+        ":agent_rbac_test_support",
         ":conftest",
-        "//agentplane/action_service/policies:resources",
+        "//agentplane:crd_group",
         "//cluster/cdk8s/agentplane:actions_staging_policies",
         "//cluster/cdk8s/agentplane:staging",
+        "//cluster/cdk8s/haku:namespace",
         "//cluster/cdk8s/haku:rbac",
         "//cluster/cdk8s/haku:ui_egress",
+        "//cluster/cdk8s/testing:manifests",
         "@pypi//cdk8s",
-        "@pypi//more_itertools",
-        "@pypi//pytest",
-        "@pypi//pyyaml",
-    ],
-)
-
-py_test(
-    name = "test_haku_anki_egress",
-    size = "medium",
-    srcs = ["test_haku_anki_egress.py"],
-    data = ["@nodejs_linux_amd64//:bin/node"],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":conftest",
-        "//cluster/cdk8s/agentplane:actions_staging_policies",
-        "//cluster/cdk8s/agentplane:staging",
-        "//cluster/cdk8s/haku:ui_egress",
-        "@pypi//cdk8s",
-        "@pypi//more_itertools",
         "@pypi//pytest",
     ],
 )

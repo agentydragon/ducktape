@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"net"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -17,6 +16,7 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -71,16 +71,11 @@ func testServiceCertificateAdmissionAndDelegation(t *testing.T, serviceOnly bool
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	methods := auth.Methods{healthpb.Health_Check_FullMethodName: rule}
 	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	calls := make(chan auth.Admission, 16)
 	healthpb.RegisterHealthServer(server, serviceAdmissionHealth{admissions: calls})
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
+	address := grpcserver.Serve(t, server)
 	valid := ca.Issue(t, peertls.ActionsURI)
 	actorTLS, err := valid.ClientTLSConfig(peertls.HistoryIngressURI)
 	if err != nil {
@@ -118,7 +113,7 @@ func testServiceCertificateAdmissionAndDelegation(t *testing.T, serviceOnly bool
 		{name: "replaced effective Identity", tls: actorTLS, md: metadata.Pairs(auth.DelegationMetadataKey, string(wrongEncoded)), code: codes.PermissionDenied},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(tc.tls)))
+			conn, err := grpc.NewClient(address, grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(tc.tls)))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -166,7 +161,7 @@ func testServiceCertificateAdmissionAndDelegation(t *testing.T, serviceOnly bool
 			}
 			clientTLS := actorTLS.Clone()
 			clientTLS.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) { return &pair, nil }
-			conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)))
+			conn, err := grpc.NewClient(address, grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(clientTLS)))
 			if err != nil {
 				t.Fatal(err)
 			}

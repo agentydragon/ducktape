@@ -1,0 +1,32 @@
+name = "esm_split"
+defaultTargets = ["EsmSplit", "render"]
+
+[[lean_lib]]
+name = "EsmSplit"
+
+[[lean_exe]]
+name = "render"
+root = "Main"
+
+[[lean_lib]]
+name = "Experiments"
+
+[[lean_exe]]
+name = "lower"
+root = "EsmSplit.LowerMain"
+
+[[lean_exe]]
+name = "lowersplit"
+root = "EsmSplit.LowerSplitMain"
+
+[[lean_exe]]
+name = "evalorder"
+root = "EsmSplit.EvalOrder"
+
+[[lean_exe]]
+name = "translate"
+root = "EsmSplit.TranslateMain"
+
+[[lean_exe]]
+name = "corejs"
+root = "EsmSplit.CoreJSMain"

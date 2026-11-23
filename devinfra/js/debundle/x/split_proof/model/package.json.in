@@ -1,0 +1,8 @@
+{
+  "name": "corejs-model",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "acorn": "8.18.0"
+  }
+}

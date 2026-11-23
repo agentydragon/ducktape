@@ -348,15 +348,8 @@ Run `bazel build //... && bazel test //...` to verify. If something breaks:
 
 ### Snapshot tests
 
-If snapshot tests fail due to intentional output changes:
-
-```bash
-bbr test //path/to:snapshot_test \
-  --test_arg=--snapshot-update \
-  --nocache_test_results
-```
-
-Commit the updated `.ambr` files.
+For intentional snapshot changes, [update the snapshots on RBE](https://github.com/agentydragon/ducktape/blob/devel/devinfra/docs/syrupy_snapshots.md#updating-snapshots),
+review the downloaded diff, and commit it with the dependency update.
 
 ## Commit & Push
 

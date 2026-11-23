@@ -1,10 +1,7 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 exports_files(
-    [
-        "build.py",
-        "render.png",
-    ],
+    ["build.py"],
     visibility = ["//skills/freecad:__subpackages__"],
 )
 

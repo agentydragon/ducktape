@@ -4,8 +4,8 @@ import pytest
 
 # Import fixtures from testing modules (replaces deprecated pytest_plugins)
 from mcp_infra.testing.fixtures import *  # noqa: F403
+from testing.postgres_fixtures import postgres_admin_url, postgres_container, postgres_image
 from util.db_url import render_postgresql_url
-from util.testing.postgres_fixtures import postgres_admin_url, postgres_container, postgres_image
 
 
 @pytest.fixture(scope="session")

@@ -15,15 +15,10 @@ from openai_utils.errors import ContextLengthExceededError
 from openai_utils.model import Model, ResponsesRequest
 from openai_utils.testing.fixtures import ClientMode, error_transport, mock_and_live, mock_openai_client
 
-# --- Helpers ---
-
 
 def _huge_prompt(length: int = 5_000_000) -> str:
     """5M chars is ~1.25M tokens, exceeding even the largest context windows."""
     return "x" * length
-
-
-# --- Mock/live tests ---
 
 
 @mock_and_live

@@ -311,17 +311,19 @@ authoring specs in parallel produces several at once.
 1. Add the fact to `chunk_facts` if it is not derivable from what is there.
    Extraction stays fail-closed.
 2. Lower it through the selector program. `selector_ir`: a `SelectorAtom`
-   variant with arms in `variable_ids`, `remap_variables` and `validate_atom`,
-   and a `SelectorFact` variant for a new kind of fact. `selector_ir_lowering`:
-   an arm of `lower_selector_atoms`. `selector_resolve`: a `selector_fact_store`
-   branch that extracts its facts only when the program holds the atom.
-   `selector_constraint_model_builder`: an arm of `lower_atom_constraint`,
-   `DerivedFactRequirements::from_program` and `add_atom_constants`, and its
-   tables in `FactDomains` and `RelationSupportCache`.
+   variant with arms in `operands` (which `variable_ids`, `validate_atom` and
+   the builder's `add_program_constants` read) and `remap_variables`, and a
+   `SelectorFact` variant for a new kind of fact. `selector_ir_lowering`: an arm
+   of `lower_selector_atoms`. `selector_resolve`: a `selector_fact_store` branch
+   that extracts its facts only when the program holds the atom.
+   `selector_constraint_model_builder`: an arm of `lower_atom_constraint` and of
+   `DerivedFactRequirements::from_program`, and its tables in `FactDomains` and
+   `RelationSupportCache`.
 3. Prove it through `debundle run` on a fixture whose chunk also exports and
-   uses the anchor, as <../e2e/emission/cross_ref.rs> does: real graphs
-   model `export { … }` and side-effect statements as source units that reference
-   every binding they touch, which is the discriminating case bare fixtures miss.
+   uses the anchor, as the cases in <../e2e/cases/emission/cross_ref> do: real
+   graphs model `export { … }` and side-effect statements as source units that
+   reference every binding they touch, which is the discriminating case bare
+   fixtures miss.
 4. Document it in <selectors.md>: a selector kind that is not documented there
    does not exist for authors.
 

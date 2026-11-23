@@ -9,21 +9,11 @@ const SCALE_OPTIONS = [
   { value: "log" as const, label: "Log" },
 ];
 
-const CURRENCY_DISPLAY_OPTIONS = [
-  { value: "exact" as const, label: "Exact" },
-  { value: "compact" as const, label: "Compact" },
-];
-
 type MetricScale = (typeof SCALE_OPTIONS)[number]["value"];
 type Deployment = Awaited<ReturnType<typeof fetchAugurDeployment>>;
-export type CurrencyDisplay = (typeof CURRENCY_DISPLAY_OPTIONS)[number]["value"];
 
 function isMetricScale(value: string): value is MetricScale {
   return SCALE_OPTIONS.some((option) => option.value === value);
-}
-
-function isCurrencyDisplay(value: string): value is CurrencyDisplay {
-  return CURRENCY_DISPLAY_OPTIONS.some((option) => option.value === value);
 }
 
 type SharedControlsProps = {
@@ -35,8 +25,6 @@ type SharedControlsProps = {
   models: readonly string[];
   metricScale: MetricScale;
   onChangeMetricScale?: (value: MetricScale) => void;
-  currencyDisplay: CurrencyDisplay;
-  onChangeCurrencyDisplay?: (value: CurrencyDisplay) => void;
   settingsOpen: boolean;
   onChangeSettingsOpen: (open: boolean) => void;
 };
@@ -58,8 +46,6 @@ export function SharedControls({
   models,
   metricScale,
   onChangeMetricScale,
-  currencyDisplay,
-  onChangeCurrencyDisplay,
   settingsOpen,
   onChangeSettingsOpen,
 }: SharedControlsProps) {
@@ -115,22 +101,6 @@ export function SharedControls({
       ),
     });
   }
-  if (onChangeCurrencyDisplay) {
-    rows.push({
-      label: "Currency",
-      input: (
-        <SegmentedControl
-          aria-label="Currency display"
-          size="xs"
-          value={currencyDisplay}
-          data={CURRENCY_DISPLAY_OPTIONS}
-          onChange={(value) => {
-            if (isCurrencyDisplay(value)) onChangeCurrencyDisplay(value);
-          }}
-        />
-      ),
-    });
-  }
 
   return (
     <details
@@ -181,8 +151,6 @@ export function AugurHeader({
   );
 }
 
-// -- Tab navigation ------------------------------------------------------------
-//
 // Top-level views. "product" is the default; the active tab is mirrored to the URL `?tab=`
 // (omitted for the default), following the same replaceState pattern as the product `?scenarios=` state.
 const TABS = [
@@ -225,8 +193,6 @@ export function AugurTabBar({ tab, onSelectTab }: { tab: AugurTab; onSelectTab: 
     </nav>
   );
 }
-
-// -- Deployment status chip (header rightSlot) ---------------------------------
 
 function shortCommit(commit: string | null | undefined) {
   if (!commit) return null;

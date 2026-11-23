@@ -1,0 +1,2 @@
+userInfo:
+  username: system:serviceaccount:flux-system:kustomize-controller

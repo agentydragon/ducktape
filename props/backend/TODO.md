@@ -11,7 +11,7 @@
 
 - [ ] **Monitor core/API schema drift**
   - Establish pattern for when API schemas should diverge from domain models
-  - Currently `LineRange` is shared between core and API - watch for divergence
+  - Currently `LocationAnchor` (`props/db/snapshots.py`) is shared between DB storage and API responses - watch for divergence
 
 ## Active Features
 
@@ -19,10 +19,6 @@
 
 - [ ] **Stats display improvements**
   - Move total available count to subheader: "Valid Partial (N=171)" instead of "5/171" per row
-
-- [ ] **Migrate `props stats` to frontend**
-  - Tables: by-example, by-occurrence views
-  - Include props stats subcommands: `example`, `occurrence`
 
 - [ ] **Live rollout display**
   - Grid of validation jobs with progress bars

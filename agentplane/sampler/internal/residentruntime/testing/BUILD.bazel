@@ -14,7 +14,6 @@ go_library(
         "//agentplane/env/jsonrpc",
         "//agentplane/proto:command_go_proto",
         "//agentplane/proto:session_go_proto",
-        "//agentplane/sampler/api:sampler_go_proto",
         "//agentplane/sampler/internal/codemode",
         "//agentplane/sampler/internal/sessionconfig",
         "//agentplane/sampler/internal/sessionstore",

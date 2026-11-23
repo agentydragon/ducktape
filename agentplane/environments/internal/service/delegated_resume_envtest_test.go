@@ -16,6 +16,7 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
+	"github.com/agentydragon/ducktape/agentplane/testing/testscheme"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -24,7 +25,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -48,13 +48,7 @@ func TestServiceDelegatedResumeUsesEffectiveIdentityGrant(t *testing.T) {
 		{name: "explicit grant independent of automatic wake opt-in", grant: true, token: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			scheme := runtime.NewScheme()
-			for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, sandboxapi.AddToScheme, policyapi.AddToScheme} {
-				if err := add(scheme); err != nil {
-					t.Fatal(err)
-				}
-			}
-			objects, err := client.NewWithWatch(watchAPI.Config, client.Options{Scheme: scheme})
+			objects, err := client.NewWithWatch(watchAPI.Config, client.Options{Scheme: testscheme.New(t)})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -161,7 +155,7 @@ func TestServiceDelegatedResumeUsesEffectiveIdentityGrant(t *testing.T) {
 				request.ResumeToken = lifecycle.NewResumeToken(target, 3)
 			}
 			response, err := environmentpb.NewEnvironmentServiceClient(grpcmethods.AsCaller(connection, peertls.ActionsURI)).ResumeEnvironment(
-				serviceDelegationContext(t, auth.Identity{Name: caller.Name, UID: string(caller.UID)}), request,
+				grpcmethods.WithActionDelegation(t, t.Context(), auth.Identity{Name: caller.Name, UID: string(caller.UID)}), request,
 			)
 			if status.Code(err) != tc.wantCode {
 				t.Fatalf("ResumeEnvironment = %v, %v; want %v", response, err, tc.wantCode)
@@ -187,13 +181,7 @@ func TestServiceDelegatedResumeUsesEffectiveIdentityGrant(t *testing.T) {
 // Managers create directly; only launchers may attach an Action launch origin. Both roles
 // must reach the handler over mTLS without acquiring one another's authority.
 func TestServiceManagerCreateAdmission(t *testing.T) {
-	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, sandboxapi.AddToScheme, policyapi.AddToScheme} {
-		if err := add(scheme); err != nil {
-			t.Fatal(err)
-		}
-	}
-	objects, err := client.NewWithWatch(watchAPI.Config, client.Options{Scheme: scheme})
+	objects, err := client.NewWithWatch(watchAPI.Config, client.Options{Scheme: testscheme.New(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

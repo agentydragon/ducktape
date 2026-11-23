@@ -88,11 +88,6 @@ func (c *config) validate() error {
 			return fmt.Errorf("%s: %w", name, err)
 		}
 	}
-	if hasServiceCallers(serviceCallers) || c.DispatcherServiceDelegation != nil {
-		if !c.RPC.Has(listener.SPIFFE) {
-			return errors.New("service caller settings require rpc.auth to include spiffe")
-		}
-	}
 	if c.DispatcherServiceDelegation != nil {
 		if len(c.DispatcherServiceDelegation.Actors) == 0 || len(c.DispatcherServiceDelegation.Methods) == 0 {
 			return errors.New("dispatcher_service_delegation requires actors and methods")
@@ -131,10 +126,6 @@ func (c *config) validate() error {
 	}
 	if err := c.RPC.Validate(); err != nil {
 		return fmt.Errorf("rpc: %w", err)
-	}
-	// The shared listener decoder still accepts legacy modes; these receivers only use SPIFFE.
-	if !c.RPC.Has(listener.SPIFFE) {
-		return errors.New("rpc.auth must include spiffe")
 	}
 	if c.GatewayTLS == nil {
 		return errors.New("gateway_tls is required for the Gateway's control-Service calls")
@@ -184,13 +175,4 @@ func (c *config) validate() error {
 	}
 
 	return nil
-}
-
-func hasServiceCallers(callers map[string][]string) bool {
-	for _, values := range callers {
-		if len(values) > 0 {
-			return true
-		}
-	}
-	return false
 }

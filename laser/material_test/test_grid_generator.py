@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tomllib
+from pathlib import Path
 from xml.etree import ElementTree as ET
 
 import pytest
@@ -27,15 +28,10 @@ from laser.material_test.grid_generator import (
 )
 from laser.ruida.rd_format import RdJob, unscramble_bytes
 
-# ── fmt_val ────────────────────────────────────────────────────────────────────
-
 
 @pytest.mark.parametrize(("value", "expected"), [(15.0, "15"), (0.0, "0"), (-0.5, "-0.5")])
 def test_fmt_val(value: float, expected: str):
     assert fmt_val(value) == expected
-
-
-# ── GridConfig (Pydantic) ──────────────────────────────────────────────────────
 
 
 def _minimal_config(**kwargs) -> GridConfig:
@@ -68,17 +64,20 @@ def _rd_move_origins(job: RdJob) -> list[tuple[float, float]]:
 
 
 @pytest.mark.parametrize(
-    ("x_param", "y_param", "message"),
+    ("axis_params", "message"),
     [
-        (CutParam.SPEED_MM_S, CutParam.SPEED_MM_S, "must be different"),
-        (CutParam.POWER_MIN_PCT, CutParam.SPEED_MM_S, "use 'power_pct'"),
-        (CutParam.POWER_MAX_PCT, CutParam.SPEED_MM_S, "use 'power_pct'"),
+        pytest.param({"x": CutParam.SPEED_MM_S, "y": CutParam.SPEED_MM_S}, "must be different", id="same-axes"),
+        pytest.param({"cols": CutParam.POWER_PCT}, "must be different", id="cols-repeats-x"),
+        pytest.param({"rows": CutParam.SPEED_MM_S}, "must be different", id="rows-repeats-y"),
+        pytest.param(
+            {"cols": CutParam.NUM_PASSES, "rows": CutParam.NUM_PASSES}, "must be different", id="cols-repeats-rows"
+        ),
     ],
-    ids=["same-axes", "power-min-axis", "power-max-axis"],
 )
-def test_grid_config_rejects_invalid_axes(x_param: CutParam, y_param: CutParam, message: str):
+def test_grid_config_rejects_invalid_axes(axis_params: dict[str, CutParam], message: str):
+    axes = {name: AxisConfig(param=param, values=[10, 20]) for name, param in axis_params.items()}
     with pytest.raises(Exception, match=message):
-        GridConfig(x=AxisConfig(param=x_param, values=[10, 20]), y=AxisConfig(param=y_param, values=[50, 100]))
+        _minimal_config(**axes)
 
 
 def test_cut_config_power_shorthand():
@@ -87,36 +86,11 @@ def test_cut_config_power_shorthand():
     assert cc.power_max_pct == 75
 
 
-def test_cut_config_power_shorthand_does_not_override_explicit():
-    # power_max_pct set explicitly should still be overridden by power_pct shorthand
-    # (model_validator runs after all fields are set)
+def test_cut_config_power_shorthand_overrides_explicit_max():
+    # model_validator runs after all fields are set
     cc = CutConfig(power_pct=60, power_max_pct=80)
     assert cc.power_min_pct == 60
     assert cc.power_max_pct == 60
-
-
-# ── generate() ────────────────────────────────────────────────────────────────
-
-
-def _make_project(
-    x_values: list[float] | None = None, y_values: list[float] | None = None, **kwargs
-) -> LightBurnProject:
-    resolved_x = x_values if x_values is not None else [10.0, 20.0, 30.0]
-    resolved_y = y_values if y_values is not None else [50.0, 100.0]
-    cfg = GridConfig(
-        title="Test grid",
-        x=AxisConfig(param=CutParam.POWER_PCT, values=resolved_x, label="Power [%]"),
-        y=AxisConfig(param=CutParam.SPEED_MM_S, values=resolved_y, label="Speed [mm/s]"),
-        **kwargs,
-    )
-    return generate(cfg)
-
-
-def test_generate_layer_count():
-    project = _make_project()
-    n_cells = 3 * 2
-    # Layer 0 (text) + n_cells cell layers
-    assert len(project.cut_settings) == 1 + n_cells
 
 
 def test_rd_grid_accepts_128_layers():
@@ -126,59 +100,17 @@ def test_rd_grid_accepts_128_layers():
     assert len(generate_rd(config).layers) == 128
 
 
-def test_rd_grid_rejects_border_over_layer_limit_without_truncating_output(tmp_path):
-    config_path = tmp_path / "grid.toml"
-    output_path = tmp_path / "existing.rd"
-    config_path.write_text(
-        '[x]\nparam = "power_pct"\nvalues = [' + ", ".join(["20"] * 128) + "]\n"
-        '[y]\nparam = "speed_mm_s"\nvalues = [100]\n[border]\nenabled = true\n'
+def test_cell_layers_are_sorted_by_energy_in_both_formats():
+    config = _minimal_config(
+        x=AxisConfig(param=CutParam.POWER_PCT, values=[10.0, 20.0]),
+        y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0, 100.0]),
     )
-    output_path.write_bytes(b"existing output")
-    with pytest.raises(ValueError, match="at most 128 layers, got 129"):
-        main([str(config_path), "--format", "rd", "-o", str(output_path)])
-    assert output_path.read_bytes() == b"existing output"
-
-
-def test_generate_rect_count():
-    project = _make_project()
-    rects = [s for s in project.shapes if isinstance(s, RectShape)]
-    assert len(rects) == 3 * 2
-
-
-def test_generate_border_adds_layer_and_rect():
-    project = _make_project(border=BorderConfig(enabled=True, power_pct=5, speed_mm_s=100))
-    # border layer added
-    assert any(cs.name == "Border" for cs in project.cut_settings)
-    # border rect added (one extra rect)
-    rects = [s for s in project.shapes if isinstance(s, RectShape)]
-    assert len(rects) == 3 * 2 + 1
-
-
-def test_generate_cell_cut_settings_have_correct_params():
-    """Each cell layer should have x_param and y_param set correctly.
-
-    Cells are sorted by ascending energy (max_power * num_passes / speed).
-    x=power_pct [10, 20], y=speed_mm_s [50, 100]:
-      (r0,c0) 10/50=0.2, (r0,c1) 20/50=0.4, (r1,c0) 10/100=0.1, (r1,c1) 20/100=0.2
-    Sorted: 0.1 → 0.2 → 0.2 → 0.4
-    """
-    x_vals = [10.0, 20.0]
-    y_vals = [50.0, 100.0]
-    project = _make_project(x_values=x_vals, y_values=y_vals)
-    cell_layers = project.cut_settings[1:]  # skip text layer
-    assert len(cell_layers) == 4
-    # Lowest energy: power=10, speed=100 (energy=0.1)
-    assert cell_layers[0].max_power == 10.0
-    assert cell_layers[0].speed == 100.0
-    # power=10, speed=50 (energy=0.2)
-    assert cell_layers[1].max_power == 10.0
-    assert cell_layers[1].speed == 50.0
-    # power=20, speed=100 (energy=0.2)
-    assert cell_layers[2].max_power == 20.0
-    assert cell_layers[2].speed == 100.0
-    # Highest energy: power=20, speed=50 (energy=0.4)
-    assert cell_layers[3].max_power == 20.0
-    assert cell_layers[3].speed == 50.0
+    # Power/speed gives 0.1, 0.2, 0.2, 0.4. The tie keeps row order.
+    expected = [(10.0, 10.0, 100.0), (10.0, 10.0, 50.0), (20.0, 20.0, 100.0), (20.0, 20.0, 50.0)]
+    lightburn_layers = generate(config).cut_settings[1:]  # skip text layer
+    ruida_layers = generate_rd(config).layers
+    assert [(layer.min_power, layer.max_power, layer.speed) for layer in lightburn_layers] == expected
+    assert [(layer.min_power_pct, layer.max_power_pct, layer.speed_mm_s) for layer in ruida_layers] == expected
 
 
 def test_cells_sorted_by_energy_across_subgrids():
@@ -205,7 +137,7 @@ def test_cells_sorted_by_energy_across_subgrids():
 
 
 def test_generate_xml_round_trips():
-    project = _make_project()
+    project = generate(_minimal_config(title="Test grid"))
     xml_str = project.to_xml_str()
     root = ET.fromstring(xml_str.split("\n", 1)[1])
     assert root.tag == "LightBurnProject"
@@ -268,33 +200,10 @@ def test_example_config_3d_parses(runfiles: Runfiles):
     assert cfg.cols is not None
 
 
-# ── 3D/4D sweep tests ────────────────────────────────────────────────────────
-
-
-def test_grid_config_rejects_duplicate_cols_param():
-    """cols.param must differ from x.param and y.param."""
-    with pytest.raises(Exception, match="must be different"):
-        _minimal_config(cols=AxisConfig(param=CutParam.POWER_PCT, values=[10, 20]))
-
-
-def test_grid_config_rejects_duplicate_rows_param():
-    """rows.param must differ from x.param and y.param."""
-    with pytest.raises(Exception, match="must be different"):
-        _minimal_config(rows=AxisConfig(param=CutParam.SPEED_MM_S, values=[50, 100]))
-
-
-def test_grid_config_rejects_duplicate_cols_rows_param():
-    """cols.param and rows.param must be different from each other."""
-    with pytest.raises(Exception, match="must be different"):
-        _minimal_config(
-            cols=AxisConfig(param=CutParam.NUM_PASSES, values=[1, 2]),
-            rows=AxisConfig(param=CutParam.NUM_PASSES, values=[3, 4]),
-        )
-
-
 @pytest.mark.parametrize(
     ("cols", "rows", "n_subgrids"),
     [
+        pytest.param(None, None, 1, id="inner_only"),
         pytest.param(AxisConfig(param=CutParam.NUM_PASSES, values=[1, 2, 3]), None, 3, id="cols_only"),
         pytest.param(None, AxisConfig(param=CutParam.Z_PER_PASS_MM, values=[-0.3, -0.5]), 2, id="rows_only"),
         pytest.param(
@@ -305,7 +214,7 @@ def test_grid_config_rejects_duplicate_cols_rows_param():
         ),
     ],
 )
-def test_generate_outer_axes_cell_counts(cols: AxisConfig | None, rows: AxisConfig | None, n_subgrids: int):
+def test_generate_cell_counts(cols: AxisConfig | None, rows: AxisConfig | None, n_subgrids: int):
     """Every sub-grid repeats all inner cells (x=3 by y=2): one cut layer and one rect per cell."""
     project = generate(_minimal_config(cols=cols, rows=rows))
     n_cells = 3 * 2 * n_subgrids
@@ -341,13 +250,18 @@ def test_generate_4d_outer_params_applied():
     assert cell_layers[3].z_per_pass == -0.5
 
 
-def test_generate_3d_border():
-    cfg = _minimal_config(cols=AxisConfig(param=CutParam.NUM_PASSES, values=[1, 2]), border=BorderConfig(enabled=True))
-    project = generate(cfg)
+@pytest.mark.parametrize(
+    ("cols", "n_cells"),
+    [
+        pytest.param(None, 3 * 2, id="2d"),  # x * y
+        pytest.param(AxisConfig(param=CutParam.NUM_PASSES, values=[1, 2]), 3 * 2 * 2, id="3d"),  # x * y * cols
+    ],
+)
+def test_generate_border_adds_layer_and_rect(cols: AxisConfig | None, n_cells: int):
+    project = generate(_minimal_config(cols=cols, border=BorderConfig(enabled=True)))
     assert any(cs.name == "Border" for cs in project.cut_settings)
     rects = [s for s in project.shapes if isinstance(s, RectShape)]
-    inner_rects = 3 * 2 * 2  # x * y * outer_cols
-    assert len(rects) == inner_rects + 1  # +1 for border
+    assert len(rects) == n_cells + 1  # +1 for border
 
 
 @pytest.mark.parametrize("axis_name", ["x", "y", "cols", "rows"])
@@ -399,19 +313,27 @@ def test_generate_rd_default_settings_and_border_still_serialize():
     assert job.to_bytes().endswith(bytes([0x60]))  # scrambled D7 EOF
 
 
-def test_rd_cli_failure_preserves_existing_output(tmp_path):
-    config_path = tmp_path / "unsupported.toml"
+@pytest.mark.parametrize(
+    ("x_values", "extra_toml", "message"),
+    [
+        pytest.param(
+            [20] * 128, "[border]\nenabled = true\n", "at most 128 layers, got 129", id="border-over-layer-limit"
+        ),
+        pytest.param([10.0], "[cut]\nnum_passes = 2\n", "num_passes", id="unsupported-setting"),
+        pytest.param([10.0], "[geometry]\ncell_size_mm = 40000000.0\n", "fit in 5 7-bit bytes", id="oversized-cell"),
+    ],
+)
+def test_rd_cli_failure_preserves_existing_output(tmp_path: Path, x_values: list[float], extra_toml: str, message: str):
+    config_path = tmp_path / "grid.toml"
     config_path.write_text(
-        'x = { param = "power_pct", values = [10.0] }\n'
-        'y = { param = "speed_mm_s", values = [50.0] }\n'
-        "[cut]\nnum_passes = 2\n",
+        f'[x]\nparam = "power_pct"\nvalues = {x_values}\n[y]\nparam = "speed_mm_s"\nvalues = [50.0]\n{extra_toml}',
         encoding="utf-8",
     )
     output_path = tmp_path / "existing.rd"
-    original_output = b"existing output must survive serialization failure"
+    original_output = b"existing output"
     output_path.write_bytes(original_output)
 
-    with pytest.raises(ValueError, match="num_passes"):
+    with pytest.raises(ValueError, match=message):
         main([str(config_path), "--format", "rd", "--output", str(output_path)])
 
     assert output_path.read_bytes() == original_output
@@ -463,32 +385,6 @@ def test_generate_rd_rejects_negative_border_padding():
         generate_rd(config)
 
 
-def test_rd_validation_failure_preserves_existing_output(tmp_path):
-    config_path = tmp_path / "oversized.toml"
-    config_path.write_text(
-        """[x]
-param = "power_pct"
-values = [10.0]
-
-[y]
-param = "speed_mm_s"
-values = [50.0]
-
-[geometry]
-cell_size_mm = 40000000.0
-""",
-        encoding="utf-8",
-    )
-    output_path = tmp_path / "existing.rd"
-    original = b"preserve this output"
-    output_path.write_bytes(original)
-
-    with pytest.raises(ValueError, match="fit in 5 7-bit bytes"):
-        main([str(config_path), "--format", "rd", "--output", str(output_path)])
-
-    assert output_path.read_bytes() == original
-
-
 def test_auto_subtitle_excludes_outer_axes():
     """Auto-subtitle should not mention cols or rows parameters."""
     cfg = GridConfig(
@@ -530,16 +426,10 @@ def test_subgrid_gap_affects_layout():
     assert xs_large[1] > xs_small[1]
 
 
-# ── _param_short_label ──────────────────────────────────────────────────────────
-
-
 def test_param_short_label():
     assert _param_short_label(CutParam.SPEED_MM_S) == "mm/s"  # abbreviable + unit
     assert _param_short_label(CutParam.POWER_PCT) == "PWR%"  # not abbreviable + unit
     assert _param_short_label(CutParam.NUM_PASSES) == "Passes"  # no unit
-
-
-# ── Legend cell ─────────────────────────────────────────────────────────────────
 
 
 def test_generate_legend_cell():
@@ -558,37 +448,23 @@ def test_generate_legend_cell():
     assert len(legend_texts) == 2
 
 
-def test_generate_legend_not_shown_when_no_cell_content():
+@pytest.mark.parametrize(
+    ("labels", "show_labels", "n_legend_rects"),
+    [
+        pytest.param(LabelsConfig(cell_text=CellContent.NOTHING, show_legend=True), True, 0, id="no-cell-content"),
+        pytest.param(
+            LabelsConfig(cell_text=CellContent.VALUES_WITH_UNITS, show_legend=True), False, 1, id="labels-hidden"
+        ),
+        pytest.param(LabelsConfig(cell_text=CellContent.VALUES_WITH_UNITS), True, 0, id="default-off"),
+    ],
+)
+def test_generate_legend_rect(labels: LabelsConfig, show_labels: bool, n_legend_rects: int):
+    """The legend rect (on layer 0) needs `show_legend` and in-cell text; hidden labels don't remove it."""
     cfg = GridConfig(
-        x=AxisConfig(param=CutParam.POWER_PCT, values=[10.0, 20.0]),
-        y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
-        labels=LabelsConfig(cell_text=CellContent.NOTHING, show_legend=True),
+        x=AxisConfig(param=CutParam.POWER_PCT, values=[10.0, 20.0], show_labels=show_labels),
+        y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0], show_labels=show_labels),
+        labels=labels,
+        auto_subtitle=show_labels,
     )
-    project = generate(cfg)
-    legend_rects = [s for s in project.shapes if isinstance(s, RectShape) and s.cut_index == 0]
-    assert len(legend_rects) == 0
-
-
-def test_generate_legend_shown_when_labels_hidden():
-    """Legend is shown even when axis labels are disabled."""
-    cfg = GridConfig(
-        x=AxisConfig(param=CutParam.POWER_PCT, values=[10.0, 20.0], show_labels=False),
-        y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0], show_labels=False),
-        labels=LabelsConfig(cell_text=CellContent.VALUES_WITH_UNITS, show_legend=True),
-        auto_subtitle=False,
-    )
-    project = generate(cfg)
-    legend_rects = [s for s in project.shapes if isinstance(s, RectShape) and s.cut_index == 0]
-    assert len(legend_rects) == 1
-
-
-def test_generate_legend_default_off():
-    """Default show_legend=False should not add legend rect."""
-    cfg = GridConfig(
-        x=AxisConfig(param=CutParam.POWER_PCT, values=[10.0, 20.0]),
-        y=AxisConfig(param=CutParam.SPEED_MM_S, values=[50.0]),
-        labels=LabelsConfig(cell_text=CellContent.VALUES_WITH_UNITS),
-    )
-    project = generate(cfg)
-    legend_rects = [s for s in project.shapes if isinstance(s, RectShape) and s.cut_index == 0]
-    assert len(legend_rects) == 0
+    legend_rects = [s for s in generate(cfg).shapes if isinstance(s, RectShape) and s.cut_index == 0]
+    assert len(legend_rects) == n_legend_rects

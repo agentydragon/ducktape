@@ -217,18 +217,21 @@ impl TreeStaged {
         self.run.root()
     }
 
-    pub fn assign(
+    /// Runs `words` (the verb and its leading positionals) with the staged graph and
+    /// modules tree, then `trailing` verb arguments. The CLI accepts these options and
+    /// positionals in any order.
+    fn edit(
         &self,
-        triple: Option<&str>,
+        words: &[&str],
+        trailing: &[&str],
         analysis: Option<&Path>,
         dry_run: bool,
     ) -> StagedInvocation {
         let root = self.root();
         let outputs = self.run.workspace().child();
         let output_root = outputs.path().join("out");
-        let mut args = vec![
-            "bindings".to_string(),
-            "assign".to_string(),
+        let mut args = words.iter().map(ToString::to_string).collect::<Vec<_>>();
+        args.extend([
             "--modules".to_string(),
             path(&self.modules).to_string(),
             "--graph".to_string(),
@@ -237,10 +240,8 @@ impl TreeStaged {
             path(&root.join("snapshot")).to_string(),
             "--format".to_string(),
             "json".to_string(),
-        ];
-        if let Some(triple) = triple {
-            args.push(triple.to_string());
-        }
+        ]);
+        args.extend(trailing.iter().map(ToString::to_string));
         if dry_run {
             args.push("--dry-run".to_string());
         }
@@ -250,30 +251,22 @@ impl TreeStaged {
         StagedInvocation::tree_command(&args, outputs)
     }
 
+    pub fn assign(
+        &self,
+        triple: Option<&str>,
+        analysis: Option<&Path>,
+        dry_run: bool,
+    ) -> StagedInvocation {
+        self.edit(
+            &["bindings", "assign"],
+            triple.as_slice(),
+            analysis,
+            dry_run,
+        )
+    }
+
     pub fn unassign(&self, sym: &str, analysis: Option<&Path>, dry_run: bool) -> StagedInvocation {
-        let root = self.root();
-        let outputs = self.run.workspace().child();
-        let output_root = outputs.path().join("out");
-        let mut args = vec![
-            "bindings".to_string(),
-            "unassign".to_string(),
-            sym.to_string(),
-            "--modules".to_string(),
-            path(&self.modules).to_string(),
-            "--graph".to_string(),
-            path(&self.graph).to_string(),
-            "--source-root".to_string(),
-            path(&root.join("snapshot")).to_string(),
-            "--format".to_string(),
-            "json".to_string(),
-        ];
-        if dry_run {
-            args.push("--dry-run".to_string());
-        }
-        if let Some(analysis) = analysis {
-            args.extend(self.analysis_args(analysis, &output_root));
-        }
-        StagedInvocation::tree_command(&args, outputs)
+        self.edit(&["bindings", "unassign", sym], &[], analysis, dry_run)
     }
 
     pub fn merge(
@@ -283,31 +276,8 @@ impl TreeStaged {
         analysis: Option<&Path>,
         dry_run: bool,
     ) -> StagedInvocation {
-        let root = self.root();
-        let outputs = self.run.workspace().child();
-        let output_root = outputs.path().join("out");
-        let mut args = vec![
-            "modules".to_string(),
-            "merge".to_string(),
-            "--modules".to_string(),
-            path(&self.modules).to_string(),
-            "--graph".to_string(),
-            path(&self.graph).to_string(),
-            "--source-root".to_string(),
-            path(&root.join("snapshot")).to_string(),
-            "--target".to_string(),
-            target.to_string(),
-            source.to_string(),
-            "--format".to_string(),
-            "json".to_string(),
-        ];
-        if dry_run {
-            args.push("--dry-run".to_string());
-        }
-        if let Some(analysis) = analysis {
-            args.extend(self.analysis_args(analysis, &output_root));
-        }
-        StagedInvocation::tree_command(&args, outputs)
+        let trailing = ["--target", target, source];
+        self.edit(&["modules", "merge"], &trailing, analysis, dry_run)
     }
 
     pub fn delete(
@@ -317,32 +287,13 @@ impl TreeStaged {
         analysis: Option<&Path>,
         dry_run: bool,
     ) -> StagedInvocation {
-        let root = self.root();
-        let outputs = self.run.workspace().child();
-        let output_root = outputs.path().join("out");
-        let mut args = vec![
-            "modules".to_string(),
-            "delete".to_string(),
-            module.to_string(),
-            "--modules".to_string(),
-            path(&self.modules).to_string(),
-            "--graph".to_string(),
-            path(&self.graph).to_string(),
-            "--source-root".to_string(),
-            path(&root.join("snapshot")).to_string(),
-            "--format".to_string(),
-            "json".to_string(),
-        ];
-        if force {
-            args.push("--force".to_string());
-        }
-        if dry_run {
-            args.push("--dry-run".to_string());
-        }
-        if let Some(analysis) = analysis {
-            args.extend(self.analysis_args(analysis, &output_root));
-        }
-        StagedInvocation::tree_command(&args, outputs)
+        let trailing = force.then_some("--force");
+        self.edit(
+            &["modules", "delete", module],
+            trailing.as_slice(),
+            analysis,
+            dry_run,
+        )
     }
 
     pub fn apply_args(

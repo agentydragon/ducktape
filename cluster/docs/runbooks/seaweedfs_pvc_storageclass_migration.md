@@ -4,8 +4,8 @@ A PVC's `storageClassName` is immutable, so moving data between SeaweedFS classe
 the former `seaweedfs-ovh` HDD class → `seaweedfs-ovh-ssd` NVMe) is a **copy-cutover**: new PVC, copy, repoint
 the consumer. Done first for Forgejo git → SSD (OVH storage tiering Phase 3, 2026-07-04).
 
-Use **VolSync rsync-TLS** (the cluster's PVC-migration tool, cf.
-`k8s/grocy/*/app/volsync-backup.yaml`) with a **pre-seed**, and cut over
+Use **VolSync rsync-TLS** (the cluster's PVC-migration tool; `_backup` in
+`cluster/cdk8s/grocy/app.py` is a live destination/source pair) with a **pre-seed**, and cut over
 **read-zero-downtime**: reads/clones stay up throughout, only writes freeze for ~1–2 min.
 
 **Why a write-freeze is unavoidable:** a consistent cross-class swap needs a quiescent
@@ -44,6 +44,18 @@ write-blocked — coordinate the window).
 7. **Cleanup (after a few days):** delete the old PVC + the three VolSync objects. Rollback
    before cleanup = revert the `claimName` commit (the source PVC is untouched by `Direct`
    reads).
+
+## Gotcha — wiring the `ReplicationSource` to the `ReplicationDestination`
+
+- Omit `keySecret` on the destination. VolSync then generates the Secret
+  `volsync-rsync-tls-<destination-name>` and reports it in `.status.rsyncTLS.keySecret`; name that
+  Secret in the source's `keySecret` instead of committing a PSK.
+- The destination status reports `.status.rsyncTLS.address` but not the port: set the source
+  `port: 8000`.
+- The real cutover gate is the destination's completion plus a check of the destination PVC;
+  source success is only the clean path. The source can retry and end `failed` after the
+  destination has reported a successful receive, once the destination service has no active
+  mover endpoint (seen on Grocy Vallejo, 2026-05-20).
 
 ## Gotcha — verifying a git push from a partial clone
 

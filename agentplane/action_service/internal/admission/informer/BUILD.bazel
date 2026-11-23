@@ -6,17 +6,11 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/informer",
     visibility = ["//agentplane/action_service:__subpackages__"],
     deps = [
-        "//agentplane/action_service/callers",
         "//agentplane/action_service/internal/admission/policies",
         "//agentplane/identity/auth",
         "//agentplane/policy/reader",
         "//agentplane/watchhealth",
-        "@io_k8s_api//core/v1:core",
-        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
         "@io_k8s_apimachinery//pkg/types",
-        "@io_k8s_apimachinery//pkg/util/sets",
-        "@io_k8s_client_go//informers/core/v1:core",
-        "@io_k8s_client_go//kubernetes",
         "@io_k8s_client_go//rest",
     ],
 )
@@ -29,7 +23,6 @@ go_test(
     ],
     embed = [":informer"],
     deps = [
-        "//agentplane/action_service/callers",
         "//agentplane/action_service/internal/admission/policies",
         "//agentplane/action_service/internal/store",
         "//agentplane/identity/auth",

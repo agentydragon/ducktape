@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -37,6 +36,11 @@ type SystemdOwner struct {
 	ScopeID           SystemdScopeID
 }
 
+// RuntimeOwner is the Environment Runtime service, with the scope's native processes bound to its invocation.
+func RuntimeOwner(scope SystemdScopeID) SystemdOwner {
+	return SystemdOwner{Unit: runtimeUnit, LifetimeDirectory: runtimeLifetimeDirectory, ScopeID: scope}
+}
+
 // SystemdLauncher describes systemd-owned containment, independently of a launch.
 // Scope declarations snapshot this configuration before reconciliation performs I/O.
 type SystemdLauncher struct {
@@ -44,7 +48,7 @@ type SystemdLauncher struct {
 	AgentUID, AgentGID             uint32
 	BlockDevices                   []string
 	AggregateLimits, ProcessLimits ResourceLimits
-	launchReady                    *atomic.Bool
+	launchReady                    <-chan struct{}
 	scope                          string
 	lifetimeUnit                   string
 	lifetimeMarker                 string
@@ -77,7 +81,7 @@ func (p *SystemdLauncher) properties(limits ResourceLimits) ([]systemd.Property,
 		return nil, err
 	}
 	props := []systemd.Property{
-		property("CPUQuotaPerSecUSec", uint64(limits.CPUQuotaMicros)*10), property("CPUQuotaPeriodUSec", CPUPeriodMicros),
+		property("CPUQuotaPerSecUSec", uint64(limits.CPUQuotaMicros)*(1_000_000/CPUPeriodMicros)), property("CPUQuotaPeriodUSec", CPUPeriodMicros),
 		property("MemoryMax", uint64(limits.MemoryMaxBytes)), property("MemorySwapMax", uint64(0)), property("TasksMax", uint64(limits.PidsMax)),
 	}
 	for name, rate := range map[string]uint64{"IOReadBandwidthMax": limits.ReadBPS, "IOWriteBandwidthMax": limits.WriteBPS, "IOReadIOPSMax": limits.ReadIOPS, "IOWriteIOPSMax": limits.WriteIOPS} {
@@ -140,7 +144,7 @@ func (p *SystemdLauncher) configureScope(stateDir, sandboxUID string, owner Syst
 	if sandboxUID == "" {
 		return errors.New("VM supervision requires a Sandbox owner UID")
 	}
-	if p.Slice != WorkloadSlice && p.Slice != ExecutorSlice {
+	if p.Slice != WorkloadSlice && p.Slice != ExecutorSlice && p.Slice != CommandSlice {
 		return errors.New("invalid native systemd slice")
 	}
 	if p.AgentUID == 0 || p.AgentGID == 0 {
@@ -149,8 +153,10 @@ func (p *SystemdLauncher) configureScope(stateDir, sandboxUID string, owner Syst
 	if err := p.AggregateLimits.Validate(); err != nil {
 		return err
 	}
-	if err := p.ValidateProcessLimits(p.ProcessLimits); err != nil {
-		return err
+	if p.Slice != CommandSlice {
+		if err := p.ValidateProcessLimits(p.ProcessLimits); err != nil {
+			return err
+		}
 	}
 
 	sum := sha256.Sum256([]byte(systemdScopeIdentity(stateDir, sandboxUID, owner)))
@@ -235,13 +241,16 @@ func (p *SystemdLauncher) prepareOwner(owner SystemdOwner) error {
 func (p *SystemdLauncher) newSupervisor() *Supervisor {
 	prepared := *p
 	prepared.BlockDevices = append([]string(nil), p.BlockDevices...)
+	if prepared.Slice == CommandSlice {
+		return &Supervisor{commands: &prepared}
+	}
 	return &Supervisor{makeBackend: func(config ProcessConfig) processBackend {
 		launcher := prepared
 		launcher.BlockDevices = append([]string(nil), prepared.BlockDevices...)
 		backend := systemdops.NewBackend(systemdops.BackendConfig{
 			Command: config.Command, Environment: environment(config.Env), Dir: config.Dir, StopGrace: config.StopGrace,
 			Scope: launcher.scope, Slice: launcher.Slice, LifetimeMarker: launcher.lifetimeMarker, ParentUnit: launcher.parentUnit(),
-			LaunchReady: func() bool { return launcher.launchReady == nil || launcher.launchReady.Load() },
+			LaunchReady: func() bool { return launcher.launchReady == nil || scopeReady(launcher.launchReady) },
 			Properties:  func() ([]systemd.Property, error) { return launcher.properties(launcher.ProcessLimits) },
 			Identity:    launcher.identityProperties(), OpenConnection: openSystemdConnection,
 			StartTransient: launcher.startTransient, ReapSnapshot: launcher.reapSnapshot, Property: property,

@@ -1,5 +1,5 @@
 // Unit tests for the budget tab's planning-adjustment encoding + adjusted-total math.
-// Runs under vitest; see //augur/frontend:budget_adjustments_test.
+// Runs under vitest; see //finance/augur/frontend:budget_adjustments_test.
 
 import { test, expect } from "vitest";
 import Decimal from "decimal.js";

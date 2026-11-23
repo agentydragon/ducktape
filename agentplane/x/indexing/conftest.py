@@ -13,10 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.x.indexing.chunking import DEFAULT_CHUNK_BUDGET
 from agentplane.x.indexing.store import Store
+from testing.postgres import DatabaseClones, PostgresDatabaseTemplate
+from testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
+from testing.sqlalchemy_engines import postgres_async_engine
 from third_party.containers import pgvector_pg18
-from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
-from util.testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
-from util.testing.sqlalchemy_engines import postgres_async_engine
 
 # A vector space with one axis per marker word, so "which document is about beta" has an
 # answer a test can assert. The floor keeps every vector non-zero: cosine distance against a

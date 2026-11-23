@@ -2,9 +2,7 @@
 # person logs in -- the operator account, sudo, NetworkManager, editors -- lives in operator.nix,
 # which hosts with a human import. Deeper workstation tooling is in workstation.nix.
 {
-  config,
   pkgs,
-  lib,
   inputs,
   hostname,
   ...

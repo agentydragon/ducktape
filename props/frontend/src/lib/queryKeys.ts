@@ -7,3 +7,19 @@ export function snapshotDetailQueryKey(
 ): SnapshotDetailQueryKey {
   return ["props", "snapshot-detail", snapshotSlug, exampleKind, filesHash];
 }
+
+export function overviewQueryKey() {
+  return ["props", "overview"] as const;
+}
+
+export function snapshotListQueryKey() {
+  return ["props", "snapshot-list"] as const;
+}
+
+export function exampleDetailQueryKey(snapshotSlug: string, exampleKind: string, filesHash: string | null) {
+  return ["props", "example-detail", snapshotSlug, exampleKind, filesHash] as const;
+}
+
+export function definitionDetailQueryKey(definitionId: string) {
+  return ["props", "definition-detail", definitionId] as const;
+}

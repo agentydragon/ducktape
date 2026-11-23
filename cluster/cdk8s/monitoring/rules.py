@@ -8,11 +8,34 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 from python.runfiles import Runfiles
 
+from cluster.cdk8s.monitoring import alloy_endpoints
+from cluster.cdk8s.monitoring.namespace import NAMESPACE
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 
 NAME = "monitoring-rules"
 _PROMQL_DIR = Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/monitoring"
-NAMESPACE = "monitoring"
+
+# TODO(https://github.com/agentydragon/ducktape/issues/17964): cover clients that
+# are first observed with <=30 minutes remaining and low-volume clients.
+_CLIENT_CERT_QUANTILE = (_PROMQL_DIR / "apiserver-client-certificate-quantile.promql").read_text().strip()
+_CLIENT_CERTIFICATE_EXPIRY = [
+    Rule.alert(
+        "KubeClientCertificateExpiration",
+        f"{_CLIENT_CERT_QUANTILE} < {threshold} "
+        'and on (job, cluster, instance) apiserver_client_certificate_expiration_seconds_count{job="apiserver"} > 0',
+        for_="5m",
+        labels={"severity": severity},
+        summary="Client certificate is about to expire.",
+        description=(
+            f"The first percentile of API client certificate remaining lifetimes is below {duration}. "
+            "Observations with 30 minutes or less remaining are excluded."
+        ),
+        annotations={
+            "runbook_url": "https://runbooks.prometheus-operator.dev/runbooks/kubernetes/kubeclientcertificateexpiration"
+        },
+    )
+    for severity, threshold, duration in (("warning", 604800, "7 days"), ("critical", 86400, "24 hours"))
+]
 
 _CONTROL_PLANE_IO = [
     Rule.record(
@@ -137,7 +160,10 @@ _FLUX = [
     *(
         Rule.alert(
             f"Flux{kind}NotReady",
-            (_PROMQL_DIR / f"flux-{filename}-not-ready-warning.promql").read_text(),
+            (
+                f'kube_customresource_flux_{kind.lower()}_ready{{status!="True"}} == 1\n'
+                f"unless on (namespace, name) (kube_customresource_flux_{kind.lower()}_suspended == 1)\n"
+            ),
             for_="15m",
             labels={"severity": "warning"},
             summary=f"Flux {kind} " + "{{ $labels.namespace }}/{{ $labels.name }} is not Ready",
@@ -147,11 +173,7 @@ _FLUX = [
                 "for more than 15 minutes."
             ),
         )
-        for kind, filename in (
-            ("Kustomization", "kustomization"),
-            ("HelmRelease", "helm-release"),
-            ("GitRepository", "git-repository"),
-        )
+        for kind in ("Kustomization", "HelmRelease", "GitRepository")
     ),
     Rule.alert(
         "FluxMainGitRepositoryArtifactLarge",
@@ -468,15 +490,15 @@ _PIRAEUS = [
 _ROAMING_NODE_WORKLOAD = [
     Rule.alert(
         "AlloyNodeUnavailable",
-        dedent("""\
-            max by (node) (kube_node_status_condition{condition="Ready",status="true"} == 1)
+        dedent(f"""\
+            max by (node) (kube_node_status_condition{{condition="Ready",status="true"}} == 1)
             unless on (node)
             max by (node) (
-              kube_pod_info{namespace="monitoring",created_by_kind="DaemonSet",created_by_name="alloy-node"}
+              kube_pod_info{{namespace="{NAMESPACE}",created_by_kind="DaemonSet",created_by_name="{alloy_endpoints.NODE_NAME}"}}
               * on (namespace, pod) group_left
-                max by (namespace, pod) (kube_pod_status_ready{namespace="monitoring",condition="true"} == 1)
+                max by (namespace, pod) (kube_pod_status_ready{{namespace="{NAMESPACE}",condition="true"}} == 1)
               * on (namespace, pod) group_left
-                max by (namespace, pod) (up{namespace="monitoring",service="alloy-node"} == 1)
+                max by (namespace, pod) (up{{namespace="{NAMESPACE}",service="{alloy_endpoints.NODE_NAME}"}} == 1)
             )
         """).strip(),
         for_="10m",
@@ -489,9 +511,9 @@ _ROAMING_NODE_WORKLOAD = [
     ),
     Rule.alert(
         "AlloyNodeRolloutStalled",
-        dedent("""\
-            count(max by (node) (kube_node_status_condition{condition="Ready",status="true"} == 1))
-            > scalar(max(kube_daemonset_status_updated_number_scheduled{namespace="monitoring",daemonset="alloy-node"}))
+        dedent(f"""\
+            count(max by (node) (kube_node_status_condition{{condition="Ready",status="true"}} == 1))
+            > scalar(max(kube_daemonset_status_updated_number_scheduled{{namespace="{NAMESPACE}",daemonset="{alloy_endpoints.NODE_NAME}"}}))
         """).strip(),
         for_="15m",
         labels={"severity": "warning"},
@@ -524,6 +546,7 @@ _ROAMING_NODE_WORKLOAD = [
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     for name, groups in (
+        ("client-certificate-expiry-alerts", [group("client-certificate-expiry", _CLIENT_CERTIFICATE_EXPIRY)]),
         ("control-plane-io-alerts", [group("control-plane-io", _CONTROL_PLANE_IO)]),
         ("disk-usage-rules", [group("disk-usage", _DISK_USAGE), group("piraeus-storage", _PIRAEUS)]),
         ("external-secrets-alerts", [group("external-secrets", _EXTERNAL_SECRETS)]),

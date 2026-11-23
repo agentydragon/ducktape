@@ -2,20 +2,33 @@
 
 from __future__ import annotations
 
-from collections.abc import Generator, Iterator
+from collections.abc import Iterator
+from pathlib import Path
 
+import httpx
 import pytest
+from python.runfiles import Runfiles
 from sqlalchemy import create_engine
 
 from study_casino.store import _run_alembic_migrations
-from util.testing.postgres import DatabaseClones, DatabaseNames, PostgresDatabaseTemplate, create_temporary_database
-from util.testing.postgres_fixtures import (
+from testing.postgres import DatabaseClones, PostgresDatabaseTemplate
+from testing.postgres_fixtures import (
     database_clones,
     database_names,
+    empty_postgres_url,
     postgres_admin_url,
     postgres_container,
     postgres_image,
 )
+
+
+@pytest.fixture(scope="session")
+def frontend_dist(runfiles: Runfiles) -> Path:
+    return Path(str(runfiles.root() / "ducktape/study_casino/frontend/dist/index.html")).parent
+
+
+def post_json(origin: str, path: str, payload: dict[str, object]) -> None:
+    httpx.post(f"{origin}{path}", json=payload, timeout=10).raise_for_status()
 
 
 @pytest.fixture(scope="session")
@@ -34,10 +47,3 @@ def casino_database_template(postgres_admin_url: str) -> Iterator[PostgresDataba
 def db_url(casino_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
     """A fresh writable clone for ordinary store and app tests."""
     return database_clones.clone(casino_database_template, drivername="postgresql+psycopg")
-
-
-@pytest.fixture
-def empty_db_url(postgres_admin_url: str, database_names: DatabaseNames) -> Generator[str]:
-    """An empty database for the migration test that deliberately starts at revision 0004."""
-    with create_temporary_database(postgres_admin_url, database_names()) as url:
-        yield url

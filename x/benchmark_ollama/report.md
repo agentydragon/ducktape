@@ -54,6 +54,10 @@ Both models hit a NIAH wall at 128k: `num_ctx_for(128000)=147712` exceeds
 128k (depth=0.64) survived because the needle was past the truncation point. The 120b's
 128k failures produced empty responses after 230-249s of reasoning.
 
+Beyond 128k only the last ~128k tokens stay visible (20b, 2026-02-22, 3 samples per 20%-wide
+depth bucket, per-request `num_ctx=295040` at 256k): 256k recall 5/15 (depth 60-80%: 2/3,
+80-100%: 3/3, shallower 0/9), 512k 1/15 (depth 80-100% only: 1/3).
+
 ## Results: `OLLAMA_NUM_CTX=1048576` (broken setting)
 
 Setting `OLLAMA_NUM_CTX` to 1M caused severe performance regression:
@@ -79,8 +83,7 @@ destroying throughput.
 
 ### 1. `OLLAMA_NUM_CTX` controls KV cache preallocation, not just truncation
 
-A previous claim that this env var "just controls truncation" was wrong. Setting it
-to 1M caused the 20b model's output speed to go from 228 t/s to N/A. The KV cache
+Setting it to 1M caused the 20b model's output speed to go from 228 t/s to N/A. The KV cache
 preallocated at 1M tokens consumed ~16 GiB of VRAM on the 20b model (which only
 needs 13 GB for weights), likely forcing partial CPU offload.
 
@@ -125,13 +128,6 @@ simple retrieval question. At 10 t/s output speed, 5k thinking tokens = 500s.
 This means NIAH benchmarks for the 120b model are bottlenecked by decode speed,
 not prefill speed.
 
-### 6. Harbor proxy cache is broken (unrelated but discovered during benchmarking)
-
-Image pulls during the benchmark revealed Harbor's pull-through proxy returns 401
-from upstream registries. Containerd falls back to direct pulls. Root cause: missing
-`overridePath = true` in Talos `hosts.toml` mirror entries, causing double `/v2/`
-in request URIs. See `docs/troubleshooting/harbor-proxy-cache-401.md`.
-
 ## Benchmark Methodology
 
 - **Output speed**: Short seed prompt + `max_tokens=128`, streaming. Rate = `(tokens - 1) / (last_chunk_ts - first_chunk_ts)`.
@@ -139,10 +135,8 @@ in request URIs. See `docs/troubleshooting/harbor-proxy-cache-401.md`.
 - **NIAH**: War and Peace haystack with 8-char hex needle at evenly spaced depths. Streamed response scored by needle presence.
 - **Prewarm**: One throwaway request per context size to pay KV cache reallocation cost.
 - **Per-request `num_ctx`**: `int(target_tokens * 1.15 + 512)` via `extra_body.options.num_ctx`.
-- **JSONL logs**: All NIAH samples logged to `hack/benchmark_ollama/benchmark_*.jsonl`.
 
 ## Raw Data
 
 - `results_num_ctx_1048576.md` — Full tables for both models at `NUM_CTX=1048576`
 - `results_num_ctx_131072.md` — Full tables for both models at `NUM_CTX=131072`
-- `benchmark_*.jsonl` — Raw NIAH sample data with full response text

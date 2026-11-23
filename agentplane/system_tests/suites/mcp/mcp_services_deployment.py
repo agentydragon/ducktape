@@ -6,6 +6,4 @@ from agentplane.system_tests.suites.mcp.mcp_deployment import render_mcp_fixture
 
 
 def render() -> RenderedFixture:
-    return render_mcp_fixture(
-        routes=fixture_chart.LOCAL_MODEL_ROUTES, central_sampler=None, central_sampler_session_delegation=False
-    )
+    return render_mcp_fixture(routes=fixture_chart.LOCAL_MODEL_ROUTES, central_sampler_session_delegation=False)

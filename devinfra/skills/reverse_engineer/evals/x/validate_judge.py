@@ -19,8 +19,8 @@ Run via:
 
 Or, for explicit `--case`:
 
-    bb run //devinfra/skills/reverse_engineer/evals/x:validate_judge -- --case=empty
-    bb run //devinfra/skills/reverse_engineer/evals/x:validate_judge -- --case=reference
+    bb run //devinfra/skills/reverse_engineer/evals/x:validate_judge_bin -- --case=empty
+    bb run //devinfra/skills/reverse_engineer/evals/x:validate_judge_bin -- --case=reference
 """
 
 from __future__ import annotations

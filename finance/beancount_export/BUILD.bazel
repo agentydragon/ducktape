@@ -9,6 +9,7 @@ py_library(
     name = "export",
     srcs = ["export.py"],
     deps = [
+        "//finance/budget:classified_transaction",
         "//finance/budget:schema",
         "@pypi//beancount",
     ],
@@ -20,6 +21,7 @@ py_library(
     deps = [
         ":export",
         "//finance:yaml_decimal",
+        "//finance/budget:classified_transaction",
         "//finance/budget:schema",
         "//finance/budget:sql_read_model",
         "//finance/plaid/db:models",
@@ -43,13 +45,12 @@ py_test(
     deps = [
         ":export",
         "//:conftest",
+        "//finance/budget:classified_transaction",
         "//finance/budget:schema",
         "@pypi//beancount",
+        "@pypi//pytest",
     ],
 )
-
-# ── OCI image (budget exporter CronJob) ────────────────────────────────
-# git + ca-certificates (apt layer) so `export_ledger sync` can push the ledger.
 
 aspect_py_binary(
     name = "export_ledger_image_bin",
@@ -68,14 +69,17 @@ oci_image(
     name = "image",
     base = "@debian_trixie_slim_linux_amd64",
     entrypoint = py_image_entrypoint("export_ledger_image_bin"),
-    env = py_image_env(binary_name = "export_ledger_image_bin"),
+    env = py_image_env(
+        binary_name = "export_ledger_image_bin",
+        extra_env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
+    ),
     labels = {
         "org.opencontainers.image.source": "https://github.com/agentydragon/ducktape",
         "org.opencontainers.image.title": "budget-exporter",
     },
     tars = [
         ":layers",
-        "@trixie_budget_exporter//:flat",
+        "//third_party/debian_slim:cacerts",
     ],
     user = "1000:1000",
 )

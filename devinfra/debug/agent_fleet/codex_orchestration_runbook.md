@@ -150,7 +150,7 @@ Pipe a worker's `--json` through the filter under the orchestrator's `Monitor` t
 line becomes a notification. The filter matches success **and** failure signatures (turn.failed,
 item error) so a crash can't hide as silence.
 
-```
+```text
 Monitor(command: 'codex exec --json ... </dev/null 2>/dev/null | python3 scripts/codex_stream_filter.py',
         persistent: false, timeout_ms: 180000)
 ```

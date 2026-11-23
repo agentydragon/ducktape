@@ -10,14 +10,6 @@ import (
 	"github.com/cosi-project/runtime/pkg/state"
 )
 
-// EnvironmentSnapshot is the live environment identity the Runtime publishes to its Host.
-// Quiesced means a seal exists or seal persistence is uncertain; both states fail closed.
-type EnvironmentSnapshot struct {
-	IncarnationUID string
-	Known          bool
-	Quiesced       bool
-}
-
 // EnvironmentState keeps the Gateway-bound incarnation in memory and restores the
 // sealed incarnation UID from COSI. Persistence errors block identity transitions until
 // Runtime restarts and reloads COSI's durable state.
@@ -43,16 +35,7 @@ func NewEnvironmentState(lifecycleState state.State) (*EnvironmentState, error) 
 	return environment, nil
 }
 
-func (s *EnvironmentState) Snapshot() EnvironmentSnapshot {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return EnvironmentSnapshot{
-		IncarnationUID: s.incarnationUID,
-		Known:          s.incarnationSet,
-		Quiesced:       s.sealed || s.sealPersistenceErr != nil,
-	}
-}
-
+// Lameduck reports that a seal exists or seal persistence is uncertain; both states fail closed.
 func (s *EnvironmentState) Lameduck() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()

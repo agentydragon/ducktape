@@ -77,8 +77,9 @@ assistant-text item. Reasoning and tool output never become that final message. 
 no terminal status. A removed range makes the read fail rather than return an apparently complete
 transcript. Each input's `command_ids` comes from History's `origin_command_ids`; an input with no
 originating command has an empty array. Replayed confirmations of the same native message within a
-turn do not duplicate inputs or command IDs. Distinct messages with equal text remain distinct. The event fold is shared with
-`session_client.ReadTurns`; malformed turn boundaries or completion statuses fail the read.
+turn do not duplicate inputs or command IDs. Distinct messages with equal text remain distinct.
+The event fold, `sessionclient.TurnProjection`, is shared with `sessionclient.ReadTurns`; malformed
+turn boundaries or completion statuses fail the read.
 
 `get_session` keeps the Dispatcher's `state`, `reason` and timestamps on each of its at most 20
 recent dispatches. A separate optional `history` object reports the latest observed History fact:
@@ -121,7 +122,7 @@ An environment offers the group with `ActionsProps.orchestration_v1`
 (`cluster/cdk8s/agentplane/environment.py`). Its Action Service then:
 
 - has the group in its settings, with the app's presets, and the `session_dispatcher` and
-  `history_service` it calls with projected tokens of their audiences;
+  `history_service` it calls with its service SVID;
 - is a caller and waker of the Session Dispatcher and a reader of the History Service;
 - has an EnvironmentService launcher grant to create on behalf of an Action caller; may read
   Sandboxes and get and create PolicySets and PolicyBindings in its namespace;

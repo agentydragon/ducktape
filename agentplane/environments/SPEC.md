@@ -30,8 +30,9 @@ RPCs for up to five seconds before force-closing them. Leadership loss shuts dow
 its RPC listener; clients reconnect and reconcile uncertain mutation outcomes without automatic replay.
 
 EnvironmentService admits workload and exact-role service SVIDs only, without TokenReview. Configure
-service SVID allowlists and typed service delegation. TokenReview RBAC and projected-token cleanup remain
-a separate final stage across receivers.
+service SVID allowlists and typed service delegation. The staging render grants no TokenReview
+(`test_workload_trust.py`) and Sandbox Pods project no Dispatcher or History audience token
+(`test_egress.py`), so no projected-token cleanup remains here.
 
 Omitting `environment_service` retains the controller-only process and existing readiness behavior.
 Deployment configuration enables the listener only after the accepting image is pinned; caller
@@ -318,7 +319,7 @@ without proxy support, remove the setting and verify its ConfigMap and rollout.
 ## Runtime lifecycle calls
 
 The controller uses the historically named `runner_gateway_target` to call the stable
-`environments:8082` Service while sealing a Sandbox with `Runner.Quiesce` or performing suspend
+`environments:8082` Service while sealing a Sandbox with `EnvironmentRuntime.Quiesce` or performing suspend
 admission. It supplies the Sandbox identity and incarnation UID; the receiving Environments replica
 routes the request to its own Runtime connection. No per-Sandbox control Service is created.
 Every Environments replica maintains an independent Runtime watch, fenced by Sandbox UID, the
@@ -352,14 +353,15 @@ proxy's per-replica Runtime observation and callable connection.
 - Nothing forces a seal: a Sandbox whose seal cannot complete is cleared by removing its finalizer by hand.
 - The Pod or VM is owned by the Sandbox with `blockOwnerDeletion`, so foreground propagation and
   namespace deletion remove it before the seal completes and the unsealed tail of a Session's
-  journal is lost; background propagation (the `kubectl` and `DeleteSandbox` default) keeps it until
+  journal is lost; background propagation (the `kubectl` and `DeleteEnvironment` default) keeps it until
   the finalizer clears.
 
 ## Status
 
 `status.incarnation` names the Pod the runner runs in and its UID: the Sandbox's Pod, or its VMI's
-virt-launcher Pod. The `Running` condition is True while the Pod runs (`PodRunning`) or the VMI runs
-(`VMRunning`). Otherwise it is False, with reason `Stopped`, `Starting`, `PullingImage`, `Stopping`, `PodEnded`,
+virt-launcher Pod once Kubernetes assigns it a node. The `Running` condition is True while the Pod
+runs (`PodRunning`) or the VMI runs (`VMRunning`). Otherwise it is False, with reason `Stopped`,
+`Starting`, `PullingImage`, `Stopping`, `PodEnded`,
 `VMEnded`, `SuspendPending`, `Quiescing`, `Deleting`,
 `TemplateNotFound`, `TemplateInvalid`, `StateVolumeConflict`, `VolumeLayoutMismatch`,
 `RunnerCredentialMissing`, `RunnerCredentialRequired`,
@@ -368,6 +370,8 @@ virt-launcher Pod. The `Running` condition is True while the Pod runs (`PodRunni
 reason such as `CertificatePending`),
 `VMIStopping`, `IncarnationUnpublished`,
 `IdentityMissing`, `IdentityChanged`,
+`FirecrackerPending`, `FirecrackerLauncherLost`, `FirecrackerStatusUnavailable`,
+`FirecrackerStatusMismatch`, `FirecrackerFailed`,
 `PodConflict` or `VMConflict`
 (a Pod or VM of the Sandbox's name that it does not control). Reasons are display only; readers
 dispatch on typed status fields.
@@ -402,9 +406,11 @@ then retries after one second. Connectivity loss restarts and replaces nothing.
 
 A new leader discovers published incarnations from the initial cache list and opens new watches.
 No observation or idle elapsed time survives takeover. Suspension and deletion conservatively
-require sealing every published incarnation that has not already been recorded quiesced: empty
-memory cannot prove that a Runtime never admitted work. The last unsealed published incarnation
-remains in status when its Pod disappears, so deletion can restart a runner against retained journals.
+require sealing published incarnations that have not already been recorded quiesced. Controller
+memory cannot prove that a Runtime never admitted work. Suspension can skip sealing a
+previously published VM launcher when Kubernetes atomically accepts deletion of its exact
+unassigned version. The last unsealed published incarnation remains in status when its Pod
+disappears, so deletion can restart a runner against retained journals.
 A replacement route is published before calling its incarnation-fenced Quiesce. Persisted quiesce attempts and retry
 deadlines survive takeover; only a fresh matching quiesced snapshot or an acknowledged Quiesce RPC
 completes the seal. Pod UID and local watch generation fence replaced streams; a new boot ID or

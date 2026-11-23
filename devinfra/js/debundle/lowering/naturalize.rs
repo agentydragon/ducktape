@@ -206,8 +206,8 @@ fn naturalize_module_body(
         });
     }
     // Free aliases are submitted per deriving function, so two functions
-    // aliasing one free source to different targets — previously a
-    // silent last-write-wins — are a seal-time conflict.
+    // aliasing one free source to different targets are a seal-time
+    // conflict.
     let mut per_function_free = Vec::<BTreeMap<String, String>>::new();
     for item in body.iter() {
         collect_free_alias_renames_from_item(item, chunk_top_level_mark, &mut per_function_free);

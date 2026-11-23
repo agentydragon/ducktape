@@ -2,13 +2,13 @@ package coordinator
 
 import (
 	"context"
-	"net"
 	"sync/atomic"
 	"testing"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	modelconfigpb "github.com/agentydragon/ducktape/agentplane/llm_ingress/v1"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -34,16 +34,8 @@ func (s *modelConfigTestServer) GetModelConfig(ctx context.Context, req *modelco
 }
 
 func TestResolveModelConfigUsesGRPCForClaude(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer()
 	service := &modelConfigTestServer{}
-	modelconfigpb.RegisterModelConfigServiceServer(server, service)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	target := listener.Addr().String()
+	target := grpcserver.ServeRegistered(t, func(server *grpc.Server) { modelconfigpb.RegisterModelConfigServiceServer(server, service) })
 	config := Config{
 		Claude: &harness.LaunchConfig{Binary: "claude"}, Codex: &harness.LaunchConfig{Binary: "codex"},
 		ModelConfigTarget: &target,

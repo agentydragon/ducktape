@@ -107,6 +107,23 @@ and complete with their full text; tool calls stream their arguments where the h
 report the complete `ToolArguments`, stream output where the harness does, and complete with the
 harness's outcome. Tool names and argument shapes are the harness's own.
 
+## Native protocol models
+
+[`internal/harnesses/codex/protocol`](../internal/harnesses/codex/protocol/) generates Go models at
+build time with Quicktype from schemas exported by the same pinned Codex executable used by the
+native tests. Requests, responses, notifications, known item payloads and the `thread/items/list`
+pages that reconciliation reads use these models. Method and item dispatch keep a raw JSON boundary
+for unknown variants; recorded native frames are never reconstructed from decoded models. Schema
+export and JavaScript code generation are build dependencies only.
+
+Claude stream events and assistant content blocks use the Anthropic Go SDK's discriminated unions.
+Consumed variants are checked with strict JSON decoding because the SDK's response decoder tolerates
+malformed fields. Tool inputs use the SDK's raw-field metadata to preserve whitespace, numeric tokens
+and explicit `null`. Claude Code control packets use the standard-library-only
+`claude-agent-sdk-go/types` envelopes and matching subtype structs. Local extensions cover
+`appendSystemPrompt`, interrupt metadata, model/effort changes, raw tool inputs and explicit null
+reply fields. User tool results have their own wire type.
+
 ## Commands and effects
 
 - A `Command` is client-chosen and idempotent. The Runtime commits the full command and its
@@ -155,14 +172,11 @@ an uncertain native effect is not retried to reconcile configuration.
 
 - Runtime holds the exclusive lock on `<state_dir>/runtime-resources.db` throughout the environment
   lifetime, including Host native cleanup, worker joins and journal close. Runtime alone owns the
-  `EnvironmentSeals` COSI resource; Host never clears or adopts that resource. It is a hard cutover
-  from `<state_dir>/sessions/sealed`: stop
-  pre-cutover workloads before new binaries reuse their state volumes. Runtime releases the
-  database only after its child domains are fenced. Durable Session IDs
-  and paths do not move.
+  `EnvironmentSeals` COSI resource; Host never clears or adopts that resource. Runtime releases the
+  database only after its child domains are fenced.
 - Production Pods explicitly select PID1 supervision and reject Runtime startup outside container
   PID 1. Embedded Host shares Runtime's PID1 supervisor for native helpers. Normal Host
-  `native_stopped` reports prove its native cleanup; abnormal Runtime exit alone does not prove that
+  `NativeStopped` reports prove its native cleanup; abnormal Runtime exit alone does not prove that
   escaped process groups are gone.
   One reaper owns direct-child exit statuses and adopted orphans; native leaders never compete
   with an `exec.Cmd.Wait` goroutine. Leader exit kills its remaining group; completion waits until

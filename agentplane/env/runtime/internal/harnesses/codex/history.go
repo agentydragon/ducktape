@@ -65,10 +65,7 @@ func (a *codexAdapter) RecoverInputs(ctx context.Context) error {
 	duplicates := map[string]bool{}
 	cursors := map[string]bool{}
 	for {
-		requestID, err := a.nextID()
-		if err != nil {
-			return err
-		}
+		requestID := a.nextID()
 		frame, source, err := a.requestEvidence(ctx, jsonrpc.Request[any]{ID: requestID, Method: "thread/items/list", Params: params})
 		if err != nil {
 			return err
@@ -262,10 +259,7 @@ func (a *codexAdapter) readTurnHistory(ctx context.Context, turnID string, items
 	params := protocol.ThreadItemsListParams{ThreadID: threadID, TurnID: &turnID, Limit: &limit}
 	cursors := make(map[string]bool)
 	for {
-		requestID, err := a.nextID()
-		if err != nil {
-			return err
-		}
+		requestID := a.nextID()
 		frame, err := a.request(ctx, jsonrpc.Request[any]{ID: requestID, Method: "thread/items/list", Params: params})
 		if err != nil {
 			return err

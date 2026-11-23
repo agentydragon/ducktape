@@ -25,7 +25,7 @@ def test_wheel_contains_import_closure_templates_and_runnable_entry_points(runfi
         assert "devinfra/pr_visuals/issue_provenance.j2" in files
         assert "devinfra/pr_visuals/determinism.py" not in files
         assert {
-            "devinfra/testing/bazel_snapshot_extension.py",
+            "devinfra/testing/syrupy_plugin.py",
             "devinfra/testing/output_writer.py",
             "devinfra/testing/pytest_outputs.py",
             "devinfra/testing/sharding.py",

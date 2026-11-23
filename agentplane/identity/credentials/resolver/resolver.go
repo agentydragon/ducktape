@@ -50,15 +50,6 @@ type Peer struct {
 	Pod *workloadapi.PodRef
 }
 
-// RequirePod is step 7: a Pod-bound token the caller also offered must come from the incarnation's
-// Pod. podUID is the Pod UID TokenReview reported for that token.
-func (p Peer) RequirePod(podUID types.UID) error {
-	if podUID == "" || p.Pod == nil || p.Pod.UID != podUID {
-		return fmt.Errorf("%w: the Pod token is not bound to the credential's accepted incarnation", ErrRefused)
-	}
-	return nil
-}
-
 // Identities is where a credential's Identity subject lives: the policy namespace.
 type Identities struct {
 	PolicyNamespace string

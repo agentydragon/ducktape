@@ -8,11 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from agentplane_policybinding_crds.works.allegedly.agentplane import (
-    PolicyBinding,
-    PolicyBindingSpec,
-    PolicyBindingSpecSubject,
-)
+from agentplane_policybinding_crds.works.allegedly.agentplane import PolicyBinding, PolicyBindingSpec
 from agentplane_policyset_crds.works.allegedly.agentplane import (
     PolicySet,
     PolicySetSpec,
@@ -49,6 +45,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
+    PLAID_PGWEB_CREDENTIAL,
     QUEST_SCHEDULER_READ_POLICY,
     THRIVE_READ_POLICY,
     grocy_sf_read_egress_rules,
@@ -75,6 +72,7 @@ KUBERNETES_INSPECTION_READS_SET = "kubernetes-inspection-reads"
 # The `cluster-sops-read` Coinbase CDP key, which can only view (no trade, no transfer): the one
 # Haku's sandbox reads too. cluster/cdk8s/external_creds.py approves this namespace's copy.
 _COINBASE_SECRET = "coinbase-api-credentials"
+_OVH_BILLING_SECRET = "ovh-billing-credentials"
 _GITHUB_DOWNLOADS_POLICY = "github-downloads"
 MIMIR_READS_POLICY = "mimir-reads"
 # AnkiWeb sync for haku-anki, which runs as the haku-ui account (see the binding below).
@@ -83,8 +81,8 @@ HAKU_CI_BUILD_FETCH_POLICY = "haku-ci-build-fetch"
 # Package and code hosts for haku-jupyter, which runs as the haku-ui account (see the binding below).
 HAKU_NOTEBOOK_FETCH_POLICY = "haku-notebook-fetch"
 
-# Staging-only PolicySets. The `coinbase` PolicySet combines GET egress with the view-only Coinbase
-# key's Secret grant. The two Action PolicySet reads every preset binds by default live here too.
+# Staging-only Action PolicySets that the launch presets (staging_config.py) and the Identity
+# bindings below bind by name.
 GITHUB_IDENTITY_READS_SET = "github-identity-reads"
 SSH_READS_SET = "ssh-reads"
 ORCHESTRATION_PRESETS_SET = "orchestration-presets"
@@ -93,9 +91,23 @@ CLAUDE_AI = StandingCaller(ServiceAccountRef(namespace=_NAMESPACE, name="claude-
 HAKU_AGENT = StandingCaller(ServiceAccountRef(namespace=_NAMESPACE, name="haku-agent"), identity="haku-agent")
 
 
-def coinbase_egress_rules() -> list[PolicySetSpecRules]:
-    """GET-only access to Coinbase; callers sign requests with the key held in Kubernetes."""
-    return [Rule.egress(hosts=["api.coinbase.com"], methods=[PolicySetSpecRulesMethods.GET])]
+# Pure-egress rules for assignable Kubernetes role sets that also grant API access.
+ASSIGNABLE_EGRESS_RULES = {
+    access.COINBASE_POLICY: [Rule.egress(hosts=["api.coinbase.com"], methods=[PolicySetSpecRulesMethods.GET])],
+    access.OVH_BILLING_POLICY: [
+        Rule.egress(
+            hosts=["api.us.ovhcloud.com"],
+            methods=[PolicySetSpecRulesMethods.GET],
+            paths=["/1.0/auth/time", "/1.0/me/bill", "/1.0/me/bill/**", "/1.0/service", "/1.0/service/**"],
+        )
+    ],
+    access.PLAID_DIAGNOSTICS_POLICY: access.plaid_pgweb_egress_rules(credential=PLAID_PGWEB_CREDENTIAL),
+}
+
+
+def identity_egress_set_name(name: str, *, identity_catalog: bool) -> str:
+    """Mixed catalogs keep the unsuffixed name for the set that also grants Kubernetes access."""
+    return name if identity_catalog else f"{name}-identity"
 
 
 # The Action PolicySets created below that the launch presets bind, named because a
@@ -150,29 +162,27 @@ def caller_role_sets() -> list[str]:
     return [name for name in _HAKU_CLAUDE_BASE_POLICIES if name in access.POLICY_SETS]
 
 
-def _identity_caller_policies(
-    policies: Sequence[str], *, identity_catalog: bool, identity_egress_set_names: set[str]
-) -> list[str]:
+def _identity_caller_policies(policies: Sequence[str], *, identity_catalog: bool) -> list[str]:
     """Identity-compatible policies, replacing mixed Kubernetes sets with their pure-egress sibling."""
     selected: list[str] = []
     for name in policies:
         if name not in access.POLICY_SETS:
             selected.append(name)
-        elif name in identity_egress_set_names:
-            selected.append(name if identity_catalog else f"{name}-identity")
+        elif name in ASSIGNABLE_EGRESS_RULES:
+            selected.append(identity_egress_set_name(name, identity_catalog=identity_catalog))
     return selected
 
 
-def _kubernetes_account_use(caller: StandingCaller) -> list[str]:
-    """The use set of `caller`'s own Kubernetes account, named after its Identity."""
-    return [kubernetes_account_ref.account(_NAMESPACE, caller.identity).credential_name]
-
-
-def _policy_set(scope: Construct, id: str, *, metadata: ApiObjectMetadata, rules: Sequence[PolicySetSpecRules]) -> None:
+def _policy_set(scope: Construct, name: str, *, description: str, rules: Sequence[PolicySetSpecRules]) -> None:
     # The Action Service parses a rule more strictly than the CRD schema (an unknown policy
     # kind or key, an invalid JSON Schema); a set it refuses grants nothing on the cluster, so
     # it fails here instead.
-    policy_set_object = PolicySet(scope, id, metadata=metadata, spec=PolicySetSpec(rules=rules))
+    policy_set_object = PolicySet(
+        scope,
+        name,
+        metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE, annotations={"description": description}),
+        spec=PolicySetSpec(rules=rules),
+    )
     for rule in policy_set_object.to_json()["spec"]["rules"]:
         parse_action_rule(rule)
 
@@ -187,17 +197,14 @@ def _exact_actions_policy_set(
 ) -> None:
     """Create a named staging PolicySet for an exact Action allowlist."""
     _policy_set(
-        scope,
-        name,
-        metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE, annotations={"description": description}),
-        rules=[AutoApproveIf.exact_actions(actions=actions), *additional_rules],
+        scope, name, description=description, rules=[AutoApproveIf.exact_actions(actions=actions), *additional_rules]
     )
 
 
-def _account_binding(
-    scope: Construct, account: ServiceAccount, *, subject: PolicyBindingSpecSubject, policies: Sequence[str]
-) -> None:
-    """What `account`, and every sandbox running as it, may reach and have auto-approved."""
+def _account_binding(scope: Construct, caller: StandingCaller, *, policies: Sequence[str]) -> None:
+    """Bind the caller's Identity to its policies and its own Kubernetes account."""
+    account = caller.service_account
+    account_use = kubernetes_account_ref.account(_NAMESPACE, caller.identity).credential_name
     PolicyBinding(
         scope,
         f"policybinding-{account.name}",
@@ -208,7 +215,7 @@ def _account_binding(
                 "description": f"What the {account.name} ServiceAccount, and sandboxes running as it, may reach and have auto-approved."
             },
         ),
-        spec=PolicyBindingSpec(subject=subject, policy_sets=policies),
+        spec=PolicyBindingSpec(subject=caller.identity_subject(), policy_sets=[*policies, account_use]),
     )
 
 
@@ -365,9 +372,8 @@ _TANA_READS_ACTIONS = [
     # keep-sorted end
 ]
 
-# Grocy SF's read-only surface, as haku-console's `grocy_reads` policy auto-approved it.
-# Reviewed exclusion: `open_product_stock` marks a product opened. New upstream tools stay manual
-# until reviewed here.
+# Grocy SF's read-only surface. Reviewed exclusion: `open_product_stock` marks a product opened.
+# New upstream tools stay manual until reviewed here.
 _GROCY_SF_READS_ACTIONS = [
     # keep-sorted start
     "entities_get",
@@ -399,12 +405,7 @@ _KUBERNETES_INSPECTION_READS_ACTIONS = ["nodes_stats_summary", "nodes_top", "pod
 
 
 def add_staging_action_policies(
-    scope: Construct,
-    *,
-    identity_catalog: bool,
-    identity_egress_set_names: set[str],
-    haku_ui: Identity,
-    haku_ci: Identity,
+    scope: Construct, *, identity_catalog: bool, haku_ui: Identity, haku_ci: Identity
 ) -> None:
     """Render Haku's standing workload Identities and caller grants independently of the optional catalog."""
     # The principal a Connection enrolled from the Claude.ai MCP connector acts as, picked by
@@ -432,7 +433,7 @@ def add_staging_action_policies(
     # that account's authority. haku-agent is a static caller identity, not the per-Sandbox
     # ServiceAccount on managed runner Pods; Coinbase key delivery to those runners is tracked
     # in #8596.
-    haku_agent = ServiceAccount(
+    ServiceAccount(
         scope,
         "serviceaccount-haku-agent",
         metadata=ApiObjectMetadata(
@@ -467,14 +468,8 @@ def add_staging_action_policies(
     # and the private gaffer-private.
     _policy_set(
         scope,
-        "common-github-read",
-        metadata=ApiObjectMetadata(
-            name=COMMON_GITHUB_READ_SET,
-            namespace=_NAMESPACE,
-            annotations={
-                "description": "Reviewed GitHub reads of any repository a live unauthenticated lookup confirms public, and of agentydragon/ducktape, its fork agentydragon-agent/ducktape and the private agentydragon/gaffer-private."
-            },
-        ),
+        COMMON_GITHUB_READ_SET,
+        description="Reviewed GitHub reads of any repository a live unauthenticated lookup confirms public, and of agentydragon/ducktape, its fork agentydragon-agent/ducktape and the private agentydragon/gaffer-private.",
         rules=[
             AutoApproveIf.github_public_repository(actions={"github": _REPOSITORY_SCOPED_ACTIONS}),
             *(
@@ -496,16 +491,10 @@ def add_staging_action_policies(
     # runs, though the MCP arguments do not expose a run's originating event for PR-only filtering.
     _policy_set(
         scope,
-        "ducktape-pr-failed-jobs",
-        metadata=ApiObjectMetadata(
-            name=DUCKTAPE_PR_FAILED_JOBS_SET,
-            namespace=_NAMESPACE,
-            annotations={
-                "description": (
-                    "Auto-approves only GitHub MCP rerun_failed_jobs calls for agentydragon/ducktape; "
-                    "dispatch, whole-run rerun, cancellation and log deletion remain on the human path."
-                )
-            },
+        DUCKTAPE_PR_FAILED_JOBS_SET,
+        description=(
+            "Auto-approves only GitHub MCP rerun_failed_jobs calls for agentydragon/ducktape; "
+            "dispatch, whole-run rerun, cancellation and log deletion remain on the human path."
         ),
         rules=[
             AutoApproveIf.argument_schema(
@@ -532,17 +521,11 @@ def add_staging_action_policies(
     #    scoped to this repository and this one Action.
     _policy_set(
         scope,
-        "gaffer-private-branch-and-pr-creation",
-        metadata=ApiObjectMetadata(
-            name=GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
-            namespace=_NAMESPACE,
-            annotations={
-                "description": (
-                    "Auto-approves only GitHub MCP create_branch and create_pull_request calls targeting "
-                    "agentydragon/gaffer-private; existing branches cannot be overwritten, the PR is not "
-                    "merged, and other writes remain human-approved."
-                )
-            },
+        GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
+        description=(
+            "Auto-approves only GitHub MCP create_branch and create_pull_request calls targeting "
+            "agentydragon/gaffer-private; existing branches cannot be overwritten, the PR is not "
+            "merged, and other writes remain human-approved."
         ),
         rules=[
             AutoApproveIf.argument_schema(
@@ -624,6 +607,45 @@ def add_staging_action_policies(
             subject.imported(scope, f"coinbase-subject-{index}")
             for index, subject in enumerate(access.profile_subjects("coinbase-credentials"))
         ),
+    )
+    # OVH signatures include the request URL, timestamp and secret, so the sandbox must
+    # sign in memory. The key itself is limited by OVH to read-only billing/service paths.
+    ExternalSecret(
+        scope,
+        "ovh-billing-external-secret",
+        metadata=ApiObjectMetadata(
+            name=_OVH_BILLING_SECRET,
+            namespace=_NAMESPACE,
+            annotations={"description": "Read-only OVH billing credential for explicitly authorized agents."},
+        ),
+        refresh_interval="1h",
+        secret_store_ref=external_creds.STORE,
+        data=[
+            remote_data(_OVH_BILLING_SECRET, key) for key in ("application_key", "application_secret", "consumer_key")
+        ],
+        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+        deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
+    )
+    ovh_billing_reader = Role(
+        scope,
+        "role-ovh-billing-reader",
+        metadata=ApiObjectMetadata(name="ovh-billing-reader", namespace=_NAMESPACE),
+        rules=[
+            RolePolicyRule(
+                resources=[Secret.from_secret_name(scope, "ovh-billing-secret", _OVH_BILLING_SECRET)], verbs=["get"]
+            )
+        ],
+    )
+    RoleBinding(
+        scope,
+        "rolebinding-ovh-billing-reader",
+        metadata=ApiObjectMetadata(name="ovh-billing-reader", namespace=_NAMESPACE),
+        role=ovh_billing_reader,
+    ).add_subjects(
+        *(
+            subject.imported(scope, f"ovh-billing-subject-{index}")
+            for index, subject in enumerate(access.profile_subjects("ovh-billing-credentials"))
+        )
     )
     sandbox_reader = Role(
         scope,
@@ -715,63 +737,29 @@ def add_staging_action_policies(
     # own Forgejo password, so a sandbox of this caller's acts as haku across every repository that
     # account owns. It is here because the operator asked for it; it is not a default any caller
     # should inherit. `packages` is the opposite end: public mirrors, no credential, GET and HEAD.
-    # `google-readonly` substitutes Airlock's read-only Google token on Gmail, Calendar, Drive,
-    # Drive Activity, Tasks, Contacts, Docs, Sheets, Slides and YouTube reads
-    # (egress_staging_credentials.py). `grocy-sf-readonly` presents the app password of an Authentik
-    # service account with no Grocy permissions, as HTTP Basic, on GETs to Grocy's own REST API (see
-    # that module's `grocy-sf-readonly` egress PolicySet for why that's Grocy's API rather than the
-    # grocy-mcp-sf MCP server). `activitywatch-read` presents the ActivityWatch read route's bearer,
-    # which that route itself holds to reads, and `aiquota-read` aiquota's bearer on its read-only
-    # API. `haku-mailbox` presents the JWT of Haku's own mailbox: JMAP reads and changes that one
-    # mailbox and cannot send. It and `forgejo-haku` are Haku's credentials, bound here because
-    # claude-ai is the connection Haku runs through (haku/TODO.md). `coinbase` combines the named
-    # key Secret grant with GET egress; the Identity binding uses its pure-egress sibling alongside
-    # the caller's exact Kubernetes account grant. `plaid-diagnostics` grants read-only control-plane metadata
-    # in plaid-mcp and presents pgweb's HTTP Basic password only on its query API, so a sandbox of
-    # this caller's can inspect sync health and run SQL over the Plaid mirror as `plaid_ro`, which
-    # can only SELECT (agent_access_profiles.py, egress_staging_credentials.py).
-    # `mimir-reads` presents nothing either: GET on Mimir's Prometheus query API over the cluster Service.
-    # `github-downloads` presents nothing either: public GitHub downloads, GET and HEAD only.
-    # `github-clone` presents nothing either: the anonymous smart-HTTP git protocol
-    # (GET+POST to github.com only, scoped to the `info/refs`/`git-upload-pack` paths). Now a
-    # strict subset of `github-agentydragon-agent` below; kept bound so clone still works if
-    # that credential is ever unbound again.
-    # `github-agentydragon-agent` substitutes the same write-capable `agentydragon-agent` PAT
-    # `public-coder` already carries (egress.py): GET, POST, PUT, PATCH and DELETE to
-    # api.github.com, github.com, codeload.github.com and *.githubusercontent.com, no path limit.
-    # A sandbox of this caller's can therefore act as that bot across the whole GitHub REST API and
-    # git protocol -- not just clone/push, and not just create: it can edit and close what it
-    # opened -- by the operator's explicit choice, the same shape of tradeoff `forgejo-haku` above
-    # already accepts for Forgejo.
-    # `github-actions-logs` presents nothing either: GET-only to the Azure Blob Storage hosts
-    # a workflow run's job logs and artifacts 302 to, so a sandbox of this caller's can follow
-    # that redirect and read its own PR's CI output (egress.py).
-    # `buildbuddy` presents the shared BuildBuddy API key as the literal `x-buildbuddy-api-key`
-    # header/metadata value, letting this caller's sandboxes run `bazel --config=rbe` directly
-    # against BuildBuddy's remote cache and Remote Execution instead of needing bbr/BuildBuddy
-    # CLI tooling this namespace otherwise lacks (egress_staging_credentials.py).
+    # `github-clone` is a strict subset of `github-agentydragon-agent`; kept bound so clone still
+    # works if that credential is ever unbound again. `github-agentydragon-agent` (egress.py)
+    # substitutes a write-capable PAT with no path limit, so a sandbox of this caller's can act as
+    # that bot across the whole GitHub REST API and git protocol -- not just clone/push, and not
+    # just create: it can edit and close what it opened -- by the operator's explicit choice, the
+    # same shape of tradeoff `forgejo-haku` above already accepts for Forgejo.
     #
     # TODO: `forgejo-haku` and `haku-mailbox` stay bound here for now even though haku-agent
     # (below) exists specifically to run in-cluster Haku-like sandboxes: claude-ai is still the
     # identity the same *logical* Haku agent runs as from Claude.ai/Claude Code's own
-    # out-of-cluster infrastructure, so it still needs Haku's credentials. Revisit whether
-    # claude-ai should keep carrying them once haku-agent has been in use for a while.
+    # out-of-cluster infrastructure, so it still needs Haku's credentials (haku/TODO.md). Revisit
+    # whether claude-ai should keep carrying them once haku-agent has been in use for a while.
+    shared_policies = _identity_caller_policies(_HAKU_CLAUDE_BASE_POLICIES, identity_catalog=identity_catalog)
     _account_binding(
         scope,
-        claude_ai,
-        subject=CLAUDE_AI.identity_subject(),
+        CLAUDE_AI,
         policies=[
-            *_identity_caller_policies(
-                _HAKU_CLAUDE_BASE_POLICIES,
-                identity_catalog=identity_catalog,
-                identity_egress_set_names=identity_egress_set_names,
-            ),
+            *shared_policies,
             BUILDBUDDY_POLICY,
             MIMIR_READS_POLICY,
             # claude-ai is the account that launches orchestration_v1 workers.
             ORCHESTRATION_PRESETS_SET,
             *HAKU_SHARED_ACTION_SETS,
-            *_kubernetes_account_use(CLAUDE_AI),
         ],
     )
 
@@ -887,20 +875,7 @@ def add_staging_action_policies(
     )
 
     # Haku-like sandboxes get Coinbase only through this explicit combined PolicySet selection.
-    _account_binding(
-        scope,
-        haku_agent,
-        subject=HAKU_AGENT.identity_subject(),
-        policies=[
-            *_identity_caller_policies(
-                _HAKU_CLAUDE_BASE_POLICIES,
-                identity_catalog=identity_catalog,
-                identity_egress_set_names=identity_egress_set_names,
-            ),
-            *HAKU_SHARED_ACTION_SETS,
-            *_kubernetes_account_use(HAKU_AGENT),
-        ],
-    )
+    _account_binding(scope, HAKU_AGENT, policies=[*shared_policies, *HAKU_SHARED_ACTION_SETS])
 
     # Every sandbox Action, auto-approved. Approving each one individually would not be a
     # boundary: a sandbox runs as the account that asked for it, so the whole group can do

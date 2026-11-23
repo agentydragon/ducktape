@@ -28,6 +28,8 @@ pub mod loader_surface;
 pub mod program_summary;
 mod request;
 mod saved_program_summary;
+#[cfg(test)]
+mod test_support;
 pub use loader_surface::{
     ExportReentryLoaderDerivation, ExportReentryLoaderFailure, ExportReentryLoaderRequest,
     LoaderRequestReportTarget, LoaderSite, LoaderSiteWitness,

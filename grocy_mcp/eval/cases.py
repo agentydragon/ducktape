@@ -21,7 +21,6 @@ Seed = Callable[[httpx.AsyncClient], Awaitable[None]]
 @dataclass(frozen=True)
 class EvalCase:
     id: str
-    description: str
     task_prompt: str
     success_criteria: str
     seed: Seed | None
@@ -124,7 +123,6 @@ The agent should:
 
 POPULATE_FRESH_PANTRY = EvalCase(
     id="populate_fresh_pantry",
-    description="Stock an empty Grocy instance from a short natural-language description of what's on hand.",
     task_prompt=_POPULATE_FRESH_PANTRY_PROMPT,
     success_criteria=_POPULATE_FRESH_PANTRY_CRITERIA,
     seed=None,
@@ -132,7 +130,6 @@ POPULATE_FRESH_PANTRY = EvalCase(
 
 SHOPPING_PLANNING = EvalCase(
     id="shopping_planning",
-    description="Plan a shopping trip for spaghetti bolognese on top of an existing shopping list.",
     task_prompt=_SHOPPING_PLANNING_PROMPT,
     success_criteria=_SHOPPING_PLANNING_CRITERIA,
     seed=seed_lived_in_pantry,
@@ -140,7 +137,6 @@ SHOPPING_PLANNING = EvalCase(
 
 POST_COOK_LOGGING = EvalCase(
     id="post_cook_logging",
-    description="Log consumption from a loose natural-language description after cooking a meal.",
     task_prompt=_POST_COOK_LOGGING_PROMPT,
     success_criteria=_POST_COOK_LOGGING_CRITERIA,
     seed=seed_lived_in_pantry,

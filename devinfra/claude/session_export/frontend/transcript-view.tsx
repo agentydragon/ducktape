@@ -818,7 +818,6 @@ function TranscriptCard({ item, session }: { item: TranscriptItem; session: Sess
 
 export function TranscriptView({
   selectedSession,
-  selectedId,
   events,
   loadingEvents,
   eventError,
@@ -830,7 +829,6 @@ export function TranscriptView({
   loadMoreEvents,
 }: {
   selectedSession: SessionSummary;
-  selectedId: string;
   events: Event[];
   loadingEvents: boolean;
   eventError: string | null;
@@ -899,9 +897,9 @@ export function TranscriptView({
               </Button>
             )}
             {showRawEvents ? (
-              <EventInspector key={selectedId} events={events} />
+              <EventInspector key={selectedSession.id} events={events} />
             ) : (
-              <ToolDisclosureProvider key={selectedId}>
+              <ToolDisclosureProvider key={selectedSession.id}>
                 {rows.map((row) =>
                   row.kind === "event-strip" ? (
                     <EventTimelineStrip key={row.id} events={row.events} />

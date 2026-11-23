@@ -4,8 +4,7 @@ Environment Runtime owns one Sandbox environment lifetime: identity, bootstrap, 
 incarnation seal, proxy-facing control, Session management, retained records, journals, native
 harness controllers, History delivery and Execution. Components have direct dependencies and
 independent COSI observations inside Runtime's single engine. The `EnvironmentRuntime` API carries
-Sandbox lifecycle and process diagnostics; `HarnessHost` carries Session creation, commands and status. A future independent Session domain and storage
-model remain separate design work.
+Sandbox lifecycle and process diagnostics; `HarnessHost` carries Session creation, commands and status.
 
 ## Durable state and recovery
 
@@ -165,19 +164,19 @@ cannot complete the environment barrier.
 The journal remains the durable seal authority, so recovery rechecks it and the fresh cleanup
 proofs before publishing status. History sends final entries and seals, persists the
 acknowledgements, and satisfies delivery only at each exact sealed cursor. The Session lifecycle
-controller observes the retained acknowledgement and reports `Delivered` for the matching committed
-seal UID, cursor and environment generation. The environment aggregate completes only when every
-Session in the inventory reports delivery for that generation.
+controller reports the retained acknowledgement alongside the seal in its generation-qualified
+status. The environment aggregate completes only when that status proves a sealed acknowledgement
+at the exact cursor of each Session's current seal.
 
 Ordinary Close without a seal drains local work and creates no seal. Close preserving a seal waits
 for exact durable acknowledgements. Runtime first settles any accepted transition and fence before
 publishing Closing; it joins History before journals close, stops/joins the engine, joins workers,
 closes journals, fences the Pod PID namespace when applicable and releases its owner last.
-The Runtime Close status reports the ordered stage and any failure; it is never persisted.
-`ReadyToJoin` is permission to finish those steps, not successful owner release. Coordinator exit
-wakes callers before joining workers, preventing a shutdown worker from waiting on a transition
-caller that is itself waiting for engine exit. Joined workers and exact fences still determine
-whether cleanup is proved; coordinator restart never replays accepted work.
+The Close worker reads the generation-qualified component status and returns its result after
+cleanup. The lifecycle guard propagates engine cancellation to the operation coordinator before
+COSI joins its controllers. The coordinator wakes callers before joining its worker so Close can
+take the transition mutex and return on engine failure. Joined workers and exact fences determine whether
+cleanup is proved. Controller restart never replays accepted work.
 
 Concurrent Close callers share one accepted worker. Caller cancellation ends only that wait.
 Session recovery or History failure closes admission and starts cleanup without manufacturing a

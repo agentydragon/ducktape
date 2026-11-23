@@ -17,6 +17,7 @@ import (
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -82,10 +83,7 @@ func acquireSandboxAdvisoryLock(t *testing.T, queueStore *store.Store, sandboxUI
 
 func waitForCreateSessionBlockedBySandboxLock(t *testing.T, queueStore *store.Store, gate *sql.Conn) {
 	t.Helper()
-	var gatePID int
-	if err := gate.QueryRowContext(t.Context(), "SELECT pg_backend_pid()").Scan(&gatePID); err != nil {
-		t.Fatal(err)
-	}
+	gatePID := postgres.BackendPID(t, t.Context(), gate)
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		var blocked bool
@@ -104,15 +102,7 @@ func waitForCreateSessionBlockedBySandboxLock(t *testing.T, queueStore *store.St
 }
 
 func TestIdentityNativeCreateRequiresCurrentBindSessionGrant(t *testing.T) {
-	api, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := api.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	api := kubeapiserver.StartForTest(t)
 	owner := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, "native-bind-session-owner", environmentGrantPolicyNamespace)
 	ownerIdentity := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}
 	sandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
@@ -213,15 +203,7 @@ func TestIdentityNativeCreateRequiresCurrentBindSessionGrant(t *testing.T) {
 }
 
 func TestIdentityNativeCreateRechecksTargetAfterSandboxLock(t *testing.T) {
-	api, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := api.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	api := kubeapiserver.StartForTest(t)
 	owner := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, "native-bind-session-lock-owner", environmentGrantPolicyNamespace)
 	ownerIdentity := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}
 	sandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}
@@ -259,15 +241,7 @@ func TestIdentityNativeCreateRechecksTargetAfterSandboxLock(t *testing.T) {
 }
 
 func TestIdentityNativeCreateHidesSandboxDeletedWhileWaitingForLock(t *testing.T) {
-	api, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := api.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	api := kubeapiserver.StartForTest(t)
 	owner := workloadauthtesting.NewIdentityWorkload(t, api, caller.Namespace, "native-bind-session-deleted-owner", environmentGrantPolicyNamespace)
 	identity := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}
 	sandbox := SandboxSnapshot{Name: owner.Sandbox.Name, Namespace: owner.Sandbox.Namespace, UID: string(owner.Sandbox.UID)}

@@ -9,6 +9,16 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 )
 
+// CLEANUP(added 2026-11-20): Add a migration that drops `message.sender_uid` and re-adds the
+//   `message_sender_identity_complete` check without its `sender_uid IS NULL` term, once no deployed or
+//   rollback image reads the column (`Store.Send` in `internal/inbox` was its last reader and stopped in
+//   the commit that added this note).
+
+// CLEANUP(added 2026-11-20): Add a migration that drops `inbox.stale_check_at` once no deployed or rollback
+//   image reads the column (the claim queries in `internal/inbox/claims.go` were its last reader and stopped
+//   in the commit that added this note). Nothing has written it since `ObserveStale` lost its last caller,
+//   so a value left in a row came from an older image.
+
 //go:embed notifications/*.sql
 var scripts embed.FS
 

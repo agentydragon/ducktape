@@ -64,9 +64,6 @@ func (p *Process) start(ctx context.Context, onHandle func(processHandle)) error
 	}
 	p.started = true
 	p.mu.Unlock()
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	handle, err := p.backend.start(ctx)
 	if handle == nil {
 		if err == nil {
@@ -141,9 +138,6 @@ func (p *Process) Write(ctx context.Context, data []byte) error {
 	if closed {
 		return errors.New("native harness stdin is closed")
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	// Writes are serialized; closing the pollable pipe interrupts any pending write.
 	return writeProcessInput(ctx, p, stdin, data)
 }
@@ -183,9 +177,6 @@ func (p *Process) Wait(ctx context.Context) (int, error) {
 	if !started {
 		return 0, errors.New("native harness process was not started")
 	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	if handle != nil {
 		code, err := handle.Wait(ctx)
 		select {
@@ -212,9 +203,6 @@ func (p *Process) Wait(ctx context.Context) (int, error) {
 // The grace period is fixed by ProcessConfig at launch so all backends use the
 // same stop contract and systemd can apply its deadline when the unit is created.
 func (p *Process) Stop(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	p.mu.Lock()
 	started, handle := p.started, p.handle
 	p.mu.Unlock()

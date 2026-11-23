@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/bootstrap"
 	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
@@ -51,19 +52,8 @@ func TestSessionOwnerReconcilesRetainedRecord(t *testing.T) {
 	defer cancel()
 	root := t.TempDir()
 	resources := state.WrapCore(namespaced.NewState(inmem.Build))
-	store, err := retained.NewStore(filepath.Join(root, "sessions"), resources)
-	if err != nil {
-		t.Fatal(err)
-	}
-	record, err := retained.NewRecord(&sessionpb.SessionSpec{
-		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}}, Cwd: root, Model: "test-model",
-	}, "echo interrupted", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Write("retained", record); err != nil {
-		t.Fatal(err)
-	}
+	store := newTestStore(t, root, resources)
+	writeTestRecord(t, store, "retained", sessionpb.Harness_HARNESS_CLAUDE, root, "echo interrupted")
 	failures := make(chan error, 1)
 	m, err := NewManager(withTestSessionFacilities(t, Config{
 		Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root),
@@ -110,19 +100,8 @@ func TestSessionOwnerReportsRecoveryFailure(t *testing.T) {
 	defer cancel()
 	root := t.TempDir()
 	resources := state.WrapCore(namespaced.NewState(inmem.Build))
-	store, err := retained.NewStore(filepath.Join(root, "sessions"), resources)
-	if err != nil {
-		t.Fatal(err)
-	}
-	record, err := retained.NewRecord(&sessionpb.SessionSpec{
-		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}}, Cwd: filepath.Dir(root), Model: "test-model",
-	}, "", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Write("invalid", record); err != nil {
-		t.Fatal(err)
-	}
+	store := newTestStore(t, root, resources)
+	writeTestRecord(t, store, "invalid", sessionpb.Harness_HARNESS_CLAUDE, filepath.Dir(root), "")
 	failures := make(chan error, 1)
 	m, err := NewManager(withTestSessionFacilities(t, Config{
 		Context: ctx, State: resources, Store: store, WorkspaceRoot: root,
@@ -207,19 +186,8 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 	defer cancel()
 	root := t.TempDir()
 	resources := state.WrapCore(namespaced.NewState(inmem.Build))
-	store, err := retained.NewStore(filepath.Join(root, "sessions"), resources)
-	if err != nil {
-		t.Fatal(err)
-	}
-	record, err := retained.NewRecord(&sessionpb.SessionSpec{
-		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}}, Cwd: root, Model: "test-model",
-	}, "echo setup", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Write("one-session", record); err != nil {
-		t.Fatal(err)
-	}
+	store := newTestStore(t, root, resources)
+	writeTestRecord(t, store, "one-session", sessionpb.Harness_HARNESS_CLAUDE, root, "echo setup")
 	publishErrors := make(chan error, 16)
 	var publicationMu sync.Mutex
 	publications := map[string][]sessionpb.SetupState{}
@@ -309,12 +277,7 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 	if len(entries) != 1 || entries[0].GetEvent().GetSetupInterrupted() == nil {
 		t.Fatalf("durable setup recovery not recorded: %v", entries)
 	}
-	freshRecord, err := retained.NewRecord(&sessionpb.SessionSpec{
-		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}}, Cwd: root, Model: "test-model",
-	}, "echo fresh setup", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	freshRecord := newTestRecord(t, sessionpb.Harness_HARNESS_CLAUDE, root, "echo fresh setup")
 	type loadResult struct {
 		session *Session
 		err     error
@@ -351,7 +314,7 @@ func TestSessionManagerLoadsOneOwnerAndPublishesRecovery(t *testing.T) {
 	}
 	waitResult := make(chan error, 1)
 	go func() { waitResult <- fresh.waitSetup(ctx) }()
-	if err := fresh.Emit(ctx, observation(&eventpb.SetupInterrupted{}), nil); err != nil {
+	if err := fresh.Emit(ctx, harness.Observation(&eventpb.SetupInterrupted{}), nil); err != nil {
 		t.Fatal(err)
 	}
 	m.publishSession(fresh, false)
@@ -511,21 +474,9 @@ func newLoadTestManager(t *testing.T, ctx context.Context, ids ...string) *Manag
 	t.Helper()
 	root := t.TempDir()
 	resources := state.WrapCore(namespaced.NewState(inmem.Build))
-	store, err := retained.NewStore(filepath.Join(root, "sessions"), resources)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store := newTestStore(t, root, resources)
 	for _, id := range ids {
-		record, err := retained.NewRecord(&sessionpb.SessionSpec{
-			Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}},
-			Cwd:       root, Model: "test-model",
-		}, "", nil)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := store.Write(id, record); err != nil {
-			t.Fatal(err)
-		}
+		writeTestRecord(t, store, id, sessionpb.Harness_HARNESS_CLAUDE, root, "")
 	}
 	manager, err := NewManager(withTestSessionFacilities(t, Config{
 		Context: ctx, State: resources, Store: store, WorkspaceRoot: filepath.Dir(root),
@@ -566,19 +517,8 @@ func TestReopenRetryKeepsCOSIIngressAcknowledgementAfterJournalReopened(t *testi
 	defer cancel()
 	root := t.TempDir()
 	resources := &failAcknowledgementModifyOnce{State: state.WrapCore(namespaced.NewState(inmem.Build))}
-	store, err := retained.NewStore(filepath.Join(root, "sessions"), resources)
-	if err != nil {
-		t.Fatal(err)
-	}
-	record, err := retained.NewRecord(&sessionpb.SessionSpec{
-		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CLAUDE}}}, Cwd: root, Model: "test-model",
-	}, "echo retained setup", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Write("reopen-session", record); err != nil {
-		t.Fatal(err)
-	}
+	store := newTestStore(t, root, resources)
+	record := writeTestRecord(t, store, "reopen-session", sessionpb.Harness_HARNESS_CLAUDE, root, "echo retained setup")
 	directory, err := store.Directory("reopen-session")
 	if err != nil {
 		t.Fatal(err)
@@ -701,19 +641,8 @@ func TestCodexExitBeforeProcessInstall(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	resources := state.WrapCore(namespaced.NewState(inmem.Build))
-	store, err := retained.NewStore(filepath.Join(root, "sessions"), resources)
-	if err != nil {
-		t.Fatal(err)
-	}
-	record, err := retained.NewRecord(&sessionpb.SessionSpec{
-		Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_EnvironmentHosted{EnvironmentHosted: &sessionpb.EnvironmentHostedPlacement{Environment: &sessionpb.ExactEnvironment{Name: "sandbox", Uid: "sandbox-uid"}, Harness: sessionpb.Harness_HARNESS_CODEX}}}, Cwd: root, Model: "test-model",
-	}, "", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Write("codex-session", record); err != nil {
-		t.Fatal(err)
-	}
+	store := newTestStore(t, root, resources)
+	record := writeTestRecord(t, store, "codex-session", sessionpb.Harness_HARNESS_CODEX, root, "")
 	directory, err := store.Directory("codex-session")
 	if err != nil {
 		t.Fatal(err)

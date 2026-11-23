@@ -1,7 +1,8 @@
 """Codex (OpenAI/ChatGPT) usage provider.
 
-Fetches 5-hour and 7-day utilization from the Codex wham usage API, plus the
-two history endpoints backing the Codex CLI's own `/usage` view.
+Fetches rate-limit window utilization from the Codex wham usage API (each window's
+length is the response's `limit_window_seconds`), plus the two history endpoints
+backing the Codex CLI's own `/usage` view.
 Auth via ~/.codex/auth.json (file-based; Secret Service not available from CLI).
 """
 
@@ -18,6 +19,7 @@ import httpx
 from atomicwrites import atomic_write
 from pydantic import BaseModel, ConfigDict
 
+from aiquota.config import CodexSettings
 from aiquota.models import (
     FetchError,
     FetchSuccess,
@@ -47,11 +49,6 @@ OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 API_TIMEOUT_SECS = 5.0
 TOKEN_REFRESH_INTERVAL = timedelta(days=8)
 TOKEN_EXPIRY_SKEW_SECS = 30
-
-
-class CodexSettings(BaseModel):
-    enabled: bool = True
-    auth_path: Path = Path.home() / ".codex" / "auth.json"
 
 
 class _AuthTokens(BaseModel):

@@ -64,9 +64,6 @@ _MAX_STEPS = 200
 SKILL_BY_ARM: dict[str, SkillSpec] = {"on": INFO_GATHERING_SKILL_SPEC, "off": EMPTY_SKILL_SPEC}
 
 
-# --- Game state ---
-
-
 @dataclass
 class GameContext:
     turn_limit: int
@@ -81,9 +78,6 @@ class GameContext:
     @property
     def finished(self) -> bool:
         return self.turn >= self.turn_limit or self.solved
-
-
-# --- Tools ---
 
 
 def _make_play_turn_tool(
@@ -143,9 +137,6 @@ def _make_play_turn_tool(
     )
 
 
-# --- Middleware ---
-
-
 class _TokenUsageTracker(ChatMiddleware):
     """Aggregate token usage (incl. Anthropic prompt-cache reads/creations)
     that AF doesn't carry on individual `Message` objects."""
@@ -166,9 +157,6 @@ class _TokenUsageTracker(ChatMiddleware):
             # TypedDict, so `.get()` is typed `object | None`; cast for the sum.
             self._game.total_cache_read_tokens += cast(int, usage.get("anthropic.cache_read_input_tokens") or 0)
             self._game.total_cache_creation_tokens += cast(int, usage.get("anthropic.cache_creation_input_tokens") or 0)
-
-
-# --- Main ---
 
 
 _NO_HINT = "The function class is unknown. You must discover its structure from queries alone."

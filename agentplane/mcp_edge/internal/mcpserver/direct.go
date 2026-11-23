@@ -165,8 +165,14 @@ func (t *tools) directTool(group *pb.ActionGroup, action *pb.Action) *mcp.Tool {
 		title = action.GetTitle()
 	}
 	var schema any = map[string]any{"type": "object"}
-	if len(action.GetInputSchema().GetFields()) > 0 {
+	notEnforced := action.GetInputSchemaValidation().GetStatus() == pb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED
+	if !notEnforced && len(action.GetInputSchema().GetFields()) > 0 {
 		schema = action.GetInputSchema()
+	}
+	description := action.GetDescription()
+	if notEnforced {
+		description += "\n\nWarning: Agentplane does not validate arguments against this tool's input schema. " +
+			action.GetInputSchemaValidation().GetDetail() + " Read the original schema with get_action."
 	}
 	var annotations *mcp.ToolAnnotations
 	if hints := action.GetAnnotations(); hints != nil {
@@ -180,7 +186,7 @@ func (t *tools) directTool(group *pb.ActionGroup, action *pb.Action) *mcp.Tool {
 	return &mcp.Tool{
 		Name:  group.GetKey() + directSeparator + action.GetName(),
 		Title: group.GetTitle() + ": " + title,
-		Description: action.GetDescription() + "\n\nRuns as an Agentplane Action under your policy: a call it does not " +
+		Description: description + "\n\nRuns as an Agentplane Action under your policy: a call it does not " +
 			"approve automatically is refused without running, and one still running after " +
 			seconds(t.directWaitSeconds) + "s answers with a request id to wait on with get_action_result.",
 		InputSchema: schema,

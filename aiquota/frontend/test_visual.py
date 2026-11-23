@@ -13,10 +13,9 @@ from playwright.async_api import expect
 from python.runfiles import Runfiles
 
 from aiquota.testing.quota_fixtures import meter_quota_view
-from util.testing.frontend_visual.capture import VisualHarness, VisualPage
-from util.testing.frontend_visual.viewports import Viewport
+from testing.frontend_visual.capture import VisualHarness, VisualPage
+from testing.frontend_visual.viewports import Viewport
 
-pytest_plugins = ("util.testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 _FIXTURES = json.loads((Runfiles.CreateOrRaise().root() / os.environ["FIXTURE_CATALOG"]).read_bytes())
@@ -50,7 +49,13 @@ async def view(
     ]
     + [
         pytest.param(scene, "dark", _NARROW_VIEWPORT, id=f"{scene}-dark-narrow")
-        for scene in ("hot", "paid_credits", "observed_account_2026_11_04", "banked_resets_ordinary")
+        for scene in (
+            "hot",
+            "paid_credits",
+            "observed_account_2026_11_04",
+            "banked_resets_ordinary",
+            "multi_account_live_shape",
+        )
     ],
 )
 async def test_dashboard(view: VisualPage) -> None:
@@ -118,7 +123,7 @@ async def test_peak_burn_identifies_affected_models(view: VisualPage) -> None:
 async def test_openai_platform_credits(view: VisualPage) -> None:
     card = view.page.locator('.aiquota-card[aria-label="OpenAI API quota"]')
     await expect(card.get_by_role("heading", name="OpenAI API")).to_be_visible()
-    await expect(card.get_by_text("Available balance", exact=True)).to_be_visible()
+    await expect(card.get_by_text("Balance", exact=True)).to_be_visible()
     await expect(card.get_by_text("$126", exact=True)).to_be_visible()
     await expect(card.get_by_text("$100 remaining", exact=True)).to_be_visible()
     await expect(card.get_by_text("$26 remaining", exact=True)).to_be_visible()
@@ -135,7 +140,7 @@ async def test_openai_platform_credits(view: VisualPage) -> None:
 async def test_claude_prepaid_balance_states(view: VisualPage, expected_balance: str) -> None:
     card = view.page.locator('.aiquota-card[aria-label="Claude quota"]')
     await expect(card.get_by_role("heading", name="Claude")).to_be_visible()
-    await expect(card.get_by_text("Available balance", exact=True)).to_be_visible()
+    await expect(card.get_by_text("Balance", exact=True)).to_be_visible()
     await expect(card.get_by_text(expected_balance, exact=True)).to_be_visible()
 
 
@@ -182,7 +187,7 @@ async def test_active_extra_usage_is_inline_with_monthly_spend(view: VisualPage)
 @pytest.mark.parametrize(("color_scheme", "viewport"), _DESKTOP_THEME_VIEWPORTS)
 async def test_paid_credits_status_is_not_repeated(view: VisualPage) -> None:
     card = view.page.locator('.aiquota-card[aria-label="Codex quota"]')
-    await expect(card.get_by_text("Paid credits", exact=True)).to_be_visible()
+    await expect(card.get_by_text("2,746 credits", exact=True)).to_be_visible()
     await expect(card.locator(".aiquota-window")).to_have_count(2)
     await expect(card.locator(".aiquota-status-row")).to_have_count(0)
     await expect(card.get_by_text("paid credits available", exact=False)).to_have_count(0)
@@ -230,8 +235,8 @@ async def test_platform_credits_with_subscription_resets(view: VisualPage) -> No
     openai = view.page.locator('.aiquota-card[aria-label="OpenAI API quota"]')
     await expect(openai.get_by_role("heading", name="OpenAI API")).to_be_visible()
     await expect(openai.get_by_text("$60", exact=True)).to_be_visible()
-    anthropic = view.page.locator('.aiquota-card[aria-label="Anthropic API quota"]')
-    await expect(anthropic.get_by_text("Shared org", exact=True)).to_be_visible()
+    anthropic = view.page.locator('.aiquota-card[aria-label="Anthropic API · Shared org quota"]')
+    await expect(anthropic.get_by_role("heading", name="Anthropic API · Shared org")).to_be_visible()
     await expect(anthropic.get_by_text("$75", exact=True)).to_be_visible()
     await expect(anthropic.get_by_text("$25 remaining", exact=True)).to_be_visible()
 
@@ -258,7 +263,7 @@ async def test_stale_observation(view: VisualPage) -> None:
 async def test_observed_account_expiries_and_promo_details(view: VisualPage) -> None:
     await expect(view.page.locator(".aiquota-window")).to_have_count(2)
     await expect(view.page.get_by_text("Grant details", exact=True)).to_have_count(5)
-    card = view.page.locator('.aiquota-card[aria-label="Anthropic API quota"]')
+    card = view.page.locator('.aiquota-card[aria-label^="Anthropic API · "]')
     await expect(card.get_by_text("Expires Nov 25", exact=True)).to_be_visible()
     await expect(card.get_by_text("Expires Jul 1, 2027", exact=True)).to_be_visible()
     openai = view.page.locator('.aiquota-card[aria-label="OpenAI API quota"]')
@@ -334,7 +339,7 @@ async def test_live_subscription(visual: VisualHarness) -> None:
             _FIXTURES["paid_credits"],
         )
         await expect(page.locator(".aiquota-notice")).to_have_count(0)
-        await expect(page.get_by_text("Paid credits", exact=True).first).to_be_visible()
+        await expect(page.get_by_text("2,746 credits", exact=True).first).to_be_visible()
         await view.capture("live-recovered", target=page.locator("#app"))
         await page.get_by_role("button", name="Reconnect").click()
         await expect(page.get_by_role("button", name="Reconnect")).to_be_disabled()

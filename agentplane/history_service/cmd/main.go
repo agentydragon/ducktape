@@ -27,13 +27,11 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/rpc"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth/listener"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/resolver"
 	"github.com/agentydragon/ducktape/agentplane/kubeclient"
 	netlistener "github.com/agentydragon/ducktape/agentplane/net/listener"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/observability"
-	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/postgres"
 	"github.com/agentydragon/ducktape/agentplane/postgres/migrate"
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
@@ -41,9 +39,7 @@ import (
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/keepalive"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -63,23 +59,6 @@ func kubernetesConfig(c config) (*rest.Config, error) {
 	// Subject records are read live for each request; don't queue them behind client-go's small default burst.
 	kubeConfig.QPS = -1
 	return kubeConfig, nil
-}
-
-// kubernetesIdentityUIDs reads the policy namespace's Identities uncached, for delegated Identity callers.
-func kubernetesIdentityUIDs(c config) (auth.IdentityUIDReader, error) {
-	kubeConfig, err := kubernetesConfig(c)
-	if err != nil {
-		return nil, err
-	}
-	scheme := runtime.NewScheme()
-	if err := policyapi.AddToScheme(scheme); err != nil {
-		return nil, err
-	}
-	objects, err := client.New(kubeConfig, client.Options{Scheme: scheme})
-	if err != nil {
-		return nil, err
-	}
-	return auth.KubernetesIdentityUIDs(objects, c.PolicyNamespace)
 }
 
 // readOnly is the database URL with sessions that refuse writes, so the read API cannot write.
@@ -120,17 +99,14 @@ func run(ctx context.Context, c config) error {
 
 // serve answers the read API and journal ingress on one native gRPC listener until ctx ends.
 func serve(ctx context.Context, c config, rpcListener net.Listener) error {
-	var svids *auth.SVIDResolver
-	if c.RPC.Has(listener.SPIFFE) {
-		base, err := kubernetesConfig(c)
-		if err != nil {
-			return err
-		}
-		svids, err = auth.NewKubernetesSVIDResolver(base, c.Ingress.WriterNamespaces,
-			&resolver.Identities{PolicyNamespace: c.PolicyNamespace})
-		if err != nil {
-			return err
-		}
+	base, err := kubernetesConfig(c)
+	if err != nil {
+		return err
+	}
+	svids, err := auth.NewKubernetesSVIDResolver(base, c.Ingress.WriterNamespaces,
+		&resolver.Identities{PolicyNamespace: c.PolicyNamespace})
+	if err != nil {
+		return err
 	}
 	// Schema initialization precedes the runtime pools; the read API's pool never writes.
 	readURL, err := readOnly(c.DatabaseURL)
@@ -170,7 +146,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	historyMethods := rpc.Methods(svids)
 	var identityReader auth.IdentityUIDReader
 	if c.ServiceDelegation != nil || c.Ingress.SamplerServiceActor != "" {
-		if identityReader, err = kubernetesIdentityUIDs(c); err != nil {
+		if identityReader, err = auth.NewKubernetesIdentityUIDs(base, c.PolicyNamespace); err != nil {
 			return err
 		}
 	}
@@ -210,9 +186,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	if err != nil {
 		return err
 	}
-	if security != nil {
-		options = append(options, grpc.Creds(security))
-	}
+	options = append(options, grpc.Creds(security))
 	server := grpc.NewServer(options...)
 	historypb.RegisterHistoryServiceServer(server, service)
 	healthServer := health.NewServer()

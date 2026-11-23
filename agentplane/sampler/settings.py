@@ -57,16 +57,6 @@ class AuthConfig(BaseModel):
             raise ValueError("credential must not be empty")
         return self
 
-    def read_credential(self) -> str:
-        if self.credential is not None:
-            return self.credential.get_secret_value()
-        if self.credential_file is None:
-            raise ValueError("configure exactly one of credential and credential_file")
-        credential = self.credential_file.read_text().strip()
-        if not credential:
-            raise ValueError("provider credential file is empty")
-        return credential
-
 
 class ConnectionConfig(BaseModel):
     tls: ClientTLS | None = None
@@ -190,14 +180,34 @@ class AnthropicMessagesConfig(BaseModel):
         return self
 
 
+class ChatCompactionReplacement(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["assistant", "user"]
+    template: str = Field(min_length=1)
+
+
+class ChatCompactionConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    max_tokens: int = Field(gt=0)
+    keep_recent_turns: int = Field(gt=0)
+    auto_compact_tokens: int | None = Field(default=None, gt=0)
+
+    summary_prompt_template: str | None = None
+    replacement: ChatCompactionReplacement | None = None
+
+
 class ModelConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     connection: str
     provider_model: str
-    api: Literal["responses", "anthropic_messages"]
+    response_header_timeout_seconds: int | None = Field(default=None, gt=0, le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS)
+    api: Literal["responses", "anthropic_messages", "chat_completions"]
     responses: ResponsesConfig | None = None
     anthropic_messages: AnthropicMessagesConfig | None = None
+    chat_compaction: ChatCompactionConfig | None = None
     exec_encoding: Literal["freeform", "json"]
     reasoning_efforts: set[str] = Field(min_length=1)
 
@@ -211,12 +221,14 @@ class ModelConfig(BaseModel):
             raise ValueError("model connection must not be empty")
         if self.provider_model == "":
             raise ValueError("model provider_model must not be empty")
+        if self.chat_compaction is not None and self.api != "chat_completions":
+            raise ValueError("chat_compaction requires the chat_completions API")
         if self.api == "responses":
             if self.responses is None:
                 raise ValueError("responses settings are required for the responses API")
             if self.anthropic_messages is not None:
                 raise ValueError("anthropic_messages settings are only valid for the anthropic_messages API")
-        else:
+        elif self.api == "anthropic_messages":
             if self.responses is not None:
                 raise ValueError("responses settings are only valid for the responses API")
             if self.exec_encoding != "json":
@@ -226,6 +238,11 @@ class ModelConfig(BaseModel):
             unsupported_efforts = self.reasoning_efforts - {"low", "medium", "high", "xhigh", "max"}
             if unsupported_efforts:
                 raise ValueError(f"unsupported Anthropic reasoning efforts: {sorted(unsupported_efforts)}")
+        else:
+            if self.responses is not None or self.anthropic_messages is not None:
+                raise ValueError("Chat Completions cannot set options for another API")
+            if self.exec_encoding != "json":
+                raise ValueError("chat_completions requires exec_encoding json")
         return self
 
 
@@ -285,6 +302,30 @@ class Settings(BaseModel):
         le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
         description="Time allowed between durable semantic provider events after response headers.",
     )
+    provider_progress_lease_coalescing_seconds: int | None = Field(
+        default=None,
+        gt=0,
+        le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
+        description="Round progress lease expiry up to this interval; defaults to 30 seconds.",
+    )
+    provider_retry_initial_backoff_seconds: int | None = Field(
+        default=None,
+        gt=0,
+        le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
+        description="Initial delay for a transient provider failure; defaults to one second.",
+    )
+    provider_retry_max_backoff_seconds: int | None = Field(
+        default=None,
+        gt=0,
+        le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
+        description="Maximum provider retry delay, including Retry-After; defaults to 30 seconds.",
+    )
+    provider_attempt_budget: int | None = Field(
+        default=None,
+        ge=1,
+        le=16,
+        description="Maximum attempts per new provider step, including the first; defaults to 3.",
+    )
     turn_timeout_seconds: int | None = Field(
         default=None,
         gt=0,
@@ -343,6 +384,15 @@ class Settings(BaseModel):
             raise ValueError("code-mode observation and RPC budgets must fit together in time.Duration")
         return self
 
+    @model_validator(mode="after")
+    def provider_attempt_budgets_fit(self) -> Self:
+        if (self.provider_retry_initial_backoff_seconds or 1) > (self.provider_retry_max_backoff_seconds or 30):
+            raise ValueError("provider retry initial backoff must fit within maximum backoff")
+        progress = (self.provider_idle_timeout_seconds or 600) + 2 * self.rpc_timeout_seconds
+        if progress + (self.provider_progress_lease_coalescing_seconds or 30) > MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS:
+            raise ValueError("rounded provider progress lease must fit in time.Duration")
+        return self
+
     @field_validator("platform_instructions")
     @classmethod
     def nonempty_platform_instructions(cls, value: str | None) -> str | None:
@@ -359,26 +409,28 @@ class Settings(BaseModel):
         if any(not name for name in self.connections):
             raise ValueError("connection name must not be empty")
         for model, config in self.models.items():
+            header = config.response_header_timeout_seconds
+            if (
+                header is not None
+                and header + (self.provider_idle_timeout_seconds or 600) + 3 * self.rpc_timeout_seconds
+                > MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS
+            ):
+                raise ValueError("model response-header, idle, and RPC budgets must fit together in time.Duration")
             if not model:
                 raise ValueError("model route must not be empty")
             connection = self.connections.get(config.connection)
             if connection is None:
                 raise ValueError(f"model {model} references unknown connection {config.connection}")
-            expected_auth = {"bearer", "agentplane_ingress"} if config.api == "responses" else {"anthropic_api_key"}
+            expected_auth = (
+                {"bearer", "agentplane_ingress"}
+                if config.api in {"responses", "chat_completions"}
+                else {"anthropic_api_key"}
+            )
             if connection.auth.type not in expected_auth:
                 raise ValueError(
                     f"model {model} {config.api} API requires {' or '.join(sorted(expected_auth))} connection auth"
                 )
         return self
-
-    def connection(self, model: str) -> ConnectionConfig:
-        config = self.models.get(model)
-        if config is None:
-            raise ValueError(f"unknown model {model}")
-        connection = self.connections.get(config.connection)
-        if connection is None:
-            raise ValueError(f"model {model} references unknown connection {config.connection}")
-        return connection
 
     @model_validator(mode="after")
     def exactly_one_execution_target(self) -> Self:

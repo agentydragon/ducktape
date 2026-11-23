@@ -1,17 +1,10 @@
 """Exercise the gateway probe's alert expressions with upstream promtool."""
 
-import subprocess
-from pathlib import Path
-
-import yaml
-from cdk8s import (
-    App,
-    Testing as Cdk8sTesting,  # pytest auto-collects classes named Test*
-)
+from cdk8s import App
 from more_itertools import one
-from python.runfiles import Runfiles
 
 from cluster.cdk8s.monitoring import gateway_probe
+from cluster.cdk8s.testing.promtool import PromtoolRules
 from cluster.scripts.nebula_mesh import Host, Mesh
 
 # testdata/gateway_probe_rules.yaml writes its series for these node names.
@@ -29,15 +22,12 @@ _MESH = Mesh(
 )
 
 
-def test_gateway_probe_rules(runfiles: Runfiles, promtool: Path, scratch_app: App, tmp_path: Path) -> None:
+def test_gateway_probe_rules(promtool: PromtoolRules, scratch_app: App) -> None:
     manifest = one(
         manifest
-        for manifest in Cdk8sTesting.synth(gateway_probe.chart(scratch_app, _MESH))
+        for manifest in gateway_probe.chart(scratch_app, _MESH).to_json()
         if manifest["kind"] == "PrometheusRule"
     )
-    (tmp_path / "gateway-probe.yaml").write_text(yaml.safe_dump(manifest["spec"]))
-    runfiles_root = runfiles.root()
-    (tmp_path / "tests.yaml").write_text(
-        (runfiles_root / "ducktape/cluster/cdk8s/monitoring/testdata/gateway_probe_rules.yaml").read_text()
+    promtool(
+        "ducktape/cluster/cdk8s/monitoring/testdata/gateway_probe_rules.yaml", {"gateway-probe.yaml": manifest["spec"]}
     )
-    subprocess.run([promtool, "test", "rules", "tests.yaml"], cwd=tmp_path, check=True)

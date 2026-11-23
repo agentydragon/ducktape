@@ -151,18 +151,17 @@ impl<'m> ChunkResolver<'m> {
     /// Indices into `var_declarator_subjects` a single-declarator needle could
     /// match — the intersection of every required token posting, or all
     /// declarators when the needle pins no candidate constraint. Mirrors
-    /// [`Self::candidate_bodies`]
-    /// for the declarator scan. `mode` / `allow_exact_ident` gate the exact-mode
-    /// identifier discriminator (see [`selector_match::needle_required_tokens`]).
+    /// [`Self::candidate_bodies`] for the declarator scan, which never has a
+    /// prebind: an exact-mode needle (`mode`) requires its identifier spellings
+    /// (see [`selector_match::needle_required_tokens`]).
     fn candidate_declarators(
         &self,
         needle_index: &selector_match::Index,
         mode: selector_match::Mode,
-        allow_exact_ident: bool,
     ) -> Vec<usize> {
         intersect_candidate_postings(
             &self.declarator_tokens,
-            &selector_match::needle_required_tokens(needle_index, mode, allow_exact_ident),
+            &selector_match::needle_required_tokens(needle_index, mode, true),
             self.var_declarator_subjects.len(),
         )
     }
@@ -245,8 +244,7 @@ fn matching_body_indices(
     // tokens (a sound superset); the root-kind prefilter and full match then
     // filter. This path matches without a prebind, so an exact-mode needle may also
     // require its identifier spellings (`allow_exact_ident = true`). A non-extractable
-    // statement projects to empty facts (no root, no tokens) and so matches nothing —
-    // the same outcome as the old skip.
+    // statement projects to empty facts (no root, no tokens) and so matches nothing.
     for body_idx in chunk.candidate_bodies(&needle_index, mode, true) {
         if let Some(kind) = prefilter
             && chunk.body_root_kinds[body_idx] != Some(kind)
@@ -355,7 +353,7 @@ fn member_matches_var_declarator(
     // cannot match, before the full match.
     let init_prefilter = selector_match::needle_var_declarator_init_kind_prefilter(&needle_facts);
     let mut matches: Vec<MemberBindingMatch> = Vec::new();
-    for subject_idx in chunk.candidate_declarators(&needle_index, mode, true) {
+    for subject_idx in chunk.candidate_declarators(&needle_index, mode) {
         let subject = &chunk.var_declarator_subjects[subject_idx];
         if let Some(kind) = init_prefilter
             && subject.init_kind != Some(kind)
@@ -779,7 +777,7 @@ fn group_matches_single_declarator(
     let mut matches: Vec<MemberBindingGroupMatch> = Vec::new();
     // No prebind (the declarator match is un-prebound); an exact-mode needle may
     // require its identifier spellings.
-    for subject_idx in chunk.candidate_declarators(&needle_index, mode, true) {
+    for subject_idx in chunk.candidate_declarators(&needle_index, mode) {
         let subject = &chunk.var_declarator_subjects[subject_idx];
         if let Some(kind) = init_prefilter
             && subject.init_kind != Some(kind)

@@ -2,6 +2,11 @@
 
 Connects to Hetzner's WebSocket-based VNC console and captures a screenshot.
 
+Replacing `WebSocketStreamAdapter` with an off-the-shelf VNC MCP server would need a WebSocket-to-TCP
+proxy (e.g. unwebsockify) that offers the `binary` subprotocol requested in `vnc_screenshot()`: none
+of the servers checked in 2026-07 (signal-slot/mcp-vnc, hrrrsn/mcp-vnc, volkan-m/vnc-mcp-server,
+mcvnc) speaks WebSocket.
+
 Usage:
     # With server name (requires HCLOUD_TOKEN env var):
     ./vnc_screenshot.py my-server-name -v

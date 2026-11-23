@@ -25,15 +25,12 @@ ts_config(
     src = "tsconfig.json",
 )
 
-# -- Frontend bundle -----------------------------------------------------------
 #
 # Generic augur React app + its tailwind-driven stylesheet. `:bundle_base`
 # contains everything nginx needs to serve the app; `:image` packages it on
 # top of `nginx_unprivileged`. Deployments that need extra static assets
 # (e.g. gaffer-private's property photos) can overlay `:image` or mount
 # additional files at runtime via a volume.
-
-# -- Pure JS helpers (no React) -------------------------------------------------
 
 ts_library(
     name = "input_helpers",
@@ -42,7 +39,6 @@ ts_library(
     deps = [
         ":client",
         "//finance/augur/frontend/lib:format",
-        "//finance/augur/frontend/lib:frame",
     ],
 )
 
@@ -103,7 +99,6 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":data_helpers",
-        ":header",
         ":rollout_event_vocabulary",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -125,8 +120,6 @@ ts_library(
     srcs = ["url_state.ts"],
     tsconfig = TSCONFIG,
 )
-
-# -- React components -----------------------------------------------------------
 
 ts_library(
     name = "header",
@@ -162,7 +155,6 @@ ts_library(
         ":scenario_tabs",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//finance/augur/frontend/lib:chart",
         "//finance/augur/frontend/lib:format",
     ],
 )
@@ -174,7 +166,6 @@ ts_library(
     deps = [
         ":data_helpers",
         ":hooks",
-        ":input_helpers",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//finance/augur/frontend/lib:chart",
@@ -188,11 +179,11 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":data_helpers",
-        ":hooks",
         ":input_helpers",
         "//:node_modules/@types/react",
         "//:node_modules/react",
         "//finance/augur/frontend/lib:chart",
+        "//finance/augur/frontend/lib:format",
         "//finance/augur/frontend/lib:frame",
     ],
 )
@@ -203,11 +194,9 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":data_helpers",
-        ":hooks",
         ":input_helpers",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//finance/augur/frontend/lib:chart",
         "//finance/augur/frontend/lib:format",
     ],
 )
@@ -227,6 +216,7 @@ ts_library(
     srcs = ["scenario_editor.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":forms",
         ":input_helpers",
         "//:node_modules/@mantine/core",
@@ -244,12 +234,10 @@ ts_library(
     deps = [
         ":client",
         ":data_helpers",
-        ":header",
         ":input_helpers",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//finance/augur/frontend/lib:chart",
         "//finance/augur/frontend/lib:controls",
         "//finance/augur/frontend/lib:format",
     ],
@@ -318,6 +306,7 @@ ts_library(
         ":skeleton",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//finance/augur/frontend/lib:errors",
         "//finance/augur/frontend/lib:toast",
     ],
 )
@@ -346,6 +335,7 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/decimal.js",
         "//:node_modules/react",
+        "//finance/augur/frontend/lib:errors",
         "//finance/augur/frontend/lib:format",
         "//finance/augur/frontend/lib:toast",
     ],
@@ -373,7 +363,7 @@ ts_library(
         "//:node_modules/@tanstack/react-query",
         "//:node_modules/@types/react",
         "//:node_modules/react",
-        "//finance/augur/frontend/lib:chart",
+        "//finance/augur/frontend/lib:errors",
         "//finance/augur/frontend/lib:format",
         "//finance/augur/frontend/lib:frame",
         "//finance/augur/frontend/lib:toast",
@@ -389,7 +379,6 @@ ts_library(
         ":calibration",
         ":client",
         ":header",
-        ":hooks",
         ":input_helpers",
         ":product",
         ":skeleton",
@@ -399,10 +388,9 @@ ts_library(
         "//:node_modules/@tanstack/react-query",
         "//:node_modules/@types/react",
         "//:node_modules/react",
+        "//finance/augur/frontend/lib:errors",
     ],
 )
-
-# -- Bundle entry point ---------------------------------------------------------
 
 ts_library(
     name = "main_lib",
@@ -432,8 +420,8 @@ esbuild(
 )
 
 # Tailwind v4 scans `@source`-declared files for class names. We concatenate
-# every .jsx/.js source whose classes we want to keep into a single text file
-# the stylesheet references.
+# every .ts/.tsx source and `index.html` whose classes we want to keep into a
+# single text file the stylesheet references.
 filegroup(
     name = "tailwind_content_srcs",
     srcs = [
@@ -526,7 +514,6 @@ filegroup(
     ],
 )
 
-# -- OCI image -----------------------------------------------------------------
 #
 # Static-assets sidecar: `nginx_unprivileged` serving the React bundle from
 # `/usr/share/nginx/html`. The nginx config itself is mounted into the pod
@@ -589,8 +576,6 @@ diff_test(
     file1 = "frontend_layout.golden.txt",
     file2 = ":frontend_layout_listing",
 )
-
-# -- Type-check + unit tests ----------------------------------------------------
 
 # Type-aware ESLint (no-floating-promises, no-misused-promises, await-thenable).
 # Runs as a whole-program test, not via the per-file lint-gate aspect: type-aware

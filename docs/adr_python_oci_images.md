@@ -28,7 +28,7 @@ image, which `distroless/cc-debian12` does not provide.
 
 All Python OCI images use:
 
-- **Base image:** `@debian_slim_linux_amd64` (`docker.io/library/debian` bookworm-slim)
+- **Base image:** `@debian_trixie_slim_linux_amd64` (`mirror.gcr.io/library/debian` trixie-slim; bookworm-slim when this was accepted)
 - **Layering:** `py_image_layer` from `@aspect_rules_py`
 - **Entrypoint/env:** `py_image_entrypoint()` and `py_image_env()` helpers from `//devinfra/oci:py_image.bzl`
 

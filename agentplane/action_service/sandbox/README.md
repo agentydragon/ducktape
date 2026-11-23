@@ -34,7 +34,7 @@ it, so a call lasting minutes is ordinary rather than an attempt the sweep recla
 ## Separation from the integration app
 
 **Its own label and selector.** Not `agentplane.allegedly.works/managed`, which identifies Session
-Sandboxes that carry runners (<../../environments/internal/service/internal/management/access.go>). A
+Sandboxes that carry runners (<../../environments/internal/service/management/access.go>). A
 box carrying it would join the fleet view, which then looks for a runner the box does not have.
 
 **Owned through its credential.** Each box's Pod is owned by its `WorkloadCredential`. The record is

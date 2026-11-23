@@ -12,17 +12,78 @@ import (
 
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/projection"
+	historytesting "github.com/agentydragon/ducktape/agentplane/history_service/testing"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/sampler/api/samplerpb"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/sampler/providers/chatcompletions"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 	"github.com/agentydragon/ducktape/agentplane/sampler/testing/exportfixture"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestChatCompletionsReasoningProjectsToHistory(t *testing.T) {
+	fixture := newSamplerExportFixture(t, newSamplerExportPlan(0, 0, false))
+	session := fixture.openSessionWithAPI(t, &identitypb.Identity{
+		Name: fixture.identity.Identity.Name, Uid: string(fixture.identity.Identity.UID),
+	}, protocol.APIStyleChatCompletions)
+	scenario, err := fixture.source.StartRecoveryScenario(t.Context(), session, "reasoning-turn")
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent, evidence, err := scenario.BeginSampling(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"id\":\"chat\",\"choices\":[{\"delta\":{\"reasoning_content\":\"thinking\"}}]}\n\n"+
+			"data: {\"id\":\"chat\",\"choices\":[{\"delta\":{\"content\":\"answer\"},\"finish_reason\":\"stop\"}]}\n\n"+
+			"data: [DONE]\n\n")
+	}))
+	defer server.Close()
+	result, err := chatcompletions.Sample(t.Context(), server.Client(), server.URL, "", []byte(`{}`), evidence, nil, false, protocol.ProviderHooks{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := scenario.FinishSampling(t.Context(), intent, result.Audit, []json.RawMessage{result.Record}, result.ContextTokens); err != nil {
+		t.Fatal(err)
+	}
+	cursor, err := fixture.source.Outbox().CurrentCursor(t.Context(), session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := scenario.Release(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	exportSamplerHistoryThrough(t, fixture, session, cursor)
+	projected := projectSamplerHistory(t, fixture, session, cursor)
+	for id, want := range map[string]struct {
+		kind eventpb.ItemKind
+		text string
+	}{"chat#reasoning": {eventpb.ItemKind_ITEM_KIND_REASONING, "thinking"}, "chat": {eventpb.ItemKind_ITEM_KIND_ASSISTANT_TEXT, "answer"}} {
+		item := projected.items[id]
+		if item == nil || item.GetKind() != want.kind || item.GetText() == nil || item.GetTextRef() == nil {
+			t.Fatalf("projected item %q: %v", id, item)
+		}
+		ref := item.GetTextRef()
+		var encoded []byte
+		if err := fixture.historyDB.QueryRowContext(t.Context(), `SELECT text FROM thread_payload_chunk
+			WHERE thread_id = $1 AND projection_epoch = $2 AND owner_cursor = $3 AND owner_id = $4
+			AND field = 'text' AND generation = $5 AND chunk_index = 0`,
+			uuid.MustParse(session), ref.GetProjectionEpoch(), ref.GetOwnerCursor(), ref.GetOwnerId(), ref.GetGeneration()).Scan(&encoded); err != nil {
+			t.Fatal(err)
+		}
+		var text string
+		if err := json.Unmarshal(encoded, &text); err != nil || text != want.text {
+			t.Fatalf("projected text for %q = %q, error %v", id, text, err)
+		}
+	}
+}
 
 func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testing.T) {
 	apis := []protocol.APIStyle{protocol.APIStyleResponses, protocol.APIStyleAnthropicMessages}
@@ -54,7 +115,7 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err := priorEvidence.Record(t.Context(), protocol.WireBytes{Bytes: []byte("unrelated")},
+				if err := priorEvidence.Record(t.Context(), protocol.WireBytes{Bytes: []byte("unrelated")}, false,
 					&eventpb.Event{Observation: &eventpb.Event_ItemStarted{ItemStarted: &eventpb.ItemStarted{
 						ItemId: "unrelated", Kind: eventpb.ItemKind_ITEM_KIND_REASONING,
 					}}}); err != nil {
@@ -86,7 +147,7 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 				if api == protocol.APIStyleResponses && cut == "before_terminal" {
 					// More than one reverse page must be read before reaching the item evidence.
 					for range 130 {
-						if err := evidence.Record(t.Context(), protocol.WireBytes{Bytes: []byte("tail")}); err != nil {
+						if err := evidence.Record(t.Context(), protocol.WireBytes{Bytes: []byte("tail")}, false); err != nil {
 							t.Fatal(err)
 						}
 					}
@@ -167,7 +228,7 @@ func TestSamplerRecoveryProjectsRetainedPriorToolAndOnlyAbandonedItems(t *testin
 						t.Fatalf("recovery changed earlier context record %d", index)
 					}
 				}
-				if err := evidence.Record(t.Context(), protocol.WireBytes{Bytes: []byte("late")}); !exportfixture.LostOwnership(err) {
+				if err := evidence.Record(t.Context(), protocol.WireBytes{Bytes: []byte("late")}, false); !exportfixture.LostOwnership(err) {
 					t.Fatalf("late provider evidence was not fenced: %v", err)
 				}
 				if err := scenario.Release(t.Context()); err != nil {
@@ -369,31 +430,7 @@ func samplerHistoryPayload(t *testing.T, fixture samplerExportFixture, sessionID
 	if err != nil {
 		t.Fatal(err)
 	}
-	rows, err := fixture.historyDB.QueryContext(t.Context(), `SELECT text FROM thread_payload_chunk
-		WHERE thread_id = $1 AND projection_epoch = $2 AND owner_cursor = $3 AND owner_id = $4
-		AND field = 'output' AND generation = $5 AND chunk_index < $6 ORDER BY chunk_index`,
-		threadID, reference.GetProjectionEpoch(), reference.GetOwnerCursor(), reference.GetOwnerId(),
-		reference.GetGeneration(), reference.GetChunkCount())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	var body strings.Builder
-	for rows.Next() {
-		var encoded []byte
-		var chunk string
-		if err := rows.Scan(&encoded); err != nil {
-			t.Fatal(err)
-		}
-		if err := json.Unmarshal(encoded, &chunk); err != nil {
-			t.Fatal(err)
-		}
-		body.WriteString(chunk)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	return body.String()
+	return historytesting.PayloadText(t, fixture.historyDB, threadID, reference, "output")
 }
 
 func TestFailedActiveInputProjectsSeparatelyFromItsTurnAndQueuedInput(t *testing.T) {

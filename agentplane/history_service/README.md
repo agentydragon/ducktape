@@ -23,7 +23,7 @@ Managed Pod, VM and Firecracker CLI environments set `AGENTPLANE_HISTORY_URL` to
 platform gRPC listener, `http://<local gateway>:3130`. The listener routes History RPCs through an
 mTLS CONNECT to the History Service; the sidecar presents the Sandbox workload SVID, and this
 service scopes the read to the Identity name and UID in that credential. No projected History token
-or `reader_accounts` grant is needed for this path.
+or `reader_service_callers` grant is needed for this path.
 
 The service binary embeds Goose migrations and applies them during normal startup before serving
 or starting the fold. `history-service --migrate-only` initializes fixture databases using the same
@@ -36,8 +36,8 @@ this setting from the same required settings file.
 
 Runners keep their harnesses running and every journal entry on their state volume, and push the
 backlog once the ingress answers again; nothing is lost while the History Service is away, only
-late. Sender-facing commands remain in the Session Dispatcher and reach runners through the Gateway's
-runner proxy; the Runner Gateway does not call this service.
+late. Sender-facing commands remain in the Session Dispatcher and reach runners through the Environments
+Runtime proxy; no Sessions or Environments binary calls this service.
 
 During shutdown the fold stops and hands back its leases while existing ingress calls drain. Entries
 already acknowledged remain committed in raw history, and a restarted fold projects any remaining
@@ -106,8 +106,7 @@ Each request chooses exactly one start:
 
 An empty `kinds` filter sends every observation. `EventKind` numbers match the fields of the runner's
 `Event.observation` oneof. Ingest stores that number in `session_event.kind` (zero for no known
-observation); `(session_id, kind, cursor)` indexes filtered reads and back starts. The separate kind
-backfill migration must deploy only after every History replica writes the column.
+observation); `(session_id, kind, cursor)` indexes filtered reads and back starts.
 
 `entries` and `caught_up` frames report `through_cursor`, the highest cursor covered by sent entries
 or the filter. Correction frames retain the last such cursor. Resume with `after_cursor` equal to the
@@ -153,8 +152,8 @@ events. Normal watch positions are ordinals over the caller's retained Sessions,
 not reveal gaps from another principal; configured backend service readers retain the existing
 service-wide opening cursor. Each RPC resolves its workload credential against live Kubernetes
 records. Watch/follow streams end at their lease so continued reads require a newly authorized call.
-Legacy `reader_accounts` settings remain decodable for deployment compatibility but do not grant
-read access. Errors carry a gRPC status and fixed detail:
+Backend reads are granted by `reader_service_callers`; there is no `reader_accounts` setting, and the
+strict settings model refuses the key. Errors carry a gRPC status and fixed detail:
 
 | Status              | Cause                                                                             |
 | ------------------- | --------------------------------------------------------------------------------- |
@@ -200,9 +199,8 @@ backfill old Sessions. Ordinary insertion/deletion still generates WAL.
 
 ### Historical packing
 
-After every History reader supports event blocks (migration 16), the same service image supports
-`history-service compact-history --session UUID --dry-run` and `--apply`, or `--all` instead of
-`--session`. Both scope and mode are required. It needs only
+The same service image supports `history-service compact-history --session UUID --dry-run` and
+`--apply`, or `--all` instead of `--session`. Both scope and mode are required. It needs only
 `AGENTPLANE_HISTORY_SERVICE_DATABASE_URL`; it does not run migrations or call harnesses/providers.
 The ingress flag independently controls new writes.
 
@@ -249,7 +247,7 @@ ordinary row count equals 162. This also separates live packing from a historica
 Each `Store.Append` batch that completes an item drops that
 item's streamed delta entries (native frames and their derived deltas) from `session_event`, in
 the same transaction, when every frame matches an exact versioned template
-(`storage/delta_templates.go`) and the retained completion holds exactly their
+(`internal/storage/delta_templates.go`) and the retained completion holds exactly their
 concatenation. Malformed frames, failed commands, harness exits and recovery boundaries keep the
 span whole. Harness stderr remains stored at its original cursor but does not prevent settlement
 of otherwise redundant deltas. The dropped cursors are recorded as a
@@ -350,6 +348,11 @@ Session summaries (`GetSessionSummary`, and `BatchGetSessionSummaries` for up to
 at once, leaving out any it has no history for) read that fold and report the committed cursor beside
 the folded one.
 
+`WatchSessionSummaries` in selected mode follows up to 200 named Sessions in the caller's read scope. It
+subscribes before reading and sends a full snapshot first, then changed summaries and removals.
+Notifications are wakeups, not data: after listener recovery the service rereads the selected rows.
+A reconnect starts with a new snapshot and fresh authorization.
+
 `WatchSessionSummaries` tells a reader when to re-read: each fold commit NOTIFYs the history
 database, and every replica forwards that to its watchers as a payload-free `changed`. A stream opens
 with one `changed` to cover whatever the caller missed, and an idle stream ends with
@@ -358,20 +361,15 @@ stream without another frame. A request with `recorded_after` also gets `session
 Session History records at a later position, the backlog first and then each as its first push binds
 it, so the app can create a Thread view for Sessions it did not start. The binding draws the Session's
 `recorded_position` under a transaction advisory lock held to commit, so positions become visible in
-ascending order and a caller that reconnects after the last position it handled misses none. Migration
-9 renames the persisted ordinal without changing its values, sequence ownership, ordering or indexes.
+ascending order and a caller that reconnects after the last position it handled misses none.
 
 `ReadThreadEntities` serves a window of a Session's fold rows, by entity index or by key, as typed
 `ThreadEntity` values. Common identity and cursor metadata sits on the entity; its oneof identifies
 view state, item, confirmed input, lifecycle Event, or command. Payload references keep their
 64-bit positions as `uint64`. Electric remains the row and payload synchronization source for the
 browser. A caller holding rows of a replaced epoch gets `FAILED_PRECONDITION`.
-The entity table keeps its indexed identity, ordering and pending columns; `state` is ProtoJSON of
-that entity's oneof variant, including its payload references. The migration preserves existing
-entities and payload chunks, converting rows in one transaction. Deployments must stop old History
-writers and old app instances for the schema and consumer cutover: old binaries cannot use the new
-row shape. The conversion locks the entity table until it commits, so migration time grows with the
-number of retained entities. A malformed row aborts and rolls back the entire conversion.
+The entity table has indexed identity, ordering and pending columns; `state` is ProtoJSON of
+that entity's oneof variant, including its payload references.
 `ReadEntityEvidence` pages the observation cursors an entity was folded from, and
 `ReadNativeFrames` the native harness frames linked to one of them, read from the raw log.
 `native_frame_read_batch_size` (default `200`, set by the YAML key) bounds the linked sequences in each raw-history
@@ -399,21 +397,15 @@ and execution-progress observations remain retained evidence; source-linked norm
 the ordinary Thread fold. History does not own the provider continuation. See the
 [sampler contract](../sampler/SPEC.md).
 
-The SessionSpec placement cutover's History migration 8 moved a legacy archived
-`SessionSpec.harness` value into `historical_harness` on retained feed and summary snapshots when
-the old record had no exact placement to report. It did not invent an environment identity or
-change raw events, cursors or event ordering. New live openings use the typed placement in
-`SessionSpec`; historical evidence remains available.
+Migration 18 is the selected Goose baseline. It creates the current schema on a fresh database and
+adopts a completed version-17 database after validating its schema. Adoption preserves existing rows,
+schema object identities, and Goose history. A deployed database below version 17 must first complete
+the previous image's audit rewrite (migration 17, run with writers stopped;
+[details](../postgres/migrate/README.md#sampler-and-history-audit-rewrite)); version 18 fails closed
+for older or partial predecessors.
 
-Migration 15 is the selected Goose baseline. It creates the current schema on a fresh database and
-adopts a completed version-14 database after validating its schema. Adoption preserves existing rows,
-schema object identities, and Goose history. A deployed database below version 14 must first run the
-previous History image through migration 14 and finish that rollout; version 15 fails closed for
-older or partial predecessors. Migration 14 removes the temporary command-operation bridge, so
-starting version 15 while an older rollout is still active is unsupported.
-
-Use a version-15-compatible image for fresh databases. Their ledger records version 15 without
-versions 11-14, so a version-14 image would reject that ledger as missing out-of-order migrations.
-On a database adopted from version 14, the prior migration rows remain present and the version-14
-Goose provider sees no pending migrations after version 15. That check covers migration startup;
-runtime rollback to an older image is unsupported.
+Use a version-18-compatible image for fresh databases. Their ledger starts at version 18, so a
+version-17 image would reject it as missing out-of-order migrations. On a database adopted from
+version 17, the prior migration rows remain present and the version-17 Goose provider sees no
+pending migrations after the baseline. That check covers migration startup; runtime rollback to an
+older image is unsupported.

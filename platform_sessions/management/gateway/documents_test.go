@@ -2,16 +2,11 @@ package gateway
 
 import (
 	"context"
-	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-
-	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/providerpb"
 )
 
 func TestProviderDocumentComesFromAuthenticatedProvider(t *testing.T) {
@@ -26,15 +21,8 @@ func TestProviderDocumentComesFromAuthenticatedProvider(t *testing.T) {
 		_, _ = w.Write([]byte(`{"openapi":"3.1.0","servers":[{"url":"https://wrong.invalid"}],"paths":{}}`))
 	}))
 	defer providerHTTP.Close()
-	ca := filepath.Join(t.TempDir(), "ca.pem")
-	if err := os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: providerHTTP.Certificate().Raw}), 0600); err != nil {
-		t.Fatal(err)
-	}
-	fake := &fakeProvider{documentPath: "/internal/openapi/personal"}
-	service, err := New([]Provider{{Ref: &providerpb.InstanceRef{ProviderId: "chatgpt", InstanceId: "personal"}, Client: fake}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	ca := trustedCAFile(t, providerHTTP)
+	service := newTestService(t, &fakeProvider{documentPath: "/internal/openapi/personal"})
 	routeToken := strings.Repeat("r", 40)
 	consumer := strings.Repeat("b", 40)
 	handler, err := HTTPServer(context.Background(), service, HTTPConfig{Owner: testOwnerConfig(), Bearers: []Bearer{{Token: consumer, Routes: []Route{{Instance: "personal", Method: "GET", Path: "/x"}}}}, Providers: map[string]ProviderHTTPConfig{"personal": {ID: "personal", Origin: providerHTTP.URL, OwnerToken: ownerToken, RouteToken: routeToken, CAFile: ca, OperationTimeout: time.Minute}}})

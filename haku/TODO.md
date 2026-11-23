@@ -3,68 +3,15 @@
 Project-level TODOs for Haku. Design rationale lives in `PLAN.md`; this is the
 actionable checklist. Remove entries once done. Component-specific detail stays in the
 component checklist rather than being copied here: haku-console's tool/API backlog is
-<console/TODO.md>, while the remaining OAuth/identity rationale and sequencing is
+<console/TODO.md>, while the remaining OAuth/identity work (backlog, rationale and sequencing) is
 <../plans/oauth_architecture.md>.
 
-## Immediate correctness and security
-
-- **Make independent haku-console rollouts skew-safe.** Do not bundle the server image, static
-  image, and live config into a bespoke atomic promotion unit. Define and test compatibility across
-  one rollout window instead: deploy readers before writers for config changes; make server API
-  additions available before the static frontend consumes them; remove old fields/endpoints only
-  after every consumer has moved. CI should exercise the server against the current and next config
-  shapes and the frontend against its supported server contract. Preserve a serving API replica
-  if a replacement fails readiness. The 2026-07-14
-  authority cutover is the regression case: new config restarted the old incompatible server and
-  caused an outage until image automation caught up.
-- **Add public-client abuse controls if public DCR remains enabled.** Bound enrollment and
-  registration attempts with Haku-side rate limits and transaction quotas. FastMCP continues to
-  own protocol validation and TTLs; Haku owns enrollment interaction and activation limits.
-
-## Agent and Operator product work
-
-The canonical authority/enrollment cutover and migration squash are complete. These are product
-slices over the deployed schema, not another identity migration:
-
-- **Fuller Agent detail:** extend the existing Operator-scoped Agent API and settings UI with safe
-  client metadata, scopes, binding generations and reconnect history. Do not call inactivity
-  "disconnected" or expose secrets/raw OAuth metadata. The existing schema is sufficient for this
-  slice; do not block it on schema cleanup.
-- **Lifecycle controls:** stage Operator-owned revoke/disable, rename, and tombstone/reconnect
-  history as separate API + UI + audit slices. Distinguish revoking one binding/grant from disabling
-  the Agent and all usable bindings. Keep names required, normalized, and globally unique; decide
-  whether rename history is a product requirement before adding another reservation/audit table.
-
-## Console and authority consolidation
-
-- After the Connected Agents read contract provides evidence about which joins really hurt,
-  simplify the authority schema: remove the deferred name-reservation ownership cycle and
-  speculative client-software fields, and prune redundant trigger functions while retaining
-  genuine cross-row security invariants. Historical tool-call tables and static Agent credential
-  rows remain retained for history; this work concerns only the live identity graph. This is a
-  deliberate migration, not a five-second cleanup.
-
-## Google connection ownership and Airlock
+## Google connection ownership
 
 - **Decide `haku_routine` ownership independently.** The Google singleton decision does not define
   whether every Operator should share one routine launcher. Specify whether the launcher is a
   global Haku capability or an Operator-owned downstream resource before relying on it in a
   multi-Operator console.
-
-## Cross-cutting OAuth/Auth infrastructure
-
-- **Keep Airlock credential-only while it remains:** it may own provider consent, refresh-token
-  custody, and access-token publication. Do not add MCP ingress, tool execution, agent policy, or
-  an operator-approval queue back to it; those Console surfaces are retired.
-- **Typed auth configuration:** replace optional-heavy incoming/outgoing auth configurations with
-  role-specific discriminated models and typed scope domains, atomically per consumer. Keep
-  credentialed-facade and identity-delegation constructors separate.
-- **Shared browser OIDC helper:** extract only genuinely common Authlib/Starlette relying-party
-  behavior from Haku and Props. Migrate Study Casino away from username authority to a local UUID
-  plus exact `(issuer, subject)` identity.
-- **Singular Authentik ownership:** inventory remaining provider/application/controller ownership,
-  assign shared mappings one controller, update `cluster/docs/mcp_oauth_authentik_notes.md`, and add
-  drift checks.
 
 ## New read-only sources to wire
 
@@ -97,13 +44,6 @@ and let action policy filter it — reads go in a policy set bound to `claude-ai
 approval. Backend authentication (a static bearer, or the operator's OAuth linkage) is separate
 from that tool policy.
 
-## Autonomous write capabilities
-
-Haku's current contract has free tools plus approval-gated tool-call requests. This section is for
-new **free/autonomous** write tools: capabilities Haku may exercise without per-call operator
-approval because the server-side boundary makes them safe by construction. Wiring one on is still a
-doctrine change, not just a config line.
-
 ## Wiring / hardening
 
 - **Pin the finance agent's permissions as a subset of Haku's, then close the BuildBuddy gap.**
@@ -116,11 +56,16 @@ doctrine change, not just a config line.
   whether the finance preset's GitHub read action sets (public repos, `ducktape`, its fork,
   `gaffer-private`) stay, since both presets already hold the `github-agentydragon-agent` PAT policy.
 
+- **Make the Claude web clone-complete check method-neutral.** `runtime/claude_web_env/bootstrap.sh`
+  announces `~/haku-state/items` as the readiness signal and `run.md` waits on
+  `~/haku-state/surface/items`. The atomic swap already makes the existence of `~/haku-state` the
+  signal, so the path check only ties the wait to haku-state's current layout.
 - **Verify the JWT mint** — confirm the `authentik-jwt-rotation` CronJob produces
   `secrets/haku-k8s-jwt.yaml` (the `client_credentials`-as-`haku-k8s` flow with
   `expected_group: haku`). The web home's whole kubectl path depends on it.
-- **Haku LiteLLM key** — `tf/gitops/litellm-api-key` → a `haku-sandbox` secret
-  for attribution / budget / kill-switch, if routing model calls through LiteLLM.
+- **Haku LiteLLM key** — a key in `cluster/cdk8s/litellm/crossplane_keys.py` → a
+  `haku-sandbox` secret for attribution / budget / kill-switch, if routing model calls
+  through LiteLLM.
 - **Tighten egress** — narrow the `haku-sandbox` CCNP `toEntities: cluster` to
   only Haku's named in-cluster sources (the gap `claude-sandbox` also accepts).
 - **Haku's agentplane principal is named `claude-ai`.** With haku-console being decommissioned,
@@ -161,9 +106,9 @@ the runtimes differ in where the sandbox runs — see
 - **Self-hosted worker (Runtime B)** — operator activation to go live:
   <runtime/x/managed_agent/self_hosted/README.md> and its bring-up RCA.
 - **Anthropic-hosted cloud** — **PARKED (2026-07-04)**: the cloud control-plane
-  objects were deleted at Anthropic and `cluster/parked/cloud-agent-tf` is
-  suspended; see <runtime/x/managed_agent/anthropic_hosted/README.md> for the reason
-  and the resume decision. Per-runtime TODO (mostly moot until resumed):
+  objects were deleted at Anthropic and its Terraform root was retired (provider
+  dormant); see <runtime/x/managed_agent/anthropic_hosted/README.md> for the reason
+  and how to resume. Per-runtime TODO (mostly moot until resumed):
   <runtime/x/managed_agent/anthropic_hosted/TODO.md>.
 
 ## Later (post-v0)
@@ -176,7 +121,7 @@ the runtimes differ in where the sandbox runs — see
   `haku-state` for replayability. Prefer `OTEL_LOG_RAW_API_BODIES=file:<dir>` over
   parsing transcript JSONL: untruncated bodies as JSON plus a `body_ref` join key
   back to the Loki events — see
-  [transcript collection](../devinfra/claude/plans/transcript_collection.md) § _Raw API bodies_.
+  [transcript collection](../devinfra/claude/plans/transcript_collection.md) § _Conditional coverage_.
   If the loop ever runs on the **Claude Agent SDK**, a second mechanism exists: a
   `SessionStore` adapter (`session_store` on `ClaudeAgentOptions`; `append`/`load` required,
   `list_sessions`/`list_session_summaries`/`delete`/`list_subkeys` optional) — docs:

@@ -22,6 +22,7 @@ go_test(
     ],
     embed = [":vsock"],
     deps = [
+        "//agentplane/testing/eventually",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_grpc//health",

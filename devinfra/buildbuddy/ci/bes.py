@@ -13,9 +13,6 @@ from collections.abc import Iterable
 
 from devinfra.buildbuddy.cli import CLIError, run
 
-DEFAULT_BASE_URL = "https://app.buildbuddy.io"
-DEFAULT_TIMEOUT_SECONDS = 120
-
 
 class BuildBuddyError(Exception):
     """The invocation could not be read. Callers decide what an absence means."""
@@ -29,7 +26,6 @@ class Output:
     path: str
     uri: str
     digest: str
-    size: int
     output_group: str
     aspect: str = ""
 
@@ -48,8 +44,6 @@ class TestSummary:
 @dataclasses.dataclass(frozen=True)
 class Invocation:
     outputs: list[Output]
-    #: Target label to Bazel's `overallStatus` (PASSED, FAILED, TIMEOUT, ...).
-    test_status: dict[str, str]
     #: Lossless summaries for callers that need to reject ambiguity across configs.
     test_summaries: list[TestSummary] = dataclasses.field(default_factory=list)
     #: Extra provenance from the test invocation; merged output views do not carry it.
@@ -64,10 +58,6 @@ class Invocation:
     child_invocation_ids: tuple[str, ...] = ()
     exit_code_name: str | None = None
 
-    def by_path(self) -> dict[str, Output]:
-        """Outputs keyed by their full path. A later duplicate wins, as in Bazel."""
-        return {output.path: output for output in self.outputs}
-
     def by_label(self) -> dict[str, list[Output]]:
         """Outputs grouped by the target that produced them.
 
@@ -81,34 +71,18 @@ class Invocation:
         return grouped
 
 
-def fetch_blob(
-    uri: str,
-    *,
-    invocation_id: str | None = None,
-    api_key: str | None = None,
-    base_url: str = DEFAULT_BASE_URL,
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
-) -> bytes:
+def fetch_blob(uri: str) -> bytes:
     """Content of a `bytestream://` URI as the event stream reports it."""
-    args = ["blob", "cat", uri]
-    if invocation_id is not None:
-        args.extend(("--invocation", invocation_id))
     try:
-        return run(*args, timeout=timeout, api_key=api_key, base_url=base_url)
+        return run("blob", "cat", uri)
     except CLIError as e:
         raise BuildBuddyError(str(e)) from e
 
 
-def read(
-    invocation_id: str,
-    *,
-    api_key: str | None = None,
-    base_url: str = DEFAULT_BASE_URL,
-    timeout: float = DEFAULT_TIMEOUT_SECONDS,
-) -> Invocation:
+def read(invocation_id: str) -> Invocation:
     """Read an invocation through bbapi's stable structured export."""
     try:
-        raw = run("invocation", "export", invocation_id, timeout=timeout, api_key=api_key, base_url=base_url)
+        raw = run("invocation", "export", invocation_id)
     except CLIError as e:
         raise BuildBuddyError(str(e)) from e
     try:
@@ -135,7 +109,6 @@ def _invocation_from_export(document: object) -> Invocation:
                 path="/".join([*file.get("pathPrefix", []), file["name"]]),
                 uri=file.get("uri", ""),
                 digest=file.get("digest", ""),
-                size=int(file.get("length", 0)),
                 output_group=output["outputGroup"],
                 aspect=target.get("aspect", ""),
             )
@@ -154,7 +127,6 @@ def _invocation_from_export(document: object) -> Invocation:
         )
     return Invocation(
         outputs=outputs,
-        test_status=dict(document["testStatus"]),
         test_summaries=summaries,
         finished=document["finished"],
         successful=document["successful"],
@@ -170,12 +142,10 @@ def _invocation_from_export(document: object) -> Invocation:
 
 
 def merge(invocations: Iterable[Invocation]) -> Invocation | None:
-    """Combine invocation outputs and test verdicts, deduplicating shared files."""
+    """Combine invocation outputs, deduplicating shared files."""
     outputs: list[Output] = []
-    test_status: dict[str, str] = {}
     empty = True
     for invocation in invocations:
         empty = False
         outputs.extend(invocation.outputs)
-        test_status.update(invocation.test_status)
-    return None if empty else Invocation(outputs=list(dict.fromkeys(outputs)), test_status=test_status)
+    return None if empty else Invocation(outputs=list(dict.fromkeys(outputs)))

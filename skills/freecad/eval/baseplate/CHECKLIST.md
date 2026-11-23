@@ -10,9 +10,9 @@ Review any rendered images/SVGs the agent produced in the workspace.
 
 ## Sketch quality
 
-- [ ] Sketch is fully constrained (`fully_constrained: true` in inspection)
+- [ ] Sketch is fully constrained (no remaining degrees of freedom)
 - [ ] Dimensional constraints are bound to spreadsheet via expressions
-      (`expression_count` > 0, expressions reference spreadsheet aliases)
+      (the sketch's expressions reference spreadsheet aliases)
 
 ## Spreadsheet
 
@@ -21,10 +21,10 @@ Review any rendered images/SVGs the agent produced in the workspace.
       slot width, slot height)
 - [ ] Default values match spec (200, 120, 10, 8, 20, 40, 15)
 
-## Geometry (from `inspection.json` features + rendered images)
+## Geometry (from the FCStd and rendered images)
 
 - [ ] Outer profile is a rounded rectangle with corner fillets (~10mm radius)
-- [ ] 4 mounting holes at inset corners (~4mm radius circles in `circular_edges`)
+- [ ] 4 mounting holes at inset corners (~4mm radius circles)
 - [ ] Central slot present and centered on the plate
 - [ ] Bounding box approximately 200 x 120
 
@@ -37,17 +37,17 @@ To test: change the plate-width spreadsheet cell to 250 and recompute. Check:
 - [ ] Right-side holes shift rightward
 - [ ] Slot remains centered
 
-_(The inspector dumps all geometry; the judge performs this test manually
-or the parametric check can be scripted separately.)_
+_(The judge performs this test manually, or the parametric check can be
+scripted separately.)_
 
 ## TechDraw
 
 - [ ] Page exists with a top-down view
 - [ ] View has visible edges (> 0)
-- [ ] At least 4 entity-referenced dimensions (`has_entity_refs: true`)
+- [ ] At least 4 entity-referenced dimensions
 - [ ] Dimension labels readable and not overlapping geometry (check SVG)
 
-## Visual inspection (from `top_view.svg` and `3d_render.png`)
+## Visual inspection (rendered images and exported SVG)
 
 - [ ] Drawing looks like a baseplate — rounded rect with holes and slot
 - [ ] Dimension text is legible and correctly placed

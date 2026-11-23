@@ -15,6 +15,6 @@ use generated CEL rules. `//agentplane/crds:test_{sandbox,policyset,identity,wor
 real API server. CEL rules must fit the API server's cost budget: bound every list a rule iterates
 or sits under with `MaxItems`.
 
-`Sandbox.spec.resumePolicy.allowOwnServiceAccount` is optional and defaults to false. Its schema
-prepares for explicit resume authorization; the current Dispatcher wake path still uses its
-existing caller grants and `wakeOnSend`. Setting this field alone does not enable that future API.
+`Sandbox.spec.resumePolicy.allowOwnServiceAccount` is optional and defaults to false. It opts the
+Identity the Sandbox acts as into automatic wake of idle suspension, together with `wakeOnSend`; it
+grants no explicit resume ([lifecycle contract](../environments/lifecycle/SPEC.md#authority)).

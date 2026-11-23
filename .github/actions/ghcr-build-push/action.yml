@@ -12,10 +12,6 @@ inputs:
     description: Path to Dockerfile (optional; defaults to {context}/Dockerfile)
     required: false
     default: ""
-  build_args:
-    description: Newline-separated Docker build args (e.g. BASE_DIGEST=sha256:...)
-    required: false
-    default: ""
   cache_from:
     description: Docker build cache source (e.g. type=registry,ref=image:buildcache)
     required: false
@@ -26,9 +22,6 @@ inputs:
     default: ""
 
 outputs:
-  tags:
-    description: Comma-separated list of pushed image tags
-    value: ${{ steps.meta.outputs.tags }}
   pin_tag:
     description: The branch-timestamp-sha7 tag (useful for Flux ImagePolicy)
     value: ${{ steps.meta.outputs.pin_tag }}
@@ -65,7 +58,6 @@ runs:
       with:
         context: ${{ inputs.context }}
         file: ${{ inputs.file }}
-        build-args: ${{ inputs.build_args }}
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         cache-from: ${{ inputs.cache_from }}

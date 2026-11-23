@@ -18,9 +18,9 @@ from source_watcher_crds.io.fluxcd.extensions.source import (
     ArtifactGeneratorSpecSourcesKind,
 )
 from tofu_controller.io.fluxcd.contrib.infra import (
-    TerraformV1Alpha2SpecSourceRef,
-    TerraformV1Alpha2SpecSourceRefKind,
-    TerraformV1Alpha2SpecStoreReadablePlan,
+    TerraformSpecSourceRef,
+    TerraformSpecSourceRefKind,
+    TerraformSpecStoreReadablePlan,
 )
 
 from cluster.cdk8s import ducktape_flux, terraform
@@ -34,10 +34,9 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/infra-drift"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    # Dedicated source: the shared flux-system GitRepository sparse-checks-out only
-    # deployment paths (cluster/k8s/, tf/gitops/, ...), so cluster/terraform/ is absent from
-    # its artifact and the runner fails with "terraform path not found". Its sparseCheckout
-    # cannot be extended either: gotk-sync.yaml is flux-generated and marked DO NOT EDIT.
+    # Dedicated source: the shared flux-system GitRepository sparse-checks-out deployment
+    # paths, so its artifact lacks cluster/terraform/. The root also needs a repo-root file,
+    # which sparseCheckout cannot select; the filtered source keeps it out of the shared artifact.
     source = GitRepository(
         chart,
         "source",
@@ -105,14 +104,14 @@ def chart(app: App) -> Chart:
         plan_only=True,
         # Without this the pending plan says only that something changed. `human`
         # writes the diff to a ConfigMap in this namespace — README § Reading a plan.
-        store_readable_plan=TerraformV1Alpha2SpecStoreReadablePlan.HUMAN,
+        store_readable_plan=TerraformSpecStoreReadablePlan.HUMAN,
         # Every plan takes the PG advisory lock on schema `main` — the lock
         # `bazel run //cluster:bootstrap` also needs. README § State lock contention
         # before shortening this.
         interval="6h",
         path="./cluster/terraform/main",
-        source_ref=TerraformV1Alpha2SpecSourceRef(
-            kind=TerraformV1Alpha2SpecSourceRefKind.EXTERNAL_ARTIFACT, name=module.name, namespace=terraform.NAMESPACE
+        source_ref=TerraformSpecSourceRef(
+            kind=TerraformSpecSourceRefKind.EXTERNAL_ARTIFACT, name=module.name, namespace=terraform.NAMESPACE
         ),
         # The OVH server resources and nothing else — the one subgraph whose only
         # dependencies are the ovh provider and two SOPS files. README § What this
@@ -134,7 +133,13 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def infra_drift(chart: Chart, directory: RenderedDirectory, tofu_controller: Kustomization) -> Kustomization:
+def infra_drift(
+    chart: Chart,
+    directory: RenderedDirectory,
+    tofu_controller: Kustomization,
+    *,
+    health_checks: list[KustomizationSpecHealthChecks],
+) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
@@ -143,13 +148,6 @@ def infra_drift(chart: Chart, directory: RenderedDirectory, tofu_controller: Kus
         timeout="10m",
         # Ready tracks the plan, so a drift finding shows up here as a NotReady
         # Kustomization — README § Reading a plan.
-        health_checks=[
-            KustomizationSpecHealthChecks(
-                api_version="infra.contrib.fluxcd.io/v1alpha2",
-                kind="Terraform",
-                name=NAME,
-                namespace=terraform.NAMESPACE,
-            )
-        ],
+        health_checks=health_checks,
         depends_on=flux_kustomization_depends_on_many(tofu_controller),
     )

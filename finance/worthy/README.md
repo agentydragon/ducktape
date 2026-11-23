@@ -26,7 +26,7 @@ Enable trace logging with `RUST_LOG=rust_main=trace`.
 _Sources_ provide current asset holdings:
 
 - **Hardcoded** — manual entries in the config file
-- **IBFlex** — Interactive Brokers Flex Query API (long equity positions + cash)
+- **IBFlex** — Interactive Brokers Flex Query API (open long stock positions; cash is not imported)
 
 Removed: Coinbase (legacy API deprecated), FTX (exchange collapsed).
 

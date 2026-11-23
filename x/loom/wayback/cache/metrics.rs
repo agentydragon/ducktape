@@ -1,6 +1,10 @@
 use std::time::Duration;
 
-use prometheus::{HistogramOpts, HistogramVec, IntCounterVec, Opts};
+use anyhow::{Context, Result};
+use http::{Response, StatusCode, header};
+use prometheus::{
+    Encoder, HistogramOpts, HistogramVec, IntCounterVec, Opts, Registry, TextEncoder,
+};
 
 use crate::types::Endpoint;
 
@@ -203,4 +207,31 @@ fn status_label(status: Option<u16>) -> String {
     status
         .map(|status| status.to_string())
         .unwrap_or_else(|| "none".to_string())
+}
+
+pub(crate) fn encode(registry: &Registry) -> Result<String> {
+    let mut output = Vec::new();
+    TextEncoder::new().encode(&registry.gather(), &mut output)?;
+    String::from_utf8(output).context("prometheus text encoder emitted invalid UTF-8")
+}
+
+/// HTTP exposition shared by the input service and filler.
+pub fn metrics_response(metrics: Result<String>) -> Response<String> {
+    let (status, content_type, body) = match metrics {
+        Ok(body) => (
+            StatusCode::OK,
+            "text/plain; version=0.0.4; charset=utf-8",
+            body,
+        ),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "text/plain; charset=utf-8",
+            format!("metrics encoding failed: {error}\n"),
+        ),
+    };
+    Response::builder()
+        .status(status)
+        .header(header::CONTENT_TYPE, content_type)
+        .body(body)
+        .expect("static response headers")
 }

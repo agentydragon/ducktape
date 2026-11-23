@@ -16,16 +16,10 @@ import subprocess
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
 SEARCH_LIMIT = 1000
 PULL_FIELDS = "number,url,mergedAt,headRefOid,statusCheckRollup"
-
-
-class GitHub(Protocol):
-    def search_count(self, repo: str, day: str) -> int: ...
-
-    def list_merged_prs(self, repo: str, day: str) -> list[dict[str, Any]]: ...
 
 
 class GhCli:
@@ -109,7 +103,7 @@ def _days(first: dt.datetime, last: dt.datetime) -> list[dt.date]:
     return days
 
 
-def collect_day(github: GitHub, repo: str, day: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def collect_day(github: GhCli, repo: str, day: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     total = github.search_count(repo, day)
     if total >= SEARCH_LIMIT:
         raise ValueError(
@@ -126,7 +120,7 @@ def collect_day(github: GitHub, repo: str, day: str) -> tuple[list[dict[str, Any
 
 
 def collect_window(
-    github: GitHub, repo: str, since: str, until: str
+    github: GhCli, repo: str, since: str, until: str
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     first, last = _parse_time(since), _parse_time(until)
     if first > last:

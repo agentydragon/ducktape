@@ -10,14 +10,20 @@ Evaluation system for LLM code critics: critic agents report issues in frozen co
 - `cli/`: `props` CLI (`db` subcommands)
 - `db/`: ORM models, Alembic migrations, specimen sync
 - `orchestration/`: container lifecycle, image pull, per-agent Postgres roles
-- `backend/`: FastAPI server — auth (Postgres creds → RLS), stats, runs, ground truth, LLM and
-  OCI registry proxies
+- `backend/`: FastAPI server — auth (Postgres creds → RLS), stats, runs, ground truth
+- `llm_proxy/`, `registry_proxy/`: LLM and OCI registry proxies, separate services from the backend
 - `frontend/`: React + Mantine dashboard
 - `agents/`: in-container code — `critic/`, `grader/`, `critic_dev/{improve,optimize}`
 - `specimens/`: frozen code snapshots with labeled issues
 - `standards/`: property definitions (issue taxonomies)
-- `prompts/`: Mako prompt templates
 - `testing/`: shared test fixtures
+
+## More docs
+
+- <docs/agent_infrastructure.md>: Kubernetes agent runtime, agent images, registry proxy ACLs
+- <docs/budget_enforcement.md>: how the LLM proxy enforces `budget_usd`; child budgets, overspend
+- <docs/agent_credential_passthrough.md>: backend DB connections that use agent credentials, so RLS filters results
+- <docs/grader.md>: snapshot grader reconciliation loop (drift, notifications, context)
 
 ## Container E2E image reuse
 
@@ -52,7 +58,7 @@ direnv allow                                     # generates PGPASSWORD, sets en
 bazelisk run //props/backend:load                # backend (+ frontend) image
 bazelisk run //props/llm_proxy:load
 docker compose up -d                             # postgres, registry, backend, llm-proxy
-bazelisk run //props/cli -- db recreate          # migrations + specimen sync; backend fails until done
+bazelisk run //props/cli -- db recreate          # migrations + model metadata (specimens: db sync-specimen); backend fails until done
 docker compose restart backend
 echo "$PGPASSWORD" | docker login localhost:8000 -u "$PGUSER" --password-stdin   # registry proxy
 for a in critic grader critic_dev/improve critic_dev/optimize; do bazelisk run //props/agents/$a:push; done
@@ -62,7 +68,7 @@ Frontend hot reload: `docker compose up -d postgres registry`, then
 `bazelisk run //props/frontend:dev` (frontend `:5173`, backend `:8000`).
 
 Dashboard and API: <http://localhost:8000> (API reference: <docs/backend_api.md>). Postgres:
-`localhost:5433` (`psql` uses the devenv `PG*` vars). Registry, direct for debugging:
+`localhost:5433` (`psql` uses the direnv `PG*` vars). Registry, direct for debugging:
 `localhost:5000`.
 
 Database: `bazelisk run //props/cli -- db {recreate,backup,restore <file>}`; `recreate` drops all

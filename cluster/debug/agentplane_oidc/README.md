@@ -1,12 +1,12 @@
 # Agentplane OIDC connectivity investigation
 
-Root cause found, fix not rolled out. <local_gateway_tls_rca.md>: the app's SNI
+Root cause found, fix applied on every `hil-ovh` node. <local_gateway_tls_rca.md>: the app's SNI
 egress rule sends Authentik traffic through Cilium's policy proxy, whose
 source-preserving upstream collides with its own downstream whenever public DNS
 hands the pod its own node's IP (about one answer in five), so the TLS handshake
 resets. The backend permissions for the Gateway Service path are verified
 (#6007, #6012; lesson in <../../docs/cilium_network_policy.md> § Egress through
-the Gateway Service). DNS is unchanged.
+a local Gateway). DNS is unchanged.
 
 ## Open items
 

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { GeolocationWatcher, getGeolocation, type WatchEmit } from "./geolocation";
+import { GeolocationWatcher, getGeolocation, type GeoResult } from "./geolocation";
 
 // Node's navigator has no geolocation; each test installs its own stub, so clear it after.
 afterEach(() => Reflect.deleteProperty(navigator, "geolocation"));
@@ -78,7 +78,7 @@ describe("GeolocationWatcher", () => {
   }
 
   function collector() {
-    const emits: [string, WatchEmit][] = [];
+    const emits: [string, GeoResult][] = [];
     const watcher = new GeolocationWatcher((id, e) => void emits.push([id, e]));
     return { emits, watcher };
   }

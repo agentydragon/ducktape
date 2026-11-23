@@ -27,6 +27,7 @@ from typing import assert_never
 
 import httpx
 import uvicorn
+from fastapi import FastAPI
 
 from devinfra.bazel.workspace import get_build_working_directory
 from devinfra.claude.session_export.api import SessionCookie, SessionsApi
@@ -112,98 +113,73 @@ async def open_api(args: argparse.Namespace) -> AsyncIterator[SessionsApi]:
         yield api
 
 
-async def run_sync(args: argparse.Namespace) -> None:
-    database_url = SyncSettings().database_url
+@asynccontextmanager
+async def open_store(database_url: str) -> AsyncIterator[SessionStore]:
+    """Migrate the database, then yield a store whose engine is disposed on exit."""
     await asyncio.to_thread(RUNNER.apply, database_url)
     engine = make_engine(database_url)
-    store = SessionStore(engine)
     try:
-        async with open_api(args) as api:
-            while True:
-                await sync_once(api, store, workers=args.workers)
-                if args.once:
-                    return
-                await asyncio.sleep(args.interval)
+        yield SessionStore(engine)
     finally:
         await engine.dispose()
+
+
+def make_server(app: FastAPI, *, host: str, port: int) -> uvicorn.Server:
+    return uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="info"))
+
+
+async def serve_and_sync(server: uvicorn.Server, supervisor: SyncSupervisor) -> None:
+    """Run the server and the sync loop until the server stops.
+
+    If the loop dies the process must too, so the pod restarts rather than serving a page over nothing.
+    """
+
+    async def serve_then_stop_syncing(syncing: asyncio.Task[None]) -> None:
+        await server.serve()
+        syncing.cancel()
+
+    async with asyncio.TaskGroup() as tasks:
+        tasks.create_task(serve_then_stop_syncing(tasks.create_task(supervisor.run())))
+
+
+async def run_sync(args: argparse.Namespace) -> None:
+    async with open_store(SyncSettings().database_url) as store, open_api(args) as api:
+        while True:
+            await sync_once(api, store, workers=args.workers)
+            if args.once:
+                return
+            await asyncio.sleep(args.interval)
 
 
 async def run_serve() -> None:
     """Local all-in-one mode: the sync and the page that pairs it share one credential-owning process."""
     settings = ServeSettings()
-    await asyncio.to_thread(RUNNER.apply, settings.database_url)
-    engine = make_engine(settings.database_url)
-    store = SessionStore(engine)
-    try:
-        async with httpx.AsyncClient(timeout=30) as token_client:
-            supervisor = SyncSupervisor.for_settings(settings, store=store, token_client=token_client)
-            server = uvicorn.Server(
-                uvicorn.Config(
-                    create_app(supervisor=supervisor, settings=settings, store=store, frontend_dir=_frontend_dir()),
-                    host=settings.host,
-                    port=settings.port,
-                    log_level="info",
-                )
-            )
-
-            async def serve_then_stop_syncing(syncing: asyncio.Task[None]) -> None:
-                await server.serve()
-                syncing.cancel()
-
-            # If the loop dies the process must too, so the pod restarts rather than serving a page over nothing.
-            async with asyncio.TaskGroup() as tasks:
-                tasks.create_task(serve_then_stop_syncing(tasks.create_task(supervisor.run())))
-    finally:
-        await engine.dispose()
+    async with open_store(settings.database_url) as store, httpx.AsyncClient(timeout=30) as token_client:
+        supervisor = SyncSupervisor.for_settings(settings, store=store, token_client=token_client)
+        app = create_app(supervisor=supervisor, settings=settings, store=store, frontend_dir=_frontend_dir())
+        await serve_and_sync(make_server(app, host=settings.host, port=settings.port), supervisor)
 
 
 async def run_web() -> None:
     """Serve the owner-authenticated page; control operations go to the private control service."""
     settings = WebSettings()
-    await asyncio.to_thread(RUNNER.apply, settings.database_url)
-    engine = make_engine(settings.database_url)
-    try:
-        async with httpx.AsyncClient(base_url=settings.control_base_url, timeout=30) as control_client:
-            server = uvicorn.Server(
-                uvicorn.Config(
-                    create_web_app(
-                        settings=settings,
-                        control_client=control_client,
-                        store=SessionStore(engine),
-                        frontend_dir=_frontend_dir(),
-                    ),
-                    host=settings.host,
-                    port=settings.port,
-                    log_level="info",
-                )
-            )
-            await server.serve()
-    finally:
-        await engine.dispose()
+    async with (
+        open_store(settings.database_url) as store,
+        httpx.AsyncClient(base_url=settings.control_base_url, timeout=30) as control_client,
+    ):
+        app = create_web_app(
+            settings=settings, control_client=control_client, store=store, frontend_dir=_frontend_dir()
+        )
+        await make_server(app, host=settings.host, port=settings.port).serve()
 
 
 async def run_control() -> None:
     """Own the rotating Claude credential and sync loop behind the private control Service."""
     settings = ControlSettings()
-    await asyncio.to_thread(RUNNER.apply, settings.database_url)
-    engine = make_engine(settings.database_url)
-    try:
-        async with httpx.AsyncClient(timeout=30) as token_client:
-            supervisor = SyncSupervisor.for_settings(settings, store=SessionStore(engine), token_client=token_client)
-            server = uvicorn.Server(
-                uvicorn.Config(
-                    create_control_app(supervisor=supervisor), host=settings.host, port=settings.port, log_level="info"
-                )
-            )
-
-            async def serve_then_stop_syncing(syncing: asyncio.Task[None]) -> None:
-                await server.serve()
-                syncing.cancel()
-
-            async with asyncio.TaskGroup() as tasks:
-                tasks.create_task(serve_then_stop_syncing(tasks.create_task(supervisor.run())))
-    finally:
-        await engine.dispose()
+    async with open_store(settings.database_url) as store, httpx.AsyncClient(timeout=30) as token_client:
+        supervisor = SyncSupervisor.for_settings(settings, store=store, token_client=token_client)
+        server = make_server(create_control_app(supervisor=supervisor), host=settings.host, port=settings.port)
+        await serve_and_sync(server, supervisor)
 
 
 async def run_pair(args: argparse.Namespace) -> None:

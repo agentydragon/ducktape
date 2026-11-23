@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/settings"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 )
 
 func TestCleanupUsesConfiguredGitHubRetentionWithoutEnablingProvider(t *testing.T) {
@@ -19,17 +20,10 @@ func TestCleanupUsesConfiguredGitHubRetentionWithoutEnablingProvider(t *testing.
 	if err := maintenance.Cleanup(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	var count int
-	if err := h.db.QueryRowContext(t.Context(), `SELECT count(*) FROM github_delivery WHERE app_id = 42`).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	if count != 1 {
+	if count := postgres.Count(t, h.db, `SELECT count(*) FROM github_delivery WHERE app_id = 42`); count != 1 {
 		t.Fatalf("retained %d receipts, want only the two-day-old receipt", count)
 	}
-	if err := h.db.QueryRowContext(t.Context(), `SELECT count(*) FROM github_mergeability_event WHERE repository_id = $1`, repositoryID).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	if count != 0 {
+	if count := postgres.Count(t, h.db, `SELECT count(*) FROM github_mergeability_event WHERE repository_id = $1`, repositoryID); count != 0 {
 		t.Fatalf("retained %d expired mergeability transitions, want none", count)
 	}
 	var snapshotState string
@@ -64,17 +58,10 @@ func TestInfiniteGitHubRetentionStillCleansUpInboxPayloads(t *testing.T) {
 	if _, err := h.store.Cleanup(t.Context(), nil); err != nil {
 		t.Fatal(err)
 	}
-	var count int
-	if err := h.db.QueryRowContext(t.Context(), `SELECT count(*) FROM github_delivery WHERE app_id = 43`).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	if count != 1 {
+	if count := postgres.Count(t, h.db, `SELECT count(*) FROM github_delivery WHERE app_id = 43`); count != 1 {
 		t.Fatalf("retained %d raw receipts, want 1", count)
 	}
-	if err := h.db.QueryRowContext(t.Context(), `SELECT count(*) FROM github_mergeability_event WHERE repository_id = $1`, repositoryID).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	if count != 1 {
+	if count := postgres.Count(t, h.db, `SELECT count(*) FROM github_mergeability_event WHERE repository_id = $1`, repositoryID); count != 1 {
 		t.Fatalf("retained %d mergeability transitions with infinite retention, want 1", count)
 	}
 	var expired bool

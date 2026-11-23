@@ -10,8 +10,6 @@ from pydantic import BaseModel, Field
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from props.db.snapshots import LocationAnchor
 
-# --- Ground truth reference types (discriminated union) ---
-
 
 class TPRef(OpenAIStrictModeBaseModel):
     """Reference to a true positive occurrence."""
@@ -30,9 +28,6 @@ class FPRef(OpenAIStrictModeBaseModel):
 
 
 GTRef = Annotated[TPRef | FPRef, Field(discriminator="type")]
-
-
-# --- Tool argument models ---
 
 
 class ShowIssueArgs(OpenAIStrictModeBaseModel):
@@ -84,9 +79,6 @@ class ReportFailureArgs(OpenAIStrictModeBaseModel):
     message: str = Field(..., description="Description of why grading could not be completed")
 
 
-# --- Clustering tool argument models ---
-
-
 class ClusterMemberSpec(OpenAIStrictModeBaseModel):
     """Identifies a critique issue to add to a cluster."""
 
@@ -124,9 +116,6 @@ class DeleteClusterArgs(OpenAIStrictModeBaseModel):
     cluster_id: str = Field(..., description="Cluster ID to delete")
 
 
-# --- Result models ---
-
-
 class OccurrenceInfo(BaseModel):
     """Locations for one occurrence of a critique issue."""
 
@@ -147,9 +136,6 @@ class GTDetails(BaseModel):
     rationale: str
     files: dict[str, tuple[int | None, int | None]] = Field(description="file -> (start_line, end_line)")
     note: str | None
-
-
-# --- Clustering result models ---
 
 
 class ClusterMemberInfo(BaseModel):

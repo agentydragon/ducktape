@@ -322,7 +322,8 @@ pub(super) fn claim_prepared_chunk<'a>(
     mut prepared: PreparedLogicalChunk<'a>,
 ) -> Result<ClaimedLogicalChunk<'a>> {
     let chunk_top_level_mark = prepared.runtime_ast.top_level_mark;
-    prepared.builder.claim_resolution(
+    prepared.builder.claim_resolution_at_offset(
+        0,
         &prepared.explicit_requests,
         std::mem::take(&mut prepared.resolution),
         std::mem::take(&mut prepared.resolved_members),

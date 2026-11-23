@@ -32,7 +32,6 @@ type ReconcileSnapshot struct {
 	Harness           sessionpb.Harness
 	Demand            uint64
 	OperationRevision uint64
-	SetupRequested    bool
 	Setup             sessionpb.SetupState
 	Pending           int
 	ProcessID         string
@@ -72,7 +71,6 @@ type LifecycleStatus struct {
 	Sealed                 bool
 	SealUID                string
 	SealCursor             uint64
-	Delivered              bool
 	AcknowledgementPresent bool
 	AcknowledgementSealed  bool
 	AcknowledgementCursor  uint64

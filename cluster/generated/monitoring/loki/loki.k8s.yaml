@@ -218,15 +218,17 @@ spec:
               weight: 100
       annotations:
         goldilocks.fairwinds.com/enabled: "false"
+        goldilocks.fairwinds.com/vpa-update-mode: auto
       extraEnv:
         - name: GOMEMLIMIT
           value: 3277MiB
       extraEnvFrom:
         - secretRef:
             name: loki-seaweedfs-credentials
+      maxUnavailable: 1
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
-      replicas: 2
+      replicas: 3
       resources:
         limits:
           cpu: 500m

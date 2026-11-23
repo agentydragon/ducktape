@@ -8,12 +8,13 @@ use swc_common::comments::{Comment, CommentKind, Comments, SingleThreadedComment
 use swc_common::sync::Lrc;
 use swc_common::{
     BytePos, DUMMY_SP, EqIgnoreSpan, FileName, GLOBALS, Globals, Mark, SourceMap, Span, Spanned,
+    SyntaxContext,
 };
 use swc_ecma_ast::{
-    ComputedPropName, Decl, EsReserved, ExportNamedSpecifier, ExportSpecifier, Expr, Id, Ident,
-    IdentName, ImportDecl, ImportNamedSpecifier, ImportPhase, ImportSpecifier, Lit, MemberProp,
-    Module, ModuleDecl, ModuleExportName, ModuleItem, NamedExport, Stmt, Str, VarDecl, VarDeclKind,
-    VarDeclarator,
+    ComputedPropName, Decl, EsReserved, ExportNamedSpecifier, ExportSpecifier, Expr, ExprOrSpread,
+    Id, Ident, IdentName, ImportDecl, ImportNamedSpecifier, ImportPhase, ImportSpecifier, Lit,
+    MemberExpr, MemberProp, MetaPropExpr, MetaPropKind, Module, ModuleDecl, ModuleExportName,
+    ModuleItem, NamedExport, NewExpr, Stmt, Str, VarDecl, VarDeclKind, VarDeclarator,
 };
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
@@ -121,13 +122,6 @@ impl SourceLineIndex {
             return None;
         }
         self.line_for_pos(span.lo())
-    }
-
-    pub fn line_range_for_span(&self, span: swc_common::Span) -> Option<(usize, usize)> {
-        if span.is_dummy() {
-            return None;
-        }
-        Some((self.line_for_pos(span.lo())?, self.line_for_pos(span.hi())?))
     }
 
     pub fn line_range_and_start_column_for_span(
@@ -244,19 +238,11 @@ pub fn parse_js_module(
     source_name: &str,
     source: &str,
 ) -> std::result::Result<ParsedJsModule, JsParseError> {
-    let cm: Lrc<SourceMap> = Default::default();
-    let fm = source_file(&cm, source_name, source);
-    let (module, unresolved_mark, top_level_mark) = parse_and_resolve(source_name, &fm)?;
-    Ok(ParsedJsModule {
-        cm,
-        module,
-        unresolved_mark,
-        top_level_mark,
-    })
+    parse_js_module_consuming(source_name, source.to_string())
 }
 
 /// Like `parse_js_module` but takes ownership of the source string, avoiding
-/// the clone inside `source_file`. The source text is retrievable via
+/// its clone. The source text is retrievable via
 /// `ParsedJsModule::source_text()`.
 pub fn parse_js_module_consuming(
     source_name: &str,
@@ -281,21 +267,7 @@ pub fn parse_js_module_ast(
     source_name: &str,
     source: &str,
 ) -> std::result::Result<Module, JsParseError> {
-    let cm: Lrc<SourceMap> = Default::default();
-    let fm = source_file(&cm, source_name, source);
-    let (module, _, _) = parse_and_resolve(source_name, &fm)?;
-    Ok(module)
-}
-
-fn source_file(
-    cm: &Lrc<SourceMap>,
-    source_name: &str,
-    source: &str,
-) -> Lrc<swc_common::SourceFile> {
-    cm.new_source_file(
-        FileName::Custom(source_name.to_string()).into(),
-        source.to_string(),
-    )
+    parse_js_module(source_name, source).map(|parsed| parsed.module)
 }
 
 /// Parse a source file and run SWC's `resolver` pass to assign
@@ -553,7 +525,7 @@ pub fn source_unit_ordinal_for_statement(
 }
 
 /// Inverse of [`source_unit_ordinal_for_statement`]: the pre-split body index
-/// of the body item that produced post-split statement ordinal `stmt_ordinal`,
+/// of the body item that produced post-split statement ordinal `ordinal`,
 /// or `None` past the end of the body.
 pub fn statement_for_source_unit_ordinal(
     body: &[ModuleItem],
@@ -735,26 +707,16 @@ fn attach_binding_comments(
 /// `// <text>`. The output is a `Vec<String>`, one entry per emitted
 /// line, ready to be joined by `\n` callers.
 pub fn format_comment_block_lines(text: &str) -> Vec<String> {
-    text.split('\n')
-        .map(|line| {
-            let trimmed = line.trim_end();
-            if trimmed.is_empty() {
-                "//".to_string()
-            } else {
-                format!("// {trimmed}")
-            }
-        })
+    format_member_comment_line_texts(text)
+        .into_iter()
+        .map(|body| format!("//{body}"))
         .collect()
 }
 
 /// Format spec comment text into the per-line texts SWC's `Line`-kind
 /// Comment expects (the prefix `//` is added by the emitter, so each
 /// entry is the *body* of one line comment, including any leading
-/// space).
-///
-/// Mirrors [`format_comment_block_lines`] but returns the bare body
-/// for each line (`" foo"` vs `"// foo"`), since SWC emits the `//`
-/// itself.
+/// space): `""` for an empty line, `" <text>"` otherwise.
 fn format_member_comment_line_texts(text: &str) -> Vec<String> {
     text.split('\n')
         .map(|line| {
@@ -918,6 +880,38 @@ pub fn named_export_module_item(
         type_only: false,
         with: None,
     }))
+}
+
+/// `new URL("<source>", import.meta.url)`, the module-relative form a worker
+/// URL needs at runtime.
+pub fn new_url_expr(source: &str) -> Expr {
+    Expr::New(NewExpr {
+        span: DUMMY_SP,
+        ctxt: SyntaxContext::empty(),
+        callee: Box::new(Expr::Ident(Ident::new_no_ctxt("URL".into(), DUMMY_SP))),
+        args: Some(vec![
+            ExprOrSpread {
+                spread: None,
+                expr: Box::new(Expr::Lit(Lit::Str(Str {
+                    span: DUMMY_SP,
+                    value: source.into(),
+                    raw: None,
+                }))),
+            },
+            ExprOrSpread {
+                spread: None,
+                expr: Box::new(Expr::Member(MemberExpr {
+                    span: DUMMY_SP,
+                    obj: Box::new(Expr::MetaProp(MetaPropExpr {
+                        span: DUMMY_SP,
+                        kind: MetaPropKind::ImportMeta,
+                    })),
+                    prop: MemberProp::Ident(IdentName::new("url".into(), DUMMY_SP)),
+                })),
+            },
+        ]),
+        type_args: None,
+    })
 }
 
 #[cfg(test)]
@@ -1201,10 +1195,11 @@ mod tests {
                     Some(parsed.cm.lookup_char_pos(span.lo()).line)
                 );
                 assert_eq!(
-                    line_index.line_range_for_span(span),
+                    line_index.line_range_and_start_column_for_span(span),
                     Some((
                         parsed.cm.lookup_char_pos(span.lo()).line,
                         parsed.cm.lookup_char_pos(span.hi()).line,
+                        parsed.cm.lookup_char_pos(span.lo()).col.0 + 1,
                     ))
                 );
             }
@@ -1218,7 +1213,10 @@ mod tests {
             let line_index = parsed.line_index();
 
             assert_eq!(line_index.line_for_span(DUMMY_SP), None);
-            assert_eq!(line_index.line_range_for_span(DUMMY_SP), None);
+            assert_eq!(
+                line_index.line_range_and_start_column_for_span(DUMMY_SP),
+                None
+            );
         });
     }
 

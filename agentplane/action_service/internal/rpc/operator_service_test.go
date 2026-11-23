@@ -2,7 +2,6 @@ package rpc
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -217,33 +216,13 @@ func TestADecisionRacingTheOwnersCancellationNeverLeavesADispatch(t *testing.T) 
 
 func TestTheHTTPFacadeDecidesAndCancels(t *testing.T) {
 	s := serve(t)
-	post := func(path, token, body string) (int, []byte) {
-		t.Helper()
-		call, err := http.NewRequestWithContext(t.Context(), http.MethodPost, s.facadeURL(token)+path, strings.NewReader(body))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.HasPrefix(token, certificatePrefix) {
-			call.Header.Set("Authorization", "Bearer "+token)
-		}
-		response, err := http.DefaultClient.Do(call)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer response.Body.Close()
-		answer, err := io.ReadAll(response.Body)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return response.StatusCode, answer
-	}
 	decided := s.submit(t, s.caller, "test-decided")
 	path := "/v1/operator/action-requests/" + decided.ID.String() + "/decision"
 	body := `{"verdict": "VERDICT_DENY", "expected_version": 1, "idempotency_key": "test-http-decision"}`
-	if code, answer := post(path, callerCertificate, body); code != http.StatusUnauthorized {
+	if code, answer := s.post(t, path, callerCertificate, body); code != http.StatusUnauthorized {
 		t.Errorf("a caller's decision: %d %s", code, answer)
 	}
-	code, answer := post(path, s.operatorToken, body)
+	code, answer := s.post(t, path, s.operatorToken, body)
 	got := &operator_action_servicepb.DecideActionRequestResponse{}
 	if code != http.StatusOK || protojson.Unmarshal(answer, got) != nil || got.GetActionRequest().GetState() != action_servicepb.ActionState_ACTION_STATE_DENIED {
 		t.Errorf("the operator's decision: %d %s", code, answer)
@@ -251,10 +230,10 @@ func TestTheHTTPFacadeDecidesAndCancels(t *testing.T) {
 
 	cancelled := s.submit(t, s.caller, "test-cancelled")
 	path = "/v1/action-requests/" + cancelled.ID.String() + ":cancel"
-	if code, answer := post(path, s.operatorToken, ""); code != http.StatusForbidden {
+	if code, answer := s.post(t, path, s.operatorToken, ""); code != http.StatusForbidden {
 		t.Errorf("an operator's cancellation: %d %s", code, answer)
 	}
-	code, answer = post(path, callerCertificate, "")
+	code, answer = s.post(t, path, callerCertificate, "")
 	withdrawn := &action_servicepb.CancelActionRequestResponse{}
 	if code != http.StatusOK || protojson.Unmarshal(answer, withdrawn) != nil ||
 		withdrawn.GetOutcome() != action_servicepb.CancellationOutcome_CANCELLATION_OUTCOME_CANCELLED {

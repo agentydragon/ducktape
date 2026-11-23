@@ -1,6 +1,6 @@
 """Shared agent loop infrastructure for critic developer agents.
 
-Contains tool argument models, loop state, tool provider factory, and handlers
+Contains tool argument models, loop state, the `create_tools` factory, and handlers
 used by both optimize and improve modes.
 """
 
@@ -21,6 +21,7 @@ from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from props.agents.af.exec_tool import make_exec_tool
 from props.agents.af.tools import direct_tools
 from props.agents.critic_dev.grading import wait_until_graded
+from props.agents.runtime import WORKSPACE
 from props.core.eval_api_models import CriticRunStatus, GradingStatusResponse, RunCriticRequest, StartCriticResponse
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
@@ -34,14 +35,6 @@ TEXT_OUTPUT_REMINDER = (
     "Use start_critic, wait_until_critic_completed, and wait_until_graded to evaluate agents, "
     "then keep iterating."
 )
-
-# Default workspace path
-WORKSPACE = Path("/workspace")
-
-
-# =============================================================================
-# Tool argument models
-# =============================================================================
 
 
 class ReportFailureArgs(OpenAIStrictModeBaseModel):
@@ -71,11 +64,6 @@ class FetchSnapshotArgs(OpenAIStrictModeBaseModel):
     path: str = Field(default="/workspace", description="Directory to extract snapshot into")
 
 
-# =============================================================================
-# Loop state
-# =============================================================================
-
-
 class LoopStatus(StrEnum):
     """Agent loop execution status."""
 
@@ -89,11 +77,6 @@ class LoopState:
     """Mutable state for agent loop."""
 
     status: LoopStatus = LoopStatus.IN_PROGRESS
-
-
-# =============================================================================
-# Tool provider
-# =============================================================================
 
 
 def create_tools(state: LoopState, http_client: httpx.AsyncClient, db: Database) -> list:

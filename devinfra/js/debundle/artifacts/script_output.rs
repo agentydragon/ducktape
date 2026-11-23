@@ -45,7 +45,7 @@ pub(super) fn materialize_artifact_scripts(
     // `JsFileBody::Ast` calls `emit_js_module_with_comments`, which drives
     // the swc emitter. Capture the parent thread's globals and re-set
     // inside each worker closure — mirrors `prepare_candidate_emission_plan` and
-    // `vendor::emission::apply_emission_rewrites`.
+    // `vendor::emission::apply_emission_rewrites_in_place`.
     let file_metrics: Vec<OutputFileMetric> = GLOBALS
         .with(|globals| -> Result<Vec<_>> {
             artifact

@@ -1,8 +1,11 @@
 import asyncio
 import base64
+import json
+from collections import Counter
 from collections.abc import AsyncGenerator, AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from uuid import UUID
 
 import httpx
 import pytest
@@ -19,23 +22,24 @@ from aiquota.api import (
     _next_view_transition,
     create_app,
 )
-from aiquota.config import Config
+from aiquota.config import Config, load
 from aiquota.models import (
     AllQuotas,
     ClaudeResetGrant,
     FetchError,
     FetchSuccess,
+    PrepaidBalanceAvailable,
     ProviderFetch,
     ProviderQuota,
     QuotaSnapshot,
     QuotaWindow,
     RawUpstreamResponse,
 )
-from aiquota.providers.claude import USAGE_URL
-from aiquota.render.view_model import AllQuotasView
+from aiquota.providers.claude import PROFILE_URL, USAGE_URL
+from aiquota.render.view_model import AllQuotasView, refresh_view
 from aiquota.server_main import _frontend_dir
 from aiquota.settings import Settings
-from util.testing.asgi import serve_app_in_loop
+from testing.asgi import serve_app_in_loop
 
 
 class FakeFetcher:
@@ -112,8 +116,6 @@ def test_settings_are_loaded_and_validated_from_environment(monkeypatch: pytest.
     monkeypatch.setenv("AIQUOTA_API_BEARER_TOKEN", "test-bearer")
     monkeypatch.setenv("AIQUOTA_CONFIG", "/tmp/aiquota.toml")
     monkeypatch.setenv("AIQUOTA_CACHE_TTL_SECONDS", "30")
-    monkeypatch.setenv("AIQUOTA_CLAUDE_PROXY", "http://proxy:8180")
-    monkeypatch.setenv("AIQUOTA_CLAUDE_PROXY_CA", "/tmp/proxy-ca.pem")
     monkeypatch.setenv("AIQUOTA_CLIPROXY_API_KEY", "management-key")
     monkeypatch.setenv("AIQUOTA_CLICKHOUSE_URL", "http://clickhouse:8123")
     monkeypatch.setenv("AIQUOTA_CLICKHOUSE_PASSWORD", "clickhouse-password")
@@ -128,8 +130,6 @@ def test_settings_are_loaded_and_validated_from_environment(monkeypatch: pytest.
     assert settings.api_bearer_token == "test-bearer"
     assert settings.config_path == Path("/tmp/aiquota.toml")
     assert settings.cache_ttl.total_seconds() == 30
-    assert settings.claude_proxy == "http://proxy:8180"
-    assert settings.claude_proxy_ca == Path("/tmp/proxy-ca.pem")
     assert settings.cli_proxy_api_key is not None
     assert settings.cli_proxy_api_key.get_secret_value() == "management-key"
     assert settings.clickhouse_url == "http://clickhouse:8123"
@@ -225,7 +225,9 @@ async def test_prepaid_balance_raw_capture_does_not_replace_claude_usage_raw(cli
     assert prepaid_response.json()["upstream"]["body"]["balance"]["credits"] == {"amount_minor": 12345, "exponent": 2}
 
 
-async def test_real_claude_provider_keeps_usage_and_prepaid_captures_separate(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_real_claude_provider_keeps_usage_and_prepaid_captures_separate(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     org_uuid = "123e4567-e89b-12d3-a456-426614174000"
     balance_url = f"https://api.anthropic.com/api/oauth/organizations/{org_uuid}/prepaid/credits"
     usage_body = {
@@ -256,17 +258,15 @@ async def test_real_claude_provider_keeps_usage_and_prepaid_captures_separate(mo
 
     original_factory = api._CapturingClientFactory
 
-    def factory_with_mock_transport(
-        *, claude_proxy: str | None, claude_proxy_ca: Path | None
-    ) -> _CapturingClientFactory:
-        return original_factory(
-            claude_proxy=claude_proxy, claude_proxy_ca=claude_proxy_ca, transport=httpx.MockTransport(handler)
-        )
+    def factory_with_mock_transport() -> _CapturingClientFactory:
+        return original_factory(transport=httpx.MockTransport(handler))
 
     monkeypatch.setattr(api, "_CapturingClientFactory", factory_with_mock_transport)
+    credentials = tmp_path / "credentials.json"
+    credentials.write_text('{"claudeAiOauth": {"accessToken": "placeholder", "expiresAt": 4102444800000}}')
     service = QuotaAPIService(
         Config.model_validate(
-            {"claude": {"access_token": "placeholder"}, "codex": {"enabled": False}, "zai": {"enabled": False}}
+            {"claude": {"credentials_path": str(credentials)}, "codex": {"enabled": False}, "zai": {"enabled": False}}
         )
     )
 
@@ -290,6 +290,60 @@ async def test_real_claude_provider_keeps_usage_and_prepaid_captures_separate(mo
     }
 
 
+async def test_managed_claude_reuses_each_profiles_organization_for_prepaid_balance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profiles = {f"selector-{index}": (str(UUID(int=index)), str(UUID(int=index + 10)), index) for index in (1, 2)}
+    requests: Counter[tuple[str, str]] = Counter()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v0/management/auth-files":
+            return httpx.Response(200, json={"files": [{"provider": "claude", "auth_index": key} for key in profiles]})
+
+        assert request.url.path == "/v0/management/api-call"
+        payload = json.loads(request.content)
+        selector, url = payload["auth_index"], payload["url"]
+        requests[selector, url] += 1
+        account, organization, amount = profiles[selector]
+        bodies = {
+            PROFILE_URL: {"account": {"uuid": account}, "organization": {"uuid": organization}},
+            USAGE_URL: {"five_hour": {"utilization": amount}},
+            f"https://api.anthropic.com/api/oauth/organizations/{organization}/prepaid/credits": {
+                "currency": "USD",
+                "balance": {"credits": {"amount_minor": amount, "exponent": 2}},
+            },
+        }
+        return httpx.Response(200, json={"status_code": 200, "body": json.dumps(bodies[url])})
+
+    monkeypatch.setattr(
+        api, "_CapturingClientFactory", lambda: _CapturingClientFactory(transport=httpx.MockTransport(handler))
+    )
+    service = QuotaAPIService(
+        Config.model_validate(
+            {
+                "cli_proxy_api": {"url": "http://cliproxy.test/v0/management"},
+                "codex": {"enabled": False},
+                "zai": {"enabled": False},
+            }
+        ),
+        cli_proxy_api_key="management-key",
+    )
+    snapshot = await service.fetch(force_refresh=True)
+
+    quotas = {quota.account_id: quota.last_output.result for quota in snapshot.quotas.providers}
+    assert set(quotas) == {f"{account}:{organization}" for account, organization, _ in profiles.values()}
+    expected_captures = set()
+    for selector, (account, organization, amount) in profiles.items():
+        account_id = f"{account}:{organization}"
+        result = quotas[account_id]
+        assert isinstance(result, FetchSuccess)
+        assert result.windows[0].used_percent == amount
+        assert result.prepaid_balance == PrepaidBalanceAvailable(amount_minor=amount, exponent=2, currency="USD")
+        assert requests[selector, PROFILE_URL] == 1
+        expected_captures.update({f"claude:{account_id}", f"claude_prepaid_balance:{account_id}"})
+    assert snapshot.raw_responses.keys() == expected_captures
+
+
 async def test_prepaid_balance_raw_capture_is_claude_only(client: httpx.AsyncClient) -> None:
     response = await client.get(
         "/v1/providers/codex/prepaid-balance/raw", headers={"Authorization": "Bearer test-bearer"}
@@ -309,7 +363,7 @@ async def test_capture_preserves_exact_bounded_upstream_bytes() -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, content=body, headers={"Content-Type": "application/json"}, request=request)
 
-    factory = _CapturingClientFactory(claude_proxy=None, claude_proxy_ca=None, transport=httpx.MockTransport(handler))
+    factory = _CapturingClientFactory(transport=httpx.MockTransport(handler))
     url = "https://provider.example/usage"
     async with factory("test", {url}, 5.0) as upstream:
         response = await upstream.get(url)
@@ -321,38 +375,6 @@ async def test_capture_preserves_exact_bounded_upstream_bytes() -> None:
     assert base64.b64decode(raw.body_base64) == body
     assert raw.body_size_bytes == len(body)
     assert raw.truncated is False
-
-
-def test_legacy_claude_proxy_routes_only_direct_provider_requests(monkeypatch: pytest.MonkeyPatch) -> None:
-    clients: list[dict[str, object]] = []
-
-    class RecordingAsyncClient:
-        def __init__(self, **kwargs: object) -> None:
-            clients.append(kwargs)
-
-    monkeypatch.setattr(api.httpx, "AsyncClient", RecordingAsyncClient)
-    factory = _CapturingClientFactory(claude_proxy="http://credential-proxy.test:8180", claude_proxy_ca=None)
-
-    factory("claude", {"http://cliproxy.test/api-call"}, 5.0)
-    factory("claude_prepaid_balance", {"http://cliproxy.test/api-call"}, 5.0)
-    factory("claude", {"https://api.anthropic.com/api/oauth/usage"}, 5.0)
-    factory("claude_profile_direct", set(), 5.0)
-    factory("claude_prepaid_balance", {"https://api.anthropic.com/api/oauth/organizations/test/prepaid/credits"}, 5.0)
-    service_with_both_configs = QuotaAPIService(
-        Config.model_validate({"cli_proxy_api": {"url": "http://cliproxy.test/v0/management"}}),
-        claude_proxy="http://credential-proxy.test:8180",
-    )
-    management_factory = service_with_both_configs._client_factory()
-    management_factory("claude", {"http://cliproxy.test/v0/management/api-call"}, 5.0)
-    management_factory("claude_prepaid_balance", {"http://cliproxy.test/v0/management/api-call"}, 5.0)
-
-    assert "proxy" not in clients[0]
-    assert "proxy" not in clients[1]
-    assert clients[2]["proxy"] == "http://credential-proxy.test:8180"
-    assert clients[3]["proxy"] == "http://credential-proxy.test:8180"
-    assert clients[4]["proxy"] == "http://credential-proxy.test:8180"
-    assert "proxy" not in clients[5]
-    assert "proxy" not in clients[6]
 
 
 def _make_snapshot(used_percent: float, fetched_at: datetime) -> QuotaSnapshot:
@@ -395,6 +417,10 @@ async def _read_view(lines: AsyncIterator[str]) -> AllQuotasView:
 async def test_events_send_current_view_and_broadcast_on_demand_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
     class CountingProvider:
         name = "claude"
+        account_id = None
+        account_label = None
+        plan_type = None
+        account_tier = None
 
         def __init__(self) -> None:
             self.fetches = 0
@@ -413,7 +439,11 @@ async def test_events_send_current_view_and_broadcast_on_demand_refresh(monkeypa
             )
 
     provider = CountingProvider()
-    monkeypatch.setattr(api, "_instantiate", lambda _config, **_kwargs: [provider])
+
+    async def instantiate_accounts(*_args: object, **_kwargs: object) -> list[CountingProvider]:
+        return [provider]
+
+    monkeypatch.setattr(api, "_instantiate_accounts", instantiate_accounts)
     service = QuotaAPIService(Config())
     app = create_app(bearer_token="test-bearer", fetcher=service)
     feed: SnapshotFeed = app.state.snapshot_feed
@@ -536,6 +566,50 @@ async def test_background_collection_runs_without_clickhouse() -> None:
     assert not collector.is_running
 
 
+async def test_scheduled_only_polling_serves_every_read_from_the_collector(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "[polling]\npoll_interval_seconds = 900\nhistory_interval_seconds = 7200\n"
+        "cache_ttl_seconds = 0\nrefresh_on_read = false\n"
+    )
+    polling = load(config_path).polling
+    assert polling.poll_interval_seconds == 900
+    assert polling.history_interval_seconds == 7200
+    assert polling.cache_ttl_seconds == 0
+
+    fetcher = FakeFetcher()
+    feed = SnapshotFeed(fetcher)
+    collector = BackgroundCollector(
+        feed, None, interval=timedelta(seconds=polling.poll_interval_seconds), metrics=CollectorMetrics()
+    )
+    app = create_app(
+        bearer_token="test-bearer", fetcher=feed, collector=collector, refresh_on_read=polling.refresh_on_read
+    )
+    headers = {"Authorization": "Bearer test-bearer"}
+    read_paths = ["/v1/quotas", "/v1/providers/claude/raw", "/v1/providers/claude/prepaid-balance/raw"]
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://aiquota.test", headers=headers) as client:
+        for path in [*read_paths, "/v1/events"]:
+            assert (await client.get(path)).status_code == 503
+        assert fetcher.calls == 0
+
+    async with serve_app_in_loop(app) as url, httpx.AsyncClient(base_url=url, headers=headers) as client:
+        await feed.wait_after(0)
+        quota_response = await client.get("/v1/quotas")
+        assert quota_response.status_code == 200
+        view = AllQuotasView.model_validate_json(quota_response.content)
+        observed_at = fetcher.snapshot.quotas.providers[0].last_output.fetched_at
+        stale_at = observed_at + timedelta(minutes=30)
+        assert view.providers[0].stale_at == stale_at
+        assert refresh_view(view, observed_at + timedelta(minutes=15)).providers[0].stale_since is None
+        for path in read_paths:
+            assert (await client.get(path)).status_code == 200
+        async with client.stream("GET", "/v1/events") as response:
+            assert response.status_code == 200
+            assert (await _read_view(response.aiter_lines())).providers[0].stale_at == stale_at
+        assert fetcher.calls == 1
+
+
 async def test_clickhouse_failure_does_not_block_snapshot_publication() -> None:
     class FailingSink:
         async def write(self, snapshot: QuotaSnapshot) -> int:
@@ -645,3 +719,46 @@ async def test_event_stream_updates_without_polling_and_disconnect_cleans_up(mon
         assert fetcher.calls == 1  # Presentation updates do not poll providers per client.
     async with asyncio.timeout(1):
         await feed.wait_for_subscribers(0)
+
+
+async def test_multiple_accounts_keep_separate_last_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Account:
+        name = "codex"
+        account_label = None
+        plan_type = None
+        account_tier = None
+
+        def __init__(self, account_id: str, used: float) -> None:
+            self.account_id = account_id
+            self.used = used
+            self.fail = False
+
+        async def fetch(self) -> ProviderFetch:
+            result = (
+                FetchError(error="unavailable")
+                if self.fail
+                else FetchSuccess(
+                    windows=[QuotaWindow(used_percent=self.used, reset_seconds=300, window_seconds=18000)]
+                )
+            )
+            return ProviderFetch(fetched_at=datetime.now(UTC), result=result)
+
+    a, b = Account("account-a", 10), Account("account-b", 80)
+    accounts = [a, b]
+
+    async def instantiate_accounts(*_args: object, **_kwargs: object) -> list[Account]:
+        return accounts
+
+    monkeypatch.setattr(api, "_instantiate_accounts", instantiate_accounts)
+    service = QuotaAPIService(Config())
+    await service.fetch(force_refresh=True)
+    a.fail = True
+    b.used = 90
+    accounts.reverse()
+    snapshot = await service.fetch(force_refresh=True)
+    by_id = {q.account_id: q for q in snapshot.quotas.providers}
+    assert isinstance(by_id["account-a"].last_output.result, FetchError)
+    assert by_id["account-a"].last_success is not None
+    assert by_id["account-a"].last_success.result.windows[0].used_percent == 10
+    assert by_id["account-b"].last_success is not None
+    assert by_id["account-b"].last_success.result.windows[0].used_percent == 90

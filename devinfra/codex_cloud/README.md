@@ -1,145 +1,53 @@
-# Codex Cloud (Legacy) environment bootstrap for `ducktape`
+# Ducktape setup for Codex Cloud (Legacy)
 
-This directory contains a unified Codex Cloud setup/maintenance script for this monorepo,
-modeled after the Claude web setup goals:
+Use these commands in a legacy environment for Code Review or the GitHub and
+Linear integrations. The current web, mobile and desktop environments have a
+separate setup workflow. [Official legacy guide](https://learn.chatgpt.com/docs/environments/cloud-environment)
+and [current environment guide](https://learn.chatgpt.com/docs/environments/cloud-environments).
 
-- bootstrap from monorepo source-of-truth scripts (`devinfra/buildbuddy/setup.sh`)
-- optionally install Nix + `.#devtools` for tool parity with local workflows
-- support SOPS via `SOPS_AGE_KEY` injected through Codex environment config
-
-The `install` and `maintenance` modes documented here target Codex Cloud
-(Legacy) environments. The current Cloud environments for web, mobile, and
-desktop use a separate setup workflow; see the [current environment guide](https://learn.chatgpt.com/docs/environments/cloud-environments).
-
-## Files
-
-- `setup.sh`: unified script with `--mode=install|maintenance`
-
-## Codex Cloud (Legacy) environment configuration
-
-Recommended initial config in Codex Cloud:
-
-- **Setup script**: `bash devinfra/codex_cloud/setup.sh --mode=install`
-- **Maintenance script**: `bash devinfra/codex_cloud/setup.sh --mode=maintenance`
-
-### Environment variables vs secrets
-
-Codex Cloud behavior (per OpenAI docs):
-
-- Environment variables are available in setup and agent phases.
-- Secrets are setup-only and removed before agent execution.
-
-For this repo:
-
-- `setup.sh` decrypts the BuildBuddy key from
-  `cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml` when
-  `SOPS_AGE_KEY` is available.
-- `setup.sh` currently persists any supplied `SOPS_AGE_KEY` in the
-  mode-0600 `~/.codex/agent_env.sh`, which the agent shell sources. Treat the
-  key as available to agent tasks regardless of whether Codex supplied it as
-  an environment variable or a setup-only secret.
-- Use `SOPS_AGE_KEY` only when that runtime exposure is intended. If setup
-  needs the key but agent tasks must not receive it, the script must first be
-  changed and verified not to persist it.
-
-If `SOPS_AGE_KEY` is present during setup, `setup.sh` writes it to the agent
-environment file and makes `~/.bashrc` and `~/.bash_profile` source that file,
-so interactive and login shell sessions inherit it.
-
-This is intentional: Codex Cloud docs state setup runs in a separate Bash
-session and recommend `~/.bashrc` for persistence into the agent phase.
+| Environment setting | Command                                                 |
+| ------------------- | ------------------------------------------------------- |
+| Setup script        | `bash devinfra/codex_cloud/setup.sh --mode=install`     |
+| Maintenance script  | `bash devinfra/codex_cloud/setup.sh --mode=maintenance` |
 
 ## What this setup does
 
-1. Detects repo root and logs commit identity.
-2. Installs Nix (Determinate installer) if missing.
-3. Installs the repo `.#devtools` profile.
-4. Installs repo pre-commit Git hooks (`pre-commit install --install-hooks`).
-5. Persists nix profile sourcing in `~/.bashrc`, prepends Nix profile bins on `PATH` (so Nix-provided tooling like Prettier wins over user-level installs), and ensures `~/.bash_profile` sources `~/.bashrc`.
-6. Decrypts BuildBuddy API key from SOPS (when possible) and runs `devinfra/buildbuddy/setup.sh`.
-7. Configures BuildBuddy remote selection:
-   - uses `origin` when it already points directly to GitHub
-   - falls back to `github-no-proxy` when `origin` is proxied/non-GitHub
-   - if `origin` is missing, creates `github-no-proxy` and selects it
-8. Writes Codex Bazel config files:
-   - `~/.config/bazel/bbr.bazelrc` for BuildBuddy metadata (`ROLE`, session tag)
-   - `~/.config/bazel/codex.bazelrc` with `try-import` wiring for BuildBuddy + bbr metadata
-   - `~/.bazelrc` `try-import` entry for `~/.config/bazel/codex.bazelrc`
-9. Ensures local `devel` branch exists and tracks a remote `devel` branch (preferring the selected BuildBuddy remote, with fallback to `origin/devel` or `github-no-proxy/devel`) so `bbr` base-branch detection works.
-10. Materializes `~/.kube/config` from `secrets/claude-web-k8s-jwt.yaml` via the Nix-managed Python interpreter (`~/.nix-profile/bin/python3 devinfra/k8s/kubeconfig.py`) so `pyyaml` is present consistently.
-11. Persists `SOPS_AGE_KEY`, `BUILDBUDDY_API_KEY` (when available during setup), Bazel env vars (`BBR_BAZELRC`, `SESSION_BAZELRC`), and runtime `web_env.sh` sourcing into shell startup files so agent command shells can use BuildBuddy + generated bazelrc files.
+On a fresh Linux x86_64 image, [setup.sh](setup.sh) installs Determinate Nix if
+needed. On cache resume, maintenance loads the Nix profile and fetches Git
+remotes. Both paths refresh `.#devtools`, install pre-commit hooks and configure
+the agent shell. Maintenance also checks that `bb` and `bbr` start.
 
-Maintenance refreshes git remotes, BuildBuddy config, devtools profile, and
-pre-commit hooks, then validates `bb` / `bbr` availability.
+- [BuildBuddy setup](../buildbuddy/setup.sh) writes its credential when
+  `BUILDBUDDY_API_KEY` is available. [Remote reconciliation](../claude/reconcile_bbr_remote.sh)
+  selects GitHub directly or configures `github-no-proxy`, and sets up tracking
+  for the remote default branch so `bbr` can find its base.
+- Under `~/.config/bazel/`, `bbr.bazelrc` sets the role and session tag.
+  `codex.bazelrc` imports that metadata and the BuildBuddy credential, selects
+  the agent config, and filters live OpenAI tests. The setup adds its import to
+  `~/.bazelrc`.
+- With a SOPS key, [web_env.sh](../secrets/web_env.sh) supplies tool credentials
+  and the Nix profile's Python runs [kubeconfig.py](../k8s/kubeconfig.py) to
+  materialize `~/.kube/config`.
 
-## Known gaps / risks
+## Agent shell and credentials
 
-1. **Hooks in Codex Cloud are not yet guaranteed**
-   - Legacy environment docs describe setup/maintenance scripts but do not
-     confirm delegated execution of project `.codex/hooks.json`.
-   - The [current Cloud hooks guide](https://learn.chatgpt.com/docs/hooks)
-     says local/project hooks and command hooks are unsupported with cloud
-     orchestration. That statement does not settle behavior in legacy
-     environment tasks.
-   - This setup remains independent of hooks unless legacy behavior is tested.
+**Supply `SOPS_AGE_KEY` only when agent tasks may use it.** Legacy Cloud
+removes setup-only secrets from the process environment before the agent runs.
+Ducktape persists any supplied key and resolved BuildBuddy key in the mode-0600
+`~/.codex/agent_env.sh`. Supplying the age key through the setup-only secret
+field therefore still grants runtime access. A setup-only decryption requirement
+needs a change to that persistence behavior. [Official secret lifecycle](https://learn.chatgpt.com/docs/environments/cloud-environment#environment-variables-and-secrets).
 
-2. **SOPS key handling trade-off**
-   - `setup.sh` persists `SOPS_AGE_KEY` into the agent environment whenever it
-     is present, so supplying it as a setup-only secret does not keep it
-     setup-only.
-   - Keep the key unset until runtime exposure is intended, or change and test
-     the script's persistence behavior before using a setup-only secret.
-   - BuildBuddy setup now depends on being able to decrypt
-     `cluster/k8s/external-creds/buildbuddy-api-key.sops.yaml`.
-
-3. **Nix bootstrap cost**
-   - First-run setup may be slow; cached-container resume mitigates this.
-   - If setup exceeds practical time limits, measure the bottleneck and decide
-     whether a non-Nix fallback is needed; the current script does not provide
-     one.
-
-4. **Cloud image assumptions**
-   - Scripts assume Linux x86_64 and that Codex agent Bash sessions execute shell startup files.
-   - If image changes, update install script accordingly.
-
-## Validation command (inside repo)
+The generated file selects the Nix tools, sources `web_env.sh` when the key is
+available, and exports `BBR_BAZELRC` and `SESSION_BAZELRC`. Setup arranges for
+the Bash login and interactive startup files to source it. For a fresh
+non-interactive Bash command that skips those files, load it in that command:
 
 ```bash
-bash -n devinfra/codex_cloud/setup.sh
+source "$HOME/.codex/agent_env.sh"
+bbr test //devinfra/bazel:test_workspace
 ```
 
-## Passing env vars in Codex command runs
-
-In this Codex execution environment, each command runs in a fresh non-login
-shell process. That means:
-
-- `export FOO=bar` in one command does **not** persist to the next command.
-- `~/.bashrc` updates are persisted to disk, but are not automatically loaded by
-  subsequent command executions.
-
-Practical implication: pass required env vars per command invocation (or via a
-wrapper script that sets env and executes the command) rather than relying on a
-previous command's `export`.
-
-Examples:
-
-```bash
-# One-off per command
-SOPS_AGE_KEY="$SOPS_AGE_KEY" bbr test //path/to:target
-
-# Multiple vars, single invocation
-BUILDBUDDY_API_KEY="$BUILDBUDDY_API_KEY" \
-BBR_BAZELRC="$HOME/.config/bazel/bbr.bazelrc" \
-bbr build //devinfra/buildbuddy:bbr
-
-# Wrapper script pattern
-cat > /tmp/run-with-env.sh <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-export BBR_BAZELRC="$HOME/.config/bazel/bbr.bazelrc"
-export SESSION_BAZELRC="$HOME/.config/bazel/codex.bazelrc"
-exec "$@"
-EOF
-chmod +x /tmp/run-with-env.sh
-/tmp/run-with-env.sh bbr test //devinfra:all
-```
+If cached state is incompatible with the current checkout, use **Reset cache**
+on the legacy environment page. Setup and maintenance configuration changes
+also invalidate the cache. [Cache behavior](https://learn.chatgpt.com/docs/environments/cloud-environment#container-caching).

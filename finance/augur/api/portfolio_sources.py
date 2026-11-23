@@ -173,9 +173,7 @@ def _cash_total(plaid: PlaidPortfolioSourceConfig, balances: tuple[CurrentCashBa
     for balance in balances:
         value = balance.current if plaid.cash.balance_field == PlaidBalanceField.CURRENT else balance.available
         if value is None:
-            raise ValueError(
-                f"Plaid cash account {balance.account_id!r} has no {plaid.cash.balance_field.value} balance"
-            )
+            raise ValueError(f"Plaid cash account {balance.account_id!r} has no {plaid.cash.balance_field} balance")
         total += value
     return total
 

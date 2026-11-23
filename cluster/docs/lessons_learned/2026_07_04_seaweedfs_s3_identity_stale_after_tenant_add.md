@@ -112,3 +112,8 @@ app.kubernetes.io/component=s3` — pod deletion is _not_ reverted by the operat
 **Current guidance:** Prefer filer-backed dynamic identities for operator-managed buckets.
 Legacy static identities reload through the current annotation-mode Reloader configuration;
 use manual pod deletion only if diagnostics confirm stale gateway replicas.
+
+**Gateway scope:** `weed s3` authenticates every identity in the config it loads, with no
+per-route scoping. The internal gateway's static config holds `admin`, so never route it
+publicly: `s3.allegedly.works` is the separate [`public-s3`](../../cdk8s/seaweedfs/public_s3.py)
+gateway, whose static config is only the anonymous `pr-visuals` read rule.

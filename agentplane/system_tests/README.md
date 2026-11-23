@@ -16,6 +16,7 @@ in [the egress spec](../egress/SPEC.md).
 | [`k3s/`](k3s/README.md)                 | Retained test node, bootstrap and networking         |
 | [`firecracker/`](firecracker/README.md) | Firecracker lifecycle adapter and KVM acceptance     |
 | [`vm/`](vm/README.md)                   | VM runtime, storage, guest image and evidence        |
+| [`debug/`](debug/README.md)             | Dated investigations and evidence, with `k3s/debug/` |
 
 Offline tests stay beside the helper they exercise. The deployment guide owns stack setup and
 artifacts; the VM guide owns guest details. The suite BUILD files and test modules are the source
@@ -24,15 +25,17 @@ of truth for exact case membership.
 ## Suite entrypoints
 
 Each k3s system-test target starts one fixture stack. Scenarios share it only when their resource
-changes are compatible. `test_dispatcher` owns a separate stack because it scales the Runner Gateway
-and deletes a controller Pod. The external MCP delegation acceptance owns another stack because it
-scales the app to zero after OAuth consent.
+changes are compatible. `test_dispatcher` owns a separate native stack because it scales the
+`sessions` Deployment and deletes one of its Pods. The fixture client presents the App service
+SVID for the Dispatcher RPCs. The external MCP delegation acceptance owns another stack
+because it scales the app to zero after OAuth consent.
 
 | Target                                                                 | Coverage                                              |
 | ---------------------------------------------------------------------- | ----------------------------------------------------- |
 | `//agentplane/system_tests/suites:test_pod`                            | App-backed Pod Sandbox scenarios                      |
+| `//agentplane/system_tests/suites:test_pod_storage`                    | Native Pod workspace replacement                      |
 | `//agentplane/system_tests/suites:test_pod_platform`                   | Native Pod workload trust and Egress credentials      |
-| `//agentplane/system_tests/suites:test_session_deletion`               | Session deletion and replacement                      |
+| `//agentplane/system_tests/suites:test_session_deletion`               | Session deletion and native CLI History reads         |
 | `//agentplane/system_tests/suites:test_dispatcher`                     | Dispatcher queue, wake and replicas                   |
 | `//agentplane/system_tests/suites/mcp:test_actions`                    | MCP Actions and operator decisions                    |
 | `//agentplane/system_tests/suites/mcp:test_services`                   | App-backed delegated Action admission                 |
@@ -43,23 +46,27 @@ scales the app to zero after OAuth consent.
 | `//agentplane/system_tests/suites/mcp:test_history_outage`             | History outage during an active central-sampler turn  |
 | `//agentplane/system_tests/suites/mcp:test_delegation`                 | External MCP delegation                               |
 | `//agentplane/system_tests/suites/mcp:test_parent_delegation`          | Parent-to-child Session CLI flow                      |
-| `//agentplane/system_tests/suites:test_vm`                             | VM Sandbox scenarios on the software-emulated stack   |
+| `//agentplane/system_tests/suites:test_vm`                             | Required Claude and Codex VM scenarios on hosted KVM  |
+| `//agentplane/system_tests/suites:test_vm_tcg`                         | Same VM cases on managed QEMU, manual comparison      |
 | `//agentplane/system_tests/suites:test_real_model`                     | Real-model egress and Session instructions            |
 | `//agentplane/system_tests/suites:test_vm_manual`                      | Manual VM storage, ownership and suspend/resume cases |
 | `//agentplane/system_tests/suites:test_vm_oom`                         | Manual Codex tool-OOM survival probe                  |
 | `//agentplane/system_tests/suites:test_vm_profile`                     | Manual tool-OOM probe with guest profiling            |
-| [`//agentplane/system_tests/x/vm_kvm:test_vm_kvm`](x/vm_kvm/README.md) | Experimental KVM variant, manual                      |
+| [`//agentplane/system_tests/x/vm_kvm:test_vm_kvm`](x/vm_kvm/README.md) | Cold KVM comparison, manual                           |
 
-`test_vm_manual`, `test_vm_oom`, `test_vm_kvm` and `test_vm_profile` carry the `manual` tag. The staging checks
+See [CI executor routing](../../devinfra/ci/README.md#where-bazel-ci-runs-tests) for pool selection and the paired evidence.
+The [VM fixture options](deployment/vm_fixture_architecture.md) record what each path retains,
+setup costs by cache state and the requirements for sharing cluster infrastructure.
+
+`test_vm_tcg`, `test_vm_manual`, `test_vm_oom`, `test_vm_kvm` and `test_vm_profile` carry the `manual` tag. The staging checks
 [`test_thread_latency`](suites/live/test_thread_latency.py) and
-[`test_ollama_routes`](suites/live/test_ollama_routes.py) carry both `manual` and `no-remote-exec`;
+[`test_tabbyapi_routes`](suites/live/test_tabbyapi_routes.py) carry both `manual` and `no-remote-exec`;
 the [live-test instructions](#running-live) explain how to run them.
 
 Pod, MCP Actions, and VM harness cases use the same bounded batch runner. Pytest selection determines
 which callbacks run; each pytest item reports its own result and traced execution time. Fixtures
 own shared deployment/model-server lifetime, while each callback owns its clients, guests, and
-cleanup. The storage case carries an explicit exclusivity marker and runs before other Pod cases,
-so no runner pair is retained while it allocates guests. A case's timeout bounds its own coroutine,
+cleanup. The storage case owns a separate stack with no other Sandboxes. A case's timeout bounds its own coroutine,
 even while pytest is awaiting a different case.
 
 `case_timeout(seconds)` starts with the scenario, after shared deployment setup. It is separate
@@ -83,8 +90,8 @@ For matched concurrency experiments, override the slot count with
 `--test_env=AGENTPLANE_POD_CASE_LIMIT=2` (or another positive count). Claude and Codex
 open separate Sessions on that same Sandbox. Protocol cases reuse their worker's Sandbox; a
 fresh-guest case deletes its worker's cache before creating its own guests. Current nonexclusive
-cases, including auxiliary impostor guests, need at most two Sandboxes per worker. Storage runs
-alone before the workers start. Failed guest cleanup aborts the batch before further allocations.
+cases, including auxiliary impostor guests, need at most two Sandboxes per worker. Failed guest
+cleanup aborts the batch before further allocations.
 
 For current test names and arguments, inspect the suite modules, such as
 [`test_pod.py`](suites/test_pod.py), [`test_dispatcher.py`](suites/test_dispatcher.py), and
@@ -105,6 +112,8 @@ for VM image layout and lifecycle.
   Pod is replaced, and a prior failed turn remains retained before a new command is sent.
 - `test_delegation` continues an external MCP Connection with the app scaled down; the separate
   `test_parent_delegation` case drives a child Session through the actual `agentplane` CLI.
+- [`dcr.md`](dcr.md) covers external-client dynamic registration: the SDK component test
+  `//agentplane/mcp_edge/internal/authserver:sdk_dcr_test` and the deployed-edge scenario in `test_services_mcp`.
 - MCP operator login reads one named test Secret from the fixture API and keeps credentials in
   memory. The caller suppresses HTTP logging and refuses pytest `--showlocals` for the full exchange;
   do not add credential-bearing traces or artifacts ([`test_actions.py`](suites/mcp/test_actions.py),
@@ -233,7 +242,7 @@ and caching enabled for other tests.
 
 The default deployment is `https://agentplane-staging.allegedly.works` in namespace
 `agentplane-staging`. Set `AGENTPLANE_SYSTEM_TEST_TOKEN` to an operator ID token accepted by the
-target app; the live suite does not mint an app ServiceAccount token. `test_ollama_routes` reads the
+target app; the live suite does not mint an app ServiceAccount token. `test_tabbyapi_routes` reads the
 deployed catalog and uses the caller kubeconfig for Sandbox operations. Do not print or save credentials.
 
 | Variable                           | Default                                      |
@@ -261,9 +270,9 @@ bazelisk test //agentplane/system_tests/suites/live:test_thread_latency --test_o
 ```
 
 `test_thread_latency` times a model turn and the cold and warm reads used to open its thread; its
-module docstring defines the stages and limits. `test_ollama_routes` selects routes offered by the
-staging catalog and requires a recorded shell-tool result. Set `OLLAMA_SMOKE_CASE` to one pytest
-case ID to narrow it, or `OLLAMA_SMOKE_HOLD_SECONDS` to retain the Sandbox briefly for diagnosis
+module docstring defines the stages and limits. `test_tabbyapi_routes` selects routes offered by the
+staging catalog and requires a recorded shell-tool result. Set `TABBYAPI_SMOKE_CASE` to one pytest
+case ID to narrow it, or `TABBYAPI_SMOKE_HOLD_SECONDS` to retain the Sandbox briefly for diagnosis
 (the test caps this at 30 seconds). Each target writes evidence under its `test.outputs/` directory;
 a rerun replaces local outputs, so save evidence first if needed.
 

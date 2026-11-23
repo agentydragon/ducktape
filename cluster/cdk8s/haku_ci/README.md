@@ -4,7 +4,7 @@ Operator-owned, contained CI runner that builds **Haku's own UI image** from `ha
 source, entirely in-cluster. `haku-state` may hold private operator data, so its builds must
 never touch BuildBuddy/RBE or any external CI — this runner keeps everything inside the
 cluster (it pulls source + pushes the image to the in-cluster Forgejo registry). See
-`haku/PLAN.md` and `haku/console/docs/containment.md`.
+`haku/console/docs/containment.md`.
 
 ## Trust model — this is agent-controlled compute
 
@@ -21,8 +21,7 @@ contained to roughly Haku's existing sandbox blast radius:
   dockerd still runs **rootless** (UID 1000), so it's strictly better than classic rootful
   dind — but `privileged: true` is the documented requirement for dind-rootless (it provides
   `/dev/net/tun` and disables the mount masks RootlessKit needs). The non-privileged path was
-  attempted and cleared seccomp + `user.max_user_namespaces` but couldn't get past the masks
-  (see the paving section). The privileged pod's blast radius is bounded by this namespace
+  attempted and cleared seccomp + `user.max_user_namespaces` but couldn't get past the masks. The privileged pod's blast radius is bounded by this namespace
   being operator-only for writes, pinned **off the control planes**, and egress-fenced.
 - **Repo-scoped, single-use runners** registered only to the `haku-state` repo, so they only ever
   run Haku's jobs. Each pod registers ephemerally under its own Kubernetes pod name (so concurrent
@@ -40,15 +39,16 @@ Haku produces the image, and the runner can't escape its perimeter.
 
 The dind daemon runs as privileged-pod rootless Docker (after the non-privileged path
 dead-ended on the mount masks). Its Docker Hub pulls go through `oci-cache` with Docker's
-Hub-only `--registry-mirror`; rootless dind listens on `tcp://127.0.0.1:2375`, not
-`/var/run/docker.sock`.
+Hub-only `--registry-mirror`; rootless dind listens on `tcp://0.0.0.0:2375` inside the pod (the runner dials
+`localhost:2375`), not `/var/run/docker.sock`.
 
 The current end-to-end validation is a real haku-state `validate-state` workflow on Forgejo.
 As of 2026-07-05, the default branch is green after a push-triggered run (`/haku/haku-state`
-Actions run 336). A quick daemon-side mirror smoke test is:
+Actions run 336). A quick daemon-side mirror smoke test, while a job's pod exists (the
+`ScaledJob` has none otherwise), is:
 
 ```bash
-kubectl -n haku-ci exec deploy/haku-runner -c dind -- \
+kubectl -n haku-ci exec -c dind "$(kubectl -n haku-ci get pod -l app.kubernetes.io/name=haku-runner -o name | head -n1)" -- \
   docker -H tcp://127.0.0.1:2375 pull --platform=linux/amd64 catthehacker/ubuntu:act-latest
 ```
 

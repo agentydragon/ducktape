@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
-from openai_utils.model import Model, ResponsesRequest, ResponsesResult, WireRequest
+from openai_utils.model import Model, ResponsesRequest, ResponsesResult
 
 # Function type for a mocked OpenAI Responses API call
 ResponsesCreateFn = Callable[[ResponsesRequest], Awaitable[ResponsesResult]]
@@ -30,11 +30,10 @@ class CapturingOpenAIModel(Model):
     def model(self) -> str:
         return self._inner.model
 
-    def prepare(self, request: ResponsesRequest) -> WireRequest:
+    def prepare(self, request: ResponsesRequest) -> ResponsesRequest:
         return self._inner.prepare(request)
 
-    async def sample(self, req: WireRequest) -> ResponsesResult:
-        assert isinstance(req, ResponsesRequest)
+    async def sample(self, req: ResponsesRequest) -> ResponsesResult:
         self.captured.append(req)
         self.calls += 1
         return await self._inner.sample(req)
@@ -52,9 +51,7 @@ class FakeOpenAIModel(Model):
         self._outputs: list[ResponsesResult] = list(outputs)
         self.calls = 0
 
-    async def sample(self, req: WireRequest) -> ResponsesResult:
-        if not isinstance(req, ResponsesRequest):
-            raise TypeError("FakeOpenAIModel expects a Responses request")
+    async def sample(self, req: ResponsesRequest) -> ResponsesResult:
         if self.calls >= len(self._outputs):
             last_messages = []
             if isinstance(req.input, list):
@@ -84,8 +81,7 @@ def make_mock(responses_create_fn: ResponsesCreateFn) -> CapturingOpenAIModel:
     class _MockClient(Model):
         model = "test-model"
 
-        async def sample(self, req: WireRequest) -> ResponsesResult:
-            assert isinstance(req, ResponsesRequest)
+        async def sample(self, req: ResponsesRequest) -> ResponsesResult:
             return await responses_create_fn(req)
 
     return CapturingOpenAIModel(_MockClient())
@@ -96,6 +92,5 @@ class NoopOpenAIClient(Model):
 
     model = "noop-model"
 
-    async def sample(self, req: WireRequest) -> ResponsesResult:
-        assert isinstance(req, ResponsesRequest)
+    async def sample(self, req: ResponsesRequest) -> ResponsesResult:
         raise NotImplementedError("NoopOpenAIClient should not be called in SyntheticAction path")

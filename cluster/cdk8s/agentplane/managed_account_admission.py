@@ -12,11 +12,10 @@ from __future__ import annotations
 from cdk8s_plus_34 import k8s
 from constructs import Construct
 
+from agentplane.crd_group import GROUP
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s.agentplane import egress
 from cluster.cdk8s.agentplane.kubernetes_account_ref import CREDENTIAL_PREFIX
-
-_GROUP = "agentplane.allegedly.works"
 
 
 def add_managed_account_admission(
@@ -36,7 +35,7 @@ def add_managed_account_admission(
             match_constraints=k8s.MatchResources(
                 resource_rules=[
                     k8s.NamedRuleWithOperations(
-                        api_groups=[_GROUP],
+                        api_groups=[GROUP],
                         api_versions=["*"],
                         operations=["CREATE", "UPDATE"],
                         resources=["egresscredentials", "policysets"],
@@ -57,7 +56,7 @@ def add_managed_account_admission(
                     name="owned",
                     expression=(
                         "size(variables.owners) == 1"
-                        f" && variables.owners[0].apiVersion == '{_GROUP}/v1alpha1'"
+                        f" && variables.owners[0].apiVersion == '{GROUP}/v1alpha1'"
                         " && variables.owners[0].kind == 'ManagedServiceAccount'"
                         " && variables.owners[0].?controller.orValue(false)"
                     ),

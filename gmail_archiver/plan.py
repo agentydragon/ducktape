@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 
 from pydantic import BaseModel
-from rich.console import Console
 
 from gmail_archiver.gmail_api_models import GmailMessageWithHeaders
 from gmail_archiver.inbox import GmailInbox
@@ -85,20 +84,16 @@ class Plan:
         # Filter out no-op label operations based on message's current labels
         current_labels = set(message.label_ids)
 
-        # Only add labels not already present
         effective_add = {lbl for lbl in labels_to_add if lbl not in current_labels}
 
-        # Only remove labels that are present
         effective_remove = {lbl for lbl in labels_to_remove if lbl in current_labels}
 
-        # Create action with effective operations only
         action = Action(
             labels_to_add=effective_add, labels_to_remove=effective_remove, reason=reason, custom_data=custom_data
         )
 
         message_id = message.id
 
-        # Check for collision
         if message_id in self.actions:
             existing = self.actions[message_id]
             raise ValueError(
@@ -106,7 +101,6 @@ class Plan:
                 f"cannot also be claimed by {self.planner_name}"
             )
 
-        # Add planned action
         assert self.planner_name is not None  # Must be set in __init__
         self.actions[message_id] = PlannedAction(planner_name=self.planner_name, action=action)
 
@@ -116,11 +110,9 @@ class Plan:
         if not plans:
             raise ValueError("Cannot merge empty list of plans")
 
-        # Create merged plan using proper constructor (no specific planner owner)
         merged = Plan(planner_name=None)
 
         for plan in plans:
-            # Check for collisions before merging
             for message_id, planned_action in plan.actions.items():
                 if message_id in merged.actions:
                     existing = merged.actions[message_id]
@@ -130,7 +122,6 @@ class Plan:
                     )
                 merged.actions[message_id] = planned_action
 
-            # Merge planner-specific messages with headers
             if plan.messages:
                 merged.messages.append(f"[{plan.planner_name}]")
                 merged.messages.extend(plan.messages)
@@ -152,7 +143,6 @@ class Plan:
         if not add_counts and not remove_counts:
             return ""
 
-        # Collect all labels and their +/- counts
         all_labels = set(add_counts.keys()) | set(remove_counts.keys())
         parts = []
         for lbl in sorted(all_labels):
@@ -178,20 +168,6 @@ class Plan:
             if sig := pa.action.signature:
                 by_signature[sig].append(message_id)
         return by_signature
-
-    def execute(self, dry_run: bool, execute_fn: Callable[[str, Action], None], console: Console):
-        actions_with_ops = self.count_operations()
-
-        if dry_run:
-            console.print(f"[yellow]DRY RUN:[/yellow] Would perform {actions_with_ops} label operation(s)")
-        else:
-            console.print("Executing label operations...")
-            executed = 0
-            for message_id, planned_action in self.actions.items():
-                if planned_action.action.labels_to_add or planned_action.action.labels_to_remove:
-                    execute_fn(message_id, planned_action.action)
-                    executed += 1
-            console.print(f"[green]✓[/green] Executed {executed} label operation(s)")
 
 
 class Planner(Protocol):

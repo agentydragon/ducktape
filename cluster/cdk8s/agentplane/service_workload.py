@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch
+from cdk8s import ApiObjectMetadata, Duration
 from cdk8s_plus_34 import (
     Container,
     ContainerPort,
@@ -22,7 +22,6 @@ from cdk8s_plus_34 import (
     PodSecurityContextProps,
     Probe,
     Secret,
-    Service,
     ServiceAccount,
     k8s,
 )
@@ -52,15 +51,12 @@ def add_service_workload(
     readiness: Probe,
     liveness: Probe,
     resources: ContainerResources,
-    termination_grace: Duration,
+    termination_grace: Duration | None = None,
     startup: Probe | None = None,
     extra_ports: list[ContainerPort] | None = None,
     replica_profile: ReplicaProfile | None = None,
-    args: list[str] | None = None,
     env_variables: dict[str, EnvValue] | None = None,
-    service_account_labels: dict[str, str] | None = None,
     service_account: ServiceAccount | None = None,
-    annotations: dict[str, str] | None = None,
     image_pull_policy: ImagePullPolicy = ImagePullPolicy.IF_NOT_PRESENT,
     tolerate_control_plane: bool = False,
     create_service: bool = True,
@@ -85,13 +81,13 @@ def add_service_workload(
     account = service_account or ServiceAccount(
         scope,
         "account",
-        metadata=ApiObjectMetadata(name=name, namespace=env.namespace, labels=service_account_labels),
+        metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
         automount_token=automount_service_account_token,
     )
     deployment = Deployment(
         scope,
         "deployment",
-        metadata=ApiObjectMetadata(name=name, namespace=env.namespace, labels=labels, annotations=annotations),
+        metadata=ApiObjectMetadata(name=name, namespace=env.namespace, labels=labels),
         pod_metadata=ApiObjectMetadata(
             labels={**labels, **(telemetry.EMITTER_SERVICE_CLASS_LABELS if telemetry_enabled else {})}
         ),
@@ -122,7 +118,6 @@ def add_service_workload(
         name=container,
         image=image,
         image_pull_policy=image_pull_policy,
-        args=args,
         env_variables={**(env_variables or {}), **service_environment},
         ports=[*ports.values(), *(extra_ports or [])],
         readiness=readiness,
@@ -135,18 +130,24 @@ def add_service_workload(
     # With the database (cnpg_conventions R5).
     if placement is not None:
         pod_policy.place(deployment, placement, tolerate_control_plane=tolerate_control_plane)
+    if name in env.hostname_spread_services:
+        if replicas.count < 2:
+            raise ValueError(f"hostname spread requires at least two replicas: {name}")
+        node_scheduling.set_topology_spread(deployment, node_scheduling.hostname_spread(labels))
     pod_policy.harden(deployment)
     if create_service:
-        service = Service(
+        k8s.KubeService(
             scope,
             "service",
-            metadata=ApiObjectMetadata(name=name, namespace=env.namespace, labels=labels),
-            selector=deployment,
-            ports=[ref.service_port() for ref in serves],
+            metadata=k8s.ObjectMeta(name=name, namespace=env.namespace, labels=labels),
+            spec=k8s.ServiceSpec(
+                selector=deployment.match_labels,
+                ports=[ref.k8s_service_port() for ref in serves],
+                traffic_distribution=traffic_distribution,
+                type="ClusterIP",
+                external_i_ps=[],
+            ),
         )
-        if traffic_distribution is not None:
-            # cdk8s-plus-34's Service props do not expose this core Service field.
-            ApiObject.of(service).add_json_patch(JsonPatch.add("/spec/trafficDistribution", traffic_distribution))
     if replicas.pdb_min_available is not None:
         k8s.KubePodDisruptionBudget(
             scope,

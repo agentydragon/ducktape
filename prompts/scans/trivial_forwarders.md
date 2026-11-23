@@ -135,8 +135,10 @@ def get_user(user_id: str) -> User:
 **Usage**:
 
 ```bash
-# Run on entire codebase
-python prompts/scans/scan_single_line_functions.py . > single_line_functions.json
+# Run on entire codebase (from the repository root)
+python -m prompts.scans.scan_single_line_functions . > single_line_functions.json
+# or
+bb run //prompts/scans:scan_single_line_functions_bin -- . > single_line_functions.json
 
 # Pretty-print summary
 cat single_line_functions.json | jq '.summary'

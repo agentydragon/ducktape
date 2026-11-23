@@ -205,4 +205,3 @@ and CLI workflows likewise need their Action result read after the receipt. For 
 details read `agentplane actions guide action_lifecycle`; for lost responses and unknown outcomes
 read `agentplane actions guide recovery`. MCP clients can request those guides with
 `get_guide({"name":"action_lifecycle"})` and `get_guide({"name":"recovery"})`.
-If the CLI image lacks the `guide` subcommand, use the temporary old-runner links in the index.

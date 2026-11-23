@@ -254,7 +254,7 @@ func (c *sessionLifecycleController) reconcile(ctx context.Context, r controller
 		return nil
 	}
 	current.NativeStopped = true
-	fenced := c.runtime.config.CodexExecServer == nil && c.runtime.executionOwner == nil
+	fenced := c.runtime.config.ExecutionBackend == nil && c.runtime.executionOwner == nil
 	if c.runtime.executionLifecycle != nil {
 		signal, present, readErr := cosi.Read(ctx, r, executionSignalResource(executionSignal{}))
 		if readErr != nil {
@@ -359,5 +359,6 @@ func sessionSealComplete(status session.LifecycleStatus, found bool, desired lif
 }
 
 func sessionDeliveryComplete(status session.LifecycleStatus, found bool, desired lifecycle.EnvironmentDesired) bool {
-	return sessionSealComplete(status, found, desired) && status.Delivered
+	return sessionSealComplete(status, found, desired) && status.AcknowledgementPresent &&
+		status.AcknowledgementSealed && status.AcknowledgementCursor == status.SealCursor
 }

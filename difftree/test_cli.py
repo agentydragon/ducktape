@@ -1,5 +1,7 @@
 """Tests for CLI functionality."""
 
+import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -57,6 +59,28 @@ def test_cli_sort_actually_changes_order(runner, temp_git_repo, run_git, monkeyp
         assert 0 <= result.output.find(first) < result.output.find(second)
 
 
+@pytest.mark.parametrize("reverse", [False, True], ids=["file-to-directory", "directory-to-file"])
+def test_cli_reports_both_sides_of_a_file_directory_replacement(runner, temp_git_repo, run_git, monkeypatch, reverse):
+    create_file(temp_git_repo, "topic", "old file\n")
+    git_add_commit(run_git)
+    (temp_git_repo / "topic").unlink()
+    create_file(temp_git_repo, "topic/entry", "first line\nsecond line\n")
+    git_add_commit(run_git)
+    monkeypatch.chdir(temp_git_repo)
+
+    revisions = ["HEAD", "HEAD~1"] if reverse else ["HEAD~1", "HEAD"]
+    result = runner.invoke(main, ["--columns", "tree,counts", *revisions])
+
+    assert result.exit_code == 0, result.output
+    root, *rows = result.output.splitlines()
+    file_count, entry_count = ("+1", "-2") if reverse else ("-1", "+2")
+    assert file_count in root
+    assert entry_count in root
+    assert len(rows) == 2
+    assert any("topic " in row and file_count in row for row in rows)
+    assert any("topic/entry" in row and entry_count in row for row in rows)
+
+
 def test_cli_columns_flag_invalid_column(runner, git_repo_with_changes):
     """Test --columns flag with invalid column name."""
     result = runner.invoke(main, ["--columns", "tree,invalid,counts"], obj={}, catch_exceptions=False)
@@ -92,6 +116,56 @@ def test_cli_integration_basic(runner, temp_git_repo, run_git, monkeypatch):
     assert result.exit_code == 0
     assert "file.py" in result.output
     assert "+1" in result.output
+
+
+@pytest.fixture
+def staged_and_unstaged_repo(temp_git_repo: Path, run_git) -> Path:
+    for name in ("staged.py", "unstaged.py"):
+        create_file(temp_git_repo, name, "before\n")
+    git_add_commit(run_git)
+    for name in ("staged.py", "unstaged.py"):
+        create_file(temp_git_repo, name, "after\n")
+    run_git("add", "staged.py")
+    return temp_git_repo
+
+
+def test_cli_cached(runner, staged_and_unstaged_repo, monkeypatch):
+    monkeypatch.chdir(staged_and_unstaged_repo)
+    result = runner.invoke(main, ["--cached"])
+
+    assert result.exit_code == 0
+    assert "staged.py" in result.output
+    assert "unstaged.py" not in result.output
+
+
+def test_cli_reads_pipe_before_falling_back(staged_and_unstaged_repo, run_git, monkeypatch, capsys):
+    monkeypatch.chdir(staged_and_unstaged_repo)
+    patch = run_git("diff", "--cached", "--color=always").stdout
+    read_fd, write_fd = os.pipe()
+    with os.fdopen(read_fd) as pipe, os.fdopen(write_fd, "w") as producer:
+        read = pipe.read
+
+        def feed_pipe_and_read() -> str:
+            # Make the producer deliver its patch only once difftree tries to read.
+            producer.write(patch)
+            producer.close()
+            return read()
+
+        monkeypatch.setattr(pipe, "read", feed_pipe_and_read)
+        monkeypatch.setattr(sys, "stdin", pipe)
+        main.main(args=[], standalone_mode=False)
+
+    output = capsys.readouterr().out
+    assert "staged.py" in output
+    assert "unstaged.py" not in output
+
+
+def test_cli_without_stdin(staged_and_unstaged_repo, monkeypatch, capsys):
+    monkeypatch.chdir(staged_and_unstaged_repo)
+    monkeypatch.setattr(sys, "stdin", None)
+    main.main(args=[], standalone_mode=False)
+
+    assert "unstaged.py" in capsys.readouterr().out
 
 
 def test_cli_integration_with_args(runner, temp_git_repo, run_git, monkeypatch):

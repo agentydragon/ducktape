@@ -248,10 +248,10 @@ func TestSubsetLimitsAndRequestSize(t *testing.T) {
 		want  bool
 	}{
 		{"entity row maximum", func() error {
-			return checkEntitySubset(SubsetRequest{OrderBy: stringPtr(entityOrder), Limit: intPtr(SubsetRowLimit)})
+			return checkEntitySubset(SubsetRequest{OrderBy: new(entityOrder), Limit: new(SubsetRowLimit)})
 		}, true},
 		{"entity row overflow", func() error {
-			return checkEntitySubset(SubsetRequest{OrderBy: stringPtr(entityOrder), Limit: intPtr(SubsetRowLimit + 1)})
+			return checkEntitySubset(SubsetRequest{OrderBy: new(entityOrder), Limit: new(SubsetRowLimit + 1)})
 		}, false},
 		{"body maximum", func() error { return checkBodySubset(bodySubset(SubsetBodyLimit)) }, true},
 		{"body overflow", func() error { return checkBodySubset(bodySubset(SubsetBodyLimit + 1)) }, false},
@@ -291,6 +291,3 @@ func bodySubset(count int) SubsetRequest {
 	value := where.String()
 	return SubsetRequest{Where: &value, Params: params}
 }
-
-func stringPtr(value string) *string { return &value }
-func intPtr(value int) *int          { return &value }

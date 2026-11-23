@@ -36,7 +36,7 @@ class EnvironmentServiceClient:
             yield cls(channel)
 
     async def unary[ResponseT: Message](self, call: Callable[..., Awaitable[ResponseT]], request: Message) -> ResponseT:
-        return await call_unary(call, request, token_file=None, timeout_s=REQUEST_TIMEOUT_SECONDS)
+        return await call_unary(call, request, timeout_s=REQUEST_TIMEOUT_SECONDS)
 
     async def create_environment(
         self, request: environment_service_pb2.CreateEnvironmentRequest
@@ -75,12 +75,6 @@ class EnvironmentServiceClient:
         ):
             raise RuntimeError(f"EnvironmentService resume was not accepted for {requested}: {response}")
         return response
-
-    async def delete_environment(self, target: identity_pb2.EnvironmentTarget) -> None:
-        await self.unary(
-            self.stub.DeleteEnvironment,
-            environment_service_pb2.EnvironmentMutationRequest(target=self._copy_target(target)),
-        )
 
     async def environment_snapshots(self) -> AsyncGenerator[list[environment_service_pb2.EnvironmentDescriptor]]:
         """Yield complete inventories; only UNAVAILABLE reconnects into a fresh snapshot."""

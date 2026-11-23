@@ -4,7 +4,8 @@ The PodMonitor is auto-discovered by Alloy (`prometheus.operator.podmonitors "cl
 forwarded to Mimir (365 d). The
 motivation is getting DCGM_FI_DEV_XID_ERRORS (the `Xid 79 "GPU has fallen off the bus"`
 signal), PCIe replay counters, and power/temp into Mimir to characterize the recurring RTX 5090
-fall-off events; this replaces the local-CSV nix/nixos/modules/gpu-monitor.nix poller.
+fall-off events; it is to replace the local-CSV nix/nixos/modules/gpu-monitor.nix poller
+(cluster/k8s/TODO.md).
 Context: debug/atlas/gpu_lockup_20260718/followups.md, cluster/docs/plan.md.
 """
 
@@ -15,10 +16,11 @@ from cdk8s_plus_34 import k8s
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import PodMonitor, PodMonitorSpec, PodMonitorSpecSelector
 
 from cluster.cdk8s import namespaces
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.dcgm_exporter import counters
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import PRIVILEGED_POD_SECURITY, Vpa
 from cluster.cdk8s.providers.prometheus_operator.pod_monitor import Endpoint
 
 NAME = "dcgm-exporter"
@@ -40,12 +42,8 @@ def chart(app: App) -> Chart:
         name=NAMESPACE,
         # Fixed-resource DaemonSet -- opt out of Goldilocks/VPA recommendations.
         vpa=Vpa.DISABLED,
-        labels={
-            # GPU exporter runs with the nvidia runtimeClass and host GPU device injection.
-            "pod-security.kubernetes.io/enforce": "privileged",
-            "pod-security.kubernetes.io/audit": "privileged",
-            "pod-security.kubernetes.io/warn": "privileged",
-        },
+        # GPU exporter runs with the nvidia runtimeClass and host GPU device injection.
+        labels=PRIVILEGED_POD_SECURITY,
     )
     k8s.KubeDaemonSet(
         chart,
@@ -87,15 +85,8 @@ def chart(app: App) -> Chart:
                                 period_seconds=10,
                             ),
                             volume_mounts=[k8s.VolumeMount(name="counters", mount_path=_CONFIG_DIR, read_only=True)],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("100m"),
-                                    "memory": k8s.Quantity.from_string("128Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("500m"),
-                                    "memory": k8s.Quantity.from_string("512Mi"),
-                                },
+                            resources=container_resources(
+                                cpu="100m", memory="128Mi", cpu_limit="500m", memory_limit="512Mi"
                             ),
                         )
                     ],

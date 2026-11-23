@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"sync"
@@ -15,6 +14,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/grpc/codes"
@@ -50,12 +50,12 @@ func TestAdmissionIsDurableAndIdempotent(t *testing.T) {
 	if _, err := enqueueWithSession(t, store, ctx, "session-a", "sandbox-a", sandboxUID, input("overflow", "x"), nil); !errors.Is(err, ErrQueueFull) {
 		t.Fatalf("cap: %v", err)
 	}
-	rows, err := store.ListDispatchesForCaller(ctx, "session-a", "", nil, ServiceAccountCaller{Privileged: true})
+	rows, err := store.ListDispatchesForCaller(ctx, storeDispatchFilter("session-a"), ServiceAccountCaller{Privileged: true})
 	if err != nil || len(rows) != 3 {
 		t.Fatalf("list: %v, %v", rows, err)
 	}
 	for _, row := range rows {
-		if row.State != QueueState {
+		if row.GetState() != dispatcherpb.DeliveryState_DELIVERY_STATE_QUEUED_IN_DISPATCHER {
 			t.Fatalf("accepted command was unexpectedly cancelled: %+v", row)
 		}
 	}
@@ -213,16 +213,8 @@ func TestMixedVersionWakeWritersShareBudgetAndFenceReplacementUID(t *testing.T) 
 	if _, err := lockTx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", lockKey); err != nil {
 		t.Fatal("take old-writer advisory lock:", err)
 	}
-	var oldWriterPID, newWriterPID int
-	if err := lockTx.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&oldWriterPID); err != nil {
-		t.Fatal(err)
-	}
-	newWriterDB := postgres.Open(t, databaseURL)
-	newWriterDB.SetMaxOpenConns(1)
-	if err := newWriterDB.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&newWriterPID); err != nil {
-		t.Fatal(err)
-	}
-	newWriter := NewStore(newWriterDB, 3)
+	oldWriterPID := postgres.BackendPID(t, ctx, lockTx)
+	newWriter, newWriterPID := connectStore(t, ctx, databaseURL)
 	newWriterDone := make(chan error, 1)
 	go func() {
 		_, err := newWriter.ReserveWakeAttempt(ctx, wakeKey(lockCaller), lockSandboxUID, 1)
@@ -306,12 +298,12 @@ func TestOnlyRunnerAdmissionRecordsAdmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	deliveryOwner := claimSessionOwner(t, store, "admission-session")
-	claimed, err := store.Settle(ctx, "admission-input", deliveryOwner, []string{QueueState}, DeliveringState, "", nil)
+	claimed, err := store.Settle(ctx, "admission-input", deliveryOwner, []dispatcherpb.DeliveryState{QueueState}, DeliveringState, "", nil)
 	if err != nil || claimed == nil || claimed.Admission != nil {
 		t.Fatalf("claimed row carries an admission: %+v %v", claimed, err)
 	}
 	admission := &eventlogpb.EventEntry{Cursor: 7, Origin: &eventlogpb.EventOrigin{SourceId: "runner", Sequence: 7}}
-	if _, err := store.Settle(ctx, "admission-input", deliveryOwner, []string{DeliveringState}, AdmittedState, "", admission); err != nil {
+	if _, err := store.Settle(ctx, "admission-input", deliveryOwner, []dispatcherpb.DeliveryState{DeliveringState}, AdmittedState, "", admission); err != nil {
 		t.Fatal(err)
 	}
 	if row, err := store.GetDispatch(ctx, "admission-input"); err != nil || !proto.Equal(row.Admission, admission) {
@@ -319,7 +311,7 @@ func TestOnlyRunnerAdmissionRecordsAdmission(t *testing.T) {
 	}
 }
 
-func TestDeletedSandboxWakesReplicasAndRetainsTerminalTombstones(t *testing.T) {
+func TestDeletedSandboxWakesReplicasAndRetainsSessionCommands(t *testing.T) {
 	ctx := context.Background()
 	store, _ := testStoreWithURL(t, 3)
 	uid := "00000000-0000-4000-8000-000000000099"
@@ -332,7 +324,7 @@ func TestDeletedSandboxWakesReplicasAndRetainsTerminalTombstones(t *testing.T) {
 	if _, err := enqueueWithSession(t, store, ctx, "session-deleted", "sandbox-deleted", uid, input("test-deleted-cancelled", "test-cancelled-input"), nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.DB.ExecContext(ctx, "UPDATE dispatch SET state=$2,reason='test-prior-cancellation' WHERE command_id=$1", "test-deleted-cancelled", CancelledState); err != nil {
+	if _, err := store.DB.ExecContext(ctx, "UPDATE dispatch SET state_value=$2,reason='test-prior-cancellation' WHERE command_id=$1", "test-deleted-cancelled", CancelledState); err != nil {
 		t.Fatal(err)
 	}
 	interrupt := &commandpb.Command{
@@ -343,17 +335,16 @@ func TestDeletedSandboxWakesReplicasAndRetainsTerminalTombstones(t *testing.T) {
 		t.Fatal(err)
 	}
 	deliveryOwner := claimSessionOwner(t, store, "session-deleted")
-	if row, err := store.Settle(ctx, interrupt.GetCommandId(), deliveryOwner, []string{QueueState}, AdmittedState, "", &eventlogpb.EventEntry{Cursor: 17}); err != nil || row == nil {
+	if row, err := store.Settle(ctx, interrupt.GetCommandId(), deliveryOwner, []dispatcherpb.DeliveryState{QueueState}, AdmittedState, "", &eventlogpb.EventEntry{Cursor: 17}); err != nil || row == nil {
 		t.Fatalf("admit interrupt: %+v %v", row, err)
 	}
-	if row, err := store.Settle(ctx, "deleted-delivering", deliveryOwner, []string{QueueState}, DeliveringState, "", nil); err != nil || row == nil {
+	if row, err := store.Settle(ctx, "deleted-delivering", deliveryOwner, []dispatcherpb.DeliveryState{QueueState}, DeliveringState, "", nil); err != nil || row == nil {
 		t.Fatalf("settle: %+v %v", row, err)
 	}
 	if marked, err := store.MarkDeliveryAttempt(ctx, "deleted-delivering", deliveryOwner); err != nil || !marked {
 		t.Fatalf("mark in-flight delivery: %t %v", marked, err)
 	}
-	// Both Dispatcher replicas must wake for the committed cleanup, then read the
-	// durable tombstones because the dispatch rows are deleted in the same transaction.
+	// Both replicas must wake to read the settled outcomes.
 	subscribers := make([]<-chan struct{}, 0, 2)
 	for range 2 {
 		hub := testWatchHub(t, store)
@@ -374,22 +365,28 @@ func TestDeletedSandboxWakesReplicasAndRetainsTerminalTombstones(t *testing.T) {
 			t.Fatalf("replica %d missed Sandbox deletion wakeup", replica)
 		}
 	}
-	if _, err := store.GetDispatch(ctx, "deleted-queued"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("deleted row visible: %v", err)
+	if uids, err := store.ListSandboxUIDs(ctx); err != nil || len(uids) != 0 {
+		t.Fatalf("cleanup still scans deleted Environment: %v, %v", uids, err)
 	}
-	for commandID, want := range map[string]struct{ state, reason string }{
+	if work, err := store.SessionsWithPendingWork(ctx); err != nil || len(work) != 0 {
+		t.Fatalf("retained commands scheduled for delivery: %v, %v", work, err)
+	}
+	row, err := store.GetDispatch(ctx, "deleted-queued")
+	if err != nil || !proto.Equal(row.Command, input("deleted-queued", "q")) {
+		t.Fatalf("retained queued input: %+v, %v", row, err)
+	}
+	for commandID, want := range map[string]struct {
+		state  dispatcherpb.DeliveryState
+		reason string
+	}{
 		"deleted-queued":         {FailedState, "sandbox_deleted"},
 		"deleted-delivering":     {UnknownState, "sandbox_deleted"},
 		"test-deleted-cancelled": {CancelledState, "test-prior-cancellation"},
 		interrupt.GetCommandId(): {AdmittedState, ""},
 	} {
-		var state string
-		var reason sql.NullString
-		if err := store.DB.QueryRowContext(ctx, `SELECT state,reason FROM dispatch_tombstone WHERE command_id=$1`, commandID).Scan(&state, &reason); err != nil {
-			t.Fatal(err)
-		}
-		if state != want.state || reason.String != want.reason {
-			t.Fatalf("retained deletion %s = %s/%s, want %s/%s", commandID, state, reason.String, want.state, want.reason)
+		row, err := store.GetDispatch(ctx, commandID)
+		if err != nil || row.State != want.state || row.Reason != want.reason {
+			t.Fatalf("retained command %s = %+v, %v; want %s/%s", commandID, row, err, want.state, want.reason)
 		}
 	}
 }
@@ -407,21 +404,9 @@ func TestSandboxCleanupWaitsForInFlightSession(t *testing.T) {
 	if err := sessionLock(ctx, gate, sessionID); err != nil {
 		t.Fatal(err)
 	}
-	var gatePID int
-	if err := gate.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&gatePID); err != nil {
-		t.Fatal(err)
-	}
-	connect := func() (*Store, int) {
-		db := postgres.Open(t, databaseURL)
-		db.SetMaxOpenConns(1)
-		var pid int
-		if err := db.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
-			t.Fatal(err)
-		}
-		return NewStore(db, 3), pid
-	}
-	openingStore, openingPID := connect()
-	cleanupStore, cleanupPID := connect()
+	gatePID := postgres.BackendPID(t, ctx, gate)
+	openingStore, openingPID := connectStore(t, ctx, databaseURL)
+	cleanupStore, cleanupPID := connectStore(t, ctx, databaseURL)
 	opened := make(chan error, 1)
 	go func() {
 		_, err := createSession(openingStore, ctx, sessionID, "sandbox-race", uid, &sessionpb.SessionSpec{}, nil, nil)
@@ -450,72 +435,68 @@ func TestSandboxCleanupWaitsForInFlightSession(t *testing.T) {
 }
 
 func TestSessionRejectionSerializesWithAdmissionAndFencesSessionLeases(t *testing.T) {
-	store, databaseURL := testStoreWithURL(t, 3)
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	sessionID, uid, commandID := uuid.NewString(), uuid.NewString(), uuid.NewString()
-	if _, err := createSession(store, ctx, sessionID, "test-rejection-race", uid, &sessionpb.SessionSpec{}, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	staleDelivery := claimSessionOwner(t, store, sessionID)
-	expireSessionLease(t, store, staleDelivery)
-	deliveryOwner := claimSessionOwner(t, store, sessionID)
-	if row, err := store.RejectSession(ctx, sessionID, staleDelivery, []string{SessionWaitingState}, "stale rejection"); err != nil || row != nil {
-		t.Fatalf("stale Session lease settled opening: %+v %v", row, err)
-	}
-	gate, err := store.DB.BeginTx(ctx, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer gate.Rollback()
-	if _, err := gate.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "command:"+commandID); err != nil {
-		t.Fatal(err)
-	}
-	var gatePID int
-	if err := gate.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&gatePID); err != nil {
-		t.Fatal(err)
-	}
-	connect := func() (*Store, int) {
-		db := postgres.Open(t, databaseURL)
-		db.SetMaxOpenConns(1)
-		var pid int
-		if err := db.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
-			t.Fatal(err)
-		}
-		return NewStore(db, 3), pid
-	}
-	admitter, admitterPID := connect()
-	rejecter, rejecterPID := connect()
-	admitted := make(chan error, 1)
-	go func() {
-		_, err := enqueueWithSession(t, admitter, ctx, sessionID, "test-rejection-race", uid, input(commandID, "concurrent command"), nil)
-		admitted <- err
-	}()
-	postgres.WaitForBlocker(t, ctx, store.DB, admitterPID, gatePID)
-	rejected := make(chan error, 1)
-	go func() {
-		_, err := rejecter.RejectSession(ctx, sessionID, deliveryOwner, []string{SessionWaitingState}, "proven rejection")
-		rejected <- err
-	}()
-	// Admission has the Session lock but has not inserted the command yet.
-	postgres.WaitForBlocker(t, ctx, store.DB, rejecterPID, admitterPID)
-	if err := gate.Commit(); err != nil {
-		t.Fatal(err)
-	}
-	if err := <-admitted; err != nil {
-		t.Fatal(err)
-	}
-	if err := <-rejected; err != nil {
-		t.Fatal(err)
-	}
-	if row, err := store.GetDispatch(ctx, commandID); err != nil || row.State != FailedState {
-		t.Fatalf("rejection missed concurrent admission: %+v %v", row, err)
-	}
-	if err := store.EndSandbox(ctx, uid); err != nil {
-		t.Fatal(err)
-	}
-	if row, err := store.RejectSession(ctx, sessionID, deliveryOwner, []string{FailedState}, "late rejection"); err != nil || row != nil {
-		t.Fatalf("rejection resurrected cleaned state: %+v %v", row, err)
+	for _, kind := range []string{"native", "central"} {
+		t.Run(kind, func(t *testing.T) {
+			store, databaseURL := testStoreWithURL(t, 3)
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			sessionID, uid, commandID := uuid.NewString(), uuid.NewString(), uuid.NewString()
+			spec := &sessionpb.SessionSpec{}
+			if kind == "central" {
+				spec.Placement = &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: "test-rejection-race", Uid: uid}}}}
+			}
+			if _, err := createSession(store, ctx, sessionID, "test-rejection-race", uid, spec, nil, nil); err != nil {
+				t.Fatal(err)
+			}
+			staleDelivery := claimSessionOwner(t, store, sessionID)
+			expireSessionLease(t, store, staleDelivery)
+			deliveryOwner := claimSessionOwner(t, store, sessionID)
+			if row, err := store.RejectSession(ctx, sessionID, staleDelivery, []dispatcherpb.SessionStatus_Materialization{SessionWaitingState}, "stale rejection"); err != nil || row != nil {
+				t.Fatalf("stale Session lease settled opening: %+v %v", row, err)
+			}
+			gate, err := store.DB.BeginTx(ctx, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer gate.Rollback()
+			if _, err := gate.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", "command:"+commandID); err != nil {
+				t.Fatal(err)
+			}
+			gatePID := postgres.BackendPID(t, ctx, gate)
+			admitter, admitterPID := connectStore(t, ctx, databaseURL)
+			rejecter, rejecterPID := connectStore(t, ctx, databaseURL)
+			admitted := make(chan error, 1)
+			go func() {
+				_, err := enqueueWithSession(t, admitter, ctx, sessionID, "test-rejection-race", uid, input(commandID, "concurrent command"), nil)
+				admitted <- err
+			}()
+			postgres.WaitForBlocker(t, ctx, store.DB, admitterPID, gatePID)
+			rejected := make(chan error, 1)
+			go func() {
+				_, err := rejecter.RejectSession(ctx, sessionID, deliveryOwner, []dispatcherpb.SessionStatus_Materialization{SessionWaitingState}, "proven rejection")
+				rejected <- err
+			}()
+			// Admission has the Session lock but has not inserted the command yet.
+			postgres.WaitForBlocker(t, ctx, store.DB, rejecterPID, admitterPID)
+			if err := gate.Commit(); err != nil {
+				t.Fatal(err)
+			}
+			if err := <-admitted; err != nil {
+				t.Fatal(err)
+			}
+			if err := <-rejected; err != nil {
+				t.Fatal(err)
+			}
+			if row, err := store.GetDispatch(ctx, commandID); err != nil || row.State != FailedState {
+				t.Fatalf("rejection missed concurrent admission: %+v %v", row, err)
+			}
+			if err := store.EndSandbox(ctx, uid); err != nil {
+				t.Fatal(err)
+			}
+			if row, err := store.RejectSession(ctx, sessionID, deliveryOwner, []dispatcherpb.SessionStatus_Materialization{SessionFailedState}, "late rejection"); err != nil || row != nil {
+				t.Fatalf("rejection resurrected cleaned state: %+v %v", row, err)
+			}
+		})
 	}
 }
 
@@ -530,20 +511,11 @@ func TestDeliveryAttemptAndDeletionFenceOrderings(t *testing.T) {
 				t.Fatal(err)
 			}
 			deliveryOwner := claimSessionOwner(t, store, head.SessionID)
-			if _, err := store.Settle(ctx, head.CommandID, deliveryOwner, []string{QueueState}, DeliveringState, "", nil); err != nil {
+			if _, err := store.Settle(ctx, head.CommandID, deliveryOwner, []dispatcherpb.DeliveryState{QueueState}, DeliveringState, "", nil); err != nil {
 				t.Fatal(err)
 			}
-			connect := func() (*Store, int) {
-				db := postgres.Open(t, databaseURL)
-				db.SetMaxOpenConns(1)
-				var pid int
-				if err := db.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
-					t.Fatal(err)
-				}
-				return NewStore(db, 3), pid
-			}
-			marker, markerPID := connect()
-			deleter, deleterPID := connect()
+			marker, markerPID := connectStore(t, ctx, databaseURL)
+			deleter, deleterPID := connectStore(t, ctx, databaseURL)
 			gate, err := store.DB.BeginTx(ctx, nil)
 			if err != nil {
 				t.Fatal(err)
@@ -588,8 +560,8 @@ func TestDeliveryAttemptAndDeletionFenceOrderings(t *testing.T) {
 			if markFirst {
 				want = UnknownState
 			}
-			var state string
-			if err := store.DB.QueryRowContext(ctx, "SELECT state FROM dispatch_tombstone WHERE command_id=$1", head.CommandID).Scan(&state); err != nil {
+			var state dispatcherpb.DeliveryState
+			if err := store.DB.QueryRowContext(ctx, "SELECT state_value FROM dispatch WHERE command_id=$1", head.CommandID).Scan(&state); err != nil {
 				t.Fatal(err)
 			}
 			if state != want {
@@ -636,22 +608,14 @@ func TestDeletedAdmittedInputRetainsKnownAdmissionWithUnknownEffect(t *testing.T
 	}
 	deliveryOwner := claimSessionOwner(t, store, head.SessionID)
 	admission := &eventlogpb.EventEntry{Cursor: 17}
-	if _, err := store.Settle(ctx, head.CommandID, deliveryOwner, []string{QueueState}, AdmittedState, "", admission); err != nil {
+	if _, err := store.Settle(ctx, head.CommandID, deliveryOwner, []dispatcherpb.DeliveryState{QueueState}, AdmittedState, "", admission); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.EndSandbox(ctx, sandboxUID); err != nil {
 		t.Fatal(err)
 	}
-	var state string
-	var admissionBytes []byte
-	if err := store.DB.QueryRowContext(ctx, "SELECT state, admission FROM dispatch_tombstone WHERE command_id=$1", head.CommandID).Scan(&state, &admissionBytes); err != nil {
-		t.Fatal(err)
-	}
-	retained := &eventlogpb.EventEntry{}
-	if err := proto.Unmarshal(admissionBytes, retained); err != nil {
-		t.Fatal(err)
-	}
-	if state != UnknownState || !proto.Equal(retained, admission) {
-		t.Fatalf("deleted admitted input = %s with admission %v, want %s with admission %v", state, retained, UnknownState, admission)
+	row, err := store.GetDispatch(ctx, head.CommandID)
+	if err != nil || row.State != UnknownState || !proto.Equal(row.Admission, admission) || !proto.Equal(row.Command, head.Command) {
+		t.Fatalf("retained input = %+v, %v; want original command and admission with unknown effect", row, err)
 	}
 }

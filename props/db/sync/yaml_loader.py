@@ -37,11 +37,6 @@ class SyncFalsePositive:
     occurrences: list[FalsePositiveOccurrence]
 
 
-# ---------------------------------------------------------------------------
-# Pydantic models for YAML parsing
-# ---------------------------------------------------------------------------
-
-
 class YAMLOccurrence(BaseModel):
     """Permissive input model for YAML occurrences - accepts multiple location shapes.
 

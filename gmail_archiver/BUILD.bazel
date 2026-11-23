@@ -6,7 +6,6 @@ py_library(
     srcs = ["main.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":dirs",
         ":event_classifier",
         ":fmt",
         ":inbox",
@@ -14,9 +13,9 @@ py_library(
         ":plan",
         ":plan_display",
         "//gmail_api:labels",
-        "//gmail_archiver/cli:common",
         "//gmail_archiver/cli:filters",
         "//gmail_archiver/cli:labels",
+        "//gmail_archiver/cli:options",
         "//gmail_archiver/planners:aliexpress",
         "//gmail_archiver/planners:anthem_eob",
         "//gmail_archiver/planners:anthem_reimbursement",
@@ -110,6 +109,7 @@ py_library(
         ":gmail_api_models",
         ":inbox",
         ":plan",
+        "//gmail_api:filters",
     ],
 )
 
@@ -121,6 +121,7 @@ py_library(
         ":filter_planner",
         ":gmail_api_models",
         ":gmail_yaml_filters_models",
+        "//gmail_api:filters",
         "//gmail_api:labels",
     ],
 )
@@ -129,7 +130,11 @@ py_library(
     name = "gmail_api_models",
     srcs = ["gmail_api_models.py"],
     visibility = ["//:__subpackages__"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        "//gmail_api:filters",
+        "//gmail_api:messages",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
@@ -191,7 +196,6 @@ py_library(
         ":inbox",
         ":models",
         "@pypi//pydantic",
-        "@pypi//rich",
     ],
 )
 
@@ -229,6 +233,7 @@ py_test(
         ":models",
         "//:conftest",
         "@pypi//google_api_python_client",
+        "@pypi//pytest",
     ],
 )
 
@@ -241,6 +246,7 @@ py_test(
         ":inbox",
         ":models",
         "//:conftest",
+        "//gmail_api:messages",
         "@pypi//pytest",
         "@pypi//rich",
     ],
@@ -261,4 +267,19 @@ py_library(
     name = "fmt",
     srcs = ["fmt.py"],
     visibility = ["//gmail_archiver:__subpackages__"],
+)
+
+py_test(
+    name = "test_plan_display",
+    srcs = ["test_plan_display.py"],
+    deps = [
+        ":plan",
+        ":plan_display",
+        "//:conftest",
+        "//gmail_archiver/planners:aliexpress",
+        "//gmail_archiver/planners:doordash",
+        "//gmail_archiver/planners:square",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+    ],
 )

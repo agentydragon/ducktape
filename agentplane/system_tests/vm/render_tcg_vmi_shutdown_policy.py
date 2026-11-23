@@ -14,32 +14,22 @@ _NAMESPACE = "vm-tcg-shutdown-template"
 
 def main() -> None:
     chart = Chart(App(), "standalone-vmi-tcg")
-    runner_pod = {
-        "spec": {
-            "initContainers": [
-                {"name": launcher_relay.sidecar_config.CONTAINER_NAME, "securityContext": {}, "volumeMounts": []}
-            ],
-            "volumes": [
-                {
-                    "name": launcher_relay.sandbox_pod.SIDECAR_SETTINGS_VOLUME_NAME,
-                    "configMap": {"name": "unused-by-virtiofs-only-policy"},
-                }
-            ],
-        }
-    }
     launcher_relay.LauncherRelayPolicy(
         chart,
         "launcher-relay",
         namespace=_NAMESPACE,
-        runner_pod=runner_pod,
+        template_name="unused-by-virtiofs-only-policy",
         settings_config_map="unused-by-virtiofs-only-policy",
     )
-    policy = cast(dict[str, Any], Testing.synth(chart)[0])
-    rule = next(rule for rule in policy["spec"]["rules"] if rule["name"] == "keep-virtiofs-through-guest-shutdown")
-    # The direct VMI has no VirtualMachine/Sandbox chain. Keep the production rule's exact
-    # VMI lookup and mutation while excluding relay authentication/injection and unrelated rules.
-    rule["context"] = [entry for entry in rule["context"] if entry["name"] in {"vmiOwner", "vmi"}]
-    policy["spec"]["rules"] = [rule]
+    policy = cast(dict[str, Any], next(doc for doc in Testing.synth(chart) if doc["kind"] == "MutatingPolicy"))
+    # The direct VMI has no VirtualMachine/Sandbox chain. Keep the production daemon mutation, the last
+    # one, which reads only the VMI lookup; the other mutations and variables are never evaluated.
+    policy["spec"]["mutations"] = policy["spec"]["mutations"][-1:]
+    policy["spec"]["variables"] = [
+        v
+        for v in policy["spec"]["variables"]
+        if v["name"] in {"vmiOwner", "vmi", "vmiVolumes", "virtiofsNames", "eligibleVirtiofs"}
+    ]
     Path(os.environ["TCG_VMI_POLICY_OUTPUT"]).write_text(json.dumps({"namespace": _NAMESPACE, "policy": policy}))
 
 

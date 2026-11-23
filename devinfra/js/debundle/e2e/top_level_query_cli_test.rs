@@ -1,6 +1,7 @@
 //! Query the artifacts emitted from real JS/spec inputs, through the CLI.
 
 use debundle_e2e_graph_support::GraphFixture;
+use debundle_e2e_support::process;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::fs;
@@ -132,11 +133,7 @@ fn inspect_source_declarator_selection_bounds_output_and_rejects_ambiguous_names
         "--format",
         "json",
     ]);
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+    process::assert_success(&out);
     assert!(out.stdout.len() <= 1200, "{} bytes", out.stdout.len());
     let bounded: Value = serde_json::from_slice(&out.stdout).unwrap();
     let statement = &bounded["files"][0]["statements"][0];
@@ -219,11 +216,7 @@ fn inspect_source_unit_id_does_not_read_the_current_module_tree() {
         "--format",
         "json",
     ]);
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+    process::assert_success(&out);
     let report: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(
         report["files"][0]["statements"][0]["source"],
@@ -305,11 +298,7 @@ fn inspect_source_bounds_long_lines_and_serialized_output() {
         "--format",
         "json",
     ]);
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+    process::assert_success(&out);
     assert!(out.stdout.len() <= 1200, "{} bytes", out.stdout.len());
     let bounded: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(bounded["files"][0]["statements"][0]["index"], 0);
@@ -330,11 +319,7 @@ fn inspect_source_bounds_long_lines_and_serialized_output() {
         "--format",
         "text",
     ]);
-    assert!(
-        text.status.success(),
-        "{}",
-        String::from_utf8_lossy(&text.stderr)
-    );
+    process::assert_success(&text);
     assert!(text.stdout.len() <= 1200, "{} bytes", text.stdout.len());
     assert!(String::from_utf8_lossy(&text.stdout).contains("body[0] bytes="));
 }
@@ -525,11 +510,7 @@ fn describe_text_includes_binding_home_module_paths() {
         )],
     );
     let out = fixture.command(&["describe", "a", "--format", "text"]);
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+    process::assert_success(&out);
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(text.contains("runtime/plugins"), "{text}");
     let report = fixture.json(&["describe", "a"]);

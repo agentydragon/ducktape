@@ -21,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 var vmGuestContractRlocation string
@@ -114,26 +115,12 @@ func testWorkspaceVMTemplate(image string) *sandboxapi.SandboxTemplate {
 
 func getWorkspacePVC(t *testing.T, c client.Client) *corev1.PersistentVolumeClaim {
 	t.Helper()
-	var pvc corev1.PersistentVolumeClaim
-	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: WorkspaceVolumeName(sandboxName)}, &pvc); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		t.Fatal(err)
-	}
-	return &pvc
+	return getOrNil[corev1.PersistentVolumeClaim](t, c, client.ObjectKey{Namespace: namespace, Name: WorkspaceVolumeName(sandboxName)})
 }
 
 func getVM(t *testing.T, c client.Client) *kubevirtv1.VirtualMachine {
 	t.Helper()
-	var vm kubevirtv1.VirtualMachine
-	if err := c.Get(context.Background(), sandboxKey, &vm); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		t.Fatal(err)
-	}
-	return &vm
+	return getOrNil[kubevirtv1.VirtualMachine](t, c, sandboxKey)
 }
 
 func volume(vm *kubevirtv1.VirtualMachine, name string) *kubevirtv1.Volume {
@@ -179,6 +166,9 @@ func startVMI(t *testing.T, c client.Client, phase kubevirtv1.VirtualMachineInst
 		Labels:          vmi.Labels,
 		OwnerReferences: []metav1.OwnerReference{controllerRef("VirtualMachineInstance", vmi.Name, vmi.UID)},
 	}}
+	if phase == kubevirtv1.Running {
+		launcher.Spec.NodeName = "test-node"
+	}
 	if err := c.Create(ctx, launcher); err != nil {
 		t.Fatal(err)
 	}
@@ -348,6 +338,105 @@ func TestStopHaltsTheVMAndKeepsIt(t *testing.T) {
 	}
 }
 
+func TestSuspendVMWithUnscheduledLauncher(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		legacyPublished    bool
+		scheduleBeforeStop bool
+		scheduleOnDelete   bool
+	}{
+		{name: "unpublished"},
+		{name: "scheduled while still unpublished", scheduleBeforeStop: true},
+		{name: "already published and quiescing", legacyPublished: true},
+		{name: "scheduler binds before deletion", legacyPublished: true, scheduleOnDelete: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			r, c := newReconciler(t, true, testVMTemplate("test-guest:v1"))
+			reconcileOnce(t, r)
+			vmi, launcher := startVMI(t, c, kubevirtv1.Scheduling)
+			reconcileOnce(t, r)
+			sandbox := getSandbox(t, c)
+			if sandbox.Status.Incarnation != nil {
+				t.Errorf("published the unscheduled launcher: %+v", sandbox.Status.Incarnation)
+			}
+			if tc.legacyPublished {
+				sandbox.Status.Incarnation = &sandboxapi.Incarnation{Name: launcher.Name, UID: string(launcher.UID)}
+				if !tc.scheduleOnDelete {
+					sandbox.Status.StopStage = sandboxapi.StopStageQuiescing
+					sandbox.Status.QuiesceAttempt = &sandboxapi.QuiesceAttempt{
+						RunnerPodUID: string(launcher.UID), AttemptedAt: metav1.NewTime(testNow),
+					}
+				}
+				if err := c.Status().Update(ctx, sandbox); err != nil {
+					t.Fatal(err)
+				}
+			}
+			setRunning(t, c, false)
+			if tc.scheduleBeforeStop {
+				launcher.Spec.NodeName = "test-node"
+				if err := c.Update(ctx, launcher); err != nil {
+					t.Fatal(err)
+				}
+			}
+			quiescer := r.Quiescer.(*fakeQuiescer)
+			quiescer.err = errors.New("Environment Runtime unreachable")
+			if tc.scheduleOnDelete {
+				r.Client = interceptor.NewClient(c.(client.WithWatch), interceptor.Funcs{
+					Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+						options := (&client.DeleteOptions{}).ApplyOptions(opts)
+						if options.Preconditions == nil || options.Preconditions.UID == nil || *options.Preconditions.UID != launcher.UID {
+							t.Fatalf("launcher delete lacks its UID precondition: %+v", options.Preconditions)
+						}
+						launcher.Spec.NodeName = "test-node"
+						if err := c.Update(ctx, launcher); err != nil {
+							return err
+						}
+						return c.Delete(ctx, obj, opts...)
+					},
+				})
+				if _, err := r.Reconcile(ctx, request); !apierrors.IsConflict(err) {
+					t.Fatalf("reconcile after scheduler bind = %v, want conflict", err)
+				}
+				reconcileOnce(t, r)
+				if !runtimecredentials.VMRunning(getVM(t, c)) || quiescer.calls != 1 {
+					t.Fatalf("scheduler won: VM running=%v, quiesce calls=%d, want running and one call",
+						runtimecredentials.VMRunning(getVM(t, c)), quiescer.calls)
+				}
+				return
+			}
+			reconcileOnce(t, r)
+			if runtimecredentials.VMRunning(getVM(t, c)) || quiescer.calls != 0 {
+				t.Fatalf("VM running=%v, quiesce calls=%d, want Halted and no calls",
+					runtimecredentials.VMRunning(getVM(t, c)), quiescer.calls)
+			}
+			if tc.legacyPublished {
+				if err := c.Get(ctx, client.ObjectKeyFromObject(launcher), &corev1.Pod{}); !apierrors.IsNotFound(err) {
+					t.Fatalf("the published launcher can still be bound: get returned %v", err)
+				}
+			}
+			// KubeVirt removes the VMI after its launcher is gone.
+			if err := c.Delete(ctx, vmi); err != nil {
+				t.Fatal(err)
+			}
+			reconcileOnce(t, r)
+			status := getSandbox(t, c).Status
+			if status.StopStage != sandboxapi.StopStageStopped || status.QuiesceAttempt != nil || status.QuiescedIncarnation != nil {
+				t.Fatalf("stage=%q, attempt=%v, sealed=%v, want Stopped without a seal", status.StopStage, status.QuiesceAttempt, status.QuiescedIncarnation)
+			}
+			if tc.legacyPublished && (status.Incarnation == nil || status.Incarnation.UID != string(launcher.UID)) {
+				t.Fatalf("lost the previously published incarnation needed for journal recovery: %+v", status.Incarnation)
+			}
+			if !tc.legacyPublished && status.Incarnation != nil {
+				t.Fatalf("published a launcher while stopping: %+v", status.Incarnation)
+			}
+			if getPVC(t, c) == nil {
+				t.Fatal("suspend removed the state volume")
+			}
+		})
+	}
+}
+
 func TestStartRendersAHaltedVMFromTheTemplateAsItIsThen(t *testing.T) {
 	r, c := newReconciler(t, false, testVMTemplate("test-guest:v1"))
 	reconcileOnce(t, r)
@@ -426,31 +515,6 @@ func TestVMDeletionWaitsForTheVMIBeforeTheStateVolume(t *testing.T) {
 	}
 }
 
-func TestTemplateWithBothKindsIsRefused(t *testing.T) {
-	template := testVMTemplate("test-guest:v1")
-	template.Spec.Pod = testTemplate("test-image:v1").Spec.Pod
-	r, c := newReconciler(t, true, template)
-	reconcileOnce(t, r)
-	if getVM(t, c) != nil || getPod(t, c) != nil || getPVC(t, c) != nil {
-		t.Fatal("created resources from a template of both kinds")
-	}
-	if reason := runningReason(t, c); reason != "TemplateInvalid" {
-		t.Errorf("Running reason = %s, want TemplateInvalid", reason)
-	}
-}
-
-func TestVMTemplateWithoutKubeVirtStaysUnreadyWithoutStartingWorkload(t *testing.T) {
-	r, c := newReconciler(t, true, testVMTemplate("test-guest:v1"))
-	r.KubeVirt = false
-	reconcileOnce(t, r)
-	if getVM(t, c) != nil || getPod(t, c) != nil {
-		t.Fatal("created a workload for a VM template without KubeVirt")
-	}
-	if reason := runningReason(t, c); reason != "KubeVirtMissing" {
-		t.Errorf("Running reason = %s, want KubeVirtMissing", reason)
-	}
-}
-
 func TestWorkspaceVolumeIsAPVCOfTheSandboxAttachedToTheVM(t *testing.T) {
 	template := testWorkspaceVMTemplate("test-guest:v1")
 	r, c := newReconciler(t, true, template)
@@ -497,48 +561,5 @@ func TestHaltedVMKeepsItsWorkspaceVolume(t *testing.T) {
 	}
 	if v := volume(getVM(t, c), workspaceVolume); v == nil || v.PersistentVolumeClaim == nil {
 		t.Errorf("restarted VM workspace volume = %v, want the PVC", v)
-	}
-}
-
-func TestWorkspaceVolumeTheSandboxDoesNotOwnIsNotUsed(t *testing.T) {
-	stale := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{
-		Namespace: namespace, Name: WorkspaceVolumeName(sandboxName),
-	}}
-	r, c := newReconciler(t, true, testWorkspaceVMTemplate("test-guest:v1"), stale)
-	reconcileOnce(t, r)
-	if getVM(t, c) != nil {
-		t.Fatal("started a VM on a previous Sandbox's workspace")
-	}
-	if reason := runningReason(t, c); reason != "VolumeLayoutMismatch" {
-		t.Errorf("Running reason = %s, want VolumeLayoutMismatch", reason)
-	}
-}
-
-func TestTemplateDefiningTheWorkspaceVolumeItselfIsRefused(t *testing.T) {
-	template := testWorkspaceVMTemplate("test-guest:v1")
-	template.Spec.VM.Template.Spec.Volumes = append(template.Spec.VM.Template.Spec.Volumes, kubevirtv1.Volume{
-		Name:         workspaceVolume,
-		VolumeSource: kubevirtv1.VolumeSource{EmptyDisk: &kubevirtv1.EmptyDiskSource{Capacity: resource.MustParse("1Gi")}},
-	})
-	r, c := newReconciler(t, true, template)
-	reconcileOnce(t, r)
-	if getVM(t, c) != nil || getWorkspacePVC(t, c) != nil {
-		t.Fatal("started a VM, or made a workspace PVC, for a template that defines the workspace volume itself")
-	}
-	if reason := runningReason(t, c); reason != "VolumeLayoutMismatch" {
-		t.Errorf("Running reason = %s, want VolumeLayoutMismatch", reason)
-	}
-}
-
-func TestPodTemplateWithAWorkspaceVolumeIsRefused(t *testing.T) {
-	template := testTemplate("test-image:v1")
-	template.Spec.WorkspaceVolume = testWorkspaceVMTemplate("test-guest:v1").Spec.WorkspaceVolume
-	r, c := newReconciler(t, true, template)
-	reconcileOnce(t, r)
-	if getPod(t, c) != nil {
-		t.Fatal("started a Pod from a template that sets a workspace volume")
-	}
-	if reason := runningReason(t, c); reason != "VolumeLayoutMismatch" {
-		t.Errorf("Running reason = %s, want VolumeLayoutMismatch", reason)
 	}
 }

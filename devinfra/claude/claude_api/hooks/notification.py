@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase
+from devinfra.claude.claude_api.hooks.hook_base import CamelModel, HookInputBase
 
 
 class NotificationInput(HookInputBase):

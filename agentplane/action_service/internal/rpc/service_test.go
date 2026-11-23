@@ -61,19 +61,10 @@ func TestAReceiptCarriesItsPolicyDecisionAndItsExecutionsOutcome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	claim, err := s.store.ClaimExecution(t.Context(), submitted.ID, "test-executor", time.Minute, func(store.ActionIdentity) bool { return true })
-	if err != nil || claim == nil {
-		t.Fatalf("claim: %v, %v", claim, err)
-	}
-	if _, err := s.store.MarkRunning(t.Context(), submitted.ID); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.store.FinishExecution(t.Context(), submitted.ID, claim.Lease, store.ExecutionOutcome{
+	s.execute(t, submitted, store.ExecutionOutcome{
 		State: store.ExecutionFailed, Result: json.RawMessage(`["test-partial", 1]`),
 		Error: &action_servicepb.ExecutionError{Kind: action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_INVALID_ARGUMENTS, Message: "test message"},
-	}); err != nil {
-		t.Fatal(err)
-	}
+	})
 	// IDs and times are the ones the store assigned.
 	stored, err := s.store.Get(t.Context(), submitted.ID, s.caller)
 	if err != nil {

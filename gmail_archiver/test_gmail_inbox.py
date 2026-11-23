@@ -1,13 +1,13 @@
 """Tests for GmailInbox behavior after partial batch fetches."""
 
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import cast
 
 import pytest
 from rich.console import Console
 
-from gmail_archiver.gmail_api_models import GmailHeader, GmailMessagePayload, GmailMessageWithHeaders
+from gmail_api.messages import MessagePartHeader
+from gmail_archiver.gmail_api_models import GmailMessagePayload, GmailMessageWithHeaders
 from gmail_archiver.gmail_client import GmailClient
 from gmail_archiver.inbox import GmailInbox
 from gmail_archiver.models import Email
@@ -44,9 +44,9 @@ class _Client:
         return self.batch_responses.pop(0)
 
 
-def test_partial_fetch_raises_and_retains_success_for_retry(tmp_path: Path) -> None:
+def test_partial_fetch_raises_and_retains_success_for_retry() -> None:
     client = _Client()
-    inbox = GmailInbox(cast(GmailClient, client), Console(), tmp_path, show_progress=False)
+    inbox = GmailInbox(cast(GmailClient, client), Console(), show_progress=False)
 
     with pytest.raises(RuntimeError, match=r"Failed to fetch Gmail messages.*b"):
         inbox.fetch_messages("in:inbox", batch_size=2)
@@ -57,7 +57,7 @@ def test_partial_fetch_raises_and_retains_success_for_retry(tmp_path: Path) -> N
     assert client.batch_requests == [["a", "b"], ["b"]]
 
 
-def test_metadata_fetch_uses_metadata_cache_for_all_message_ids(tmp_path: Path) -> None:
+def test_metadata_fetch_uses_metadata_cache_for_all_message_ids() -> None:
     class _MixedCacheClient:
         def __init__(self) -> None:
             self.metadata_requests: list[list[str]] = []
@@ -88,8 +88,8 @@ def test_metadata_fetch_uses_metadata_cache_for_all_message_ids(tmp_path: Path) 
                     internal_date="1793145600000",
                     payload=GmailMessagePayload(
                         headers=[
-                            GmailHeader(name="Subject", value=f"Subject for {message_id}"),
-                            GmailHeader(name="From", value=f"{message_id}@example.invalid"),
+                            MessagePartHeader(name="Subject", value=f"Subject for {message_id}"),
+                            MessagePartHeader(name="From", value=f"{message_id}@example.invalid"),
                         ]
                     ),
                 )
@@ -97,7 +97,7 @@ def test_metadata_fetch_uses_metadata_cache_for_all_message_ids(tmp_path: Path) 
             ], []
 
     client = _MixedCacheClient()
-    inbox = GmailInbox(cast(GmailClient, client), Console(), tmp_path, show_progress=False)
+    inbox = GmailInbox(cast(GmailClient, client), Console(), show_progress=False)
     inbox.fetch_messages("full-cache-query")
     inbox.ensure_metadata_cached(["metadata-cache-message"])
 

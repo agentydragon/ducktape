@@ -152,6 +152,25 @@ pub fn module_path_dirname(path: &str) -> String {
         .to_string()
 }
 
+/// Output-tree-rooted path of an emitted file: `<chunk_dir>/<file_path>`, where
+/// the chunk dir is the chunk's source path with the `.js` suffix dropped.
+/// Imports resolve against this same coordinate system (see
+/// [`resolve_specifier`]).
+pub fn emitted_file_abs_path(chunk_source_path: &str, file_path: &str) -> String {
+    let chunk_dir = chunk_source_path
+        .strip_suffix(".js")
+        .unwrap_or(chunk_source_path);
+    join_module_path(&[chunk_dir, file_path])
+}
+
+/// Resolve a relative module specifier against the importing file's absolute
+/// path, normalizing `.` / `..` so the result is directly comparable to a
+/// target file's [`emitted_file_abs_path`].
+pub fn resolve_specifier(specifier: &str, importer_abs: &str) -> String {
+    let dir = module_path_dirname(importer_abs);
+    join_module_path(&[dir.as_str(), specifier])
+}
+
 /// First segment of a module path; for an app-relative output file, its chunk id.
 pub fn module_path_first_segment(path: &str) -> Option<&str> {
     RelativePath::new(path).iter().next()

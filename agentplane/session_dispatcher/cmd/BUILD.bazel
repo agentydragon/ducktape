@@ -13,7 +13,7 @@ go_library(
 )
 
 go_binary(
-    name = "runner-gateway",
+    name = "sessions",
     embed = [":main_lib"],
     pure = "on",
     visibility = ["//agentplane:__subpackages__"],

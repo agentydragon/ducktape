@@ -12,16 +12,15 @@ use std::fmt;
 
 use selector_constraint_backend::{
     BackendAssignment, BackendAssignmentCoverage, BackendAssignmentError, BackendSolveResult,
-    BackendSolveStatus, BackendVariableAssignment, CompiledSelectorProblem, ConstraintValue,
-    ConstraintVariableId, MAX_ALTERNATIVES_PER_VARIABLE, SelectorProblemBackend,
-    TargetBindingProjection,
+    BackendSolveStatus, BackendVariableAssignment, CompiledSelectorProblem, ConstraintVariableId,
+    MAX_ALTERNATIVES_PER_VARIABLE, SelectorProblemBackend, TargetBindingProjection,
 };
 use selector_constraint_model_builder::{
     CompiledSelectorProblemBuildError, compile_selector_problem,
 };
 use selector_ir::{
     ClaimKind, ClaimOutcome, ResolvedClaim, SelectorFact, SelectorFactStore, SelectorProgram,
-    SelectorTargetId, SolverClaim, SolverResult,
+    SelectorProjectedValue, SelectorTargetId, SolverClaim, SolverResult,
 };
 use source_identity::SourceUnitId;
 
@@ -121,7 +120,7 @@ pub enum SelectorBackendSolveError<E> {
     DecodedAssignmentDomainMismatch {
         variable: ConstraintVariableId,
         expected: selector_ir::VariableDomain,
-        actual: ConstraintValue,
+        actual: SelectorProjectedValue,
     },
     MissingSourceUnitFact {
         source_unit: SourceUnitId,
@@ -379,11 +378,11 @@ fn decode_satisfying_assignments<E>(
 }
 
 fn assigned_source_unit<E>(
-    assignment: &BTreeMap<ConstraintVariableId, ConstraintValue>,
+    assignment: &BTreeMap<ConstraintVariableId, SelectorProjectedValue>,
     variable: ConstraintVariableId,
 ) -> Result<SourceUnitId, SelectorBackendSolveError<E>> {
     match assignment.get(&variable) {
-        Some(ConstraintValue::SourceUnit(source_unit)) => Ok(*source_unit),
+        Some(SelectorProjectedValue::SourceUnit(source_unit)) => Ok(*source_unit),
         Some(value) => Err(SelectorBackendSolveError::DecodedAssignmentDomainMismatch {
             variable,
             expected: selector_ir::VariableDomain::SourceUnit,
@@ -394,11 +393,11 @@ fn assigned_source_unit<E>(
 }
 
 fn assigned_string<E>(
-    assignment: &BTreeMap<ConstraintVariableId, ConstraintValue>,
+    assignment: &BTreeMap<ConstraintVariableId, SelectorProjectedValue>,
     variable: ConstraintVariableId,
 ) -> Result<String, SelectorBackendSolveError<E>> {
     match assignment.get(&variable) {
-        Some(ConstraintValue::String(value)) => Ok(value.clone()),
+        Some(SelectorProjectedValue::String(value)) => Ok(value.clone()),
         Some(value) => Err(SelectorBackendSolveError::DecodedAssignmentDomainMismatch {
             variable,
             expected: selector_ir::VariableDomain::String,
@@ -484,19 +483,19 @@ impl MaterializationFacts {
 mod tests {
     use std::convert::Infallible;
 
-    use selector_constraint_backend::ConstraintValue;
     use selector_constraint_backend::{
         BackendAssignment, BackendAssignmentCoverage, BackendSolveResult, BackendSolveStatus,
         BackendValueId, BackendVariableAssignment,
     };
     use selector_ir::{SelectorAtom, SourceUnitTerm, StringTerm, VariableDomain};
+    use selector_test_fixtures::{declared_binding, source_unit_fact};
     use source_identity::SourceUnitId;
 
     use super::*;
 
     #[derive(Debug)]
     struct SelectingBackend {
-        assignments: Vec<Vec<(ConstraintVariableId, ConstraintValue)>>,
+        assignments: Vec<Vec<(ConstraintVariableId, SelectorProjectedValue)>>,
         coverage: BackendAssignmentCoverage,
         status: BackendSolveStatus,
     }
@@ -546,7 +545,7 @@ mod tests {
 
     fn backend_value_for(
         problem: &CompiledSelectorProblem,
-        value: &ConstraintValue,
+        value: &SelectorProjectedValue,
     ) -> BackendValueId {
         problem
             .value_dictionary
@@ -554,27 +553,12 @@ mod tests {
             .expect("test backend value must be in dictionary")
     }
 
-    fn source_unit(value: usize) -> ConstraintValue {
-        ConstraintValue::SourceUnit(SourceUnitId(value))
+    fn source_unit(value: usize) -> SelectorProjectedValue {
+        SelectorProjectedValue::SourceUnit(SourceUnitId(value))
     }
 
-    fn string(value: &str) -> ConstraintValue {
-        ConstraintValue::String(value.to_string())
-    }
-
-    fn source_unit_fact(source_unit: SourceUnitId, ordinal: usize, kind: &str) -> SelectorFact {
-        SelectorFact::SourceUnit {
-            source_unit,
-            statement_ordinal: SourceUnitOrdinal(ordinal),
-            statement_kind: kind.to_string(),
-        }
-    }
-
-    fn binding_fact(source_unit: SourceUnitId, binding: &str) -> SelectorFact {
-        SelectorFact::DeclaredBinding {
-            source_unit,
-            binding: binding.to_string(),
-        }
+    fn string(value: &str) -> SelectorProjectedValue {
+        SelectorProjectedValue::String(value.to_string())
     }
 
     fn binding_program() -> (SelectorProgram, SelectorTargetId) {
@@ -650,17 +634,17 @@ mod tests {
 
     fn facts() -> SelectorFactStore {
         let mut facts = SelectorFactStore::default();
-        facts.push(source_unit_fact(SourceUnitId(1), 10, "function"));
-        facts.push(binding_fact(SourceUnitId(1), "minA"));
-        facts.push(source_unit_fact(SourceUnitId(2), 20, "function"));
-        facts.push(binding_fact(SourceUnitId(2), "minB"));
+        facts.push(source_unit_fact(1, 10, "function"));
+        facts.push(declared_binding(1, "minA"));
+        facts.push(source_unit_fact(2, 20, "function"));
+        facts.push(declared_binding(2, "minB"));
         facts
     }
 
     fn single_binding_facts() -> SelectorFactStore {
         let mut facts = SelectorFactStore::default();
-        facts.push(source_unit_fact(SourceUnitId(1), 10, "function"));
-        facts.push(binding_fact(SourceUnitId(1), "minA"));
+        facts.push(source_unit_fact(1, 10, "function"));
+        facts.push(declared_binding(1, "minA"));
         facts
     }
 
@@ -878,12 +862,8 @@ mod tests {
         };
         let mut facts = SelectorFactStore::default();
         for (source_unit, binding) in [(1, "minA"), (2, "minB")] {
-            facts.push(source_unit_fact(
-                SourceUnitId(source_unit),
-                source_unit * 10,
-                "function",
-            ));
-            facts.push(binding_fact(SourceUnitId(source_unit), binding));
+            facts.push(source_unit_fact(source_unit, source_unit * 10, "function"));
+            facts.push(declared_binding(source_unit, binding));
         }
         let problem = compile_selector_problem(&program, &facts).unwrap();
         let source_unit_variable = |target| {

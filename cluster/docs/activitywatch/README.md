@@ -21,15 +21,10 @@ Syncthing into a cluster receiver and imported by an `aw-sync` CronJob — was r
 not idempotent, so it could not produce a canonical central dataset. The old Authentik
 human route and agent OAuth client-credential mint were removed with that deployment.
 The human route is now restored as the Authentik proxy described below; agents use the
-separate bearer-gated read route. Records from that era, kept for their lessons:
-
-- [Importer canary](importer-canary.md): the live `aw-sync` pull canary that forced the
-  retirement — source mutation, provenance collisions, heartbeat amplification.
-- [Syncthing conflicts](syncthing-conflicts.md): receiver index-loss and conflict-file
-  RCA.
-- [GNOME Wayland capture](gnome-wayland-capture.md): why the stock watcher saw no windows
-  on GNOME Wayland; fixed by `awatcher` + the focused-window-d-bus extension, now the
-  deployed capture stack.
+separate bearer-gated read route. A record from that era is kept for its lesson:
+[GNOME Wayland capture](gnome-wayland-capture.md) — why the stock watcher saw no windows
+on GNOME Wayland; fixed by `awatcher` + the focused-window-d-bus extension, now the
+deployed capture stack.
 
 ## Design
 
@@ -124,5 +119,5 @@ still hold.
 - 10Gi is a starting budget, not a retention policy: window/AFK data should fit for a
   long time, but multi-device growth is unbounded and unmeasured now that four devices
   feed it.
-- Agent read access is a static long-lived bearer (SOPS-minted, iron-substituted). A
+- Agent read access is a static long-lived bearer (SOPS-minted). A
   rotator-issued short-lived token handoff would be more hygienic.

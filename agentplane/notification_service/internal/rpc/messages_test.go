@@ -70,7 +70,7 @@ func TestAGrantedSenderMessagesASessionThatReadsItFromItsInbox(t *testing.T) {
 		t.Errorf("id %q: %v", sent.GetId(), err)
 	}
 	// The destination is pinned to the incarnation that took the message.
-	if sent.GetDestinationRef().GetNamespace() != "" || sent.GetDestinationRef().GetName() != "" || sent.GetDestinationRef().GetUid() != "" || sent.GetSessionId() != testSession ||
+	if sent.GetSessionId() != testSession ||
 		sent.GetIdempotencyKey() != "first" || time.Since(sent.GetAcceptedAt().AsTime()) > time.Minute ||
 		sent.GetCovered() || sent.GetAcknowledged() || sent.GetInboxRetired() {
 		t.Errorf("sent = %v", sent)
@@ -270,18 +270,25 @@ func TestSessionTargetUsesTypedPlacement(t *testing.T) {
 	}
 }
 
+// legacyDestinationBytes is the retired SendMessageRequest field 1 as an old client put it on the wire: a
+// nested Sandbox address, kept raw because the service no longer has the message.
+func legacyDestinationBytes(namespace, name, uid string) []byte {
+	nested := appendRawField(nil, 1, namespace)
+	nested = appendRawField(nested, 2, name)
+	nested = appendRawField(nested, 3, uid)
+	return protowire.AppendBytes(protowire.AppendTag(nil, 1, protowire.BytesType), nested)
+}
+
+func appendRawField(out []byte, number protowire.Number, value string) []byte {
+	return protowire.AppendBytes(protowire.AppendTag(out, number, protowire.BytesType), []byte(value))
+}
+
 func TestAnOldWireDestinationFenceIsRejectedBeforeSending(t *testing.T) {
 	server := newServer(t)
 	server.grantSend(otherSandboxName, toSandbox)
-	oldRef, err := proto.Marshal(&notificationspb.DestinationRef{
-		Namespace: testNamespace, Name: sandboxName, Uid: "test-former-sandbox-uid",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	request := sendRequest("old-wire")
-	request.ProtoReflect().SetUnknown(protowire.AppendBytes(protowire.AppendTag(nil, 1, protowire.BytesType), oldRef))
-	_, err = server.client.SendMessage(bearing(t, otherIdentityCaller), request)
+	request.ProtoReflect().SetUnknown(legacyDestinationBytes(testNamespace, sandboxName, "test-former-sandbox-uid"))
+	_, err := server.client.SendMessage(bearing(t, otherIdentityCaller), request)
 	requireCode(t, err, codes.InvalidArgument)
 	server.requireNoInbox(t)
 	if asked := server.history.questions(); len(asked) != 0 {

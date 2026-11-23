@@ -29,7 +29,7 @@ func TestMain(m *testing.M) {
 		serveStdio()
 		return
 	}
-	os.Exit(postgres.RunIntegrationTestsWithDatabase(m, migrations.Up, &integrationDatabase))
+	os.Exit(postgres.RunIntegrationTests(m.Run, migrations.Up, &integrationDatabase))
 }
 
 // awaitBound only fails a test whose condition never comes.
@@ -126,8 +126,8 @@ func unavailableAndRetryingFor(reason action_servicepb.McpUnavailableReason, det
 
 func anyDetail(string) bool { return true }
 
-// executorTiming is the Python service's but for a shorter lifecycle bound, so that a test of a step that never
-// answers ends sooner.
+// executorTiming is DefaultTiming with a shorter lifecycle bound, so that a test of a step that never answers ends
+// sooner.
 func executorTiming() Timing {
 	timing := DefaultTiming()
 	timing.Lifecycle = 5 * time.Second
@@ -203,8 +203,8 @@ func (r router) Route(action store.ActionIdentity) (worker.Executor, bool) {
 	return r.executor, true
 }
 
-// workerTiming is the Python service's, with a sweep and an executor heartbeat a test can wait for, and a drain
-// that does not hold up a test's cleanup.
+// workerTiming is worker.DefaultTiming with a sweep and an executor heartbeat a test can wait for, and a drain that
+// does not hold up a test's cleanup.
 func workerTiming() worker.Timing {
 	timing := worker.DefaultTiming()
 	timing.Sweep = 20 * time.Millisecond

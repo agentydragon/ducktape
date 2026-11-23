@@ -6,13 +6,13 @@ from pathlib import Path
 from python.runfiles import Runfiles
 from sqlalchemy import create_engine, text
 
+from testing.postgres import DatabaseNames, create_temporary_database
 from util.db_url import render_postgresql_url
-from util.testing.postgres import DatabaseNames, create_temporary_database
 
 # SQLAlchemy loads this URL dialect dynamically.
 # gazelle:include_dep @pypi//psycopg
 
-_SERVICE = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/session_dispatcher/cmd/runner-gateway_/runner-gateway"
+_SERVICE = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/session_dispatcher/cmd/sessions_/sessions"
 _VERSION = "runner_gateway_dispatcher_goose_version"
 
 

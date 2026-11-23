@@ -2,7 +2,7 @@
 
 Run via:
 
-    bb run //devinfra/skills/reverse_engineer/evals/x:run -- \
+    bb run //devinfra/skills/reverse_engineer/evals/x:run_bin -- \
         --model anthropic/claude-haiku-4-5-20251001
 
 Both Anthropic and OpenAI models are supported through Inspect's standard

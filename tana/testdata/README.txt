@@ -1,7 +1,7 @@
 test_workspace.json:
     "Export Test" test workspace exported from Tana PWA, formatted with jq .
 
-test_workspace_node.txt:
+MFjacEHVlv36.tanapaste:
     the "Export Test" workspace root node from the same workspace -> "Copy as Tana Paste" from Tana PWA
 
 test_markdown_export/:

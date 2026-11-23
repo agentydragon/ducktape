@@ -5,7 +5,7 @@ act on ([naming ADR](../docs/adr_journal_and_thread.md)). Nothing here is releas
 decides when to build it. The task DAG's
 [`AGENT_AUTHORED_CONVERSATIONS_DESIGN`](task_dag.md#agent_authored_conversations_design--conversations-agents-act-on-through-tools)
 records the direction (operator, 2026-11-17 13:21 UTC), and the
-[CLI experiment](authored_conversation_experiment.md) is the evidence it builds on, and
+[CLI experiment](../debug/authored_conversation/README.md) is the evidence it builds on, and
 [prior art](thread_prior_art.md) collects how other agent systems do it.
 
 **Decided (operator, 2026-11-17 13:29 UTC):** "i agree, i think Notifications would probably make
@@ -19,9 +19,16 @@ it already read. If that holds on Codex and Claude, History can become the diagn
 
 The operator runs real work through Threads for a while. The comparison against working through
 History is: replies the agent should have published but did not, edits it missed or misapplied, and
-whether the operator still needed the History view to follow the work. The CLI experiment's
-explanatory prompt fixed missed publications on Qwen and Luna; this tests it on the hosted
-harnesses.
+whether the operator still needed the History view to follow the work. Focused CLI probes with an explanatory prompt elicited replies after reset and correction
+on Qwen and Luna. Exercise those situations with the hosted harnesses.
+
+The operator reiterated the two-view goal on Nov 22. The messenger pane shows authored posts and
+their revisions. History gives a diagnostic account of model activity, tool calls and captured
+context, with enough detail to explain a missing post. The [CLI Thread and Trace views](../x/authored_conversation/README.md)
+already demonstrate this distinction. For the hosted trial, display the same Session in both
+panes: send a request, let a tool run, edit a message and follow the agent’s published reply.
+Check that tool traffic stays in History, that both participants see the same message revisions,
+and that a missing reply can be investigated from the recorded activity.
 
 ## What exists
 
@@ -65,25 +72,36 @@ Session participant's inbox, through the existing notice batching and wake. The 
 Thread with the CLI; the body is never pushed. The new `EventIdentity` variant ships in the CLI and
 App readers one release before Notifications writes it.
 
-**Agent surface:** `agentplane threads read | post | edit | list` in the agent CLI, which hosted
-Codex and Claude Sessions already run, so no harness changes. A bundled guide (`agentplane threads
-guide`) carries the experiment's explanatory prompt: the operator reads only what is posted to the
-Thread, so publish complete replies there; ordinary assistant text goes only to History. Central
-sampler Sessions would need an Action and come later.
+**Session opt-in (operator preference, Nov 22).** Offer an optional authored Thread attachment
+when starting a Session, for example by selecting it in the Session creation request. Record the
+participant and Thread ID so a reconnect or retry reopens the same conversation. The exact flag,
+whether to create or select a Thread, and which service records the attachment are design choices.
+The app can gate exposure of the experiment across a deployment. Each Session's attachment
+controls its messenger pane, tool discovery and guidance. A Session may run with zero Threads.
 
-**App, behind an optional `frontend_config.threads` section** (absent means off):
+**Agent surface.** Compare existing Agentplane tools (CLI, Action or MCP as appropriate for the
+harness) with a small set of central sampler tools for reading, posting and editing. Choose one
+entry point for the first participating harness. It must act as the recorded participant and
+respect the same Thread and revision checks as the UI. Provide the explanatory guidance from the
+CLI experiment only to opted-in Sessions. A hosted CLI and central sampler rollout can be tried
+independently.
 
-- an "Open Thread" action on a Session page, which creates a Thread with the operator and that
-  Session and submits one input naming the Thread and the guide;
-- a Threads pane that follows `WatchThread`, with a composer, in-place edit and revision history;
-- the App's proxy allows the Thread write routes to Notifications, as a plain proxy.
+**App.** For a Session with an attachment, open the messenger pane on that Thread with a composer,
+in-place edit and revision history. Keep History accessible. The existing optional
+`frontend_config.threads` proposal can hide the experimental UI across a deployment.
 
 ## Rollout
 
-Separate PRs: (1) store, API and authorization in Notifications; (2) CLI commands, guide and the
-reader for the new inbox entry; (3) Notifications writes inbox entries; (4) App setting, proxy routes
-and pane; (5) the setting on staging. Each is additive; reverting (4) or removing the setting hides the
-spike. Dropping it later deletes the package and, in its own PR, the tables.
+Land the Notifications store, API and authorization, then the reader for the new inbox entry before
+enabling its writer. Add the per-Session attachment and the chosen tool surface, then expose the pane
+to the operator. Check two Sessions in the same deployment: one starts with a Thread and can post
+and edit after reconnect, while one starts with defaults and uses today's conversation view without
+creating a Thread or advertising its tools. Record messages and trace events through both paths.
+Disabling new opt-ins preserves existing posts and revisions.
+
+The operator wants to try the messenger on real work before deciding on the default UI. Keep the
+History fold, projections and sync during the trial. A later simplification must account for raw
+diagnostic reads, command reconciliation and retained data.
 
 ## Proposals from prior art
 

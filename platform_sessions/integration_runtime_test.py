@@ -1,8 +1,7 @@
 """The common lifecycle delegates provider checks without persisting rejected sessions."""
 
 import pytest
-from prometheus_client import CollectorRegistry, generate_latest
-from prometheus_client.parser import text_string_to_metric_families
+from prometheus_client import CollectorRegistry
 from pydantic import BaseModel, TypeAdapter
 
 from platform_sessions.host import IntegrationError
@@ -21,18 +20,6 @@ class Settings(BaseModel):
     pass
 
 
-def sample_value(output: str, name: str, labels: dict[str, str]) -> float | None:
-    return next(
-        (
-            sample.value
-            for family in text_string_to_metric_families(output)
-            for sample in family.samples
-            if sample.name == name and sample.labels == labels
-        ),
-        None,
-    )
-
-
 class ExampleIntegration(IntegrationRuntime[Session]):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -46,7 +33,6 @@ class ExampleIntegration(IntegrationRuntime[Session]):
             raise ValueError("rejected")
 
 
-@pytest.mark.asyncio
 async def test_local_import_validation_failure_does_not_save_candidate(tmp_path):
     config = IntegrationRegistry((IntegrationType("example", Settings, "https://example.test"),)).resolve(
         {"integrations": [{"id": "test", "type": "example", "state_dir": str(tmp_path)}]}
@@ -64,7 +50,6 @@ async def test_local_import_validation_failure_does_not_save_candidate(tmp_path)
     await runtime.refresh()
 
 
-@pytest.mark.asyncio
 async def test_refresh_reports_success_failure_and_recovery_without_provider_requests(tmp_path):
     config = IntegrationRegistry((IntegrationType("example", Settings, "https://example.test"),)).resolve(
         {"integrations": [{"id": "test", "type": "example", "state_dir": str(tmp_path)}]}
@@ -82,19 +67,20 @@ async def test_refresh_reports_success_failure_and_recovery_without_provider_req
     runtime.fail_refresh = False
     await runtime.refresh(source=ProbeSource.PERIODIC)
 
-    output = generate_latest(registry).decode("utf-8")
     identity = {"provider": "example", "instance": "test"}
     assert (
-        sample_value(output, "platform_session_probe_total", identity | {"outcome": "success", "source": "periodic"})
+        registry.get_sample_value(
+            "platform_session_probe_total", identity | {"outcome": "success", "source": "periodic"}
+        )
         == 2
     )
     assert (
-        sample_value(
-            output, "platform_session_probe_total", identity | {"outcome": "invalid_response", "source": "periodic"}
+        registry.get_sample_value(
+            "platform_session_probe_total", identity | {"outcome": "invalid_response", "source": "periodic"}
         )
         == 1
     )
-    assert sample_value(output, "platform_session_latest_probe_outcome", identity | {"outcome": "success"}) == 1
-    last_success = sample_value(output, "platform_session_last_success_timestamp_seconds", identity)
+    assert registry.get_sample_value("platform_session_latest_probe_outcome", identity | {"outcome": "success"}) == 1
+    last_success = registry.get_sample_value("platform_session_last_success_timestamp_seconds", identity)
     assert last_success is not None
     assert last_success > 0

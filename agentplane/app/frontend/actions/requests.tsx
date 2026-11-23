@@ -281,7 +281,7 @@ export function PendingActionCard({
 
 /** The primary, actionable view: ActionRequests still awaiting an operator decision. Decided and
  * terminal requests follow these in the unified Actions view. */
-export function ActionRequests({ embedded = false }: { embedded?: boolean }): JSX.Element {
+export function ActionRequests(): JSX.Element {
   const shared = useContext(ActionRequestsContext);
   const local = useActionRequests(shared === null);
   const { requests, error, loading, deciding, decide } = shared ?? local;
@@ -289,14 +289,6 @@ export function ActionRequests({ embedded = false }: { embedded?: boolean }): JS
 
   return (
     <Stack>
-      {!embedded && (
-        <div>
-          <Title order={2}>Actions</Title>
-          <Text c="dimmed" size="sm">
-            Review pending ActionRequests. Allow dispatches the single permitted Execution automatically.
-          </Text>
-        </div>
-      )}
       {error && <Text c="red">{error}</Text>}
       {loading && <Text role="status">Loading actions…</Text>}
       <Title order={3}>{loading || error ? "Pending" : `Pending (${pending.length})`}</Title>

@@ -16,8 +16,6 @@ from pypdf import PdfReader
 
 tracer = trace.get_tracer(__name__)
 
-# --- DXF ---
-
 _DXF_STRIP_PATTERNS = re.compile(r"^\$TD(CREATE|UPDATE)|^\$VERSIONSTRING$")
 _DXF_FLOAT_RE = re.compile(r"^[- ]?\d*\.?\d+([eE][+-]?\d+)?$")
 
@@ -70,9 +68,6 @@ def assert_dxf_equal(actual_path: Path, golden_path: Path) -> None:
             raise AssertionError(f"DXF mismatch:\n{diff[:500]}")
 
 
-# --- SVG ---
-
-
 def _normalize_svg_element(elem: ElementTree.Element) -> None:
     """Recursively sort attributes and child elements for stable comparison.
 
@@ -121,9 +116,6 @@ def assert_svg_equal(actual_path: Path, golden_path: Path) -> None:
                 )
             )
             raise AssertionError(f"SVG mismatch:\n{diff[:500]}")
-
-
-# --- PDF ---
 
 
 # Font names in embedded PDFs are non-deterministic: subset prefix varies (e.g., QNAAAA+)
@@ -217,9 +209,6 @@ def assert_pdf_equal(actual_path: Path, golden_path: Path) -> None:
                     f"  actual: {ctx_a!r}"
                 )
         raise AssertionError(f"PDF size mismatch: golden={len(golden)} actual={len(actual)}")
-
-
-# --- PNG ---
 
 
 def assert_png_equal(actual_path: Path, golden_path: Path, max_diff_fraction: float = 0.02) -> None:

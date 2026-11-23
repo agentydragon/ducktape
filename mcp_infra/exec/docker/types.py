@@ -12,8 +12,6 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
-# -- BindMount --
-
 
 class BindMount(BaseModel, frozen=True):
     """Docker volume bind mount specification."""
@@ -25,12 +23,6 @@ class BindMount(BaseModel, frozen=True):
     def to_docker_spec(self) -> str:
         """Convert to Docker bind spec string: 'host:container:mode'."""
         return f"{self.host_path}:{self.container_path}:{self.mode}"
-
-
-# -- CwdPolicy: controls how the `cwd` field is exposed in the exec tool schema --
-#
-# Discriminated union via Pydantic's tagged union support. JSON-serializable
-# so it can be embedded in ContainerExecServerConfig.
 
 
 class ModelChooses(BaseModel, frozen=True):
@@ -54,9 +46,6 @@ class AlwaysSetTo(BaseModel, frozen=True):
 
 
 CwdPolicy = Annotated[ModelChooses | DefaultValue | AlwaysSetTo, Field(discriminator="type")]
-
-
-# -- ContainerExecServerConfig --
 
 
 class ContainerExecServerConfig(BaseModel):
@@ -98,9 +87,6 @@ class ContainerExecServerConfig(BaseModel):
             "Tty": False,
             "HostConfig": host_config,
         }
-
-
-# -- Container info (for MCP resource responses) --
 
 
 class ContainerImageInfo(BaseModel):

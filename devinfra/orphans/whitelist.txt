@@ -36,8 +36,6 @@ LICENSE*
 *.html
 *.css
 
-# Python version files
-
 # Shell scripts (many are standalone utilities)
 *.sh
 
@@ -56,7 +54,6 @@ nix/**
 # Cluster manifests and supporting files not consistently covered by Bazel
 cluster/k8s/**
 cluster/parked/**
-cluster/scripts/get-passwords
 cluster/docs/iam-policy-route53.json
 
 # Website (Hakyll, not Bazelized)
@@ -77,9 +74,6 @@ homeassistant/**/*.yaml
 # Markdown posts
 *.markdown
 
-# JavaScript / TypeScript
-finance/worthy/worthy/graph.js
-
 # Text files (notes, todos, etc.)
 *.txt
 
@@ -97,7 +91,6 @@ finance/worthy/worthy/graph.js
 **/package.json
 
 # JSON config/example files
-devinfra/claude/web_env/diff-report.json
 devinfra/lockfile.json
 
 # Props docker compose (infra config, not Bazelized)

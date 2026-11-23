@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import shlex
 import shutil
 import sys
 from pathlib import Path
@@ -22,9 +23,12 @@ from agentplane.native.codex.testing import frames, responses_sse
 from agentplane.proto import identity_pb2, session_pb2
 from agentplane.session_dispatcher.client import SandboxControlClient
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
-from agentplane.system_tests.driver.agent import TURN_SECONDS, Agent, Turn, scripted_turn_with_admission_and_history
+from agentplane.system_tests.deployment.local_models import LOCAL_MODEL_MODELS
+from agentplane.system_tests.driver.agent import TURN_SECONDS, Agent, Turn
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.native_platform import NativePlatformClients
 from agentplane.system_tests.driver.sandbox import VM_WORKING_DIRECTORY, Sandboxes
+from agentplane.system_tests.driver.scripted_turn import drive_scripted_turn
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
 from agentplane.system_tests.scenarios import runner_credentials
@@ -37,6 +41,9 @@ from agentplane.testing.scripted_model import Text
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 PING = "Run a shell command, then say exactly PING."
+_COMMAND_SLICE = "/agentplane.slice/agentplane-commands.slice/"
+_REPORT_CGROUP = """printf 'VM_CGROUP %s\\n' "$(awk -F: '$1 == 0 {print $3}' /proc/self/cgroup)"\n"""
+_EXECUTOR_PROBE = "/usr/sbin/agentplane-executor-probe"
 
 VM_SUPERVISION_PROBE = r"""set -eu
 printf 'VM_UID %s\n' "$(id -u)"
@@ -51,9 +58,10 @@ printf 'VM_SYSTEMCTL_OUTPUT %s\n' "$systemctl_output"
 
 # The test guest's root observer publishes kernel counters without granting the tool cgroup access.
 # Wait for a new snapshot so the follow-up cannot accidentally read pre-OOM counters.
-MEMORY_PROBE = """(set -eu
-group=$(awk -F: '$1 == "0" {print $3}' /proc/self/cgroup)
-snapshot=/run/agentplane-test/cgroups/${group##*/}.json
+MEMORY_PROBE = (
+    _REPORT_CGROUP
+    + """(set -eu
+snapshot=/run/agentplane-test/cgroups/commands.json
 first=$(cat "$snapshot" 2>/dev/null || true)
 for attempt in $(seq 1 50); do
     current=$(cat "$snapshot" 2>/dev/null || true)
@@ -63,34 +71,34 @@ for attempt in $(seq 1 50); do
     fi
     sleep 0.1
 done
-echo "No fresh cgroup snapshot for $group" >&2
+echo "No fresh command slice snapshot" >&2
 exit 1
 )
 """
+)
 
 # Busybox awk is in the test guest. sprintf touches each allocation, so this is not merely virtual
-# address reservation. Bound growth above the leaf's configured limit and prefer this command as
-# the victim, making the tool-OOM path deterministic without changing the executor's OOM policy.
-OOM_COMMAND = """set -eu
-echo VM_OOM_ALLOCATING
-echo 1000 > /proc/self/oom_score_adj
+# address reservation. Bound the allocation above the shared command slice limit.
+OOM_COMMAND = (
+    _REPORT_CGROUP
+    + """set -eu
 exec awk -v chunks="$((limit / 65536 + 1024))" 'BEGIN {
     for (i = 0; i < chunks; i++) blocks[i] = sprintf("%65536s", i)
-    print "VM_OOM_UNEXPECTED_SURVIVAL"
     exit 42
 }'
 """
+)
 
 
 class _MemoryEvidence(BaseModel):
-    cgroup: str
+    executor_cgroup: str
+    executor_pid: int
+    executor_start_ticks: int
+    executor_oom_kill: int
     max: int
     swap_max: int
-    oom_group: int
-    executor_oom: int
     oom: int
     oom_kill: int
-    oom_group_kill: int
 
     @classmethod
     def from_output(cls, output: str) -> _MemoryEvidence:
@@ -110,6 +118,22 @@ def _assert_native_service_cgroup(cgroup: str, slice_name: str) -> None:
     assert re.fullmatch(
         r"agentplane-native-.+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.service", unit
     ), cgroup
+
+
+def _command_cgroup(output: str) -> str:
+    (cgroup,) = [line.removeprefix("VM_CGROUP ") for line in output.splitlines() if line.startswith("VM_CGROUP ")]
+    assert cgroup.startswith(_COMMAND_SLICE), cgroup
+    return cgroup
+
+
+def _execution_session(output: str) -> str:
+    (session_id,) = [
+        line.removeprefix("VM_EXECUTION_SESSION ")
+        for line in output.splitlines()
+        if line.startswith("VM_EXECUTION_SESSION ")
+    ]
+    assert session_id, output
+    return session_id
 
 
 async def _command(
@@ -169,14 +193,12 @@ async def _command(
 
 async def vm_sandbox_turn(
     cluster: Cluster,
-    client: Client,
-    dispatcher: SessionDispatcherClient,
+    platform: NativePlatformClients,
     sandbox: Sandboxes,
     harness: session_pb2.Harness,
-    offered_model: str,
     scripted: ScriptedUpstream,
     template: str,
-) -> None:
+) -> str:
     view = await sandbox(f"systest-vm-{harness}", template=template)
     assert view.kubernetes_diagnostics.HasField("pod")
     identity = await runner_credentials.check_vm_runner_certificate(cluster, view)
@@ -188,20 +210,15 @@ async def vm_sandbox_turn(
                     "Missing this VM's supervisor check receipt"
                 )
     model = scripted.model(view.kubernetes_diagnostics.pod.name, harness)
-    with tracer.start_as_current_span(
-        "system_test.session.create",
-        attributes={"harness": session_pb2.Harness.Name(harness), "sandbox.name": view.target.name},
-    ):
-        agent = await session_setup_is_supervised(
-            client, dispatcher, view.target.name, view.target.uid, harness, offered_model
-        )
+    session = await session_setup_is_supervised(
+        platform, view.target.name, view.target.uid, harness, LOCAL_MODEL_MODELS[harness].id
+    )
     with (
         tracer.start_as_current_span("system_test.turn"),
         observe_active_turn(undeclared_outputs_dir() / "vm-artifacts", view.target.name, view.target.uid),
     ):
-        turn, _, _ = await scripted_turn_with_admission_and_history(
-            client,
-            agent,
+        turn, _ = await drive_scripted_turn(
+            session,
             model=model,
             command_id=f"vm-{view.target.uid}",
             prompt=PING,
@@ -209,27 +226,27 @@ async def vm_sandbox_turn(
             shell_call_id="vm-supervision",
             response="PING",
         )
+        await session.assert_completed_summary()
     assert len(turn.tool_outputs) == 1, turn.transcript
     output_text = turn.tool_outputs[0]
     assert "VM_UID 107" in output_text, turn.transcript
     assert "VM_PID1 systemd" in output_text, turn.transcript
     (cgroup_line,) = [line for line in output_text.splitlines() if line.startswith("VM_CGROUP ")]
     cgroup = cgroup_line.removeprefix("VM_CGROUP ")
-    subtree = "agentplane-executors.slice" if harness == session_pb2.HARNESS_CODEX else "agentplane-workloads.slice"
-    _assert_native_service_cgroup(cgroup, subtree)
+    if harness == session_pb2.HARNESS_CODEX:
+        assert cgroup.startswith(_COMMAND_SLICE), cgroup
+    else:
+        _assert_native_service_cgroup(cgroup, "agentplane-workloads.slice")
     assert "VM_SYSTEMCTL_UNEXPECTED_SUCCESS" not in output_text, turn.transcript
     systemctl_denial = re.search(
         r"authentication|authorization|not authorized|access denied", output_text, re.IGNORECASE
     )
     assert systemctl_denial is not None, turn.transcript
     assert "PING" in turn.answer, turn.transcript
-    rules_turn = await agent.run_shell(model, "agentplane --json egress rules")
-    rules_output = rules_turn.tool_outputs[-1]
-    start = rules_output.find("{")
-    assert start >= 0, rules_turn.transcript
-    rules, _ = json.JSONDecoder().raw_decode(rules_output[start:])
-    assert rules["identity"] == {"name": view.identity_name}, rules_turn.transcript
-    platform_turn = await agent.run_shell(
+    rules_command = "agentplane --json egress rules"
+    rules_turn = await session.run_shell(model, rules_command)
+    assert rules_turn.shell_json(rules_command).get("identity") == {"name": view.identity_name}, rules_turn.transcript
+    platform_turn = await session.run_shell(
         model,
         "agentplane notifications subscriptions --limit 1 >/dev/null && echo NOTIFICATIONS_GRPC_OK && "
         "agentplane session-dispatcher list --limit 1 >/dev/null && echo SESSIONS_GRPC_OK && "
@@ -242,6 +259,7 @@ async def vm_sandbox_turn(
     await runner_credentials.assert_vm_runner_identity_unchanged(
         cluster, view.kubernetes_diagnostics.pod.name, identity
     )
+    return view.target.uid
 
 
 async def _capture_native_profile(cluster: Cluster, sandbox_name: str, sandbox_uid: str) -> Path:
@@ -298,12 +316,19 @@ async def codex_tool_oom(
         with tracer.start_as_current_span(
             "system_test.vm_oom.baseline", record_exception=False, set_status_on_exception=False
         ):
-            _, output = await _command(agent, model, call_id="memory-before", command=MEMORY_PROBE, exit_code=0)
+            _, output = await _command(
+                agent, model, call_id="memory-before", command="set -e\n" + MEMORY_PROBE + _EXECUTOR_PROBE, exit_code=0
+            )
             before = _MemoryEvidence.from_output(output.output)
+            native_session = _execution_session(output.output)
+            evidence["native_session"] = native_session
+            evidence["command_cgroup_before"] = _command_cgroup(output.output)
             evidence["memory_before"] = before.model_dump()
-            _assert_native_service_cgroup(before.cgroup, "agentplane-executors.slice")
+            _assert_native_service_cgroup(before.executor_cgroup, "agentplane-executors.slice")
+            assert before.executor_pid > 0
+            assert before.executor_start_ticks > 0
             assert before.max > 0
-            assert before.swap_max == before.oom_group == before.oom_group_kill == 0
+            assert before.swap_max == 0
             original = await client.runtime_diagnostics(view.target)
             evidence["runner_before"] = MessageToDict(
                 original, preserving_proto_field_name=True, always_print_fields_with_no_presence=True
@@ -323,8 +348,7 @@ async def codex_tool_oom(
             )
             evidence["oom_tool_result"] = output.model_dump()
             evidence["oom_native_frames"] = turn.native
-            assert "VM_OOM_ALLOCATING" in output.output
-            assert "VM_OOM_UNEXPECTED_SURVIVAL" not in output.output
+            evidence["command_cgroup_oom"] = _command_cgroup(output.output)
             (execution,) = frames.assert_item_lifecycles(
                 [json.loads(line) for line in turn.native], wire.CommandExecutionItem
             )
@@ -341,24 +365,29 @@ async def codex_tool_oom(
             (survived_session,) = await _host_session(control, view)
             assert survived_session == session
 
-        # A fresh turn on the same native Session must execute commands through the surviving leaf.
+        # A fresh turn on the same Session must execute through the original executor instance.
         with tracer.start_as_current_span(
             "system_test.vm_oom.same_session_recovery", record_exception=False, set_status_on_exception=False
         ):
             followup, output = await _command(
-                agent, model, call_id="memory-after", command=MEMORY_PROBE + "echo VM_OOM_FOLLOWUP_OK", exit_code=0
+                agent,
+                model,
+                call_id="memory-after",
+                command="set -e\n" + MEMORY_PROBE + f"{_EXECUTOR_PROBE} {shlex.quote(native_session)}",
+                exit_code=0,
             )
             evidence["followup_tool_result"] = output.model_dump()
+            evidence["command_cgroup_after"] = _command_cgroup(output.output)
+            assert _execution_session(output.output) == native_session
             after = _MemoryEvidence.from_output(output.output)
             evidence["memory_after"] = after.model_dump()
-            assert "VM_OOM_FOLLOWUP_OK" in output.output
-            assert after.cgroup == before.cgroup
+            assert after.executor_cgroup == before.executor_cgroup
+            assert after.executor_pid == before.executor_pid
+            assert after.executor_start_ticks == before.executor_start_ticks
+            assert after.executor_oom_kill == before.executor_oom_kill
             assert after.max == before.max
-            # Either aggregate or leaf can hit its memory limit first. The aggregate's hierarchical
-            # counter proves a memcg OOM in the executor subtree; the leaf counts its actual victims.
-            assert after.executor_oom > before.executor_oom
-            assert after.oom_kill == before.oom_kill + 1
-            assert after.oom_group_kill == 0
+            assert after.oom > before.oom
+            assert after.oom_kill > before.oom_kill
             assert not followup.resumed
             (execution,) = frames.assert_item_lifecycles(
                 [json.loads(line) for line in followup.native], wire.CommandExecutionItem

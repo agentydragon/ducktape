@@ -9,11 +9,11 @@ from cdk8s import ApiObjectMetadata
 from constructs import Construct
 
 from cluster.cdk8s.agentplane import egress
+from cluster.cdk8s.haku.namespace import NAMESPACE
 from cluster.cdk8s.providers.agentplane.identity import Identity
 from cluster.cdk8s.providers.agentplane.workload_credential import WorkloadCredential
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 
-NAMESPACE = "haku-sandbox"
 SERVICE_ACCOUNT = "haku-ui"
 # The Identity every standing record below names, in the policy namespace; its PolicyBinding
 # (agentplane/actions_staging_policies.py) is what Haku's workloads may reach.

@@ -10,7 +10,7 @@ Deletion removes an S3 object, and Seaweed eventually compacts volume files, but
 compaction only frees ext4 blocks. The ext4 mounts on all three HDD servers lack
 `discard`. In a disposable test, Seaweed vacuum followed by `fstrim` returned
 about 254 MiB of a 256 MiB object to its Piraeus thin LV; without trim the LV
-remained allocated. See [the measured phases](https://github.com/agentydragon/ducktape/pull/13739).
+remained allocated. See [the measured phases](../../debug/piraeus_migration/2026-11-02-reclaim-test.md).
 
 SeaweedFS 4.46's leader scans for compaction every roughly 14–16 minutes after
 completion of the preceding scan, with a 30% garbage threshold; production logs

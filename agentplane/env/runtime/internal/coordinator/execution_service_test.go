@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/backend"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/service"
 	"go.uber.org/zap"
@@ -15,16 +15,17 @@ import (
 )
 
 func TestRuntimeExecutionServiceConfigCarriesResolvedReadiness(t *testing.T) {
-	want := codexexecserver.Readiness{Timeout: 725 * time.Millisecond, ProbeTimeout: 55 * time.Millisecond, ProbeInterval: 130 * time.Millisecond}
+	want := backend.Readiness{Timeout: 725 * time.Millisecond, ProbeTimeout: 55 * time.Millisecond, ProbeInterval: 130 * time.Millisecond}
 	config := Config{
 		StateDir: "/state", Supervision: "pid1",
 		Launch:             configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{Namespace: "test-namespace", Name: "test-sandbox", UID: "test-sandbox-uid"}},
 		HarnessEnvironment: map[string]string{"PATH": "/usr/bin"},
-		CodexExecServer: &codexexecserver.Config{
+		ExecutionBackend: &backend.Config{
+			Owner: backend.OwnerCompanion, Placement: backend.PlacementDirect,
 			URL: "ws://127.0.0.1:4501", ContainerSocket: "/run/executor.sock", Readiness: want,
 		},
 	}
-	resolved, err := runtimeExecutionServiceConfig(config, "test-incarnation", nil, nil)
+	resolved, err := runtimeExecutionServiceConfig(config, "test-incarnation", nil, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,11 +109,11 @@ func TestFencedExecutionBackendLossLogsCauseAndRemainsRecoverable(t *testing.T) 
 	undo := zap.ReplaceGlobals(zap.New(core))
 	t.Cleanup(undo)
 
-	const lossReason = "execution backend lost\nCodex exec-server exited: code=137"
+	const lossReason = "execution backend lost\nexecution backend exited: code=137"
 	backendLoss := errors.Join(service.ErrFencedBackendLoss, errors.New(lossReason))
 	config := service.Config{
 		Namespace: "test-namespace", SandboxName: "test-sandbox", SandboxUID: "test-sandbox-uid",
-		IncarnationUID: "test-incarnation", Backend: "systemd",
+		IncarnationUID: "test-incarnation", Owner: backend.OwnerSystemd, Placement: backend.PlacementDirect,
 	}
 	handle := newExecutionServiceHandle(config, func(context.Context, service.Config, func(executorpb.ExecutorServer, context.Context)) error {
 		return backendLoss

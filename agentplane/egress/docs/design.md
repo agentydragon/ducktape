@@ -40,10 +40,9 @@ documents. The main proxy decodes YAML through `mapstructure` with its existing 
 hooks, keeping its structured authentication settings in sync with the application model. The
 sidecar uses `yaml.v3` directly because its `platform_routes.routes` map is keyed by route name; each
 route also allowlists exact gRPC service prefixes. Viper lowercases every key, map keys included.
-With v1.21.0 (`ExperimentalBindStruct`, `UnmarshalExact`) two audiences that differ only in case
-merge into one entry and a route name loses its case, so a Pod could offer one audience the other's
-token. `config_test.go` keeps both spellings apart. Static settings have no per-setting environment
-or CLI overrides; the proxy database URL remains an explicit Secret-backed environment input.
+With v1.21.0 (`ExperimentalBindStruct`, `UnmarshalExact`) route names that differ only in case merge
+into one entry and each loses its case. Static settings have no per-setting environment or CLI
+overrides; the proxy database URL remains an explicit Secret-backed environment input.
 
 ## Test tiers
 

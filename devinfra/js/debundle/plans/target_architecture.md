@@ -34,7 +34,7 @@ variables split, are the units (`prepare_chunks.rs`, `js_ast.rs`).
 ### 2. Analyze
 
 Analysis runs in source order and never reads the assignment. It is cached by
-source, analysis projection and engine (`staged_analysis/analysis_projection.rs`,
+source, analysis projection and engine (`analysis_projection.rs`,
 <../docs/bazel_integration.md>).
 
 - **One effect producer.** One domain and one builtin table

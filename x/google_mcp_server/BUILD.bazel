@@ -162,7 +162,6 @@ py_test(
         ":server",
         "//:conftest",
         "@pypi//httpx",
-        "@pypi//pytest",
     ],
 )
 

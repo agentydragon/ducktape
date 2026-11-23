@@ -1,7 +1,3 @@
-# Fetches the InvenTree admin API token and writes it to the inventree namespace.
-# An ESO ClusterExternalSecret (token-eso.yaml) mirrors the Secret to claude-sandbox
-# and claude-sandbox.
-# Script is baked into the InvenTree token-provisioner image via Bazel.
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -12,7 +8,7 @@ metadata:
 spec:
   # Idempotent fetch-and-write, safe to re-run; the TTL lets a failed run retry
   # instead of holding this Kustomization unready forever. Rationale in
-  # cluster/cdk8s/ha_mcp.py's HaMcpCredentialsProvisioner._add_job.
+  # cluster/docs/troubleshooting.md, "A Failed Job Wedges Its Flux Kustomization".
   ttlSecondsAfterFinished: 3600
   backoffLimit: 5
   template:

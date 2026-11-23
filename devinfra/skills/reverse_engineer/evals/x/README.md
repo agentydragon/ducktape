@@ -16,26 +16,26 @@ before trusting eval scores.
 | File                | Purpose                                                                                                          |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------- |
 | `task.py`           | `@task reverse_engineer_go_crypto`, `validate_empty_work`, `validate_reference_work`, the `rubric_judge` scorer. |
-| `run.py`            | `bb run :run` entry — runs the agent eval against `--model`.                                                     |
+| `run.py`            | `bb run :run_bin` entry — runs the agent eval against `--model`.                                                 |
 | `validate_judge.py` | `bb run :validate_empty` / `:validate_reference` — judge floor/ceiling sanity checks (no agent).                 |
 | `_runner.py`        | Shared CLI: credential check, log-dir defaulting, `inspect_eval()` call.                                         |
 | `compose.yaml`      | Agent docker sandbox: `python:3.14-slim`, `working_dir=/work`.                                                   |
-| `BUILD.bazel`       | `:task` library + `:run` / `:validate_judge` / `:validate_empty` / `:validate_reference` binaries.               |
+| `BUILD.bazel`       | `:task` library + `:run_bin` / `:validate_judge_bin` / `:validate_empty` / `:validate_reference` binaries.       |
 
 ## Run
 
 ```bash
 # Eval — Haiku (default model)
-bb run //devinfra/skills/reverse_engineer/evals/x:run
+bb run //devinfra/skills/reverse_engineer/evals/x:run_bin
 
 # Eval — Sonnet
-bb run //devinfra/skills/reverse_engineer/evals/x:run -- --model anthropic/claude-sonnet-5
+bb run //devinfra/skills/reverse_engineer/evals/x:run_bin -- --model anthropic/claude-sonnet-5
 
 # OpenAI-compatible
-bb run //devinfra/skills/reverse_engineer/evals/x:run -- --model openai/gpt-4o-mini
+bb run //devinfra/skills/reverse_engineer/evals/x:run_bin -- --model openai/gpt-4o-mini
 
 # Watch the conversation in realtime instead of the plain summary
-bb run //devinfra/skills/reverse_engineer/evals/x:run -- --display conversation
+bb run //devinfra/skills/reverse_engineer/evals/x:run_bin -- --display conversation
 
 # Judge floor (empty /grade/recovered/) — expected score ~0.0
 bb run //devinfra/skills/reverse_engineer/evals/x:validate_empty
@@ -59,7 +59,7 @@ env -u PYTHONPATH uvx --from inspect-ai inspect view start --log-dir eval_logs
 ```
 
 `uvx` resolves Inspect into a one-shot venv. The `env -u PYTHONPATH`
-prefix is the same NixOS dodge the shared <cluster/docs/inference/runs/aime/run_aime.py>
+prefix is the same NixOS dodge the shared <cluster/docs/inference/runs/run_inspect_sweep.py>
 uses — without it the Nix-store `pydantic` leaks into the uv venv and
 clashes with the venv's `pydantic_core`. If `inspect-ai` is installed
 globally (`uv tool install inspect-ai`), `inspect view start --log-dir …`

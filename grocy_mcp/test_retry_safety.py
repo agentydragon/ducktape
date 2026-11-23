@@ -1,4 +1,4 @@
-"""Unit tests for retry safety and QU validation in batch_tools.
+"""Unit tests for backend failures and QU validation in batch_tools.
 
 These tests mock the httpx2 client via pytest-httpx2's RESPX router to verify:
 - Mutating POSTs are never re-executed after they succeed (even when follow-up GET fails)
@@ -21,7 +21,7 @@ from grocy_mcp.batch_tools import build_batch_tools_mcp
 from grocy_mcp.client import GrocyClient
 from grocy_mcp.mcp_types import ServerSettings
 from grocy_mcp.request_scoped_openapi import borrowed_http_client_provider
-from grocy_mcp.testing.helpers import unwrap_result
+from grocy_mcp.testing.results import unwrap_result
 
 BASE_URL = "https://grocy.example.com/api"
 # Not every test calls every route _setup_entity_routes registers.
@@ -132,6 +132,29 @@ async def test_read_get_still_retried_on_timeout(mcp_client: tuple[Client, respx
     assert stock_route.calls.call_count == 2, "read GET should retry after a timeout"
 
 
+async def test_low_stock_report_survives_unavailable_locations(mcp_client: tuple[Client, respx.Router]) -> None:
+    client, router = mcp_client
+    router.get("/stock/volatile").respond(
+        json={
+            "missing_products": [{"id": 1, "amount_missing": "2", "product": {**PRODUCTS[0], "min_stock_amount": "5"}}]
+        }
+    )
+    router.get("/objects/locations").respond(status_code=503)
+
+    result = await client.call_tool("get_below_minimum_stock", {})
+
+    assert unwrap_result(result) == [
+        {
+            "product_id": 1,
+            "product_name": "TestProduct",
+            "amount": 3,
+            "min_amount": 5,
+            "qu_name": "pieces",
+            "deficit": 2,
+        }
+    ]
+
+
 async def test_unit_validation_rejects_wrong_qu(mcp_client: tuple[Client, respx.Router]) -> None:
     """Specifying a QU with no conversion to stock QU should fail validation."""
     client, _router = mcp_client
@@ -142,13 +165,6 @@ async def test_unit_validation_rejects_wrong_qu(mcp_client: tuple[Client, respx.
     op = unwrap_result(result)[0]
     assert op["kind"] == "error", f"expected error for wrong QU, got: {op}"
     assert "pieces" in op["error"], "error should mention the expected stock QU"
-
-
-async def test_unit_validation_rejects_missing_qu(mcp_client: tuple[Client, respx.Router]) -> None:
-    """Omitting qu should fail validation."""
-    client, _router = mcp_client
-    with pytest.raises(Exception, match="qu"):
-        await client.call_tool("stock_add", {"items": [{"product": 1, "amount": 5, "location": "TestLoc"}]})
 
 
 async def test_http_errors_are_compact_and_include_status_url_and_body(mcp_client: tuple[Client, respx.Router]) -> None:

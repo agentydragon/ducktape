@@ -1,46 +1,8 @@
-import React, { useState, useMemo } from "react";
+import { useState } from "react";
 
-import { COLORS, SectionTitle, WinBurst } from "./shared.jsx";
+import { COLORS, SectionTitle, WagerInput, WagerPresets, WinBurst } from "./shared.jsx";
 
-function cardRankValue(rank) {
-  if (rank === "A") return 11;
-  if (["J", "Q", "K"].includes(rank)) return 10;
-  return parseInt(rank, 10);
-}
-
-function handValue(cards) {
-  let total = 0;
-  let aces = 0;
-  for (const c of cards) {
-    total += cardRankValue(c.rank);
-    if (c.rank === "A") aces++;
-  }
-  while (total > 21 && aces > 0) {
-    total -= 10;
-    aces--;
-  }
-  return total;
-}
-
-function PlayingCard({ card, hidden }) {
-  if (hidden) {
-    return (
-      <div
-        style={{
-          width: 62,
-          height: 88,
-          background: `repeating-linear-gradient(45deg, ${COLORS.wine}, ${COLORS.wine} 6px, #3d1520 6px, #3d1520 12px)`,
-          border: `1.5px solid ${COLORS.gold}`,
-          borderRadius: 6,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <div style={{ width: 32, height: 48, border: `1px solid ${COLORS.goldDim}`, opacity: 0.6 }} />
-      </div>
-    );
-  }
+function PlayingCard({ card }) {
   const isRed = card.suit === "♥" || card.suit === "♦";
   const color = isRed ? "#c23030" : "#1a1a1a";
   return (
@@ -95,109 +57,41 @@ function PlayingCard({ card, hidden }) {
 }
 
 export function Blackjack({ offline, credits, blackjackDeal, blackjackHit, blackjackStand, blackjackDouble }) {
-  const [handId, setHandId] = useState(null);
-  const [playerHand, setPlayerHand] = useState([]);
-  const [dealerHand, setDealerHand] = useState([]);
-  const [phase, setPhase] = useState("betting");
+  const [hand, setHand] = useState(null);
   const [betInput, setBetInput] = useState(10);
-  const [wager, setWager] = useState(0);
-  const [result, setResult] = useState(null);
-  const [holeHidden, setHoleHidden] = useState(true);
   const [winBurst, setWinBurst] = useState(null);
-  const [pending, setPending] = useState(false);
+  const [pending, setPending] = useState(null);
 
-  const playerValue = useMemo(() => handValue(playerHand), [playerHand]);
-  const dealerValue = useMemo(() => handValue(dealerHand), [dealerHand]);
-  const dealerVisibleValue = useMemo(() => {
-    if (!holeHidden || dealerHand.length < 2) return handValue(dealerHand);
-    return handValue([dealerHand[0]]);
-  }, [dealerHand, holeHidden]);
+  const {
+    hand_id: handId,
+    phase = "betting",
+    current_wager: wager,
+    player_cards: playerHand = [],
+    dealer_cards: dealerHand = [],
+    player_value: playerValue,
+    dealer_value: dealerValue,
+    settlement: result,
+  } = hand ?? {};
 
-  const canDeal = !offline && phase === "betting" && !pending && betInput > 0 && betInput <= credits;
-  const canHit = !offline && phase === "playing" && !pending && handId && playerValue < 21;
-  const canStand = !offline && phase === "playing" && !pending && handId;
-  const canDouble =
-    !offline && phase === "playing" && !pending && handId && playerHand.length === 2 && credits >= wager;
+  const dealerPlaying = pending === "stand" || pending === "double";
+  const ready = !offline && pending === null;
+  const canDeal = ready && phase === "betting" && betInput > 0 && betInput <= credits;
+  const canStand = ready && phase === "playing" && handId;
+  const canHit = canStand && playerValue < 21;
+  const canDouble = canStand && playerHand.length === 2 && credits >= wager;
 
-  const applyServerHand = (state) => {
-    setHandId(state.hand_id);
-    setPlayerHand(state.player_cards || []);
-    setDealerHand(state.dealer_cards || []);
-    setWager(state.current_wager || 0);
-    // The server sends only the upcard while the hand is in progress; the
-    // hole-card placeholder is shown exactly while phase is "playing".
-    setHoleHidden(state.phase === "playing");
-    if (state.phase === "done" && state.settlement) {
-      const payout = state.settlement.payout_tokens || 0;
-      setResult({ outcome: state.settlement.outcome, payout, text: state.settlement.text });
+  const play = async (action, request) => {
+    setPending(action);
+    try {
+      const nextHand = await request();
+      setHand(nextHand);
+      const payout = nextHand.settlement?.payout_tokens;
       if (payout > 0) setWinBurst({ key: Date.now(), amount: payout });
-      setPhase("done");
-    } else {
-      setResult(null);
-      setPhase("playing");
-    }
-  };
-
-  const deal = async () => {
-    if (!canDeal) return;
-    setPending(true);
-    try {
-      applyServerHand(await blackjackDeal(betInput));
     } catch (e) {
-      console.debug("[Casino] blackjack deal failed:", e.message ?? String(e));
+      console.debug(`[Casino] blackjack ${action} failed:`, e.message ?? String(e));
     } finally {
-      setPending(false);
+      setPending(null);
     }
-  };
-
-  const hit = async () => {
-    if (!canHit) return;
-    setPending(true);
-    try {
-      applyServerHand(await blackjackHit(handId));
-    } catch (e) {
-      console.debug("[Casino] blackjack hit failed:", e.message ?? String(e));
-    } finally {
-      setPending(false);
-    }
-  };
-
-  const stand = async () => {
-    if (!canStand) return;
-    setPhase("dealer");
-    setPending(true);
-    try {
-      applyServerHand(await blackjackStand(handId));
-    } catch (e) {
-      console.debug("[Casino] blackjack stand failed:", e.message ?? String(e));
-      setPhase("playing");
-    } finally {
-      setPending(false);
-    }
-  };
-
-  const doubleDown = async () => {
-    if (!canDouble) return;
-    setPhase("dealer");
-    setPending(true);
-    try {
-      applyServerHand(await blackjackDouble(handId));
-    } catch (e) {
-      console.debug("[Casino] blackjack double failed:", e.message ?? String(e));
-      setPhase("playing");
-    } finally {
-      setPending(false);
-    }
-  };
-
-  const newHand = () => {
-    setPlayerHand([]);
-    setDealerHand([]);
-    setResult(null);
-    setWager(0);
-    setHoleHidden(true);
-    setHandId(null);
-    setPhase("betting");
   };
 
   const resultColor = result
@@ -213,7 +107,7 @@ export function Blackjack({ offline, credits, blackjackDeal, blackjackHit, black
       <div className="panel deco-corners" style={{ padding: 28, minHeight: 420, position: "relative" }}>
         {winBurst && <WinBurst key={winBurst.key} amount={winBurst.amount} />}
         {/* Dealer */}
-        <div style={{ marginBottom: 28 }}>
+        <div role="group" aria-label="Dealer hand" style={{ marginBottom: 28 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             <div
               className="display-font"
@@ -222,18 +116,18 @@ export function Blackjack({ offline, credits, blackjackDeal, blackjackHit, black
               Dealer
             </div>
             <div className="mono" style={{ fontSize: 15, color: COLORS.cream }}>
-              {dealerHand.length > 0 ? (holeHidden ? `${dealerVisibleValue} + ?` : dealerValue) : ""}
+              {dealerHand.length > 0 ? (phase === "playing" ? `${dealerValue} + ?` : dealerValue) : ""}
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, minHeight: 92, flexWrap: "wrap" }}>
             {dealerHand.map((c, i) => (
-              <PlayingCard key={`${c.rank}-${c.suit}-${i}`} card={c} hidden={i === 1 && holeHidden} />
+              <PlayingCard key={`${c.rank}-${c.suit}-${i}`} card={c} />
             ))}
           </div>
         </div>
 
         {/* Player */}
-        <div>
+        <div role="group" aria-label="Player hand">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             <div
               className="display-font"
@@ -254,6 +148,7 @@ export function Blackjack({ offline, credits, blackjackDeal, blackjackHit, black
 
         {result && (
           <div
+            role="status"
             style={{
               marginTop: 24,
               padding: 14,
@@ -265,8 +160,8 @@ export function Blackjack({ offline, credits, blackjackDeal, blackjackHit, black
             <div className="display-font" style={{ fontSize: 18, color: resultColor, letterSpacing: "0.1em" }}>
               {result.text}
             </div>
-            {result.payout > 0 && (
-              <div style={{ fontSize: 14, color: COLORS.rose, marginTop: 4 }}>+{result.payout} tokens</div>
+            {result.payout_tokens > 0 && (
+              <div style={{ fontSize: 14, color: COLORS.rose, marginTop: 4 }}>+{result.payout_tokens} tokens</div>
             )}
           </div>
         )}
@@ -278,38 +173,17 @@ export function Blackjack({ offline, credits, blackjackDeal, blackjackHit, black
 
           {phase === "betting" ? (
             <>
-              <input
-                type="number"
+              <WagerInput
+                credits={credits}
                 value={betInput}
-                onChange={(e) => setBetInput(Math.max(1, Math.min(credits, parseInt(e.target.value) || 0)))}
-                min="1"
-                max={credits}
+                onChange={setBetInput}
                 style={{ width: "100%", marginBottom: 8 }}
               />
-              <div style={{ display: "flex", gap: 4, marginBottom: 12, flexWrap: "wrap" }}>
-                {[5, 10, 25, 50, 100].map((v) => (
-                  <button
-                    key={v}
-                    onClick={() => setBetInput(Math.min(v, credits))}
-                    disabled={credits < v}
-                    style={{
-                      padding: "4px 10px",
-                      fontSize: 11,
-                      background: "transparent",
-                      color: COLORS.creamDim,
-                      border: `1px solid rgba(212,165,72,0.3)`,
-                      cursor: credits < v ? "not-allowed" : "pointer",
-                      opacity: credits < v ? 0.4 : 1,
-                    }}
-                  >
-                    {v}
-                  </button>
-                ))}
-              </div>
+              <WagerPresets credits={credits} onChange={setBetInput} style={{ marginBottom: 12 }} />
               <button
                 className="btn btn-primary"
                 style={{ width: "100%", padding: 12 }}
-                onClick={deal}
+                onClick={() => play("deal", () => blackjackDeal(betInput))}
                 disabled={!canDeal}
               >
                 Deal · {betInput} cr
@@ -325,18 +199,28 @@ export function Blackjack({ offline, credits, blackjackDeal, blackjackHit, black
                 {wager}
               </div>
 
-              {phase === "playing" && (
+              {phase === "playing" && !dealerPlaying && (
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 6 }}>
-                  <button className="btn btn-primary" style={{ padding: 10 }} onClick={hit} disabled={!canHit}>
+                  <button
+                    className="btn btn-primary"
+                    style={{ padding: 10 }}
+                    onClick={() => play("hit", () => blackjackHit(handId))}
+                    disabled={!canHit}
+                  >
                     Hit
                   </button>
-                  <button className="btn btn-primary" style={{ padding: 10 }} onClick={stand} disabled={!canStand}>
+                  <button
+                    className="btn btn-primary"
+                    style={{ padding: 10 }}
+                    onClick={() => play("stand", () => blackjackStand(handId))}
+                    disabled={!canStand}
+                  >
                     Stand
                   </button>
                   <button
                     className="btn"
                     style={{ padding: 10, gridColumn: "span 2" }}
-                    onClick={doubleDown}
+                    onClick={() => play("double", () => blackjackDouble(handId))}
                     disabled={!canDouble}
                   >
                     Double {credits < wager ? "(not enough credits)" : `(+${wager})`}
@@ -344,7 +228,7 @@ export function Blackjack({ offline, credits, blackjackDeal, blackjackHit, black
                 </div>
               )}
 
-              {phase === "dealer" && (
+              {dealerPlaying && (
                 <div
                   style={{
                     fontSize: 12,
@@ -360,7 +244,11 @@ export function Blackjack({ offline, credits, blackjackDeal, blackjackHit, black
               )}
 
               {phase === "done" && (
-                <button className="btn btn-primary" style={{ width: "100%", padding: 12 }} onClick={newHand}>
+                <button
+                  className="btn btn-primary"
+                  style={{ width: "100%", padding: 12 }}
+                  onClick={() => setHand(null)}
+                >
                   New hand
                 </button>
               )}

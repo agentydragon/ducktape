@@ -14,16 +14,16 @@ a field a harness adds sends every such call to the JSON view while the tests st
   (`agentplane/proto/event.proto`)'s payload is a `oneof` field literally named `observation`; that name then propagated
   outward into Runtime's observation handling, History's `ReadSessionObservations` and
   `ReadNativeFrames` APIs, and the debug UI
-  (`sessions/chronological_debug.tsx`'s "Observation N raw frames"). Worth revisiting whether this is a distinction worth
+  (`sessions/thread_evidence.tsx`'s "Observation N raw frames"). Worth revisiting whether this is a distinction worth
   keeping or whether it should just say "Event" everywhere a stored `Event` is meant.
 - **Bubble chrome and the user bubble's blue read as unnecessary decoration**: `.transcript-user-bubble`
-  (`sessions/conversation.css` ~line 40) fills the operator's bubble with `var(--mantine-color-blue-light)`; feedback
+  (`util/frontend/transcript/message.css` ~line 5) fills the operator's bubble with `var(--mantine-color-blue-light)`; feedback
   was grey would do, since role already reads from position (right-aligned) without needing a hue. More broadly,
   consider dropping bubble/card chrome across `EntityCard` altogether -- the user bubble's background, and the
-  bordered card an opened tool call or reasoning step gets (`DisclosureCard` in `disclosure.tsx`) -- and distinguishing rows
+  bordered card an opened tool call or reasoning step gets (`DisclosureCard` in `util/frontend/disclosure.tsx`) -- and distinguishing rows
   by their text and a light shade of grey instead, reserving actual color for when it's semantically meaningful
-  (as the prominent-lifecycle `Alert color="red"` at ~line 376 and the failed-tool-call `Badge color="red"` at
-  ~line 444 already do).
+  (as the prominent-lifecycle `Alert color="red"` at ~line 717 and the failed-tool-call `Badge color="red"` at
+  ~line 847 of `sessions/thread_cards.tsx` already do).
 - **Repeated recovery interruption badges on phones**: review whether multiple `Interrupted` badges in recovery history can be grouped or visually softened while preserving each item's distinct recovery meaning.
 
 ## Hidden characters in ordinary Action text

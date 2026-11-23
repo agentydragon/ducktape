@@ -8,7 +8,6 @@ from collections.abc import Callable
 from dataclasses import replace
 from decimal import Decimal
 from functools import partial
-from typing import Literal
 
 import numpy as np
 import pytest
@@ -39,7 +38,7 @@ from finance.augur.sim.testing.bonds import (
 # Aliased: the bond situations' `compose` holds the plain name.
 from finance.augur.sim.testing.funded_bill import HOUSEHOLD, STOCK, compose as example_world, sell_then_pay, situation
 from finance.augur.sim.testing.session import finish
-from finance.augur.sim.world import World
+from finance.augur.sim.world import Capture, World
 
 type Compose = Callable[[int], World]
 EXAMPLE_HORIZON = 13
@@ -48,7 +47,7 @@ EXAMPLE_HORIZON = 13
 def _run(
     worlds: Compose,
     ids: list[int],
-    capture: Literal["summary", "dense", "forensic"],
+    capture: Capture,
     policy: Callable[[list[Decision]], list[DecisionActions]] = sell_then_pay,
     *,
     actor_id: AgentId = HOUSEHOLD,
@@ -107,7 +106,7 @@ def example() -> Compose:
 
 @pytest.fixture(scope="module")
 def outcomes(example: Compose) -> dict[str, list[Rollout]]:
-    captures: tuple[Literal["summary", "dense", "forensic"], ...] = ("summary", "dense", "forensic")
+    captures: tuple[Capture, ...] = ("summary", "dense", "forensic")
     return {capture: _run(example, [0, 1], capture) for capture in captures}
 
 
@@ -326,7 +325,6 @@ def _hold(batch: list[Decision]) -> list[DecisionActions]:
 
 
 def test_product_net_worth_carries_indexed_bonds_at_indexed_principal() -> None:
-    # Preserve the actual product metric control formerly in rust/backend_test.py.
     # Untaxed: tax on $1M accretion would stop this cash-constrained case first.
     for indexed, expected in ((True, 200_000_000), (False, 100_000_000)):
         worlds = partial(compose, bond_case(indexed=indexed, cpi=CPI_DOUBLING, is_taxed=False))
@@ -338,9 +336,7 @@ def test_product_net_worth_carries_indexed_bonds_at_indexed_principal() -> None:
 
 
 @pytest.mark.parametrize("capture", ["summary", "dense", "forensic"])
-def test_redemption_replaces_principal_with_cash_without_changing_product_net_worth(
-    capture: Literal["summary", "dense", "forensic"],
-) -> None:
+def test_redemption_replaces_principal_with_cash_without_changing_product_net_worth(capture: Capture) -> None:
     worlds = _bonds(
         dated(BondId("test-note"), agent_id=HOUSEHOLD, face=Decimal(100), annual_rate=0, period=1, maturity=1),
         horizon_months=2,

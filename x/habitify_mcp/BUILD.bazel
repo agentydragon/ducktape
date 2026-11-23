@@ -11,7 +11,10 @@ py_library(
     name = "types",
     srcs = ["types.py"],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        ":date_utils",
+        "@pypi//pydantic",
+    ],
 )
 
 py_library(
@@ -42,7 +45,6 @@ py_library(
     srcs = ["utils/cli_utils.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":config",
         ":habitify_client",
         "@pypi//rich",
         "@pypi//typer",
@@ -116,10 +118,11 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         ":cli_utils",
+        ":config",
         ":habitify_client",
         ":server",
         ":types",
-        "@pypi//python_dotenv",
+        "//util:typer",
         "@pypi//rich",
         "@pypi//typer",
     ],
@@ -133,27 +136,20 @@ py_binary(
     main = "cli.py",
     deps = [
         ":cli",
-        "@pypi//python_dotenv",
         "@pypi//rich",
         "@pypi//typer",
     ],
 )
 
 py_binary(
-    name = "run_server",
-    srcs = ["examples/run_server.py"],
-    main = "examples/run_server.py",
-    deps = [
-        ":cli_utils",
-        ":server",
-    ],
-)
-
-py_binary(
     name = "mcp_dev_runner",
     srcs = ["examples/mcp_dev_runner.py"],
+    data = [":habitify_cli"],
     main = "examples/mcp_dev_runner.py",
-    deps = [":cli_utils"],
+    deps = [
+        ":config",
+        "@rules_python//python/runfiles",
+    ],
 )
 
 # --- Tests ---

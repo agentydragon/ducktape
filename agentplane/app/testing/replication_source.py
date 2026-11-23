@@ -72,6 +72,21 @@ class ReplicationSource:
             update.set()
         return entry
 
+    def confirm_input(
+        self, command: command_pb2.Command, message_id: str, *, turn_id: str = "test-browser-turn"
+    ) -> None:
+        """Confirm the text of a submitted input; `turn_id` defaults to the turn `thread_source` starts."""
+        self.append(
+            event_pb2.Event(
+                harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
+                    harness_message_id=message_id,
+                    origin_command_ids=[command.command_id],
+                    text=command.submit_input.text,
+                    turn_id=turn_id,
+                )
+            )
+        )
+
     @asynccontextmanager
     async def ingesting(self, history: History) -> AsyncIterator[None]:
         async def copy() -> None:

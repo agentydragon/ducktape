@@ -108,24 +108,7 @@ def graph_wide_change_reason(paths: list[str]) -> str | None:
         ".bazelversion",
         ".github/workflows/bazel-ci.yml",
         ".github/workflows/ci.yml",
-        "Cargo.lock",
-        "Cargo.toml",
-        "MODULE.bazel",
-        "MODULE.bazel.lock",
-        "Pipfile.lock",
-        "WORKSPACE",
-        "WORKSPACE.bazel",
-        "WORKSPACE.bzlmod",
-        "WORKSPACE.bzlmod.lock",
         "devinfra/ci/bazel_ci.py",
-        "devinfra/ci/bazel_ci.sh",
-        "go.mod",
-        "go.sum",
-        "package.json",
-        "pnpm-lock.yaml",
-        "poetry.lock",
-        "pyproject.toml",
-        "uv.lock",
         # keep-sorted end
     }
     manifest_basenames = {
@@ -194,9 +177,7 @@ def _rbe_flags() -> list[str]:
     return flags
 
 
-def _run_bazel(
-    command: str, *, role: str, targets: list[str], extra_flags: tuple[str, ...] = (), check: bool = True
-) -> subprocess.CompletedProcess[str]:
+def _run_bazel(command: str, *, role: str, targets: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
     """Run one named CI phase with its common Bazel flags."""
     _announce_bazel_command(role)
     return _run(
@@ -206,7 +187,6 @@ def _run_bazel(
             f"--invocation_id={os.environ[f'{role.upper()}_INVOCATION_ID']}",
             "--keep_going",
             *_rbe_flags(),
-            *extra_flags,
             *targets,
         ],
         check=check,
@@ -290,6 +270,9 @@ def _select_targets(temp_dir: Path) -> TargetSelection:
     hash_command = [
         "bazel-diff",
         "generate-hashes",
+        # There is no WORKSPACE, so `//external` does not exist. Without this, bazel-diff queries it, fails with
+        # "no such package 'external'" and retries without it, twice per run.
+        "--excludeExternalTargets",
         "-co=--proto:include_synthetic_attribute_hash",
         "-w",
         str(Path.cwd()),

@@ -16,10 +16,10 @@ Neither owner reconciles Sandboxes or determines readiness; those stay with the 
 
 The Kubernetes client is uncached. Every operation identifies a target by namespace, name and UID,
 and reads the current controller-owned execution ServiceAccount or Identity. Explicit resume accepts
-either an Identity with a live `environment` grant for `resume`, or a direct, live Pod-bound
-ServiceAccount in `operator_callers`. Automatic wake accepts a live Identity matching the Sandbox's
-current Identity binding, an explicitly configured ServiceAccount broker, or an exact service-SPIFFE
-broker. A replacement Sandbox, ServiceAccount or Identity cannot inherit old authority.
+either an Identity with a live `environment` grant for `resume`, or an exact service-SPIFFE
+operator. Automatic wake accepts a live Identity matching the Sandbox's current Identity binding or
+an exact service-SPIFFE broker. A ServiceAccount caller holds neither grant. A replacement Sandbox,
+ServiceAccount or Identity cannot inherit old authority.
 
 ## Authority
 
@@ -29,9 +29,7 @@ broker. A replacement Sandbox, ServiceAccount or Identity cannot inherit old aut
   `NotFound` unless the Sandbox is currently bound to that exact live Identity; read grants remain
   outside this slice.
 - Direct Identity and delegated Identity callers use the effective Identity as the grant subject.
-  The delegated actor remains authentication provenance and never supplies resume authority. A
-  direct TokenReview-proven Pod-bound ServiceAccount in `operator_callers` keeps its separate
-  explicit-resume path, including the ability to resume a requested stop.
+  The delegated actor remains authentication provenance and never supplies resume authority.
 - An Identity grant never overrides a requested stop. Policy readiness is required for Identity
   eligibility and every retry; a missing or unavailable policy view fails closed.
 - Dispatcher automatic wake for rows attributed as an Identity workload or Identity delegation may
@@ -41,11 +39,10 @@ broker. A replacement Sandbox, ServiceAccount or Identity cannot inherit old aut
   effective Identity; it does not authorize a ServiceAccount with the same name. Broker and operator component grants do not supply Identity authority.
 - Explicit delegated resume retains the actor separately and uses the effective Identity from
   `auth.Admitted`; actor Pod proof and actor allowlist membership do not become the caller's grant.
-- A direct TokenReview-proven Pod-bound account listed in `operator_callers` may explicitly resume a
-  requested stop. This allowlist is separate from `wake_callers`; delegated calls cannot exercise it.
-- `wake_callers` remains a restricted ServiceAccount broker grant for automatic wake only. Identity
-  self-wake and broker wake require `spec.wakeOnSend` and cannot override `spec.running=false`.
-- `wake_service_callers` is a separate exact-SPIFFE broker grant for automatic wake only. Dispatcher
+- An exact service SPIFFE ID in `service_operators` may explicitly resume a requested stop. This
+  allowlist is separate from `wake_service_callers`; delegated calls cannot exercise it.
+- `wake_service_callers` is an exact-SPIFFE broker grant for automatic wake only. Identity self-wake
+  and broker wake require `spec.wakeOnSend` and cannot override `spec.running=false`. Dispatcher
   maps Action-attributed rows to their service actor for this check and retains the effective Identity
   as row provenance. Environments configures its own list for its assessment path; that list does not
   authorize Dispatcher's in-process wake manager.
@@ -55,7 +52,7 @@ broker. A replacement Sandbox, ServiceAccount or Identity cannot inherit old aut
 
 Discovery returns a deterministic opaque precondition derived from target UID and wake generation.
 It is not a bearer capability. An ordinary `ResumeEnvironment` call, including an Identity grant,
-requires that token. A direct Pod-bound configured operator may omit it to state a fresh intent; the
+requires that token. A configured service operator may omit it to state a fresh intent; the
 manager captures the current generation internally and still guards the write. Delegated callers
 never inherit token omission.
 
@@ -64,10 +61,9 @@ the live caller Identity and the target's live bound Identity when a grant selec
 token returns `STATE_CHANGED` with current eligibility and generation rather than retrying against a
 later suspension. It bounds conflict retries. A patch error may have uncertain effect, so the manager
 returns a typed `OUTCOME_UNKNOWN` status and does not replay the patch. Only automatic `RequestWake`
-reserves the shared wake budget before patching, keyed by caller principal (a ServiceAccount's
-namespace/name/UID, an Identity's manager namespace/name/UID, or a service's exact SPIFFE ID),
-target Sandbox UID and next generation. Explicit `ResumeEnvironment`, for both operator callers
-and Identity grants, does not reserve budget and is unaffected by budget exhaustion or unavailability.
+reserves the shared wake budget before patching, keyed by caller principal (an Identity's
+manager namespace/name/UID or a service's exact SPIFFE ID), target Sandbox UID and next
+generation. Explicit `ResumeEnvironment`, for both service operators and Identity grants, does not reserve budget and is unaffected by budget exhaustion or unavailability.
 
 `REQUESTED` means the desired running state and next wake generation were accepted. It does not mean
 the environment is ready. `ALREADY_RUNNING` means no wake mutation was needed. A current-generation
@@ -97,16 +93,5 @@ facts proto does not import the API proto; the EnvironmentService proto owns its
 The two owners share in-process policy and guarded-write code, not a manager instance or policy
 index. Environments makes no call to Sessions. Only `EnvironmentService` is registered as a public environment API. Its list/get operations
 remain read-only; explicit resume uses the policy and mutation contract above.
-The public service exposes no suspend operation. Any future public suspend API requires a separately
-reviewed authority and retry contract.
 
-Direct service SVIDs have independent, exact-SPIFFE-ID grants through
-`environment_service_readers`, `environment_service_managers`,
-`environment_service_launchers`, and `environment_service_operators`. Service operators may
-explicitly resume, including a requested stop; delegated callers never inherit those roles.
-`environment_service_delegation` admits a service actor only for configured read methods and
-`ResumeEnvironment`, using the live effective Identity and its explicit resume grants. Delegation
-never supplies operator authority or waives the resume token. Environments' `wake_service_callers`
-grants automatic broker eligibility for its own assessments. Dispatcher configures its own broker
-list and budgets service wakes by exact SPIFFE ID. Create receipts retain the typed service actor
-separately from the Action origin.
+Service SVID role grants and delegation: [EnvironmentService SPEC](../internal/service/SPEC.md#resume-and-ownership).

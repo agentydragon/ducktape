@@ -57,13 +57,9 @@ export interface ShellChromeProps {
 export const PANEL_Z = 2147483647;
 const ARM_DELAY_MS = 400;
 
-function useArmed(identity: string | null): boolean {
+function useArmed(identity: string): boolean {
   const [armed, setArmed] = useState(false);
   useEffect(() => {
-    if (!identity) {
-      setArmed(false);
-      return;
-    }
     setArmed(false);
     const t = window.setTimeout(() => setArmed(true), ARM_DELAY_MS);
     return () => window.clearTimeout(t);

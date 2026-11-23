@@ -60,9 +60,10 @@ After grading is complete (`get_drift().grading` is empty), cluster unmatched is
 
 When GT or critiques change, you'll receive a message like:
 ```
-GT changes detected:
-  - INSERT_true_positives
-  - INSERT_reported_issues
+2 new grading notification(s):
+  - INSERT on true_positives
+  - INSERT on reported_issues
+Check pending work and continue grading.
 ```
 
 This tells you what triggered the wake. Call `get_drift()` to see the actual work.

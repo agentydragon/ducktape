@@ -7,6 +7,7 @@ py_library(
     srcs = ["server.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:manifest_roots",
@@ -27,6 +28,7 @@ py_library(
     data = ["provision.py"],
     deps = [
         ":server",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",

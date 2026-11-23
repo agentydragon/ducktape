@@ -42,11 +42,11 @@ def _request_content(req: httpx.Request) -> tuple[dict[str, str], str]:
     return headers, (req.content or b"").decode("utf-8", errors="ignore")
 
 
-async def _response_content(resp: httpx.Response, target_logger: logging.Logger) -> str:
+async def _response_content(resp: httpx.Response) -> str:
     try:
         return (await resp.aread()).decode("utf-8", errors="ignore")
     except (httpx.StreamConsumed, httpx.StreamClosed, httpx.ReadError) as e:
-        target_logger.debug("failed to read response body: %s", e)
+        logger.debug("failed to read response body: %s", e)
         return ""
 
 
@@ -60,7 +60,7 @@ async def _on_request(req: httpx.Request, *, path: Path) -> None:  # pragma: no 
 async def _on_response(resp: httpx.Response, *, path: Path) -> None:  # pragma: no cover - HTTP hook
     req = resp.request
     headers, req_body = _request_content(req)
-    resp_body = await _response_content(resp, logger)
+    resp_body = await _response_content(resp)
     await _log_write(
         path,
         {
@@ -75,34 +75,6 @@ async def _on_response(resp: httpx.Response, *, path: Path) -> None:  # pragma: 
     )
 
 
-async def _log_request_to_logger(req: httpx.Request, *, logger: logging.Logger) -> None:  # pragma: no cover - HTTP hook
-    headers, body = _request_content(req)
-    logger.debug(
-        "OpenAI Request: %s %s\nHeaders: %s\nBody: %s",
-        req.method,
-        str(req.url),
-        json.dumps(headers, ensure_ascii=False),
-        body,
-    )
-
-
-async def _log_response_to_logger(
-    resp: httpx.Response, *, logger: logging.Logger
-) -> None:  # pragma: no cover - HTTP hook
-    req = resp.request
-    headers, req_body = _request_content(req)
-    resp_body = await _response_content(resp, logger)
-    logger.debug(
-        "OpenAI Response: %d %s\nRequest Headers: %s\nRequest Body: %s\nResponse Headers: %s\nResponse Body: %s",
-        resp.status_code,
-        str(req.url),
-        json.dumps(headers, ensure_ascii=False),
-        req_body,
-        json.dumps(dict(resp.headers), ensure_ascii=False),
-        resp_body,
-    )
-
-
 def make_logging_httpx_async_client(log_path: Path) -> httpx.AsyncClient:
     """Return an ``httpx.AsyncClient`` with request/response logging.
 
@@ -114,16 +86,5 @@ def make_logging_httpx_async_client(log_path: Path) -> httpx.AsyncClient:
         event_hooks={
             "request": [partial(_on_request, path=log_path)],
             "response": [partial(_on_response, path=log_path)],
-        }
-    )
-
-
-def make_logger_logging_httpx_async_client(logger_name: str = "openai.http") -> httpx.AsyncClient:
-    """Return an httpx.AsyncClient that logs raw HTTP traffic to a Python logger at DEBUG level."""
-    target_logger = logging.getLogger(logger_name)
-    return httpx.AsyncClient(
-        event_hooks={
-            "request": [partial(_log_request_to_logger, logger=target_logger)],
-            "response": [partial(_log_response_to_logger, logger=target_logger)],
         }
     )

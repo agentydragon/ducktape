@@ -48,30 +48,23 @@ in
 
       dest = {
         url = lib.mkOption {
-          type = lib.types.nullOr lib.types.str;
-          default = null;
-          description = ''
-            Base URL of the central aw-server to import into. When set, a timer
-            runs the instance-to-instance importer (aw-importer), reading this
-            host's local aw-server and folding its buckets into
-            `<device>::<bucket>` on the central one. null disables the importer.
-          '';
+          type = lib.types.str;
+          default = "https://activitywatch-write.allegedly.works";
+          description = "Base URL of the central aw-server's bearer-gated write route that the importer (aw-importer) pushes into.";
         };
 
         device = lib.mkOption {
-          type = lib.types.nullOr lib.types.str;
-          default = null;
-          description = "Provenance id this host's buckets are namespaced under on the central server.";
+          type = lib.types.str;
+          description = "Provenance id this host's buckets are namespaced under on the central server (`<device>::<bucket>`).";
         };
 
         tokenSopsFile = lib.mkOption {
-          type = lib.types.nullOr lib.types.path;
-          default = null;
+          type = lib.types.path;
+          default = ../../../cluster/k8s/activitywatch/activitywatch-write-token.sops.yaml;
           description = ''
             SOPS file holding the central write token under `stringData/token`.
-            Decrypted to AW_DEST_TOKEN for the importer. The shared dual-recipient
-            Secret (cluster + desktops) is
-            cluster/k8s/activitywatch/activitywatch-write-token.sops.yaml.
+            Decrypted to AW_DEST_TOKEN for the importer. The default is the shared
+            dual-recipient Secret (cluster + desktops).
           '';
         };
       };
@@ -169,9 +162,8 @@ in
 
       # Importer transport: read this host's local aw-server and fold its buckets
       # into the central one over the bearer-gated write route. Replaces the retired
-      # aw-sync push; active only where a dest.url is set (so only those hosts pull in
-      # the aw-importer artifact).
-      (lib.mkIf (cfg.sync.enable && cfg.sync.dest.url != null) (
+      # aw-sync push.
+      (lib.mkIf cfg.sync.enable (
         let
           importScript = pkgs.writeShellScript "activitywatch-import" ''
             set -eu
@@ -184,13 +176,6 @@ in
           '';
         in
         {
-          assertions = [
-            {
-              assertion = cfg.sync.dest.device != null && cfg.sync.dest.tokenSopsFile != null;
-              message = "ducktape.activitywatch.sync.dest.url needs dest.device and dest.tokenSopsFile set too.";
-            }
-          ];
-
           sops.secrets.aw_dest_token = {
             sopsFile = cfg.sync.dest.tokenSopsFile;
             key = "stringData/token";

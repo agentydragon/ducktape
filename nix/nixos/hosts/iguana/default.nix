@@ -9,7 +9,6 @@
 #
 # Manual setup steps:
 # - SSH keygen and copy to GitHub/GitLab
-# - Transfer Ansible Vault password into libwallet
 # - sops-nix age key generation (for when secrets are needed)
 # - Nebula certs (will be added out-of-band later, via Google Keep or similar)
 #
@@ -19,7 +18,6 @@
 {
   config,
   pkgs,
-  lib,
   username,
   ...
 }:

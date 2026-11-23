@@ -1,24 +1,21 @@
 //! Unified pass-through emission rewriter: the single position-preserving directive rewriter for files
 //! that are emitted without lowering — chunk entries (including
 //! materialized chunks' residual entries) and runtime files. Driven by
-//! `vendor::emission::apply_emission_rewrites`, which applies it to
+//! `vendor::emission::apply_emission_rewrites_in_place`, which applies it to
 //! non-vendor pass-through files as a wave and to vendor-chunk files
 //! as the first step of the per-chunk residual composition. Per file
 //! it performs:
 //!
-//! * **Specifier canonicalization** (the old always-on stage 0):
+//! * **Specifier canonicalization**:
 //!   relative `import` / `export … from` / `export *` / `import()` /
 //!   direct literal `import.meta.require` / `new Worker` sources that
 //!   resolve to another chunk are rewritten to the artifact-relative form.
-//! * **Boundary-rename name mapping** (the old `rename_vendor_exports`
-//!   caller side): named imports of a whole-chunk `swap`
+//! * **Boundary-rename name mapping**: named imports of a whole-chunk `swap`
 //!   chunk's entry are renamed from vendor-local to public export
 //!   names.
-//! * **Partial-swap directive surgery** (the old
-//!   `apply_partial_vendor_swaps` / `apply_bundled_partial_vendor_swaps`
-//!   consumer side): named imports / re-exports of swapped names are
-//!   replaced in position with package / facade imports and the
-//!   matching body reference rewrites.
+//! * **Partial-swap directive surgery**: named imports / re-exports of
+//!   swapped names are replaced in position with package / facade imports and
+//!   the matching body reference rewrites.
 //!
 //! All three consult the same `VendorResolutionPlan` oracle; lowering's
 //! import construction is the other application site for materialized
@@ -34,14 +31,14 @@ use swc_ecma_visit::{VisitMut, VisitMutWith};
 
 use artifact::paths::{join_module_path, module_path_dirname, relative_module_path};
 use artifact::{ArtifactIndexes, ImportReferenceKind};
-use binding_targets::module_export_name;
-use js_ast::{set_str_value, str_value};
+use binding_targets::{imported_export_name, module_export_name, public_export_name};
+use js_ast::{new_url_expr, set_str_value, str_value};
 use spec::PartialSwapKind;
 
 use crate::plan::VendorResolutionPlan;
 use crate::{
     DeferredImport, MaterializedOutputChunkIndex, PartialSwapIdentRewriter, VendorImportRewrites,
-    bundled_facade_import_source, make_named_reexport, make_namespace_reexport, new_url_expr,
+    bundled_facade_import_source, make_named_reexport, make_namespace_reexport,
     resolve_partial_swap_import_target,
 };
 
@@ -74,9 +71,9 @@ pub(crate) fn rewrite_passthrough_module(
         &mut state,
     );
 
-    // Pass B: specifier canonicalization (the old stage 0) over every
-    // directive shape and supported source call, including `import()`,
-    // literal `import.meta.require`, and `new Worker` sources.
+    // Pass B: specifier canonicalization over every directive shape and
+    // supported source call, including `import()`, literal
+    // `import.meta.require`, and `new Worker` sources.
     // Runs after the surgery so retained directives are canonicalized
     // and replacement package / facade sources (bare specifiers or
     // generated output paths outside the artifact) pass through
@@ -235,11 +232,7 @@ fn rewrite_import_decl(
                 retained_specifiers.push(specifier);
                 continue;
             };
-            let imported_name = named
-                .imported
-                .as_ref()
-                .map(module_export_name)
-                .unwrap_or_else(|| named.local.sym.to_string());
+            let imported_name = imported_export_name(&named);
             match plan_named_import_replacement(
                 target_chunk_id,
                 &imported_name,
@@ -284,11 +277,7 @@ fn rewrite_import_decl(
             let ImportSpecifier::Named(named) = specifier else {
                 continue;
             };
-            let imported_name = named
-                .imported
-                .as_ref()
-                .map(module_export_name)
-                .unwrap_or_else(|| named.local.sym.to_string());
+            let imported_name = imported_export_name(named);
             let Some(mapped) = context
                 .plan
                 .boundary_public_export_name(target_chunk_id, &imported_name)
@@ -393,11 +382,7 @@ fn rewrite_export_from_decl(
             continue;
         };
         let orig_name = module_export_name(&named_spec.orig);
-        let exported_name = named_spec
-            .exported
-            .as_ref()
-            .map(module_export_name)
-            .unwrap_or_else(|| orig_name.clone());
+        let exported_name = public_export_name(named_spec);
         let Some(target) = chunk_mapping.symbols.get(&orig_name) else {
             retained.push(specifier);
             continue;
@@ -434,11 +419,10 @@ fn rewrite_export_from_decl(
     }
 }
 
-/// Specifier canonicalization visitor — the relocated stage-0
-/// `RuntimeSourceRewriter`. Rewrites relative requests from directives,
-/// supported literal calls, and worker sources that resolve to another
-/// chunk into artifact-relative form; sources already spelled as artifact
-/// output paths keep their spelling.
+/// Specifier canonicalization visitor. Rewrites relative requests from
+/// directives, supported literal calls, and worker sources that resolve to
+/// another chunk into artifact-relative form; sources already spelled as
+/// artifact output paths keep their spelling.
 /// Directives targeting a full-swap chunk that index resolution misses
 /// (the full-swap dangling-import contract) canonicalize against the
 /// plan's recorded entry path instead.

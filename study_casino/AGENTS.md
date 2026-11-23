@@ -17,8 +17,8 @@ New endpoint:
 
 1. `response_model=...` or a typed return, never `dict[str, Any]`.
 2. Mutations return a typed `ActionResponse`; a genuinely new shape gets a new `ActionResult`
-   variant with `extra="forbid"` and a unique required-field set (the union is structural; a
-   `kind` discriminator is being rolled out per <docs/action_result_discriminators.md>).
+   variant with `extra="forbid"` and a unique `kind: Literal[...]` default, added to the
+   discriminated union in <actions.py>.
 3. A `game_events` row is returned as `ActionMutation(game_event=GameEventMutation(...))` with a
    `RouletteOutcome` / `SlotsOutcome` / `BlackjackOutcome` (<events.py>).
-4. Parse the response in `frontend/sync.js` (or `use_casino.js`) through its `z<ResponseModel>`.
+4. Parse the response in `frontend/sync.js` through its `z<ResponseModel>`.

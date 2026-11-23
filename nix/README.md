@@ -18,6 +18,7 @@ nix/
 ├── docs/          # Maintained Nix notes
 ├── droid/         # Android (phone) configurations — see droid/README.md
 ├── flake/         # Flake output composition
+│   ├── artifact-checks.nix
 │   ├── devtools.nix
 │   └── packages.nix
 ├── packages/      # Custom Nix packages
@@ -31,6 +32,9 @@ nix/
   crash evidence and the current locked source status.
 - [Retired workstation features](docs/workstation_retired_features.md): removed
   features and what to consider before restoring them.
+- [Private Gaffer artifacts](docs/private_flake_inputs.md): `gaffer-private` is
+  not a flake input; its binaries are pinned store closures from a private
+  cache.
 
 ## Usage
 

@@ -172,11 +172,11 @@ Node: every legacy-refused / effect-accepted run probed under
 `--emit-on-rejection` matches its source (152 same, 4 unrunnable) except the
 two placement-blocked rebinds above. Targets: `bundle_owned_globals_test`
 (12), `reentry_free_operations_test` (11), `imported_callback_timing_test`
-(7), `native_slot_integrity_test` (7), `native_call_summary_test` (6),
-`math_round_timing_test` (5), `namespace_wrapper_test` (5),
-`captured_value_input_test` (4), `descriptor_copy_factory_test` (4), and 9
-others with 1–3 each. L4d note: on the flip these tests' refusals become
-acceptances of the _assembled_ candidate, not of the authored split.
+(7), `namespace_wrapper_test` (5), `captured_value_input_test` (4), the
+`native_integrity_test` modules `slot_integrity` (7), `call_summary` (6),
+`math_round_timing` (5) and `descriptor_copy_factory` (4), and 9 others with
+1–3 each. L4d note: on the flip these tests' refusals become acceptances of
+the _assembled_ candidate, not of the authored split.
 
 ## Missing coverage (360 e2e, 38 canonical chunks)
 

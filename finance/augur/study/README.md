@@ -1,7 +1,7 @@
 # augur/study
 
 Reproductions of published results, run through the whole simulator. One subdirectory per
-paper.
+paper, except `macro_window/`.
 
 Every other check on augur is internal — the money math is exact, the fitted model scores well
 on its own holdout — and none of it can catch a simulator that is self-consistently wrong. A
@@ -25,3 +25,6 @@ upstream outage cannot redden an unrelated PR. Run one by name.
 - <guyton_klinger/> — Guyton and Klinger (2006) rules replayed over annual history under a
   [declared three-sleeve adaptation](guyton_klinger/README.md#declared-three-sleeve-adaptation),
   not a table reproduction. `run.py` carries the offline CLI invocation.
+- <macro_window/> — not a paper: scores the macro VAR fitted on the 1955 FRED window against
+  the 1926 long record (`compare.py`, `holdout.py`, `mixed_windows.py`, `stability.py`).
+  `demo_stability.py` prints the comparison by hand.

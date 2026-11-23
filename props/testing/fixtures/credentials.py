@@ -13,8 +13,8 @@ from pydantic import BaseModel
 from props.db.database import Database
 from props.db.models import AgentRun, AgentRunStatus
 from props.orchestration.agent_credentials import AgentCredentials, ensure_agent_role
-from props.testing.constants import DEFAULT_TEST_MODEL
 from props.testing.fixtures.runs import ensure_fake_agent_definitions
+from props.testing.models import DEFAULT_TEST_MODEL
 
 
 async def make_agent_credentials(db: Database, type_config: BaseModel, image_digest: str) -> AgentCredentials:

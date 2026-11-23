@@ -64,12 +64,16 @@ Trace [transport capture](../sampler/protocol/evidence.go),
 [final intent audit](../sampler/internal/sessionstore/intents.go). Decide which representation each
 consumer actually needs. Prefer one retained stream with references from the completed operation
 over another full `events` array. Keep final response content only where it supplies information
-that cannot be referenced or derived from retained items.
+that cannot be referenced or derived from retained items. A 2026-11-12 staging sample found 17
+OpenAI responses retaining 370 KB of `instructions` and 151 KB of `tools`, which request profiles
+already represent.
 
 Separate optional raw transport diagnostics from data required for recovery or acknowledged
 history. Use existing typed configuration for capture/retention policy, considering per-Session
 capture when needed. Preserve malformed/partial-response diagnosis and the existing rule that
-failed evidence persistence stops processing. An unknown provider outcome must not trigger replay.
+failed evidence persistence stops processing. Each stream event and wire chunk is persisted by its
+own `ResponseEvidence.Record` transaction before the stream advances (`EvidenceSink`); batching
+those writes changes that rule. An unknown provider outcome must not trigger replay.
 
 The bounded source probe found a narrower first change: successful sampling and compaction audits
 copy `Response.Events` into both `sampler_intent.result` and result-phase boundary evidence. No

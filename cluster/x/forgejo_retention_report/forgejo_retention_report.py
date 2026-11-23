@@ -19,19 +19,23 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-REGISTRY = "git.allegedly.works"
-TAG = re.compile(r"devel-[0-9]{14}-[0-9a-f]{7}")
+_REGISTRY_PREFIX = re.escape("git.allegedly.works/")
+_DATED_TAG_SUFFIX = r"[0-9]{14}-[0-9a-f]{7}"
+_DIGEST = r"sha256:[0-9a-f]{64}"
+TAG = re.compile("devel-" + _DATED_TAG_SUFFIX)
 SHAPES = (
     ("dated-devel", TAG),
-    ("dated-main", re.compile(r"main-[0-9]{14}-[0-9a-f]{7}")),
-    ("pr-merge", re.compile(r"[0-9]+-merge-[0-9]{14}-[0-9a-f]{7}")),
-    ("digest", re.compile(r"sha256:[0-9a-f]{64}")),
+    ("dated-main", re.compile("main-" + _DATED_TAG_SUFFIX)),
+    ("pr-merge", re.compile(r"[0-9]+-merge-" + _DATED_TAG_SUFFIX)),
+    ("digest", re.compile(_DIGEST)),
     ("bare-hash", re.compile(r"[0-9a-f]{7,40}")),
     ("latest", re.compile(r"latest")),
     ("upload-session", re.compile(r"_upload")),
 )
-TOKEN = re.compile(r"devel-[0-9]{14}-[0-9a-f]{7}|sha256:[0-9a-f]{64}")
-REFERENCE = re.compile(re.escape(REGISTRY) + r"/([\w./-]+)[:@]([\w.:-]+)")
+# Git grep -E and log -G use the same ERE-compatible fragments as the scanner.
+TOKEN = re.compile(f"{TAG.pattern}|{_DIGEST}")
+_SOURCE_PATTERN = f"{_REGISTRY_PREFIX}|{TOKEN.pattern}"
+REFERENCE = re.compile(_REGISTRY_PREFIX + r"([\w./-]+)[:@]([\w.:-]+)")
 WORKLOADS = (
     "pods,deployments,statefulsets,daemonsets,replicasets,replicationcontrollers,"
     "jobs,cronjobs,podtemplates,sandboxtemplates.agentplane.allegedly.works,"
@@ -81,9 +85,8 @@ def scan_repo(spec: str, rollback_days: int, protection: Protection) -> dict[str
     repo = str(Path(path).resolve())
     ref = ref if separator else "HEAD"
     sha = run(["git", "-C", repo, "rev-parse", "--verify", f"{ref}^{{commit}}"]).strip()
-    pattern = r"git[.]allegedly[.]works/|devel-[0-9]{14}-[0-9a-f]{7}|sha256:[0-9a-f]{64}"
     result = subprocess.run(
-        ["git", "-C", repo, "grep", "-n", "-I", "-E", pattern, sha, "--", "."],
+        ["git", "-C", repo, "grep", "-n", "-I", "-E", _SOURCE_PATTERN, sha, "--", "."],
         capture_output=True,
         text=True,
         check=False,
@@ -108,7 +111,7 @@ def scan_repo(spec: str, rollback_days: int, protection: Protection) -> dict[str
                 "--unified=0",
                 "-p",
                 "-G",
-                pattern,
+                _SOURCE_PATTERN,
                 "--",
                 ".",
             ],
@@ -159,7 +162,9 @@ def make_report(
     for version in versions.values():
         groups[f"{version['owner']}/{version['name']}"].append(version)
     candidates: set[int] = set()
+    out_of_policy_members: dict[tuple[str, str, str, bool], set[int]] = defaultdict(set)
     details = []
+    recent_cutoff = (now - timedelta(days=days)).timestamp()
     for image, group in sorted(groups.items()):
         public = sorted((v for v in group if not v["internal"]), key=lambda v: (v["created"], v["id"]), reverse=True)
         newest = {v["id"] for v in public[:keep]}
@@ -171,9 +176,13 @@ def make_report(
                 reasons.add("internal")
             if not TAG.fullmatch(v["version"]):
                 reasons.add("not-dated-devel-tag")
+            # Only permanent exclusions belong in the out-of-policy inventory.
+            if reasons:
+                group_key = (v["owner"], v["type"], classify_shape(v["version"]), v["internal"])
+                out_of_policy_members[group_key].add(v["id"])
             if v["id"] in newest:
                 reasons.add("newest-N")
-            if v["created"] >= (now - timedelta(days=days)).timestamp():
+            if v["created"] >= recent_cutoff:
                 reasons.add("recent")
             reasons.update(protection.tokens.get(v["version"], set()))
             reasons.update(protection.references.get(f"{image}:{v['version']}", set()))
@@ -193,12 +202,8 @@ def make_report(
                 }
             )
     reclaimable = {b for b, refs in blob_refs.items() if refs and refs <= candidates}
-    members: dict[tuple[str, str, str, bool], set[int]] = defaultdict(set)
-    for v in versions.values():
-        if not (v["owner"] == owner and v["type"] == "container" and TAG.fullmatch(v["version"]) and not v["internal"]):
-            members[(v["owner"], v["type"], classify_shape(v["version"]), v["internal"])].add(v["id"])
     out_of_policy = []
-    for (g_owner, g_type, shape, internal), ids in sorted(members.items()):
+    for (g_owner, g_type, shape, internal), ids in sorted(out_of_policy_members.items()):
         group_blobs = set().union(*(version_blobs[i] for i in ids))
         out_of_policy.append(
             {

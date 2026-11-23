@@ -15,7 +15,7 @@ Migrate a single-instance CNPG PostgreSQL cluster between regions using the Stan
 
 ## Procedure
 
-Follow the runbook at `skills/cnpg_region_switch/RUNBOOK.md` step by step.
+Follow the runbook at `RUNBOOK.md` (beside this file) step by step.
 
 Key steps:
 

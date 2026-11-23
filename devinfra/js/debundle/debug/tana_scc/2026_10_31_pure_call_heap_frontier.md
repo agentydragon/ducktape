@@ -15,12 +15,14 @@ complete. They are ordered only by a `cell_order` `after_barrier` edge whose
 two endpoints are `heap_frontier` with causes `array_content_effects` and
 `unresolved_callee`.
 
-Both causes come from `facts/array_content_effects.rs`, which never sees
-cross-module purity. An imported callee has no local function body, so
-`visit_call_expr` records `record_opaque_call` (`array_content_effects`) and
-`record_call_target` adds the import to `calls.eager`. Then
-`graph/build.rs::emit_heap_content_order` cannot resolve that name to a
-source unit (`unresolved_callee`).
+Both causes came from `facts/heap_contents.rs` (then
+`array_content_effects.rs`), which never sees cross-module purity. An imported
+callee has no local function body, so `visit_call_expr` recorded
+`record_opaque_call` (now `record_opaque`; `array_content_effects`) and
+`record_call_target` added the import to `calls.eager`. Then
+`graph/build.rs::emit_heap_content_order` could not resolve that name to a
+source unit (`unresolved_callee`). #13374 removed `record_call_target` and the
+`unresolved_callee` cause.
 
 Graph-wide, 735 of the 1,577 `cell_order` edges join two statements the
 engine rates pure and complete.
@@ -85,7 +87,7 @@ roughly halves the surface to model.
 
 `Fx` (Tana's `UICommand`) is the largest route into Tana's callback pool:
 86 of 325 distinct escapes on devel `5dfe2142`, probed as in
-[the pool-composition note](../havoc_reach_pool_probe/README.md).
+[the pool-composition note](../../docs/lessons_learned/performance_traps.md#other-measured-shapes).
 The chain starts at the helper factories `hO`/`fO` (statements 2698–2705).
 Each calls `Se({...})` with a literal record inside its own body.
 

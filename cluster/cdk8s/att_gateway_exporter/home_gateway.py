@@ -201,7 +201,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=12,
-                targets=gateway_error_queries("lan_port", "5m", legend_prefix="Port {{port}} "),
+                targets=gateway_error_queries("lan_port", legend_prefix="Port {{port}} "),
                 title="LAN port errors and drops",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, y=26),
@@ -209,7 +209,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=13,
-                targets=gateway_error_queries("wan", "5m"),
+                targets=gateway_error_queries("wan"),
                 title="WAN errors and drops",
                 datasource=mimir(),
                 grid_pos=dashboard.GridPos(h=8, x=12, y=26),

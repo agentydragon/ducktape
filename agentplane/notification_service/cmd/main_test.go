@@ -201,8 +201,6 @@ func restart(t *testing.T, tune func(*config)) running {
 		return path
 	}
 	actionAddress := grpcserver.ServeRegistered(t, func(s *grpc.Server) { actionpb.RegisterActionServiceServer(s, testActionService{}) })
-	runnerAddress := grpcserver.ServeRegistered(t, func(s *grpc.Server) {
-	})
 	historyAddress := grpcserver.ServeRegistered(t, func(s *grpc.Server) {
 		historypb.RegisterHistoryServiceServer(s, historypb.UnimplementedHistoryServiceServer{})
 	})
@@ -214,7 +212,6 @@ func restart(t *testing.T, tune func(*config)) running {
 	c.DatabaseURL = integrationDatabase.URL
 	c.Namespace = testNamespace
 	c.Actions = actionPeer{URL: "http://" + actionAddress, TokenFile: tokenFile("actions"), RequestTimeoutSeconds: 5}
-	c.RunnerGateway = runnerGateway{ControlTarget: runnerAddress, TokenFile: tokenFile("gateway"), RequestTimeoutSeconds: 5}
 	c.HistoryService = peer{Target: historyAddress, TokenFile: tokenFile("history"), RequestTimeoutSeconds: 5}
 	c.SessionDispatcher = peer{Target: dispatcherAddress, TokenFile: tokenFile("dispatcher"), RequestTimeoutSeconds: 5}
 	if tune != nil {

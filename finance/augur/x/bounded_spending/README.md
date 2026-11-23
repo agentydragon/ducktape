@@ -89,16 +89,15 @@ per month. Python policies must not use neighboring rows as economic information
 
 ```bash
 bbr run -c opt //finance/augur/x/bounded_spending:profile_bin -- \
-  --rollouts 1000 --horizon-months 60 --native-threads 4 \
+  --rollouts 1000 --horizon-months 60 \
   --authoring batch --capture summary \
   --output-dir /home/buildbuddy/workspace/artifacts/command-0/bounded-batch
 ```
 
 Compare `scalar` and `batch` with identical capture/dimensions.
-The real cProfile records world composition, Python policy authoring,
-action/observation transfer, native steps and final JSON decoding. Path compilation is
-outside the profile; process memory includes it. These are not isolated native
-compute or heap measurements, and no cost budget or language verdict is inferred.
+The real cProfile records world composition, Python policy authoring and session
+steps. Path compilation is outside the profile; process memory includes it. No cost
+budget is inferred.
 
 `compare_test` and `python_policy_test` run the actual study/profile CLIs with
 synthetic data, compare scalar/batch and compact/forensic outcomes, and exercise

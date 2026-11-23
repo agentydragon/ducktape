@@ -14,8 +14,8 @@ from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.kubernetes_apiserver_fixtures import api_server, kubeconfig
 from agentplane.testing.sandbox_fixtures import sandbox
-from util.testing.postgres import DatabaseNames, create_temporary_database
-from util.testing.postgres_fixtures import (
+from testing.postgres import DatabaseNames, create_temporary_database
+from testing.postgres_fixtures import (
     database_clones,
     database_names,
     postgres_admin_url,
@@ -40,9 +40,6 @@ __all__ = [
     "sandbox",
 ]
 
-DISPATCHER_AUDIENCE = "test-contract-dispatcher"
-GATEWAY_AUDIENCE = "test-contract-gateway"
-
 
 @pytest.fixture
 def dispatcher_database_url(postgres_admin_url: str, database_names: DatabaseNames) -> Iterator[str]:
@@ -65,8 +62,6 @@ async def gateway_service(
         database_url=dispatcher_database_url,
         namespace=sandbox.namespace,
         runtime_proxy_controller_callers=(SANDBOX_CONTROLLER_URI,) if controller_enabled else (),
-        dispatcher_audience=DISPATCHER_AUDIENCE,
-        gateway_audience=GATEWAY_AUDIENCE,
     ) as service:
         yield service
 
@@ -80,7 +75,6 @@ def runtime_client(gateway_service: GatewayProcess) -> SandboxControlClient:
 async def dispatcher(gateway_service: GatewayProcess) -> AsyncIterator[SessionDispatcherClient]:
     async with SessionDispatcherClient.connect(
         gateway_service.target,
-        token_file=None,
         request_timeout_s=10,
         channel_credentials=gateway_service.service_credentials("spiffe://agentplane/app"),
     ) as client:

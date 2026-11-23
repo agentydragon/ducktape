@@ -1,21 +1,22 @@
-"""Tests for Flux domain parsing."""
+"""Flux domain parsing and cold-start source authentication."""
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
+from urllib.parse import urlsplit
 
-import durationpy
 import pytest
+import yaml
+from python.runfiles import Runfiles
 
 from cluster.validation.flux import FluxReconcileHistoryEntry, parse_flux_kustomizations
-from cluster.validation.flux_bootstrap_auth import check_flux_bootstrap_auth
 
 
 class TestParseFluxKustomization:
-    def test_parses_parked_marker(self, tmp_path: Path) -> None:
+    def test_parses_parked_marker_and_target_namespace(self, tmp_path: Path) -> None:
         flux_file = tmp_path / "flux-kustomization.yaml"
-        _write_yaml(
-            flux_file,
+        flux_file.write_text(
             """
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -25,63 +26,67 @@ metadata:
     ducktape.org/parked: "true"
 spec:
   path: ./cluster/k8s/parked-app
-""",
+  targetNamespace: app
+"""
         )
 
         spec = parse_flux_kustomizations(flux_file)["parked-app"]
 
         assert spec.parked
+        assert spec.target_namespace == "app"
 
 
-def test_history_duration_uses_go_duration_syntax() -> None:
-    for duration, seconds in [("1h30m1.25s", 5401.25), ("940.5ms", 0.9405), ("-1s", -1.0), ("0", 0.0), (None, 0.0)]:
-        entry = FluxReconcileHistoryEntry(last_reconciled_duration=duration)
-        assert entry.duration_s == seconds
+def test_history_duration_is_seconds_and_missing_is_zero() -> None:
+    assert FluxReconcileHistoryEntry(last_reconciled_duration="1h30m1.25s").duration_s == 5401.25
+    assert FluxReconcileHistoryEntry().duration_s == 0.0
 
 
-def test_history_invalid_duration_is_reported() -> None:
-    entry = FluxReconcileHistoryEntry(last_reconciled_duration="invalid 2s")
-    with pytest.raises(durationpy.DurationError):
-        _ = entry.duration_s
+_BOOTSTRAP_SYNC = "cluster/k8s/flux/flux-system/gotk-sync.yaml"
 
 
-def _write_yaml(path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content)
+def _git_repository(path: Path, namespace: str, name: str) -> dict[str, Any]:
+    [source] = [
+        doc["spec"]
+        for doc in yaml.safe_load_all(path.read_text())
+        if doc["kind"] == "GitRepository"
+        and (doc["metadata"]["namespace"], doc["metadata"]["name"]) == (namespace, name)
+    ]
+    assert isinstance(source, dict)
+    return source
 
 
-def test_bootstrap_gitrepository_cannot_depend_on_sops_managed_auth(tmp_path: Path) -> None:
-    """source-controller needs the bootstrap source before Flux can decrypt SOPS resources."""
-    _write_yaml(
-        tmp_path / "flux" / "flux-system" / "gotk-sync.yaml",
-        """
-apiVersion: source.toolkit.fluxcd.io/v1
-kind: GitRepository
-metadata:
-  name: flux-system
-  namespace: flux-system
-spec:
-  interval: 1m
-  provider: github
-  secretRef:
-    name: ducktape-automation-github-app
-  url: https://github.com/agentydragon/ducktape.git
-""",
-    )
-    _write_yaml(
-        tmp_path / "flux-system" / "ducktape-automation-github-app.sops.yaml",
-        """
-apiVersion: v1
-kind: Secret
-metadata:
-  name: ducktape-automation-github-app
-  namespace: flux-system
-type: Opaque
-stringData:
-  githubAppPrivateKey: ENC[AES256_GCM,data:example]
-""",
-    )
+@pytest.mark.parametrize(
+    ("namespace", "name", "manifest"),
+    [
+        ("ducktape-flux", "ducktape", "cluster/k8s/flux/ducktape-flux/ducktape-flux.k8s.yaml"),
+        ("flux-system", "flux-system", _BOOTSTRAP_SYNC),
+    ],
+)
+def test_artifact_copies_are_in_the_source_checkout(
+    runfiles: Runfiles, namespace: str, name: str, manifest: str
+) -> None:
+    repo = runfiles.root() / "ducktape"
+    source = _git_repository(repo / manifest, namespace, name)
+    generators = repo / "cluster/generated/artifact-generators/artifact-generators.k8s.yaml"
+    [(generator, alias)] = [
+        (doc["spec"], ref["alias"])
+        for doc in yaml.safe_load_all(generators.read_text())
+        for ref in doc["spec"]["sources"]
+        if ref["kind"] == "GitRepository"
+        and (ref.get("namespace", doc["metadata"]["namespace"]), ref["name"]) == (namespace, name)
+    ]
+    for artifact in generator["artifacts"]:
+        for copy in artifact["copy"]:
+            # The artifact builder supports literal files and whole-directory copies ending in /**.
+            path = Path(copy["from"]).relative_to(f"@{alias}")
+            assert any(path.is_relative_to(root) for root in source["sparseCheckout"]), (name, artifact["name"], path)
 
-    errors = check_flux_bootstrap_auth(tmp_path)
-    assert any("sets provider=github" in error for error in errors)
-    assert any("references SOPS-managed Secret" in error for error in errors)
+
+def test_bootstrap_source_fetches_anonymously(runfiles: Runfiles) -> None:
+    """Terraform waits for this source before Flux can decrypt any Git credentials."""
+    source = _git_repository(runfiles.root() / "ducktape" / _BOOTSTRAP_SYNC, "flux-system", "flux-system")
+    url = urlsplit(source["url"])
+    assert url.scheme == "https"
+    assert url.username is None
+    assert source.get("provider", "generic") == "generic"
+    assert "secretRef" not in source

@@ -1201,11 +1201,7 @@ fn selector_debt_ndjson_preserves_json_payloads_and_section_order() {
             "--format",
             format,
         ]);
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
+        process::assert_success(&out);
         out.stdout
     };
     let report: Value = serde_json::from_slice(&run("json")).unwrap();

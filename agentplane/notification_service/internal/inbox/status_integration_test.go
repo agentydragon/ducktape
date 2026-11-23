@@ -240,11 +240,6 @@ func TestSessionStatusRestrictsExecutionIdentity(t *testing.T) {
 	if got := read(f.sessionID, &other); got != nil {
 		t.Fatalf("other account got %+v", got)
 	}
-	other = owner
-	other.SandboxUID = "replacement"
-	if got := read(f.sessionID, &other); got == nil || got.Inbox.ID != sub.InboxID {
-		t.Fatalf("same Identity in another Sandbox got %+v", got)
-	}
 	if got := read(uniqueSession(), &owner); got != nil {
 		t.Fatalf("missing Session got %+v", got)
 	}

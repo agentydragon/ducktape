@@ -7,6 +7,85 @@ fn id(name: &str) -> Id {
     (name.into(), SyntaxContext::empty())
 }
 
+/// One module of a hand-built program: parsed source plus the import and
+/// export maps that program binding resolves.
+struct TestModule {
+    name: &'static str,
+    ast: swc_ecma_ast::Module,
+    imports: BTreeMap<String, ResolvedImport>,
+    exports: BTreeMap<String, String>,
+    fresh_factory_imports: BTreeSet<String>,
+}
+
+impl TestModule {
+    fn new(name: &'static str, source: &str) -> Self {
+        Self {
+            name,
+            ast: raw_js_test_support::parse(source),
+            imports: BTreeMap::new(),
+            exports: BTreeMap::new(),
+            fresh_factory_imports: BTreeSet::new(),
+        }
+    }
+
+    /// Imports each of `names` from module `from` under the same name.
+    fn importing(mut self, from: &str, names: &[&str]) -> Self {
+        for &name in names {
+            self.imports.insert(
+                name.to_string(),
+                ResolvedImport {
+                    module: from.into(),
+                    export: name.into(),
+                    source_specifier: format!("./{from}.js"),
+                },
+            );
+        }
+        self
+    }
+
+    /// Exports each of `names` under the same name.
+    fn exporting(mut self, names: &[&str]) -> Self {
+        self.exports.extend(
+            names
+                .iter()
+                .map(|&name| (name.to_string(), name.to_string())),
+        );
+        self
+    }
+}
+
+fn run_program(modules: &[TestModule]) -> ProgramValueFlows {
+    let bodies: Vec<_> = modules
+        .iter()
+        .map(|module| crate::facts::top_level_item_views(&module.ast.body))
+        .collect();
+    let bindings = ProgramBindings::new(
+        modules.iter().map(|module| ModuleBindings {
+            module: module.name,
+            imports: &module.imports,
+            exports: &module.exports,
+        }),
+        [],
+    );
+    let no_members = BTreeMap::new();
+    let inferred = BTreeMap::new();
+    program_value_flows(
+        &bindings,
+        modules
+            .iter()
+            .zip(&bodies)
+            .map(|(module, body)| ProgramFlowModule {
+                module: module.name,
+                body,
+                fresh_factory_imports: &module.fresh_factory_imports,
+                fresh_factory_members: &no_members,
+                native_operation_inputs: &[],
+                inferred_sets: &inferred,
+            }),
+        &crate::diagnostics::Diagnostics::default(),
+    )
+}
+
 fn flow(source: &str) -> Arc<ChunkValueFlow> {
     program(source).flows.remove("caller").unwrap()
 }
@@ -16,69 +95,17 @@ fn program(source: &str) -> ProgramValueFlows {
 }
 
 fn program_and_caller(source: &str) -> (ProgramValueFlows, swc_ecma_ast::Module) {
-    let caller = raw_js_test_support::parse(source);
-    let provider = raw_js_test_support::parse(
-        "export function relay(value) { return value; }\nexport function wrap(value) { return { box: value }; }\n",
-    );
-    let caller_views = crate::facts::top_level_item_views(&caller.body);
-    let provider_views = crate::facts::top_level_item_views(&provider.body);
-    let imports = ["relay", "wrap"]
-        .into_iter()
-        .map(|name| {
-            (
-                name.to_string(),
-                ResolvedImport {
-                    module: "provider".into(),
-                    export: name.into(),
-                    source_specifier: "./provider.js".into(),
-                },
-            )
-        })
-        .collect();
-    let exports = ["relay", "wrap"]
-        .into_iter()
-        .map(|name| (name.to_string(), name.to_string()))
-        .collect();
-    let empty = BTreeMap::new();
-    let bindings = ProgramBindings::new(
-        [
-            ModuleBindings {
-                module: "caller",
-                imports: &imports,
-                exports: &empty,
-            },
-            ModuleBindings {
-                module: "provider",
-                imports: &BTreeMap::new(),
-                exports: &exports,
-            },
-        ],
-        [],
-    );
-    let inferred = BTreeMap::new();
-    let flows = program_value_flows(
-        &bindings,
-        [
-            ProgramFlowModule {
-                fresh_factory_imports: &BTreeSet::new(),
-                fresh_factory_members: &BTreeMap::new(),
-                module: "caller",
-                body: &caller_views,
-                native_operation_inputs: &[],
-                inferred_sets: &inferred,
-            },
-            ProgramFlowModule {
-                fresh_factory_imports: &BTreeSet::new(),
-                fresh_factory_members: &BTreeMap::new(),
-                module: "provider",
-                body: &provider_views,
-                native_operation_inputs: &[],
-                inferred_sets: &inferred,
-            },
-        ],
-        &crate::diagnostics::Diagnostics::default(),
-    );
-    (flows, caller)
+    let modules = [
+        TestModule::new("caller", source).importing("provider", &["relay", "wrap"]),
+        TestModule::new(
+            "provider",
+            "export function relay(value) { return value; }\nexport function wrap(value) { return { box: value }; }\n",
+        )
+        .exporting(&["relay", "wrap"]),
+    ];
+    let flows = run_program(&modules);
+    let [caller, _] = modules;
+    (flows, caller.ast)
 }
 
 fn variable_initializer<'a>(module: &'a swc_ecma_ast::Module, name: &str) -> &'a Expr {
@@ -341,52 +368,15 @@ fn completed_expression_queries_preserve_static_missing_and_dynamic_top() {
 
 #[test]
 fn local_property_return_summaries_keep_module_slot_names() {
-    let caller = raw_js_test_support::parse("const marker = { alpha: 0 };\n");
-    let provider = raw_js_test_support::parse(
-        "const callback = () => 1;\nfunction read(context) { return context.value; }\nconst result = read({ value: callback });\n",
-    );
-    let caller_views = crate::facts::top_level_item_views(&caller.body);
-    let provider_views = crate::facts::top_level_item_views(&provider.body);
-    let empty_imports = BTreeMap::new();
-    let empty_exports = BTreeMap::new();
-    let bindings = ProgramBindings::new(
-        [
-            ModuleBindings {
-                module: "caller",
-                imports: &empty_imports,
-                exports: &empty_exports,
-            },
-            ModuleBindings {
-                module: "provider",
-                imports: &empty_imports,
-                exports: &empty_exports,
-            },
-        ],
-        [],
-    );
-    let inferred = BTreeMap::new();
-    let flows = program_value_flows(
-        &bindings,
-        [
-            ProgramFlowModule {
-                fresh_factory_imports: &BTreeSet::new(),
-                fresh_factory_members: &BTreeMap::new(),
-                module: "caller",
-                body: &caller_views,
-                native_operation_inputs: &[],
-                inferred_sets: &inferred,
-            },
-            ProgramFlowModule {
-                fresh_factory_imports: &BTreeSet::new(),
-                fresh_factory_members: &BTreeMap::new(),
-                module: "provider",
-                body: &provider_views,
-                native_operation_inputs: &[],
-                inferred_sets: &inferred,
-            },
-        ],
-        &crate::diagnostics::Diagnostics::default(),
-    );
+    let modules = [
+        TestModule::new("caller", "const marker = { alpha: 0 };\n"),
+        TestModule::new(
+            "provider",
+            "const callback = () => 1;\nfunction read(context) { return context.value; }\nconst result = read({ value: callback });\n",
+        ),
+    ];
+    let flows = run_program(&modules);
+    let [_, provider] = &modules;
     let flow = &flows.flows["provider"];
     let view = flow.program.as_ref().unwrap();
     let local_value_slot = flow
@@ -406,12 +396,13 @@ fn local_property_return_summaries_keep_module_slot_names() {
         callback.iter().all(|origin| result.contains(&origin)),
         "the local return summary transfers the selected property even when the conservative return row also has Top"
     );
-    let result_expr = variable_initializer(&provider, "result");
+    let result_expr = variable_initializer(&provider.ast, "result");
     let shared_query = flow.values_of_expr(result_expr);
     assert!(
         callback.iter().all(|origin| shared_query.contains(&origin)),
         "the shared summary uses globally rekeyed property slots"
     );
+    let provider_views = crate::facts::top_level_item_views(&provider.ast.body);
     let reference = ChunkValueFlow::analyze_reference(&provider_views);
     let local_query = reference.values_of_expr(result_expr);
     let callback_values: BTreeSet<_> = callback.iter().collect();
@@ -424,51 +415,13 @@ fn local_property_return_summaries_keep_module_slot_names() {
 
 #[test]
 fn property_producer_census_uses_rekeyed_object_sites_across_modules() {
-    let caller = raw_js_test_support::parse("const box = {};\nconst early = box.run;\n");
-    let provider =
-        raw_js_test_support::parse("const box = { run: target };\nfunction target() {}\n");
-    let caller_views = crate::facts::top_level_item_views(&caller.body);
-    let provider_views = crate::facts::top_level_item_views(&provider.body);
-    let empty_imports = BTreeMap::new();
-    let empty_exports = BTreeMap::new();
-    let bindings = ProgramBindings::new(
-        [
-            ModuleBindings {
-                module: "caller",
-                imports: &empty_imports,
-                exports: &empty_exports,
-            },
-            ModuleBindings {
-                module: "provider",
-                imports: &empty_imports,
-                exports: &empty_exports,
-            },
-        ],
-        [],
-    );
-    let inferred = BTreeMap::new();
-    let flows = program_value_flows(
-        &bindings,
-        [
-            ProgramFlowModule {
-                fresh_factory_imports: &BTreeSet::new(),
-                fresh_factory_members: &BTreeMap::new(),
-                module: "caller",
-                body: &caller_views,
-                native_operation_inputs: &[],
-                inferred_sets: &inferred,
-            },
-            ProgramFlowModule {
-                fresh_factory_imports: &BTreeSet::new(),
-                fresh_factory_members: &BTreeMap::new(),
-                module: "provider",
-                body: &provider_views,
-                native_operation_inputs: &[],
-                inferred_sets: &inferred,
-            },
-        ],
-        &crate::diagnostics::Diagnostics::default(),
-    );
+    let flows = run_program(&[
+        TestModule::new("caller", "const box = {};\nconst early = box.run;\n"),
+        TestModule::new(
+            "provider",
+            "const box = { run: target };\nfunction target() {}\n",
+        ),
+    ]);
 
     let caller_flow = &flows.flows["caller"];
     let values = caller_flow.values_of_binding(&id("early"));
@@ -600,113 +553,39 @@ fn reference_candidate_maps(
 }
 
 fn shared_scc_program() -> (ProgramValueFlows, swc_ecma_ast::Module) {
-    let caller = raw_js_test_support::parse(
-        "import { left, right } from './provider.js';\n\
-         export const local = { own: true };\n\
-         const ownLeft = { payload: local };\n\
-         const ownRight = { payload: local, back: ownLeft };\n\
-         ownLeft.back = ownRight;\n\
-         const combined = left || right;\n\
-         left || right;\n",
-    );
-    let provider = raw_js_test_support::parse(
-        "import { local } from './caller.js';\n\
-         const left = { payload: local };\n\
-         const right = { payload: local, back: left };\n\
-         left.back = right;\n\
-         export { left, right };\n",
-    );
-    let empty = raw_js_test_support::parse(
-        "import { left, right } from './provider.js';\n\
-         const combined = left || right;\n",
-    );
-    let caller_views = crate::facts::top_level_item_views(&caller.body);
-    let provider_views = crate::facts::top_level_item_views(&provider.body);
-    let empty_views = crate::facts::top_level_item_views(&empty.body);
-    let caller_imports: BTreeMap<String, ResolvedImport> = ["left", "right"]
-        .into_iter()
-        .map(|name| {
-            (
-                name.to_string(),
-                ResolvedImport {
-                    module: "provider".into(),
-                    export: name.into(),
-                    source_specifier: "./provider.js".into(),
-                },
-            )
-        })
-        .collect();
-    let provider_imports: BTreeMap<String, ResolvedImport> = [(
-        "local".to_string(),
-        ResolvedImport {
-            module: "caller".into(),
-            export: "local".into(),
-            source_specifier: "./caller.js".into(),
-        },
-    )]
-    .into_iter()
-    .collect();
-    let empty_imports = caller_imports.clone();
-    let caller_exports: BTreeMap<String, String> = [("local".to_string(), "local".to_string())]
-        .into_iter()
-        .collect();
-    let provider_exports: BTreeMap<String, String> = ["left", "right"]
-        .into_iter()
-        .map(|name| (name.to_string(), name.to_string()))
-        .collect();
-    let no_exports = BTreeMap::new();
-    let bindings = ProgramBindings::new(
-        [
-            ModuleBindings {
-                module: "caller",
-                imports: &caller_imports,
-                exports: &caller_exports,
-            },
-            ModuleBindings {
-                module: "provider",
-                imports: &provider_imports,
-                exports: &provider_exports,
-            },
-            ModuleBindings {
-                module: "empty",
-                imports: &empty_imports,
-                exports: &no_exports,
-            },
-        ],
-        [],
-    );
-    let inferred = BTreeMap::new();
-    let flows = program_value_flows(
-        &bindings,
-        [
-            ProgramFlowModule {
-                fresh_factory_imports: &BTreeSet::new(),
-                fresh_factory_members: &BTreeMap::new(),
-                module: "caller",
-                body: &caller_views,
-                native_operation_inputs: &[],
-                inferred_sets: &inferred,
-            },
-            ProgramFlowModule {
-                fresh_factory_imports: &BTreeSet::new(),
-                fresh_factory_members: &BTreeMap::new(),
-                module: "provider",
-                body: &provider_views,
-                native_operation_inputs: &[],
-                inferred_sets: &inferred,
-            },
-            ProgramFlowModule {
-                fresh_factory_imports: &BTreeSet::new(),
-                fresh_factory_members: &BTreeMap::new(),
-                module: "empty",
-                body: &empty_views,
-                native_operation_inputs: &[],
-                inferred_sets: &inferred,
-            },
-        ],
-        &crate::diagnostics::Diagnostics::default(),
-    );
-    (flows, caller)
+    let modules = [
+        TestModule::new(
+            "caller",
+            "import { left, right } from './provider.js';\n\
+             export const local = { own: true };\n\
+             const ownLeft = { payload: local };\n\
+             const ownRight = { payload: local, back: ownLeft };\n\
+             ownLeft.back = ownRight;\n\
+             const combined = left || right;\n\
+             left || right;\n",
+        )
+        .importing("provider", &["left", "right"])
+        .exporting(&["local"]),
+        TestModule::new(
+            "provider",
+            "import { local } from './caller.js';\n\
+             const left = { payload: local };\n\
+             const right = { payload: local, back: left };\n\
+             left.back = right;\n\
+             export { left, right };\n",
+        )
+        .importing("caller", &["local"])
+        .exporting(&["left", "right"]),
+        TestModule::new(
+            "empty",
+            "import { left, right } from './provider.js';\n\
+             const combined = left || right;\n",
+        )
+        .importing("provider", &["left", "right"]),
+    ];
+    let flows = run_program(&modules);
+    let [caller, ..] = modules;
+    (flows, caller.ast)
 }
 
 #[test]
@@ -923,69 +802,28 @@ fn shared_candidate_projections_preserve_indices_sharing_and_transient_queries()
 
 #[test]
 fn declared_factory_result_exclusion_preserves_member_aliases_unknown_and_provider_flow() {
-    let caller = raw_js_test_support::parse(
-        "import { factory } from './provider.js'; const retained = factory(() => 7); const alias = retained.invoke;",
-    );
-    let provider = raw_js_test_support::parse(
-        "export function factory(callback) { if (typeof callback !== 'function') return callback; return { invoke: callback }; }",
-    );
-    let caller_views = crate::facts::top_level_item_views(&caller.body);
-    let provider_views = crate::facts::top_level_item_views(&provider.body);
-    let imports = BTreeMap::from([(
-        "factory".into(),
-        ResolvedImport {
-            module: "provider".into(),
-            export: "factory".into(),
-            source_specifier: "./provider.js".into(),
-        },
-    )]);
-    let exports = BTreeMap::from([("factory".into(), "factory".into())]);
-    let no_exports = BTreeMap::new();
-    let no_imports = BTreeMap::new();
-    let inferred = BTreeMap::new();
-    let bindings = ProgramBindings::new(
-        [
-            ModuleBindings {
-                module: "caller",
-                imports: &imports,
-                exports: &no_exports,
-            },
-            ModuleBindings {
-                module: "provider",
-                imports: &no_imports,
-                exports: &exports,
-            },
-        ],
-        [],
-    );
     // Supplementary transfer invariant: eligibility itself is checked by the
     // real CLI fixtures, including provider backedges and unsafe alias writes.
-    let eligible = BTreeSet::from(["factory".into()]);
-    let flows = program_value_flows(
-        &bindings,
-        [
-            ProgramFlowModule {
-                module: "caller",
-                body: &caller_views,
-                fresh_factory_imports: &eligible,
-                fresh_factory_members: &BTreeMap::new(),
-                native_operation_inputs: &[],
-                inferred_sets: &inferred,
-            },
-            ProgramFlowModule {
-                module: "provider",
-                body: &provider_views,
-                fresh_factory_imports: &BTreeSet::new(),
-                fresh_factory_members: &BTreeMap::new(),
-                native_operation_inputs: &[],
-                inferred_sets: &inferred,
-            },
-        ],
-        &crate::diagnostics::Diagnostics::default(),
-    );
+    let modules = [
+        TestModule {
+            fresh_factory_imports: BTreeSet::from(["factory".into()]),
+            ..TestModule::new(
+                "caller",
+                "import { factory } from './provider.js'; const retained = factory(() => 7); const alias = retained.invoke;",
+            )
+            .importing("provider", &["factory"])
+        },
+        TestModule::new(
+            "provider",
+            "export function factory(callback) { if (typeof callback !== 'function') return callback; return { invoke: callback }; }",
+        )
+        .exporting(&["factory"]),
+    ];
+    let flows = run_program(&modules);
+    let [caller, _] = &modules;
     let caller_flow = &flows.flows["caller"];
     let provider_flow = &flows.flows["provider"];
-    let Expr::Call(call) = variable_initializer(&caller, "retained") else {
+    let Expr::Call(call) = variable_initializer(&caller.ast, "retained") else {
         panic!("factory call");
     };
     let Expr::Arrow(callback) = call.args[0].expr.as_ref() else {
@@ -994,7 +832,7 @@ fn declared_factory_result_exclusion_preserves_member_aliases_unknown_and_provid
     let callback = Value::Alloc(Kind::Function, callback.span.lo.0);
     for values in [
         caller_flow.values_of_binding(&id("retained")),
-        caller_flow.values_of_expr(variable_initializer(&caller, "retained")),
+        caller_flow.values_of_expr(variable_initializer(&caller.ast, "retained")),
     ] {
         assert!(
             !values.iter().any(|value| value == callback),

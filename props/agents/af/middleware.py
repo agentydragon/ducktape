@@ -1,9 +1,9 @@
-"""MAF middleware shims for props agents.
+"""MAF middleware shims shared by props agents.
 
-The only cross-cutting control behavior props needs at the middleware layer is
-"end the run as soon as a terminal tool fires" — the faithful port of the old
-agent_core terminal-handler behavior driven by the `submit` / `report_failure` /
-`report_success` tools. Budget is enforced server-side by props-llm-proxy, and tool
+`terminate_after_tools` ends the run as soon as a terminal tool fires, driven by the
+`submit` / `report_failure` / `report_success` tools. Agent-specific middleware lives beside
+its agent (`grader/notification_middleware.py`, `improve_termination_middleware` in
+`critic_dev/main.py`). Budget is enforced server-side by props-llm-proxy, and tool
 output size is bounded at the `exec` tool (`max_bytes`), so neither needs a middleware.
 """
 
@@ -23,8 +23,7 @@ def terminate_after_tools(names: AbstractSet[str]) -> FunctionMiddlewareCallable
     """Function middleware that ends the run immediately after any named terminal tool runs.
 
     The tool executes (its DB writes / status flips happen), then the function-calling loop
-    is terminated so the model takes no further turns — equivalent to agent_core aborting on
-    the next `on_before_sample` once `exit_state` was set.
+    is terminated so the model takes no further turns.
     """
 
     @function_middleware

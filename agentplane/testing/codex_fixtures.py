@@ -12,7 +12,7 @@ from python.runfiles import Runfiles
 from sqlalchemy.engine import make_url
 
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.postgres import create_temporary_database
+from testing.postgres import create_temporary_database
 
 
 @dataclass(frozen=True)

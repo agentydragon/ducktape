@@ -101,6 +101,10 @@ func TestSessionDeliveryTargetsAndCommands(t *testing.T) {
 				t.Fatal(err)
 			}
 			sandbox := SandboxSnapshot{Name: "test-executor", Namespace: "test", UID: "test-sandbox-uid", Incarnation: "test-pod-uid", Blocker: "sandbox_not_ready"}
+			if kind == placement.CentralSampler {
+				// Logical admission does not need an execution Pod; its first open fences the incarnation.
+				sandbox.Incarnation, sandbox.Blocker = "", "sandbox_suspended"
+			}
 			execution := store.SessionExecution{Identity: &identitypb.Identity{Name: "test-identity", Uid: "00000000-0000-4000-8000-00000000a008"}}
 			spec := &sessionpb.SessionSpec{Placement: &sessionpb.SessionPlacement{Kind: &sessionpb.SessionPlacement_CentralSamplerV1{CentralSamplerV1: &sessionpb.CentralSamplerV1Placement{ExecutorEnvironment: &sessionpb.ExactEnvironment{Name: sandbox.Name, Uid: sandbox.UID}}}}}
 			if kind == placement.EnvironmentHosted {

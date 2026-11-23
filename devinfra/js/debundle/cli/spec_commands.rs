@@ -5,7 +5,7 @@ use crate::validate::{ValidateArgs, run_validate_cmd};
 use crate::{emit_report, write_section};
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, Subcommand};
-use command_output::write_report;
+use command_output::{infallible, write_report};
 use graph_provenance::CurrentRoots;
 use graph_provenance::VerifiedGraphSourceContext;
 use peel::OutputFormat;
@@ -380,10 +380,7 @@ fn run_synthesize_selectors_cmd(
         output,
         args.format,
         &report,
-        |report, out| {
-            render_selector_codemod_text(report, out);
-            Ok(())
-        },
+        infallible(render_selector_codemod_text),
         "writing synthesize-selectors output",
     )
 }
@@ -406,10 +403,7 @@ fn run_match_selector_cmd(args: MatchSelectorArgs, output: &mut dyn std::io::Wri
             output,
             args.format,
             &report,
-            |report, out| {
-                crate::selector_explanation::render(report, out);
-                Ok(())
-            },
+            infallible(crate::selector_explanation::render),
             "writing selector explanation",
         );
     }
@@ -425,10 +419,7 @@ fn run_match_selector_cmd(args: MatchSelectorArgs, output: &mut dyn std::io::Wri
         output,
         args.format,
         &report,
-        |report, out| {
-            render_match_selector_text(report, out);
-            Ok(())
-        },
+        infallible(render_match_selector_text),
         "writing match-selector output",
     )
 }
@@ -442,11 +433,8 @@ fn run_spec_stats_cmd(args: SpecStatsArgs, output: &mut dyn std::io::Write) -> R
             write_section(output, "bindings", &stats.bindings)?;
             Ok(())
         }
-        _ => write_report(&stats, format, output, |stats, out| {
-            render_spec_stats_text(stats, out);
-            Ok(())
-        })
-        .context("writing spec stats output"),
+        _ => write_report(&stats, format, output, infallible(render_spec_stats_text))
+            .context("writing spec stats output"),
     }
 }
 
@@ -492,10 +480,12 @@ fn run_selector_debt_cmd(args: SelectorDebtArgs, output: &mut dyn std::io::Write
         emit_selector_debt_ndjson(&report, output)?;
         return Ok(());
     }
-    write_report(&report, format, output, |report, out| {
-        render_selector_debt_text(report, out);
-        Ok(())
-    })
+    write_report(
+        &report,
+        format,
+        output,
+        infallible(render_selector_debt_text),
+    )
     .context("writing selector-debt output")
 }
 

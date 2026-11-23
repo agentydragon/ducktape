@@ -4,7 +4,7 @@
 
 GDM 49.2 crashes with `SIGTRAP` in `get_fallback_session_name()`:
 
-```
+```text
 GdmSession: no session desktop files installed, aborting...
 ```
 

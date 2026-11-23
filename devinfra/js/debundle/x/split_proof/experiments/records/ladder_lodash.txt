@@ -1,0 +1,6 @@
+$ node prove.mjs Lodash.lean --ladder "decide;native_decide"   # 670 statements, 6 modules
+decide             failed: maximum recursion depth has been reached    1.8 s
+native_decide      proved                                              2.3 s  [propext,
+ Classical.choice,
+ Quot.sound,
+ plan_valid._native.native_decide.ax_1_1]

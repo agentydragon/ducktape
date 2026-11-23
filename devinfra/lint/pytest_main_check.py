@@ -16,15 +16,13 @@ def check_sources(paths: list[Path]) -> list[str]:
     return errors
 
 
-def main() -> int:
+def main() -> None:
     report, *srcs = map(Path, sys.argv[1:])
-    errors = check_sources(srcs)
-    if errors:
-        print("\n".join(errors), file=sys.stderr)
-        return 1
+    if errors := check_sources(srcs):
+        # The nonzero exit fails the `CheckPytestMain` action in pytest_main.bzl.
+        raise SystemExit("\n".join(errors))
     report.write_text("")
-    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

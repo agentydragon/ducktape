@@ -22,6 +22,9 @@ message InspectResponse {
 
 message ClaimRequest {
   map<string, string> environment = 1;
+  string implementation = 2;
+  // Native executor settings resolved from the Environment Runtime configuration.
+  string limits_json = 3;
 }
 
 message ClaimResponse {

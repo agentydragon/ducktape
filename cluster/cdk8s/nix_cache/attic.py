@@ -13,13 +13,7 @@ from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import ClusterRole, ClusterRolePolicyRule, ServiceAccount, k8s
-from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
-from cnpg_database_crds.io.cnpg.postgresql import (
-    Database,
-    DatabaseSpec,
-    DatabaseSpecCluster,
-    DatabaseSpecDatabaseReclaimPolicy,
-)
+from cnpg_cluster_crds.io.cnpg.postgresql import Cluster, ClusterSpecPostgresql
 from constructs import Construct
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
@@ -28,9 +22,10 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplateEngineVersion,
 )
 
-from cluster.cdk8s import api_resource, external_creds, namespaces, node_scheduling
+from cluster.cdk8s import api_resource, external_creds, namespaces, node_scheduling, piraeus_storage, public_web_pki
 from cluster.cdk8s.cnpg import cluster
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.forgejo_registry import pull_credentials
@@ -42,6 +37,7 @@ from cluster.cdk8s.nix_cache import ci_token
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.volume_claim import volume_claim
 from cluster.rotators.attic_jwt_rotation.config import (
     Config,
     KubernetesDestination,
@@ -150,14 +146,12 @@ NEXT_CONFIG_MAP = ConfigMapArgs(name=_NEXT_CONFIG_MAP, namespace=NAMESPACE, file
 
 
 ROTATORS_CONFIG_MAP = ConfigMapArgs(
-    name=_ROTATORS_CONFIG_MAP,
-    namespace=NAMESPACE,
-    data={"rotators.yaml": yaml_config(ROTATOR_CONFIG.model_dump(mode="json"))},
+    name=_ROTATORS_CONFIG_MAP, namespace=NAMESPACE, data={"rotators.yaml": yaml_config(ROTATOR_CONFIG)}
 )
 
 
-def _database(scope: Construct) -> None:
-    cluster.cluster(
+def _database(scope: Construct) -> Cluster:
+    return cluster.cluster(
         scope,
         "db",
         ref=DATABASE,
@@ -182,7 +176,7 @@ def _service(scope: Construct) -> None:
         scope,
         "service",
         metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(type="ClusterIP", ports=[SERVICE.port.k8s_service_port()], selector=SERVICE.pods.selector),
+        spec=k8s.ServiceSpec(type="ClusterIP", ports=[SERVICE.k8s_service_port()], selector=SERVICE.pods.selector),
     )
     https_route(
         scope,
@@ -195,17 +189,14 @@ def _service(scope: Construct) -> None:
     )
 
 
-def _local_server(scope: Construct) -> None:
-    Database(
+def _local_server(scope: Construct, postgres: Cluster) -> None:
+    cluster.Database(
         scope,
         "local-database",
         metadata=ApiObjectMetadata(name=_NEXT_DATABASE_SECRET, namespace=NAMESPACE),
-        spec=DatabaseSpec(
-            cluster=DatabaseSpecCluster(name=DATABASE.name),
-            name="attic_local",
-            owner="attic",
-            database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.RETAIN,
-        ),
+        cluster=postgres,
+        name="attic_local",
+        owner="attic",
     )
     reader = k8s.KubeServiceAccount(
         scope, "local-db-reader", metadata=k8s.ObjectMeta(name="attic-local-db-reader", namespace=NAMESPACE)
@@ -248,15 +239,13 @@ def _local_server(scope: Construct) -> None:
             },
         ),
     )
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         scope,
         "local-storage",
-        metadata=k8s.ObjectMeta(name=_NEXT_STORAGE, namespace=NAMESPACE),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-hdd-2",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("100Gi")}),
-        ),
+        name=_NEXT_STORAGE,
+        namespace=NAMESPACE,
+        storage_class=piraeus_storage.HDD_REPLICATED,
+        size="100Gi",
     )
     k8s.KubeDeployment(
         scope,
@@ -300,14 +289,8 @@ def _local_server(scope: Construct) -> None:
                                 .env_var("ATTIC_SERVER_TOKEN_HS256_SECRET_BASE64"),
                             ],
                             args=["-f", "/config/server.toml", "--mode", "monolithic"],
-                            ports=[SERVICE.port.k8s_container_port()],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                    "memory": k8s.Quantity.from_string("1280Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("8Gi")},
-                            ),
+                            ports=[SERVICE.k8s_container_port()],
+                            resources=container_resources(cpu="50m", memory="1280Mi", memory_limit="8Gi"),
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path="/config", read_only=True),
                                 k8s.VolumeMount(name="tmp", mount_path="/tmp"),
@@ -343,7 +326,7 @@ def _local_server(scope: Construct) -> None:
         scope,
         "candidate-service",
         metadata=k8s.ObjectMeta(name=_NEXT, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(type="ClusterIP", ports=[SERVICE.port.k8s_service_port()], selector=_NEXT_LABELS),
+        spec=k8s.ServiceSpec(type="ClusterIP", ports=[SERVICE.k8s_service_port()], selector=_NEXT_LABELS),
     )
     k8s.KubeJob(
         scope,
@@ -382,24 +365,16 @@ def _local_server(scope: Construct) -> None:
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                             ),
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("100m"),
-                                    "memory": k8s.Quantity.from_string("128Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("256Mi")},
-                            ),
-                            env=[k8s.EnvVar(name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt")],
+                            resources=container_resources(cpu="100m", memory="128Mi", memory_limit="256Mi"),
+                            env=[public_web_pki.SSL_CERT_FILE],
                             volume_mounts=[
                                 k8s.VolumeMount(name="cache-keys", mount_path="/secrets/cache-keys", read_only=True),
-                                k8s.VolumeMount(
-                                    name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
-                                ),
+                                public_web_pki.VOLUME_MOUNT,
                             ],
                         )
                     ],
                     volumes=[
-                        k8s.Volume(name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki")),
+                        public_web_pki.VOLUME,
                         k8s.Volume(
                             name="cache-keys",
                             secret=k8s.SecretVolumeSource(
@@ -417,36 +392,19 @@ def _local_server(scope: Construct) -> None:
 def _rotation(scope: Construct) -> None:
     # Flux owns the Secret's identity; only the rotator owns its data. Omitting
     # data and using Merge preserve rotator-owned fields on Flux reconciles.
-    k8s.KubeSecret(
-        scope,
-        "ci-writer-token",
-        metadata=k8s.ObjectMeta(
-            name=ci_token.WRITER.name,
-            namespace=ci_token.WRITER.namespace,
-            annotations={"kustomize.toolkit.fluxcd.io/ssa": "Merge"},
-        ),
-        type="Opaque",
-    )
-    k8s.KubeSecret(
-        scope,
-        "ci-reader-token",
-        metadata=k8s.ObjectMeta(
-            name=ci_token.READER.name,
-            namespace=ci_token.READER.namespace,
-            annotations={"kustomize.toolkit.fluxcd.io/ssa": "Merge"},
-        ),
-        type="Opaque",
-    )
-    k8s.KubeSecret(
-        scope,
-        "gaffer-ci-writer-token",
-        metadata=k8s.ObjectMeta(
-            name=ci_token.GAFFER_WRITER.name,
-            namespace=ci_token.GAFFER_WRITER.namespace,
-            annotations={"kustomize.toolkit.fluxcd.io/ssa": "Merge"},
-        ),
-        type="Opaque",
-    )
+    for construct_id, token in (
+        ("ci-writer-token", ci_token.WRITER),
+        ("ci-reader-token", ci_token.READER),
+        ("gaffer-ci-writer-token", ci_token.GAFFER_WRITER),
+    ):
+        k8s.KubeSecret(
+            scope,
+            construct_id,
+            metadata=k8s.ObjectMeta(
+                name=token.name, namespace=token.namespace, annotations={"kustomize.toolkit.fluxcd.io/ssa": "Merge"}
+            ),
+            type="Opaque",
+        )
     notification_role = ClusterRole(
         scope,
         "ci-token-notification",
@@ -554,9 +512,7 @@ def _rotation(scope: Construct) -> None:
                             automount_service_account_token=True,
                             restart_policy="OnFailure",
                             volumes=[
-                                k8s.Volume(
-                                    name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki")
-                                ),
+                                public_web_pki.VOLUME,
                                 k8s.Volume(
                                     name="rotators-config",
                                     config_map=k8s.ConfigMapVolumeSource(name=_ROTATORS_CONFIG_MAP),
@@ -572,28 +528,15 @@ def _rotation(scope: Construct) -> None:
                                     name="rotate",
                                     image=_ROTATOR_IMAGE,
                                     args=["rotate", "--config", "/config/rotators.yaml"],
-                                    env=[
-                                        _GITHUB_PAT.key("token").env_var("GIT_TOKEN"),
-                                        k8s.EnvVar(
-                                            name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"
-                                        ),
-                                    ],
+                                    env=[_GITHUB_PAT.key("token").env_var("GIT_TOKEN"), public_web_pki.SSL_CERT_FILE],
                                     security_context=k8s.SecurityContext(
                                         allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"])
                                     ),
                                     volume_mounts=[
                                         k8s.VolumeMount(name="rotators-config", mount_path="/config", read_only=True),
-                                        k8s.VolumeMount(
-                                            name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
-                                        ),
+                                        public_web_pki.VOLUME_MOUNT,
                                     ],
-                                    resources=k8s.ResourceRequirements(
-                                        requests={
-                                            "cpu": k8s.Quantity.from_string("100m"),
-                                            "memory": k8s.Quantity.from_string("256Mi"),
-                                        },
-                                        limits={"memory": k8s.Quantity.from_string("512Mi")},
-                                    ),
+                                    resources=container_resources(cpu="100m", memory="256Mi", memory_limit="512Mi"),
                                 )
                             ],
                         )
@@ -608,8 +551,8 @@ def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO)
     pull_credentials.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
-    _database(chart)
+    postgres = _database(chart)
     _service(chart)
     _rotation(chart)
-    _local_server(chart)
+    _local_server(chart, postgres)
     return chart

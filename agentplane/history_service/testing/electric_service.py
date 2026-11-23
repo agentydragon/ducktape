@@ -18,10 +18,10 @@ from testcontainers.core.network import Network
 from agentplane.history_service.testing.go_service import migrate_history_database, migrated_history_template
 from agentplane.testing.electric_role import ensure_electric_role
 from devinfra.oci.oci import load_oci_image
+from testing.container_logs import LoggedContainer
+from testing.postgres import PostgresDatabaseTemplate
 from third_party.containers import electric_1_8_1, postgres_18, ryuk
 from util.db_url import render_postgresql_url
-from util.testing.container_logs import LoggedContainer
-from util.testing.postgres import PostgresDatabaseTemplate
 
 
 @dataclass(frozen=True)

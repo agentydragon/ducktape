@@ -22,8 +22,10 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from agentplane.egress.resources import placeholder_of
 from cluster.cdk8s import agent_access_profiles as access, namespaces
+from cluster.cdk8s.agentplane import platform_routes
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import json_config
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
@@ -34,11 +36,13 @@ from cluster.cdk8s.flux import (
 )
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.generation import config_map_chart, write_charts
+from cluster.cdk8s.litellm import endpoint as litellm
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, PARKED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.public_coder import config as public_coder_config, egress as public_coder_egress, egress_proxy_url
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.volume_claim import volume_claim
 
 _CONFIG_MAP_NAME = "config"
 _NAME = "public-coder-agent"
@@ -60,10 +64,10 @@ _HOME = "/home/openclaw"
 _CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
 _STATE_CLAIM_NAME = "public-coder-agent-state-v2"
 _DIAGNOSTICS_CLAIM_NAME = "public-coder-agent-diagnostics"
-_GATEWAY_PASSWORD = SecretRef(namespace=NAMESPACE, name="public-coder-agent-gateway-password")
+_GATEWAY_PASSWORD = SecretRef(namespace=NAMESPACE, name="public-coder-agent-gateway-password").key("password")
 # The OpenClaw config uses the same proxy for Matrix login-password substitution.
 _EGRESS_PROXY = egress_proxy_url.PROXY_URL
-_NO_PROXY = "127.0.0.1,localhost,litellm.litellm.svc,litellm.litellm.svc.cluster.local"
+_NO_PROXY = f"127.0.0.1,localhost,{litellm.SERVICE.host},{litellm.SERVICE.fqdn}"
 _RBAC_GROUP = "rbac.authorization.k8s.io"
 _READ = ["get", "list", "watch"]
 
@@ -74,7 +78,7 @@ def chart(app: App) -> Chart:
         chart_name=_CONFIG_MAP_NAME,
         configmap_name=_CONFIG_MAP_NAME,
         namespace=NAMESPACE,
-        data={"openclaw.json5": json_config(public_coder_config.config())},
+        data={"openclaw.json5": json_config(public_coder_config.config(litellm_url=litellm.API_BASE))},
     )
 
 
@@ -147,8 +151,7 @@ def _openclaw_container() -> k8s.Container:
             # A placeholder, not a credential. The real PAT lives in Agentplane egress, which swaps
             # this value into `Authorization` on the way out to GitHub -- in `Bearer <value>` and
             # inside base64 `Basic user:<value>` alike, so both the REST API and the git transport
-            # work. The agent cannot read the token from its environment or from /proc, which is
-            # what F7 previously left exposed.
+            # work. The agent cannot read the token from its environment or from /proc.
             #
             # The agent has to be told the contract, because egress only acts on requests
             # carrying the placeholder: authenticate to GitHub with $GH_PAT as if it were a real
@@ -180,12 +183,12 @@ def _openclaw_container() -> k8s.Container:
             # Authentik authenticates proxied browser traffic. OpenClaw's subagent completion
             # path calls the local gateway directly and therefore uses the documented
             # trusted-proxy local-password fallback instead of proxy identity headers.
-            _GATEWAY_PASSWORD.key("password").env_var("OPENCLAW_GATEWAY_PASSWORD"),
+            _GATEWAY_PASSWORD.env_var("OPENCLAW_GATEWAY_PASSWORD"),
             # OpenClaw's password login puts this value in the Matrix JSON body. It is a proxy
             # placeholder: Agentplane egress replaces it with the real controller-owned password only
             # on the Matrix login endpoint.
             _env("MATRIX_PASSWORD", placeholder_of(public_coder_egress.MATRIX_CREDENTIAL)),
-            _env("AGENTPLANE_EGRESS_GRPC_URL", f"http://{public_coder_egress.RULES_ROUTE.local_target}"),
+            _env("AGENTPLANE_EGRESS_GRPC_URL", platform_routes.listener_url()),
             # Node does not honour proxy environment variables by default.
             _env("NODE_USE_ENV_PROXY", "1"),
             _env("HTTP_PROXY", _EGRESS_PROXY),
@@ -221,7 +224,7 @@ def _openclaw_container() -> k8s.Container:
             _env("REQUESTS_CA_BUNDLE", _CA_BUNDLE),
             _env("PIP_CERT", _CA_BUNDLE),
         ],
-        ports=[_SERVICE.port.k8s_container_port()],
+        ports=[_SERVICE.k8s_container_port()],
         # Without this the Deployment reports 1/1 Running whenever a process exists, which hid
         # two different outages during the 2026.8.1 recovery: a gateway crash-looping every ~4
         # minutes, and one that started but never bound its port. /healthz answers 200
@@ -255,19 +258,13 @@ def _openclaw_container() -> k8s.Container:
             # where the next roll discards them.
             k8s.VolumeMount(name="diagnostics", mount_path="/diag"),
         ],
-        resources=k8s.ResourceRequirements(
-            requests={"cpu": k8s.Quantity.from_string("250m"), "memory": k8s.Quantity.from_string("768Mi")},
-            limits={
-                "cpu": k8s.Quantity.from_string("2"),
-                # openclaw/default.nix pins --max-old-space-size at exactly what this limit
-                # derives today, so the two move together. The gap is not slack: it carries
-                # native allocations, and it has to absorb the transient growth when V8 raises its
-                # own limit to serialize a near-heap-limit snapshot. Raising this silently raises
-                # nothing -- the heap is pinned -- but lowering it below that headroom turns a
-                # clean heap-limit abort into an OOMKill.
-                "memory": k8s.Quantity.from_string("4Gi"),
-            },
-        ),
+        # openclaw/default.nix pins --max-old-space-size at exactly what the memory limit
+        # derives today, so the two move together. The gap is not slack: it carries
+        # native allocations, and it has to absorb the transient growth when V8 raises its
+        # own limit to serialize a near-heap-limit snapshot. Raising the limit silently raises
+        # nothing -- the heap is pinned -- but lowering it below that headroom turns a
+        # clean heap-limit abort into an OOMKill.
+        resources=container_resources(cpu="250m", memory="768Mi", cpu_limit="2", memory_limit="4Gi"),
     )
 
 
@@ -331,13 +328,7 @@ def _deployment(scope: Construct) -> None:
                         k8s.Container(
                             name="seed-config",
                             image=_IMAGE,
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("32Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("64Mi")},
-                            ),
+                            resources=container_resources(cpu="10m", memory="32Mi", memory_limit="64Mi"),
                             command=["sh", "-c", _SEED_CONFIG_SCRIPT],
                             volume_mounts=[
                                 k8s.VolumeMount(name="cfg", mount_path="/cfg"),
@@ -372,28 +363,23 @@ def _deployment(scope: Construct) -> None:
 
 
 def _claims(scope: Construct) -> None:
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         scope,
         "state-v2",
-        metadata=k8s.ObjectMeta(
-            name=_STATE_CLAIM_NAME,
-            namespace=NAMESPACE,
-            annotations={
-                "kustomize.toolkit.fluxcd.io/prune": "disabled",
-                "description": (
-                    "Worker-local replacement for the archived Public Coder OpenClaw state. "
-                    "WaitForFirstConsumer binds it to ovh-ns102453 when the one-off restore Pod is created; "
-                    "it must not be mounted by the Deployment before restore."
-                ),
-            },
-        ),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="local-path-ovh-hdd",
-            # local-path does not enforce PVC requests as quotas; this request leaves headroom for
-            # the durable agent workspace and normal growth.
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("80Gi")}),
-        ),
+        name=_STATE_CLAIM_NAME,
+        namespace=NAMESPACE,
+        annotations={
+            "kustomize.toolkit.fluxcd.io/prune": "disabled",
+            "description": (
+                "Worker-local replacement for the archived Public Coder OpenClaw state. "
+                "WaitForFirstConsumer binds it to ovh-ns102453 when the one-off restore Pod is created; "
+                "it must not be mounted by the Deployment before restore."
+            ),
+        },
+        storage_class="local-path-ovh-hdd",
+        # local-path does not enforce PVC requests as quotas; this request leaves headroom for
+        # the durable agent workspace and normal growth.
+        size="80Gi",
     )
     # Node's diagnostic output for the gateway: heap snapshots and fatal-error reports, written
     # here by the --diagnostic-dir/--report-directory flags in openclaw/default.nix.
@@ -413,44 +399,34 @@ def _claims(scope: Construct) -> None:
     #
     # Deliberately outside the VolSync backup set (public_coder/backup.py, which covers the state
     # claim): disposable investigation artifacts.
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         scope,
         "diagnostics",
-        metadata=k8s.ObjectMeta(
-            name=_DIAGNOSTICS_CLAIM_NAME,
-            namespace=NAMESPACE,
-            annotations={
-                "kustomize.toolkit.fluxcd.io/prune": "disabled",
-                "description": "Heap snapshots and Node diagnostic reports for the OpenClaw gateway",
-            },
-        ),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="local-path-ovh-hdd",
-            # A snapshot is roughly heap-sized and the heap is capped at 2 GiB, so this holds
-            # several plus the reports. Snapshots are read in pairs and deleted once analysed;
-            # local-path does not enforce the request as a quota.
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("20Gi")}),
-        ),
+        name=_DIAGNOSTICS_CLAIM_NAME,
+        namespace=NAMESPACE,
+        annotations={
+            "kustomize.toolkit.fluxcd.io/prune": "disabled",
+            "description": "Heap snapshots and Node diagnostic reports for the OpenClaw gateway",
+        },
+        storage_class="local-path-ovh-hdd",
+        # A snapshot is roughly heap-sized and the heap is capped at 2 GiB, so this holds
+        # several plus the reports. Snapshots are read in pairs and deleted once analysed;
+        # local-path does not enforce the request as a quota.
+        size="20Gi",
     )
     # Keep the SSH session audit trail after retiring the devbox route. These recordings are
     # separate from guest state and remain available for later review.
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         scope,
         "sshpiper-recordings",
-        metadata=k8s.ObjectMeta(
-            name="public-coder-agent-sshpiper-recordings",
-            namespace=NAMESPACE,
-            annotations={
-                "kustomize.toolkit.fluxcd.io/prune": "disabled",
-                "description": "Retained audit recordings from the retired public-coder SSH route.",
-            },
-        ),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="local-path-ovh",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("5Gi")}),
-        ),
+        name="public-coder-agent-sshpiper-recordings",
+        namespace=NAMESPACE,
+        annotations={
+            "kustomize.toolkit.fluxcd.io/prune": "disabled",
+            "description": "Retained audit recordings from the retired public-coder SSH route.",
+        },
+        storage_class="local-path-ovh",
+        size="5Gi",
     )
 
 
@@ -459,7 +435,7 @@ def _service(scope: Construct) -> None:
         scope,
         "service",
         metadata=k8s.ObjectMeta(name=_SERVICE.name, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(selector=_SERVICE.pods.selector, ports=[_SERVICE.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=_SERVICE.pods.selector, ports=[_SERVICE.k8s_service_port()]),
     )
 
 
@@ -498,7 +474,7 @@ def _network_policies(scope: Construct) -> None:
                     ports=[_tcp(public_coder_egress.GATEWAY.pod_port)],
                 ),
                 k8s.NetworkPolicyEgressRule(
-                    to=[_peer("litellm", {"app.kubernetes.io/name": "litellm"})], ports=[_tcp(4000)]
+                    to=[_peer(litellm.NAMESPACE, litellm.SERVICE.pods.selector)], ports=[_tcp(litellm.SERVICE.pod_port)]
                 ),
             ],
         ),
@@ -540,9 +516,8 @@ def _credentials(scope: Construct) -> None:
     mint_bearer_secret(
         scope,
         "gateway-password",
-        name=_GATEWAY_PASSWORD.name,
-        namespace=_GATEWAY_PASSWORD.namespace,
-        generator_name=f"{_GATEWAY_PASSWORD.name}-generator",
+        target=_GATEWAY_PASSWORD,
+        generator_name=f"{_GATEWAY_PASSWORD.secret.name}-generator",
         # A generated password is stable for the generator's lifetime. Avoid an automatic
         # rotation that would unnecessarily interrupt active sessions.
         refresh="8760h",
@@ -561,12 +536,12 @@ def _rbac(scope: Construct) -> None:
     #
     # Expand by adding RoleBindings in other namespaces that reference the deploy-owned
     # access-profile group, or by graduating to a ClusterRole when the scope warrants it.
-    reader = "public-coder-agent-reader"
+    reader = access.role_ref("public-coder-agent-reader")
     k8s.KubeRole(
         scope,
         "reader",
         metadata=k8s.ObjectMeta(
-            name=reader,
+            name=reader.name,
             namespace=NAMESPACE,
             annotations={"description": "Read-only diagnostic access for the public-coder access profile."},
         ),
@@ -602,21 +577,21 @@ def _rbac(scope: Construct) -> None:
         scope,
         "reader-binding",
         metadata=k8s.ObjectMeta(
-            name=reader,
+            name=reader.name,
             namespace=NAMESPACE,
             annotations={"description": "Binds public-coder and its Haku superset to the reader Role."},
         ),
-        role_ref=access.role_ref("public-coder-agent-reader"),
+        role_ref=reader,
         subjects=[subject.k8s() for subject in access.profile_subjects("public-coder-agent-reader")],
     )
 
     # Additional secret-free status for the public-coder workload itself.
-    diagnostics = "agent-public-coder-extended-diagnostics-reader"
+    diagnostics = access.role_ref("public-coder-volsync-status")
     k8s.KubeRole(
         scope,
         "extended-diagnostics-reader",
         metadata=k8s.ObjectMeta(
-            name=diagnostics,
+            name=diagnostics.name,
             namespace=NAMESPACE,
             annotations={"description": "Read-only VolSync backup status for Haku and public-coder."},
         ),
@@ -630,25 +605,25 @@ def _rbac(scope: Construct) -> None:
         scope,
         "extended-diagnostics-reader-binding",
         metadata=k8s.ObjectMeta(
-            name=diagnostics,
+            name=diagnostics.name,
             namespace=NAMESPACE,
             annotations={"description": "Binds Haku and public-coder to VolSync status."},
         ),
-        role_ref=access.role_ref("public-coder-volsync-status"),
+        role_ref=diagnostics,
         subjects=[subject.k8s() for subject in access.profile_subjects("public-coder-volsync-status")],
     )
 
     # Cluster-scoped node inventory for scheduling and health diagnostics.
     #
     # Nodes are cluster infrastructure rather than Git-managed application state, so this is
-    # intentionally the sole cluster-wide grant for the public coder. In particular, it does
+    # a separate cluster-wide grant for the public coder. In particular, it does
     # not include nodes/proxy, node logs, metrics, or any write verbs.
-    node_reader = "public-coder-agent-node-reader"
+    node_reader = access.role_ref("public-coder-node-read")
     k8s.KubeClusterRole(
         scope,
         "node-reader",
         metadata=k8s.ObjectMeta(
-            name=node_reader,
+            name=node_reader.name,
             annotations={"description": "Read-only node inventory for public-coder-agent diagnostics."},
         ),
         rules=[k8s.PolicyRule(api_groups=[""], resources=["nodes"], verbs=_READ)],
@@ -657,10 +632,10 @@ def _rbac(scope: Construct) -> None:
         scope,
         "node-reader-binding",
         metadata=k8s.ObjectMeta(
-            name=node_reader,
+            name=node_reader.name,
             annotations={"description": "Binds public-coder and its Haku superset to read-only node inventory."},
         ),
-        role_ref=access.role_ref("public-coder-node-read"),
+        role_ref=node_reader,
         subjects=[subject.k8s() for subject in access.profile_subjects("public-coder-node-read")],
     )
 
@@ -670,12 +645,12 @@ def _rbac(scope: Construct) -> None:
     # here to make the Haku-superset invariant explicit. Keep public-coder on this smaller
     # surface rather than binding it to that broad role, which also exposes all Pods, PVs, RBAC,
     # and webhooks.
-    metadata_reader = "public-coder-agent-cluster-metadata-reader"
+    metadata_reader = access.role_ref("public-coder-cluster-metadata-read")
     k8s.KubeClusterRole(
         scope,
         "cluster-metadata-reader",
         metadata=k8s.ObjectMeta(
-            name=metadata_reader,
+            name=metadata_reader.name,
             annotations={"description": "Read-only CRD schemas and node metrics for public-coder diagnostics."},
         ),
         rules=[
@@ -687,12 +662,12 @@ def _rbac(scope: Construct) -> None:
         scope,
         "cluster-metadata-reader-binding",
         metadata=k8s.ObjectMeta(
-            name=metadata_reader,
+            name=metadata_reader.name,
             annotations={
                 "description": "Binds public-coder and its Haku superset to CRD schemas and node metrics only."
             },
         ),
-        role_ref=access.role_ref("public-coder-cluster-metadata-read"),
+        role_ref=metadata_reader,
         subjects=[subject.k8s() for subject in access.profile_subjects("public-coder-cluster-metadata-read")],
     )
 
@@ -769,7 +744,6 @@ def public_coder_agent_app(
         "public-coder-agent-app",
         artifact,
         wait=None,
-        annotations={"ducktape.org/parked": "true"},
         # The parked app artifact is intentionally omitted. Keep its inventory orphanable so
         # the retained OpenClaw PVCs and state survive while the app is offline.
         suspend=True,

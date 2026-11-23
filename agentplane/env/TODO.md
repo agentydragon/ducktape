@@ -1,5 +1,15 @@
 # TODO — Agentplane environment
 
+## Complete Codex execution protocol coverage
+
+The execution backend rejects restricted sandbox policies, managed networking, network-proxy
+launch and shell snapshots; it must never silently run those requests unrestricted. Implement and
+test the supported Linux policies before enabling them for the Codex harness. Add differential
+tests against the pinned Codex exec-server for capability discovery, filesystem and process
+operations, error data, reconnect and HTTP edge cases; current tests cover selected flows, not full
+protocol parity. Discovery V2 and environment configuration reads are not implemented. Separate
+the backend's memory budget from its commands so a tool OOM does not kill the execution owner.
+
 ## Resolve legacy Codex inputs without a client message ID
 
 Some retained Codex inputs predate `clientUserMessageId`. A matching historical text item does
@@ -30,6 +40,12 @@ latency, including the writes from unconditional restore. Establish required too
 consider keeping heavy tools in an immutable disk. In every case,
 preserve the paused disk/RAM boundary, durable manifest commit and identity fencing. The
 [system-test scenario](../system_tests/scenarios/firecracker.py) exercises the current CI guest.
+
+Measure whether a Firecracker writer using bounded, aligned direct I/O to a fresh memory
+file lowers the second checkpoint's cgroup memory peak. The pinned Firecracker API uses
+buffered capture. Verify direct I/O support on the staging state filesystem, checkpoint
+latency, successful repeated restore and the existing durable generation commit before
+reducing the launcher limit.
 
 ## Explore keeping control services outside Firecracker guests
 
@@ -67,6 +83,31 @@ define parking and durable terminal release before promising indefinite process 
   profile exists. Measure a real shutdown with many retained Sessions and process attempts; use
   a Go CPU profile to separate inventory listing, sorting and COSI reads, and record resource counts
   and blocker transitions. Preserve the full membership and recovery proof if optimizing.
+
+### Tentative review findings (2026-11-19)
+
+Review candidates; validate each proposed change before burning it down. Estimates of net savings
+need prototypes and must include tests, migration and glue. Preserve the [lifecycle barriers](runtime/docs/lifecycle.md),
+durable user data and uncertain-effect handling in any accepted change.
+
+- **Session operations:** Consider consuming operation completions and deciding the next action in
+  the live Session owner, publishing smaller observations for the environment aggregate. Today
+  [snapshots](runtime/session/inputs.go), operation revisions, local slots and
+  [lifecycle status](runtime/session/resources.go) coordinate the same work; Codex app-server has a
+  related pattern. Keep durable journal authority, admission guards, completion ordering and no replay.
+  The setup snapshot no longer duplicates whether the retained script is present. Prototype one
+  operation before deciding whether a broader ownership change actually saves code.
+- **Bootstrap output:** COSI retains every output chunk and loads it on restart, although no production
+  reader of the output bytes was found. `OpenLog` validates the sequence without cloning each payload
+  again. Decide whether full retained output is needed before changing the contract. A bounded/indexed
+  store preserves output but needs data-preserving migration and rollback; bounded diagnostics would
+  discard future output.
+  The [storage comparison](runtime/debug/2026_11_04_bootstrap_event_storage_comparison.md) has synthetic
+  measurements, not production output distributions. Preserve existing evidence and one-shot outcomes.
+
+Moving native protocol translation out of Runtime is a cross-service tradeoff, not established net
+savings; see the existing [native interface proposal](../plans/native_harness_interfaces.md).
+Removing Pod or VM supervision likewise drops a deployment mode and requires a separate decision.
 
 ## Simplify ownership and process fencing with COSI lifecycle primitives
 
@@ -138,7 +179,11 @@ teardown contracts rather than treating every controller as a simple resource tr
   `cosi.Write` caller uses those persisted protobuf specs.
 - Keep the retryable _mutations_ and their outer barriers: Session input publication increments
   demand inside `StateModify` while `publishMu` serializes snapshots; Runtime admission accounting
-  updates a delta under the admission lock; retained Session field updates patch an existing record
+  updates a delta under the admission lock and advances its local count only after successful COSI
+  publication. The observed count gates shutdown, and a missing resource fails closed; its updates also
+  wake controllers when a Running generation is accepted. A wakeup-only resource would retain the
+  synchronous publication and failure path, while COSI-only accounting changes ambiguous-write
+  behavior. Retained Session field updates patch an existing record
   with `StateUpdateWithConflicts`. Execution's `inputMu` also orders demand and completion against
   native handle registration; its completion callback has side effects and cannot simply move
   inside a retryable updater. COSI retries update conflicts, but its absent-resource Modify path can
@@ -207,6 +252,27 @@ Claude's transcript reader does the same for `compact_boundary`. The [manual-com
 shows that retained history items need not remain in the model context. Keep the `UNKNOWN` barrier
 until real-binary evidence covers automatic compaction, interruption or process loss during
 compaction, compaction outside the observed recovery window, and external rollback.
+
+## Decide whether a journal failure may stop only its Session
+
+A Session journal failure reaches the shared Runtime fail-stop: admission closes and cleanup starts for every
+Session. Two failures on 2026-11-15 in Sandbox `codex-cleanup-tls` did this. Both causes are fixed (cleanup no longer
+stalls on a failed journal, and a delayed `turn/started` notification no longer re-inserts a known turn boundary),
+but the policy is unchanged. Decide whether a Session-local storage failure may leave the other Sessions running.
+The answer must cover the shared app-server readers, History supervision and admission and fence ownership.
+The lock holder of the first failure (`SQLITE_BUSY`) was never observed. A diagnostic reader holding an open
+`SELECT` is the leading candidate; [retained state](runtime/docs/retained_state.md) lists what to capture if it
+recurs.
+
+## Define overlapping Codex turn boundaries
+
+A Codex `turn/start` reply can name a new turn while an earlier turn is still active, and the earlier turn's boundary
+stays open. `agentplane sessions read-turns` then returns a `DataLoss` error ("retained History contains an
+incomplete turn projection"); Session `551f2a33-886b-4fd8-bdf1-9857058435c7` in Sandbox `codex-cleanup-tls` showed
+this on 2026-11-15. Define how accepted future work is told apart from the executing turn and when the earlier turn
+completes; suppressing duplicate starts alone does not supply the missing completions. Repairing an affected
+Session's retained History needs an explicit operator decision: keep it as evidence, or rebuild it from retained
+native events once the ordering is defined. Never delete it as a side effect.
 
 ## Codex reconcile edge cases
 

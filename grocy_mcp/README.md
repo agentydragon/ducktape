@@ -7,6 +7,8 @@ Auth-aware remote MCP server for [Grocy](https://grocy.info/), one per household
 
 Deploy, spec refresh and end-to-end verification: <docs/operations.md>.
 
+Agent evals against a fresh Grocy container per case: <eval/cli.py> (backlog: <eval/TODO.md>). Why we stayed on Grocy: <docs/grocy_alternatives_2026_04.md>.
+
 `GROCY_MCP_CONFIG_FILE`, when set, must name a regular YAML file; the server fails startup if it is missing.
 
 ## Auth
@@ -38,7 +40,7 @@ tools only.
   client to each generated tool, so the transform binds the `Depends` client to an invocation-local
   copy while preserving the generated route metadata.
 - **Custom batch tools** in <batch_tools.py> (`register_batch_tools`) replace single-shot routes
-  with N-item operations via `asyncio.gather`. A failed item is reported `ok=False` without
+  with N-item operations via `asyncio.gather`. A failed item is reported as `kind: "error"` without
   aborting the rest. Stock operations return a `transaction_id` per item for
   `transaction_undo`; there is no cross-item atomicity (Grocy has no client batch transaction).
 

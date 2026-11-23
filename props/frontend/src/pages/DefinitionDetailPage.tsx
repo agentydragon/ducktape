@@ -1,47 +1,27 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import { Center, Loader, Text } from "@mantine/core";
 
 import DefinitionDetail from "$components/DefinitionDetail";
-import type { DefinitionDetailResponse } from "$lib/schema";
 import { fetchDefinitionDetail } from "$lib/api/client";
+import { definitionDetailQueryKey } from "$lib/queryKeys";
 
 interface Props {
   definitionId: string;
 }
 
 export default function DefinitionDetailPage({ definitionId }: Props) {
-  const [definition, setDefinition] = useState<DefinitionDetailResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const query = useQuery({
+    queryKey: definitionDetailQueryKey(definitionId),
+    queryFn: () => fetchDefinitionDetail(definitionId),
+    enabled: Boolean(definitionId),
+  });
 
-  useEffect(() => {
-    if (!definitionId) {
-      setLoading(false);
-      return;
-    }
-
-    let current = true;
-    setLoading(true);
-    setError(null);
-
-    void fetchDefinitionDetail(definitionId)
-      .then((data) => {
-        if (current) setDefinition(data);
-      })
-      .catch((reason: unknown) => {
-        if (current) setError(reason instanceof Error ? reason.message : "Failed to load definition");
-      })
-      .finally(() => {
-        if (current) setLoading(false);
-      });
-
-    return () => {
-      current = false;
-    };
-  }, [definitionId]);
-
-  if (loading) {
+  if (!definitionId) return null;
+  if (query.error) {
+    return <Text c="red">{query.error instanceof Error ? query.error.message : "Failed to load definition"}</Text>;
+  }
+  if (!query.data) {
     return (
       <Center mih={160}>
         <Loader size="sm" />
@@ -49,7 +29,5 @@ export default function DefinitionDetailPage({ definitionId }: Props) {
       </Center>
     );
   }
-  if (error) return <Text c="red">{error}</Text>;
-  if (definition) return <DefinitionDetail data={definition} />;
-  return null;
+  return <DefinitionDetail data={query.data} />;
 }

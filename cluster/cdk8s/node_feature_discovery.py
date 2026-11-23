@@ -8,7 +8,8 @@ from cdk8s import App, Chart
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import Vpa, VpaProfile
+from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
 
 NAME = "node-feature-discovery"
 NAMESPACE = "node-feature-discovery"
@@ -21,7 +22,20 @@ def chart(app: App) -> Chart:
         chart,
         "namespace",
         name=NAMESPACE,
-        vpa=Vpa.RECOMMEND,
+        vpa=VpaProfile(
+            Vpa.INITIAL,
+            (
+                *(
+                    ContainerPolicy(
+                        container_name=name,
+                        controlled_values=ControlledValues.REQUESTS_ONLY,
+                        controlled_resources=("cpu", "memory"),
+                    )
+                    for name in ("gc", "master", "worker")
+                ),
+                ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+            ),
+        ),
         labels={"pod-security.kubernetes.io/enforce": "privileged"},
     )
     helm_release(

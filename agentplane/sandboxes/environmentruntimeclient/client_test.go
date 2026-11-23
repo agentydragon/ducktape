@@ -102,24 +102,21 @@ func TestServerSeesTheCurrentTokenAndSandboxIdentity(t *testing.T) {
 	}
 }
 
-func TestReplaceOutgoingMetadataDropsTheCallersMetadata(t *testing.T) {
-	for _, replace := range []bool{false, true} {
-		config, runtime := serve(t, "test-token")
-		config.ReplaceOutgoingMetadata = replace
-		ctx := metadata.AppendToOutgoingContext(t.Context(), "test-caller-key", "test-caller-value")
-		if err := getStatus(ctx, config); err != nil {
-			t.Fatal(err)
-		}
-		received := <-runtime.received
-		if forwarded := len(received.Get("test-caller-key")) > 0; forwarded == replace {
-			t.Errorf("ReplaceOutgoingMetadata=%v forwarded caller metadata=%v", replace, forwarded)
-		}
-		if got := single(t, received, "authorization"); got != "Bearer test-token" {
-			t.Errorf("authorization = %q", got)
-		}
-		if values := received.Get(sandboxapi.RuntimeProxyIncarnationUIDMetadataKey); len(values) != 0 {
-			t.Errorf("optional incarnation UID metadata = %q, want omitted", values)
-		}
+func TestCallerMetadataIsKeptAndIncarnationUIDIsOptional(t *testing.T) {
+	config, runtime := serve(t, "test-token")
+	ctx := metadata.AppendToOutgoingContext(t.Context(), "test-caller-key", "test-caller-value")
+	if err := getStatus(ctx, config); err != nil {
+		t.Fatal(err)
+	}
+	received := <-runtime.received
+	if got := single(t, received, "test-caller-key"); got != "test-caller-value" {
+		t.Errorf("caller metadata = %q, want it forwarded", got)
+	}
+	if got := single(t, received, "authorization"); got != "Bearer test-token" {
+		t.Errorf("authorization = %q", got)
+	}
+	if values := received.Get(sandboxapi.RuntimeProxyIncarnationUIDMetadataKey); len(values) != 0 {
+		t.Errorf("optional incarnation UID metadata = %q, want omitted", values)
 	}
 }
 

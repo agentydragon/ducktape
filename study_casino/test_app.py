@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from study_casino.app import create_app
 from study_casino.config import Settings
 from study_casino.games import RNG_VERSION, draw_cards, load_cards, make_shoe, spin_roulette
-from study_casino.models import BlackjackHandRow, RngActionAuditRow, RngCallAuditRow
+from study_casino.models import BlackjackHandRow, GameEventRow, LedgerEventRow, RngActionAuditRow, RngCallAuditRow
 from study_casino.rng import AuditedRandom
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
@@ -143,7 +143,7 @@ def test_changelog_ack_advances_cursor(client: TestClient) -> None:
     assert client.get("/state").json()["changelog_unacked"] == []
 
     # Acking an already-acked (older) id never rewinds the cursor.
-    r = client.post("/actions/changelog/ack", json={"client_action_id": "clog-2", "last_id": latest})
+    r = client.post("/actions/changelog/ack", json={"client_action_id": "clog-2", "last_id": 1})
     assert r.json()["result"]["acked_through"] == latest
     assert client.get("/state").json()["changelog_unacked"] == []
 
@@ -226,7 +226,7 @@ def test_session_complete_is_idempotent(client: TestClient) -> None:
     }
     first = client.post("/actions/session/complete", json=body).json()
     second = client.post("/actions/session/complete", json=body).json()
-    assert second["event"]["id"] == first["event"]["id"]
+    assert second == first
     # Awarded once: (10 + 30 daily bonus) × 1.01 — the retry must not re-award.
     assert client.get("/state").json()["balance"]["credits_millis"] == 40400
 
@@ -379,14 +379,16 @@ def test_redeem_insufficient_tokens_returns_409(client: TestClient) -> None:
     assert r.json()["detail"]["rule"] == "insufficient_tokens"
 
 
-def test_slots_spin_writes_game_event(client: TestClient) -> None:
+def test_slots_spin_writes_game_event(client: TestClient, db_url: str) -> None:
     _grant_credits(client, 5)
     r = client.post("/casino/slots/spin", json={"client_action_id": "slots-1", "wager_credits": 1})
     assert r.status_code == 200, r.text
-    body = r.json()
-    assert body["event"]["action_type"] == "casino.slots.spin"
-    assert body["game_event"]["source"] == "server_resolved"
-    assert body["game_event"]["rng_version"] == RNG_VERSION
+
+    with Session(create_engine(db_url)) as s:
+        ledger = s.scalars(select(LedgerEventRow).where(LedgerEventRow.client_action_id == "slots-1")).one()
+        game = s.scalars(select(GameEventRow).where(GameEventRow.client_event_id == "slots-1")).one()
+    assert ledger.action_type == "casino.slots.spin"
+    assert (game.source, game.rng_version) == ("server_resolved", RNG_VERSION)
 
     state = client.get("/state").json()
     assert state["balance"]["credits_millis"] == 4000
@@ -408,7 +410,7 @@ def test_roulette_spin_writes_replayable_rng_audit(tmp_path: Path, db_url: str) 
     assert json.loads(action.seed_material_json)["request_body"] == request
     assert json.loads(calls[0].result_json)["value"] == result["result_index"]
 
-    replay = AuditedRandom.from_seed_material_json(
+    replay = AuditedRandom(
         secret=_TEST_RNG_SECRET.encode(),
         rng_version=action.rng_version,
         rng_key_id=action.rng_key_id,
@@ -428,7 +430,7 @@ def test_slots_rng_audit_records_weighted_draws_and_retry_is_idempotent(tmp_path
     second = client.post("/casino/slots/spin", json=request)
     assert first.status_code == 200, first.text
     assert second.status_code == 200, second.text
-    assert second.json()["event"]["id"] == first.json()["event"]["id"]
+    assert second.json() == first.json()
 
     action, calls = _rng_audit_rows(db_url, "slots-audit")
     assert action is not None
@@ -455,7 +457,7 @@ def test_blackjack_deal_rng_audit_replays_stored_shoe(tmp_path: Path, db_url: st
     assert action is not None
     assert calls
 
-    replay = AuditedRandom.from_seed_material_json(
+    replay = AuditedRandom(
         secret=_TEST_RNG_SECRET.encode(),
         rng_version=action.rng_version,
         rng_key_id=action.rng_key_id,
@@ -554,9 +556,6 @@ def test_ws_broadcasts_state_changed_after_action(tmp_path: Path, db_url: str) -
             assert msg == {"type": "state_changed"}
 
 
-# ── Admin-only prize management ──────────────────────────────────────────────
-
-
 def test_me_reports_admin_flag(client: TestClient, non_admin_client: TestClient) -> None:
     assert client.get("/me").json() == {"username": "default", "is_admin": True}
     assert non_admin_client.get("/me").json() == {"username": "default", "is_admin": False}
@@ -645,9 +644,6 @@ def test_admin_unknown_user_returns_404_without_seeding(admin_app: tuple[TestCli
 
     # The 404 path must not have seeded 'ghost'.
     assert "ghost" not in c.get("/admin/users").json()["users"]
-
-
-# ── Casino stats endpoint ────────────────────────────────────────────────────
 
 
 def test_casino_stats_counts_a_real_spin(client: TestClient) -> None:

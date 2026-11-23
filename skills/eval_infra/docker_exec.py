@@ -29,6 +29,23 @@ def _proxy_env() -> dict[str, str]:
     return env
 
 
+def scratch_exec_config(*, image: str, working_dir: Path, binds: list[BindMount]) -> ContainerExecServerConfig:
+    """Config of a scratch exec container: host networking, proxy env, cwd pinned to `working_dir`.
+
+    The `cwd`, `user` and `env` fields are hidden from the model.
+    """
+    return ContainerExecServerConfig(
+        image=image,
+        working_dir=working_dir,
+        network_mode="host",
+        environment=_proxy_env(),
+        allow_user_field=False,
+        allow_env_field=False,
+        cwd_policy=AlwaysSetTo(value=working_dir),
+        binds=binds,
+    )
+
+
 @asynccontextmanager
 async def scratch_exec_server(
     image: str = "python:3.14-slim", *, binds: list[BindMount] | None = None, working_dir: Path = Path("/tmp")
@@ -42,17 +59,7 @@ async def scratch_exec_server(
     """
     async with aiodocker.Docker() as docker_client:
         server = ContainerExecServer(
-            docker_client,
-            ContainerExecServerConfig(
-                image=image,
-                working_dir=working_dir,
-                network_mode="host",
-                environment=_proxy_env(),
-                allow_user_field=False,
-                allow_env_field=False,
-                cwd_policy=AlwaysSetTo(value=working_dir),
-                binds=list(binds or []),
-            ),
+            docker_client, scratch_exec_config(image=image, working_dir=working_dir, binds=list(binds or []))
         )
         logger.info(
             "Scratch exec server created (image=%s, network=host, working_dir=%s, binds=%d)",

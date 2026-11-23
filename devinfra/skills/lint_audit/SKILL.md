@@ -110,7 +110,7 @@ changes needed). List them all — these are always worth enabling.
 
 For each candidate check with violations, present:
 
-````
+````text
 ### {rule_code} — {short_description} ({violation_count} violations)
 
 {Why this matters for THIS repo, referencing style guide if one exists}
@@ -129,7 +129,7 @@ For each candidate check with violations, present:
 
 **Effort:** {Low/Medium/High} — {auto-fixable? mechanical? needs judgment?}
 
-```
+```text
 
 Sort by: (value to repo × ease of fixing) descending. Consider:
 - Does the repo's style guide or AGENTS.md mention related conventions?

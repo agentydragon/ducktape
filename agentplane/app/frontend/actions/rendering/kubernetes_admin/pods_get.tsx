@@ -1,3 +1,4 @@
+import { kubernetesResourcesResult } from "./resources";
 import type { JSX } from "react";
 import { Code, Text } from "@mantine/core";
 import { z } from "zod";
@@ -34,7 +35,7 @@ export const podsGetPreview: ArgumentsPreview = definePreview(podsGetArguments, 
 
 export const podsGetPresentation: ActionPresentation = {
   label: podsGetLabel,
-  details: { arguments: podsGetPreview },
+  details: { arguments: podsGetPreview, result: kubernetesResourcesResult },
   offersCardDecisionButtons: offersCardDecisionButtonsPodsGet,
   compactCardExpands: expandsForRejectedArguments(podsGetArguments),
 };

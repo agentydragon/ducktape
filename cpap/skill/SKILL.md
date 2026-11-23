@@ -42,7 +42,7 @@ nights' blobs.
 
 ### Directory structure on the card
 
-```
+```text
 /                        Root of the SD card
 ├── STR.EDF              Daily summary (one record per day, 78 signals)
 ├── Identification.json  Device serial, model, firmware

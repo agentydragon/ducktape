@@ -26,7 +26,7 @@ All LLM requests from agents you launch are logged in `llm_requests`. Query via 
 
 ## Creating Custom Critic Images
 
-See the Agent Image Authoring Guide in the Reference section for the full crane workflow: inspect → overlay `main.py` → push by digest → run with `run_critic`.
+See the Agent Image Authoring Guide in the Reference section for the full crane workflow: inspect → overlay `main.py` → push by digest → run with `start_critic`.
 
 The digest you pass to `start_critic` as `definition_id` comes from `crane digest --tarball /tmp/image.tar` (computed locally before pushing).
 
@@ -49,7 +49,6 @@ ${source_inspection([
     ("props.db.models", "SQLAlchemy models"),
     ("props.db.snapshot_io", "Snapshot fetching"),
     ("props.agents.af.loop", "Built-in critic agent loop"),
-    ("props.agents.critic_dev.eval_client", "Eval client — read this for run_critic internals"),
     ("props.agents.critic_dev.grading", "Grading status polling — read this for wait_until_graded internals"),
     ("props.agents.critic_dev.loop", "Your tool definitions and argument types"),
     ("props.agents.critic_dev.recipes.ground_truth", "Recipe: querying TPs/FPs for snapshots"),

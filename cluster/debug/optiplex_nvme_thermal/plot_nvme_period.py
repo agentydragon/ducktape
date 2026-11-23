@@ -32,7 +32,6 @@ SURFACE, INK, INK2, MUTED, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#8a8984", "#
 WORKLOAD_COLORS = {"haku-ci": "#2a78d6", "flux-system": "#eb6834", "cpap-sync": "#1baf7a"}
 OTHER_COLOR = "#b9b8b2"
 WORKLOADS = [*WORKLOAD_COLORS, "other"]
-DRIVE_WARNING_C = 83.85
 DRIVE_CRITICAL_C = 84.85
 HOT_C = 80.0
 MB = 1e6

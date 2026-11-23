@@ -1212,92 +1212,66 @@ mod capability_graph_tests {
     }
 
     #[test]
-    fn a_deep_containment_chain_recomputes_only_its_reverse_dependency_path() {
+    fn a_changed_alias_recomputes_each_dependent_node_once() {
         let source = id("source");
         let depth = 128;
-        let mut value = ValueExpr::Binding(source.clone());
-        for _ in 0..depth {
-            value = object([value]);
-        }
-        let index = ExecutionIndex::default();
-        let declared = BTreeSet::from([source.clone()]);
-        let graph = compile(&value, &index, &declared);
-        let roots = BTreeSet::from([NativeReceiverRoot::Intrinsic(NativeIntrinsic::Array)]);
-        let mut state = evaluate(
-            &graph,
-            BTreeMap::from([(source.clone(), roots)]),
-            &index,
-            &declared,
-        );
-        assert_eq!(graph.nodes.len(), depth + 1);
-        assert_eq!(state.transfer_evaluations.get(), graph.nodes.len());
-
-        state.aliases.insert(
-            source.clone(),
-            BTreeSet::from([
-                NativeReceiverRoot::Intrinsic(NativeIntrinsic::Array),
-                NativeReceiverRoot::Intrinsic(NativeIntrinsic::Object),
-            ]),
-        );
-        let before = state.transfer_evaluations.get();
-        graph.recompute_changed(
-            graph.alias_nodes[&source].iter().copied(),
-            &mut state,
-            &index,
-            &declared,
-        );
-        assert_eq!(
-            state.transfer_evaluations.get() - before,
-            graph.nodes.len(),
-            "one changed leaf touches each node on its only containment path once"
-        );
-        assert_eq!(
-            state.contained[graph.root],
-            BTreeSet::from([NativeIntrinsic::Array, NativeIntrinsic::Object])
-        );
-    }
-
-    #[test]
-    fn fanout_to_a_shared_result_recomputes_each_branch_and_the_join_once() {
-        let source = id("source");
         let fanout = 96;
-        let value = object((0..fanout).map(|_| object([ValueExpr::Binding(source.clone())])));
+        let chain = (0..depth).fold(ValueExpr::Binding(source.clone()), |value, _| {
+            object([value])
+        });
+        let shared_result =
+            object((0..fanout).map(|_| object([ValueExpr::Binding(source.clone())])));
         let index = ExecutionIndex::default();
         let declared = BTreeSet::from([source.clone()]);
-        let graph = compile(&value, &index, &declared);
-        let roots = BTreeSet::from([NativeReceiverRoot::Intrinsic(NativeIntrinsic::Array)]);
-        let mut state = evaluate(
-            &graph,
-            BTreeMap::from([(source.clone(), roots)]),
-            &index,
-            &declared,
-        );
-        assert_eq!(graph.nodes.len(), 2 * fanout + 1);
-        assert_eq!(state.transfer_evaluations.get(), graph.nodes.len());
 
-        state.aliases.insert(
-            source.clone(),
-            BTreeSet::from([
-                NativeReceiverRoot::Intrinsic(NativeIntrinsic::Array),
-                NativeReceiverRoot::Intrinsic(NativeIntrinsic::Object),
-            ]),
-        );
-        let before = state.transfer_evaluations.get();
-        graph.recompute_changed(
-            graph.alias_nodes[&source].iter().copied(),
-            &mut state,
-            &index,
-            &declared,
-        );
-        assert_eq!(
-            state.transfer_evaluations.get() - before,
-            graph.nodes.len(),
-            "shared alias growth visits its fanout and the common result once"
-        );
-        assert_eq!(
-            state.contained[graph.root],
-            BTreeSet::from([NativeIntrinsic::Array, NativeIntrinsic::Object])
-        );
+        for (value, node_count, why) in [
+            (
+                chain,
+                depth + 1,
+                "one changed leaf touches each node on its only containment path once",
+            ),
+            (
+                shared_result,
+                2 * fanout + 1,
+                "shared alias growth visits its fanout and the common result once",
+            ),
+        ] {
+            let graph = compile(&value, &index, &declared);
+            let roots = BTreeSet::from([NativeReceiverRoot::Intrinsic(NativeIntrinsic::Array)]);
+            let mut state = evaluate(
+                &graph,
+                BTreeMap::from([(source.clone(), roots)]),
+                &index,
+                &declared,
+            );
+            assert_eq!(graph.nodes.len(), node_count, "{why}");
+            assert_eq!(state.transfer_evaluations.get(), graph.nodes.len(), "{why}");
+
+            state.aliases.insert(
+                source.clone(),
+                BTreeSet::from([
+                    NativeReceiverRoot::Intrinsic(NativeIntrinsic::Array),
+                    NativeReceiverRoot::Intrinsic(NativeIntrinsic::Object),
+                ]),
+            );
+            let before = state.transfer_evaluations.get();
+            graph.recompute_changed(
+                graph.alias_nodes[&source].iter().copied(),
+                &mut state,
+                &index,
+                &declared,
+            );
+            assert_eq!(
+                state.transfer_evaluations.get() - before,
+                graph.nodes.len(),
+                "{why}"
+            );
+            assert_eq!(
+                state.contained[graph.root],
+                BTreeSet::from([NativeIntrinsic::Array, NativeIntrinsic::Object]),
+                "{why}"
+            );
+        }
     }
 
     #[test]

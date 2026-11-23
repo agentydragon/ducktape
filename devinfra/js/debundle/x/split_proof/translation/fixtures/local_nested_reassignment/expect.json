@@ -1,0 +1,1 @@
+{ "code": 4, "contains": "OBLIGATIONS", "node_stdout": ["nested\nside\nresult 1\n", "side\nnested\nresult 1\n"] }

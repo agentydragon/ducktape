@@ -3,16 +3,16 @@
 This package owns the optional VM part of a system-test deployment:
 
 - `infrastructure.py` installs the retained KubeVirt and Kyverno controllers.
-- `runtime.py` and `pytest_plugin.py` attach VM lifecycle handling to the deployment fixture.
+- `runtime.py` attaches VM lifecycle handling to the deployment fixture; the shared
+  [`deployment/pytest_plugin.py`](../deployment/pytest_plugin.py) selects it through `runtime_factory`.
 - `block_storage.py` provisions action-owned workspace volumes and detaches their loop devices
   after workload teardown.
 - `guest_logs.py` and `trace_contract.py` collect and check guest evidence.
 - `configuration.py` and `supervision.py` describe guest settings and drive supervision assertions.
 - [`guest/`](guest/) builds the test guest, including systemd units and boot/shutdown evidence.
 
-Only VM suites select the VM pytest plugin and runtime inputs. Pod and MCP suites use the common
-deployment adapter without importing this runtime. The K3s suite macro remains in
-[`k3s/defs.bzl`](../k3s/defs.bzl).
+Only VM suites select the VM runtime inputs, and `runtime_factory` returns this runtime only for a KubeVirt
+fixture; Pod and MCP suites run without one. The K3s suite macro remains in [`k3s/defs.bzl`](../k3s/defs.bzl).
 
 Raw-volume release requires workload Pods/VMs to be removed, or the owned K3s server and container
 tasks to be stopped on failure. Kubelet can hold a block volume through another loop device after

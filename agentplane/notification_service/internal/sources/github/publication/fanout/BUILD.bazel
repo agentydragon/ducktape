@@ -55,7 +55,6 @@ go_test(
     deps = [
         "//agentplane/notification_service/internal/inbox",
         "//agentplane/notification_service/internal/sourceadapter",
-        "//agentplane/notification_service/internal/sources/github/filters",
         "//agentplane/notification_service/internal/sources/github/model",
         "//agentplane/notification_service/internal/sources/github/publication",
         "//agentplane/notification_service/internal/sources/github/state",

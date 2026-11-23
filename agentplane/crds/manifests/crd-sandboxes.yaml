@@ -100,24 +100,18 @@ spec:
                 type: array
                 x-kubernetes-list-type: set
               resumePolicy:
-                description: 'ResumePolicy controls whether the Sandbox''s own principal,
-                  its exact live execution
+                description: 'ResumePolicy controls whether queued work of the Identity
+                  the Sandbox acts as may wake it.
 
-                  ServiceAccount or the Identity it acts as, may request resume. Omitted
-                  policy and fields
-
-                  default to deny.'
+                  Omitted policy and fields default to deny.'
                 properties:
                   allowOwnServiceAccount:
                     default: false
-                    description: 'AllowOwnServiceAccount permits the Sandbox''s exact
-                      live execution ServiceAccount to request
+                    description: 'AllowOwnServiceAccount lets queued work of the Identity
+                      the Sandbox acts as wake it while it is
 
-                      resume while the Sandbox is idle-suspended, and queued work
-                      of the Identity the Sandbox acts
-
-                      as to wake it then. It does not authorize overriding a requested
-                      stop.'
+                      idle-suspended. It grants no explicit resume and does not authorize
+                      overriding a requested stop.'
                     type: boolean
                 type: object
               running:

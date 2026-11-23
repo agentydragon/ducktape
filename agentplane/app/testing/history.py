@@ -13,8 +13,6 @@ from agentplane.proto import event_log_pb2
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep //agentplane/history_service/api/history:history_service_pb2
 
-SANDBOX_NAMESPACE = "test-history-sandbox-namespace"
-
 
 def fixture_session_id(sandbox: str, session_id: str) -> UUID:
     try:

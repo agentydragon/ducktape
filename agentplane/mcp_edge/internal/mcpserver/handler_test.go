@@ -211,6 +211,51 @@ func TestToolsCallTheCoreAsTheVerifiedCaller(t *testing.T) {
 	}
 }
 
+func TestActionGroupInspectionShowsSchemaWarnings(t *testing.T) {
+	warning := "Agentplane cannot validate arguments against this tool's input schema"
+	catalog := &pb.ListActionGroupsResponse{ActionGroups: []*pb.ActionGroup{{
+		Key: "tana", Title: "Tana", Available: true,
+		Health:  &pb.McpHealth{State: pb.McpLifecycle_MCP_LIFECYCLE_AVAILABLE},
+		Actions: []*pb.Action{{Group: "tana", Name: "search_nodes", InputSchemaValidation: &pb.InputSchemaValidation{Status: pb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED, Reason: pb.InputSchemaValidationReason_INPUT_SCHEMA_VALIDATION_REASON_SCHEMA_COMPILE_FAILED, Detail: &warning}}},
+	}}}
+	recorder := &recordingCore{}
+	session := newHarness(t, recorder.core(map[string]proto.Message{
+		"ListActionGroups": catalog,
+		"GetAction":        &pb.GetActionResponse{Action: catalog.ActionGroups[0].Actions[0]},
+	}, noWatch), Options{}).connect(t, callerToken)
+	result := callTool(t, session, "get_action_group", `{"group":"tana"}`)
+	view, ok := result.StructuredContent.(map[string]any)
+	if !ok || view["group"] != "tana" || view["available"] != true {
+		t.Fatalf("group result = %#v", result.StructuredContent)
+	}
+	health, ok := view["health"].(map[string]any)
+	if !ok || health["state"] != "available" {
+		t.Errorf("health = %#v", view["health"])
+	}
+	warnings, ok := view["warnings"].([]any)
+	if !ok || len(warnings) != 1 {
+		t.Fatalf("warnings = %#v", view["warnings"])
+	}
+	got, ok := warnings[0].(map[string]any)
+	if !ok || got["action"] != "search_nodes" || got["code"] != "input_schema_not_enforced" || got["detail"] != warning {
+		t.Errorf("warning = %#v", warnings[0])
+	}
+	action := callTool(t, session, "get_action", `{"group":"tana","name":"search_nodes"}`)
+	actionView, ok := action.StructuredContent.(map[string]any)
+	validation, valid := actionView["input_schema_validation"].(map[string]any)
+	if !ok || !valid || validation["status"] != "not_enforced" || validation["reason"] != "schema_compile_failed" || validation["detail"] != warning {
+		t.Errorf("action result = %#v", action.StructuredContent)
+	}
+}
+
+func TestMissingOrUnrecognizedSchemaValidationIsUnknown(t *testing.T) {
+	for _, validation := range []*pb.InputSchemaValidation{nil, {Status: pb.InputSchemaValidationStatus(99)}} {
+		if got := schemaValidation(validation); got.Status != "unknown" || got.Reason != nil || got.Detail != nil {
+			t.Errorf("schemaValidation(%v) = %#v, want unknown", validation, got)
+		}
+	}
+}
+
 func TestInvalidArgumentsAreRefusedBeforeTheCore(t *testing.T) {
 	recorder := &recordingCore{}
 	session := newHarness(t, recorder.core(nil, noWatch), Options{MaxWaitSeconds: 30}).connect(t, callerToken)

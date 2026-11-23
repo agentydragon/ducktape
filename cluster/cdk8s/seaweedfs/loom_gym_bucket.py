@@ -31,10 +31,9 @@ def chart(app: App) -> Chart:
 def seaweedfs_loom_gym_bucket(
     chart: Chart, directory: RenderedDirectory, seaweedfs_operator: Kustomization
 ) -> Kustomization:
-    name = "seaweedfs-loom-gym-bucket"
     return flux_kustomization(
         chart,
-        name,
+        "seaweedfs-loom-gym-bucket",
         directory,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         depends_on=[flux_kustomization_depends_on(seaweedfs_operator)],

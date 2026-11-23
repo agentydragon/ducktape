@@ -278,14 +278,13 @@ def scan_repo_contents_cache(
     contents: Path,
     bases: Sequence[Inspection],
     *,
-    uid: int | None = None,
     mountinfo_path: Path = Path("/proc/self/mountinfo"),
     progress: ProgressSink = NULL_PROGRESS,
 ) -> list[EntryInspection]:
     """Classify every entry against `bases`: the joint scan's verdict on every output base
     whose `external/` may link into this cache (the root's and the session-env ones). Entries
     are REVIEW when any base's reference inventory is incomplete."""
-    uid = os.getuid() if uid is None else uid
+    uid = os.getuid()
     try:
         contents = contents.resolve(strict=True)
     except FileNotFoundError:
@@ -362,7 +361,6 @@ def trash_prunable_entries(
     contents: Path,
     output_user_root: Path,
     session_bases: Sequence[Path],
-    uid: int | None = None,
     mountinfo_path: Path = Path("/proc/self/mountinfo"),
 ) -> TrashedEntries:
     """Move each candidate that is still unreferenced into `_trash/`, under Bazel's exclusive
@@ -377,7 +375,7 @@ def trash_prunable_entries(
     lock is released, as Bazel does; an interruption leaves at worst trash Bazel's next GC
     empties.
     """
-    uid = os.getuid() if uid is None else uid
+    uid = os.getuid()
     contents = contents.resolve(strict=True)
     results: list[RemovalResult[Path]] = []
     trashed: list[tuple[Path, Path]] = []
@@ -442,7 +440,6 @@ def delete_prunable_entries(
     contents: Path,
     output_user_root: Path,
     session_bases: Sequence[Path],
-    uid: int | None = None,
     mountinfo_path: Path = Path("/proc/self/mountinfo"),
 ) -> list[RemovalResult[Path]]:
     trashed = trash_prunable_entries(
@@ -450,7 +447,6 @@ def delete_prunable_entries(
         contents=contents,
         output_user_root=output_user_root,
         session_bases=session_bases,
-        uid=uid,
         mountinfo_path=mountinfo_path,
     )
     return [*trashed.results, *(empty_trash(path, trash) for path, trash in trashed.trashed)]

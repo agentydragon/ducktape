@@ -18,13 +18,6 @@ ruff = lint_ruff_aspect(
 # Mypy aspect, enabled by default on Bazel builds
 # Uses root mypy.ini for configuration
 # Uses an upstream-produced mypy_cli under Python 3.14 (needed to parse homeassistant's 3.14 syntax)
-#
-# Type checking behavior:
-# - Packages with py.typed (rich, structlog, aiohttp, aiodocker) are fully
-#   type-checked - API misuse will be caught
-# - Packages without py.typed (colorama, Pygments) need type stubs for full
-#   checking. Pre-commit has these but Bazel needs a separate pip hub.
-#   For now these packages get ignore_missing_imports treatment.
 mypy_aspect = mypy(
     mypy_cli = Label("//devinfra/lint:mypy_cli"),
     mypy_ini = Label("//:mypy.ini"),
@@ -50,11 +43,9 @@ eslint = lint_eslint_aspect(
 # Test rule factories - use these in BUILD.bazel files:
 #   load("//devinfra/lint:linters.bzl", "eslint_test")
 #   eslint_test(name = "eslint", srcs = [":my_library"])
-# NOTE: ruff_test removed - ruff is enforced via pre-commit hook
 eslint_test = lint_test(aspect = eslint)
 
 # NOTE: mypy_aspect is configured in .bazelrc, not via lint_test.
 # The rules_mypy aspect produces different output groups than lint_test expects
 
-# NOTE: Clippy uses rules_rust native aspects, not aspect_rules_lint
-# Run via: bazel build --config=rust-check //finance/...
+# NOTE: Clippy uses rules_rust native aspects, not aspect_rules_lint; .bazelrc enables it by default.

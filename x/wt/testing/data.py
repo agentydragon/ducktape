@@ -28,14 +28,6 @@ class TestData:
         MAIN = "main"
         MASTER = "master"
         TEST_PREFIX = "test/"
-        FEATURE_PREFIX = "feature/"
-        INTEGRATION_TEST = "integration-test-branch"
-
-        @classmethod
-        def prefixed_name(cls, name: str, prefix: str | None = None) -> str:
-            """Create a prefixed branch name."""
-            prefix = prefix or cls.TEST_PREFIX
-            return f"{prefix}{name}"
 
     class Commits:
         """Commit message templates."""
@@ -43,7 +35,6 @@ class TestData:
         INITIAL = "Initial commit"
         FEATURE_TEMPLATE = "Add feature: {feature_name}"
         BUGFIX_TEMPLATE = "Fix bug: {bug_description}"
-        REFACTOR = "Refactor code"
 
         @classmethod
         def feature(cls, feature_name: str) -> str:
@@ -69,10 +60,8 @@ class TestData:
         """File content and names."""
 
         README_CONTENT = "# Test Repository\n\nThis is a test repository for worktree management testing."
-        GITIGNORE_CONTENT = "*.pyc\n__pycache__/\n.pytest_cache/\n"
 
         # Standard test files
-        FEATURE_FILE = "feature.txt"
         TEST_FILE = "test.py"
         CONFIG_FILE = "config.yaml"
 
@@ -91,8 +80,6 @@ class ConfigPresets:
         "cache_refresh_age": 300,
     }
 
-    GITHUB_ENABLED: ClassVar[dict] = {"github_repo": "test-user/test-repo"}
-
 
 class MockBehaviors:
     """Standard mock behaviors for test fixtures."""
@@ -105,33 +92,6 @@ class MockBehaviors:
             """No pull requests found."""
             return []
 
-        @staticmethod
-        def single_pr(branch_name: str, pr_number: int = 123):
-            """Single PR for a branch."""
-            return [
-                {
-                    "number": pr_number,
-                    "headRefName": branch_name,
-                    "state": "open",
-                    "title": f"PR for {branch_name}",
-                    "mergeable": True,
-                }
-            ]
-
-        @staticmethod
-        def multiple_prs(branches: list[str]):
-            """Multiple PRs for different branches."""
-            return [
-                {
-                    "number": 100 + i,
-                    "headRefName": branch,
-                    "state": "open",
-                    "title": f"PR for {branch}",
-                    "mergeable": True,
-                }
-                for i, branch in enumerate(branches)
-            ]
-
     class Git:
         """Git operation mock behaviors."""
 
@@ -139,11 +99,6 @@ class MockBehaviors:
         def clean_status():
             """Clean working directory status."""
             return [], []  # no dirty files, no untracked files
-
-        @staticmethod
-        def dirty_status():
-            """Dirty working directory status."""
-            return ["modified.txt"], ["untracked.txt"]
 
         @staticmethod
         def standard_branches():

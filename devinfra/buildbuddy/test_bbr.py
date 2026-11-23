@@ -28,6 +28,7 @@ from devinfra.buildbuddy.bbr import (
 )
 
 BB = "/usr/bin/bb"
+USER_INVOCATION_ID = "12345678-1234-1234-1234-123456789abc"
 
 
 def _make_repo(tmp_path: Path) -> pygit2.Repository:
@@ -113,140 +114,66 @@ def test_local_remote_fails_before_invocation_creation(
     assert "bbr: invocation" not in capsys.readouterr().err
 
 
-class TestBazelrcArgs:
-    def test_skips_comments_and_blanks(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        rc = tmp_path / "bbr.bazelrc"
-        rc.write_text("# comment\n\nbuild --config=rbe\n  \n# another comment\n")
-        monkeypatch.setenv("BBR_BAZELRC", str(rc))
-        assert _bazelrc_args() == ["--config=rbe"]
-
-    def test_strips_command_prefixes(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        rc = tmp_path / "bbr.bazelrc"
-        rc.write_text("common --remote_cache_compression\ntest --test_output=errors\n")
-        monkeypatch.setenv("BBR_BAZELRC", str(rc))
-        assert _bazelrc_args() == ["--remote_cache_compression", "--test_output=errors"]
-
-    def test_missing_file_returns_empty(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("BBR_BAZELRC", str(tmp_path / "nonexistent"))
-        assert _bazelrc_args() == []
-
-    def test_prefix_only_line_skipped(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """A line with just a command prefix and no flag is skipped."""
-        rc = tmp_path / "bbr.bazelrc"
-        rc.write_text("build\nbuild --config=rbe\n")
-        monkeypatch.setenv("BBR_BAZELRC", str(rc))
-        assert _bazelrc_args() == ["--config=rbe"]
+def test_session_bazelrc_flags(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    rc = tmp_path / "bbr.bazelrc"
+    monkeypatch.setenv("BBR_BAZELRC", str(rc))
+    assert _bazelrc_args() == []
+    rc.write_text("# session metadata\n\ncommon --remote_cache_compression\n  \nbuild\ntest --test_output=errors\n")
+    assert _bazelrc_args() == ["--remote_cache_compression", "--test_output=errors"]
 
 
 class TestBuildCommand:
-    """Golden command line tests for build_command().
-
-    Each test checks the full assembled command line against the expected
-    output, ensuring argument ordering is correct across all config layers.
-    The minted invocation ID is opaque, so goldens splice in the returned one.
-    """
-
-    def _build(
-        self, user_args: list[str], monkeypatch: pytest.MonkeyPatch, *, env: dict[str, str] | None = None
-    ) -> tuple[list[str], str | None]:
+    @pytest.fixture(autouse=True)
+    def _environment(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr("devinfra.buildbuddy.bbr._find_bb", lambda: BB)
-        # Clear env vars that affect command construction
         monkeypatch.delenv("BBR_BAZELRC", raising=False)
-        for k, v in (env or {}).items():
-            monkeypatch.setenv(k, v)
-        return build_command(user_args)
 
-    def test_basic_test(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        cmd, inv_id = self._build(["test", "//foo:bar"], monkeypatch)
-        assert cmd == [BB, "remote", "--disable_retry=true", "test", f"--invocation_id={inv_id}", "//foo:bar"]
-
-    def test_each_run_mints_fresh_id(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr("devinfra.buildbuddy.bbr._find_bb", lambda: BB)
-        _, first = build_command(["test", "//foo"])
+    def test_each_bazel_run_gets_its_own_id(self) -> None:
+        cmd, first = build_command(["test", "//foo"])
+        assert cmd == [BB, "remote", "--disable_retry=true", "test", f"--invocation_id={first}", "//foo"]
         _, second = build_command(["test", "//foo"])
         assert first != second
 
-    def test_user_supplied_invocation_id_adopted(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    @pytest.mark.parametrize(
+        "flag",
+        [
+            pytest.param([f"--invocation_id={USER_INVOCATION_ID}"], id="equals-form"),
+            pytest.param(["--invocation_id", USER_INVOCATION_ID], id="space-form"),
+        ],
+    )
+    def test_user_supplied_invocation_id_adopted(self, flag: list[str]) -> None:
         """An explicit --invocation_id is reported as-is, not overridden by a minted one."""
-        user_id = "12345678-1234-1234-1234-123456789abc"
-        cmd, inv_id = self._build(["test", f"--invocation_id={user_id}", "//foo"], monkeypatch)
-        assert inv_id == user_id
-        assert [arg for arg in cmd if "--invocation_id" in arg] == [f"--invocation_id={user_id}"]
+        cmd, inv_id = build_command(["test", *flag, "//foo"])
+        assert inv_id == USER_INVOCATION_ID
+        assert [arg for arg in cmd if "--invocation_id" in arg] == [flag[0]]
 
-    def test_user_supplied_invocation_id_space_form(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        user_id = "12345678-1234-1234-1234-123456789abc"
-        cmd, inv_id = self._build(["test", "--invocation_id", user_id, "//foo"], monkeypatch)
-        assert inv_id == user_id
-        assert [arg for arg in cmd if "--invocation_id" in arg] == ["--invocation_id"]
-
-    def test_basic_build_with_user_override(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        cmd, inv_id = self._build(["build", "--config=nolint", "//foo"], monkeypatch)
-        assert cmd == [
-            BB,
-            "remote",
-            "--disable_retry=true",
-            "build",
-            f"--invocation_id={inv_id}",
-            "--config=nolint",
-            "//foo",
-        ]
-
-    def test_session_bazelrc(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_argument_order(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         rc = tmp_path / "bbr.bazelrc"
-        rc.write_text("build --build_metadata=TAGS=session:xyz\nbuild --build_metadata=ROLE=agent\n")
-        cmd, inv_id = self._build(["build", "//foo"], monkeypatch, env={"BBR_BAZELRC": str(rc)})
-        assert cmd == [
-            BB,
-            "remote",
-            "--disable_retry=true",
-            "build",
-            f"--invocation_id={inv_id}",
-            "--build_metadata=TAGS=session:xyz",
-            "--build_metadata=ROLE=agent",
-            "//foo",
-        ]
-
-    def test_all_layers(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Remote flags precede the verb; session metadata precedes user Bazel flags."""
-        rc = tmp_path / "bbr.bazelrc"
-        rc.write_text("build --build_metadata=TAGS=session:s1\n")
-        cmd, inv_id = self._build(
-            ["--timeout=10m", "test", "//foo:bar", "--nocache_test_results"], monkeypatch, env={"BBR_BAZELRC": str(rc)}
-        )
+        rc.write_text("build --build_metadata=TAGS=session:s1\nbuild --build_metadata=ROLE=agent\n")
+        monkeypatch.setenv("BBR_BAZELRC", str(rc))
+        cmd, inv_id = build_command(["--timeout=10m", "--output_base=/tmp/bazel", "build", "//foo", "--config=nolint"])
         assert cmd == [
             BB,
             "remote",
             "--disable_retry=true",
             "--timeout=10m",
-            "test",
-            f"--invocation_id={inv_id}",
-            "--build_metadata=TAGS=session:s1",
-            "//foo:bar",
-            "--nocache_test_results",
-        ]
-
-    def test_startup_options_before_verb(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        cmd, inv_id = self._build(["--output_base=/tmp/bazel", "build", "//foo"], monkeypatch)
-        assert cmd == [
-            BB,
-            "remote",
-            "--disable_retry=true",
             "--output_base=/tmp/bazel",
             "build",
             f"--invocation_id={inv_id}",
+            "--build_metadata=TAGS=session:s1",
+            "--build_metadata=ROLE=agent",
             "//foo",
+            "--config=nolint",
         ]
 
-    def test_no_verb(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """When no verb is found, everything is startup options and no ID is minted."""
-        cmd, inv_id = self._build(["--flag", "//foo"], monkeypatch)
+    @pytest.mark.parametrize("args", [["--flag", "//foo"], ["--script=echo one-time-write"]])
+    def test_command_without_bazel_verb(self, args: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        rc = tmp_path / "bbr.bazelrc"
+        rc.write_text("build --build_metadata=ROLE=agent\n")
+        monkeypatch.setenv("BBR_BAZELRC", str(rc))
+        cmd, inv_id = build_command(args)
         assert inv_id is None
-        assert cmd == [BB, "remote", "--disable_retry=true", "--flag", "//foo"]
-
-    def test_script_forwards_disable_retry(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        cmd, inv_id = self._build(["--script=echo one-time-write"], monkeypatch)
-        assert inv_id is None
-        assert cmd == [BB, "remote", "--disable_retry=true", "--script=echo one-time-write"]
+        assert cmd == [BB, "remote", "--disable_retry=true", *args, "--build_metadata=ROLE=agent"]
 
 
 class TestExtractInvocationIdFile:
@@ -396,7 +323,7 @@ class TestCheckBaseBranchFreshness:
     def test_current_branch_tracked_but_ahead_falls_through_to_default_branch_check(self, tmp_path: Path) -> None:
         """Unpushed commits on a tracked branch still fall back to `<default>@{upstream}`.
 
-        Mirrors bb's own Phase 2 logic (bb_remote_internals.md): HEAD must be
+        Mirrors bb's own Phase 2 logic (devinfra/buildbuddy/docs/remote.md): HEAD must be
         an ancestor of (or equal to) the tracked commit for bb to use HEAD
         directly — merely having a tracking ref isn't enough.
         """

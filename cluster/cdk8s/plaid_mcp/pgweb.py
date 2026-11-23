@@ -15,15 +15,20 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
-from cluster.cdk8s import cilium
+from cluster.cdk8s import cilium, namespaces
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.plaid_mcp import db
 from cluster.cdk8s.plaid_mcp.db import NAMESPACE
+from cluster.cdk8s.pod_policy import harden
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 _NAME = "plaid-pgweb"
+_CPU_REQUEST = "25m"
+_MEMORY_LIMIT = "256Mi"
 _LABELS = {"app.kubernetes.io/name": _NAME}
 # Clients use the default HTTP port; pgweb's unprivileged container still listens on 8081.
 SERVICE = ServiceRef(
@@ -35,18 +40,15 @@ SERVICE = ServiceRef(
 # What pgweb asks its callers for, as HTTP Basic. The user is not secret; the password is minted
 # below and read by the egress proxy, which is the only holder besides pgweb.
 AUTH_USER = "plaid"
-AUTH = SecretRef(namespace=NAMESPACE, name=f"{_NAME}-auth")
-AUTH_KEY = "password"
+AUTH = SecretRef(namespace=NAMESPACE, name=f"{_NAME}-auth").key("password")
 # 0.17.0's multi-arch index digest.
 _IMAGE = "ghcr.io/sosedoff/pgweb:0.17.0@sha256:a5256d416e2e8b92d69a4459058e3eca33a9f075d8325491644411d0bc3bd70b"
 _QUERY_TIMEOUT_SECONDS = 60
-# The CNPG Cluster in db.py.
-_DB_CLUSTER = "plaid-mcp-db"
 
 
 def _deployment(chart: Chart) -> None:
     port = k8s.TcpSocketAction(port=k8s.IntOrString.from_number(SERVICE.pod_port))
-    k8s.KubeDeployment(
+    deployment = k8s.KubeDeployment(
         chart,
         "deployment",
         metadata=k8s.ObjectMeta(
@@ -54,10 +56,11 @@ def _deployment(chart: Chart) -> None:
             namespace=NAMESPACE,
             labels=_LABELS,
             annotations={
+                **namespaces.initial_request_annotations(ContainerPolicy.cpu_and_memory_requests_only("pgweb")),
                 "description": (
                     "pgweb over the Plaid sync database as the read-only plaid_ro role, for sandboxes that reach it"
                     " through the agentplane-staging egress proxy."
-                )
+                ),
             },
         ),
         spec=k8s.DeploymentSpec(
@@ -67,7 +70,6 @@ def _deployment(chart: Chart) -> None:
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
-                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     containers=[
                         k8s.Container(
                             name="pgweb",
@@ -87,23 +89,11 @@ def _deployment(chart: Chart) -> None:
                                 # A caller cannot point pgweb at another database.
                                 k8s.EnvVar(name="PGWEB_LOCK_SESSION", value="true"),
                                 k8s.EnvVar(name="PGWEB_AUTH_USER", value=AUTH_USER),
-                                AUTH.key(AUTH_KEY).env_var("PGWEB_AUTH_PASS"),
+                                AUTH.env_var("PGWEB_AUTH_PASS"),
                             ],
-                            ports=[
-                                k8s.ContainerPort(
-                                    name=SERVICE.port.name, container_port=SERVICE.pod_port, protocol="TCP"
-                                )
-                            ],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                    "cpu": k8s.Quantity.from_string("25m"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("256Mi")},
-                            ),
+                            ports=[SERVICE.k8s_container_port()],
+                            resources=container_resources(cpu=_CPU_REQUEST, memory="64Mi", memory_limit=_MEMORY_LIMIT),
                             security_context=k8s.SecurityContext(
-                                allow_privilege_escalation=False,
-                                capabilities=k8s.Capabilities(drop=["ALL"]),
                                 read_only_root_filesystem=True,
                                 run_as_non_root=True,
                                 # The image's `pgweb` user, named rather than numbered there.
@@ -118,35 +108,18 @@ def _deployment(chart: Chart) -> None:
             ),
         ),
     )
+    harden(deployment)
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, _NAME, disable_resource_name_hashes=True)
-    mint_bearer_secret(
-        chart,
-        "auth-secret",
-        name=AUTH.name,
-        namespace=AUTH.namespace,
-        key=AUTH_KEY,
-        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-    )
+    mint_bearer_secret(chart, "auth-secret", target=AUTH, creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER)
     _deployment(chart)
     k8s.KubeService(
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=_NAME, namespace=NAMESPACE, labels=_LABELS),
-        spec=k8s.ServiceSpec(
-            selector=_LABELS,
-            ports=[
-                k8s.ServicePort(
-                    name=SERVICE.port.name,
-                    port=SERVICE.port.number,
-                    target_port=k8s.IntOrString.from_number(SERVICE.pod_port),
-                    protocol="TCP",
-                )
-            ],
-            type="ClusterIP",
-        ),
+        spec=k8s.ServiceSpec(selector=_LABELS, ports=[SERVICE.k8s_service_port()], type="ClusterIP"),
     )
     NetworkPolicy(
         chart,
@@ -164,6 +137,6 @@ def chart(app: App) -> Chart:
         endpoint_selector=_LABELS,
         ingress=[cilium.AGENTPLANE_STAGING_PROXY.admit(SERVICE.pod_port)],
         # Cilium exposes Kubernetes pod labels with the k8s: prefix.
-        egress=[cilium.dns_egress(), EgressRule.to_endpoints({"k8s:cnpg.io/cluster": _DB_CLUSTER}, 5432)],
+        egress=[cilium.dns_egress(), EgressRule.to_endpoints({"k8s:cnpg.io/cluster": db.POSTGRES.name}, 5432)],
     )
     return chart

@@ -1,6 +1,6 @@
 """Train/validation/test split definitions for snapshot evaluation.
 
-Each snapshot is explicitly assigned to 'train', 'valid', or 'test' in its manifest.yaml.
+Each snapshot's `BUILD.bazel` assigns it to 'train', 'valid', or 'test' with `specimen_targets(split=...)`.
 The split assignment is the single source of truth for snapshot classification.
 
 Query splits via database ORM:

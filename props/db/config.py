@@ -1,7 +1,7 @@
 """Database configuration for production and test environments.
 
-Database connection parameters are set by devenv.nix and must be present in the environment.
-Tests construct their own DatabaseConfig with per-test database names.
+Database connection parameters come from the `PG*` environment variables (`props/.envrc` sets them on the host)
+and must be present. Tests construct their own DatabaseConfig with per-test database names.
 """
 
 from __future__ import annotations

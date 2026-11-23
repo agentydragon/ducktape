@@ -101,7 +101,7 @@ func GetSession(
 		}
 		if status.Code(sessionErr) != codes.NotFound {
 			snapshot.Session.Kind = SourceUnavailable
-			snapshot.Session.Error = sourceFailure(sessionErr)
+			snapshot.Session.Error = NewSourceError(sessionErr)
 		}
 	} else if session == nil || session.GetSession() == nil {
 		snapshot.Session.Kind = SourceUnavailable
@@ -121,7 +121,7 @@ func GetSession(
 		}
 		if status.Code(historyErr) != codes.NotFound {
 			snapshot.History.Kind = SourceUnavailable
-			snapshot.History.Error = sourceFailure(historyErr)
+			snapshot.History.Error = NewSourceError(historyErr)
 		}
 	} else if summary == nil {
 		snapshot.History.Kind = SourceUnavailable
@@ -251,7 +251,7 @@ func ReadTurns(ctx context.Context, history historypb.HistoryServiceClient, requ
 		if ctx.Err() != nil {
 			return page, status.FromContextError(ctx.Err()).Err()
 		}
-		page.Error = sourceFailure(err)
+		page.Error = NewSourceError(err)
 		return page, nil
 	}
 	if probe == nil {
@@ -271,7 +271,7 @@ func ReadTurns(ctx context.Context, history historypb.HistoryServiceClient, requ
 		if ctx.Err() != nil {
 			return page, status.FromContextError(ctx.Err()).Err()
 		}
-		page.Error = sourceFailure(err)
+		page.Error = NewSourceError(err)
 		return page, nil
 	}
 	projection := TurnProjection{}
@@ -289,7 +289,7 @@ func ReadTurns(ctx context.Context, history historypb.HistoryServiceClient, requ
 				contextErr = status.FromContextError(ctx.Err()).Err()
 				readErr = contextErr
 			}
-			page.Error = sourceFailure(readErr)
+			page.Error = NewSourceError(readErr)
 			break
 		}
 		if events == nil {

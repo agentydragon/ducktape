@@ -19,4 +19,5 @@ See <../docs/backend_api.md> for backend endpoint and agent-workflow details.
 bazel build //props/frontend:bundle    # Regenerate API types after schema changes
 ```
 
-Imports from `props.core` (agent registry), `props.db` (ORM, config). Frontend in `../frontend/`.
+Imports from `props.core` (agent types), `props.orchestration` (agent registry), `props.db` (ORM, config).
+Frontend in `../frontend/`.

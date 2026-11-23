@@ -14,7 +14,6 @@ Run from the repository root with sandbox credentials available to `dev_creds.lo
 import logging
 
 from plaid.model.accounts_get_request import AccountsGetRequest
-from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
 from plaid.model.products import Products
 from plaid.model.sandbox_public_token_create_request import SandboxPublicTokenCreateRequest
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
@@ -39,9 +38,7 @@ def main() -> None:
         logger.info("public_token=%s…", public_token[:24])
 
         logger.info("exchanging for access_token …")
-        access_token = api.item_public_token_exchange(
-            ItemPublicTokenExchangeRequest(public_token=public_token)
-        ).access_token
+        access_token = api.exchange_public_token(public_token).access_token
         logger.info("access_token=%s…", access_token[:24])
 
         logger.info("fetching /accounts/get …")

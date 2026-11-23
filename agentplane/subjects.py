@@ -1,9 +1,10 @@
 """The subject an Agentplane policy binds to, defined once for every service that binds one.
 
-A subject is a Kubernetes ServiceAccount: the one a workload's Pod runs as, which is what both the
-egress proxy and the Action Service authenticate it by, and what the Kubernetes API server
-authorizes. The CRD schema is generated from the Go `ServiceAccountRef` type under
-`agentplane/policy/api/v1alpha1`; this model is the Python representation of that wire value.
+A subject is a Kubernetes ServiceAccount: the one a workload's Pod runs as, which is what the
+egress proxy authenticates it by and what the Kubernetes API server authorizes. The Action Service
+admits Identities only: a ServiceAccount subject admits no caller there. The CRD schema is generated
+from the Go `ServiceAccountRef` type under `agentplane/policy/api/v1alpha1`; this model is the Python
+representation of that wire value.
 
 ServiceAccount subjects remain useful for platform workloads and external callers. Sandbox workload
 permissions are attached to its named `Identity` instead of a Sandbox-owned ServiceAccount.

@@ -1,6 +1,6 @@
 """The Receiver that Forgejo's `package` webhook (container-registry push) and `push` webhook
-(git push to haku-state) hit, both provisioned by tf/gitops/haku-state, and the directory's
-Flux Kustomization. It force-reconciles every polling leg of the haku-ui deploy chain:
+(git push to haku-state) hit, both provisioned by tf/gitops/haku-state. It force-reconciles
+every polling leg of the haku-ui deploy chain:
 registry scan -> ImageUpdateAutomation tag-bump commit -> GitRepository fetch -> workloads
 apply (kustomize-controller reconciles on the new source artifact by itself, so it needs no
 entry here). The receiver is `generic` (payload ignored), so either event pokes all listed

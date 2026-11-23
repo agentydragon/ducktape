@@ -82,26 +82,6 @@ func TestSharedListenerRequiresSVIDTLS(t *testing.T) {
 	}
 }
 
-func TestServiceCallerSettingsRequireSPIFFEListener(t *testing.T) {
-	withoutSPIFFE := strings.Replace(requiredFile, "    - {mode: spiffe, ca_file: /tmp/workload-ca}\n", "", 1)
-	for name, settings := range map[string]string{
-		"dispatcher caller": "dispatcher_service_callers: [\"spiffe://agentplane/actions\"]\n",
-		"wake caller":       "wake_service_callers: [\"spiffe://agentplane/actions\"]\n",
-		"Dispatcher delegation": `dispatcher_service_delegation:
-  actors: [{spiffe_id: "spiffe://agentplane/actions"}]
-  methods: [/agentplane.runner_gateway.dispatcher.SessionDispatcher/SubmitInput]
-`,
-	} {
-		t.Run(name, func(t *testing.T) {
-			settings := configtest.WriteSettings(t, withoutSPIFFE+settings)
-			_, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+settings))
-			if err == nil || !strings.Contains(err.Error(), "service caller settings require rpc.auth to include spiffe") {
-				t.Fatalf("loadConfig error = %v, want missing-SPIFFE service-caller error", err)
-			}
-		})
-	}
-}
-
 func TestDispatcherServiceDelegationIsScopedToServiceMethodsAndActionActors(t *testing.T) {
 	base := `dispatcher_service_delegation:
   actors: [{spiffe_id: "spiffe://agentplane/actions"}]
@@ -247,23 +227,6 @@ func TestSettingsAreRefusedWithoutEchoingRuntimeSecretValues(t *testing.T) {
 	if _, err := configtest.Load(t, settingPrefix, loadConfig,
 		required(t, settingPrefix+"DISPATCHER_DATABASE_URL=not-a-postgres-url")); err == nil {
 		t.Fatal("invalid runtime database URL was accepted")
-	}
-}
-
-func TestRetiredRuntimeSettingsAreRejected(t *testing.T) {
-	for _, setting := range []string{
-		"runner_security: {mode: insecure}\n",
-		"runtime_proxy_readers: [spiffe://agentplane/app]\n",
-		"runtime_proxy_session_callers: [spiffe://agentplane/sessions]\n",
-		"runtime_proxy_controller_callers: [spiffe://agentplane/sandbox-controller]\n",
-		"executor_service_callers: [spiffe://agentplane/central-sampler]\n",
-	} {
-		t.Run(strings.SplitN(setting, ":", 2)[0], func(t *testing.T) {
-			path := configtest.WriteSettings(t, requiredFile+setting)
-			if _, err := configtest.Load(t, settingPrefix, loadConfig, required(t, settingPrefix+"CONFIG_FILE="+path)); err == nil {
-				t.Fatal("accepted a retired receiver setting")
-			}
-		})
 	}
 }
 

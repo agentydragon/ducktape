@@ -35,12 +35,9 @@ async def main(
     else:
         raise typer.BadParameter("Specify --config or --config-file.")
 
-    docker_client = aiodocker.Docker()
-    try:
+    async with aiodocker.Docker() as docker_client:
         server = ContainerExecServer(docker_client, parsed)
         await server.run_stdio_async()
-    finally:
-        await docker_client.close()
 
 
 if __name__ == "__main__":

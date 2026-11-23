@@ -50,9 +50,9 @@ Prettier runs through the repository's [pre-commit configuration](../../.pre-com
 ## Browser tests and the historical module-identity failure
 
 [MODULE.bazel](../../MODULE.bazel) pins Chrome for Testing's headless shell;
-[the browser launcher](../../util/testing/browser/launcher.py) supplies it from
+[the browser launcher](../../testing/browser/launcher.py) supplies it from
 runfiles. Review screenshots use the
-[Python visual-test harness](../../util/testing/frontend_visual/README.md#one-way-in)
+[Python visual-test harness](../../testing/frontend_visual/README.md#one-way-in)
 and its deterministic context and capture API. Browser tests run on RBE, as required
 by [AGENTS.md](../../AGENTS.md#bazel-commands).
 

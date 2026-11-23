@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 
@@ -68,3 +69,12 @@ class OpenAIResponses(ModelEndpoint[ResponsesRequest]):
 
     async def await_next_request(self) -> ModelExchange[ResponsesRequest]:
         return await self._next_exchange()
+
+    @asynccontextmanager
+    async def await_parent_and_child(
+        self, parent_thread_id: str
+    ) -> AsyncIterator[tuple[ModelExchange[ResponsesRequest], ModelExchange[ResponsesRequest]]]:
+        """Hold the next two requests open as (parent, child), told apart by `client_metadata.thread_id`;
+        arrival order does not say which is which."""
+        async with await self.await_next_request() as first, await self.await_next_request() as second:
+            yield (first, second) if first.request.client_metadata.thread_id == parent_thread_id else (second, first)

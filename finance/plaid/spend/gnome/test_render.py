@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import re
 import shlex
-import zipfile
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
 from datetime import datetime
@@ -24,17 +23,17 @@ import pytest
 from PIL import Image, ImageChops, ImageStat
 from python.runfiles import Runfiles
 
-from devinfra.oci.oci import load_oci_image
 from devinfra.testing.output_writer import BoundTestOutputs
 from finance.plaid.spend.allowance import PeriodId
 from finance.plaid.spend.models import SpendView
 from finance.plaid.spend.testing import dashboard
-from gnome.test_image import gnome_shell_test
 from gnome.testing.fake_daemon import fake_daemon
 from gnome.testing.session import GnomeMenuCapture, GnomeSession, exec_output, gnome_session, string_reply, wait_until
 
-_EXTENSION_ZIP = "ducktape/finance/plaid/spend/gnome/plaid-spend-desktop.zip"
+pytest_plugins = ("gnome.testing.fixtures",)
+
 _EXTENSION_UUID = "plaid-spend@allegedly.works"
+_SETTINGS_SCHEMA = "org.gnome.shell.extensions.plaid-spend"
 _FIXTURE_NAMES = (
     "ready_allowance",
     "ready_two_cards",
@@ -69,19 +68,6 @@ def test_extension_metadata_supports_gnome_50(extension_dir: Path) -> None:
     metadata = json.loads((extension_dir / "metadata.json").read_text())
 
     assert "50" in metadata["shell-version"]
-
-
-@pytest.fixture(scope="module")
-def gnome_shell_test_image() -> str:
-    return load_oci_image(gnome_shell_test.LAYOUT_RLOCATION)
-
-
-@pytest.fixture(scope="module")
-def extension_dir(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory) -> Path:
-    dest = tmp_path_factory.mktemp("plaid-spend-extension")
-    with zipfile.ZipFile(runfiles.root() / _EXTENSION_ZIP) as extension_zip:
-        extension_zip.extractall(dest)
-    return dest
 
 
 @pytest.fixture(scope="module")
@@ -173,7 +159,6 @@ def plaid_gnome_session(
         fake_daemon_script=runfiles.root() / _FAKE_DBUS_SERVICE,
         destination=_TEST_DBUS_DEST,
         object_path=_TEST_DBUS_PATH,
-        compile_extension_schemas=True,
     )
 
 
@@ -189,6 +174,20 @@ def session(plaid_gnome_session: PlaidGnomeSession, tmp_path_factory: pytest.Tem
         yield session
 
 
+def _set_panel_settings(
+    session: GnomeSession, settings: dict[str, str | list[str] | bool], *, wait_for_paint: bool = True
+) -> None:
+    for key, value in settings.items():
+        session.gsettings("set", _SETTINGS_SCHEMA, key, json.dumps(value, ensure_ascii=False))
+    if wait_for_paint:
+        session.wait_for_paint()
+
+
+def _reset_panel_settings(session: GnomeSession) -> None:
+    session.gsettings("reset-recursively", _SETTINGS_SCHEMA)
+    session.wait_for_paint()
+
+
 def test_fixture_preview_starts_without_daemon(
     plaid_gnome_session: PlaidGnomeSession, tmp_path_factory: pytest.TempPathFactory
 ) -> None:
@@ -201,19 +200,12 @@ def test_fixture_preview_starts_without_daemon(
         def panel_state() -> dict[str, Any]:
             return cast(dict[str, Any], json.loads(string_reply(session.call("GetPanelState"))))
 
-        def set_visible(value: str) -> None:
-            result = session.exec(
-                f"gsettings --schemadir /usr/share/gnome-shell/extensions/{_EXTENSION_UUID}/schemas "
-                f"set org.gnome.shell.extensions.plaid-spend panel-visible {value!r}"
-            )
-            assert result.exit_code == 0, exec_output(result)
-
-        set_visible("['pace', 'sparkline']")
+        _set_panel_settings(session, {"panel-visible": ["pace", "sparkline"]})
         wait_until(lambda: panel_state()["items"] == ["pace", "sparkline"], "fixture settings were not applied")
         assert string_reply(session.call("GetPanelLabel")) == "90%"
-        set_visible("['pace']")
+        _set_panel_settings(session, {"panel-visible": ["pace"]})
         wait_until(lambda: panel_state()["items"] == ["pace"], "sparkline was not hidden")
-        set_visible("['pace', 'sparkline']")
+        _set_panel_settings(session, {"panel-visible": ["pace", "sparkline"]})
         wait_until(lambda: panel_state()["items"] == ["pace", "sparkline"], "fixture history was not retained")
         _assert_no_plaid_extension_error(session)
 
@@ -424,16 +416,11 @@ def test_allowance_paced(
         capture_menu.capture(geometry, label="allowance paced")
 
 
-def test_rounded_balance_keeps_exact_amount_in_details(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
+def test_rounded_balance_has_no_details_toggle(session: GnomeSession) -> None:
     with _menu(session, "allowance_fractional", "$200"):
         menu_text = string_reply(session.call("GetMenuText"))
         assert "$200 available" in menu_text
-        assert "$200.25" not in menu_text
-        assert "Balance details" in menu_text
-        assert string_reply(session.call("GetBalanceDetails")) == "Exact available: $200.25"
-        session.call("OpenBalanceDetails")
-        session.wait_for_paint()
-        capture_menu.capture(session.open_menu(), label="exact balance details")
+        assert "Balance details" not in menu_text
 
 
 def test_allowance_warning(
@@ -447,8 +434,7 @@ def test_allowance_warning(
         assert "7d $13/day" in menu_text
         assert "30d $18/day" in menu_text
         assert "Leash ~$23/day" in menu_text
-        assert "7d unmatched 1 ($15)" in menu_text
-        assert "30d unmatched 1 ($15)" in menu_text
+        assert "Unmatched: 7d: 1 txn ($15) · 30d: 1 txn ($15)" in menu_text
         assert "Oldest linked sync 1h ago" in menu_text
         capture_menu.capture(geometry, label="allowance warning")
 
@@ -520,18 +506,18 @@ def test_sign_in_keeps_distinct_errors(session: GnomeSession, fixture_name: str,
 
 
 def test_custom_panel_items_and_pace_window(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
-    def configure(**settings: object) -> None:
-        session.call("SetPanelSettings", json.dumps(settings))
-        session.wait_for_paint()
-
     def state() -> dict[str, Any]:
         return cast(dict[str, Any], json.loads(string_reply(session.call("GetPanelState"))))
 
     try:
-        configure(
-            order=["pace-window", "pace", "sparkline", "status", "balance"],
-            visible=["status", "balance", "pace-window", "pace", "sparkline"],
-            window="7d",
+        # A saved order can predate current items, repeat one, or name a retired item.
+        _set_panel_settings(
+            session,
+            {
+                "panel-order": ["pace-window", "pace", "retired", "pace", "sparkline"],
+                "panel-visible": ["status", "balance", "pace-window", "pace", "sparkline"],
+                "pace-window": "7d",
+            },
         )
         with _menu(session, "panel_composition", "7d 110% $12.3k") as geometry:
             assert state() == {
@@ -540,60 +526,55 @@ def test_custom_panel_items_and_pace_window(session: GnomeSession, capture_menu:
                 "window": "7d",
             }
             assert "$12,345 available" in string_reply(session.call("GetMenuText"))
+            assert "7d $22/day (110%) · 30d $28/day (140%)" in string_reply(session.call("GetMenuText"))
             assert "Customize panel" in string_reply(session.call("GetMenuText"))
             assert "Use 30-day pace" not in string_reply(session.call("GetMenuText"))
             assert "Pace history has coverage gaps" in string_reply(session.call("GetMenuText"))
             capture_menu.capture(geometry, label="custom panel 7d with sparkline", checkpoint="7d", left_padding=160)
-        configure(window="30d")
+        _set_panel_settings(session, {"pace-window": "30d"})
         assert string_reply(session.call("GetPanelLabel")) == "30d 140% $12.3k"
         assert state()["level"] == "danger"
         geometry = session.open_menu()
         capture_menu.capture(geometry, label="custom panel 30d with sparkline", checkpoint="30d", left_padding=160)
         session.close_menu()
-        configure(visible=["pace-window"])
+        _set_panel_settings(session, {"panel-visible": ["pace-window"]})
         assert state()["items"] == ["pace-window"]
         assert string_reply(session.call("GetPanelLabel")) == "30d"
-        configure(visible=["pace"])
+        _set_panel_settings(session, {"panel-visible": ["pace"]})
         assert state()["items"] == ["pace"]
         assert string_reply(session.call("GetPanelLabel")) == "140%"
-        configure(order=["sparkline", "pace", "balance", "status"], visible=["sparkline", "pace"])
+        _set_panel_settings(
+            session, {"panel-order": ["sparkline", "pace", "balance", "status"], "panel-visible": ["sparkline", "pace"]}
+        )
         session.reload("/fixtures/panel_composition.json")
         assert state()["items"] == ["sparkline", "pace"]
         session.reload("/fixtures/allowance_paced.json")
         assert state()["items"] == ["sparkline-unavailable", "pace"]
         assert state()["level"] == "good"
-        configure(visible=[])
+        _set_panel_settings(session, {"panel-visible": []})
         assert state()["items"] == ["status"]
         _assert_no_plaid_extension_error(session)
     finally:
-        configure(
-            order=["status", "balance", "pace-window", "pace", "sparkline"], visible=["status", "balance"], window="7d"
-        )
+        _reset_panel_settings(session)
 
 
-def test_existing_pace_panel_setting_is_migrated(
+def test_pace_panel_setting_is_preserved_across_restart(
     plaid_gnome_session: PlaidGnomeSession, tmp_path_factory: pytest.TempPathFactory
 ) -> None:
-    def set_legacy_settings(session: GnomeSession) -> None:
-        command = (
-            f"gsettings --schemadir /usr/share/gnome-shell/extensions/{_EXTENSION_UUID}/schemas "
-            "set org.gnome.shell.extensions.plaid-spend "
+    def set_panel_settings(session: GnomeSession) -> None:
+        _set_panel_settings(
+            session,
+            {"panel-visible": ["pace"], "panel-order": ["sparkline", "pace-window", "pace", "status", "balance"]},
+            wait_for_paint=False,
         )
-        for key, value in [
-            ("panel-visible", "['pace']"),
-            ("panel-order", "['sparkline', 'pace', 'status', 'balance']"),
-        ]:
-            result = session.exec(f"{command}{key} {shlex.quote(value)}")
-            assert result.exit_code == 0, exec_output(result)
 
     with plaid_gnome_session(
-        screenshot_dir=tmp_path_factory.mktemp("gnome-panel-migration"),
+        screenshot_dir=tmp_path_factory.mktemp("gnome-panel-settings"),
         environment={"PLAID_SPEND_FIXTURE": "/fixtures/ready_allowance.json"},
-        before_start=set_legacy_settings,
+        before_start=set_panel_settings,
     ) as session:
-        assert json.loads(string_reply(session.call("GetPanelState")))["items"] == ["pace-window", "pace"]
-        assert string_reply(session.call("GetPanelLabel")) == "7d 90%"
-        session.call("SetPanelSettings", json.dumps({"visible": ["pace"]}))
+        assert json.loads(string_reply(session.call("GetPanelState")))["items"] == ["pace"]
+        assert string_reply(session.call("GetPanelLabel")) == "90%"
         for method in ("DisableExtension", "EnableExtension"):
             result = session.exec(
                 "gdbus call --session --dest org.gnome.Shell --object-path /org/gnome/Shell "
@@ -613,10 +594,6 @@ def test_existing_pace_panel_setting_is_migrated(
 
 
 def test_sparkline_options(session: GnomeSession, capture_menu: GnomeMenuCapture) -> None:
-    def configure(**settings: object) -> None:
-        session.call("SetPanelSettings", json.dumps(settings))
-        session.wait_for_paint()
-
     def sparkline_image() -> Image.Image:
         match = re.search(rb"\((-?\d+),\s*(-?\d+),\s*(\d+),\s*(\d+)\)", session.call("GetSparklineGeometry"))
         assert match is not None
@@ -626,13 +603,22 @@ def test_sparkline_options(session: GnomeSession, capture_menu: GnomeMenuCapture
         return Image.open(BytesIO(session.screenshot())).convert("RGB").crop((x, y, x + width, y + height))
 
     try:
-        configure(visible=["sparkline"], window="30d", anchorZero=True, showLeash=True, historyDays=30)
+        _set_panel_settings(
+            session,
+            {
+                "panel-visible": ["sparkline"],
+                "pace-window": "30d",
+                "sparkline-anchor-zero": True,
+                "sparkline-show-leash": True,
+                "sparkline-history-days": "30",
+            },
+        )
         session.reload("/fixtures/panel_composition.json")
         geometry = session.open_menu()
         assert "Sparkline: last 30 days of 30d averages" in string_reply(session.call("GetMenuText"))
         zero_with_leash = sparkline_image()
         capture_menu.capture(geometry, label="sparkline at zero with leash", checkpoint="zero-leash", left_padding=160)
-        configure(leashColor="#00ffff")
+        _set_panel_settings(session, {"sparkline-leash-color": "#00ffff"})
         custom_leash = sparkline_image()
         assert ImageChops.difference(zero_with_leash, custom_leash).getbbox() is not None
         pixels = cast(list[tuple[int, int, int]], list(custom_leash.get_flattened_data()))
@@ -640,12 +626,12 @@ def test_sparkline_options(session: GnomeSession, capture_menu: GnomeMenuCapture
         capture_menu.capture(
             geometry, label="sparkline custom leash color", checkpoint="custom-leash", left_padding=160
         )
-        configure(leashColor="")
-        configure(anchorZero=False)
+        _set_panel_settings(session, {"sparkline-leash-color": ""})
+        _set_panel_settings(session, {"sparkline-anchor-zero": False})
         fitted_with_leash = sparkline_image()
         assert ImageChops.difference(zero_with_leash, fitted_with_leash).getbbox() is not None
         capture_menu.capture(geometry, label="sparkline fitted with leash", checkpoint="fitted-leash", left_padding=160)
-        configure(showLeash=False)
+        _set_panel_settings(session, {"sparkline-show-leash": False})
         fitted_without_leash = sparkline_image()
         assert ImageChops.difference(fitted_with_leash, fitted_without_leash).getbbox() is not None
         pixels = cast(list[tuple[int, int, int]], list(fitted_without_leash.get_flattened_data()))
@@ -653,7 +639,7 @@ def test_sparkline_options(session: GnomeSession, capture_menu: GnomeMenuCapture
         assert any(r > g + 10 and g > b + 20 for r, g, b in pixels)
         assert any(r > g + 30 and r > b + 30 for r, g, b in pixels)
         capture_menu.capture(geometry, label="sparkline fitted without leash", checkpoint="fitted", left_padding=160)
-        configure(historyDays=7)
+        _set_panel_settings(session, {"sparkline-history-days": "7"})
         assert "Sparkline: last 7 days of 30d averages" in string_reply(session.call("GetMenuText"))
         assert ImageChops.difference(fitted_without_leash, sparkline_image()).getbbox() is not None
         capture_menu.capture(geometry, label="sparkline seven-day history", checkpoint="seven-days", left_padding=160)
@@ -663,9 +649,7 @@ def test_sparkline_options(session: GnomeSession, capture_menu: GnomeMenuCapture
         session.close_menu()
         _assert_no_plaid_extension_error(session)
     finally:
-        configure(
-            visible=["status", "balance"], window="7d", anchorZero=True, showLeash=True, leashColor="", historyDays=30
-        )
+        _reset_panel_settings(session)
 
 
 def test_history_from_daemon_drops_stale_replies(session: GnomeSession, fixture_json_dir: Path) -> None:
@@ -675,7 +659,7 @@ def test_history_from_daemon_drops_stale_replies(session: GnomeSession, fixture_
         with fake_daemon(session, destination=_FAKE_DBUS_DEST, object_path=_FAKE_DBUS_PATH) as daemon:
             wait_until(lambda: bool(string_reply(session.call("GetDaemonOwner"))), "daemon did not connect")
             daemon.call("SetHistory", json.dumps(fixture["pace_history"]))
-            session.call("SetPanelSettings", json.dumps({"visible": ["sparkline"]}))
+            _set_panel_settings(session, {"panel-visible": ["sparkline"]})
 
             def pending() -> int:
                 return int(string_reply(daemon.call("GetHistoryPending")))
@@ -699,9 +683,18 @@ def test_history_from_daemon_drops_stale_replies(session: GnomeSession, fixture_
                 lambda: json.loads(string_reply(session.call("GetPanelState")))["items"] == ["sparkline"],
                 "extension did not adopt the latest history",
             )
+
+            daemon.call("SetHistory", "null")
+            daemon.call("SetView", json.dumps(fixture["view"]))
+            wait_until(lambda: pending() == 1, "extension did not request the unavailable history")
+            daemon.call("ReleaseGetHistory")
+            wait_until(
+                lambda: "Pace history unavailable" in string_reply(session.call("GetMenuText")),
+                "extension did not report the invalid history reply",
+            )
             _assert_no_plaid_extension_error(session)
     finally:
-        session.call("SetPanelSettings", json.dumps({"visible": ["status", "balance"]}))
+        _reset_panel_settings(session)
 
 
 def test_preferences_window_opens(session: GnomeSession, test_outputs: BoundTestOutputs) -> None:
@@ -721,7 +714,7 @@ def test_preferences_window_opens(session: GnomeSession, test_outputs: BoundTest
         result = session.exec(
             "gdbus call --session --timeout 10 --dest org.gnome.Shell.Extensions "
             "--object-path /org/gnome/Shell/Extensions --method org.gnome.Shell.Extensions.OpenExtensionPrefs "
-            "'plaid-spend@allegedly.works' '' '{}'"
+            f"{shlex.quote(_EXTENSION_UUID)} '' '{{}}'"
         )
         raise AssertionError(f"Preferences service call failed: {exec_output(result)}") from error
     test_outputs.publish(
@@ -733,18 +726,21 @@ def test_preferences_window_opens(session: GnomeSession, test_outputs: BoundTest
         title="Plaid Spend GNOME extension",
     )
     disabled = Image.open(BytesIO(session.screenshot())).convert("RGB").crop((480, 80, 1440, 820))
-    session.call("SetPanelSettings", json.dumps({"visible": ["status", "balance", "sparkline"]}))
+    try:
+        _set_panel_settings(session, {"panel-visible": ["status", "balance", "sparkline"]})
 
-    def sparkline_controls_enabled() -> bool:
-        enabled = Image.open(BytesIO(session.screenshot())).convert("RGB").crop((480, 80, 1440, 820))
-        return sum(ImageStat.Stat(ImageChops.difference(disabled, enabled)).sum) > 10_000
+        def sparkline_controls_enabled() -> bool:
+            enabled = Image.open(BytesIO(session.screenshot())).convert("RGB").crop((480, 80, 1440, 820))
+            return sum(ImageStat.Stat(ImageChops.difference(disabled, enabled)).sum) > 10_000
 
-    wait_until(sparkline_controls_enabled, "preferences did not update when sparkline was enabled")
-    test_outputs.publish(
-        checkpoint="sparkline-enabled",
-        role="screenshot",
-        data=session.screenshot(),
-        suffix="png",
-        label="panel preferences with sparkline enabled",
-        title="Plaid Spend GNOME extension",
-    )
+        wait_until(sparkline_controls_enabled, "preferences did not update when sparkline was enabled")
+        test_outputs.publish(
+            checkpoint="sparkline-enabled",
+            role="screenshot",
+            data=session.screenshot(),
+            suffix="png",
+            label="panel preferences with sparkline enabled",
+            title="Plaid Spend GNOME extension",
+        )
+    finally:
+        _reset_panel_settings(session)

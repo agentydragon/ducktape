@@ -51,7 +51,6 @@ type Session struct {
 	activeTurn                                             string
 	setup                                                  sessionpb.SetupState
 	launch                                                 sessionpb.LaunchOutcome
-	failure                                                *uint64
 	harnessFailure                                         *uint64
 	setupJob, stopping                                     *oneoff.Operation
 	connection                                             *nativeConnection
@@ -97,7 +96,7 @@ type sessionDependencies struct {
 
 func newSession(deps sessionDependencies, id string, record *retained.Record, journal *journal.Journal) *Session {
 	s := &Session{deps: deps, id: id, record: record, journal: journal, pending: map[string]bool{}, dispatched: map[string]bool{}, controlDispatches: map[string]chan struct{}{}, interrupts: map[string]string{}, launch: sessionpb.LaunchOutcome_LAUNCH_OUTCOME_PENDING, setup: sessionpb.SetupState_SETUP_STATE_NOT_REQUIRED}
-	if retained.HasSetupScript(record) {
+	if len(record.SetupScript) != 0 {
 		s.setup = sessionpb.SetupState_SETUP_STATE_RUNNING
 	}
 	s.connection = &nativeConnection{deps: nativeConnectionDependencies{
@@ -105,7 +104,7 @@ func newSession(deps sessionDependencies, id string, record *retained.Record, jo
 		send:       func(ctx context.Context, frame json.RawMessage) error { return s.sendNative(ctx, deps.ctx, frame) },
 		afterBatch: s.wake,
 		stderr: func(ctx context.Context, text string) error {
-			return s.Emit(ctx, observation(&eventpb.HarnessStderr{Text: text}), nil)
+			return s.Emit(ctx, harness.Observation(&eventpb.HarnessStderr{Text: text}), nil)
 		},
 		ended: s.harnessEnded, fail: deps.fail,
 	}}
@@ -225,12 +224,12 @@ func (s *Session) recover(ctx context.Context) error {
 	setup := s.setup
 	s.mu.Unlock()
 	if setup == sessionpb.SetupState_SETUP_STATE_RUNNING {
-		if err := s.Emit(ctx, observation(&eventpb.SetupInterrupted{}), nil); err != nil {
+		if err := s.Emit(ctx, harness.Observation(&eventpb.SetupInterrupted{}), nil); err != nil {
 			return err
 		}
 	}
 	if s.journal.RecoveryState().HarnessRunning {
-		if err := s.Emit(ctx, observation(&eventpb.HarnessLost{}), nil); err != nil {
+		if err := s.Emit(ctx, harness.Observation(&eventpb.HarnessLost{}), nil); err != nil {
 			return err
 		}
 	}

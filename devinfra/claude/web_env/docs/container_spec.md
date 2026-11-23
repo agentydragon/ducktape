@@ -63,8 +63,9 @@ removed: every path through it reached its "could not read `tune2fs -l`" warning
 so it produced a warning line per session and nothing else. `git log` has it if
 device access ever returns.
 
-The Bazel cache (`~/.claude/session-env/<id>/bazel-cache`) lives on the ext4
-root disk. There are **no tmpfs mounts** for Bazel cache or container storage.
+The per-session Bazel output base (`~/.claude/session-env/<id>/bazel-output-base`)
+lives on the ext4 root disk. There are **no tmpfs mounts** for Bazel cache or
+container storage.
 
 ### Typical Disk Usage (observed 2026-04-01)
 
@@ -110,8 +111,9 @@ web/remote session lacks that marker, treat it as platform drift and report it.
 
 Java auto-sizes max heap to ~25% of physical memory (~4Gi). For full-monorepo
 `bazel query` operations (6000+ packages), this is insufficient — the Skyframe
-analysis cache alone needs ~4Gi. The session bazelrc template sets `-Xmx8g`
-when it detects Firecracker.
+analysis cache alone needs ~4Gi. The session bazelrc that
+[`claude-hook`](../../claude_hook/main.rs) generates sets `-Xmx8g` when it
+detects Firecracker.
 
 ## Anthropic-Specific Components
 
@@ -150,8 +152,9 @@ TLS inspection, injecting its own CA certificate. Proxy credentials are
 JWT-based, passed via `Proxy-Authorization: Basic` header.
 
 The proxy returns non-standard HTTP 401 (not 407) with `www-authenticate` (not
-`Proxy-Authenticate`), which breaks Java's `Authenticator` class. See
-`devinfra/claude/proxy_setup.py` for the local proxy workaround.
+`Proxy-Authenticate`), which breaks Java's `Authenticator` class. The local proxy workaround
+for this lived in `devinfra/claude/auth_proxy/`, removed with the rest of the explicit-proxy
+subsystem; restore it from git history if explicit proxy environment variables return.
 
 | Interface | IP Address   |
 | --------- | ------------ |

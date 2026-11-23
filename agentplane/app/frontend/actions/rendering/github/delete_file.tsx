@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 import { Code, Stack, Text } from "@mantine/core";
+import { fileDeleted } from "./receipts";
 
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { type ActionPresentation, expandsForRejectedArguments } from "../presentation";
@@ -36,7 +37,7 @@ export const deleteFilePresentation: ActionPresentation = {
   fallbackLabel: "Delete a GitHub file",
   label: deleteFileLabel,
   pane: { collapsed: deleteFileArguments },
-  details: { arguments: deleteFileArguments },
+  details: { arguments: deleteFileArguments, result: fileDeleted },
   offersCardDecisionButtons: (args) => zDeleteFileArguments.safeParse(args).success,
   compactCardExpands: expandsForRejectedArguments(zDeleteFileArguments),
 };

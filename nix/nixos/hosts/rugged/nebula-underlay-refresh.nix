@@ -103,6 +103,8 @@ in
   # therefore move the one-shot refresh five seconds into the future.
   systemd.timers.nebula-underlay-route-refresh = {
     description = "Debounce Nebula underlay route changes";
+    # Dispatcher event bursts intentionally restart the timer to debounce them.
+    unitConfig.StartLimitIntervalSec = 0;
     timerConfig = {
       OnActiveSec = "5s";
       AccuracySec = "1s";

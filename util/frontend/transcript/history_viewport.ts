@@ -394,6 +394,8 @@ export class HistoryViewport {
           "scrolled-up"
         );
     } else {
+      // Release targetKey together with target. Clearing only target lets reconcile() find the nested
+      // anchor again by key and apply this row-relative offset against it, undoing the reader's scroll.
       this.intent = {
         ...this.intent,
         anchor: {

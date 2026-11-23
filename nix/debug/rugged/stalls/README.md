@@ -108,135 +108,38 @@ partial improvement is no sustained swap I/O or meaningful high-order kswapd
 wakes even if a capture occurs. Failure is a rapid trigger near the recorded
 baseline with the same Xe TTM/rebind stack.
 
-Date: 2026-05-19
-Host: `rugged`
+## Symptom and earlier suspects (2026-05-19 to 2026-06-11)
 
-## Symptom
+The desktop freezes for roughly 1-10 seconds, felt about every five minutes. The
+pointer can still move; windows do not react.
 
-The desktop periodically freezes for roughly 1-10 seconds, perceived at about a
-five-minute cadence, then resumes normally.
+- **IIO debug log flood (2026-05-19): not the only cause.**
+  `ducktape.iioDebug.enable = true` (kernel dynamic debug for the HID-sensor and
+  IIO modules, plus `G_MESSAGES_DEBUG=all` on `iio-sensor-proxy`) wrote 13,211
+  journal lines in 10 minutes and 37.5 GB since boot, with the persistent
+  journal near its 4 GB cap. That fits journald's five-minute sync. Stalls
+  continued after it was off (2026-05-20). `nix/nixos/hosts/rugged/default.nix`
+  keeps it off; enable it only for an active auto-rotate capture. Switching it
+  off leaves runtime dynamic-debug flags until reboot, or write `module <m> -p`
+  to `/sys/kernel/debug/dynamic_debug/control` for each `dyndbgModules` entry of
+  `iio-debug.nix`.
+- **aiquota GNOME extension (2026-05-20): fixed.** It ran
+  `GLib.spawn_command_line_sync` on Shell's main thread every 120 s. A slow
+  provider fetch (8.6 s measured) froze windows while the pointer kept moving.
+  Fixed with an async subprocess; `aiquota/gnome/extension.js` now talks to a
+  D-Bus service and spawns nothing. Rule: no synchronous subprocess on the Shell
+  main thread.
+- **Swap and refault (2026-06-11).** 15 GiB of swap in use with 23 GiB of RAM
+  available; `vmstat` caught block reads, one 7% IO-wait sample and nonzero
+  swap-in. The 2026-07-13 section above explains paging with free RAM; this
+  sample was not separately tied to it. No `vm.swappiness` setting remains under
+  `nix/`, and `default.nix` has `zramSwap.enable = true` only.
+- **USB HID flapping (2026-06-11): untested.** The active pointer
+  (`USB-HID Keyboard Mouse` on `usb 3-4.3`) reset and disconnected repeatedly
+  all boot. If pointer-only lag persists, try the device on another port or hub,
+  or swap the device or cable.
 
-## Finding
-
-The machine was still running the high-volume IIO debug instrumentation from the
-auto-rotate investigation:
-
-- `ducktape.iioDebug.enable = true`
-- kernel dynamic debug enabled for HID sensor / IIO modules
-- `G_MESSAGES_DEBUG=all` on `iio-sensor-proxy`
-
-The live journal rate was far too high for normal operation:
-
-- last 10 minutes: 13,211 total journal lines
-- last 10 minutes: 10,492 kernel lines
-- last 10 minutes: 2,079 `iio-sensor-proxy` lines
-- `systemd-journald` had written 37.5 GB since boot
-- persistent journals occupied 3.6 GB, near the configured 4 GB cap
-
-The top repeated kernel messages were `hid_sensor_hub:sensor_hub_raw_event`
-debug lines. The top userspace messages were `iio-sensor-proxy` debug lines for
-light-sensor reads and repeated `No new data available on 'iio:device5'`.
-
-This fits the five-minute stall cadence: journald's default sync interval is
-five minutes unless overridden, so a large stream of debug messages can turn
-periodic journal sync/rotation into visible UI stalls.
-
-No recent kernel warnings, lockups, GPU resets, NVMe errors, or hung-task reports
-were present in the initial snapshot.
-
-## Fix
-
-`nix/nixos/hosts/rugged/default.nix` now leaves the debug module imported but
-sets:
-
-```nix
-ducktape.iioDebug.enable = false;
-```
-
-The module can still be re-enabled temporarily when actively capturing an IIO
-wedge, but it should not stay enabled during normal use.
-
-## Live Mitigation
-
-To stop the current boot's log flood without rebooting:
-
-```bash
-for m in hid_sensor_trigger hid_sensor_iio_common hid_sensor_hub \
-  hid_sensor_accel_3d hid_sensor_als industrialio intel_ishtp_hid \
-  intel_ish_ipc; do
-  printf 'module %s -p\n' "$m" | sudo tee /sys/kernel/debug/dynamic_debug/control >/dev/null
-done
-
-sudo mkdir -p /run/systemd/system/iio-sensor-proxy.service.d
-printf '[Service]\nUnsetEnvironment=G_MESSAGES_DEBUG\n' \
-  | sudo tee /run/systemd/system/iio-sensor-proxy.service.d/99-no-debug.conf >/dev/null
-sudo systemctl daemon-reload
-sudo systemctl restart iio-sensor-proxy.service
-```
-
-Then verify the rate dropped:
-
-```bash
-journalctl -k --since '1 min ago' --no-pager -q | wc -l
-journalctl -u iio-sensor-proxy.service --since '1 min ago' --no-pager -q | wc -l
-systemctl show iio-sensor-proxy.service -p Environment --no-pager
-```
-
-## Follow-up
-
-After switching the NixOS config, rebooting is the cleanest way to guarantee all
-boot-time dynamic-debug settings are gone. If avoiding a reboot, run the live
-mitigation above after `nixos-rebuild switch`.
-
-## Post-switch Validation
-
-After `nixos-rebuild switch` on 2026-05-19:
-
-- `iio-debug-watchdog.timer`, `iio-debug-watchdog.service`, and
-  `iio-debug-dyndbg.service` were `not-found` and inactive.
-- `systemctl show iio-sensor-proxy.service -p Environment` returned an empty
-  environment, so `G_MESSAGES_DEBUG=all` was no longer active.
-- The current unit came directly from the upstream `iio-sensor-proxy` service;
-  its packaged `G_MESSAGES_DEBUG=all` line is commented out.
-- Journal rate dropped to:
-  - `kernel_lines_60s=3`
-  - `iio_lines_60s=0`
-
-A temporary `/run/systemd/system/iio-sensor-proxy.service.d/99-no-debug.conf`
-drop-in was still present from the live mitigation. It is harmless and will
-disappear on reboot.
-
-## 2026-05-20 Follow-up: Stalls Still Observed
-
-The IIO debug-log hypothesis is no longer active on the current boot:
-
-- current system: `/nix/store/jc63ryg2kwrx4hk9hy3klbzlzn7brymg-nixos-system-rugged-25.11.20260425.a4bf066`
-- `iio-debug-watchdog.timer`, `iio-debug-watchdog.service`, and
-  `iio-debug-dyndbg.service`: inactive
-- `iio-sensor-proxy.service`: active with empty `Environment=`
-- recent journal rate:
-  - `kernel_lines_60s=0`
-  - `iio_lines_60s=0`
-  - `iio_lines_10m=0`
-
-The current symptom is more specific: the pointer can still move, but windows
-do not react for roughly 1-10 seconds. That points away from a whole-kernel
-freeze and toward the compositor/session path or severe client scheduling
-pressure.
-
-During a 3-minute ad-hoc capture on 2026-05-20, two samples hit the 5-second
-GNOME Shell DBus call timeout while the session bus stayed responsive:
-
-- `2026-05-20 14:24:45.465 PDT`: shell call `5009 ms`, session bus `17 ms`
-- `2026-05-20 14:24:50.801 PDT`: shell call `5011 ms`, session bus `22 ms`
-
-At the same time the machine had several concurrent interactive/build
-workloads: multiple Codex wrappers, three Bazel JVMs, Chrome, Tana, and
-transient `nix`/`nix-daemon` CPU/IO bursts. Earlier snapshots showed load in
-the 4-7 range, CPU PSI around 5-11%, IO full PSI up to about 1-2%, and several
-GiB of swap in use. This can make the desktop feel normal between stalls while
-still creating short hard pauses when GNOME Shell or related clients miss a
-scheduling window.
+## Probe script
 
 The current probe script is:
 
@@ -322,122 +225,6 @@ sudo -E nix/debug/rugged/stalls/probe_gnome_stalls.sh \
   --no-gcore \
   --perf-seconds 0
 ```
-
-## 2026-05-20 RCA: Synchronous aiquota Refresh Blocks GNOME Shell
-
-The 18:51-19:24 capture caught the active stall pattern:
-
-- capture: `nix/debug/rugged/stalls/captures/20260520-185405.tsv`
-- rows: 3,429
-- slow rows: 46
-- first true slow event: `2026-05-20 19:18:04.564 PDT`
-- first event details: Shell DBus call `80 ms`, session bus call `5040 ms`
-  and failed, while CPU PSI was only `2.26`, IO full PSI `0.04`, and memory
-  full PSI `0.24`
-- the next sample at `19:18:10.047 PDT` showed Shell DBus `4679 ms`
-
-The low PSI and clean kernel warning window rule out the earlier journald/IIO
-log-flood root cause for this capture. The later slow rows are partly polluted
-by the probe itself: after the first trigger, the script started `gdb`, `gcore`,
-and `perf` snapshots against GNOME Shell.
-
-The smoking gun is the installed GNOME extension:
-
-```text
-aiquota@allegedly.works
-Path: /etc/profiles/per-user/agentydragon/share/gnome-shell/extensions/aiquota@allegedly.works
-State: ACTIVE
-```
-
-The installed artifact still runs:
-
-```js
-GLib.spawn_command_line_sync(`${binPath} gnome-extension-json`);
-```
-
-from the GNOME Shell extension refresh path. That executes on Shell's main
-thread every 120 seconds. When network is slow or a provider times out, the
-Python CLI can take several seconds; a live manual check took `8.567 s`, and
-the cache at the time showed a Codex read timeout. That exactly matches the
-observed symptom: pointer motion can continue, but Shell/window interaction is
-stuck until the synchronous subprocess returns.
-
-The perf snapshot also showed GNOME Shell doing normal compositor work around
-the stall, including Mutter/Wayland damage processing and Intel `xe` GEM
-allocation stacks:
-
-- `meta_wayland_buffer_process_damage`
-- `_mesa_TexSubImage2D`
-- `xe_gem_create_ioctl`
-
-Those stacks explain visible compositor work during recovery but are not the
-root cause by themselves. The root cause is the extension blocking Shell's main
-thread with a synchronous subprocess.
-
-Repo fix: `aiquota/gnome/extension.js` now uses
-`Gio.Subprocess.communicate_utf8_async()` and refuses overlapping refreshes.
-That keeps slow quota/network fetches off the Shell main loop.
-
-Verification status:
-
-- `node --check aiquota/gnome/extension.js`: passed
-- `bbr test //aiquota/gnome:test_render`: blocked because local `devel` has
-  unpushed/diverged commits (`HEAD=4d50d46a`, `origin/devel=4b1beec0`)
-
-Deployment note: rugged currently uses the CI-released pinned Nix artifact, not
-the local source tree. The fix needs either a temporary user-local extension
-install or a normal release + artifact pin sync before `home-manager switch`
-will install it declaratively.
-
-## 2026-06-11 Follow-up: Current Choppiness Is Not the IIO Log Flood
-
-The old custom-Nix IIO log flood is not active on the current boot:
-
-- `ducktape.iioDebug.enable = false` in
-  `nix/nixos/hosts/rugged/default.nix`
-- `iio-debug-watchdog.timer`, `iio-debug-watchdog.service`, and
-  `iio-debug-dyndbg.service`: not found
-- `iio-sensor-proxy.service` has empty `Environment=`
-- recent live rate: 92 total journal lines in 10 minutes, 0 kernel lines in
-  10 minutes
-
-The May 20 aiquota GNOME Shell blocker is also not the current installed
-failure mode: `aiquota@allegedly.works` is enabled, but the installed extension
-uses `Gio.Subprocess.communicate_utf8_async()` rather than
-`GLib.spawn_command_line_sync()`. A manual `aiquota gnome-extension-json` run
-completed in about 1.5 seconds and no longer blocks the Shell main loop.
-
-Current evidence points at two remaining contributors:
-
-- Disk swap/refault stalls: `free -h` showed 15 GiB used swap while only
-  7.7 GiB RAM was used and 23 GiB was available. `swapon --show --bytes`
-  listed only `/swap/swapfile`; `zramctl` returned nothing; current
-  `vm.swappiness` was 60. A short `vmstat -SM 1 8` sample caught block reads
-  above 330 GiB/s reported by vmstat units and one sample at 7% IO wait, while
-  swap-in was still nonzero.
-- USB HID flapping: the active pointer is
-  `/dev/input/by-path/pci-0000:00:14.0-usb-0:4.3:1.2-event-mouse`, i.e.
-  `USB-HID Keyboard Mouse` on `usb-0000:00:14.0-4.3/input2`. Kernel logs show
-  repeated resets/disconnects for that exact `usb 3-4.3` composite HID path
-  throughout this boot, including today.
-
-Repo mitigation added in `nix/nixos/hosts/rugged/default.nix`:
-
-```nix
-zramSwap = {
-  enable = true;
-  algorithm = "zstd";
-  memoryPercent = 50;
-  priority = 100;
-};
-boot.kernel.sysctl."vm.swappiness" = 10;
-```
-
-This keeps the existing disk swapfile as a lower-priority fallback while making
-future swap activity prefer compressed RAM and reducing eager disk swap-out of
-cold desktop pages. It does not fix the USB HID reset path; if pointer-only
-lag continues after the memory change, test the same mouse/dongle through a
-different port/hub or swap the device to isolate hardware/cable/dock flapping.
 
 ## 2026-08-26: Xe/TTM fix confirmed backported to stable, RC kernel dropped
 

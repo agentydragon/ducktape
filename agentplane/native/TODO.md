@@ -35,7 +35,7 @@ summarisation request must then be recognised and answered by the script.
 
 ## Does `--include-hook-events` emit frames for `initialize` hooks?
 
-- Frames appear: `docs/hooks.md:36-37`, `native/claude/scenarios.py:162-163` (the `hooks` launch
+- Frames appear: `docs/hooks.md:36-37`, `native/claude/scenarios.py:65-66` (the `hooks` launch
   "has the harness report each firing as `hook_started`/`hook_response`"), and
   `env/runtime/docs/session_protocol.md` ("Hook events need `--include-hook-events`"); all 2.1.252.
 - None appear: `docs/hooks.md:45-47` (live capture, 2.1.252) and
@@ -48,8 +48,8 @@ would show whether the flag only covers hooks the CLI runs itself.
 
 ## What turns `command_lifecycle` on?
 
-- `--replay-user-messages`: `native/claude/wire.py:95`, `native/claude/scenarios.py:159-160`,
-  `native/docs/protocol_roster.md:216-218` (2.1.252). Every agentplane test that asserts lifecycle
+- `--replay-user-messages`: `native/claude/wire.py:95`, `native/claude/scenarios.py:62-63`,
+  `native/docs/protocol_roster.md:223-225` (2.1.252). Every agentplane test that asserts lifecycle
   frames also sets `replay_user_messages=True`.
 - The prompt `uuid` alone: `haku/cli_protocol/protocol.md:184-187` (2.1.220), whose steering probe
   launched without `--replay-user-messages` and still got `queued`/`started`/`completed`.
@@ -59,7 +59,7 @@ uuid-less prompt as negative control.
 
 ## `UserFrame` does not know the synthetic compaction summary
 
-`native/claude/wire.py:234` describes `UserFrame` as "the replay echo of an input, and tool
+`native/claude/wire.py:236-237` describes `UserFrame` as "the replay echo of an input, and tool
 results" (2.1.252). On 2.1.233 compaction also emits a non-replay text `user` frame marked
 `isSynthetic: true` (`haku/cli_protocol/protocol.md:383-388`), a field `UserFrame` does not model.
 By reading, `env/runtime/internal/harnesses/claude/adapter.go` derives nothing from a text-only non-replay frame, so the

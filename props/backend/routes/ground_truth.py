@@ -37,9 +37,6 @@ from props.db.snapshots import LocationAnchor
 router = APIRouter()
 
 
-# --- Response Models ---
-
-
 class SnapshotSummary(BaseModel):
     """Summary info for a snapshot in list view."""
 
@@ -91,9 +88,6 @@ class SnapshotDetailResponse(BaseModel):
     false_positives: list[FpInfo]
 
 
-# --- Helper Functions ---
-
-
 def _ranges_to_locations(ranges: list[OccurrenceRangeORM]) -> list[LocationAnchor]:
     """Convert ORM occurrence ranges to flat LocationAnchor list."""
     return [
@@ -114,9 +108,6 @@ def _get_critic_scopes_expected_to_recall_paths(occ: TruePositiveOccurrenceORM) 
         for scope in occ.critic_scopes_expected_to_recall
         if scope.file_set
     ]
-
-
-# --- Endpoints ---
 
 
 def get_snapshot_or_404(session: Session, snapshot_slug: SnapshotSlug) -> Snapshot:
@@ -313,9 +304,6 @@ def get_snapshot_detail(
         )
 
 
-# --- File Browser Endpoints ---
-
-
 class FileTreeNode(BaseModel):
     """Node in file tree (file or directory)."""
 
@@ -335,8 +323,8 @@ class FileTreeResponse(BaseModel):
 
 @router.get("/snapshots/{org}/{snapshot_date}/tree")
 def get_snapshot_tree(org: str, snapshot_date: str, caller_db: CallerDb) -> FileTreeResponse:
-    snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
     """Get directory tree with issue occurrence counts."""
+    snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
     with caller_db.session() as session:
         get_snapshot_or_404(session, snapshot_slug)
 
@@ -529,8 +517,8 @@ def get_snapshot_files(
 
 @router.get("/snapshots/{org}/{snapshot_date}/files/{file_path:path}")
 def get_snapshot_file(org: str, snapshot_date: str, file_path: str, caller_db: CallerDb) -> FileContentResponse:
-    snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
     """Get file content from snapshot tar archive."""
+    snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
     with caller_db.session() as session:
         snapshot = get_snapshot_or_404(session, snapshot_slug)
 
@@ -546,9 +534,6 @@ def get_snapshot_file(org: str, snapshot_date: str, file_path: str, caller_db: C
         if response.files:
             return response.files[0]
         raise HTTPException(status_code=404, detail=f"File not in tar archive: {file_path}")
-
-
-# --- Cluster Endpoints ---
 
 
 class ClusterMemberResponse(BaseModel):
@@ -576,8 +561,8 @@ class ClustersListResponse(BaseModel):
 
 @router.get("/snapshots/{org}/{snapshot_date}/clusters")
 def list_clusters(org: str, snapshot_date: str, caller_db: CallerDb) -> ClustersListResponse:
-    snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
     """List all issue clusters for a snapshot with members."""
+    snapshot_slug = SnapshotSlug(f"{org}/{snapshot_date}")
     with caller_db.session() as session:
         get_snapshot_or_404(session, snapshot_slug)
 

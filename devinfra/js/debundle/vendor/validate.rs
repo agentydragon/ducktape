@@ -13,7 +13,7 @@ use anyhow::{Context, Result, bail};
 use serde_json::Value;
 
 use artifact::{ArtifactIndexes, ChunkBundle, list_chunk_file_paths};
-use binding_targets::module_export_name;
+use binding_targets::{imported_export_name, module_export_name};
 use js_ast::{ParsedJsModule, is_binding_identifier};
 use spec::{BundledPartialSwapPackage, PartialSwapKind, PartialSwapPackage, PartialSwapSymbol};
 use swc_ecma_ast::{
@@ -381,11 +381,7 @@ fn check_consumer_directive(
             for specifier in &import.specifiers {
                 match specifier {
                     ImportSpecifier::Named(named) => {
-                        let imported = named
-                            .imported
-                            .as_ref()
-                            .map(module_export_name)
-                            .unwrap_or_else(|| named.local.sym.to_string());
+                        let imported = imported_export_name(named);
                         let Some(symbol) = symbols.get(&imported) else {
                             continue;
                         };

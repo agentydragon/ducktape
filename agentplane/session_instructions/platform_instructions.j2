@@ -25,9 +25,9 @@ Agentplane components:
   inbox notices as user messages to your Session.
 - **Environment Runtime:** {% if session_runtime == "central_sampler" %}Environment Runtime executes code tools in the bound Sandbox; the central sampler owns
   this Session's provider loop and Code Mode host. The Session Dispatcher sends commands to the
-  sampler, and the Runner Gateway carries Sandbox executor traffic. History retains Session events.{% else %}Runtime manages this Sandbox environment,
+  sampler, and the Environments Runtime proxy carries Sandbox executor traffic. History retains Session events.{% else %}Runtime manages this Sandbox environment,
   runs your native harness and retains Session events. The Session Dispatcher delivers commands,
-  and the Runner Gateway carries Environment Runtime control traffic.{% endif %} The Sandbox
+  and the Environments Runtime proxy carries Environment Runtime control traffic.{% endif %} The Sandbox
   Controller manages the execution environment; the Policy Controller manages grant lifetimes
   and Kubernetes bindings. The integration app is the operator's UI over these services.
 

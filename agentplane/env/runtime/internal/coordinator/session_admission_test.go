@@ -316,8 +316,8 @@ func TestRuntimeRestartDoesNotReplayRetainedSetup(t *testing.T) {
 		t.Fatalf("open recovered Session without resupplying setup source: %v", err)
 	}
 	input, found, err := session.ReadReconcileSnapshot(r.lifecycleContext, r.lifecycleState, sessionID)
-	if err != nil || !found || input.Setup != sessionpb.SetupState_SETUP_STATE_INTERRUPTED || !input.SetupRequested {
-		t.Fatalf("recovered setup input = %+v, found=%t, err=%v; want retained but interrupted", input, found, err)
+	if err != nil || !found || input.Setup != sessionpb.SetupState_SETUP_STATE_INTERRUPTED {
+		t.Fatalf("recovered setup input = %+v, found=%t, err=%v; want interrupted", input, found, err)
 	}
 	if err := closeRuntimeForTest(t, r); err != nil {
 		t.Fatalf("close recovered Host: %v", err)
@@ -604,11 +604,7 @@ func TestCloseSettlesAfterInitialOperationPublicationFailure(t *testing.T) {
 	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("failed initial operation launched the native harness: stat err=%v", err)
 	}
-	owner, err := openTestRuntimeStore(r.config.StateDir)
-	if err != nil {
-		t.Fatalf("settled cleanup retained the environment owner: %v", err)
-	}
-	_ = owner.Close()
+	requireOwnerReleased(t, r.config.StateDir, "settled cleanup retained the environment owner")
 }
 
 func TestCloseReportsTeardownOperationPublicationFailure(t *testing.T) {
@@ -762,15 +758,6 @@ func TestOpenSessionRevokedAdmissionDoesNotWriteAfterModelLookup(t *testing.T) {
 	}
 	if exists, err := r.store.Exists("revoked-session"); err != nil || exists {
 		t.Fatalf("revoked OpenSession wrote a durable Session: exists=%t err=%v", exists, err)
-	}
-}
-
-func assertStillClosing(t *testing.T, closed <-chan error, stage string) {
-	t.Helper()
-	select {
-	case err := <-closed:
-		t.Fatalf("Environment Runtime close returned before %s completed: %v", stage, err)
-	case <-time.After(100 * time.Millisecond):
 	}
 }
 

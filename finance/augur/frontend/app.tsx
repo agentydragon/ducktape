@@ -16,10 +16,8 @@ import {
   tabFromSearch,
   writeTabToSearch,
   type AugurTab,
-  type CurrencyDisplay,
 } from "./header";
 import { ProductProjectionLoading } from "./skeleton";
-import { CurrencyDisplayProvider } from "./hooks";
 import {
   rolloutCountFromSearch,
   rolloutCountDefault,
@@ -32,6 +30,7 @@ import {
   clampHorizonMonths,
   metricScaleFromSearch,
 } from "./input_helpers";
+import { errorMessage, isAbortError } from "./lib/errors";
 import { replaceSearchParams } from "./url_state";
 
 // The shared rollout count is a top-level concern (both tabs run this many rollouts), so it gets
@@ -43,15 +42,6 @@ type CalibrationInfo = Awaited<ReturnType<typeof fetchAugurCalibrationInfo>>;
 type Bootstrap = Omit<Catalog, keyof Settings> & Settings & { calibration: CalibrationInfo };
 type Deployment = Awaited<ReturnType<typeof fetchAugurDeployment>>;
 type MetricScale = ReturnType<typeof metricScaleFromSearch>;
-
-function errorMessage(error: unknown): string {
-  if (error && typeof error === "object" && "message" in error && error.message) return String(error.message);
-  return String(error);
-}
-
-function isAbortError(error: unknown): boolean {
-  return error != null && typeof error === "object" && "name" in error && error.name === "AbortError";
-}
 
 function writeRolloutCountToSearch(value: number | null, bootstrap: Bootstrap) {
   replaceSearchParams({ n: value == null || value === rolloutCountDefault(bootstrap) ? null : value });
@@ -70,10 +60,6 @@ function writeHorizonMonthsToSearch(value: number | null, bootstrap: Bootstrap) 
 
 function writeMetricScaleToSearch(value: MetricScale) {
   replaceSearchParams({ scale: value === "log" ? "log" : null });
-}
-
-function currencyDisplayFromSearch(searchString: string): "exact" | "compact" {
-  return new URLSearchParams(searchString).get("fmt") === "exact" ? "exact" : "compact";
 }
 
 function BudgetAppSurface({
@@ -162,9 +148,6 @@ function LoadedAppShell({ bootstrap, deployment }: { bootstrap: Bootstrap; deplo
     horizonMonthsFromSearch(window.location.search, bootstrap)
   );
   const [metricScale, setMetricScale] = useState(() => metricScaleFromSearch(window.location.search));
-  const [currencyDisplay, setCurrencyDisplay] = useState<CurrencyDisplay>(() =>
-    currencyDisplayFromSearch(window.location.search)
-  );
   const [settingsOpen, setSettingsOpen] = useState(true);
 
   const onSelectTab = (next: AugurTab) => {
@@ -194,11 +177,6 @@ function LoadedAppShell({ bootstrap, deployment }: { bootstrap: Bootstrap; deplo
     writeMetricScaleToSearch(value);
   };
 
-  const onChangeCurrencyDisplay = (value: CurrencyDisplay) => {
-    setCurrencyDisplay(value);
-    replaceSearchParams({ fmt: value !== "compact" ? "exact" : null });
-  };
-
   const sharedProps = {
     sharedControlsSlot: (
       <SharedControls
@@ -210,8 +188,6 @@ function LoadedAppShell({ bootstrap, deployment }: { bootstrap: Bootstrap; deplo
         models={bootstrap.models}
         metricScale={metricScale}
         onChangeMetricScale={onChangeMetricScale}
-        currencyDisplay={currencyDisplay}
-        onChangeCurrencyDisplay={onChangeCurrencyDisplay}
         settingsOpen={settingsOpen}
         onChangeSettingsOpen={setSettingsOpen}
       />
@@ -227,19 +203,9 @@ function LoadedAppShell({ bootstrap, deployment }: { bootstrap: Bootstrap; deplo
     onChangeHorizonMonths,
     metricScale,
   };
-  let surface: ReactNode;
-  if (tab === "calibration") {
-    surface = <CalibrationAppSurface {...sharedProps} />;
-  } else if (tab === "budget") {
-    surface = <BudgetAppSurface {...sharedProps} />;
-  } else {
-    surface = <ProductProjectionWorkspace {...sharedProps} />;
-  }
-  return (
-    <CurrencyDisplayProvider value={{ display: currencyDisplay, setDisplay: onChangeCurrencyDisplay }}>
-      {surface}
-    </CurrencyDisplayProvider>
-  );
+  if (tab === "calibration") return <CalibrationAppSurface {...sharedProps} />;
+  if (tab === "budget") return <BudgetAppSurface {...sharedProps} />;
+  return <ProductProjectionWorkspace {...sharedProps} />;
 }
 
 function ProductProjectionAppShell() {

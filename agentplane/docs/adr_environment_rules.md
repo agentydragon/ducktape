@@ -47,7 +47,12 @@ spec:
   operator-stopped Sandbox.
 - **Automatic wake is not an operation** (operator, 2026-11-11). Whether delivering Session work
   wakes a suspended environment is the recipient's choice (`spec.wakeOnSend`), bounded by wake
-  budgets; the implied same-Identity wake and the `wake_callers` broker role stay as they are.
+  budgets; the implied same-Identity wake and the `wake_service_callers` broker role stay as they are.
+- **Acting in a workload is implied for its bound Identity**: exec in a Sandbox or box, reading its
+  files, interacting with Sessions running as that Identity. A harness-hosted Session already
+  executes commands inside the Sandbox it runs in, as that Sandbox's Identity; any Session of
+  Identity I executing in any Sandbox bound to I is the transitive closure of that, and grants
+  nothing I does not already have.
 - **Reading your own environments is implied** (operator, 2026-11-11): an Identity reads the
   environments bound to it without a rule.
 - **Settings and rebinding stay with configured managers.** `SetEnvironmentWakeOnSend`,

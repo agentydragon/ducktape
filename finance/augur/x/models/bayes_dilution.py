@@ -49,7 +49,6 @@ re-running inference at deploy time -- mirroring how `vecm.py` persists its fit.
 
 from __future__ import annotations
 
-import datetime as dt
 import math
 from dataclasses import dataclass
 
@@ -60,11 +59,9 @@ import numpyro
 import numpyro.distributions as dist
 from numpyro.infer import MCMC, NUTS
 
+from finance.augur.dates import months_between
 from finance.augur.x.models.private_equity_fit import PriceObservation, ValuationObservation
 
-# Mean Gregorian year / 12 — matches the day-count used across augur's time-axis math.
-# (Consolidation into a shared augur.dates helper is tracked separately.)
-_DAYS_PER_MONTH = 365.2425 / 12.0
 _MONTHS_PER_YEAR = 12.0
 
 
@@ -262,10 +259,6 @@ def _generative(
     numpyro.sample("price_obs", dist.Normal(log_price_model, price_s), obs=price_y)
 
 
-def _months_since(observed_at: dt.date, origin: dt.date) -> float:
-    return (observed_at - origin).days / _DAYS_PER_MONTH
-
-
 def fit_bayesian_dilution_prior(
     prices: list[PriceObservation],
     valuations: list[ValuationObservation],
@@ -302,10 +295,10 @@ def fit_bayesian_dilution_prior(
     price_origin = min(obs.observed_at for obs in prices)
     valuation_origin = min(obs.observed_at for obs in valuations)
     origin = min(price_origin, valuation_origin)
-    price_t = np.array([_months_since(obs.observed_at, origin) for obs in prices], dtype=np.float64)
+    price_t = np.array([months_between(origin, obs.observed_at) for obs in prices], dtype=np.float64)
     price_y = np.array([np.log(obs.price_usd_per_share) for obs in prices], dtype=np.float64)
     price_s = np.array([obs.uncertainty_log_sigma for obs in prices], dtype=np.float64)
-    val_t = np.array([_months_since(obs.observed_at, origin) for obs in valuations], dtype=np.float64)
+    val_t = np.array([months_between(origin, obs.observed_at) for obs in valuations], dtype=np.float64)
     val_y = np.array([np.log(obs.valuation_usd) for obs in valuations], dtype=np.float64)
     val_s = np.array([obs.uncertainty_log_sigma for obs in valuations], dtype=np.float64)
     # Dense monthly grid 0..n_months; each observation snaps to its nearest whole month. The SDE

@@ -17,20 +17,20 @@ import (
 	"unicode/utf8"
 )
 
-// UpstreamProxy opens streamed HTTP requests to one configured service.
+// UpstreamProxy relays streamed HTTP requests to one configured service.
 //
-// The returned client never follows redirects and has no whole-request timeout. Its default
-// transport bounds connection establishment to five seconds, while the caller's context controls
-// the lifetime of the response stream.
+// It never follows redirects and has no whole-request timeout. Its default transport bounds
+// connection establishment to five seconds, while the caller's context controls the lifetime of
+// the response stream.
 type UpstreamProxy struct {
-	client  *http.Client
-	baseURL *url.URL
+	transport http.RoundTripper
+	baseURL   *url.URL
 }
 
-// HandlerUpstream relays a request to an in-process generated HTTP facade. Its requests still use
-// the same narrow headers and request context as UpstreamProxy, while the generated handler can
-// carry them to its gRPC target without an HTTP hop. Responses expose only Content-Type from the
-// generated handler and force the app's cache and buffering headers.
+// HandlerUpstream relays a request to an in-process generated HTTP facade, which carries it to its
+// gRPC target without an HTTP hop. Only Accept, Content-Type, and User-Agent are forwarded from the
+// inbound headers; browser credentials and cookies never reach the handler. Responses expose only
+// Content-Type from the generated handler and force the app's cache and buffering headers.
 type HandlerUpstream struct {
 	handler   http.Handler
 	tokenFile string
@@ -141,7 +141,8 @@ func (w *flushingFacadeResponseWriter) FlushError() error {
 	return http.NewResponseController(w.underlying).Flush()
 }
 
-// NewUpstreamProxy creates a streaming client for baseURL.
+// NewUpstreamProxy creates a streaming proxy for baseURL. Only client's transport is used; a nil
+// client or transport gets a default one.
 func NewUpstreamProxy(client *http.Client, baseURL string) (*UpstreamProxy, error) {
 	base, err := url.Parse(baseURL)
 	if err != nil {
@@ -154,42 +155,7 @@ func NewUpstreamProxy(client *http.Client, baseURL string) (*UpstreamProxy, erro
 	base.RawPath = ""
 	base.RawQuery = ""
 	base.Fragment = ""
-	return &UpstreamProxy{client: proxyClient(client), baseURL: base}, nil
-}
-
-// OpenRequest opens a streamed request. Only Accept, Content-Type, and User-Agent are forwarded
-// from headers; browser credentials and cookies never cross the proxy boundary. The response body
-// remains unread and must be closed by the caller.
-func (p *UpstreamProxy) OpenRequest(
-	ctx context.Context,
-	method, path, query, bearer string,
-	headers http.Header,
-	body io.Reader,
-) (*http.Response, error) {
-	target := *p.baseURL
-	target.Path = "/" + strings.TrimLeft(path, "/")
-	target.RawPath = ""
-	target.RawQuery = query
-	request, err := http.NewRequestWithContext(ctx, method, target.String(), body)
-	if err != nil {
-		return nil, fmt.Errorf("build upstream request: %w", err)
-	}
-	for _, name := range []string{"Accept", "Content-Type", "User-Agent"} {
-		value := headers.Get(name)
-		if name == "User-Agent" {
-			value = truncateRunes(value, 300)
-		}
-		if value != "" {
-			request.Header.Set(name, value)
-		}
-	}
-	if bearer != "" {
-		request.Header.Set("Authorization", "Bearer "+bearer)
-	}
-	// Avoid decompression so an upstream content-encoding and its bytes remain a pair; the request
-	// context, not a total timeout, bounds the stream.
-	request.Header.Set("Accept-Encoding", "identity")
-	return p.client.Do(request)
+	return &UpstreamProxy{transport: proxyTransport(client), baseURL: base}, nil
 }
 
 // RelayRequest is the complete outbound request of UpstreamProxy.Relay; nothing from the inbound
@@ -215,7 +181,7 @@ type RelayRequest struct {
 // as-is, each read is flushed, and r's context cancels the upstream request.
 func (p *UpstreamProxy) Relay(w http.ResponseWriter, r *http.Request, relay RelayRequest) {
 	proxy := &httputil.ReverseProxy{
-		Transport:     p.client.Transport,
+		Transport:     p.transport,
 		FlushInterval: -1,
 		Rewrite: func(pr *httputil.ProxyRequest) {
 			target := *p.baseURL
@@ -301,17 +267,11 @@ func GeneratedFacadeRouteAllowed(method, path string) bool {
 	return true
 }
 
-func proxyClient(client *http.Client) *http.Client {
-	if client == nil {
-		client = &http.Client{Transport: defaultProxyTransport()}
+func proxyTransport(client *http.Client) http.RoundTripper {
+	if client == nil || client.Transport == nil {
+		return defaultProxyTransport()
 	}
-	copy := *client
-	if copy.Transport == nil {
-		copy.Transport = defaultProxyTransport()
-	}
-	copy.Timeout = 0
-	copy.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &copy
+	return client.Transport
 }
 
 func defaultProxyTransport() *http.Transport {

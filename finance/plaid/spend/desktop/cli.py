@@ -12,10 +12,10 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from babel.numbers import format_currency, get_currency_precision
-from dbus_next import Message
-from dbus_next.aio import MessageBus
-from dbus_next.constants import MessageType
-from dbus_next.errors import DBusError
+from dbus_fast import Message
+from dbus_fast.aio import MessageBus
+from dbus_fast.constants import MessageType
+from dbus_fast.errors import DBusError
 from sparklines import sparklines
 
 from finance.plaid.spend.allowance import AllowanceView, Status

@@ -144,46 +144,19 @@ about 10 ms resolution, limiting interpretation of near-zero clone times.
 
 ## SeaweedFS HDD retry
 
-On 2026-10-19 at 06:25–06:28 UTC, a separate disposable namespace ran the same
-Forgejo workload on a fresh 1 GiB `seaweedfs-ovh` PVC. Forgejo initialized with zero
-restarts and produced 20 samples per operation: 60 status-200 rows and 20
-status-201 rows. The app/client stayed on `ovh-ns102453`; the new PostgreSQL SSD PVC
-and ephemeral Valkey stayed on `ovh-ns104952`. Actual Forgejo, PostgreSQL and Valkey
-image IDs matched the initial run. The new collection's volumes 1105–1110 were
-observed only on HDD servers before and after timing, with placement `001` (two
-copies). The class itself remains media-blind.
+Two later runs on 2026-10-19 (06:25–06:28 and 06:38–06:41 UTC) repeated only the failed
+SeaweedFS Forgejo cell, each on a fresh 1 GiB `seaweedfs-ovh` PVC in its own disposable
+namespace. Each produced 20 samples per operation, all HTTP 2xx, with no restarts of the
+accepted Forgejo Pod and a collection observed only on HDD volume servers (placement `001`)
+before and after timing. A fresh PVC's first mount is not the remount that failed, so neither
+run explains the original failure. Method: [`seaweedfs_retry/README.md`](seaweedfs_retry/README.md).
+Attempt 2 (Stakater Reloader replaced a Pending Pod before the accepted Pod became Ready):
+[`results/seaweedfs-hdd-retry-2/README.md`](results/seaweedfs-hdd-retry-2/README.md).
 
-The original failed app had mounted a PVC already used by the direct filesystem
-job, then unstaged and restaged. This retry exercised the fresh PVC's first app
-mount, so its success does not establish the cause of the earlier failure or
-verify that remount scenario. The direct filesystem samples in the figure remain
-from the original batch; only the SeaweedFS Forgejo cell was rerun. No shared
-provider configuration changed. A transient API DNS failure interrupted Helm
-before it created the app; the same untouched fixture ran after API recovery.
-
-The [retry method](seaweedfs_retry/README.md),
-[runtime evidence](results/seaweedfs-hdd-retry-1/runtime.txt), and
-[placement evidence](results/seaweedfs-hdd-retry-1/media-check-after.txt)
-record the separate attempt. Its
-[cleanup proof](results/seaweedfs-hdd-retry-1/cleanup-proof.txt) records removal
-of its namespace, two PVs and volume attachments through normal reclaim.
-
-A second fresh-PVC retry ran at 06:38–06:41 UTC with the same image IDs, node
-placement, fixture and workload. It again produced 20 samples per operation, all
-successful (60 status-200 and 20 status-201 rows). Its collection was HDD-only
-before and after timing, with placement `001`. During startup, Stakater Reloader
-reacted to the chart-created configuration Secrets and replaced a Pending Pod
-under the Deployment's `Recreate` strategy. The accepted Pod completed all init
-containers with zero restarts and was the sole active Forgejo writer. Events show
-only its successful PVC attachment; absence of an earlier attachment event does
-not establish that the previous Pod never mounted the PVC. This remains a fresh
-PVC trial rather than a controlled reproduction of the original remount failure.
-See [runtime](results/seaweedfs-hdd-retry-2/runtime.txt),
-[startup replacement](results/seaweedfs-hdd-retry-2/pod-replacement.txt),
-[HDD placement](results/seaweedfs-hdd-retry-2/media-check-after.txt), and
-[cleanup](results/seaweedfs-hdd-retry-2/cleanup-proof.txt) evidence. The two successful
-retries share one dataset and plot row, with 40 samples per Forgejo operation.
-The run-specific evidence and per-run medians above retain their provenance.
+Attempt 1 evidence is in `results/seaweedfs-hdd-retry-1/`: runtime, placement and cleanup proof,
+plus [`orchestration-interruption.txt`](results/seaweedfs-hdd-retry-1/orchestration-interruption.txt),
+which records a transient API DNS failure that interrupted its first Helm install before it
+created the app. The same untouched fixture ran after recovery.
 
 ## Plot regeneration
 

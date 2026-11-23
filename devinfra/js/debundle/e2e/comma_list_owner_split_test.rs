@@ -35,8 +35,6 @@ macro_rules! variable_declarator {
     };
 }
 
-// --- Two-way split across kinds ------------------------------------------
-
 #[test]
 fn two_siblings_split_to_two_modules_keeping_the_declaration_kind() {
     for (keyword, kind) in [
@@ -84,8 +82,6 @@ export {{ a, b }};
     }
 }
 
-// --- export const comma-list ---------------------------------------------
-
 #[test]
 fn export_const_two_siblings_split_to_two_modules() {
     // `export const a = 1, b = 2;` — both bindings exported.
@@ -127,8 +123,6 @@ console.log(a, b);
     assert_entry_output(&fixture, "1 2\n");
 }
 
-// --- Partial claim leaves the rest in the residual comma-list ------------
-
 #[test]
 fn partial_claim_leaves_unclaimed_in_residual() {
     // mod_x claims `a` and `c`; `b` is unclaimed and must remain
@@ -160,8 +154,6 @@ export { a, b, c };
     );
     assert_entry_output(&fixture, "1 2 3\n");
 }
-
-// --- Side-effecting sibling initializer ----------------------------------
 
 #[test]
 fn mixed_purity_sibling_init_preserves_side_effect_module() {
@@ -204,8 +196,6 @@ export { A, B };
     assert_entry_output(&fixture, "init\n1 42\n");
 }
 
-// --- Cross-sibling read (eager) ------------------------------------------
-
 #[test]
 fn sibling_reads_other_sibling_eagerly() {
     // `const a = 1, b = a + 1;` — `b`'s RHS reads `a`. When the
@@ -236,8 +226,6 @@ export { a, b };
     assert_entry_output(&fixture, "1 2\n");
 }
 
-// --- Cross-sibling read (lazy: function body) ----------------------------
-
 #[test]
 fn sibling_reads_other_sibling_lazily() {
     // `const a = 1, b = () => a + 1;` — `b`'s read is inside a
@@ -267,8 +255,6 @@ export { a, b };
     );
     assert_entry_output(&fixture, "1 2\n");
 }
-
-// --- Cross-comma-list flow with two comma-lists -------------------------
 
 #[test]
 fn two_comma_lists_split_independently() {
@@ -306,8 +292,6 @@ export { a, b, c, d };
     );
     assert_entry_output(&fixture, "1 2 3 4\n");
 }
-
-// --- Destructuring patterns ----------------------------------------------
 
 #[test]
 fn comma_list_with_destructuring_sibling_splits() {
@@ -377,8 +361,6 @@ export { a, b, c };
     );
     assert_entry_output(&fixture, "10 30 40\n");
 }
-
-// --- Comma-list with side-effecting prior init affecting later sibling ---
 
 #[test]
 fn comma_list_evaluates_in_source_order_after_split() {

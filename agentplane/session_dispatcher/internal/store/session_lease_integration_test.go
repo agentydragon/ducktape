@@ -8,6 +8,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/postgres/lease"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 )
 
@@ -27,17 +28,8 @@ func TestCleanupLocksMissingSessionLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	connect := func() (*Store, int) {
-		db := postgres.Open(t, databaseURL)
-		db.SetMaxOpenConns(1)
-		var pid int
-		if err := db.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid); err != nil {
-			t.Fatal(err)
-		}
-		return NewStore(db, 3), pid
-	}
-	deleter, deleterPID := connect()
-	acquirer, acquirerPID := connect()
+	deleter, deleterPID := connectStore(t, ctx, databaseURL)
+	acquirer, acquirerPID := connectStore(t, ctx, databaseURL)
 	gate, err := store.DB.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -70,8 +62,8 @@ func TestCleanupLocksMissingSessionLease(t *testing.T) {
 	if err := <-deleted; err != nil {
 		t.Fatal(err)
 	}
-	var state string
-	if err := store.DB.QueryRowContext(ctx, "SELECT state FROM dispatch_tombstone WHERE command_id=$1", row.CommandID).Scan(&state); err != nil {
+	var state dispatcherpb.DeliveryState
+	if err := store.DB.QueryRowContext(ctx, "SELECT state_value FROM dispatch WHERE command_id=$1", row.CommandID).Scan(&state); err != nil {
 		t.Fatal(err)
 	}
 	if state != FailedState {
@@ -101,7 +93,7 @@ func TestSessionLeaseExpiryFencesAttemptsSettlementAndRecovery(t *testing.T) {
 	if err := store.RenewSessionLease(ctx, stale); err != nil {
 		t.Fatal(err)
 	}
-	if claimed, err := store.Settle(ctx, row.CommandID, stale, []string{QueueState}, DeliveringState, "", nil); err != nil || claimed == nil {
+	if claimed, err := store.Settle(ctx, row.CommandID, stale, []dispatcherpb.DeliveryState{QueueState}, DeliveringState, "", nil); err != nil || claimed == nil {
 		t.Fatalf("claim: %v %v", claimed, err)
 	}
 	if marked, err := store.MarkDeliveryAttempt(ctx, row.CommandID, stale); err != nil || !marked {
@@ -130,7 +122,7 @@ func TestSessionLeaseExpiryFencesAttemptsSettlementAndRecovery(t *testing.T) {
 		if marked, err := store.MarkDeliveryAttempt(ctx, row.CommandID, stale); err != nil || marked {
 			t.Fatalf("expired holder marked: %t %v", marked, err)
 		}
-		if changed, err := store.Settle(ctx, row.CommandID, stale, []string{QueueState, DeliveringState}, FailedState, "test stale settlement", nil); err != nil || changed != nil {
+		if changed, err := store.Settle(ctx, row.CommandID, stale, []dispatcherpb.DeliveryState{QueueState, DeliveringState}, FailedState, "test stale settlement", nil); err != nil || changed != nil {
 			t.Fatalf("expired holder settled: %v %v", changed, err)
 		}
 		if recovered, err := store.RecoverSession(ctx, stale); err != nil || recovered {
@@ -153,7 +145,7 @@ func TestSessionLeaseHandoffRecoversOnlyOwnedSession(t *testing.T) {
 			t.Fatal(err)
 		}
 		owner := claimSessionOwner(t, store, id)
-		if row, err := store.SettleSession(ctx, id, owner, []string{SessionWaitingState}, SessionInProgressState, ""); err != nil || row == nil {
+		if row, err := store.SettleSession(ctx, id, owner, []dispatcherpb.SessionStatus_Materialization{SessionWaitingState}, SessionInProgressState, ""); err != nil || row == nil {
 			t.Fatalf("claim Session: %v %v", row, err)
 		}
 		if id == recoveringID {
@@ -162,7 +154,7 @@ func TestSessionLeaseHandoffRecoversOnlyOwnedSession(t *testing.T) {
 	}
 	expireSessionLease(t, store, stale)
 	successor := claimSessionOwner(t, store, recoveringID)
-	if row, err := store.SettleSession(ctx, recoveringID, stale, []string{SessionInProgressState}, SessionAcceptedState, "stale"); err != nil || row != nil {
+	if row, err := store.SettleSession(ctx, recoveringID, stale, []dispatcherpb.SessionStatus_Materialization{SessionInProgressState}, SessionAcceptedState, "stale"); err != nil || row != nil {
 		t.Fatalf("stale holder settled after lease handoff: %v %v", row, err)
 	}
 	if recovered, err := store.RecoverSession(ctx, successor); err != nil || !recovered {
@@ -213,10 +205,10 @@ func TestPendingScanRecoversStrandedWorkWithoutLeaseRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Model a crashed pre-expansion worker: its in-flight work has no Session lease row.
-	if _, err := store.DB.ExecContext(ctx, `UPDATE session SET state=CASE WHEN session_id=$1 THEN $2 ELSE $3 END`, openingID, SessionInProgressState, SessionAcceptedState); err != nil {
+	if _, err := store.DB.ExecContext(ctx, `UPDATE session SET state_value=CASE WHEN session_id=$1 THEN $2::integer ELSE $3::integer END`, openingID, SessionInProgressState, SessionAcceptedState); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.DB.ExecContext(ctx, `UPDATE dispatch SET state=$1,delivery_attempted=true WHERE command_id=$2`, DeliveringState, row.CommandID); err != nil {
+	if _, err := store.DB.ExecContext(ctx, `UPDATE dispatch SET state_value=$1,delivery_attempted=true WHERE command_id=$2`, DeliveringState, row.CommandID); err != nil {
 		t.Fatal(err)
 	}
 	var leaseRows int

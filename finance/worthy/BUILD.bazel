@@ -1,7 +1,6 @@
 load(
     "@rules_rust//rust:defs.bzl",
     "rust_binary",
-    #"rust_doc",
     "rust_library",
     "rust_test",
 )
@@ -40,8 +39,6 @@ rust_library(
     visibility = ["//visibility:public"],
     deps = [
         ":denomination",
-        "@crates//:chrono",
-        "@crates//:chrono-tz",
         "@crates//:rust_decimal",
     ],
 )
@@ -59,7 +56,6 @@ rust_binary(
         ":config",
         ":converter",
         ":denomination",
-        ":exchange_rate",
         ":flags",
         ":json_output",
         ":source",
@@ -67,6 +63,7 @@ rust_binary(
         "//finance/worthy/model:model_rs",
         "//finance/worthy/source:ibflex_source",
         "@crates//:chrono",
+        "@crates//:clap",
         "@crates//:csv",
         "@crates//:env_logger",
         "@crates//:futures",
@@ -79,7 +76,6 @@ rust_binary(
         "@crates//:serde_json",
         "@crates//:serde_yaml",
         "@crates//:shellexpand",
-        "@crates//:structopt",
         "@crates//:term-table",
         "@crates//:tokio",
         "@crates//:xdg",
@@ -115,7 +111,6 @@ rust_test(
         ":denomination",
         ":exchange_rate",
         "@crates//:env_logger",
-        "@crates//:log",
         "@crates//:rust_decimal",
     ],
 )
@@ -148,16 +143,6 @@ rust_test(
     ],
 )
 
-#rust_doc(
-#    name = "rust_doc",
-#    dep = ":rust_main",
-#)
-
-rust_test(
-    name = "rust_main_test",
-    crate = ":rust_main",
-)
-
 rust_library(
     name = "denomination",
     srcs = ["denomination.rs"],
@@ -185,8 +170,7 @@ rust_library(
     srcs = ["flags.rs"],
     edition = "2024",
     deps = [
-        "@crates//:serde",
-        "@crates//:structopt",
+        "@crates//:clap",
     ],
 )
 
@@ -200,7 +184,6 @@ rust_library(
         "//finance/worthy/source:ibflex_source",
         "@crates//:rust_decimal",
         "@crates//:serde",
-        "@crates//:serde_yaml",
     ],
 )
 
@@ -209,9 +192,8 @@ rust_test(
     srcs = ["flags_test.rs"],
     edition = "2024",
     deps = [
-        ":config",
         ":flags",
-        "@crates//:structopt",
+        "@crates//:clap",
     ],
 )
 
@@ -219,14 +201,13 @@ rust_library(
     name = "json_output",
     srcs = ["json_output.rs"],
     edition = "2024",
-    proc_macro_deps = [
-        "@crates//:rust_decimal_macros",
-    ],
     deps = [
+        ":asset",
+        ":denomination",
+        ":exchange_rate",
         "@crates//:chrono",
         "@crates//:rust_decimal",
         "@crates//:serde",
-        "@crates//:serde_json",
     ],
 )
 
@@ -238,10 +219,12 @@ rust_test(
         "@crates//:rust_decimal_macros",
     ],
     deps = [
+        ":asset",
+        ":denomination",
+        ":exchange_rate",
         ":json_output",
         "@crates//:chrono",
         "@crates//:rust_decimal",
-        "@crates//:serde",
         "@crates//:serde_json",
     ],
 )

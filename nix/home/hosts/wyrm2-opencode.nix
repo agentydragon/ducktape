@@ -214,19 +214,9 @@
             output = 8192;
           };
         };
-        # DeepSeek R1 32B - disabled: does not support tool calling
-        # "deepseek-r1:32b" = {
-        #   name = "DeepSeek R1 32B (local)";
-        #   reasoning = true;
-        #   tool_call = true;
-        #   interleaved = {
-        #     field = "reasoning_content";
-        #   };
-        #   limit = {
-        #     context = 131072;
-        #     output = 8192;
-        #   };
-        # };
+        # DeepSeek R1 through Ollama (`deepseek-r1:32b`, `deepseek-r1:70b`, `deepseek-r1:70b-64k`) is not
+        # declared: Ollama has no tool-calling template for it. The vLLM entries above serve the R1 distills with tools.
+        # `MFDoom/deepseek-r1-tool-calling:70b` is the Ollama build that supports them.
         # Qwen3 abliterated (uncensored) variant
         # WARNING: Tool calling has parsing issues in Ollama
         "huihui_ai/qwen3-abliterated:32b" = {
@@ -265,33 +255,6 @@
             output = 8192;
           };
         };
-
-        # DeepSeek R1 70B - disabled: Ollama lacks tool calling templates
-        # Use MFDoom/deepseek-r1-tool-calling:70b for tool support
-        # "deepseek-r1:70b" = {
-        #   name = "DeepSeek R1 70B (local)";
-        #   reasoning = true;
-        #   tool_call = true;
-        #   interleaved = {
-        #     field = "reasoning_content";
-        #   };
-        #   limit = {
-        #     context = 32768;  # safe limit; model supports 128k native
-        #     output = 8192;
-        #   };
-        # };
-        # "deepseek-r1:70b-64k" = {
-        #   name = "DeepSeek R1 70B 64k (local)";
-        #   reasoning = true;
-        #   tool_call = true;
-        #   interleaved = {
-        #     field = "reasoning_content";
-        #   };
-        #   limit = {
-        #     context = 65536;  # aggressive but fits in 64GB with Q4
-        #     output = 8192;
-        #   };
-        # };
 
         # Llama 3.1 70B Abliterated - uncensored, reliable tools, no reasoning
         # Pull via: ollama pull krith/meta-llama-3.1-70b-instruct-abliterated:IQ3_M

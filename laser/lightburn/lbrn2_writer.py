@@ -18,9 +18,6 @@ LBRN2_FORMAT_VERSION = "1"
 MAX_LAYERS = 30
 
 
-# ── Enums ──────────────────────────────────────────────────────────────────────
-
-
 class CutMode(StrEnum):
     """LightBurn layer mode."""
 
@@ -43,9 +40,6 @@ class VAlign(StrEnum):
     TOP = "0"
     CENTER = "1"
     BOTTOM = "2"
-
-
-# ── XForm ─────────────────────────────────────────────────────────────────────
 
 
 @dataclass
@@ -107,9 +101,6 @@ class XForm:
         return f"{_f(self.a)} {_f(self.b)} {_f(self.c)} {_f(self.d)} {_f(self.tx)} {_f(self.ty)}"
 
 
-# ── SubLayer ──────────────────────────────────────────────────────────────────
-
-
 @dataclass
 class SubLayer:
     """Additional pass within a parent CutSetting with overridden parameters.
@@ -141,9 +132,6 @@ class SubLayer:
             f("subname", self.subname)
 
         return el
-
-
-# ── CutSetting ────────────────────────────────────────────────────────────────
 
 
 @dataclass
@@ -246,9 +234,6 @@ class CutSetting:
         return el
 
 
-# ── Shapes ────────────────────────────────────────────────────────────────────
-
-
 @dataclass
 class RectShape:
     """Axis-aligned rectangle.
@@ -321,8 +306,6 @@ class TextShape:
 #: Union of all supported shape types (for type annotations).
 AnyShape = RectShape | TextShape
 
-
-# ── LightBurnProject ──────────────────────────────────────────────────────────
 
 _UIPREFS: list[tuple[str, int]] = [
     ("Optimize_ByLayer", 0),

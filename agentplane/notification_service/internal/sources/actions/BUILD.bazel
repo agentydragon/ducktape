@@ -16,7 +16,6 @@ go_library(
         "//agentplane/notification_service/internal/sources",
         "//agentplane/notification_service/internal/storagecodec",
         "//agentplane/notification_service/model",
-        "//agentplane/proto:identity_go_proto",
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_grpc//codes",
         "@org_golang_google_grpc//status",

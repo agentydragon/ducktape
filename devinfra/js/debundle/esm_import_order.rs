@@ -1,8 +1,8 @@
-//! Deterministic preferred import policy. `EsmImportSchedule` reifies this
-//! order and preserves it when valid; otherwise its exact constructor derives
-//! an alternative from the canonical graphs. Validation, effect sweeps and
-//! emission consume the retained concrete schedule, never independently rerun
-//! this policy. Linker positions remain useful diagnostic information.
+//! Deterministic preferred import policy. `EsmImportSchedule::from_policy`
+//! reifies this order unchanged; production never derives an alternative.
+//! Validation, effect sweeps and emission consume the retained concrete
+//! schedule, never independently rerun this policy. Linker positions remain
+//! useful diagnostic information.
 //!
 //! Entry prefers dependency ranks between import SCCs, reversed linker rank
 //! within each SCC. Other modules prefer dependency-first linker rank. Safe

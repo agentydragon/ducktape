@@ -6,7 +6,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from devinfra.ci.pr_mergeability import SourceRevisionError, verify_source_revision
+from devinfra.ci.pr_mergeability import SourceRevisionError, read_checkout_revision, verify_source_revision
 
 ANSIBLE_CONFIGURATION_PATHS = {
     ".ansible-lint.yaml",
@@ -46,9 +46,7 @@ def prepare_changed_files(
     if not expected_sha or not expected_head_sha:
         raise SourceRevisionError("PR file selection requires the tested merge SHA and expected PR head SHA")
 
-    resolved_sha, *parents = (
-        subprocess.check_output(["git", "rev-list", "--parents", "-n", "1", "HEAD"]).decode().split()
-    )
+    resolved_sha, parents = read_checkout_revision()
     if len(parents) != 2:
         raise SourceRevisionError(f"PR checkout {resolved_sha} must expose two merge parents; use fetch-depth: 2")
     tested_sha = verify_source_revision(

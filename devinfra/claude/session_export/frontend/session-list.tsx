@@ -26,7 +26,6 @@ function SessionRow({
   onSelect: () => void;
 }): JSX.Element {
   const routineId = sessionRoutineId(session);
-  const routineSession = routineId !== null || isRoutineSession(session);
   return (
     <NavLink
       component="button"
@@ -45,7 +44,7 @@ function SessionRow({
             <Badge size="xs" variant="light" color={statusColor(session.status)}>
               {session.status}
             </Badge>
-            {routineSession && (
+            {isRoutineSession(session) && (
               <Badge size="xs" variant="light" color="violet">
                 Routine run
               </Badge>

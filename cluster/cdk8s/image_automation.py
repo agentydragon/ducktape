@@ -4,6 +4,7 @@ repository through the ducktape-automation GitHub App."""
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 
 from cdk8s import ApiObjectMetadata
@@ -40,12 +41,10 @@ from flux_imageupdateautomation_crds.io.fluxcd.toolkit.image import (
 
 from cluster.cdk8s.providers.flux.image_policy import ImagePolicy
 
-# CI pushes {branch}-YYYYMMDDHHMMSS-{sha7}; among devel builds, alphabetical order is chronological.
-_CI_TAG_PATTERN = r"^devel-\d{14}-[0-9a-f]{7}$"
 # The ducktape-automation GitHub App's credentials: a SOPS Secret Flux decrypts into flux-system
 # (cluster/k8s/flux/flux-system). A GitRepository's secretRef resolves in its own namespace.
-_GITHUB_APP_NAMESPACE = "flux-system"
-_GITHUB_APP_SECRET = "ducktape-automation-github-app"
+GITHUB_APP_NAMESPACE = "flux-system"
+GITHUB_APP_SECRET = "ducktape-automation-github-app"
 _COMMIT_MESSAGE = (
     "chore: update images [skip ci]\n"
     "\n"
@@ -57,15 +56,14 @@ _COMMIT_MESSAGE = (
 )
 
 
-def newest_ci_tag_policy(scope: Construct, repository: ImageRepository) -> ImagePolicy:
-    """The ImagePolicy picking `repository`'s newest devel CI build, named after the repository and
-    in its namespace, where its by-name reference resolves."""
+def newest_ci_tag_policy(scope: Construct, repository: ImageRepository, *, prefix: str = "devel") -> ImagePolicy:
+    """Select the newest CI tag with the given prefix. The timestamp sorts chronologically."""
     return ImagePolicy(
         scope,
         f"image-policy-{repository.name}",
         metadata=ApiObjectMetadata(name=repository.name, namespace=repository.metadata.namespace),
         image_repository_ref=ImagePolicySpecImageRepositoryRef(name=repository.name),
-        filter_tags=ImagePolicySpecFilterTags(pattern=_CI_TAG_PATTERN),
+        filter_tags=ImagePolicySpecFilterTags(pattern=f"^{re.escape(prefix)}" + r"-\d{14}-[0-9a-f]{7}$"),
         policy=ImagePolicySpecPolicy(
             alphabetical=ImagePolicySpecPolicyAlphabetical(order=ImagePolicySpecPolicyAlphabeticalOrder.ASC)
         ),
@@ -102,13 +100,13 @@ class ImageUpdatePush(Construct):
             self,
             "source",
             metadata=ApiObjectMetadata(
-                name=source_name, namespace=_GITHUB_APP_NAMESPACE, annotations={"description": source_description}
+                name=source_name, namespace=GITHUB_APP_NAMESPACE, annotations={"description": source_description}
             ),
             spec=GitRepositorySpec(
                 interval=source_interval,
                 provider=GitRepositorySpecProvider.GITHUB,
                 ref=GitRepositorySpecRef(branch=branch),
-                secret_ref=GitRepositorySpecSecretRef(name=_GITHUB_APP_SECRET),
+                secret_ref=GitRepositorySpecSecretRef(name=GITHUB_APP_SECRET),
                 sparse_checkout=sparse_checkout,
                 timeout=source_timeout,
                 url=url,
@@ -119,7 +117,7 @@ class ImageUpdatePush(Construct):
             "automation",
             metadata=ApiObjectMetadata(
                 name=name,
-                namespace=_GITHUB_APP_NAMESPACE,
+                namespace=GITHUB_APP_NAMESPACE,
                 annotations=None if description is None else {"description": description},
             ),
             spec=ImageUpdateAutomationSpec(

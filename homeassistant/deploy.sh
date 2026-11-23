@@ -5,7 +5,9 @@ HA_HOST=homeassistant
 HA_PACKAGES_DIR=/config/packages/rai
 LOCAL_DIR="$(cd "$(dirname "$0")/packages/rai" && pwd)"
 
-changed_files=$(rsync -avn --out-format="%n" "$LOCAL_DIR/" "$HA_HOST:$HA_PACKAGES_DIR/" | grep -v '/$' | grep '\.' || true)
+# rsync's itemized file type distinguishes transferred files from directory metadata.
+# Let a failed preview exit before reporting success or asking to deploy.
+changed_files=$(rsync -ani --out-format='%i %n' "$LOCAL_DIR/" "$HA_HOST:$HA_PACKAGES_DIR/" | sed -n 's/^.f[^ ]* //p')
 
 if [[ -z "$changed_files" ]]; then
   echo "No differences — HA is up to date."

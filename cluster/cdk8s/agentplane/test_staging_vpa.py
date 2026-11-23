@@ -1,0 +1,29 @@
+"""The static-service VPA bounds stay within their Deployment resource contracts."""
+
+from collections.abc import Callable
+
+from cdk8s import App, SizeRoundingBehavior
+from cdk8s_plus_34 import Deployment
+from more_itertools import one
+
+from cluster.cdk8s.agentplane import staging, staging_vpa
+
+
+def test_vpa_bounds_fit_staging_deployments(scratch_app_factory: Callable[[], App]) -> None:
+    charts = [staging.chart(scratch_app_factory()), staging.delivery_chart(scratch_app_factory())]
+    deployments = [obj for chart in charts for obj in chart.node.find_all() if isinstance(obj, Deployment)]
+    for name, container_name, minimum, maximum in staging_vpa._WORKLOADS:
+        deployment = one(deployment for deployment in deployments if deployment.name == name)
+        container = one(container for container in deployment.containers if container.name == container_name)
+        if minimum is None and maximum is None:
+            continue
+        resources = container.resources
+        assert resources is not None
+        memory = resources.memory
+        assert memory is not None
+        if minimum is not None:
+            assert memory.request is not None
+            assert memory.request.to_mebibytes(rounding=SizeRoundingBehavior.NONE) <= minimum
+        if maximum is not None:
+            assert memory.limit is not None
+            assert memory.limit.to_mebibytes(rounding=SizeRoundingBehavior.NONE) >= maximum

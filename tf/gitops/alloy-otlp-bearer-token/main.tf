@@ -13,7 +13,7 @@ terraform {
   }
 }
 
-# Read the Authentik bootstrap token from the K8s Secret (populated by ESO from Vault).
+# K8s Secret holding the Authentik bootstrap token (cluster/k8s/authentik/app/bootstrap-token.sops.yaml).
 data "kubernetes_secret" "authentik_bootstrap" {
   metadata {
     name      = "authentik-bootstrap"
@@ -59,10 +59,6 @@ data "authentik_property_mapping_provider_scope" "profile" {
 # by a dedicated client_credentials OAuth2 provider. Keeping this separate from
 # kubectl-sandbox-client-credentials ensures leaked tracing credentials do not
 # grant Kubernetes access.
-#
-# The proxy provider predates this module and already exists in Authentik, so
-# tofu-controller must adopt it into state before it can update
-# jwt_federation_providers declaratively.
 
 resource "authentik_provider_proxy" "alloy_otlp" {
   name                = "alloy-otlp"

@@ -11,7 +11,7 @@ output directory.
 
 Usage:
   INPUT=/work/bearing_block.FCStd OUTDIR=/output \
-    DISPLAY=:99 freecad build_bearing_block_techdraw.py
+    DISPLAY=:99 freecad build_techdraw.py
 """
 
 import os
@@ -20,7 +20,7 @@ from pathlib import Path
 import FreeCAD
 import Part
 
-from skills.freecad.examples.freecad_helpers import init_gui, log, pump, run_gui_script
+from skills.freecad.examples.freecad_helpers import init_gui, landscape_page, log, pump, run_gui_script
 
 input_path = os.environ.get("INPUT", "bearing_block.FCStd")
 outdir = os.environ.get("OUTDIR", ".")
@@ -53,13 +53,7 @@ def _main() -> None:
     total_h = base_h + boss_h
 
     # === TechDraw Page ===
-    tmpl_path = os.path.join(  # noqa: PTH118
-        FreeCAD.getResourceDir(), "Mod", "TechDraw", "Templates", "ISO", "A4_Landscape_blank.svg"
-    )
-    page = doc.addObject("TechDraw::DrawPage", "Page")
-    tmpl = doc.addObject("TechDraw::DrawSVGTemplate", "Template")
-    tmpl.Template = tmpl_path
-    page.Template = tmpl
+    page = landscape_page(doc)
 
     # === Views ===
     # Layout on A4 Landscape (297 x 210 mm):
@@ -215,9 +209,7 @@ def _main() -> None:
         "front: base chamfer line",
     )
 
-    # ============================================================
     # Front view dimensions — overall envelope + chamfer/fillet
-    # ============================================================
 
     # BaseLength — bottom edge
     add_dim("BaseLength", "DistanceX", [(front, f"Edge{bottom_idx}")], x=0, y=18)
@@ -275,9 +267,7 @@ def _main() -> None:
         format_spec="%.0f x45\u00b0",
     )
 
-    # ============================================================
     # Right view dimensions — BaseWidth + BaseHeight
-    # ============================================================
 
     right_vis = right_v.getVisibleEdges()
     for i, e in enumerate(right_vis):
@@ -311,9 +301,7 @@ def _main() -> None:
         y=5,
     )
 
-    # ============================================================
     # Top view dimensions — bore, boss diameter, mounting holes
-    # ============================================================
 
     top_vis = top_v.getVisibleEdges()
     for i, e in enumerate(top_vis):

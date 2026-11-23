@@ -8,10 +8,9 @@
 //!
 //! The bucket boundaries (`singletons` / `tiny_2_to_5` /
 //! `medium_6_to_20` / `large_21_plus`) are the ones that survived the
-//! 2026-05-26 corpus survey of a real spec — see the `CLI gaps`
-//! section of `TODO.md`. They are intentionally exposed as a fixed
-//! shape: spec-wide stats lose value once each consumer picks its own
-//! bucketing.
+//! 2026-05-26 corpus survey of a real spec. They are intentionally exposed
+//! as a fixed shape: spec-wide stats lose value once each consumer picks its
+//! own bucketing.
 
 use std::path::Path;
 

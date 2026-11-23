@@ -17,7 +17,8 @@ from finance.augur.api.config import Config
 from finance.augur.api.portfolio import TlhCohort, TlhPortfolioSpec
 from finance.augur.api.wire import CatalogResponse
 from finance.augur.model.series import SecurityKey, SecuritySymbol
-from finance.augur.product.scenarios import locations_by_id, resolve_primary_agent_id
+from finance.augur.product.conftest import make_managed_product_service
+from finance.augur.product.scenarios import resolve_primary_agent_id
 from finance.augur.product.service import ProductService
 from finance.augur.product.wire import (
     FundingPolicy,
@@ -33,7 +34,7 @@ from finance.augur.product.wire import (
 )
 from finance.augur.sim.events import TlhOperation
 from finance.augur.sim.ids import AccountId, PortfolioId
-from finance.augur.sim.tlh import TlhAssumptions
+from finance.augur.sim.testing.tlh import NO_HARVEST
 
 VOO = SecuritySymbol("VOO")
 
@@ -43,36 +44,17 @@ _ACCOUNT_ID = AccountId("test_managed_brokerage")
 
 def _product(augur_config: Config, catalog: CatalogResponse, *, index: str, account_id: AccountId) -> ProductService:
     """The fixture portfolio plus a $100k TLH portfolio pegged to `index` in `account_id`, harvesting nothing."""
-    owner = resolve_primary_agent_id(augur_config)
-    return ProductService(
-        portfolio=augur_config.portfolio_sources.fixed.portfolio,
-        initial_cash=250_000,
-        primary_agent_id=owner,
-        tlh_portfolios=(
-            TlhPortfolioSpec(
-                portfolio_id=_PORTFOLIO_ID,
-                owner_agent_id=owner,
-                account_id=account_id,
-                asset=SecurityKey(symbol=SecuritySymbol(index)),
-                initial_cohorts=[
-                    TlhCohort(value=Decimal(100_000), cost_basis=Decimal(100_000), purchase_month_index=-24)
-                ],
-                assumptions=TlhAssumptions(
-                    peak_annual_yield=0,
-                    floor_annual_yield=0,
-                    maturity_decay_exponent=1,
-                    drawdown_sensitivity=0,
-                    short_term_fraction=1,
-                ),
-            ),
+    return make_managed_product_service(
+        augur_config,
+        catalog,
+        TlhPortfolioSpec(
+            portfolio_id=_PORTFOLIO_ID,
+            owner_agent_id=resolve_primary_agent_id(augur_config),
+            account_id=account_id,
+            asset=SecurityKey(symbol=SecuritySymbol(index)),
+            initial_cohorts=[TlhCohort(value=Decimal(100_000), cost_basis=Decimal(100_000), purchase_month_index=-24)],
+            assumptions=NO_HARVEST,
         ),
-        known_location_ids=catalog.location_ids,
-        locations=locations_by_id(augur_config.locations),
-        properties_by_id=catalog.properties_by_id,
-        models={"current_model": augur_config.models[augur_config.default_model_id].realize_model()},
-        max_rollout_samples=augur_config.max_rollout_samples,
-        max_horizon_months=augur_config.max_horizon_months,
-        result_cache_entries=0,
     )
 
 

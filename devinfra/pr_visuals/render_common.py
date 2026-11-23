@@ -148,8 +148,8 @@ def provenance_labels_for_test(test: ReviewTest) -> tuple[dict[str, str], dict[s
     return invocation_labels, configuration_labels
 
 
-def unique_prefixes(values: set[str], *, minimum_length: int = 8) -> dict[str, str]:
-    lengths = {value: min(minimum_length, len(value)) for value in values}
+def unique_prefixes(values: set[str]) -> dict[str, str]:
+    lengths = {value: min(8, len(value)) for value in values}
     while True:
         colliding: dict[str, list[str]] = {}
         for value, length in lengths.items():

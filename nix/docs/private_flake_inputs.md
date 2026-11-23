@@ -7,7 +7,7 @@ Private binaries built by `gaffer-private` CI—currently `drivefs` and
 `drivectl`—are consumed as pinned Nix store closures from the private Attic
 cache:
 
-```
+```text
 gaffer-private CI
   -> cache.allegedly.works/gaffer
   -> nix/gaffer-pins.json

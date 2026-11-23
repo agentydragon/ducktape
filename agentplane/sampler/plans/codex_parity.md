@@ -8,11 +8,9 @@ are in the [README](../README.md#codex-features-left-out).
 
 ## Selected workflow work
 
-The [stakeholder priorities](../../plans/task_dag.md#stakeholder-priorities-2026-10-30-pdt)
-prioritize concrete reliability regressions, followed by caller-privilege Agentplane-level Session
-spawning and communication for a daily CI-maintenance agent. The operator deferred dedicated
-disruption/continuation acceptance pending normal use; revisit it only on
-[observed instability](../../plans/task_freezer.md#central_sampler_reliability_followup--investigate-instability-observed-in-normal-use).
+The daily CI agent remains a proposed use of delegation. The operator deferred broad
+disruption testing pending a [concrete failure in normal use](../../plans/task_freezer.md#central_sampler_reliability_followup--investigate-instability-observed-in-normal-use).
+See the [current work lanes](../../plans/task_dag.md#operator-interests-2026-11-22).
 The [delegation interfaces and scripted workflows](../../plans/session_delegation_workflows.md)
 are implemented and exposed in staging; natural-agent usability remains open. Use Codex
 multi-agent v2, its agent message board and Claude Code subagents as reference designs for that

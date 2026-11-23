@@ -24,10 +24,10 @@ Ownership changes follow the [stateful Flux migration guidance](../../../AGENTS.
 Stalwart keeps almost all settings in its database; the file surface is
 deliberately tiny (its documented declarative-deployments workflow):
 
-- `app/config.json` — the DataStore object only (Postgres via the
+- `config.json` — the DataStore object only (Postgres via the
   CNPG-generated `haku-mailbox-db-app` credentials; password injected as an
   env var).
-- `app/mailbox-plan.ndjson` — everything else, as an idempotent
+- `mailbox-plan.ndjson` — everything else, as an idempotent
   `stalwart-cli apply` plan: domain, the `haku` account
   (pre-created so inbound RCPT resolves before first login — required for
   OIDC directories), the Authentik OIDC directory, the SPF-gated
@@ -47,7 +47,7 @@ deliberately tiny (its documented declarative-deployments workflow):
   (`/tls/tls.{crt,key}`), so the plan is fully static and the upsert is
   idempotent across renewals — a renewal just restarts the pod (reloader)
   and the server re-reads the PEMs.
-- `app/initialize.sh` runs in the Pod's init container on every creation. It
+- `initialize.sh` runs in the Pod's init container on every creation. It
   starts Stalwart in normal mode with a temporary fallback admin, waits for
   the local API, applies the plan, then terminates and waits for that exact
   process. On an empty database, normal startup first creates SQL tables and
@@ -59,19 +59,9 @@ deliberately tiny (its documented declarative-deployments workflow):
   strategy stops the old Pod before running the new init container. There is
   no bootstrap marker or recovery-mode process, and an interrupted partial
   apply is retried from the same idempotent plan.
-- The in-repo image overlays the official release
-  binary at build time with mode `0755`, removing upstream's unused
-  `cap_net_bind_service` xattr so restricted pods can execute it. Certificate
-  renewal still restarts production so Stalwart re-reads the mounted PEMs.
-- The pod image is the in-repo repack from `image/BUILD.bazel` — upstream
-  server + the pinned static `stalwart-cli` used by the init container (upstream
-  ships the CLI only as a distroless image, not as an executable to layer into
-  another container) plus the
-  capability-free official server release binary. Published as
-  `git.allegedly.works/ducktape-ci/stalwart` by the push-images workflow, tag tracked
-  by Flux image automation. Upgrading Stalwart = bumping the `stalwart`
-  `oci.pull` (tag + digest) and, on CLI releases, the `stalwart_cli`
-  `http_archive` sha in `MODULE.bazel`.
+- The pod image is the in-repo repack in `image/`; `image/BUILD.bazel` says why it
+  exists and where its pins live. The push-images workflow publishes it as
+  `git.allegedly.works/ducktape-ci/stalwart`; Flux image automation tracks the tag.
 
 **Deviation** from stock Stalwart: no setup wizard and no WebUI-managed state;
 the plan is the source of truth. `STALWART_RECOVERY_ADMIN` is set only on the
@@ -93,7 +83,7 @@ kubectl-sandbox JWT) are rejected. The `authentik-jwt-rotation` CronJob
 less remaining (about every 44 days), and re-mints if the configured
 authentication probe returns 401 or 403 for its published Secret. It publishes the JWT as the
 `haku-mail-token` Secret (`flux-system`), and the `ClusterExternalSecret` in
-`app/` mirrors it into `haku-sandbox`.
+`mailbox.k8s.yaml` mirrors it into `haku-sandbox`.
 agentplane-staging's egress proxy also holds a copy and presents it to
 `claude-ai` sandboxes for the `agentplane-credential-haku-mailbox`
 placeholder, on JMAP paths only
@@ -137,9 +127,8 @@ TOK=$(kubectl -n haku-sandbox get secret haku-mail-token -o jsonpath='{.data.jwt
 curl -s -H "Authorization: Bearer $TOK" https://haku-mailbox.allegedly.works/.well-known/jmap | head
 ```
 
-First-deploy item to watch: the plan's object shapes were authored against
-the v0.16 docs — `stalwart-cli apply` errors name the offending field if the
-schema drifts.
+The plan's object shapes were authored against the v0.16 docs; if the schema
+drifts, `stalwart-cli apply` errors name the offending field.
 
 ## Future
 

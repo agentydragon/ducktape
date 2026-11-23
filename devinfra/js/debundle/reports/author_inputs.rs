@@ -6,7 +6,7 @@
 //! Report writers add the authored spec file, the parser input file and the
 //! author's note here.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
@@ -32,7 +32,7 @@ impl<'a> AuthorInputLocations<'a> {
         provenance: Option<&GraphProvenance>,
         options: &'a BTreeMap<String, DependencyGraphOptions>,
     ) -> Result<Self> {
-        let with_inputs = options
+        let mut with_inputs = options
             .iter()
             .filter(|(_, options)| {
                 !options.value_inputs.is_empty()
@@ -42,26 +42,14 @@ impl<'a> AuthorInputLocations<'a> {
                     || !options.argument_inputs.is_empty()
             })
             .map(|(chunk, _)| chunk)
-            .collect::<Vec<_>>();
-        let mut with_inputs = with_inputs;
-        let mut chunk_set: std::collections::BTreeSet<_> = with_inputs.iter().copied().collect();
-        for (chunk, chunk_options) in options {
-            if chunk_options
-                .imported_primitive_array_spread_inputs
-                .is_empty()
-            {
-                continue;
-            }
-            chunk_set.insert(chunk);
-            chunk_set.extend(
-                chunk_options
-                    .imported_primitive_array_spread_inputs
-                    .iter()
-                    .flat_map(|input| &input.operands)
-                    .map(|operand| &operand.provider_chunk),
-            );
-        }
-        with_inputs = chunk_set.into_iter().collect();
+            .collect::<BTreeSet<_>>();
+        with_inputs.extend(
+            options
+                .values()
+                .flat_map(|options| &options.imported_primitive_array_spread_inputs)
+                .flat_map(|input| &input.operands)
+                .map(|operand| &operand.provider_chunk),
+        );
         if with_inputs.is_empty() {
             return Ok(Self {
                 spec_path: None,

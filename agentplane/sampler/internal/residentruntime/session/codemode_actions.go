@@ -35,12 +35,7 @@ func (r *CodeMode) hostTools(ctx context.Context) ([]protocol.CodeToolDefinition
 		}
 		for _, group := range groups {
 			for _, action := range group.GetActions() {
-				schema, err := protojson.Marshal(action.GetInputSchema())
-				if err != nil {
-					return nil, err
-				}
-				namespace := group.GetKey()
-				definition, err := toolcontract.HostActionDefinition(namespace+"__"+action.GetName(), protocol.ToolName{Name: action.GetName(), Namespace: &namespace}, action.GetDescription(), schema)
+				definition, err := hostActionDefinition(group.GetKey(), action)
 				if err != nil {
 					return nil, err
 				}
@@ -57,6 +52,19 @@ func (r *CodeMode) hostTools(ctx context.Context) ([]protocol.CodeToolDefinition
 	}
 	slices.SortFunc(definitions, func(a, b protocol.CodeToolDefinition) int { return strings.Compare(a.Name, b.Name) })
 	return definitions, nil
+}
+
+// hostActionDefinition makes the absence of Agentplane's tool-schema validation visible in ALL_TOOLS.
+func hostActionDefinition(namespace string, action *pb.Action) (protocol.CodeToolDefinition, error) {
+	schema, err := protojson.Marshal(action.GetInputSchema())
+	if err != nil {
+		return protocol.CodeToolDefinition{}, err
+	}
+	description := action.GetDescription()
+	if action.GetInputSchemaValidation().GetStatus() == pb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED {
+		description += "\n\nWarning: Agentplane does not validate arguments against this tool's input schema."
+	}
+	return toolcontract.HostActionDefinition(namespace+"__"+action.GetName(), protocol.ToolName{Name: action.GetName(), Namespace: &namespace}, description, schema)
 }
 
 func (r *CodeMode) invokeAction(ctx context.Context, intent string, invocation codemode.ToolInvocation) (codemode.DelegateResult, codemode.DelegateResult, error) {

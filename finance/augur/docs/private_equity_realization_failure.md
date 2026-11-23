@@ -10,7 +10,7 @@ The motivating event is broader than "the shares go to zero." It includes any pa
 where the current paper value does not become usable wealth for the holder.
 
 For the public/private evidence boundary used by this memo, see
-`augur/README.md`. This public note may include sourced public issuer-specific facts,
+`finance/augur/README.md`. This public note may include sourced public issuer-specific facts,
 including OpenAI facts, because those can be part of the forecasting reference class.
 Private account data, share counts, security numbers, screenshots, security
 documents, and holder-specific eligibility facts belong downstream.

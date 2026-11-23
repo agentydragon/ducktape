@@ -12,7 +12,6 @@ import type { CheckedComponentStatus } from "./system_status_client";
 import * as systemStatusClient from "./system_status_client";
 import { SystemStatus } from "./system";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const mounted: Array<{ root: ReturnType<typeof createRoot>; container: HTMLDivElement }> = [];
 beforeEach(() => {
   vi.useFakeTimers();

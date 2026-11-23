@@ -12,5 +12,5 @@ import (
 var integrationDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
-	os.Exit(postgres.RunIntegrationTestsWithDatabase(m, historytesting.SetupIntegrationDatabase, &integrationDatabase))
+	os.Exit(postgres.RunIntegrationTests(m.Run, historytesting.SetupIntegrationDatabase, &integrationDatabase))
 }

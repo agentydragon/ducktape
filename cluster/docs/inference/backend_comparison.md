@@ -1,11 +1,12 @@
 # Inference engine comparison
 
-Evaluating options for the cluster's GPU inference path. See <README.md> for
-the wider docs hub.
+This survey records the Ollama-era comparison and the proposed vLLM
+migration. See [current serving and measured results](README.md#current-state)
+for the November TabbyAPI deployment.
 
-## Declared deployment
+## Ollama baseline
 
-Ollama runs on wyrm2 with two RTX 5090 GPUs. Its declaration mounts the
+Ollama ran on wyrm2 with two RTX 5090 GPUs. Its retained declaration mounts the
 `models` PVC (200 GiB, `piraeus-hdd-local`) at `/models` and the `qwen38-iq4`
 PVC (100 GiB, `piraeus-ssd-local`) at `/ssd-models`. The nginx sidecar provides
 bearer-token access to the public endpoint. The deployment sets q8_0 KV cache,
@@ -19,11 +20,10 @@ The MXFP4 weights inside the gpt-oss GGUFs are _not_ exercised as native
 Blackwell FP4 — Ollama/llama.cpp dequantize them into compute kernels that
 don't hit the 5090's FP4 tensor cores. Real perf gap on this hardware.
 
-Production remains the single Ollama Deployment. The vLLM configurations in
-this document are evaluation and migration candidates, not a second production
-backend; measured results and parser limitations are tracked in <results.md>.
+The vLLM configurations in this document were evaluation and migration
+candidates. Measured results and parser limitations are tracked in <results.md>.
 
-## Migration path
+## Proposed vLLM migration path
 
 Add a second PVC with **Blackwell-native formats** (HF safetensors / native
 MXFP4 / FP8 / AWQ) for vLLM, run alongside the existing GGUF PVC during
@@ -116,7 +116,7 @@ edge-case bugs through 2026 ([#20281](https://github.com/ggml-org/llama.cpp/issu
 [#19814](https://github.com/ggml-org/llama.cpp/issues/19814)), no Helm
 chart, one process per model, GGUF-only.
 
-**Ollama** — the current production backend, turnkey for gpt-oss with
+**Ollama** — the previous production backend, turnkey for gpt-oss with
 `"think": "low|medium|high"` as a
 real request field, but **no tensor parallel** (layers laid sequentially —
 bandwidth-bound on 2× 5090), no Anthropic endpoint, Responses API non-
@@ -162,7 +162,7 @@ based on API surface alone.
    for agent traffic.
 3. **llama.cpp** — keep as a side option for Anthropic-native serving and
    GGUF-only models that haven't landed in vLLM yet.
-4. **Ollama** — current deployment. The [September SSD run](runs/2026-09-27_ollama_ssd/README.md)
+4. **Ollama** — previous deployment. The [September SSD run](runs/2026-09-27_ollama_ssd/README.md)
    served Qwen3.8 IQ4_XS at 145K history (29.07 tok/s on one cached continuation) and
    passed 24/24 LiteLLM API-shape checks across Chat Completions, Responses, and
    Anthropic Messages. Its lack of tensor parallelism remains a limit; compare the

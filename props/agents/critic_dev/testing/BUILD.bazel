@@ -12,6 +12,8 @@ py_library(
         "//openai_utils/testing:responses",
         "//props/agents/critic_dev:loop",
         "//props/core:eval_api_models",
+        "//props/core:ids",
+        "//props/core/models:examples",
         "//props/testing",
     ],
 )
@@ -22,8 +24,12 @@ py_library(
     srcs = ["orchestration_fixtures.py"],
     visibility = ["//props:__subpackages__"],
     deps = [
+        ":mocks",
+        "//openai_utils:model",
+        "//openai_utils/testing:responses",
         "//props/core:agent_types",
         "//props/core:ids",
         "//props/testing/fixtures:e2e_container",
+        "@pypi//pytest",
     ],
 )

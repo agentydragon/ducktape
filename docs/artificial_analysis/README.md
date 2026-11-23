@@ -135,28 +135,8 @@ Do not compare index scores or task costs across these dated snapshots as a mode
 improvement/regression: the evaluation mix changed. In particular, September uses
 Terminal-Bench 4.0, not August's 2.1.
 
-### GPT-6 cost/effort comparison
-
-Selected rows from the CSV; Terminal-Bench is a separate score, not the workload
-whose cost appears in the adjacent column. These are reference points for agent
-routing, not estimates of success on our repository tasks.
-
-| Model / effort | Index | Index cost/task | Terminal-Bench 4.0 |
-| -------------- | ----: | --------------: | -----------------: |
-| Luna high      | 32.15 |        $0.02862 |              4.55% |
-| Luna xhigh     | 33.88 |        $0.04171 |              8.08% |
-| Luna max       | 37.26 |        $0.06809 |             12.63% |
-| Sol low        | 33.90 |        $0.13224 |              9.09% |
-| Sol medium     | 39.78 |        $0.24820 |             18.69% |
-| Sol high       | 42.82 |        $0.37463 |             26.26% |
-| Astra low      | 45.78 |        $0.81751 |             41.92% |
-| Astra high     | 50.92 |        $1.72525 |             54.04% |
-
-Luna max costs **51.5% as much as Sol low**, with higher scores on both listed
-metrics in this snapshot. Sol high costs **13.09x Luna high**; Astra high costs
-**60.28x Luna high**. Those are observed benchmark-task cost ratios, not the
-20x/100x ratios of their input/output token list prices. Different effort settings
-and token consumption matter.
+The rounded GPT-6 cost/effort comparison for agent routing is in the
+[delegation research report](../agent_delegation/research.md#dated-model-costs-and-eval-anchors).
 
 ### Export schema and refresh
 

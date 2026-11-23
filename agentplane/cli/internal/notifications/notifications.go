@@ -680,8 +680,7 @@ func messageLine(message *notificationspb.Message) (string, error) {
 			return "", invocation.InvalidResponse("accepted_at: %v", err)
 		}
 	}
-	ref := message.GetDestinationRef()
-	line := invocation.Fields(message.GetId(), fmt.Sprintf("to %s/%s session %s", ref.GetNamespace(), ref.GetName(), message.GetSessionId()),
+	line := invocation.Fields(message.GetId(), fmt.Sprintf("to session %s", message.GetSessionId()),
 		"accepted "+acceptedAt.AsTime().UTC().Format(time.RFC3339))
 	if message.GetCovered() {
 		line += "  covered"

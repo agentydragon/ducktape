@@ -9,6 +9,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletion
 
 from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -36,19 +37,19 @@ def _database(chart: Chart) -> None:
         resize_in_use_volumes=False,
         initdb=cluster.same_owner_initdb(NAME),
         wal_archive=True,
+        resources=cluster.resource_requests(cpu_millis=250, memory_mib=160),
     )
-    backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
-
-
-def _http_probe(initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
-    return k8s.Probe(
-        http_get=k8s.HttpGetAction(path="/", port=k8s.IntOrString.from_number(SERVER.pod_port)),
-        initial_delay_seconds=initial_delay_seconds,
-        period_seconds=period_seconds,
+    backup.CnpgBackup(
+        chart,
+        "db-backup",
+        ref=DATABASE,
+        retention="30d",
+        instance_sidecar_configuration=backup.sidecar_resource_requests(cpu_millis=75, memory_mib=192),
     )
 
 
 def _server(chart: Chart) -> None:
+    health = k8s.HttpGetAction(path="/", port=k8s.IntOrString.from_number(SERVER.pod_port))
     k8s.KubeDeployment(
         chart,
         "deployment",
@@ -67,7 +68,7 @@ def _server(chart: Chart) -> None:
                             name=NAME,
                             image="ghcr.io/atuinsh/atuin:18.22.0",
                             args=["start"],
-                            ports=[SERVER.port.k8s_container_port()],
+                            ports=[SERVER.k8s_container_port()],
                             env=[
                                 k8s.EnvVar(name="ATUIN_HOST", value="0.0.0.0"),
                                 k8s.EnvVar(name="ATUIN_PORT", value=str(SERVER.pod_port)),
@@ -75,18 +76,11 @@ def _server(chart: Chart) -> None:
                                 DATABASE.app_secret.key("uri").env_var("ATUIN_DB_URI"),
                                 k8s.EnvVar(name="RUST_LOG", value="info"),
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("500m"),
-                                    "memory": k8s.Quantity.from_string("256Mi"),
-                                },
+                            resources=container_resources(
+                                cpu="50m", memory="64Mi", cpu_limit="500m", memory_limit="256Mi"
                             ),
-                            liveness_probe=_http_probe(initial_delay_seconds=10, period_seconds=10),
-                            readiness_probe=_http_probe(initial_delay_seconds=5, period_seconds=5),
+                            liveness_probe=k8s.Probe(http_get=health, initial_delay_seconds=10, period_seconds=10),
+                            readiness_probe=k8s.Probe(http_get=health, initial_delay_seconds=5, period_seconds=5),
                         )
                     ],
                 ),
@@ -97,7 +91,7 @@ def _server(chart: Chart) -> None:
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=SERVER.name, namespace=NAMESPACE),
-        spec=k8s.ServiceSpec(selector=SERVER.pods.selector, ports=[SERVER.port.k8s_service_port()], type="ClusterIP"),
+        spec=k8s.ServiceSpec(selector=SERVER.pods.selector, ports=[SERVER.k8s_service_port()], type="ClusterIP"),
     )
     https_route(
         chart,

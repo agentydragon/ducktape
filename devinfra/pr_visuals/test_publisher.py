@@ -10,13 +10,14 @@ from io import BytesIO
 from pathlib import Path
 from threading import Event, Lock, Thread
 from typing import TYPE_CHECKING, Any, ClassVar, NoReturn, cast
+from unittest.mock import Mock
 
 import pytest
 from botocore.exceptions import ClientError
 from PIL import Image
 
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
-from devinfra.pr_visuals.artifacts import BESTestSummary, BuildBuddyArtifact
+from devinfra.pr_visuals.artifacts import BESTestSummary, BuildBuddyArtifact, Runner
 from devinfra.pr_visuals.collection import CollectedOutputs, CollectionIssue, OutputKey, ResultCoverage, ResultKey
 from devinfra.pr_visuals.comment_publishing import CommentUpdate, publish_pull_request_comment
 from devinfra.pr_visuals.github_comment import (
@@ -43,12 +44,12 @@ from devinfra.pr_visuals.publisher import (
     CollectedAsset,
     CollectedVariant,
     CollectedVisualTest,
+    PublicationConfig,
     ResolvedBaseline,
     _parse_cli,
     build_bundle,
     collect_visual_tests,
     diff_check,
-    list_ci_failures,
     main as cli_main,
     materialize_visual_tests,
     publish_visual_review,
@@ -59,21 +60,13 @@ from devinfra.pr_visuals.publisher import (
     write_baseline_pointers,
 )
 from devinfra.pr_visuals.pull_request import PullRequestRef
+from devinfra.pr_visuals.targets import list_ci_failures
 from devinfra.pr_visuals.testing.outputs import Blob, output_observation, result_artifact
 from devinfra.testing.output_writer import BoundTestOutputs
 
 if TYPE_CHECKING:
     from github import Github
     from types_boto3_s3.client import S3Client
-
-
-def _run_publication(
-    *, run: Callable[..., subprocess.CompletedProcess[str]], client: object, github: FakePublisherGithub
-) -> None:
-    config, _endpoint = _parse_cli()
-    publish_visual_review(
-        config, run=run, client=cast("S3Client", client), github=cast("Github", github), workflow_url=None
-    )
 
 
 def _png(path: Path, color: tuple[int, int, int, int] = (10, 20, 30, 255), size: tuple[int, int] = (8, 8)) -> Path:
@@ -92,11 +85,7 @@ class FakeBaselineSource:
 @pytest.mark.parametrize("pull_request_head", [None, "pr-owner:topic"])
 @pytest.mark.parametrize("attempt", ["1", "2"])
 def test_publisher_uses_triggering_run_for_artifacts_and_failures(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    publisher_run: PublisherRun,
-    pull_request_head: str | None,
-    attempt: str,
+    monkeypatch: pytest.MonkeyPatch, publisher_run: PublisherRun, pull_request_head: str | None, attempt: str
 ) -> None:
     test_id = str(invocation_id(run_id="33060467222", attempt=attempt, role="test"))
     build_id = str(invocation_id(run_id="33060467222", attempt=attempt, role="build"))
@@ -122,19 +111,15 @@ def test_publisher_uses_triggering_run_for_artifacts_and_failures(
     monkeypatch.setattr(
         "devinfra.pr_visuals.publisher.find_reviewable_pull_request", lambda **_kwargs: PullRequestRef(8733, "c" * 40)
     )
-    monkeypatch.setattr(
-        "sys.argv",
-        _publisher_argv(
-            tmp_path / "work",
-            "--ci-run-attempt",
-            attempt,
-            "--ci-conclusion",
-            "failure",
-            *(["--pull-request-head", pull_request_head] if pull_request_head else []),
-        ),
+    publisher_run.config = replace(
+        publisher_run.config,
+        ci_run_attempt=attempt,
+        ci_conclusion="failure",
+        pull_request_head=pull_request_head,
+        check_external_id=None,
     )
 
-    _run_publication(run=fake_run, client=EmptyBucket(), github=publisher_run.github)
+    publisher_run.publish(EmptyBucket(), run=fake_run)
 
     assert downloaded == [[test_id]]
     assert [words[2] for words in commands if words[1] == "target"] == [test_id, build_id]
@@ -169,21 +154,21 @@ def test_late_invocation_artifacts_are_read_only_after_completion(
         "devinfra.pr_visuals.publisher.find_reviewable_pull_request", lambda **_k: PullRequestRef(8733, "c" * 40)
     )
 
-    _run_publication(run=fake_run, client=EmptyBucket(), github=FakePublisherGithub())
+    publisher_run.publish(EmptyBucket(), run=fake_run)
 
     assert listed_after_completion == [True]
     assert [check["conclusion"] for check in publisher_run.checks] == ["success", "success"]
 
 
 def test_incomplete_invocation_cannot_advance_a_devel_baseline(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, publisher_run: PublisherRun
+    monkeypatch: pytest.MonkeyPatch, publisher_run: PublisherRun
 ) -> None:
-    monkeypatch.setattr("sys.argv", _publisher_argv(tmp_path / "work"))
+    publisher_run.config = replace(publisher_run.config, pull_request_head=None, check_external_id=None)
     monkeypatch.setattr("devinfra.pr_visuals.publisher.wait_for_test_invocations", lambda *_a, **_k: "incomplete")
     _forbid(monkeypatch, "collect_visual_tests", "upload_bundle", "write_baseline_pointers")
 
     with pytest.raises(RuntimeError, match="did not complete"):
-        _run_publication(run=publisher_run.command_runner, client=EmptyBucket(), github=publisher_run.github)
+        publisher_run.publish(EmptyBucket())
 
     assert [check["conclusion"] for check in publisher_run.checks] == ["failure"]
 
@@ -253,9 +238,9 @@ def test_failed_workflow_does_not_treat_missing_invocations_as_no_tests() -> Non
 
 
 def test_successful_build_only_run_has_no_visuals_without_waiting(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, publisher_run: PublisherRun
+    monkeypatch: pytest.MonkeyPatch, publisher_run: PublisherRun
 ) -> None:
-    monkeypatch.setattr("sys.argv", _publisher_argv(tmp_path / "work"))
+    publisher_run.config = replace(publisher_run.config, pull_request_head=None, check_external_id=None)
 
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         words = [str(part) for part in command]
@@ -272,7 +257,7 @@ def test_successful_build_only_run_has_no_visuals_without_waiting(
 
     _forbid(monkeypatch, "collect_visual_tests", "upload_bundle", "write_baseline_pointers")
 
-    _run_publication(run=fake_run, client=EmptyBucket(), github=FakePublisherGithub())
+    publisher_run.publish(EmptyBucket(), run=fake_run)
 
     assert [check["conclusion"] for check in publisher_run.checks] == ["neutral"]
 
@@ -775,26 +760,32 @@ def test_list_ci_failures_is_best_effort_and_deduplicates_labels() -> None:
     def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
         if command[2] == "missing":
             return subprocess.CompletedProcess(command, 1, "", "not found")
+        if command[2] == "malformed":
+            return subprocess.CompletedProcess(command, 0, '{"targetGroups": 17}', "")
         return subprocess.CompletedProcess(
             command,
             0,
             json.dumps(
                 {
                     "targetGroups": [
+                        {"targets": 17},
                         {
                             "targets": [
                                 {"metadata": {"label": "//z:test"}, "status": "FAILED"},
                                 {"metadata": {"label": "//a:test"}, "status": "FAILED"},
                                 {"metadata": {"label": "//ok:test"}, "status": "PASSED"},
                             ]
-                        }
+                        },
                     ]
                 }
             ),
             "",
         )
 
-    assert list_ci_failures(["missing", "invocation", "invocation"], run=fake_run) == ["//a:test", "//z:test"]
+    assert list_ci_failures(["missing", "malformed", "invocation", "invocation"], run=fake_run) == [
+        "//a:test",
+        "//z:test",
+    ]
 
 
 def test_build_bundle_groups_tests_and_writes_target_pages(tmp_path: Path) -> None:
@@ -1016,14 +1007,9 @@ def test_cancelled_run_closes_its_check_without_reading_or_publishing_artifacts(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, pull_request_head: str | None
 ) -> None:
     checks: list[dict[str, object]] = []
-    github_clients: list[FakePublisherGithub] = []
-
-    def create_github_client(**_kwargs: object) -> FakePublisherGithub:
-        github = FakePublisherGithub()
-        github_clients.append(github)
-        return github
-
-    monkeypatch.setattr("devinfra.pr_visuals.publisher.Github", create_github_client)
+    github = FakePublisherGithub()
+    create_github = Mock(return_value=github)
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.Github", create_github)
     monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", lambda **kwargs: checks.append(kwargs))
     _forbid(
         monkeypatch,
@@ -1054,21 +1040,16 @@ def test_cancelled_run_closes_its_check_without_reading_or_publishing_artifacts(
     assert len(checks) == 1
     assert checks[0]["conclusion"] == "cancelled"
     assert checks[0]["commit_sha"] == HEAD_SHA
-    assert len(github_clients) == 1
-    assert checks[0]["github"] is github_clients[0]
+    create_github.assert_called_once()
+    assert checks[0]["github"] is github
 
 
 def test_cli_supplies_an_explicit_s3_client_to_publication(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     expected_client = EmptyBucket()
     observed: list[tuple[object, object, object]] = []
-    github_clients: list[FakePublisherGithub] = []
-
-    def create_github_client(**_kwargs: object) -> FakePublisherGithub:
-        github = FakePublisherGithub()
-        github_clients.append(github)
-        return github
-
-    monkeypatch.setattr("devinfra.pr_visuals.publisher.Github", create_github_client)
+    github = FakePublisherGithub()
+    create_github = Mock(return_value=github)
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.Github", create_github)
     monkeypatch.setenv("GITHUB_TOKEN", "token")
     monkeypatch.setattr("sys.argv", _publisher_argv(tmp_path / "work"))
     monkeypatch.setattr(
@@ -1086,7 +1067,8 @@ def test_cli_supplies_an_explicit_s3_client_to_publication(monkeypatch: pytest.M
 
     cli_main()
 
-    assert observed == [(expected_client, subprocess.run, github_clients[0])]
+    create_github.assert_called_once()
+    assert observed == [(expected_client, subprocess.run, github)]
 
 
 PR_CHECK_ID = "pr-visual-review:33060467222:1"
@@ -1102,9 +1084,19 @@ class FakePublisherGithub:
 
 @dataclass
 class PublisherRun:
+    config: PublicationConfig
     checks: list[dict[str, object]] = field(default_factory=list)
     comments: list[dict[str, object]] = field(default_factory=list)
     github: FakePublisherGithub = field(default_factory=FakePublisherGithub)
+
+    def publish(self, client: object, *, run: Runner | None = None) -> None:
+        publish_visual_review(
+            self.config,
+            run=self.command_runner if run is None else run,
+            client=cast("S3Client", client),
+            github=cast("Github", self.github),
+            workflow_url=None,
+        )
 
     @staticmethod
     def command_runner(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
@@ -1121,22 +1113,17 @@ class PublisherRun:
 
 @pytest.fixture
 def publisher_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> PublisherRun:
-    """Publication as the workflow starts it for a PR's CI run, recording GitHub writes.
-
-    The run's event is not trusted to name its pull request, so the publisher is handed the run's head ref
-    instead. A test of another kind of run replaces `sys.argv`.
-    """
-    run = PublisherRun()
+    """A PR publication with recorded GitHub writes."""
+    config, _ = _parse_cli(
+        _publisher_argv(tmp_path / "work", "--pull-request-head", PR_HEAD_REF, "--check-external-id", PR_CHECK_ID)[1:]
+    )
+    run = PublisherRun(config)
     monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", lambda **kwargs: run.checks.append(kwargs))
     monkeypatch.setattr(
         "devinfra.pr_visuals.publisher.publish_pull_request_comment", lambda **kwargs: run.comments.append(kwargs)
     )
 
     monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
-    monkeypatch.setattr(
-        "sys.argv",
-        _publisher_argv(tmp_path / "work", "--pull-request-head", PR_HEAD_REF, "--check-external-id", PR_CHECK_ID),
-    )
     return run
 
 
@@ -1174,12 +1161,24 @@ def test_a_pr_run_publishes_to_the_pr_its_head_ref_finds(
         lookups.append(kwargs)
         return PullRequestRef(number=8733, base_sha=base_sha)
 
-    candidate, bucket = _publish_one_visual_target(monkeypatch, tmp_path)
+    candidate = _single_asset_test(tmp_path / "candidate", repository="agentydragon/ducktape")
+    bucket = EmptyBucket()
+    run = Mock(wraps=publisher_run.command_runner)
+    collect = Mock(return_value=[candidate])
+    upload = Mock()
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.collect_visual_tests", collect)
+    monkeypatch.setattr("devinfra.pr_visuals.publisher.upload_bundle", upload)
     monkeypatch.setattr("devinfra.pr_visuals.publisher.find_reviewable_pull_request", find)
     _forbid(monkeypatch, "write_baseline_pointers")
 
-    _run_publication(run=publisher_run.command_runner, client=bucket, github=publisher_run.github)
+    publisher_run.publish(bucket, run=run)
 
+    assert any("invocation" in call.args[0] and "status" in call.args[0] for call in run.call_args_list)
+    collect.assert_called_once()
+    assert collect.call_args.kwargs["repository"] == "agentydragon/ducktape"
+    assert collect.call_args.kwargs["run"] is run
+    upload.assert_called_once()
+    assert upload.call_args.kwargs["client"] is bucket
     assert [(lookup["head"], lookup["head_sha"]) for lookup in lookups] == [(PR_HEAD_REF, HEAD_SHA)] * 2
     assert [comment["pull_request"] for comment in publisher_run.comments] == [8733]
     github = publisher_run.github
@@ -1193,67 +1192,6 @@ def test_a_pr_run_publishes_to_the_pr_its_head_ref_finds(
     assert [check["conclusion"] for check in publisher_run.checks] == ["success", "success"]
 
 
-def test_publish_visual_review_uses_injected_runner_and_clients(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    candidate = _single_asset_test(tmp_path / "candidate", repository="agentydragon/ducktape")
-    bucket = EmptyBucket()
-    commands: list[list[str]] = []
-    download_runners: list[Callable[..., subprocess.CompletedProcess[str]]] = []
-    upload_clients: list[object] = []
-    checks: list[dict[str, object]] = []
-    comments: list[dict[str, object]] = []
-
-    def fake_run(command: list[str | Path], **_kwargs: object) -> subprocess.CompletedProcess[str]:
-        words = [str(part) for part in command]
-        commands.append(words)
-        if "status" in words:
-            output = '{"invocation":[{"invocationStatus":"COMPLETE_INVOCATION_STATUS"}]}'
-        else:
-            raise AssertionError(f"unexpected command {words}")
-        return subprocess.CompletedProcess(command, 0, output, "")
-
-    def fake_download(
-        _invocations: list[str],
-        _destination: Path,
-        *,
-        repository: str,
-        run: Callable[..., subprocess.CompletedProcess[str]],
-    ) -> list[CollectedVisualTest]:
-        assert repository == "agentydragon/ducktape"
-        download_runners.append(run)
-        return [candidate]
-
-    def fake_upload(_bundle: Path, **kwargs: object) -> None:
-        upload_clients.append(kwargs["client"])
-
-    config, _ = _parse_cli(
-        _publisher_argv(tmp_path / "work", "--pull-request-head", PR_HEAD_REF, "--check-external-id", PR_CHECK_ID)[1:]
-    )
-    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
-    monkeypatch.setattr("devinfra.pr_visuals.publisher.collect_visual_tests", fake_download)
-    monkeypatch.setattr("devinfra.pr_visuals.publisher.upload_bundle", fake_upload)
-    monkeypatch.setattr(
-        "devinfra.pr_visuals.publisher.find_reviewable_pull_request",
-        lambda **_kwargs: PullRequestRef(number=8733, base_sha="c" * 40),
-    )
-    monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", lambda **kwargs: checks.append(kwargs))
-    monkeypatch.setattr(
-        "devinfra.pr_visuals.publisher.publish_pull_request_comment", lambda **kwargs: comments.append(kwargs)
-    )
-
-    github = cast("Github", FakePublisherGithub())
-    publish_visual_review(config, run=fake_run, client=cast("S3Client", bucket), github=github, workflow_url=None)
-
-    assert any("invocation" in command and "status" in command for command in commands)
-    assert download_runners == [fake_run]
-    assert bucket.requested[0] == f"reviews-test-outputs/{'c' * 40}/tests/{candidate.slug}/metadata.json"
-    assert upload_clients == [bucket]
-    assert [comment["pull_request"] for comment in comments] == [8733]
-    assert [check["conclusion"] for check in checks] == ["success", "success"]
-    assert all(item["github"] is github for item in [*checks, *comments])
-
-
 @pytest.mark.parametrize("current", [None, PullRequestRef(number=9999, base_sha="c" * 40)])
 def test_a_pr_that_changes_during_publication_does_not_get_a_stale_comment(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, publisher_run: PublisherRun, current: PullRequestRef | None
@@ -1263,7 +1201,7 @@ def test_a_pr_that_changes_during_publication_does_not_get_a_stale_comment(
     monkeypatch.setattr("devinfra.pr_visuals.publisher.find_reviewable_pull_request", lambda **_kwargs: next(lookups))
     _forbid(monkeypatch, "write_baseline_pointers")
 
-    _run_publication(run=publisher_run.command_runner, client=bucket, github=publisher_run.github)
+    publisher_run.publish(bucket)
 
     assert publisher_run.comments == []
     assert [check["conclusion"] for check in publisher_run.checks] == ["success", "success"]
@@ -1277,7 +1215,7 @@ def test_successful_pr_run_without_visuals_reports_no_visual_state(
         lambda **_kwargs: PullRequestRef(number=8733, base_sha="c" * 40),
     )
 
-    _run_publication(run=publisher_run.command_runner, client=EmptyBucket(), github=publisher_run.github)
+    publisher_run.publish(EmptyBucket())
 
     assert len(publisher_run.comments) == 1
     assert publisher_run.comments[0]["pull_request"] == 8733
@@ -1296,9 +1234,9 @@ def test_a_devel_push_run_advances_the_baseline_pointers_and_looks_up_no_pr(
         "devinfra.pr_visuals.publisher.write_baseline_pointers", lambda slugs, **_kwargs: pointers.append(slugs)
     )
     _forbid(monkeypatch, "find_reviewable_pull_request")
-    monkeypatch.setattr("sys.argv", _publisher_argv(tmp_path / "work"))
+    publisher_run.config = replace(publisher_run.config, pull_request_head=None, check_external_id=None)
 
-    _run_publication(run=publisher_run.command_runner, client=bucket, github=publisher_run.github)
+    publisher_run.publish(bucket)
 
     assert pointers == [[candidate.slug]]
     assert publisher_run.comments == []
@@ -1311,7 +1249,7 @@ def test_a_pr_run_whose_commit_is_no_longer_a_pr_head_only_closes_its_check(
     monkeypatch.setattr("devinfra.pr_visuals.publisher.find_reviewable_pull_request", lambda **_kwargs: None)
     _forbid(monkeypatch, "collect_visual_tests", "publish_pull_request_comment", "write_baseline_pointers")
 
-    _run_publication(run=publisher_run.command_runner, client=EmptyBucket(), github=publisher_run.github)
+    publisher_run.publish(EmptyBucket())
 
     assert [(check["conclusion"], check["external_id"]) for check in publisher_run.checks] == [("neutral", PR_CHECK_ID)]
     assert publisher_run.comments == []
@@ -1327,7 +1265,7 @@ def test_a_failed_pr_lookup_fails_the_check_instead_of_leaving_it_in_progress(
     _forbid(monkeypatch, "collect_visual_tests", "write_baseline_pointers")
 
     with pytest.raises(ValueError, match="Expected exactly one"):
-        _run_publication(run=publisher_run.command_runner, client=EmptyBucket(), github=publisher_run.github)
+        publisher_run.publish(EmptyBucket())
 
     assert [(check["conclusion"], check["external_id"]) for check in publisher_run.checks] == [("failure", PR_CHECK_ID)]
     assert publisher_run.comments == [], "with no PR identified there is nowhere to comment"
@@ -1352,7 +1290,7 @@ def test_pr_recheck_failure_preserves_processing_error_and_completes_check(
     monkeypatch.setattr("devinfra.pr_visuals.publisher.collect_visual_tests", fail_download)
 
     with pytest.raises(RuntimeError, match="visual collection failed") as raised:
-        _run_publication(run=publisher_run.command_runner, client=EmptyBucket(), github=publisher_run.github)
+        publisher_run.publish(EmptyBucket())
 
     assert lookups == 2
     assert isinstance(raised.value.__cause__, ExceptionGroup)
@@ -1376,7 +1314,7 @@ def test_comment_failure_marks_final_check_failed_and_raises(
     monkeypatch.setattr("devinfra.pr_visuals.publisher.publish_pull_request_comment", fail_comment)
 
     with pytest.raises(ExceptionGroup) as raised:
-        _run_publication(run=publisher_run.command_runner, client=bucket, github=publisher_run.github)
+        publisher_run.publish(bucket)
 
     assert [type(error) for error in raised.value.exceptions] == [OSError]
     assert [check["conclusion"] for check in publisher_run.checks] == ["success", "failure"]
@@ -1400,7 +1338,7 @@ def test_diff_check_failure_still_comments_and_completes_final_check(
     monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", update_check)
 
     with pytest.raises(ExceptionGroup) as raised:
-        _run_publication(run=publisher_run.command_runner, client=bucket, github=publisher_run.github)
+        publisher_run.publish(bucket)
 
     assert [type(error) for error in raised.value.exceptions] == [ConnectionError]
     assert [comment["pull_request"] for comment in publisher_run.comments] == [8733]
@@ -1432,7 +1370,7 @@ def test_processing_error_survives_comment_and_check_failures(
     monkeypatch.setattr("devinfra.pr_visuals.publisher.upsert_check_run", fail_check)
 
     with pytest.raises(RuntimeError, match="visual collection failed") as raised:
-        _run_publication(run=publisher_run.command_runner, client=EmptyBucket(), github=publisher_run.github)
+        publisher_run.publish(EmptyBucket())
 
     assert attempts == ["comment", "check"]
     assert isinstance(raised.value.__cause__, ExceptionGroup)
@@ -1473,19 +1411,24 @@ class PublishedObjects:
         self.events.append(key)
 
 
+def _upload(bundle: Path, client: PublishedObjects, *, key: str = "reviews/a", **kwargs: Any) -> None:
+    upload_bundle(
+        bundle,
+        staged_image_root=bundle.parent.parent,
+        bucket="visuals",
+        key=key,
+        client=cast("S3Client", client),
+        **kwargs,
+    )
+
+
 def test_upload_reuses_shared_images_and_publishes_indexes_last(tmp_path: Path) -> None:
     source = _single_asset_test(tmp_path / "source")
     client = PublishedObjects()
     for sha in ("a" * 40, "b" * 40):
         bundle = build_bundle([source], tmp_path / "site", commit_sha=sha, repository="r")
         client.events.clear()
-        upload_bundle(
-            bundle,
-            staged_image_root=bundle.parent.parent,
-            bucket="visuals",
-            key=f"reviews-test-outputs/{sha}",
-            client=cast("S3Client", client),
-        )
+        _upload(bundle, client, key=f"reviews-test-outputs/{sha}")
         if sha == "a" * 40:
             assert client.events[0].startswith("assets/")
         first_index = next(index for index, key in enumerate(client.events) if key.endswith("index.html"))
@@ -1545,15 +1488,7 @@ def test_published_cas_image_skips_candidate_download_and_keeps_fresh_provenance
     client = CountingBucket()
     image_key = f"assets/{hashlib.sha256(body).hexdigest()}.png"
     client.objects[image_key] = body
-    upload_bundle(
-        bundle,
-        staged_image_root=bundle.parent.parent,
-        bucket="visuals",
-        key="reviews/a",
-        client=cast("S3Client", client),
-        candidates=tests,
-        run=lambda *_a, **_k: pytest.fail("downloaded"),
-    )
+    _upload(bundle, client, candidates=tests, run=lambda *_a, **_k: pytest.fail("downloaded"))
 
     assert client.heads == [image_key]
     assert client.puts == []
@@ -1576,15 +1511,7 @@ def test_existing_historical_image_is_reused_without_revalidating_png(tmp_path: 
     client = PublishedObjects()
     client.objects[f"assets/{hashlib.sha256(body).hexdigest()}.png"] = body
 
-    upload_bundle(
-        bundle,
-        staged_image_root=bundle.parent.parent,
-        bucket="visuals",
-        key="reviews/a",
-        client=cast("S3Client", client),
-        candidates=[test],
-        run=lambda *_a, **_k: pytest.fail("downloaded"),
-    )
+    _upload(bundle, client, candidates=[test], run=lambda *_a, **_k: pytest.fail("downloaded"))
     assert client.puts == []
     assert client.events[-1] == "reviews/a/index.html"
 
@@ -1618,15 +1545,7 @@ def test_candidate_image_must_be_verified_before_page_publication(
     client = PublishedObjects()
 
     with pytest.raises(ValueError, match=message):
-        upload_bundle(
-            bundle,
-            staged_image_root=bundle.parent.parent,
-            bucket="visuals",
-            key="reviews/a",
-            client=cast("S3Client", client),
-            candidates=[test],
-            run=run,
-        )
+        _upload(bundle, client, candidates=[test], run=run)
     assert client.events == []
 
 
@@ -1646,15 +1565,7 @@ def test_missing_cas_image_is_downloaded_once_for_duplicate_targets(tmp_path: Pa
         return subprocess.CompletedProcess(command, 0, "", "")
 
     client = PublishedObjects()
-    upload_bundle(
-        bundle,
-        staged_image_root=bundle.parent.parent,
-        bucket="visuals",
-        key="reviews/a",
-        client=cast("S3Client", client),
-        candidates=tests,
-        run=run,
-    )
+    _upload(bundle, client, candidates=tests, run=run)
     assert len(manifests) == 1
     assert len(manifests[0]) == 1
     assert len(client.puts) == 1
@@ -1677,15 +1588,7 @@ def test_wrong_size_existing_image_cannot_publish_a_review(tmp_path: Path) -> No
     client = WrongSizeBucket()
     client.objects[image_key] = b"wrong size"
     with pytest.raises(ValueError, match="wrong size"):
-        upload_bundle(
-            bundle,
-            staged_image_root=bundle.parent.parent,
-            bucket="visuals",
-            key="reviews/a",
-            client=cast("S3Client", client),
-            candidates=[test],
-            run=_download_runner({Blob(body).uri: body}),
-        )
+        _upload(bundle, client, candidates=[test], run=_download_runner({Blob(body).uri: body}))
     assert client.events == []
 
 
@@ -1761,23 +1664,11 @@ def test_shared_image_upload_errors_do_not_publish_broken_reviews(tmp_path: Path
 
     client = RacingOrFailingS3()
     if code == "PreconditionFailed":
-        upload_bundle(
-            bundle,
-            staged_image_root=bundle.parent.parent,
-            bucket="visuals",
-            key="reviews-test-outputs/sha",
-            client=cast("S3Client", client),
-        )
+        _upload(bundle, client, key="reviews-test-outputs/sha")
         assert client.events[-1] == "reviews-test-outputs/sha/index.html"
     else:
         with pytest.raises(ClientError):
-            upload_bundle(
-                bundle,
-                staged_image_root=bundle.parent.parent,
-                bucket="visuals",
-                key="reviews-test-outputs/sha",
-                client=cast("S3Client", client),
-            )
+            _upload(bundle, client, key="reviews-test-outputs/sha")
         assert not client.events
 
 
@@ -1812,6 +1703,20 @@ def test_build_bundle_classifies_structured_assets_against_eligible_baseline(tmp
         )
         for asset in baseline_assets
     ]
+    # This baseline is a parent PR's review. One screenshot returns in the
+    # child and the other stays absent.
+    baseline_records.extend(
+        ReviewAsset(
+            path=asset.review_filename,
+            label=asset.label,
+            case_id=asset.case_id,
+            checkpoint=asset.checkpoint,
+            role=asset.role,
+            baseline_sha256=asset.variants[0].sha256,
+            classification="removed",
+        )
+        for asset in (candidate.assets[-1], _asset_from_file(_png(baseline_dir / "previously-removed.png")))
+    )
     objects = {
         f"reviews-test-outputs/{base_sha}/tests/{candidate.slug}/metadata.json": BaselineMetadata(
             assets=baseline_records,
@@ -1844,8 +1749,17 @@ def test_build_bundle_classifies_structured_assets_against_eligible_baseline(tmp
     }
     assert metadata.tests[0].summary == ClassificationCounts(modified=1, new=1, removed=1, unchanged=1)
     assert metadata.tests[0].baseline_eligible
-    assert by_label["changed"].diff_sha256 is not None
     assert by_label["gone"].candidate_sha256 is None
+    staged = tmp_path / "site" / "assets"
+    for label, name in [("changed", "changed.png"), ("gone", "gone.png")]:
+        baseline_body = (baseline_dir / name).read_bytes()
+        digest = hashlib.sha256(baseline_body).hexdigest()
+        assert by_label[label].baseline_sha256 == digest
+        assert (staged / f"{digest}.png").read_bytes() == baseline_body
+    overlay = staged / f"{by_label['changed'].diff_sha256}.png"
+    with Image.open(overlay) as image:
+        assert image.getpixel((0, 0)) == (255, 0, 0, 255)
+    assert by_label["gone"].diff_sha256 is None
     assert not list(bundle.rglob("*.png"))
 
 
@@ -2001,13 +1915,7 @@ def test_upload_image_checks_are_bounded_and_drained_before_review_uploads(tmp_p
 
     def publish() -> None:
         try:
-            upload_bundle(
-                bundle,
-                staged_image_root=bundle.parent.parent,
-                bucket="visuals",
-                key="reviews/a",
-                client=cast("S3Client", client),
-            )
+            _upload(bundle, client)
         except Exception as error:
             failures.append(error)
 
@@ -2069,13 +1977,7 @@ def test_upload_bundle_waits_for_all_image_checks_before_propagating_failure(tmp
 
     client = OneFailureS3()
     with pytest.raises(ClientError, match="HeadObject"):
-        upload_bundle(
-            bundle,
-            staged_image_root=bundle.parent.parent,
-            bucket="visuals",
-            key="reviews/a",
-            client=cast("S3Client", client),
-        )
+        _upload(bundle, client)
 
     assert set(client.head_calls) == image_keys
     assert client.events == []

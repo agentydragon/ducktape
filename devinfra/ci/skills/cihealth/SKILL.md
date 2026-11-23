@@ -89,8 +89,8 @@ use semantic versions instead.
 
 For image pins, read devinfra/image_pins.json and each publishing workflow's
 path filters. Image digests should move when their owned source paths change.
-The RBE worker digest is part of every Bazel action cache key, so it should
-remain stable unless the RBE worker image itself changes.
+The RBE container image digest is part of every Bazel action cache key, so it
+should remain stable unless the RBE container image itself changes.
 
 ### 2c. Scheduled workflow health
 

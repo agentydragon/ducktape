@@ -5,7 +5,6 @@
   vars_files:
     - vars/common_vars.yml
   vars:
-    docker_state: absent # Proxmox host doesn't need Docker
     nebula_ca_cert_file: "{{ playbook_dir }}/../secrets/nebula/ca.crt"
     nebula_host_cert_file: "{{ playbook_dir }}/../secrets/nebula/atlas.crt"
     nebula_host_key_sops_file: "{{ playbook_dir }}/../secrets/nebula/atlas.sops.key"
@@ -534,11 +533,6 @@
         mode: "0644"
       notify: Restart logind
       tags: [power_management, vfio]
-
-    # TODO: WiFi Configuration - MediaTek MT7927 (14c3:7927)
-    # The atlas host has a MediaTek MT7927 WiFi 7 card. MT7927 support was added
-    # to the mt76 driver in Linux 6.12. Upgrade to Proxmox VE 9 (kernel 6.12+)
-    # will enable this. After upgrade, install: wireless-tools, wpasupplicant, iw
 
   handlers:
     - name: Reload network interfaces

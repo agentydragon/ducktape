@@ -7,9 +7,7 @@ from grafana_foundation_sdk.models import common, dashboard
 from cluster.cdk8s.monitoring.dashboards.foundation import clickhouse_datasource, clickhouse_query, series_options
 
 _WINDOW_NAME = "if(empty(window_name), '(default)', window_name)"
-_OBSERVATION_COLUMNS = (
-    "observed_at, source, status_code, content_type, raw_body_size_bytes, raw_body_truncated, error, raw_body_sha256"
-)
+_OBSERVATION_COLUMNS = "observed_at, source, account_id, status_code, content_type, raw_body_size_bytes, raw_body_truncated, error, raw_body_sha256"
 
 
 def build_dashboard() -> dashboard.Dashboard:
@@ -32,6 +30,7 @@ def build_dashboard() -> dashboard.Dashboard:
                         sql=dedent(f"""\
                             SELECT
                               provider,
+                              if(empty(account_id), 'unknown (legacy)', account_id) AS account,
                               {_WINDOW_NAME} AS window,
                               formatReadableTimeDelta(toUInt64(window_seconds)) AS duration,
                               round(latest.1, 1) AS remaining_percent,
@@ -45,14 +44,14 @@ def build_dashboard() -> dashboard.Dashboard:
                               formatDateTime(latest.5, '%Y-%m-%d %H:%i:%S') AS last_observed_at
                             FROM (
                               SELECT
-                                provider, window_name, window_seconds,
+                                provider, account_id, window_name, window_seconds,
                                 argMax(tuple(remaining_percent, used_percent, reset_at, reset_seconds, observed_at), observed_at) AS latest,
                                 coalesce(latest.3, if(latest.4 > 0, latest.5 + toIntervalSecond(toInt64(latest.4)), NULL)) AS reset_deadline
                               FROM aiquota.aiquota_windows
                               WHERE $__timeFilter(observed_at)
-                              GROUP BY provider, window_name, window_seconds
+                              GROUP BY provider, account_id, window_name, window_seconds
                             )
-                            ORDER BY provider, window_seconds, window_name
+                            ORDER BY provider, account_id, window_seconds, window_name
                             """).strip()
                     )
                 ],
@@ -70,7 +69,7 @@ def build_dashboard() -> dashboard.Dashboard:
                             SELECT
                               observed_at AS time,
                               remaining_percent AS value,
-                              concat(provider, ' / ', {_WINDOW_NAME}, ' / ', formatReadableTimeDelta(toUInt64(window_seconds))) AS metric
+                              concat(provider, ' / ', if(empty(account_id), 'unknown (legacy)', account_id), ' / ', {_WINDOW_NAME}, ' / ', formatReadableTimeDelta(toUInt64(window_seconds))) AS metric
                             FROM aiquota.aiquota_windows
                             WHERE $__timeFilter(observed_at)
                             ORDER BY time, metric
@@ -121,16 +120,16 @@ def build_dashboard() -> dashboard.Dashboard:
                         sql=dedent("""\
                             SELECT
                               observed_at AS time,
-                              max(extra_spend_used_usd) AS used_usd,
-                              max(extra_spend_limit_usd) AS monthly_limit_usd
+                              amount.2 AS value,
+                              concat(if(empty(account_id), 'unknown (legacy)', account_id), ' / ', amount.1) AS metric
                             FROM aiquota.aiquota_windows
+                            ARRAY JOIN [('used', extra_spend_used_usd), ('monthly limit', extra_spend_limit_usd)] AS amount
                             WHERE provider = 'claude' AND extra_spend_enabled = true AND $__timeFilter(observed_at)
-                            GROUP BY observed_at
-                            ORDER BY time
+                            ORDER BY time, metric
                             """).strip()
                     )
                 ],
-                title="Claude extra usage (current billing month)",
+                title="Claude extra usage by account (current billing month)",
                 datasource=clickhouse_datasource(),
                 grid_pos=dashboard.GridPos(h=10, w=24, y=30),
                 options=series_options(legend_calcs=("lastNotNull", "max")),

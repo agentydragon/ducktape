@@ -18,10 +18,10 @@ restrictions with **verifiable proofs of correctness**.
 Read these before starting — they define `match_file_restriction` semantics and
 contain labeled positive/negative examples of correct restriction assignments:
 
-- @props/specimens/docs/format-spec.md (section "Match File Restriction")
-- @props/specimens/docs/only-matchable-labels.md (labeled examples with reasoning)
+- @props/specimens/docs/format_spec.md (section "Match File Restriction")
+- @props/specimens/docs/only_matchable_labels.md (labeled examples with reasoning)
 
-The **validation test** from `only-matchable-labels.md` is the key correctness
+The **validation test** from `only_matchable_labels.md` is the key correctness
 criterion: "Can you produce a valid critique phrasing that accurately describes
 this issue but tags a file outside the proposed set?" If yes, the set is too
 narrow.
@@ -87,7 +87,7 @@ without independent research.
 that file.** The `files:` field records where the _problematic code_ is, but a
 valid critique could tag a _different_ file — a caller, consumer, duplicate, or
 the other side of a producer/consumer relationship. See the
-`dead-constants-runs-context` negative example in `only-matchable-labels.md`:
+`dead-constants-runs-context` negative example in `only_matchable_labels.md`:
 `files:` has only `runs_context.py`, but a critic could validly tag the files
 with hardcoded strings instead.
 

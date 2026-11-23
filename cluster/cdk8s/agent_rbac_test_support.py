@@ -41,12 +41,14 @@ class Permission:
 
 
 def uncovered(required: Iterable[Permission], available: Iterable[Permission]) -> set[Permission]:
-    available = tuple(available)
-    return {permission for permission in required if not any(grant.covers(permission) for grant in available)}
+    grants = set(available)
+    return {
+        permission for permission in set(required) - grants if not any(grant.covers(permission) for grant in grants)
+    }
 
 
 class Rbac:
-    """Resolve declared RBAC from the dictionaries returned by ``Testing.synth``.
+    """Resolve declared RBAC from the rendered resource dictionaries.
 
     This is not an apiserver authorizer: admission, egress, and access obtained through exec/node
     proxy are outside this declarative contract, as is impersonation other than the egress proxy's
@@ -132,12 +134,14 @@ class Rbac:
                 (subject["kind"], subject["name"], subject.get("namespace", "")) in subjects
                 for subject in binding.get("subjects", [])
             ):
-                role_ref = binding["roleRef"]
-                assert role_ref.get("apiGroup") == "rbac.authorization.k8s.io", binding
-                assert role_ref["kind"] in ("Role", "ClusterRole"), binding
-                namespace = binding["metadata"].get("namespace") if binding["kind"] == "RoleBinding" else None
-                permissions.update(self.rules(role_ref["kind"], role_ref["name"], namespace))
+                permissions.update(self.binding_rules(binding))
         return permissions
+
+    def binding_rules(self, binding: dict[str, Any]) -> set[Permission]:
+        role = binding["roleRef"]
+        assert role.get("apiGroup") == "rbac.authorization.k8s.io", binding
+        namespace = binding["metadata"]["namespace"] if binding["kind"] == "RoleBinding" else None
+        return self.rules(role["kind"], role["name"], namespace)
 
     def bound(self, roles: Iterable[BoundRole]) -> set[Permission]:
         return {permission for role in roles for permission in self.rules(role.kind, role.name, role.namespace)}

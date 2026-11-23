@@ -41,6 +41,12 @@ logger = logging.getLogger(__name__)
 # disk, not the code.
 DEFAULT_CLASSIFY_WORKERS = 8
 
+# TODO: Discover stale direnv environments and their Nix GC roots under temporary workspaces
+# (including /tmp/agents and other /tmp paths), even when no Bazel output base points to them.
+# Classify and safely release roots only for inactive, abandoned environments; preserve live
+# sessions and workspace changes. Report shared roots and estimate actual reclaimable space
+# without double-counting shared closures or hard links. Run Nix GC only as an explicit step.
+
 
 @dataclass(frozen=True, slots=True)
 class WorkspaceScan:

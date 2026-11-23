@@ -202,13 +202,9 @@ func (w *Worker) attend(ctx context.Context, claim inboxstore.Claim) (attended, 
 	case budget.Err() != nil && ctx.Err() == nil:
 		failed(timeoutName)
 	case errors.Is(err, errOwnerMismatch):
-		clearErr := w.Store.ClearStale(ctx, claim)
 		name := "OwnerMismatchError"
 		outcome.deliveryError = &name
 		slog.WarnContext(ctx, "notification delivery unavailable", "inbox", claim.ID, "cause", name)
-		if !errors.Is(clearErr, inboxstore.ErrClaimLost) {
-			return outcome, clearErr
-		}
 	case errors.As(err, &invalid):
 		message := invalid.Error()
 		outcome.deliveryError = &message
@@ -228,9 +224,6 @@ func (w *Worker) work(ctx context.Context, claim inboxstore.Claim, deliver bool)
 		return unavailableNotFound(err, "SessionNotFoundError", seconds(w.Settings.UnavailableDestinationRetrySeconds))
 	}
 	if err := w.checkSessionOwner(claim, session.GetSession()); err != nil {
-		return err
-	}
-	if err := w.Store.ClearStale(ctx, claim); err != nil {
 		return err
 	}
 	notice, err := w.prepareNotice(ctx, claim)

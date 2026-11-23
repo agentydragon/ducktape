@@ -4,7 +4,7 @@ namespace: props
 resources:
   # keep-sorted start
   - agent-password-salt.sops.yaml
-  - cleanuppolicy-finished-pods.yaml
+  - deletingpolicy-finished-pods.yaml
   - deployment.yaml
   - evaluator-credentials.sops.yaml
   - forgejo-images-creds-eso.yaml

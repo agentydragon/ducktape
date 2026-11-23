@@ -18,13 +18,6 @@ import (
 
 func main() {
 	configureLogLevels(nil)
-	if len(os.Args) == 2 && os.Args[1] == "--export-openapi" {
-		if err := server.ExportOpenAPI(os.Stdout); err != nil {
-			slog.Error("export Agentplane OpenAPI schema", "error", err)
-			os.Exit(1)
-		}
-		return
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	if handled, err := dbmigrate.RunOnly(ctx, os.Args[1:], "AGENTPLANE_DATABASE_URL", migrations.Up); handled {

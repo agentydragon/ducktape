@@ -1,5 +1,5 @@
 """The SeaweedFS CSI driver, pinned to OVH nodes, with the GitRepository its chart comes
-from, its StorageClasses, and the directory's Flux Kustomization.
+from, and its StorageClasses.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from flux_helm.io.fluxcd.toolkit.helm import HelmReleaseSpecUpgrade, HelmRelease
 from cluster.cdk8s import namespaces, node_scheduling
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import PRIVILEGED_POD_SECURITY, Vpa
 
 NAME = "seaweedfs-csi"
 NAMESPACE = "seaweedfs-csi-system"
@@ -63,12 +63,9 @@ def _values() -> dict[str, object]:
         # Node label keys the driver reports as each node's CSI accessible_topology
         # (NodeGetInfo) and that csi-provisioner requires to honour StorageClass
         # allowedTopologies (--feature-gates=Topology=true, gated on this being non-empty).
-        # Picks up seaweedfs/seaweedfs-csi-driver#301 (merged to master 2026-08-26, released
-        # v1.4.30): before this, NodeGetInfo reported no topology at all and CSINode showed
-        # topologyKeys=null for every node, so nothing stopped the scheduler from placing a
-        # SeaweedFS CSI PVC pod on a non-OVH node (cluster/generated/kyverno/policies/ formerly
-        # carried a pin-seaweedfs-ovh-consumers ClusterPolicy working around exactly this, now
-        # removed in favor of the StorageClasses' own allowedTopologies).
+        # Needs seaweedfs/seaweedfs-csi-driver#301 (released v1.4.30): without it NodeGetInfo
+        # reports no topology, CSINode shows topologyKeys=null for every node, and nothing stops
+        # the scheduler from placing a SeaweedFS CSI PVC pod on a non-OVH node.
         # `topology.kubernetes.io/zone` matches the node label OVH nodes actually carry
         # (cluster/terraform/main/ovh-nodes.tf nodeLabels, value "hil-ovh") and what the
         # StorageClasses' allowedTopologies match on.
@@ -107,6 +104,14 @@ def _values() -> dict[str, object]:
         # Keep the image tags explicit and in sync with the source tag so the deployed plugin
         # and mount-service versions are auditable.
         "seaweedfsCsiPlugin": {"image": "chrislusf/seaweedfs-csi-driver", "tag": _VERSION},
+        # Round the Off-mode VPA recommendations up for the CSI sidecars. The 30-day
+        # working-set peaks fit within these requests and the five-minute CPU peaks were
+        # below 4m. The liveness-probe value applies to both controller and node pods.
+        "csiAttacher": {"resources": {"requests": {"cpu": "15m", "memory": "48Mi"}}},
+        "csiProvisioner": {"resources": {"requests": {"cpu": "15m", "memory": "64Mi"}}},
+        "csiResizer": {"resources": {"requests": {"cpu": "15m", "memory": "80Mi"}}},
+        "csiLivenessProbe": {"resources": {"requests": {"cpu": "15m", "memory": "40Mi"}}},
+        "csiNodeDriverRegistrar": {"resources": {"requests": {"cpu": "15m", "memory": "40Mi"}}},
         # Restrict the FUSE mount service + CSI node daemons to OVH kimsufi nodes. Pods
         # consuming SeaweedFS CSI PVCs must schedule on OVH; we don't want phantom daemonsets
         # on non-OVH nodes until we know the backend is suitable.
@@ -199,11 +204,7 @@ def chart(app: App) -> Chart:
         name=NAMESPACE,
         vpa=Vpa.RECOMMEND,
         # CSI driver needs hostPath, hostPID, SYS_ADMIN, and privileged containers.
-        labels={
-            "pod-security.kubernetes.io/enforce": "privileged",
-            "pod-security.kubernetes.io/audit": "privileged",
-            "pod-security.kubernetes.io/warn": "privileged",
-        },
+        labels=PRIVILEGED_POD_SECURITY,
     )
     source = GitRepository(
         chart,
@@ -212,7 +213,7 @@ def chart(app: App) -> Chart:
         spec=GitRepositorySpec(
             interval="24h",
             url="https://github.com/seaweedfs/seaweedfs-csi-driver",
-            ref=GitRepositorySpecRef(tag="v1.4.38"),
+            ref=GitRepositorySpecRef(tag=_VERSION),
             ignore=textwrap.dedent(
                 """\
             /*

@@ -1,17 +1,6 @@
-import { createContext, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { DEFAULT_HIDDEN_EVENT_KINDS, ROLLOUT_EVENT_KIND_ORDER } from "./data_helpers";
-import type { CurrencyDisplay } from "./header";
 import type { RolloutEventKind } from "./rollout_event_vocabulary.generated";
-
-const CurrencyDisplayContext = createContext<{
-  display: CurrencyDisplay;
-  setDisplay: (display: CurrencyDisplay) => void;
-}>({
-  display: "compact",
-  setDisplay: () => {},
-});
-
-export const CurrencyDisplayProvider = CurrencyDisplayContext.Provider;
 
 export function useVisibleEventKinds() {
   const allKinds = ROLLOUT_EVENT_KIND_ORDER;

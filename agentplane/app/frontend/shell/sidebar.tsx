@@ -71,26 +71,28 @@ export function Sidebar({ settingsOpen, onOpenSettings, open, onClose }: Sidebar
     <nav className={`agentplane-sidebar${open ? " agentplane-sidebar-open" : ""}`} style={{ width: `${pane.size}px` }}>
       <ResizeHandle pane={pane} axis="x" className="agentplane-sidebar-resize-handle" aria-label="Resize sidebar" />
       <div className="agentplane-sidebar-header">
-        <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
-          {/* The unscoped new-thread composer isn't built yet, so "+" sends the operator to the
-              Sandbox list to start one the existing way -- label says exactly that rather than
-              promising a composer that isn't there yet. */}
-          <Tooltip label="New thread (via Sandboxes)" withArrow>
-            <ActionIcon variant="light" aria-label="New thread (via Sandboxes)" onClick={() => goTo("/sandboxes")}>
-              <IconPlus size={13} />
-            </ActionIcon>
-          </Tooltip>
-          {/* Only shown by sidebar.css's phone-width, drawer-open state: at desktop width the
-              always-visible shell topbar's own toggle already collapses this column. */}
+        {/* On phones this occupies the same position as the covered topbar toggle. */}
+        <ActionIcon
+          className="agentplane-sidebar-close"
+          variant="subtle"
+          aria-label="Close navigation"
+          onClick={onClose}
+        >
+          <IconX size={16} />
+        </ActionIcon>
+        {/* The unscoped new-thread composer isn't built yet, so "+" sends the operator to the
+            Sandbox list to start one the existing way -- label says exactly that rather than
+            promising a composer that isn't there yet. */}
+        <Tooltip label="New thread (via Sandboxes)" withArrow>
           <ActionIcon
-            className="agentplane-sidebar-close"
-            variant="subtle"
-            aria-label="Close navigation"
-            onClick={onClose}
+            className="agentplane-sidebar-new"
+            variant="light"
+            aria-label="New thread (via Sandboxes)"
+            onClick={() => goTo("/sandboxes")}
           >
-            <IconX size={16} />
+            <IconPlus size={13} />
           </ActionIcon>
-        </div>
+        </Tooltip>
       </div>
       <div className="agentplane-sidebar-body">
         <ThreadList detailed={false} onNavigate={closeIfPhone} />

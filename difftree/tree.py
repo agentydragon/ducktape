@@ -1,15 +1,8 @@
-"""Build tree structure from file paths with aggregated statistics.
-
-This module handles the DATA layer - pure representation of file tree structure
-and diff statistics. No view concerns like path collapsing or styling.
-
-TreeNode is immutable (frozen dataclass) - all tree transformations return new nodes.
-View-level rendering logic (path collapsing, tree decoration styling) lives in diff_tree.py.
-"""
+"""Build a sorted display tree with per-directory change totals."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from difftree.config import SortMode
@@ -18,122 +11,59 @@ from difftree.parser import FileChange
 
 @dataclass(frozen=True)
 class TreeNode:
-    """Immutable node in the file tree representing a file or directory.
-
-    This is a pure data structure - no view concerns like path collapsing.
-    Stats (additions, deletions) are aggregated from children.
-    """
-
-    name: str  # Component name (e.g., "foo.py" not "dir/foo.py")
+    name: str
     is_file: bool
-    additions: int = 0
-    deletions: int = 0
+    additions: int
+    deletions: int
     is_binary: bool = False
-    children: dict[str, TreeNode] = field(default_factory=dict)
-    path: str = ""  # Full path from root (e.g., "dir/foo.py")
+    children: tuple[TreeNode, ...] = ()
 
     @property
     def total_changes(self) -> int:
         return self.additions + self.deletions
 
 
-def build_tree(changes: list[FileChange]) -> TreeNode:
-    """Build an immutable tree structure from file changes.
+@dataclass
+class _PathNode:
+    # A patch can delete a file and add children at the same path, or vice versa.
+    change: FileChange | None = None
+    children: dict[str, _PathNode] = field(default_factory=dict)
 
-    Uses a mutable builder structure internally, then creates frozen TreeNodes.
-    """
-
-    @dataclass
-    class _MutableNode:
-        name: str
-        is_file: bool
-        additions: int = 0
-        deletions: int = 0
-        is_binary: bool = False
-        children: dict[str, _MutableNode] = field(default_factory=dict)
-        path: str = ""
-
-    # Build mutable tree
-    root_name = Path.cwd().name or "."
-    root = _MutableNode(name=root_name, is_file=False, path=".")
-
-    for change in changes:
-        parts = Path(change.path).parts
-        current = root
-
-        for i, part in enumerate(parts):
-            is_last = i == len(parts) - 1
-            path_so_far = str(Path(*parts[: i + 1]))
-
-            if part not in current.children:
-                node = _MutableNode(
-                    name=part,
-                    is_file=is_last,
-                    additions=change.additions if is_last else 0,
-                    deletions=change.deletions if is_last else 0,
-                    is_binary=change.is_binary if is_last else False,
-                    path=path_so_far,
+    def directory(self, name: str, sort_by: SortMode) -> TreeNode:
+        children = []
+        for child_name, child in self.children.items():
+            if (change := child.change) is not None:
+                children.append(
+                    TreeNode(
+                        child_name,
+                        is_file=True,
+                        additions=change.additions,
+                        deletions=change.deletions,
+                        is_binary=change.is_binary,
+                    )
                 )
-                current.children[part] = node
-                current = node
-            else:
-                current = current.children[part]
-                if is_last:
-                    current.additions = change.additions
-                    current.deletions = change.deletions
-                    current.is_binary = change.is_binary
+            if child.children:
+                children.append(child.directory(child_name, sort_by))
 
-    # Propagate stats bottom-up
-    def propagate_stats(node: _MutableNode) -> tuple[int, int]:
-        if node.is_file:
-            return (node.additions, node.deletions)
-
-        total_adds = 0
-        total_dels = 0
-        for child in node.children.values():
-            adds, dels = propagate_stats(child)
-            total_adds += adds
-            total_dels += dels
-
-        node.additions = total_adds
-        node.deletions = total_dels
-        return (total_adds, total_dels)
-
-    propagate_stats(root)
-
-    # Convert to immutable TreeNode
-    def to_frozen(node: _MutableNode) -> TreeNode:
-        frozen_children = {name: to_frozen(child) for name, child in node.children.items()}
+        if sort_by == SortMode.SIZE:
+            children.sort(key=lambda child: child.total_changes, reverse=True)
+        else:
+            children.sort(key=lambda child: child.name)
         return TreeNode(
-            name=node.name,
-            is_file=node.is_file,
-            additions=node.additions,
-            deletions=node.deletions,
-            is_binary=node.is_binary,
-            children=frozen_children,
-            path=node.path,
+            name,
+            is_file=False,
+            additions=sum(child.additions for child in children),
+            deletions=sum(child.deletions for child in children),
+            children=tuple(children),
         )
 
-    return to_frozen(root)
 
+def build_tree(changes: list[FileChange], sort_by: SortMode = SortMode.SIZE) -> TreeNode:
+    root = _PathNode()
+    for change in changes:
+        current = root
+        for part in Path(change.path).parts:
+            current = current.children.setdefault(part, _PathNode())
+        current.change = change
 
-def sort_tree(node: TreeNode, sort_by: SortMode = SortMode.SIZE, *, reverse: bool = True) -> TreeNode:
-    """Return a new tree with nodes sorted according to the specified mode.
-
-    Since TreeNode is immutable, this creates a new tree with sorted children.
-    """
-    if not node.children:
-        return node
-
-    # Recursively sort children
-    sorted_child_nodes = {name: sort_tree(child, sort_by, reverse=reverse) for name, child in node.children.items()}
-
-    # Sort the children dict
-    if sort_by == SortMode.SIZE:
-        sorted_items = sorted(sorted_child_nodes.items(), key=lambda x: x[1].total_changes, reverse=reverse)
-    else:
-        sorted_items = sorted(sorted_child_nodes.items(), key=lambda x: x[0], reverse=False)
-
-    sorted_children = dict(sorted_items)
-
-    return replace(node, children=sorted_children)
+    return root.directory(Path.cwd().name or ".", sort_by)

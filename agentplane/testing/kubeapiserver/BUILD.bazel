@@ -17,7 +17,6 @@ go_library(
     srcs = [
         "fixture.go",
         "kubeapiserver.go",
-        "reviews.go",
     ],
     data = [
         ":envtest_assets_tree",

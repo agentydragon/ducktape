@@ -2,41 +2,31 @@
 
 import os
 import subprocess
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session
 
 from ai_session_archive.database_migrate import RUNNER
-from ai_session_archive.restic import ResticRepository
-from util.testing.postgres import DatabaseNames, create_temporary_database
+from ai_session_archive.ingest import ArchiveSource, SnapshotIngestor
+from ai_session_archive.restic import ResticRepository, find_pinned_restic_binary
+from ai_session_archive.source_paths import HarnessRoot
 
 
 @pytest.fixture
-def postgres_engine(postgres_admin_url: str, database_names: DatabaseNames) -> Iterator[Engine]:
-    with create_temporary_database(postgres_admin_url, database_names()) as database_url:
-        engine = create_engine(database_url)
-        try:
-            RUNNER.apply(database_url)
-            yield engine
-        finally:
-            engine.dispose()
+def postgres_engine(empty_postgres_url: str) -> Iterator[Engine]:
+    engine = create_engine(empty_postgres_url)
+    try:
+        RUNNER.apply(empty_postgres_url)
+        yield engine
+    finally:
+        engine.dispose()
 
 
-def _restic_binary() -> str:
-    roots = [os.environ.get("RUNFILES_DIR"), os.environ.get("TEST_SRCDIR")]
-    for runfiles_root in roots:
-        if runfiles_root:
-            for workspace in ("_main", "ducktape"):
-                candidate = Path(runfiles_root) / workspace / "third_party/restic/restic_bin"
-                if candidate.is_file():
-                    return str(candidate)
-    raise AssertionError("pinned Restic binary is missing from test runfiles")
-
-
-def _new_repository(tmp_path: Path) -> tuple[ResticRepository, dict[str, str]]:
+def new_repository(tmp_path: Path) -> tuple[ResticRepository, dict[str, str]]:
     repository_path = tmp_path / "repository"
     environment = {
         **os.environ,
@@ -47,13 +37,21 @@ def _new_repository(tmp_path: Path) -> tuple[ResticRepository, dict[str, str]]:
     }
     Path(environment["HOME"]).mkdir()
     Path(environment["RESTIC_CACHE_DIR"]).mkdir()
-    subprocess.run([_restic_binary(), "init"], env=environment, check=True, capture_output=True)
-    return ResticRepository(binary=_restic_binary(), environment=environment), environment
+    binary = find_pinned_restic_binary()
+    subprocess.run([binary, "init"], env=environment, check=True, capture_output=True)
+    return ResticRepository(binary=binary, environment=environment), environment
 
 
-def _backup(environment: dict[str, str], *source_paths: Path, force: bool = False, cwd: Path | None = None) -> None:
-    arguments = [_restic_binary(), "backup"]
+def backup(environment: dict[str, str], *source_paths: Path, force: bool = False, cwd: Path | None = None) -> None:
+    arguments = [find_pinned_restic_binary(), "backup"]
     if force:
         arguments.append("--force")
     arguments.extend(("--host", "archive-test", "--", *(str(path) for path in source_paths)))
     subprocess.run(arguments, env=environment, check=True, capture_output=True, cwd=cwd)
+
+
+def new_ingestor(
+    factory: Callable[[], Session], repository: ResticRepository, *roots: HarnessRoot, machine_id: str = "host"
+) -> SnapshotIngestor:
+    source = ArchiveSource(machine_id=machine_id, display_name="Test host", restic=repository, roots=roots)
+    return SnapshotIngestor(factory, source)

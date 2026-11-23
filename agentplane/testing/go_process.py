@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import signal
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
-from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator, Mapping, Sequence
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,6 +25,15 @@ class GoProcess:
     stderr: Path
     health_port: int
     health_credentials: grpc.ChannelCredentials | None = None
+
+    @contextmanager
+    def paused(self) -> Iterator[None]:
+        """Suspend the child for a simulated outage and resume it on every exit path."""
+        self.process.send_signal(signal.SIGSTOP)
+        try:
+            yield
+        finally:
+            self.process.send_signal(signal.SIGCONT)
 
     def terminate(self) -> None:
         self.process.terminate()

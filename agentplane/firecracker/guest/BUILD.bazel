@@ -32,6 +32,7 @@ go_test(
         "//agentplane/env/firecracker:management_go_proto",
         "//agentplane/firecracker/workloadidentity",
         "//agentplane/net/peertls/testing",
+        "//agentplane/testing/eventually",
         "@com_github_spiffe_go_spiffe_v2//proto/spiffe/workload",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//codes",

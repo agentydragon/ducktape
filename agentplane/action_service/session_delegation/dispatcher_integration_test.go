@@ -3,12 +3,10 @@ package sessiondelegation
 import (
 	"context"
 	"encoding/json"
-	"net"
 	"testing"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/action_service/session_delegation/contract"
 	"github.com/agentydragon/ducktape/agentplane/environments/access"
@@ -25,6 +23,7 @@ import (
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
@@ -88,15 +87,7 @@ func (s *recordingDispatcher) SubmitInput(ctx context.Context, request *dispatch
 // Action Service acting for it, and cancellable; another Identity's Session and opening a
 // Session are refused.
 func TestAnIdentitysSessionActionsSucceedAgainstTheDispatcher(t *testing.T) {
-	api, err := kubeapiserver.Start()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := api.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	api := kubeapiserver.StartForTest(t)
 	const policyNamespace = "test-delegation-policies"
 	owner := workloadauthtesting.NewIdentityWorkload(t, api, integrationNamespace, "test-delegating-identity", policyNamespace)
 	ownerIdentity := &identitypb.Identity{Name: owner.Identity.Name, Uid: string(owner.Identity.UID)}
@@ -144,12 +135,7 @@ func TestAnIdentitysSessionActionsSucceedAgainstTheDispatcher(t *testing.T) {
 	}
 	server := grpc.NewServer(append(served.ServerOptions(time.Second), grpc.Creds(credentials.NewTLS(serverTLS)))...)
 	dispatcherpb.RegisterSessionDispatcherServer(server, recording)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
+	serverAddr := grpcserver.Serve(t, server)
 	transport := func(serviceURI string) *peertls.ClientTLS {
 		t.Helper()
 		leaf := ca.Issue(t, serviceURI)
@@ -158,18 +144,18 @@ func TestAnIdentitysSessionActionsSucceedAgainstTheDispatcher(t *testing.T) {
 			CertFile: leaf.CertFile, KeyFile: leaf.KeyFile, ClientURI: serviceURI,
 		}
 	}
-	connection, err := workloadgrpc.DialDelegated(listener.Addr().String(), "", 10*time.Second, transport(peertls.ActionsURI), workloadgrpc.ClientInterceptors{})
+	connection, err := workloadgrpc.DialDelegated(serverAddr, "", 10*time.Second, transport(peertls.ActionsURI), workloadgrpc.ClientInterceptors{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = connection.Close() })
-	appConnection, err := bearer.Dial(listener.Addr().String(), "", 10*time.Second, transport(peertls.AppURI))
+	appConnection, err := bearer.Dial(serverAddr, "", 10*time.Second, transport(peertls.AppURI))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = appConnection.Close() })
 	app := dispatcherpb.NewSessionDispatcherClient(appConnection)
-	executor, err := NewExecutor(contract.GroupSessions, catalog.SessionDelegationBinding{Description: "forwards caller"},
+	executor, err := NewExecutor(contract.GroupSessions,
 		environmentpb.NewEnvironmentServiceClient(connection), dispatcherpb.NewSessionDispatcherClient(connection),
 		historypb.NewHistoryServiceClient(connection))
 	if err != nil {

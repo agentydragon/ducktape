@@ -4,6 +4,7 @@ go_library(
     name = "grpcmethods",
     testonly = True,
     srcs = [
+        "delegation.go",
         "grpcmethods.go",
         "tls.go",
     ],
@@ -13,10 +14,13 @@ go_library(
         "//agentplane/identity/auth",
         "//agentplane/net/peertls",
         "//agentplane/net/peertls/testing",
+        "//agentplane/proto:delegation_go_proto",
+        "//agentplane/proto:identity_go_proto",
         "//agentplane/testing/grpcserver",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//credentials",
         "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//metadata",
         "@org_golang_google_protobuf//types/known/emptypb",
     ],
 )

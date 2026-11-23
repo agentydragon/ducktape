@@ -208,8 +208,6 @@ class GraderSupervisor:
         # replaces them, so a tag move just schedules a normal reconcile.
         self._schedule_reconcile(trigger=f"grader_definition_changed:{notification.tag}")
 
-    # --- Lifecycle ---
-
     def schedule_startup_reconcile(self) -> None:
         """Schedule the initial reconciliation after HTTP server is ready."""
         if self._shutdown or self._task_group is None:
@@ -227,8 +225,6 @@ class GraderSupervisor:
                 return
             if interval.cancel_called:
                 self._schedule_reconcile(trigger="periodic")
-
-    # --- Debounced reconcile scheduling ---
 
     def _schedule_reconcile(self, *, trigger: str) -> None:
         """Debounce an event-driven reconcile: coalesce rapid triggers into one
@@ -266,8 +262,6 @@ class GraderSupervisor:
         self._pending_triggers = []
         if scope is not None:
             scope.cancel()
-
-    # --- Core reconciliation ---
 
     async def reconcile(self, *, trigger: str) -> None:
         """Converge actual state (grader pods listed from the runtime) toward
@@ -389,8 +383,6 @@ class GraderSupervisor:
         else:
             await self._registry.reap_grader_pod(pod, reason=reason)
 
-    # --- Crash-loop backoff ---
-
     def _record_failure(self, slug: SnapshotSlug, *, now: float) -> None:
         """Account a grader crash for ``slug`` and schedule its next respawn window."""
         prev = self._failures.get(slug)
@@ -417,8 +409,6 @@ class GraderSupervisor:
         if state.consecutive >= self._max_consecutive_failures:
             return False
         return now >= state.respawn_not_before
-
-    # --- Internal helpers ---
 
     async def _start_listener(self) -> None:
         self._listener_conn = await self._db_config.asyncpg_connect()

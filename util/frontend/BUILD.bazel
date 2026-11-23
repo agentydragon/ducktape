@@ -221,7 +221,17 @@ ts_library(
     testonly = True,
     srcs = ["testing/react.tsx"],
     tsconfig = ":tsconfig",
-    visibility = ["//props/frontend/src/pages:__pkg__"],
+    visibility = [
+        "//agentplane/app/frontend/identities:__pkg__",
+        "//agentplane/app/frontend/sandboxes:__pkg__",
+        "//agentplane/app/frontend/sessions:__pkg__",
+        "//ai_session_archive/frontend:__pkg__",
+        "//devinfra/claude/session_export/frontend:__pkg__",
+        "//haku/console/frontend:__pkg__",
+        "//props/frontend/src/components:__pkg__",
+        "//props/frontend/src/pages:__pkg__",
+        "//util/frontend/transcript:__pkg__",
+    ],
     deps = [
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -274,11 +284,9 @@ vitest_test(
     tsconfig = ":tsconfig",
     deps = [
         ":markdown",
-        "//:node_modules/@mantine/core",
+        ":react_test_utils",
         "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
-        "//:node_modules/react-dom",
         "//:node_modules/vitest",
     ],
 )

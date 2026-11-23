@@ -3,7 +3,6 @@ package observability
 import (
 	"context"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
@@ -100,15 +100,10 @@ func (receiver *otlpMetricsReceiver) Export(
 }
 
 func TestOTLPMetricsExporterFlushesRuntimeAndCustomMetricsAtShutdown(t *testing.T) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	receiver := &otlpMetricsReceiver{requests: make(chan *metricspb.ExportMetricsServiceRequest, 1)}
 	server := grpc.NewServer()
 	metricspb.RegisterMetricsServiceServer(server, receiver)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
+	address := grpcserver.Serve(t, server)
 
 	for name, value := range map[string]string{
 		"OTEL_SDK_DISABLED":                                 "false",
@@ -117,7 +112,7 @@ func TestOTLPMetricsExporterFlushesRuntimeAndCustomMetricsAtShutdown(t *testing.
 		"OTEL_SERVICE_NAME":                                 "action-service-test",
 		"OTEL_RESOURCE_ATTRIBUTES":                          "service.namespace=agentplane,deployment.environment.name=test",
 		"OTEL_EXPORTER_OTLP_PROTOCOL":                       "grpc",
-		"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT":               "http://" + listener.Addr().String(),
+		"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT":               "http://" + address,
 		"OTEL_EXPORTER_OTLP_METRICS_INSECURE":               "true",
 		"OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE": "cumulative",
 	} {

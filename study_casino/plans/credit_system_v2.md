@@ -1,8 +1,9 @@
 # Credit System follow-ups
 
 Open work is limited to time milestones, break-time accrual and settlement, and
-the remaining UI for those features. The current credit contract and
-streak/daily-bonus behavior live in <../README.md> and the server code.
+the remaining UI for those features. The current credit accounting and
+streak/daily-bonus behavior live in <../credit_award.py>, with tunables in
+<../credit_constants.py>.
 
 ## Time milestones
 
@@ -19,7 +20,7 @@ each hour boundary:
 | 4th hour      | +20           |
 | 5th+ hour     | +20 each      |
 
-```
+```python
 MILESTONE_BONUSES = [5, 10, 15, 20, 20, 20, ...]
 ```
 
@@ -81,8 +82,8 @@ these open features:
 - Break start time, accrued duration, settled credits, and the multiplier captured
   at break start.
 
-The current streak and daily-bonus fields already belong to the schema documented
-in <../README.md>.
+The current streak and daily-bonus fields already belong to `CreditStateRow` in
+<../models.py>.
 
 ## UI follow-ups
 

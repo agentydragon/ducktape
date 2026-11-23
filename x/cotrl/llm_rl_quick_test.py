@@ -9,7 +9,7 @@ import sys
 
 # Temporarily modify parameters for quick test
 sys.path.insert(0, ".")
-import oneoff__llm_rl_experiment as main_exp
+import llm_rl_experiment as main_exp
 
 # Override parameters for quick test
 main_exp.MODELS = ["gpt-4o-mini", "gpt-4o", "o1-mini"]

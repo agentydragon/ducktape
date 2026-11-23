@@ -17,6 +17,14 @@ Layout:
 - `debug/github_graphql_exhaustion/`: the #5213 investigation.
 - `../github_api_capture/`: capture reporting scripts.
 
+The proxy and chart tests run in routine CI, including the test that starts the proxy image.
+To build the image or run the tests directly:
+
+```sh
+bbr build //devinfra/x/github_proxy/central:image
+bbr test //devinfra/x/github_proxy/central:tests //cluster/cdk8s/x/github_api_proxy:test_proxy
+```
+
 Reviving needs: re-add the generator to `cluster/cdk8s/generate_manifests.py`, regenerate the
 Flux and image-automation outputs, restore `image_targets.json` and
 `cluster/cdk8s/external_secrets/config.py` entries, mint new client credentials, and import

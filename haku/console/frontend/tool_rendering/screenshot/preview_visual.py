@@ -10,11 +10,9 @@ from playwright.async_api import expect
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 from python.runfiles import Runfiles
 
-from util.testing.frontend_visual.capture import VisualHarness
-from util.testing.frontend_visual.viewports import Viewport
+from testing.frontend_visual.capture import VisualHarness
+from testing.frontend_visual.viewports import Viewport
 
-# gazelle:include_dep //util/testing/frontend_visual:fixtures
-pytest_plugins = ("util.testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 

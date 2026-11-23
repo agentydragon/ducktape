@@ -12,14 +12,12 @@ pub use saved_purity_proto::debundle::saved_purity::PurityRule;
 /// observable side effects; `NotPure { reasons }` carries the
 /// classifier rules that fired directly in the expression and its
 /// sub-expressions (in source order). Known impure callees are linked
-/// through shared cause nodes rather than flattened into this list. The classifier
-/// previously distinguished `Impure` from `Unknown` for an internal
-/// soundness argument, but downstream consumers (dependency graph
-/// `has_side_effect`) collapsed both to "not pure"; this type
-/// matches that contract and replaces the bool with the full
-/// rationale via those links.
+/// through shared cause nodes rather than flattened into this list.
+/// Downstream consumers (dependency graph `has_side_effect`) treat every
+/// non-`Pure` verdict alike, so this type matches that contract and
+/// carries the full rationale via those links instead of a bool.
 ///
-/// Reasons collected by `Purity::worst` are concatenated, so a
+/// `Effects::project` keeps one reason per effect, so a
 /// composite like `f() + g()` records both `UnknownCall` reasons
 /// (with their respective spans), rather than only the first. A call
 /// to a known impure function contributes one `ImpureFunctionCall`
@@ -40,10 +38,9 @@ pub enum Purity {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PurityReason {
     pub rule: PurityRule,
-    /// Resolved by `resolve_reason_locations` once the per-chunk
-    /// source-span resolver is in scope (inside
-    /// `analyze_item_facts`). The classifier itself only fills
-    /// `span` — the wire-emitted reason has `source_location`
+    /// Resolved from `span` where the per-chunk `SourceLocator` is in scope
+    /// (`facts/analyze.rs`, `purity/code_graph.rs`). The classifier itself
+    /// only fills `span` — the wire-emitted reason has `source_location`
     /// populated and `span` skipped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_location: Option<SourceLocation>,
@@ -405,33 +402,12 @@ impl Purity {
         }
         self
     }
-
-    /// Combine two purity verdicts. Pure results union the proof
-    /// dependencies that justified them; concatenating `NotPure`
-    /// reasons preserves every offending sub-expression in source order.
-    pub fn worst(self, other: Self) -> Self {
-        match (self, other) {
-            (
-                Self::Pure { mut dependencies },
-                Self::Pure {
-                    dependencies: other_dependencies,
-                },
-            ) => {
-                dependencies.extend(&other_dependencies);
-                Self::Pure { dependencies }
-            }
-            (Self::Pure { .. }, other) | (other, Self::Pure { .. }) => other,
-            (Purity::NotPure { reasons: mut a }, Purity::NotPure { reasons: b }) => {
-                a.extend(b);
-                Purity::NotPure { reasons: a }
-            }
-        }
-    }
 }
 
 impl PurityReason {
     /// A reason with `source_location` left unresolved: the classifier fills only
-    /// `span`; `resolve_reason_locations` populates `source_location` later.
+    /// `span`; a caller holding the `SourceLocator` populates `source_location`
+    /// later.
     pub(crate) fn new(rule: PurityRule, span: Span, detail: Option<String>) -> Self {
         Self {
             rule,
@@ -456,41 +432,6 @@ impl PurityReason {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis_inputs::ValueInputRef;
-
-    fn dependency(chunk: &str, index: usize) -> ProofDependencies {
-        ProofDependencies {
-            value_inputs: BTreeSet::from([ValueInputRef {
-                defining_chunk: chunk.to_string(),
-                input_index: index,
-            }]),
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn combining_pure_results_unions_dependencies() {
-        let combined = Purity::pure()
-            .with_dependencies(&dependency("static/provider", 0))
-            .worst(Purity::pure().with_dependencies(&dependency("static/other", 1)));
-
-        assert_eq!(
-            combined.dependencies(),
-            Some(&ProofDependencies {
-                value_inputs: BTreeSet::from([
-                    ValueInputRef {
-                        defining_chunk: "static/provider".to_string(),
-                        input_index: 0,
-                    },
-                    ValueInputRef {
-                        defining_chunk: "static/other".to_string(),
-                        input_index: 1,
-                    },
-                ]),
-                ..Default::default()
-            })
-        );
-    }
 
     #[test]
     fn empty_pure_dependencies_preserve_existing_wire_shape() {

@@ -47,8 +47,8 @@ before changing a profile's tolerance, check where its PV lives and rebuild the
 instance on a schedulable node if needed.
 
 **Proxmox-single**: For homelab services. Single instance co-located with the
-app on Proxmox. Relies on ZFS for local reliability; off-site backups via
-pg_dump CronJobs (see backup strategy in <plan.md>).
+app on Proxmox. Relies on ZFS for local reliability; no off-site
+backup exists yet; a `pg_dump` CronJob pattern is a backlog item in <plan.md>.
 
 **Optiplex-single** (`cnpg.OPTIPLEX_PIRAEUS_SSD`): for a database whose app is
 pinned to the OptiPlex at home (Home Assistant's recorder), so writes stay
@@ -107,6 +107,63 @@ its default queries against that database, and the primary's instance reconcile 
 owner's password from the secret. When the role does not exist, that reconcile fails and
 skips every later step.
 
+### R7: CNPG VPAs are recommendation-only
+
+A VPA targeting a CNPG `Cluster` must use `updateMode: Off`. Do not use VPA
+admission or eviction modes, including `Initial` and `Recreate`, for its instance
+Pods. CNPG owns the Pod specification and orchestrates database-aware rolling
+updates; a VPA can change admitted resources without changing the Cluster's
+declared resources, and VPA eviction bypasses CNPG's switchover sequencing.
+
+Use VPA recommendations as sizing evidence, then set requests through the CNPG
+`Cluster` and, for the backup sidecar, its Barman `ObjectStore` configuration.
+The VPA 1.7.1 recommender skips init-container metrics, including restartable
+Barman sidecars, so size those separately. [CNPG 1.30 VPA guidance](https://cloudnative-pg.io/docs/1.30/resource_management/#integration-with-the-vertical-pod-autoscaler-vpa) · [VPA 1.7.1 recommender](https://github.com/kubernetes/autoscaler/blob/vertical-pod-autoscaler-1.7.1/vertical-pod-autoscaler/pkg/recommender/input/cluster_feeder.go)
+
+## Changing database requests
+
+Changing `Cluster.spec.resources` rolls the PostgreSQL Pods. For a healthy
+replicated Cluster, prefer `primaryUpdateMethod: switchover` for a sizing
+change: CNPG updates the replicas first, then with the default `unsupervised`
+strategy promotes an updated replica before replacing the former primary. The
+`supervised` strategy waits for operator intervention. This still disconnects
+clients; it is not a zero-downtime promise. A singleton has no replica to
+promote and needs its own maintenance and recovery plan. See [CNPG rolling updates](https://cloudnative-pg.io/docs/current/rolling_update/).
+
+1. Review the requested sizes against usage, startup and failover headroom, and
+   capacity on the nodes where each instance can run. Confirm a recent usable
+   backup, healthy continuous archiving, healthy instances, and a streaming
+   replica caught up to a primary WAL position. Record the primary and Pod/PVC
+   identities. Check the application-specific recovery path and agree on an
+   acceptable interruption before proceeding.
+2. Change the Cluster's request and update method through its Git owner. Apply
+   one database at a time and observe each rollout before starting the next.
+   When using `switchover`, do not change the PostgreSQL image and PostgreSQL
+   configuration parameters in the same update; CNPG rejects that combination.
+   Size Barman separately through its ObjectStore.
+3. Measure service recovery through a representative client, including
+   reconnection and the application's read/write path. Verify the new primary,
+   read-write Service endpoint, expected replicas and streaming replication,
+   PVC identities, archiving, and Flux reconciliation. Investigate failed
+   application operations even if CNPG reports Ready.
+
+On 2026-11-22, [Study Casino's sizing test](https://github.com/agentydragon/ducktape/pull/19119)
+promoted its replica and restored two healthy instances. A one-second client
+read probe saw an 11.1-second gap between successful reads and ten failed
+attempts; it did not test committed writes. This is one observed rollout, not
+an outage bound. The previous [four-database request wave](https://github.com/agentydragon/ducktape/pull/19102)
+used `restart` and left three write endpoints unready for roughly three minutes
+each while existing connections delayed shutdown. The [VPA report](https://agentydragon.github.io/ducktape/vpa/#rollout-status)
+tracks the dated rollout evidence and remaining sizing work.
+
+## Gotcha: replica stuck `0/1` after failover
+
+A former primary can finish `pg_rewind`, enter standby and stay `0/1` for ~30 minutes while the
+new primary is healthy: it needs WAL up to a minimum recovery ending LSN that the idle primary
+has not sent (`airlock-db-1` needed `0/15000028`; the primary had sent and the replica replayed
+`0/15000000`). `pg_switch_wal()` does not help while the primary idles at a WAL segment boundary;
+one WAL record on the primary does: `select pg_create_restore_point('cnpg_recovery_nudge_<date>_<cluster>');`
+
 ## Current Compliance
 
 No roster here — it drifts. The SSOT is the `Cluster` manifests themselves;
@@ -123,7 +180,7 @@ Parked clusters (retained in Git; R2/R3 bind again on revival):
 
 - `Props` (<../../props/deploy/>): suspended 2026-08-20 for a temporary teardown
   (<decisions.md> § "Parked application manifests").
-- Proxmox-single: `firecrawl-db`, `inventree-db`, `tandoor-db` (`x/`). Their
+- Proxmox-single: `firecrawl-db`, `inventree-db`, `tandoor-db` (`parked/{firecrawl,inventree,tandoor}/db`). Their
   manifests still name the retired `local-path` StorageClass — re-point to
   `piraeus-ssd-local` when reviving.
 - `wayback-archive-db` (<../../x/loom/wayback/deploy/>): OVH-HA shape,

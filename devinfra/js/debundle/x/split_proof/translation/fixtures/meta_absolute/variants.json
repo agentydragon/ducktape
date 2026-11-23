@@ -1,0 +1,8 @@
+[
+  {
+    "name": "the absolute path becomes a relative one",
+    "edits": [{ "file": "lib.js", "find": "\"/static/data.json\"", "replace": "\"./data.json\"" }],
+    "cert": "base",
+    "expect": { "code": 1, "contains": "against" }
+  }
+]

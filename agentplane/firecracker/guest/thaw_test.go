@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"reflect"
@@ -13,6 +14,7 @@ import (
 	managementpb "github.com/agentydragon/ducktape/agentplane/env/firecracker/managementpb"
 	"github.com/agentydragon/ducktape/agentplane/firecracker/workloadidentity"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"github.com/spiffe/go-spiffe/v2/proto/spiffe/workload"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -142,19 +144,10 @@ func TestSubscriberFollowsRotationAndRefreshesAfterSuspension(t *testing.T) {
 	}
 	assertCurrent := func(want *workload.X509SVIDResponse) {
 		t.Helper()
-		ticker := time.NewTicker(10 * time.Millisecond)
-		defer ticker.Stop()
-		for {
+		eventually.Within(t, 10*time.Second, func() (bool, string) {
 			got, err := subscriber.mirror.Snapshot()
-			if err == nil && reflect.DeepEqual(got.Svids[0].X509Svid, want.Svids[0].X509Svid) {
-				return
-			}
-			select {
-			case <-ctx.Done():
-				t.Fatalf("did not receive current credential: %v", err)
-			case <-ticker.C:
-			}
-		}
+			return err == nil && reflect.DeepEqual(got.Svids[0].X509Svid, want.Svids[0].X509Svid), fmt.Sprintf("did not receive current credential: %v", err)
+		})
 	}
 	assertCurrent(first)
 	second := response()

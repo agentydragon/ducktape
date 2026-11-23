@@ -172,11 +172,6 @@ impl<'a> CandidatePreflight<'a> {
         legacy_gate_rejects(&self.legacy_validation)
     }
 
-    /// The exact assignment report produced by the shared realizability gate.
-    pub fn report(&self) -> &AssignmentReport {
-        &self.legacy_validation.report
-    }
-
     /// Structural placement result for the same immutable assignment and
     /// projection. This is independent of effect-sweep diagnostics.
     pub fn placement_assessment(&self) -> &StructuralPlacementAssessment {

@@ -5,8 +5,9 @@ This script finds functions (sync and async) that have exactly one line of
 real code in their body (excluding docstrings). These are candidates for
 trivial forwarders that should be inlined.
 
-Usage:
-    python scan_single_line_functions.py [directory]
+Usage (from the repository root):
+    python -m prompts.scans.scan_single_line_functions [directory]
+    bb run //prompts/scans:scan_single_line_functions_bin -- [directory]
 
 Output:
     JSON with:
@@ -141,11 +142,7 @@ class SingleLineExtractor(ast.NodeVisitor):
 
 
 def scan_file(filepath: Path) -> list[dict[str, Any]]:
-    """Scan a single Python file for single-line functions.
-
-    Returns:
-        List of single-line function dicts
-    """
+    """Scan a single Python file for single-line functions."""
     try:
         content = filepath.read_text(encoding="utf-8")
         lines = content.splitlines(keepends=True)

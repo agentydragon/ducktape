@@ -1,0 +1,3 @@
+$ node prove.mjs AcornMin.lean --ladder "native_decide"   # 374 statements, 5 modules; OrderOk rejects this split
+native_decide      failed: Tactic `native_decide` evaluated that the proposition    1.4 s
+no strategy proved it

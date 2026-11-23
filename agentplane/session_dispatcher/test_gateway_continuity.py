@@ -17,7 +17,7 @@ from agentplane.env.e2e.testing.gateway import Gateway
 from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.env.e2e.testing.runtime_with_history import run_runtime_with_history
 from agentplane.env.runtime.execution import executor_pb2, executor_pb2_grpc
-from agentplane.env.runtime.execution.testing.codex_exec_server_container import CodexExecServerContainer
+from agentplane.env.runtime.execution.testing.executor_companion import ExecutorCompanion
 from agentplane.environments.testing.process import EnvironmentServiceProcess, run_environment_service
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.testing.go_service import WRITER, GoHistoryService, go_history_service
@@ -28,7 +28,6 @@ from agentplane.session_dispatcher.client import SandboxControlClient
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
-from agentplane.testing.native_gateway_fixtures import DISPATCHER_AUDIENCE, GATEWAY_AUDIENCE
 from agentplane.testing.tls import RUNNER_GATEWAY_TEST_DNS
 
 # gazelle:include_dep @pypi//protobuf
@@ -39,7 +38,7 @@ pytest_plugins = (
     "agentplane.testing.native_gateway_fixtures",
     "agentplane.env.e2e.testing.fixtures",
     "agentplane.history_service.testing.fixtures",
-    "agentplane.env.runtime.execution.testing.codex_exec_server_container",
+    "agentplane.env.runtime.execution.testing.executor_companion",
 )
 
 
@@ -94,14 +93,8 @@ async def runner(
 @pytest.mark.parametrize("harness", [session_pb2.HARNESS_CODEX], ids=["codex"])
 class TestGatewayContinuity:
     @pytest.fixture
-    def config(
-        self, config: RunnerTestConfig, codex_exec_server_container: CodexExecServerContainer
-    ) -> RunnerTestConfig:
-        return replace(
-            config,
-            codex_executor_url=codex_exec_server_container.url,
-            codex_executor_socket=codex_exec_server_container.socket,
-        )
+    def config(self, config: RunnerTestConfig, executor_companion: ExecutorCompanion) -> RunnerTestConfig:
+        return replace(config, executor_url=executor_companion.url, executor_socket=executor_companion.socket)
 
     @pytest.fixture
     async def gateway_service(
@@ -112,8 +105,6 @@ class TestGatewayContinuity:
             database_url=dispatcher_database_url,
             namespace=sandbox.namespace,
             runtime_proxy_executor_callers=(CENTRAL_SAMPLER_URI,),
-            dispatcher_audience=DISPATCHER_AUDIENCE,
-            gateway_audience=GATEWAY_AUDIENCE,
         ) as gateway:
             yield gateway
 
@@ -136,7 +127,6 @@ class TestGatewayContinuity:
         ) as replica:
             replica_client = SandboxControlClient(
                 control_target=replica.target,
-                token_file=None,
                 request_timeout_s=20,
                 channel_credentials=replica.channel_credentials(APP_URI),
             )
@@ -156,7 +146,6 @@ class TestGatewayContinuity:
         gateway_a_client = gateway_service.environment_runtime_client()
         gateway_b_client = SandboxControlClient(
             control_target=sibling_environment_service.target,
-            token_file=None,
             request_timeout_s=20,
             channel_credentials=sibling_environment_service.channel_credentials(APP_URI),
         )

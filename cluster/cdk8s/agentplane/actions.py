@@ -5,9 +5,6 @@ an environment with the orchestration_v1 group. Staging's policy sets are added 
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from pathlib import Path
-
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ContainerResources,
@@ -34,7 +31,6 @@ from agentplane.action_service.push_settings import WebPushSettings
 from agentplane.action_service.session_delegation.binding import SessionDelegationExecutorBinding
 from agentplane.action_service.settings import EnvironmentServicePeer, ServicePeer, Settings
 from agentplane.crd_group import GROUP
-from agentplane.identity.auth import listener
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
@@ -52,7 +48,7 @@ from cluster.cdk8s.agentplane.environment import Environment, OrchestrationProps
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.probes import tls_grpc_probe
+from cluster.cdk8s.probes import TlsGrpcHealth
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 from cluster.cdk8s.secret_ref import SecretRef
@@ -300,7 +296,6 @@ class Actions(Construct):
         image_pull_policy: ImagePullPolicy = ImagePullPolicy.ALWAYS,
         memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
-        container_env: Mapping[str, EnvValue] | None = None,
     ) -> None:
         """`history` and `dispatcher` serve orchestration_v1 directly and session_delegation with forwarded
         caller identity, when those groups are configured."""
@@ -310,7 +305,6 @@ class Actions(Construct):
         self.history = history
         self.dispatcher = dispatcher
         self.environment_service_endpoint = environment_service_endpoint
-        self.container_env = container_env or {}
         self.placement = placement
         self.registry_secret_name = registry_secret_name
         self.image_pull_policy = image_pull_policy
@@ -336,45 +330,19 @@ class Actions(Construct):
         groups = dict(props.action_groups)
         if props.orchestration_v1 is not None:
             groups[ORCHESTRATION_GROUP] = _orchestration_group(env, props.orchestration_v1)
-            dispatcher_peer = ServicePeer(
-                target=f"{dispatcher.fqdn}:{dispatcher.port.number}",
-                request_timeout_s=_PEER_TIMEOUT_SECONDS,
-                tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=ACTIONS_URI),
-            )
-            history_peer = ServicePeer(
-                target=f"{history.fqdn}:{history.pod_port}",
-                request_timeout_s=_PEER_TIMEOUT_SECONDS,
-                tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=ACTIONS_URI),
-            )
+            dispatcher_peer, history_peer = self._session_peers(_PEER_TIMEOUT_SECONDS)
         if props.session_delegation is not None:
             groups.update(_session_delegation_groups(props.session_delegation))
-            delegated_dispatcher_peer = ServicePeer(
-                target=f"{dispatcher.fqdn}:{dispatcher.port.number}",
-                request_timeout_s=_DELEGATED_PEER_TIMEOUT_SECONDS,
-                tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=ACTIONS_URI),
-            )
-            delegated_history_peer = ServicePeer(
-                target=f"{history.fqdn}:{history.pod_port}",
-                request_timeout_s=_DELEGATED_PEER_TIMEOUT_SECONDS,
-                tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=ACTIONS_URI),
-            )
-        settings_name = "actions-settings"
-        workload = self._add_workload(settings_name)
+            delegated_dispatcher_peer, delegated_history_peer = self._session_peers(_DELEGATED_PEER_TIMEOUT_SECONDS)
+        workload = self._add_workload()
         serving_tls = workload_tls.service_certificate(
             self, env, container=workload.container, name=NAME, uri=ACTIONS_URI
         )
-        assert serving_tls.cert_file is not None
-        assert serving_tls.key_file is not None
-        assert serving_tls.ca_file is not None
-        rpc = listener.Listener(
-            listen_address=f"0.0.0.0:{self.service.pod_port}",
-            tls=listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
-            auth=[listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file))],
-        )
+        rpc = serving_tls.spiffe_listener(self.service.pod_port)
         settings = SettingsFile(
             self,
             "settings",
-            metadata=ApiObjectMetadata(name=settings_name, namespace=env.namespace),
+            metadata=ApiObjectMetadata(name="actions-settings", namespace=env.namespace),
             content=yaml_config(
                 Settings(
                     rpc=rpc,
@@ -392,7 +360,7 @@ class Actions(Construct):
                     action_groups=groups,
                     environment_service=(
                         EnvironmentServicePeer(
-                            target=f"{environment_service_endpoint.fqdn}:{environment_service_endpoint.port.number}",
+                            target=environment_service_endpoint.authority,
                             request_timeout_s=(
                                 _DELEGATED_PEER_TIMEOUT_SECONDS
                                 if props.session_delegation is not None
@@ -415,6 +383,20 @@ class Actions(Construct):
         self._add_rbac(workload.account)
         if props.orchestration_v1 is not None:
             add_launcher_admission(self, env.namespace)
+
+    def _session_peers(self, timeout_seconds: int) -> tuple[ServicePeer, ServicePeer]:
+        return (
+            ServicePeer(
+                target=self.dispatcher.authority,
+                request_timeout_s=timeout_seconds,
+                tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=ACTIONS_URI),
+            ),
+            ServicePeer(
+                target=self.history.authority,
+                request_timeout_s=timeout_seconds,
+                tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=ACTIONS_URI),
+            ),
+        )
 
     def add_platform_resources(self) -> None:
         """Add the Cilium policy and Action Service availability alert."""
@@ -510,7 +492,7 @@ class Actions(Construct):
         )
         if self.env.actions.orchestration_v1 is not None:
             # The EnvironmentService creates Sandboxes; Actions reads the exact created UID and
-            # writes launcher grants, which `_add_launcher_admission` limits to that shape.
+            # writes launcher grants, which `add_launcher_admission` limits to that shape.
             rules_by_namespace[namespace].append(
                 RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get"])
             )
@@ -559,44 +541,14 @@ class Actions(Construct):
                 .key("private-key-pem")
                 .env_value(self, "web-push-secret")
             )
-        return env | dict(self.container_env)
+        return env
 
-    def _reload_secrets(self) -> list[str]:
-        """The Secrets `_container_env` and `_add_workload` wire in, so rotating any rolls the Deployment."""
-        props = self.env.actions
-        names = {mount.secret_name for mount in props.bearer_mcp_mounts}
-        if props.web_push is not None:
-            names.add(props.web_push.secret_name)
-        if props.github_mcp_client_secret_name is not None:
-            names.add(props.github_mcp_client_secret_name)
-        if props.oauth_secret_items:
-            names.add(self.mcp_oauth.name)
-        return sorted(names)
-
-    def _add_workload(self, settings_name: str) -> ServiceWorkload:
-        reload_secrets = self._reload_secrets()
-        readiness = tls_grpc_probe(
+    def _add_workload(self) -> ServiceWorkload:
+        health = TlsGrpcHealth(
             port=self.service.pod_port,
             ca_file=workload_tls.TRUST_BUNDLE_FILE,
             server_uri=ACTIONS_URI,
-            initial_delay_seconds=3,
-        )
-        liveness = tls_grpc_probe(
-            port=self.service.pod_port,
-            ca_file=workload_tls.TRUST_BUNDLE_FILE,
-            server_uri=ACTIONS_URI,
-            service="livez",
-            initial_delay_seconds=20,
-            period_seconds=30,
-        )
-        startup = tls_grpc_probe(
-            port=self.service.pod_port,
-            ca_file=workload_tls.TRUST_BUNDLE_FILE,
-            server_uri=ACTIONS_URI,
-            initial_delay_seconds=0,
-            period_seconds=5,
-            service="livez",
-            failure_threshold=60,
+            liveness_service="livez",
         )
         workload = add_service_workload(
             self,
@@ -605,11 +557,10 @@ class Actions(Construct):
             container="actions",
             image=f"{_ACTIONS_IMAGE}:{_PLACEHOLDER_TAG}",
             image_pull_policy=self.image_pull_policy,
-            replica_profile=self.env.replicas,
             env_variables=self._container_env(),
-            readiness=readiness,
-            liveness=liveness,
-            startup=startup,
+            readiness=health.readiness(),
+            liveness=health.liveness(),
+            startup=health.startup(),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=self.memory_request, limit=self.memory_limit),
@@ -619,12 +570,6 @@ class Actions(Construct):
             placement=self.placement,
             telemetry_enabled=True,
             registry_secret_name=self.registry_secret_name,
-            annotations={
-                **({"secret.reloader.stakater.com/reload": ",".join(reload_secrets)} if reload_secrets else {}),
-                # No configMapGenerator hash rolls the Deployment on settings changes
-                # (cluster/docs/cdk8s.md); reloader does.
-                "configmap.reloader.stakater.com/reload": settings_name,
-            },
         )
         container = workload.container
 
@@ -661,7 +606,7 @@ class Actions(Construct):
             )
             # Its own directory: a subPath file cannot be mounted inside the read-only
             # settings volume (runc: "not a directory").
-            container.mount(f"/run/secrets/{mount.name}", bearer_volume, read_only=True)
+            container.mount(mount.mount_dir, bearer_volume, read_only=True)
         return workload
 
     def _add_network_policy(self) -> None:
@@ -669,14 +614,13 @@ class Actions(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             endpoint_selector=self.service.pods.selector,
             ingress=[
                 notifications.service(namespace).pods.admit(self.service.pod_port),
                 # egress.py and app.py import this module, so their Pods are named here.
                 IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "egress"), ports=[self.service.pod_port]),
                 IngressRule.from_endpoints(cilium.endpoint_labels(namespace, "app"), ports=[self.service.pod_port]),
-                # The staged edge has no Pods until the Connection/MCP traffic cutover.
                 IngressRule.from_endpoints(
                     cilium.endpoint_labels(namespace, "mcp-edge"), ports=[self.service.pod_port]
                 ),

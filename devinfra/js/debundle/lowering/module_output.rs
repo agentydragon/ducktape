@@ -448,10 +448,9 @@ pub(super) fn prepare_module_emission<'output>(
     // External package / facade imports join the runtime re-import
     // block after the retained chunk re-imports, deterministic in
     // first-need order. External targets are outside the per-chunk
-    // I-graph the gate orders. Spliced
-    // after the chunk_renames application so the locals they
-    // introduce are never subject to spec renames — matching the
-    // post-hoc wave, which introduced them after every rename had run.
+    // I-graph the gate orders. Spliced after the chunk_renames
+    // application so the locals they introduce are never subject to
+    // spec renames.
     if !vendor_external_imports.is_empty() {
         let import_count = body
             .iter()
@@ -498,7 +497,7 @@ pub(super) fn prepare_module_emission<'output>(
     }
     // ImportSpecifier-bound members (`BindingKind::Imported` in
     // `assignment_analysis.inputs().binding_catalogue()`): for each `Imported` binding whose
-    // `re_exported_by` map names this module, emit a re-import
+    // `re_exporter` is this module, emit a re-import
     // (using the local name as the alias) plus mirror the public-name
     // export. Output paths are rebased here per destination; external
     // specifiers keep their original loader identity.

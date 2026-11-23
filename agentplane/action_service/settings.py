@@ -92,8 +92,8 @@ class Settings(BaseModel):
         "it writes `ActionsReady` conditions only on those bindings."
     )
     caller_service_account_namespaces: Set[str] = Field(
-        description="Kubernetes namespaces whose live WorkloadCredentials the SVID resolver reads "
-        "and whose ServiceAccounts the policy index watches; it does not grant Action approval."
+        description="Kubernetes namespaces whose live WorkloadCredentials the SVID resolver reads; "
+        "it does not grant Action approval."
     )
     direct_wait_seconds: float = Field(
         default=DEFAULT_DIRECT_WAIT_SECONDS,

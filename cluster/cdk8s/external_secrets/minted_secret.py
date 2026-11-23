@@ -1,8 +1,8 @@
-"""ducktape mints its own bearer tokens and DB role credentials rather than storing
-ciphertext for values nothing outside the cluster needs to know: an ESO `Password`
-generator immediately consumed by a matching `ExternalSecret`. Two idioms share the
-generator half: a single opaque secret (`mint_bearer_secret`) and a multi-field DB role
-credential (`mint_db_role_secret`).
+"""ESO Password generators for cluster-owned secrets.
+
+Each refresh produces a new password. Callers select CreatedOnce or a yearly refresh
+according to the consumer's rotation policy. Credentials owned by another system,
+such as Authentik OIDC client secrets, must be read from that owner.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 
 from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret
+from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 
 
 def password_generator(scope: Construct, id: str, *, name: str, namespace: str, length: int, digits: int) -> str:
@@ -37,9 +38,7 @@ def mint_bearer_secret(
     scope: Construct,
     id: str,
     *,
-    name: str,
-    namespace: str,
-    key: str | None = "password",
+    target: SecretKey | SecretRef,
     length: int = 48,
     digits: int = 12,
     refresh: str | ExternalSecretSpecRefreshPolicy = ExternalSecretSpecRefreshPolicy.CREATED_ONCE,
@@ -51,36 +50,39 @@ def mint_bearer_secret(
     description: str | None = None,
     target_annotations: dict[str, str] | None = None,
 ) -> None:
-    """Mints `name` as a single-key bearer/opaque secret: an ESO `Password` generator
-    immediately consumed by a single-key `ExternalSecret` template.
-
-    `key` names the field the generated password lands under in the target Secret;
-    `key=None` omits the template, so ESO copies the generator's own `password` field into
-    the target verbatim, under that same name. `generator_name` overrides the `Password`
-    object's own name where it must differ from the target Secret's `name` -- both objects
-    share one name at most call sites. `target_annotations` lands on the generated
-    Secret's own metadata (e.g. reflector mirroring config); `description` is this
-    `ExternalSecret` object's own `metadata.annotations.description`.
+    """Mint a single opaque credential. A SecretKey names its templated output field.
+    A whole SecretRef receives the password generator's native output without a template.
+    generator_name overrides the Password resource name independently of the Secret name.
+    target_annotations apply to the templated Secret, and description to the ExternalSecret.
     """
-    generator = password_generator(
-        scope, f"{id}-generator", name=generator_name or name, namespace=namespace, length=length, digits=digits
-    )
-    template = (
-        ExternalSecretSpecTargetTemplate(
+    if isinstance(target, SecretKey):
+        secret = target.secret
+        template = ExternalSecretSpecTargetTemplate(
             type=secret_type,
-            data={key: "{{ .password }}"},
+            data={target.key: "{{ .password }}"},
             metadata=ExternalSecretSpecTargetTemplateMetadata(annotations=target_annotations)
             if target_annotations
             else None,
         )
-        if key is not None
-        else None
+    else:
+        secret = target
+        template = None
+
+    generator = password_generator(
+        scope,
+        f"{id}-generator",
+        name=generator_name or secret.name,
+        namespace=secret.namespace,
+        length=length,
+        digits=digits,
     )
     ExternalSecret(
         scope,
         id,
         metadata=ApiObjectMetadata(
-            name=name, namespace=namespace, annotations={"description": description} if description else None
+            name=secret.name,
+            namespace=secret.namespace,
+            annotations={"description": description} if description else None,
         ),
         refresh_interval=refresh if isinstance(refresh, str) else None,
         refresh_policy=refresh if isinstance(refresh, ExternalSecretSpecRefreshPolicy) else None,
@@ -89,53 +91,4 @@ def mint_bearer_secret(
         deletion_policy=deletion_policy,
         template=template,
         immutable=immutable,
-    )
-
-
-def mint_db_role_secret(
-    scope: Construct,
-    id: str,
-    *,
-    name: str,
-    namespace: str,
-    role: str,
-    host: str,
-    port: int,
-    database: str,
-    url_scheme: str = "postgresql",
-    url_key: str = "DATABASE_URL",
-    include_host_fields: bool = True,
-    secret_type: str | None = "kubernetes.io/basic-auth",
-    target_annotations: dict[str, str] | None = None,
-) -> None:
-    """Mints `name` as a DB role credential: an ESO `Password` generator feeding a
-    multi-field `ExternalSecret` template -- `username`/`password`, optionally `host`/
-    `port`/`dbname`, plus a `{url_scheme}://...` connection string under `url_key`. The
-    generator's own object is always `f"{name}-generator"`, distinct from the target
-    Secret's name (unlike `mint_bearer_secret`, every DB role site already used this
-    naming). `target_annotations` land on the generated Secret's own metadata, which always
-    carries `cnpg.io/reload`: every caller names the Secret as a CloudNativePG managed role's
-    `passwordSecret`, and without the label the operator applies a new password only at its
-    next unrelated reconcile, while Reloader restarts the consumers at once.
-    """
-    generator = password_generator(
-        scope, f"{id}-generator", name=f"{name}-generator", namespace=namespace, length=40, digits=8
-    )
-    data = {"username": role, "password": "{{ .password }}"}
-    if include_host_fields:
-        data |= {"host": host, "port": str(port), "dbname": database}
-    data[url_key] = f"{url_scheme}://{role}:{{{{ .password }}}}@{host}:{port}/{database}"
-    ExternalSecret(
-        scope,
-        id,
-        metadata=ApiObjectMetadata(name=name, namespace=namespace),
-        refresh_interval="8760h",
-        data_from=[DataFrom.from_password_generator(generator)],
-        template=ExternalSecretSpecTargetTemplate(
-            type=secret_type,
-            data=data,
-            metadata=ExternalSecretSpecTargetTemplateMetadata(
-                labels={"cnpg.io/reload": "true"}, annotations=target_annotations
-            ),
-        ),
     )

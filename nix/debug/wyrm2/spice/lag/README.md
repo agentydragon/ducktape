@@ -54,7 +54,7 @@ virtio-gl was re-enabled (2026-01-27) and is now working correctly.
 
 ### VT path (fast, ~58ms adjusted)
 
-```
+```text
 Keystroke → SPICE input channel → VM kernel → VT framebuffer console
 → QXL/SPICE grabs changed framebuffer region → SPICE image stream → client
 ```
@@ -68,7 +68,7 @@ video encoding overhead. ~58ms end-to-end (after subtracting ydotool overhead).
 The desktop session is actually **Xorg** (confirmed via `loginctl` and
 `nvidia-smi` showing `/usr/lib/xorg/Xorg`), not Wayland.
 
-```
+```text
 Keystroke → SPICE input channel → VM kernel → X11 client (terminal)
 → Mutter compositor (GNOME Shell on Xorg)
 → OpenGL compositing via llvmpipe (CPU software rendering!)
@@ -111,7 +111,7 @@ transitions (vim_col goes from N-1 to N), not character recognition.
 
 vim running in a bare VT (Ctrl+Alt+F1) on wyrm, no desktop compositor involved.
 
-```
+```text
 Samples: 10/10
 Average: 98ms [91-106ms]
 Min: 87ms, Max: 128ms
@@ -125,7 +125,7 @@ Recording: `results/2026-01-27T04:19_baseline/`
 
 vim in terminal inside GNOME on Xorg. One keystroke every 3 seconds.
 
-```
+```text
 Samples: 10/10
 Average: 147ms [143-152ms]
 Min: 120ms, Max: 159ms
@@ -139,7 +139,7 @@ Recording: `results/2026-01-27T04:41_gnome/`
 
 40 markers at 200ms intervals under GNOME/SPICE.
 
-```
+```text
 Samples: 40/40
 Average: 462ms [458-465ms]
 Min: -74ms, Max: 764ms
@@ -155,7 +155,7 @@ Recording: `results/2026-01-27T04:51_gnome_burst/`
 
 40 markers at ~200ms intervals in a bare VT.
 
-```
+```text
 Samples: 37/40 (3 excluded: clock misreads)
 Average: ~93ms [80-103ms]
 Min: 80ms, Max: 103ms
@@ -172,7 +172,7 @@ Recording: `results/2026-01-27T06:17_vt_burst_clean/`
 (QXL display, Xorg session — same as previous GNOME tests except streaming
 disabled).
 
-```
+```text
 Samples: 40/40
 Average: 152ms [159-146ms]
 Min: 34ms, Max: 578ms
@@ -190,7 +190,7 @@ Recording: `results/2026-01-27T16:23_gnome_novideostream_burst/`
 40 markers at ~280ms intervals under GNOME/SPICE with `vga: virtio-gl`
 (VirGL GPU acceleration via host AMD iGPU, videostreaming off).
 
-```
+```text
 Samples: 40/40
 Average: 157ms [141-174ms]
 Min: 68ms, Max: 553ms

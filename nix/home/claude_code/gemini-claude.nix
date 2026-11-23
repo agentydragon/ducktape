@@ -25,8 +25,7 @@ in
 import ./gateway.nix { inherit pkgs lib; } "gemini-claude" {
   baseUrl = "https://litellm.allegedly.works";
   authTokenFile = config.sops.secrets.litellm_gemini_key.path;
-  inherit (models) model;
-  inherit (models) haikuModel;
+  inherit (models) model haikuModel;
   disallowedTools = [
     "WebFetch"
     "WebSearch"

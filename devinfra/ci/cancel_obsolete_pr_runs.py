@@ -1,6 +1,11 @@
 """Retire obsolete ordinary PR validation runs as replacements start or their PR closes.
 
 Stdlib only: executed from the controller workflow's trusted default-branch SHA.
+
+Each ordinary same-repository PR run has its own concurrency group in `bazel-ci.yml`, so a PR update does not
+queue behind its predecessor's cancellation (three 2026-11-03 updates waited 54, 58 and 80 s: a ceiling on the
+saving, not a measured saving). `workflow_run` loads the default branch's workflow, so a PR cannot exercise this
+controller: verify a change to it after merge, on a live PR update.
 """
 
 from __future__ import annotations

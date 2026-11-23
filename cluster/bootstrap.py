@@ -102,7 +102,7 @@ def preflight(root: Path) -> None:
     log.info("Preflight Validation")
 
     repo = pygit2.Repository(root)
-    gitops_prefixes = ("cluster/k8s/", "cluster/generated/", "cluster/flux-system/")
+    gitops_prefixes = ("cluster/k8s/", "cluster/generated/")
     diff = repo.index.diff_to_tree(repo.head.peel(pygit2.Tree))
     dirty = [d.delta.new_file.path for d in diff if d.delta.new_file.path.startswith(gitops_prefixes)]
     if dirty:
@@ -122,7 +122,7 @@ def deploy_persistent_auth() -> None:
     These are idempotent — if they already exist, tofu apply is a no-op.
     On fresh bootstrap, they're created first so infrastructure can use them.
     Targeted applies don't need -exclude (tofu doesn't allow combining them,
-    and the target lists don't include module.wyrm2).
+    and the target lists don't include proxmox_virtual_environment_vm.wyrm2).
     """
     log.info("Phase 1: Persistent Auth")
 
@@ -194,7 +194,7 @@ def deploy_infrastructure() -> None:
 
     wait_for_cilium_health(v1)
     verify_clusterip_routing(v1)
-    restart_cilium_operator_gateway_controller(v1)
+    restart_cilium_operator_gateway_controller()
     log.info("Infrastructure ready")
 
 

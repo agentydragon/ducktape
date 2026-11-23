@@ -17,22 +17,18 @@ import sys
 import time
 from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
 RUN_LIMIT = 1000
 EARLIEST_GITHUB_RUN = "2008-01-01T00:00:00Z"
 ACTIVE_STATUSES = ("queued", "in_progress", "pending", "waiting", "requested")
 
 
-class Api(Protocol):
-    def request(self, endpoint: str, params: Mapping[str, str], *, paginate: bool) -> Any:
-        """Request one GitHub page or all pages through `gh api`."""
-
-
 class GhApi:
     """Small `gh api` adapter; authentication remains owned by GitHub CLI."""
 
     def request(self, endpoint: str, params: Mapping[str, str], *, paginate: bool) -> Any:
+        """Request one GitHub page or all pages through `gh api`."""
         command = ["gh", "api", "--method", "GET", endpoint]
         for key, value in params.items():
             command.extend(("-f", f"{key}={value}"))
@@ -83,7 +79,7 @@ def _unique_by_id(items: Iterable[Mapping[str, Any]], label: str) -> list[dict[s
     return list(unique.values())
 
 
-def _run_pages(api: Api, endpoint: str, params: Mapping[str, str], expected_count: int) -> list[dict[str, Any]]:
+def _run_pages(api: GhApi, endpoint: str, params: Mapping[str, str], expected_count: int) -> list[dict[str, Any]]:
     pages = api.request(endpoint, params, paginate=True)
     if not isinstance(pages, list) or not pages:
         if expected_count == 0 and pages == []:
@@ -99,7 +95,7 @@ def _run_pages(api: Api, endpoint: str, params: Mapping[str, str], expected_coun
 
 
 def collect_runs(
-    api: Api, repo: str, first: str, last: str, *, filters: Mapping[str, str] | None = None
+    api: GhApi, repo: str, first: str, last: str, *, filters: Mapping[str, str] | None = None
 ) -> list[dict[str, Any]]:
     """Fetch all runs in an inclusive time window, partitioning at the API cap."""
     start, end = _parse_time(first), _parse_time(last)
@@ -132,7 +128,9 @@ def collect_runs(
     return _unique_by_id(result, "workflow run across time partitions")
 
 
-def _paginated_collection(api: Api, endpoint: str, params: Mapping[str, str], *, rows_key: str) -> list[dict[str, Any]]:
+def _paginated_collection(
+    api: GhApi, endpoint: str, params: Mapping[str, str], *, rows_key: str
+) -> list[dict[str, Any]]:
     pages = api.request(endpoint, params, paginate=True)
     if not isinstance(pages, list):
         raise ValueError(f"{endpoint} pagination did not return a page list")
@@ -166,7 +164,7 @@ def combine_runs(
     return [runs[identifier] for identifier in sorted(runs)]
 
 
-def _plain_array_pages(api: Api, endpoint: str, params: Mapping[str, str]) -> list[list[Any]]:
+def _plain_array_pages(api: GhApi, endpoint: str, params: Mapping[str, str]) -> list[list[Any]]:
     pages = api.request(endpoint, params, paginate=True)
     if not isinstance(pages, list) or any(not isinstance(page, list) for page in pages):
         raise ValueError(f"{endpoint} returned malformed array pages")

@@ -3,7 +3,9 @@ import { type JSX, useEffect, useState } from "react";
 
 import type { EnvironmentDescriptor } from "../../../environments/v1/environment_service_pb";
 import { displayableError } from "../transport/client";
-import { type ThreadView, getThread } from "./client";
+import { type ThreadView, getThread, sessionEnvironment } from "./client";
+import { Harness } from "../../../proto/session_pb";
+import { SessionStatus_Materialization } from "../../../session_dispatcher/dispatcher/api/session/session_dispatcher_pb";
 import { attachedHarness, harnessBehavior } from "./harness_behavior";
 import { harnessLabel } from "./model_catalog";
 import { resumeSandbox } from "../sandboxes/client";
@@ -13,7 +15,7 @@ import { ChronologicalDebugProvider } from "./chronological_debug";
 import { ThreadTitle } from "./thread_title";
 import { ThreadStatusIndicator } from "./thread_status_indicator";
 import { installThreadFavicon } from "./thread_favicon";
-import { sessionActivityFresh, threadStatusFromSnapshot } from "./thread_status";
+import { sessionActivityFresh, sessionMaterializationLabel, threadStatusFromSnapshot } from "./thread_status";
 import {
   sandboxReady,
   sandboxStarting,
@@ -27,7 +29,10 @@ import { finishSessionCreate, withinSessionCreate } from "../observability/traci
 import { useFrontendConfig } from "../app_config/frontend_config";
 import { appDocumentTitle, threadDocumentTitle } from "../shell/tab_metadata";
 import { useThreadSync } from "./thread_sync";
+import { CommandDeliveryHistory, DeliveryHistoryFallback } from "./command_delivery_history";
 import { ThreadConversation } from "./conversation";
+import { OutstandingDispatchCommands, inlineDispatches } from "./thread_commands";
+import { useThreadDelivery } from "./thread_delivery";
 import { DEFAULT_COMPOSER_PLACEHOLDER } from "./composer";
 import "./page.css";
 import "./conversation.css";
@@ -65,44 +70,74 @@ export interface ThreadPageProps {
   settingsOpen?: boolean;
 }
 
-export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps): JSX.Element {
+export function ThreadPage(props: ThreadPageProps): JSX.Element {
+  return <SelectedThreadPage key={props.threadId} {...props} />;
+}
+
+function SelectedThreadPage({ threadId, settingsOpen = false }: ThreadPageProps): JSX.Element {
   const sync = useThreadSync();
+  const [historySession, setHistorySession] = useState<string | null>(null);
+  const openDeliveryHistory = () => setHistorySession(threadId);
   const threadsLive = useRequiredThreadsLive();
   const snapshotThread = threadsLive.snapshot?.threads.find((candidate) => candidate.metadata.threadId === threadId);
   const [thread, setThread] = useState<ThreadView | null>(snapshotThread ?? null);
+  const delivery = useThreadDelivery(threadId, thread?.metadata.threadId === threadId);
   const notices = useThreadNotices(thread === null ? [] : [threadId]);
   const environment = useRequiredSandboxesLive();
   const inventoryFresh = sandboxInventoryFresh(environment);
+  const target = sessionEnvironment(thread?.session) ?? thread?.summary.sandbox;
   // The top bar and the composer read the one Sandbox row, so they cannot disagree about it.
   const sandbox = environment.snapshot?.find(
     (candidate) =>
       thread !== null &&
-      Boolean(thread.summary.sandbox?.uid) &&
+      Boolean(target?.uid) &&
       candidate.target !== undefined &&
-      candidate.target.name === thread.summary.sandbox?.name &&
-      candidate.target.uid === thread.summary.sandbox?.uid
+      candidate.target.name === target?.name &&
+      candidate.target.uid === target?.uid
   );
   const topbarStatus = threadStatusFromSnapshot(snapshotThread, sessionActivityFresh(threadsLive));
   const [error, setError] = useState<string | null>(null);
   const frontendConfig = useFrontendConfig();
   const traceSearch = frontendConfig?.traceSearch ?? null;
   const langfuseSearch = frontendConfig?.langfuseSearch ?? null;
-  const { commandsRequireReadySandbox } = harnessBehavior(attachedHarness(thread?.summary.attached));
+  const placement = thread?.session?.placement?.kind;
+  const harness =
+    attachedHarness(thread?.summary.attached) ??
+    (placement?.case === "centralSamplerV1"
+      ? Harness.CENTRAL_SAMPLER
+      : placement?.case === "environmentHosted"
+        ? placement.value.harness
+        : undefined);
+  const { commandsRequireReadySandbox } = harnessBehavior(harness);
+  const materialization = thread?.session?.status?.materialization;
+  const materializationUnconfirmed =
+    materialization === SessionStatus_Materialization.SESSION_MATERIALIZATION_FAILED ||
+    materialization === SessionStatus_Materialization.SESSION_MATERIALIZATION_UNKNOWN;
+  const showConversation = !materializationUnconfirmed || Boolean(thread?.summary.projectionEpoch);
   const notice =
-    !commandsRequireReadySandbox && sandbox && inventoryFresh && !sandboxReady(sandbox)
+    !materializationUnconfirmed && !commandsRequireReadySandbox && sandbox && inventoryFresh && !sandboxReady(sandbox)
       ? "Execution Sandbox is unavailable. Central sampling controls remain available."
-      : thread && environment.snapshot && sandboxNotice(sandbox, inventoryFresh);
+      : thread &&
+        environment.snapshot &&
+        (target?.uid
+          ? sandboxNotice(sandbox, inventoryFresh)
+          : "Sandbox identity unavailable. Current availability unknown; controls are disabled.");
   const suspended = sandboxSuspended(sandbox);
   const composerPlaceholder = !commandsRequireReadySandbox
     ? DEFAULT_COMPOSER_PLACEHOLDER
     : sandboxComposerPlaceholder(sandbox, inventoryFresh);
   const canQueueCommands =
+    !materializationUnconfirmed &&
     commandsRequireReadySandbox &&
     inventoryFresh &&
     sandbox !== undefined &&
     ((suspended && sandbox.configuration?.wakeOnSend) || sandboxStarting(sandbox));
   const canResumeSandbox =
-    commandsRequireReadySandbox && inventoryFresh && suspended && sandbox?.configuration?.wakeOnSend === false;
+    !materializationUnconfirmed &&
+    commandsRequireReadySandbox &&
+    inventoryFresh &&
+    suspended &&
+    sandbox?.configuration?.wakeOnSend === false;
   useEffect(() => {
     let current = true;
     setError(null);
@@ -159,16 +194,27 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
             />
             {thread && (
               <Text size="xs" c="dimmed" className="agentplane-thread-heading-sandbox">
-                {thread.summary.sandbox?.name ?? ""} · {harnessLabel(attachedHarness(thread.summary.attached))}
+                {target?.name ?? ""} · {harnessLabel(harness)}
               </Text>
             )}
           </Box>
         </Group>
       </TopbarTitle>
+      <CommandDeliveryHistory
+        delivery={delivery}
+        opened={historySession === threadId}
+        onClose={() => setHistorySession(null)}
+      />
+      {(!thread || !showConversation) && <DeliveryHistoryFallback onOpen={openDeliveryHistory} />}
       <Stack style={{ flex: 1, minHeight: 0 }}>
         {error && (
           <Text role="alert" c="red">
             {error}
+          </Text>
+        )}
+        {thread && materializationUnconfirmed && (
+          <Text role="alert" c="red">
+            {sessionMaterializationLabel(thread)}
           </Text>
         )}
         {thread?.metadata.archived && (
@@ -181,17 +227,20 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
             {notice}
           </Text>
         )}
-        {thread && (
+        {thread && showConversation && (
           <sync.Thread key={threadId} threadId={threadId}>
             <ThreadConversation
               threadId={threadId}
               thread={thread}
               available={
-                inventoryFresh && (commandsRequireReadySandbox ? sandboxReady(sandbox) : sandbox !== undefined)
+                !materializationUnconfirmed &&
+                inventoryFresh &&
+                (commandsRequireReadySandbox ? sandboxReady(sandbox) : sandbox !== undefined)
               }
               canQueueCommands={canQueueCommands}
               canResumeSandbox={canResumeSandbox}
               composerPlaceholder={composerPlaceholder}
+              onOpenDeliveryHistory={openDeliveryHistory}
               onResumeSandbox={() => {
                 if (canResumeSandbox && thread && sandbox?.target) {
                   void resumeSandbox(sandbox.target).catch((reason: unknown) => setError(displayableError(reason)));
@@ -200,8 +249,16 @@ export function ThreadPage({ threadId, settingsOpen = false }: ThreadPageProps):
               traceSearch={traceSearch}
               langfuseSearch={langfuseSearch}
               sandbox={sandbox}
+              delivery={delivery}
             />
           </sync.Thread>
+        )}
+        {thread && materializationUnconfirmed && !thread.summary.projectionEpoch && (
+          <OutstandingDispatchCommands
+            delivery={delivery}
+            items={inlineDispatches(delivery)}
+            onOpenDeliveryHistory={openDeliveryHistory}
+          />
         )}
       </Stack>
     </ChronologicalDebugProvider>

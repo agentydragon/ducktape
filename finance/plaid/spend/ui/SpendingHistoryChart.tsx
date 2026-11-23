@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
-  Button,
   Card,
   Checkbox,
   Group,
@@ -13,6 +12,7 @@ import {
   useComputedColorScheme,
 } from "@mantine/core";
 import { chartPalette, mountChart, movingAverageColor } from "./chart";
+import { ChartLegend, toggleLegendItem } from "./chart_legend";
 import type { AllowanceView, PaceHistory } from "./schema";
 import { HelpTooltip } from "../../../../util/frontend/help_tooltip";
 import { money } from "./spend_display";
@@ -26,9 +26,9 @@ export function SpendingHistoryChart({ allowance, revision }: { allowance: Allow
   const [show7, setShow7] = useState(true);
   const [show30, setShow30] = useState(true);
   const [showBars, setShowBars] = useState(true);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [hovered, setHovered] = useState<string | null>(null);
-  const highlighted = hovered ?? selected;
+  const highlighted = useMemo(() => new Set([...selected, ...(hovered ? [hovered] : [])]), [selected, hovered]);
   const scheme = useComputedColorScheme("light");
   const average7Color = movingAverageColor(scheme, 7);
   const average30Color = movingAverageColor(scheme, 30);
@@ -84,9 +84,10 @@ export function SpendingHistoryChart({ allowance, revision }: { allowance: Allow
         type: "bar" as const,
         label: category.label,
         data: history.daily.map((day) => day.categories[category.id] ?? 0),
-        backgroundColor: highlighted && highlighted !== category.id ? `${category.color}55` : category.color,
-        borderColor: highlighted === category.id ? chartPalette[scheme].emphasis : category.color,
-        borderWidth: highlighted === category.id ? 2 : 0,
+        backgroundColor: highlighted.size > 0 && !highlighted.has(category.id) ? `${category.color}55` : category.color,
+        borderColor: highlighted.has(category.id) ? chartPalette[scheme].emphasis : category.color,
+        borderWidth: highlighted.has(category.id) ? 2 : 0,
+        borderSkipped: false as const,
         stack: "spending",
       })),
       ...history.windows
@@ -257,40 +258,22 @@ export function SpendingHistoryChart({ allowance, revision }: { allowance: Allow
                 role="img"
                 aria-label={summary}
                 aria-describedby="spending-history-summary"
-                data-highlighted-category={highlighted ?? undefined}
+                data-highlighted-categories={[...highlighted].sort().join(",")}
               />
             </div>
             <details open>
               <summary>Category totals and reference lines</summary>
-              <Group gap="xs" mt="xs">
-                {chart.categories.map((category) => (
-                  <Button
-                    key={category.id}
-                    size="xs"
-                    styles={{
-                      root: { maxWidth: "100%", height: "auto", minHeight: 30 },
-                      label: { whiteSpace: "normal" },
-                    }}
-                    variant={selected === category.id ? "filled" : "light"}
-                    aria-pressed={selected === category.id}
-                    onClick={() => setSelected(selected === category.id ? null : category.id)}
-                    onMouseEnter={() => setHovered(category.id)}
-                    onMouseLeave={() => setHovered(null)}
-                    onFocus={() => setHovered(category.id)}
-                    onBlur={() => setHovered(null)}
-                    leftSection={
-                      <span
-                        aria-hidden="true"
-                        style={{ width: 10, height: 10, background: category.color, display: "inline-block" }}
-                      />
-                    }
-                  >
-                    {category.label} · {money(category.total, allowance.currency)}
-                  </Button>
-                ))}
-              </Group>
+              <ChartLegend
+                items={chart.categories.map((category) => ({
+                  ...category,
+                  label: `${category.label} · ${money(category.total, allowance.currency)}`,
+                }))}
+                selected={selected}
+                onToggle={(id) => setSelected((current) => toggleLegendItem(current, id))}
+                onHover={setHovered}
+              />
               <Text size="xs" c="dimmed" mt="xs">
-                Select a category to highlight it; select again to clear. Leash level:{" "}
+                Select categories to highlight them; select again to clear each one. Leash level:{" "}
                 {money(history.daily_reference_minor_units, allowance.currency)}/day.
               </Text>
             </details>

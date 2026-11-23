@@ -1,8 +1,6 @@
 // The two market tables on the calibration tab: scored ("clean", apples-to-apples model-vs-market
 // with a KL column) and surfaced (context-only, market price beside a related augur signal).
 
-import React from "react";
-
 import { fmtProb, fmtKl, klTextClass, PlatformBadge } from "./calibration_format";
 import { fmtPct, fmtVolume } from "./lib/format";
 import type { fetchCalibrationRun } from "./client";

@@ -17,7 +17,7 @@ func TestDispatchWatchRejectsInvalidFilters(t *testing.T) {
 		{Scope: &dispatcherpb.DispatchFilter_Sandbox{}},
 		{Scope: &dispatcherpb.DispatchFilter_SessionId{SessionId: "test-session"}, CommandIds: make([]string, maxFilterCommands+1)},
 	} {
-		if _, err := dispatchWatchFilter(filter); status.Code(err) != codes.InvalidArgument {
+		if _, err := dispatchFilter(filter); status.Code(err) != codes.InvalidArgument {
 			t.Fatalf("filter %v returned %v", filter, err)
 		}
 	}
@@ -25,7 +25,7 @@ func TestDispatchWatchRejectsInvalidFilters(t *testing.T) {
 
 func TestDispatchWatchCanonicalizesCommandSetWithoutChangingRequest(t *testing.T) {
 	filter := &dispatcherpb.DispatchFilter{Scope: &dispatcherpb.DispatchFilter_SessionId{SessionId: "test-session"}, CommandIds: []string{"test-b", "test-a", "test-a"}}
-	canonical, err := dispatchWatchFilter(filter)
+	canonical, err := dispatchFilter(filter)
 	if err != nil {
 		t.Fatal(err)
 	}

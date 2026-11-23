@@ -15,8 +15,6 @@ from dataclasses import dataclass, field
 
 MAX_LAYERS = 128
 
-# ── Byte-level encoding primitives ────────────────────────────────────────────
-
 
 def scramble_byte(b: int) -> int:
     """Scramble a single byte for writing into .rd files.
@@ -102,8 +100,6 @@ def encode_hex(hex_str: str) -> bytes:
     return bytes(int(x, 16) for x in cleaned.split())
 
 
-# ── Layer colors ──────────────────────────────────────────────────────────────
-
 # Default palette matching RDWorks/LightBurn layer colors.
 _LAYER_COLORS: list[tuple[int, int, int]] = [
     (0, 0, 0),  # black
@@ -119,9 +115,6 @@ _LAYER_COLORS: list[tuple[int, int, int]] = [
 
 def _layer_color(index: int) -> tuple[int, int, int]:
     return _LAYER_COLORS[index % len(_LAYER_COLORS)]
-
-
-# ── High-level API ────────────────────────────────────────────────────────────
 
 
 @dataclass

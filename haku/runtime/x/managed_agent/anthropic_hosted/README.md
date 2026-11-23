@@ -1,66 +1,88 @@
 # Managed Agents — Anthropic-hosted sandbox
 
-Status: **PARKED (2026-07-04).** The cloud control-plane objects
-(environment/agent/vault/static_bearer credential/deployment) were deleted at
-Anthropic by the operator on 2026-09-30. Its Flux registration and artifact
-generation are removed; manifests remain in `cluster/parked/cloud-agent-tf`.
-Resuming requires restoring that wiring and starts with the decision in
-[Resuming](#resuming-recreate-via-the-provider-vs-retire-it) below. What follows
-describes the **v0 architecture as it was built**, before parking — historical
-until resumed:
+Status: **PARKED (2026-07-04); Terraform root retired (2026-11-21).** The cloud control-plane
+objects (environment/agent/vault/credentials/deployment) were deleted at Anthropic by the
+operator on 2026-09-30. The OpenTofu root that provisioned them and its suspended
+tofu-controller resource (`cluster/parked/cloud-agent-tf`) were then deleted, because their
+provider is dormant ([why](#why-the-terraform-root-was-retired)). Nothing here is deployed.
+Resuming needs a reviewed reactivation decision and starts from [Resuming](#resuming). The
+sections from [Why cloud](#why-cloud-vs-the-self-hosted-worker) on describe the **v0
+architecture as it was built**, before parking — historical until resumed.
 
-- **Terraform root:** <terraform/> — the
-  `claude-managed-agents` provider, pinned + hash-locked.
-- **Deployed by:** <../../../../../cluster/parked/cloud-agent-tf> (tofu-controller
-  `Terraform` CR; runbook + provisioned IDs there).
 - **Cluster access path:** the public, Authentik-authed `kubectl-machine-mcp`
   passthrough MCP (<../../../../../cluster/parked/kubectl-machine-mcp/README.md>).
 
-> **Retired (2026-06-26):** the imperative bring-up — `provision.sh` plus
-> `haku.{agent,environment,deployment}.yaml` — and **Path B** (the cloud agent
-> `curl`ing `kubeapi.allegedly.works` directly with a `KUBE_TOKEN` env-var vault
-> credential). Terraform now owns provisioning, and cluster access goes through
-> `kubectl-machine-mcp` with a `static_bearer` credential bound to the MCP URL
-> (Path A), so the token is never substituted into arbitrary egress.
+> **Retired (2026-06-26):** the first imperative bring-up for this agent (`provision.sh` plus
+> `haku.{agent,environment,deployment}.yaml`) and **Path B** (the cloud agent `curl`ing
+> `kubeapi.allegedly.works` directly with a `KUBE_TOKEN` env-var vault credential). Path A
+> replaced them: cluster access through `kubectl-machine-mcp` with a `static_bearer` credential
+> bound to the MCP URL, so the token is never substituted into arbitrary egress. Terraform
+> provisioned Path A until its root was deleted.
 
 This doc is the **architecture + forward direction** beyond v0. Before parking,
 the agent only ran a connectivity test (lists `haku-sandbox` pods); the
 ephemeral-compute run loop below was never built.
 
-## Resuming: recreate via the provider vs retire it
+## What the deleted root provisioned
 
-Before rebuilding, decide whether to keep using the `claude-managed-agents`
-OpenTofu provider at all. It has bitten in three distinct ways:
+Last tree with the root and its CR: `77cd80fa40`. Read them with
+`git show 77cd80fa40:haku/runtime/x/managed_agent/anthropic_hosted/terraform/main.tf` and
+`git show 77cd80fa40:cluster/parked/cloud-agent-tf/terraform.yaml`.
 
-1. **No `self_hosted` support** — `networking` is `Required` but the API rejects
-   it for `type=self_hosted`, which forced the self-hosted agent off TF entirely
-   (back to imperative `ant`, PR #2780).
-2. **`Read` doesn't detect deletions** — after the objects were deleted,
-   tofu-controller kept reporting `Plan no changes`/Ready against phantom state;
-   recovery needs `state rm`/`-replace`, not a normal reconcile.
-3. **Supply-chain caution** — a single-maintainer, low-download third party
-   holding an org API key; every version bump needs a manual source-diff review.
+- **Environment** `haku-cloud`: `config.type = cloud`, `networking.type = unrestricted` (v0;
+  narrowing to `limited` + `allowed_hosts` is in <TODO.md>).
+- **Agent** `haku-cloud`: model, toolset and MCP URLs matched <../self_hosted/haku.agent.yaml>
+  (a test enforced it): the `kubectl-machine` (`https://kubectl-machine-mcp.allegedly.works/mcp`)
+  and `haku-console` (`https://haku.allegedly.works/mcp`) MCP servers, every toolset
+  `always_allow`. Only the name, the `system` prose ("do exactly what each user message asks,
+  then stop") and the environment differed.
+- **Vault** `haku-cloud` with `static_bearer` credentials, each bound to one MCP URL:
+  - `kubectl-machine`: the `haku-k8s` Authentik JWT, which the MCP forwards to kube-apiserver
+    (`groups:["haku"]` → `oidc-ksbx-groups:haku` → `haku-sandbox-admin`). It rotates about every
+    44 days; the write-only `token` used the JWT's `exp` as `token_wo_version`.
+  - `haku-console`: the console's static Agent bearer. **Gone:** #11897 (2026-10-24) retired
+    static Agent bearers and nothing creates that Secret now.
+- **Deployment** `haku-cloud` (agent + environment + vault, `desired_status = active`), run on
+  demand with `ant beta:deployments run`. Its only initial event was a connectivity test: list
+  `haku-sandbox` pods.
+- **Provider key:** `ANTHROPIC_API_KEY` in the tofu-controller runner, from a dedicated,
+  spend-capped Anthropic workspace key (`llm-anthropic-haku`, shared with LiteLLM).
+- **State:** `pg` backend schema `haku_cloud_agent` in `tofu-state-db-ovh`. Outputs (vault, agent,
+  environment and deployment IDs) went to Secret `haku-cloud-agent-ids` in `flux-system`. The
+  schema and Secret may still exist (unchecked); the IDs refer to deleted objects, so never
+  consume them.
 
-**Option A — `state rm` + unsuspend + recreate via the provider.** Lowest
-immediate effort; fresh IDs refresh the `haku-cloud-agent-ids` output Secret and
-provision a new vault. The existing output Secret, if still present, contains a
-vault ID deleted at Anthropic and must not be reused. Keeps GitOps declarative
-reconciliation for the cloud agent — and all three liabilities, drift-blindness
-included.
+## Why the Terraform root was retired
 
-**Option B — retire the provider; manage the cloud agent imperatively**, as the
-self-hosted agent already is (`provision.sh` + `ant`). Drops the provider, its
-supply-chain surface, and the repin-review burden. Cost: the cloud agent loses
-declarative reconciliation. Coupling: PR #2788's shared vault lives _in the TF
-module_ and self-hosted reads its ID from the TF output Secret, so retiring the
-provider also unwinds vault-in-TF — the shared vault moves to imperative
-provisioning too. The SSOT/parity test (`//haku/runtime/x/managed_agent:test_agent_config_ssot`)
-stays valid either way.
+Provider: `modus-agendi/anthropic-claude-managed-agents`, a community provider locked at 1.2.0.
+Checked 2026-11-21:
 
-**Lean: B** — the provider has produced two silent-failure bugs and the
-imperative path is proven for self-hosted — unless declarative GitOps for the
-cloud agent specifically is worth the ongoing liability. Option A is acceptable
-as a stopgap to get a working baseline first.
+- **Dormant.** v1.2.0 (tag 2026-07-10) is a version-only bump. `main` has no commit after
+  2026-07-26, when the maintainer added a `.terraform-registry` file reading
+  `Request: remove from registry` for the Terraform registry. Both registries still listed
+  1.2.0 that day. Its 1.0.0 changelog says "Not production software".
+- **No `self_hosted`.** `config.type` supports only `cloud`, and `networking` is `Required`
+  but the API rejects it for `type=self_hosted`. This forced the self-hosted agent onto `ant`
+  (PR #2780).
+- **Deletions went unnoticed.** After the objects were deleted at Anthropic, tofu-controller
+  kept reporting `Plan no changes`/Ready against phantom state; recovery needed
+  `state rm`/`-replace`. Upstream `Read` drops state only on a 404 (all seven resources), so
+  the API probably did not answer 404 for these deletions (unchecked).
+- **Release assets.** The Bazel provider mirror dropped it because v1.1.0 no longer resolved
+  through the GitHub release path the OpenTofu registry advertises. Not rechecked for 1.2.0.
+- **Supply chain.** One maintainer, holding an org API key; each version bump needed a manual
+  source-diff review of `internal/client/` (egress and secret handling) and
+  `.github/workflows/release.yml`.
+
+## Resuming
+
+Recreate with `ant`, as <../self_hosted/provision.sh> does for the self-hosted agent: a fresh
+environment, agent, vault, credentials and deployment, with model, toolset and MCP URLs copied
+from <../self_hosted/haku.agent.yaml>. Never reuse IDs from `haku-cloud-agent-ids`. Also needed:
+the parked `kubectl-machine-mcp`
+(<../../../../../cluster/parked/kubectl-machine-mcp/README.md>), a `haku-k8s` JWT input (the
+Authentik rotation no longer publishes a copy for this agent), and a new credential path for
+`haku-console`.
 
 ## Why cloud (vs the self-hosted worker)
 

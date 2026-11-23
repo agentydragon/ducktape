@@ -58,11 +58,11 @@ cell is involved.
 **Mechanism.** `EsmImportOrder::build` (`esm_import_order.rs`) takes
 `linker_order` from `chunk_linker_order_from_pairs`. That function returns an
 empty vector when the constraining pairs are cyclic, so any Pass-1 cycle
-empties the linker order. Every import list then sorts by `ModuleId`, and the
-Pass-2 simulator checks TDZs against that arbitrary order. Pass 2 runs on
-every multi-module I-graph SCC whose module set is not _equal_ to a reported
-Pass-1 SCC. The 1,800 contains the 963, so it is checked under that order and
-reported with 25,523 TDZ pairs (161,444 edges).
+empties the linker order. Every import list then sorts by `ModuleId`. At the
+measured pin the Pass-2 simulator still checked TDZs against that arbitrary
+order, on every multi-module I-graph SCC whose module set is not _equal_ to a
+reported Pass-1 SCC. The 1,800 contains the 963, so it was checked under that
+order and reported with 25,523 TDZ pairs (161,444 edges).
 
 **With the heap barriers removed.** Remove all heap-barrier `cell_order`
 edges: the 1,051 constraining cross-module ones and 3 that a commuting premise
@@ -84,26 +84,21 @@ modules also gives a real linker order. Pass 2 then rejects 838 modules
 (95,093 edges): what the fallback edges still require if the heap barriers
 are kept and the cycle is resolved by merging.
 
-**Gate bug.** The verdict is misleading. Pass 2's contract
-(`SccRejection::EsmEvaluationTdz`) says the SCC's constraining subgraph is
-acyclic and the TDZ is real under the materializer's import order. Neither
-holds here:
+**Gate bug (fixed).** The 1,800 broke both preconditions of Pass 2
+(`SccRejection::EsmEvaluationTdz`): it contains a constraining cycle, and with
+a cyclic Pass 1 the spec is rejected, so no materializer import order exists
+for the simulator to describe. Its 161,444-edge cut flowed into `gate cut`,
+`describe` and `spec propose-commutations` as if every edge had to be
+resolved. Once Pass 1 is clean, Pass 2 is left with only 170 TDZ pairs across
+three small SCCs. Any other I-SCC checked in the same run got the same
+arbitrary order, so excluding only supersets of Pass-1 SCCs would not have
+been enough.
 
-- the 1,800 contains a constraining cycle;
-- with a cyclic Pass 1 the spec is rejected, so no materializer import order
-  exists for the simulator to describe.
-
-The 1,800's cut flows into `gate cut`, `describe` and
-`spec propose-commutations` as if those 161,444 edges had to be resolved. In
-fact, once Pass 1 is clean, Pass 2 is left with only 170 TDZ pairs across
-three small SCCs.
-
-Any other I-SCC checked in the same run gets the same arbitrary order, so
-excluding only supersets of Pass-1 SCCs is not enough. The fix: when Pass 1
-reports a cycle (equivalently, `linker_order` is empty), skip Pass 2 and
-report only the Pass-1 SCCs. A more useful variant reruns Pass 2 on the
-quotient with each Pass-1 SCC condensed to one node and labels the result
-conditional on resolving Pass 1. That variant would report the 838 here.
+The gate now skips Pass 2 while Pass 1 reports a cycle (`linker_order` is
+empty) and reports only the Pass-1 SCCs: `SccRejection::EsmEvaluationTdz` and
+the `reported.is_empty()` guard in `realizability/mod.rs`,
+`linker_order_available` in `realizability/esm_simulator.rs`, and test
+`pass_two_is_skipped_while_pass_one_has_a_cycle` in `realizability/tests.rs`.
 
 ## 1. Observed-only
 
@@ -181,10 +176,11 @@ cross-module heap edges, 958 are `after_barrier` and 93 are
 every eager opaque call as a barrier once tracked array contents are live.
 They are live from statement 0, because some callables allocate array
 literals lazily. Lazy allocations are conservatively live (SPEC
-§ Dependency-graph array ordering). `facts/array_content_effects.rs` records
-an imported callee as `record_opaque_call` (`array_content_effects`), and as
-`unresolved_callee` when no source unit resolves. Purity does not exempt a
-call: SPEC says purity does not prove heap locality. The
+§ Dependency-graph array ordering). `facts/heap_contents.rs` records an
+imported callee as `record_opaque` (`array_content_effects`). The measured pin
+also labelled it `unresolved_callee` when no source unit resolved; #13374
+removed that cause. Purity does not exempt a call: SPEC says purity does not
+prove heap locality. The
 [pure-call heap frontier](2026_10_31_pure_call_heap_frontier.md) note
 investigates this. 952 of the 1,335 barrier statements are rated pure.
 
@@ -361,14 +357,12 @@ because the timeline fallback (1.0 M edges, 73% of them
 
 ## Recommendation
 
-1. **Gate fix:** skip Pass 2 when Pass 1 reports a cycle (empty linker
-   order), or rerun it on the quotient with the Pass-1 SCCs condensed and
-   label the result conditional. Today the 1,800 SCC and its 161,444-edge cut
-   are reported from a `ModuleId` import order.
+1. **Gate variant (open):** the Pass-2 skip landed (Gate bug above). Still
+   open: rerun Pass 2 on the quotient with the Pass-1 SCCs condensed and label
+   the result conditional on resolving Pass 1. It would report the 838 here.
 2. **Heap locality.** Pass 1 is a heap-barrier artifact. Build the
    escaped-cell set, so barriers are ordered only through escaped cells, and
-   re-measure. Demoting individual barrier statements does not help. Until Pass 1 is clean, the reported Pass-2 SCC and its cut are
-   noise, because the simulator runs with an empty linker order.
+   re-measure. Demoting individual barrier statements does not help.
 3. **Two audited premises worth about 1.37 M edges** (66% of fallback
    edges), both on existing mechanisms:
    - `effect: typescript_metadata_decorate_helper` on the 20 unannotated
@@ -383,8 +377,8 @@ because the timeline fallback (1.0 M edges, 73% of them
    pool as `fallback`, not `observed` (21,812 of 23,102 observed timeline
    edges).
 
-Everything here is measured on the emulated gate over the saved graph. No
-change was applied to the engine or the spec, and no regenerated run checks
-these predictions. The edge removals assume understanding a family deletes
-its statements' fallback edges, though modelling could replace them with real
-ones.
+Everything here is measured on the emulated gate over the saved graph. This
+investigation changed neither the engine nor the spec (the Pass-2 skip landed
+later), and no regenerated run checks these predictions. The edge removals
+assume understanding a family deletes its statements' fallback edges, though
+modelling could replace them with real ones.

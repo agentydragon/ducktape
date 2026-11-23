@@ -1,6 +1,7 @@
 """Action-level controls for the public debundle pipeline's report flags."""
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
+load("//devinfra/js/debundle:pipeline.bzl", "debundle_analysis", "debundle_apply")
 
 _BaselineActions = provider(fields = ["actions"])
 _DebundleCliContract = provider(fields = ["args", "runfiles"])
@@ -59,6 +60,25 @@ source_tree_fixture = rule(
     implementation = _source_tree_fixture_impl,
     attrs = {"srcs": attr.string_keyed_label_dict(allow_files = True, mandatory = True)},
 )
+
+# Label strings resolve against the package whose BUILD calls the fixture macros.
+_FIXTURE_INPUTS = {
+    "input_data": [":source"],
+    "spec_tree_inputs": [":spec"],
+    "tags": ["manual"],
+    "tree_config": "fixture/config.yaml",
+    "tree_modules": "fixture/modules",
+    "tree_source_root": ":source",
+    "tree_vendor_marks": "fixture/vendor_marks.yaml",
+}
+
+def fixture_analysis(name, **kwargs):
+    """`debundle_analysis` over the shared fixture inputs; `kwargs` override them."""
+    debundle_analysis(name = name, **(_FIXTURE_INPUTS | kwargs))
+
+def fixture_apply(name, **kwargs):
+    """`debundle_apply` over the shared fixture inputs; `kwargs` override them."""
+    debundle_apply(name = name, **(_FIXTURE_INPUTS | kwargs))
 
 def _baseline_actions_impl(target, _ctx):
     return [_BaselineActions(actions = target.actions)]

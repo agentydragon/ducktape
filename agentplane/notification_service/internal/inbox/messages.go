@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"time"
 	"unicode/utf8"
 
@@ -29,25 +28,15 @@ var ErrNoInbox = errors.New("the Session has no inbox yet")
 
 // Message is a message a workload sends to a Session's inbox.
 type Message struct {
-	Sender Sender
-	// Recipient is the exact Identity and Sandbox incarnation the inbox belongs to.
-	Recipient      Owner
-	DestinationRef model.DestinationRef
-	SessionID      string
+	Sender IdentitySender
+	// Recipient is the exact Identity incarnation the inbox belongs to.
+	Recipient Owner
+	SessionID string
 	// IdempotencyKey is unique per sender and inbox: an identical retry answers with the message it sent.
 	IdempotencyKey string
 	Body           string
 	// FromSession is the sender's own label for the Session it writes from, which nothing verifies.
 	FromSession *string
-}
-
-// Sender is who sends a message: an AccountSender or an IdentitySender.
-type Sender interface{ isSender() }
-
-// AccountSender is a ServiceAccount incarnation.
-type AccountSender struct {
-	Account model.ServiceAccount
-	UID     string
 }
 
 // IdentitySender is an Identity incarnation sending from the Sandbox its workload credential is
@@ -58,36 +47,14 @@ type IdentitySender struct {
 	Sandbox  model.ServiceAccount
 }
 
-func (AccountSender) isSender()  {}
-func (IdentitySender) isSender() {}
-
-// senderPredicate selects the messages (alias m.) sender sent, with bind parameters numbered from first.
-func senderPredicate(sender Sender, first int) (string, []any) {
-	switch sender := sender.(type) {
-	case AccountSender:
-		return fmt.Sprintf("m.sender_namespace = $%d AND m.sender_name = $%d AND m.sender_uid = $%d", first, first+1, first+2),
-			[]any{sender.Account.Namespace, sender.Account.Name, sender.UID}
-	case IdentitySender:
-		return fmt.Sprintf("m.sender_namespace = $%d AND m.sender_name = $%d AND m.sender_identity_name = $%d AND m.sender_identity_uid = $%d",
-				first, first+1, first+2, first+3),
-			[]any{sender.Sandbox.Namespace, sender.Sandbox.Name, sender.Identity.Name, sender.Identity.UID}
-	default:
-		panic(fmt.Sprintf("unknown message sender %T", sender))
-	}
-}
-
 type messagePayload struct {
 	Body        string  `json:"body"`
 	FromSession *string `json:"from_session,omitempty"`
 }
 
-// Validate checks the bounds of the message, its body against limit UTF-8 bytes. The destination's UID may be
-// empty, for the Sandbox of that name as it is now.
+// Validate checks the bounds of the message, its body against limit UTF-8 bytes.
 func (m Message) Validate(limit int) error {
 	if err := errors.Join(
-		model.CheckText("destination_ref.namespace", m.DestinationRef.Namespace, 1, 63),
-		model.CheckText("destination_ref.name", m.DestinationRef.Name, 1, 63),
-		model.CheckText("destination_ref.uid", m.DestinationRef.UID, 0, 128),
 		model.CheckText("session_id", m.SessionID, 1, 200),
 		model.CheckText("idempotency_key", m.IdempotencyKey, 1, 200),
 	); err != nil {
@@ -116,7 +83,6 @@ func (m Message) payload() ([]byte, error) {
 // past it, never the inbox's cursors or other entries.
 type SentMessage struct {
 	ID             uuid.UUID
-	DestinationRef model.DestinationRef
 	SessionID      string
 	IdempotencyKey string
 	AcceptedAt     time.Time
@@ -146,31 +112,11 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 	if err != nil {
 		return SentMessage{}, err
 	}
-	var named model.ServiceAccount
-	var senderIdentity *model.Identity
-	var senderUID, identityName, identityUID sql.NullString
-	// unacknowledged counts the sender's messages; an AccountSender's include those a release before
-	// sender UIDs recorded none, never an IdentitySender's.
-	var unacknowledged string
-	switch sender := message.Sender.(type) {
-	case AccountSender:
-		if sender.UID == "" {
-			return SentMessage{}, ErrNotFound
-		}
-		named, senderUID = sender.Account, sql.NullString{String: sender.UID, Valid: true}
-		unacknowledged = `(sender_uid = $5 OR sender_uid IS NULL AND sender_identity_uid IS NULL)`
-	case IdentitySender:
-		if sender.Identity.Name == "" || sender.Identity.UID == "" || sender.Sandbox.Name == "" {
-			return SentMessage{}, ErrNotFound
-		}
-		named, senderIdentity = sender.Sandbox, &sender.Identity
-		identityName = sql.NullString{String: sender.Identity.Name, Valid: true}
-		identityUID = sql.NullString{String: sender.Identity.UID, Valid: true}
-		unacknowledged = `sender_identity_uid = $5`
-	default:
-		panic(fmt.Sprintf("unknown message sender %T", sender))
+	sender := message.Sender
+	if sender.Identity.Name == "" || sender.Identity.UID == "" || sender.Sandbox.Name == "" {
+		return SentMessage{}, ErrNotFound
 	}
-	if message.Recipient.Identity.Name == "" || message.Recipient.Identity.UID == "" || message.Recipient.SandboxUID == "" {
+	if message.Recipient.Identity.Name == "" || message.Recipient.Identity.UID == "" {
 		return SentMessage{}, ErrNotFound
 	}
 	digest := sha256.Sum256(payload)
@@ -188,21 +134,22 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 		}
 		var id uuid.UUID
 		var existing []byte
-		var establishedUID, establishedIdentityName, establishedIdentityUID sql.NullString
+		var establishedIdentityName, establishedIdentityUID sql.NullString
 		err = tx.QueryRowContext(ctx, `
-			SELECT id, digest, sender_uid, sender_identity_name, sender_identity_uid FROM message
+			SELECT id, digest, sender_identity_name, sender_identity_uid FROM message
 			WHERE inbox_id = $1 AND sender_namespace = $2 AND sender_name = $3 AND idempotency_key = $4`,
-			inbox.ID, named.Namespace, named.Name, message.IdempotencyKey).
-			Scan(&id, &existing, &establishedUID, &establishedIdentityName, &establishedIdentityUID)
-		sameSender := establishedUID.Valid && establishedUID == senderUID ||
-			establishedIdentityUID.Valid && establishedIdentityName == identityName && establishedIdentityUID == identityUID
+			inbox.ID, sender.Sandbox.Namespace, sender.Sandbox.Name, message.IdempotencyKey).
+			Scan(&id, &existing, &establishedIdentityName, &establishedIdentityUID)
+		// A message stored without an Identity was sent before Identity senders; no sender retries it.
+		sameSender := establishedIdentityUID.Valid &&
+			establishedIdentityName.String == sender.Identity.Name && establishedIdentityUID.String == sender.Identity.UID
 		switch {
 		case err == nil && !sameSender:
 			return ErrNotFound
 		case err == nil && !bytes.Equal(existing, digest[:]):
 			return ErrIdempotencyKeyReused
 		case err == nil:
-			sent, err = sentMessage(ctx, tx, message.Sender, id)
+			sent, err = sentMessage(ctx, tx, sender, id)
 			return err
 		case !errors.Is(err, sql.ErrNoRows):
 			return err
@@ -211,25 +158,25 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 			return ErrInboxRetired
 		}
 		var pending int
-		sender := senderUID
-		if identityUID.Valid {
-			sender = identityUID
-		}
 		if err := tx.QueryRowContext(ctx, `
 			SELECT count(*) FROM message
-			WHERE inbox_id = $1 AND sender_namespace = $2 AND sender_name = $3 AND cursor > $4 AND `+unacknowledged,
-			inbox.ID, named.Namespace, named.Name, inbox.Acknowledged, sender).Scan(&pending); err != nil {
+			WHERE inbox_id = $1 AND sender_namespace = $2 AND sender_name = $3 AND cursor > $4 AND sender_identity_uid = $5`,
+			inbox.ID, sender.Sandbox.Namespace, sender.Sandbox.Name, inbox.Acknowledged, sender.Identity.UID).Scan(&pending); err != nil {
 			return err
 		}
 		if pending >= s.quotas.UnacknowledgedMessagesPerSender {
 			return &QuotaError{Quota: UnacknowledgedMessagesPerSender, Limit: s.quotas.UnacknowledgedMessagesPerSender}
 		}
 		id = uuid.New()
-		event := sourceadapter.WrapMessageEvent(model.MessageEvent{MessageID: id, Sender: named, SenderIdentity: senderIdentity})
+		event := sourceadapter.WrapMessageEvent(model.MessageEvent{MessageID: id, Sender: sender.Sandbox, SenderIdentity: &sender.Identity})
 		accepted, cursor := now(), inbox.LastCursor+1
-		// A worker's release works out when the notice is due, so the inbox is only made due now.
+		// A worker's release works out when the notice is due, so the inbox is only made due now. Preserve an
+		// existing failure deadline: a new entry must not turn a known delivery failure into a tight retry loop.
 		if _, err := tx.ExecContext(ctx,
-			`UPDATE inbox SET last_cursor = $2, next_attempt = LEAST(COALESCE(next_attempt, $3), $3) WHERE id = $1`,
+			`UPDATE inbox SET last_cursor = $2, next_attempt = CASE
+				WHEN delivery_error IS NOT NULL AND next_attempt IS NOT NULL THEN next_attempt
+				ELSE LEAST(COALESCE(next_attempt, $3), $3)
+			END WHERE id = $1`,
 			inbox.ID, cursor, accepted); err != nil {
 			return err
 		}
@@ -241,16 +188,15 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO message (id, inbox_id, cursor, sender_namespace, sender_name, idempotency_key, digest, sender_uid,
+			INSERT INTO message (id, inbox_id, cursor, sender_namespace, sender_name, idempotency_key, digest,
 				sender_identity_name, sender_identity_uid)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-			id, inbox.ID, cursor, named.Namespace, named.Name, message.IdempotencyKey, digest[:], senderUID,
-			identityName, identityUID); err != nil {
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+			id, inbox.ID, cursor, sender.Sandbox.Namespace, sender.Sandbox.Name, message.IdempotencyKey, digest[:],
+			sender.Identity.Name, sender.Identity.UID); err != nil {
 			return err
 		}
 		sent = SentMessage{
-			ID: id, DestinationRef: inbox.DestinationRef, SessionID: inbox.SessionID, IdempotencyKey: message.IdempotencyKey,
-			AcceptedAt: accepted,
+			ID: id, SessionID: inbox.SessionID, IdempotencyKey: message.IdempotencyKey, AcceptedAt: accepted,
 		}
 		return notify(ctx, tx)
 	})
@@ -259,7 +205,7 @@ func (s *Store) Send(ctx context.Context, message Message) (SentMessage, error) 
 
 // SentMessage returns a message the sender sent. Another sender's message, an unknown ID and a message whose
 // inbox was purged are all ErrNotFound.
-func (s *Store) SentMessage(ctx context.Context, sender Sender, id uuid.UUID) (SentMessage, error) {
+func (s *Store) SentMessage(ctx context.Context, sender IdentitySender, id uuid.UUID) (SentMessage, error) {
 	var sent SentMessage
 	err := s.transaction(ctx, func(tx transaction.Tx) (err error) {
 		sent, err = sentMessage(ctx, tx, sender, id)
@@ -268,20 +214,16 @@ func (s *Store) SentMessage(ctx context.Context, sender Sender, id uuid.UUID) (S
 	return sent, err
 }
 
-func sentMessage(ctx context.Context, tx transaction.Tx, sender Sender, id uuid.UUID) (SentMessage, error) {
+func sentMessage(ctx context.Context, tx transaction.Tx, sender IdentitySender, id uuid.UUID) (SentMessage, error) {
 	sent := SentMessage{ID: id}
-	var inboxID uuid.UUID
-	var namespace, name, uid sql.NullString
-	predicate, args := senderPredicate(sender, 2)
 	err := tx.QueryRowContext(ctx, `
-		SELECT i.id, i.destination_namespace, i.destination_name, i.destination_uid,
-			i.session_id, m.idempotency_key, e.created_at,
+		SELECT i.session_id, m.idempotency_key, e.created_at,
 			m.cursor <= i.covered, m.cursor <= i.acknowledged, i.retired
 		FROM message m JOIN inbox i ON i.id = m.inbox_id JOIN entry e ON e.inbox_id = m.inbox_id AND e.cursor = m.cursor
-		WHERE m.id = $1 AND `+predicate,
-		append([]any{id}, args...)...).Scan(&inboxID, &namespace, &name, &uid,
-		&sent.SessionID, &sent.IdempotencyKey, &sent.AcceptedAt,
-		&sent.Covered, &sent.Acknowledged, &sent.InboxRetired)
+		WHERE m.id = $1 AND m.sender_namespace = $2 AND m.sender_name = $3
+			AND m.sender_identity_name = $4 AND m.sender_identity_uid = $5`,
+		id, sender.Sandbox.Namespace, sender.Sandbox.Name, sender.Identity.Name, sender.Identity.UID).Scan(&sent.SessionID,
+		&sent.IdempotencyKey, &sent.AcceptedAt, &sent.Covered, &sent.Acknowledged, &sent.InboxRetired)
 	if errors.Is(err, sql.ErrNoRows) {
 		return SentMessage{}, ErrNotFound
 	}
@@ -289,9 +231,5 @@ func sentMessage(ctx context.Context, tx transaction.Tx, sender Sender, id uuid.
 		return SentMessage{}, err
 	}
 	sent.AcceptedAt = sent.AcceptedAt.UTC()
-	sent.DestinationRef, err = destinationRefFromColumns(inboxID, namespace, name, uid)
-	if err != nil {
-		return SentMessage{}, err
-	}
 	return sent, nil
 }

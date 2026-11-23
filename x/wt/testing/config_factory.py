@@ -90,10 +90,6 @@ class ConfigFactory:
         """Create configuration for end-to-end tests."""
         return self.create(ConfigPresets.E2E, **overrides)
 
-    def with_github(self, **overrides) -> Configuration:
-        """Create configuration with GitHub enabled."""
-        return self.create(ConfigPresets.GITHUB_ENABLED, **overrides)
-
     def custom(self, **config_fields) -> Configuration:
         """Create configuration with all custom fields (no preset)."""
         # Start with minimal and override everything

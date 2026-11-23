@@ -1,0 +1,5 @@
+{
+  "code": 4,
+  "contains": "OBLIGATIONS",
+  "node_stdout": ["replacement\nside\nresult 1\n", "side\nreplacement\nresult 1\n"]
+}

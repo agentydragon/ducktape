@@ -14,7 +14,7 @@ import (
 func TestObservationRetainsCheckpointAndDoesNotExposePointers(t *testing.T) {
 	ctx, root, _, store, manager := newSessionTestManager(t, nil)
 	s := reserveTestSession(t, ctx, manager, store, "session", filepath.Join(root, "project"), "")
-	if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "turn"}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.TurnStarted{TurnId: "turn"}), nil); err != nil {
 		t.Fatal(err)
 	}
 	observed := s.Observe()
@@ -26,7 +26,7 @@ func TestObservationRetainsCheckpointAndDoesNotExposePointers(t *testing.T) {
 	}
 	attached.Spec.Model = "mutated"
 	host.ActiveTurnId = "mutated"
-	if err := s.Emit(ctx, observation(&eventpb.TurnCompleted{TurnId: "turn", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.TurnCompleted{TurnId: "turn", Status: eventpb.TurnStatus_TURN_STATUS_COMPLETED}), nil); err != nil {
 		t.Fatal(err)
 	}
 	again := observed.Attached()
@@ -55,7 +55,7 @@ func TestObservationRetainsIdleBarrierBetweenAdmissionAndBatchCommit(t *testing.
 	done := make(chan error, 1)
 	go func() {
 		done <- s.journal.WithBatch(ctx, func(ctx context.Context) error {
-			if err := s.Emit(ctx, observation(&eventpb.TurnStarted{TurnId: "turn"}), nil); err != nil {
+			if err := s.Emit(ctx, harness.Observation(&eventpb.TurnStarted{TurnId: "turn"}), nil); err != nil {
 				return err
 			}
 			if err := s.ConfirmUserMessage(ctx, harness.UserMessageConfirmation{HarnessMessageID: "message", OriginCommandIDs: []string{"command"}, TurnID: "turn", Text: "hello"}, nil); err != nil {

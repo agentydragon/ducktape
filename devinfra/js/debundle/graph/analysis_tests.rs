@@ -211,8 +211,6 @@ fn repeated_declaration_is_refused_unless_every_site_is_var() {
     }
 }
 
-// --- Atomic groups ---------------------------------------------------------
-
 fn atomic_groups_for(source: &str) -> Vec<AtomicGroup> {
     let module = parse(source);
     let facts = analyze_facts(&module);

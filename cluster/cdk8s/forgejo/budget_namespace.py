@@ -44,10 +44,9 @@ def git_credentials_chart(app: App) -> Chart:
 def budget_namespace(
     chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization
 ) -> Kustomization:
-    name = "budget-namespace"
     return flux_kustomization(
         chart,
-        name,
+        "budget-namespace",
         directory,
         retry_interval=None,
         wait=None,

@@ -6,7 +6,7 @@ Version: 2026.3.4
 > **Legacy instance (2026-06-27):** the 15 Leroy household was left. This config (`iaqi`,
 > `packages/rai`, `deploy.sh`) is retained as migration reference for the Kubernetes Home
 > Assistant deployment under `cluster/k8s/home-assistant`. The
-> `~/.ssh/15leroy` key + `nix/home/modules/15leroy-ssh.nix` module were removed (see TODO.md).
+> `~/.ssh/15leroy` key + `nix/home/modules/15leroy-ssh.nix` module were removed.
 
 ## Access
 
@@ -64,7 +64,7 @@ Version: 2026.3.4
 
 ## Config-as-Code
 
-SSH access is set up. See <config-as-code.md> for research notes on options.
+SSH access is dormant (see Access). See <config-as-code.md> for research notes on options.
 
 ## Addons
 

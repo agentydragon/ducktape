@@ -242,12 +242,8 @@ class SampledExogenousBundle:
     `levels` holds one frame per kind (see `LevelFrames`); `private_equity` carries the
     typed PE protocol bundle per issuer.
 
-    Everything a consumer READS is a typed field. What used to be one
-    `metadata: Mapping[str, object]` carried two unrelated things under one type: load-bearing
-    data that consumers reached for by string key, and free-form provenance nobody parses. The
-    load-bearing data now lives in the typed level and private-equity protocol bundles, while
-    `provenance` keeps the descriptive remainder and is named for what it is, so a future field
-    cannot quietly hide in it again.
+    Everything a consumer READS is a typed field; `provenance` keeps only the descriptive
+    remainder, so a future field cannot quietly hide in it.
     """
 
     levels: LevelFrames = field(default_factory=LevelFrames.empty)
@@ -362,10 +358,8 @@ def assemble_level_frames(
 ) -> LevelFrames:
     """Assemble sampled `(key, matrix)` blocks into per-kind frames.
 
-    One flat iterable, because each key already knows its kind and each kind already
-    knows its role. Producers used to hand a separate list per role and
-    every one of them had to remember all of them — which is exactly how a channel gets
-    silently dropped.
+    One flat iterable: each key already knows its kind and each kind already knows its role,
+    so callers do not route blocks into per-role lists.
     """
 
     rows_by_kind: dict[LevelSeriesKind, list[pl.DataFrame]] = {kind: [] for kind in LEVEL_KIND_SPECS}

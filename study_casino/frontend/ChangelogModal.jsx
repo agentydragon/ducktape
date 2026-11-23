@@ -1,5 +1,3 @@
-import React from "react";
-
 import { COLORS, SectionTitle } from "./shared.jsx";
 
 // Blocking "what's new" overlay shown while the server reports unacked

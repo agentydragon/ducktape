@@ -1,7 +1,6 @@
 package informer
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -21,8 +20,6 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/agentydragon/ducktape/agentplane/action_service/callers"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -56,9 +53,9 @@ type fixture struct {
 	t      *testing.T
 	index  *Index
 	faults *failingPaths
-	// policy holds the PolicySets and PolicyBindings, callers and moreCallers the callers, and elsewhere is a
-	// namespace the Informer does not read.
-	policy, callers, moreCallers, elsewhere string
+	// policy holds the PolicySets and PolicyBindings, callers the accounts they name, and elsewhere is a namespace
+	// the Informer does not read.
+	policy, callers, elsewhere string
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -66,18 +63,18 @@ func newFixture(t *testing.T) *fixture {
 	prefix := fmt.Sprintf("test-%d", fixtures.Add(1))
 	f := &fixture{
 		t: t, TestClient: kubeapiserver.NewTestClient(t, apiClient), faults: &failingPaths{failing: map[string]bool{}},
-		policy: prefix + "-policy", callers: prefix + "-callers", moreCallers: prefix + "-more-callers", elsewhere: prefix + "-elsewhere",
+		policy: prefix + "-policy", callers: prefix + "-callers", elsewhere: prefix + "-elsewhere",
 	}
-	for _, namespace := range []string{f.policy, f.callers, f.moreCallers, f.elsewhere} {
+	for _, namespace := range []string{f.policy, f.callers, f.elsewhere} {
 		f.Create(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}})
 	}
 	return f
 }
 
-// start runs an Informer over the fixture's namespaces until the test ends.
+// start runs an Informer over the fixture's policy namespace until the test ends.
 func (f *fixture) start() {
 	f.t.Helper()
-	f.index = NewIndex([]string{f.callers, f.moreCallers})
+	f.index = NewIndex()
 	base := rest.CopyConfig(server.Config)
 	base.Wrap(f.faults.wrap)
 	informer, err := New(base, f.index, f.policy)
@@ -94,21 +91,6 @@ func (f *fixture) eventually(what string, condition func() bool, lastSeen ...fun
 }
 
 func (f *fixture) available() bool { return f.index.Health.Available() }
-
-// serviceAccount is the account's ServiceAccount, created with the given caller label value, or without the label
-// when the value is empty.
-func (f *fixture) serviceAccount(account auth.Account, label string) *corev1.ServiceAccount {
-	f.t.Helper()
-	created, err := server.ServiceAccount(context.Background(), account)
-	if err != nil {
-		f.t.Fatal(err)
-	}
-	if label != "" {
-		created.Labels = map[string]string{callers.ServiceAccountLabelKey: label}
-		f.Update(created)
-	}
-	return created
-}
 
 func (f *fixture) policySet(name string, rules ...policyapi.Rule) *policyapi.PolicySet {
 	return &policyapi.PolicySet{

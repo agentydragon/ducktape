@@ -26,7 +26,6 @@ _DATABASE = "sandbox_service"
 _STREAM_ID = "agentplane_history"
 
 
-_DEFAULT_MEMORY_LIMIT = Size.gibibytes(1)
 # Operator-accepted exception to the two-replica rolling target: a replacement briefly interrupts
 # sync. Raising replicas alone does not add a useful replica: a second Pod on the same stream ID
 # waits read-only with an empty emptyDir store, answers 503 for new shapes, and passes /v1/health
@@ -50,7 +49,6 @@ class Electric(Construct):
         env: Environment,
         *,
         placement: node_scheduling.Placement | None = node_scheduling.HIL_OVH,
-        memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
     ) -> None:
         super().__init__(scope, id)
         self.env = env
@@ -90,7 +88,7 @@ class Electric(Construct):
             liveness=http_probe("/v1/health", port=electric.pod_port, initial_delay_seconds=20, period_seconds=30),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(100)),
-                memory=MemoryResources(request=Size.mebibytes(256), limit=memory_limit),
+                memory=MemoryResources(request=Size.mebibytes(256), limit=Size.gibibytes(1)),
             ),
             termination_grace=Duration.seconds(60),
             replica_profile=_REPLICAS,
@@ -110,7 +108,7 @@ class Electric(Construct):
         NetworkPolicy(
             self,
             "networkpolicy",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=self.env.namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=self.env.namespace),
             endpoint_selector=electric.pods.selector,
             ingress=[
                 IngressRule.from_endpoints(cilium.endpoint_labels(self.env.namespace, "app"), ports=[electric.pod_port])

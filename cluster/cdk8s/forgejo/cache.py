@@ -3,20 +3,15 @@ Kustomization."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from cdk8s import App, Chart, Size
 from cdk8s_plus_34 import Cpu
 from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import RedisReplicationSpecTolerations
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import node_scheduling, piraeus_storage
 from cluster.cdk8s.forgejo.namespace import NAMESPACE
-from cluster.cdk8s.generation import write_charts
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.valkey import valkey_instance
 
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo/cache"
 NAME = "forgejo-valkey-ovh"
 # The redis-operator's Service in front of the replication's current master.
 MASTER = ServiceRef(
@@ -40,7 +35,7 @@ def chart(app: App) -> Chart:
         cpu_limit=Cpu.millis(500),
         memory_limit=Size.mebibytes(512),
         max_memory_percent_of_limit=80,
-        storage_class="piraeus-ssd-local",
+        storage_class=piraeus_storage.SSD_LOCAL,
         storage_size=Size.gibibytes(2),
         tolerations=[
             RedisReplicationSpecTolerations(
@@ -49,7 +44,3 @@ def chart(app: App) -> Chart:
         ],
     )
     return chart
-
-
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)

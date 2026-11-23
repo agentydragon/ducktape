@@ -37,54 +37,20 @@ func (s *Store) begin(ctx context.Context, owner Owner, request IntentPayload, p
 	}
 	id := uuid.NewString()
 	var wire []byte
-	var conversation *Conversation
 	err := s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		var err error
-		conversation, err = lockOwner(ctx, tx, owner)
+		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
 		}
-		if err := checkInterrupt(ctx, tx, owner); err != nil {
-			return err
-		}
-		if conversation.Pending != nil {
-			return &protocol.UnknownEffectError{Reason: fmt.Sprintf("unresolved %s intent %s; automatic replay is unsafe", conversation.Pending.Kind, conversation.Pending.ID)}
-		}
-		if request.ProviderRequest != nil {
-			if prepare == nil || request.API != conversation.API {
-				return protocol.ErrInvalid
-			}
-			prepared, rendered, err := prepare(ctx, tx, newContentDB(ctx, tx), conversation, *request.ProviderRequest)
-			if err != nil {
-				return err
-			}
-			request.ProviderRequest = &prepared
-			wire = rendered
-		}
-		if policy != nil && request.ProviderRequest != nil {
-			request.ProviderRequest.SourceNativeContextID = conversation.nativeContextID()
-			request.ProviderRequest.SourceControl, err = conversation.contextControl(conversation.Context())
-			if err != nil {
-				return err
-			}
-		}
-		requestWire, err := marshal(request)
-		if err != nil {
+		if err := checkIntentStart(ctx, tx, owner, conversation); err != nil {
 			return err
 		}
 		session, err := sessionForConversation(ctx, tx, conversation.ID)
 		if err != nil {
 			return err
 		}
-		if policy != nil {
-			if err := insertProviderAttempt(ctx, tx, id, owner, requestWire, session, *policy, id, nil, 1, policy.Budget); err != nil {
-				return err
-			}
-		} else if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_intent(id,conversation_id,generation,request,result) VALUES($1,$2,$3,$4,NULL)`,
-			id, owner.ConversationID, owner.Generation, requestWire); err != nil {
-			return err
-		}
-		return s.publishIntent(ctx, tx, owner, conversation, session, id, request)
+		wire, err = s.beginIntent(ctx, tx, owner, conversation, session, id, request, prepare, policy)
+		return err
 	})
 	if err != nil {
 		return "", nil, err
@@ -92,8 +58,54 @@ func (s *Store) begin(ctx context.Context, owner Owner, request IntentPayload, p
 	return id, wire, nil
 }
 
+func checkIntentStart(ctx context.Context, tx *sql.Tx, owner Owner, conversation *Conversation) error {
+	if err := checkInterrupt(ctx, tx, owner); err != nil {
+		return err
+	}
+	if conversation.Pending != nil {
+		return &protocol.UnknownEffectError{Reason: fmt.Sprintf("unresolved %s intent %s; automatic replay is unsafe", conversation.Pending.Kind, conversation.Pending.ID)}
+	}
+	return nil
+}
+
+func (s *Store) beginIntent(ctx context.Context, tx *sql.Tx, owner Owner, conversation *Conversation, session *Session,
+	id string, request IntentPayload, prepare requestPreparation, policy *ProviderAttemptPolicy,
+) ([]byte, error) {
+	var wire []byte
+	if request.ProviderRequest != nil {
+		if prepare == nil || request.API != conversation.API {
+			return nil, protocol.ErrInvalid
+		}
+		prepared, rendered, err := prepare(ctx, tx, newContentDB(ctx, tx), conversation, *request.ProviderRequest)
+		if err != nil {
+			return nil, err
+		}
+		if policy != nil {
+			prepared.SourceNativeContextID = conversation.nativeContextID()
+			prepared.SourceControl, err = conversation.contextControl(conversation.Context())
+			if err != nil {
+				return nil, err
+			}
+		}
+		request.ProviderRequest, wire = &prepared, rendered
+	}
+	requestWire, err := marshal(request)
+	if err != nil {
+		return nil, err
+	}
+	if policy != nil {
+		if err := insertProviderAttempt(ctx, tx, id, owner, requestWire, session, *policy, id, nil, 1, policy.Budget); err != nil {
+			return nil, err
+		}
+	} else if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_intent(id,conversation_id,generation,request,result) VALUES($1,$2,$3,$4,NULL)`,
+		id, owner.ConversationID, owner.Generation, requestWire); err != nil {
+		return nil, err
+	}
+	return wire, s.publishIntent(ctx, tx, conversation, session, id, request)
+}
+
 // publishIntent follows the caller's admission checks and intent insertion in the same transaction.
-func (s *Store) publishIntent(ctx context.Context, tx *sql.Tx, owner Owner, conversation *Conversation, session *Session,
+func (s *Store) publishIntent(ctx context.Context, tx *sql.Tx, conversation *Conversation, session *Session,
 	id string, request IntentPayload,
 ) error {
 	if err := saveProviderRequest(ctx, tx, id, conversation.ID, request.ProviderRequest); err != nil {
@@ -103,32 +115,36 @@ func (s *Store) publishIntent(ctx context.Context, tx *sql.Tx, owner Owner, conv
 	if err := updateConversation(ctx, tx, conversation); err != nil {
 		return err
 	}
-	return s.recordEvidence(ctx, tx, owner, conversation, session, id, IntentKind(request.Kind).progressKind(), eventpb.ExecutionProgress_PHASE_DISPATCH, request.dispatchEvidence(id))
+	return s.recordEvidence(ctx, tx, conversation, session, id, IntentKind(request.Kind).progressKind(), eventpb.ExecutionProgress_PHASE_DISPATCH, request.dispatchEvidence(id))
 }
 
 func (s *Store) Finish(ctx context.Context, owner Owner, intentID string, result any, records []json.RawMessage, contextTokens *int) error {
-	return s.finish(ctx, owner, intentID, result, contextTokens, func(c *Conversation) error {
+	return s.finish(ctx, owner, intentID, result, contextTokens, nil, func(c *Conversation) error {
 		return c.apply(func(state protocol.Context) error { return state.AppendRecords(records) })
 	})
 }
 
 func (s *Store) FinishTool(ctx context.Context, owner Owner, intentID string, result map[string]any, call protocol.ToolInvocation, output []protocol.ContentPart) error {
-	return s.finish(ctx, owner, intentID, result, nil, func(c *Conversation) error {
+	return s.finish(ctx, owner, intentID, result, nil, nil, func(c *Conversation) error {
 		return c.appendToolResult(call, output)
 	})
 }
 
-func (s *Store) finish(ctx context.Context, owner Owner, intentID string, result any, contextTokens *int, appendResult func(*Conversation) error) error {
+func (s *Store) finish(ctx context.Context, owner Owner, intentID string, result any, contextTokens *int, snapshot *ProviderAttemptSnapshot, appendResult func(*Conversation) error) error {
 	resultWire, err := marshal(result)
 	if err != nil {
 		return err
 	}
 	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		conversation, err := lockOwner(ctx, tx, owner)
+		conversation, err := lockOwnerWithContextRefs(ctx, tx, owner)
 		if err != nil {
 			return err
 		}
-		if !pendingMatches(conversation.Pending, intentID, PendingIntentKind("")) {
+		var kind PendingIntentKind
+		if snapshot != nil {
+			kind = PendingIntentSampling
+		}
+		if !pendingMatches(conversation.Pending, intentID, kind) {
 			return protocol.ErrPrecondition
 		}
 		intent, err := intentFor(ctx, tx, intentID)
@@ -138,11 +154,19 @@ func (s *Store) finish(ctx context.Context, owner Owner, intentID string, result
 		if intent.ConversationID != owner.ConversationID || intent.Generation != owner.Generation {
 			return &LostOwnershipError{Reason: "intent belongs to another owner generation"}
 		}
+		if snapshot != nil && intent.Kind != IntentSampling {
+			return protocol.ErrPrecondition
+		}
 		if intent.Kind == IntentSampling || intent.Kind == IntentCompaction {
 			if err := checkInterrupt(ctx, tx, owner); err != nil {
 				return err
 			}
 			if err := requireLiveProviderAttempt(ctx, tx, intentID); err != nil {
+				return err
+			}
+		}
+		if snapshot == nil || !conversation.reuseNativeContexts(snapshot.conversation) {
+			if err := loadConversationItems(ctx, tx, conversation); err != nil {
 				return err
 			}
 		}
@@ -153,7 +177,7 @@ func (s *Store) finish(ctx context.Context, owner Owner, intentID string, result
 		if err != nil {
 			return err
 		}
-		if err := s.recordEvidence(ctx, tx, owner, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_RESULT, result); err != nil {
+		if err := s.recordEvidence(ctx, tx, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_RESULT, result); err != nil {
 			return err
 		}
 		if err := appendResult(conversation); err != nil {
@@ -218,10 +242,10 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 			if err != nil {
 				return err
 			}
-			if err := s.recordEvidence(ctx, tx, owner, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_REJECTED, result); err != nil {
+			if err := s.recordEvidence(ctx, tx, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_REJECTED, result); err != nil {
 				return err
 			}
-			return s.settleFailure(ctx, tx, owner, conversation, session, session.ActiveCommand, failure)
+			return s.settleFailure(ctx, tx, conversation, session, session.ActiveCommand, failure)
 		}
 		outputs, err := settlePendingCalls(conversation, func(call protocol.ToolInvocation) string { return "Not dispatched because the turn failed." })
 		if err != nil {
@@ -246,10 +270,10 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 		if err != nil {
 			return err
 		}
-		if err := s.recordEvidence(ctx, tx, owner, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_REJECTED, result); err != nil {
+		if err := s.recordEvidence(ctx, tx, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_REJECTED, result); err != nil {
 			return err
 		}
-		return s.settleFailure(ctx, tx, owner, conversation, session, session.ActiveCommand, failure)
+		return s.settleFailure(ctx, tx, conversation, session, session.ActiveCommand, failure)
 	})
 }
 
@@ -320,7 +344,7 @@ func (s *Store) beginCompaction(ctx context.Context, owner Owner, request Intent
 		if err := insertProviderAttempt(ctx, tx, id, owner, requestWire, session, policy, id, nil, 1, policy.Budget); err != nil {
 			return err
 		}
-		return s.publishIntent(ctx, tx, owner, conversation, session, id, request)
+		return s.publishIntent(ctx, tx, conversation, session, id, request)
 	})
 	if err != nil {
 		return "", nil, err
@@ -364,7 +388,7 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 		if err != nil {
 			return err
 		}
-		sources, err := s.recordEvidenceWithSources(ctx, tx, owner, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_RESULT, audit)
+		sources, err := s.recordEvidenceWithSources(ctx, tx, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_RESULT, audit)
 		if err != nil {
 			return err
 		}
@@ -458,7 +482,7 @@ func (s *Store) RecordNested(ctx context.Context, owner Owner, kind IntentKind, 
 		if err != nil {
 			return err
 		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, id, kind.progressKind(), eventpb.ExecutionProgress_PHASE_DISPATCH, request)
+		return s.recordEvidence(ctx, tx, conversation, session, id, kind.progressKind(), eventpb.ExecutionProgress_PHASE_DISPATCH, request)
 	})
 	return id, err
 }
@@ -487,7 +511,7 @@ func (s *Store) FinishNested(ctx context.Context, owner Owner, intentID string, 
 		if err != nil {
 			return err
 		}
-		return s.recordEvidence(ctx, tx, owner, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_RESULT, result)
+		return s.recordEvidence(ctx, tx, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_RESULT, result)
 	})
 }
 

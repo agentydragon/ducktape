@@ -17,7 +17,7 @@ didn't fully succeed.
 ## What ran
 
 - Job: <job.yaml> (`MODELS=gemma4:31b-it-q8_0`, `REASONING_EFFORT=off`)
-- Bench: <bench.py> (with the two patches above); shared prompt and metrics helpers: <../ollama_bench_helpers.py>
+- Bench: <bench.py> (with the two patches above); shared streaming benchmark: <../ollama_bench.py>
 - Driver: <run.sh> (creates the ConfigMap from the bench and shared helper)
 - Endpoint: `http://ollama.ollama:11434/v1/chat/completions`
 
@@ -86,7 +86,7 @@ The cleanest next step for gemma throughput is the same as for the
 other Ollama configs: rerun with a single endpoint that we trust
 (probably `/api/chat`), accept gemma reasons by default, and report
 combined-decode TPS. Deferred — see the proposed-suite next pass in
-<../../benchmarks.md#proposed-benchmark-suite>.
+<cluster/docs/inference/benchmarks.md#legacy-proposed-benchmark-suite>.
 
 ## Raw data
 

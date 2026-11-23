@@ -1,12 +1,14 @@
-"""Tests for batched Gmail message retrieval without a live Gmail API."""
+"""Tests for batched Gmail message retrieval and label changes without a live Gmail API."""
 
 import base64
 import json
 import re
 from dataclasses import dataclass
 from typing import Any, cast
+from unittest.mock import Mock
 from urllib.parse import unquote, urlsplit
 
+import pytest
 from googleapiclient.http import BatchHttpRequest, HttpMock, HttpRequest
 from googleapiclient.model import JsonModel
 
@@ -262,3 +264,44 @@ def test_full_message_batch_returns_successes_and_explicit_failures() -> None:
     assert [message.id for message in messages] == ["a"]
     assert [message_id for message_id, _ in errors] == ["b"]
     assert "HTTP 404" in errors[0][1]
+
+
+def test_get_or_create_label_sends_shared_visibility_defaults_and_reuses_label() -> None:
+    client = object.__new__(GmailClient)
+    client.service = Mock()
+    client._label_cache = None
+    labels = client.service.users().labels()
+    labels.list.return_value.execute.side_effect = [{}, {"labels": [{"id": "Label_1", "name": "Test receipts"}]}]
+    labels.create.return_value.execute.return_value = {"id": "Label_1"}
+
+    assert client.get_or_create_label("Test receipts") == "Label_1"
+    assert client.get_or_create_label("Test receipts") == "Label_1"
+
+    labels.create.assert_called_once_with(
+        userId="me", body={"name": "Test receipts", "labelListVisibility": "labelShow", "messageListVisibility": "show"}
+    )
+
+
+@pytest.mark.parametrize(
+    ("add_label_ids", "remove_label_ids", "expected_label_fields"),
+    [
+        (["Label_1"], ["INBOX"], {"addLabelIds": ["Label_1"], "removeLabelIds": ["INBOX"]}),
+        (["Label_1"], [], {"addLabelIds": ["Label_1"]}),
+        ([], ["INBOX"], {"removeLabelIds": ["INBOX"]}),
+    ],
+)
+def test_modify_labels_batch_sends_1000_ids_per_call_and_omits_empty_label_lists(
+    add_label_ids: list[str], remove_label_ids: list[str], expected_label_fields: dict[str, list[str]]
+) -> None:
+    client = object.__new__(GmailClient)
+    client.service = Mock()
+    batch_modify = client.service.users().messages().batchModify
+    message_ids = [f"m{i}" for i in range(1001)]
+
+    client.modify_labels_batch(message_ids, add_label_ids=add_label_ids, remove_label_ids=remove_label_ids)
+
+    assert [call.kwargs for call in batch_modify.call_args_list] == [
+        {"userId": "me", "body": {"ids": message_ids[:1000], **expected_label_fields}},
+        {"userId": "me", "body": {"ids": message_ids[1000:], **expected_label_fields}},
+    ]
+    assert batch_modify.return_value.execute.call_count == 2

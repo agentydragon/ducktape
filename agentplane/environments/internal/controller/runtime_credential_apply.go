@@ -86,7 +86,7 @@ func (r *Reconciler) applyRuntimeCredential(ctx context.Context, sandbox *sandbo
 		bound := runtimecredentials.Binding(sandbox)
 		bound.Kind, bound.PodUID = sandboxapi.RunnerCredentialKindPod, string(w.pod.UID)
 		w.credentialBinding = &bound
-		w.credential, w.runtimeCredentialAccepted, w.runtimeIncarnationPublished = outcome.Issued, true, true
+		w.credential, w.runtimeIncarnationPublished = outcome.Issued, true
 		return w, nil, nil
 	case runtimecredentials.AcceptVMI:
 		if err := r.acceptVMICredential(ctx, w.vm, w.vmi); err != nil {
@@ -95,7 +95,11 @@ func (r *Reconciler) applyRuntimeCredential(ctx context.Context, sandbox *sandbo
 		bound := runtimecredentials.Binding(sandbox)
 		bound.Kind, bound.LastVMIUID, bound.PodUID = sandboxapi.RunnerCredentialKindVM, string(w.vmi.UID), ""
 		w.credentialBinding = &bound
-		w.credential, w.runtimeCredentialAccepted, w.runtimeIncarnationPublished = outcome.Issued, true, true
+		w.credential = outcome.Issued
+		// An unassigned launcher cannot run a guest. Publish a new route only after
+		// node assignment, while running or recovering journals during deletion.
+		w.runtimeIncarnationPublished = previouslyPublishedRuntimeIncarnation(sandbox, w) ||
+			(w.launcher != nil && w.launcher.Spec.NodeName != "" && (sandboxRunning(sandbox) || !sandbox.DeletionTimestamp.IsZero()))
 		return w, nil, nil
 	case runtimecredentials.RotateVMI:
 		if err := r.rotateVMICredential(ctx, w.vm); err != nil {

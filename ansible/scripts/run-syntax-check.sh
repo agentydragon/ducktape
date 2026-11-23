@@ -14,7 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR/.."
 
 # Syntax check each playbook passed by pre-commit.
-# Pre-commit passes paths like "ansible/agentydragon.yaml" — strip prefix.
+# Pre-commit passes paths like "ansible/atlas.yaml" — strip prefix.
 exit_code=0
 for arg in "$@"; do
   playbook="${arg#ansible/}"

@@ -322,17 +322,14 @@ def test_closed_pr_cancels_nix_wheel_check_validation_run() -> None:
 
 def test_closed_pr_workflow_covers_non_default_base_branches() -> None:
     root = Runfiles.CreateOrRaise().root()
-    close_workflow = yaml.load(
-        (root / "ducktape/.github/workflows/cancel-closed-pr-ci.yml").read_text(), Loader=yaml.BaseLoader
-    )
-    trigger = close_workflow["on"]["pull_request_target"]
-    assert trigger["types"] == ["closed"]
-    assert "branches" not in trigger
-
-    listener = yaml.load(
+    workflow = yaml.load(
         (root / "ducktape/.github/workflows/cancel-obsolete-pr-ci.yml").read_text(), Loader=yaml.BaseLoader
     )
-    assert listener["on"]["workflow_run"]["workflows"] == ["CI", "Nix wheel check"]
+    triggers = workflow["on"]
+    assert triggers["pull_request_target"]["types"] == ["closed"]
+    assert "branches" not in triggers["pull_request_target"]
+    assert triggers["workflow_run"]["types"] == ["requested"]
+    assert triggers["workflow_run"]["workflows"] == ["CI", "Nix wheel check"]
     assert set(CLOSED_PR_WORKFLOW_PATHS) == {WORKFLOW_PATH, ".github/workflows/nix-wheel-check.yml"}
 
 

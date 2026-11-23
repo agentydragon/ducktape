@@ -12,7 +12,6 @@ import { CallerGrants } from "./caller_grants";
 
 const watch = vi.hoisted(() => vi.fn());
 vi.mock("../policy/watch", () => ({ usePolicyResources: watch }));
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;
 const identity = create(IdentitySchema, { name: "caller", uid: "caller-uid" });

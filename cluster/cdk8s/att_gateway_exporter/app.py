@@ -11,12 +11,6 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from grafana_grafanadashboard_crds.org.integreatly.grafana import (
-    GrafanaDashboard,
-    GrafanaDashboardSpec,
-    GrafanaDashboardSpecDatasources,
-    GrafanaDashboardSpecInstanceSelector,
-)
 from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitor,
     ServiceMonitorSpecEndpoints,
@@ -28,6 +22,7 @@ from python.runfiles import Runfiles
 from att_gateway.settings import Settings, SyslogLevel, SyslogSettings
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.att_gateway_exporter import access_code
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
@@ -50,10 +45,7 @@ _SERVICE = ServiceRef(
 _IMAGE = f"git.allegedly.works/ducktape-ci/{NAME}:unset"
 
 
-_RESOURCES = k8s.ResourceRequirements(
-    requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("64Mi")},
-    limits={"cpu": k8s.Quantity.from_string("200m"), "memory": k8s.Quantity.from_string("128Mi")},
-)
+_RESOURCES = container_resources(cpu="10m", memory="64Mi", cpu_limit="200m", memory_limit="128Mi")
 
 
 def _gateway_env(settings: type[BaseSettings]) -> list[k8s.EnvVar]:
@@ -179,7 +171,7 @@ def chart(app: App) -> Chart:
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=NAME, namespace=_NAMESPACE, labels=_SERVICE.labels),
-        spec=k8s.ServiceSpec(selector=_SERVICE.pods.selector, ports=[_HTTP.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=_SERVICE.pods.selector, ports=[_SERVICE.k8s_service_port()]),
     )
     ServiceMonitor(
         chart,
@@ -196,22 +188,13 @@ def chart(app: App) -> Chart:
             )
         ),
     )
-    GrafanaDashboard(
+    grafana_instance.dashboard(
         chart,
-        "dashboard",
-        metadata=ApiObjectMetadata(name=NAME, namespace=_NAMESPACE),
-        spec=GrafanaDashboardSpec(
-            instance_selector=GrafanaDashboardSpecInstanceSelector(match_labels=grafana_instance.INSTANCE_LABELS),
-            folder="Network",
-            datasources=[
-                GrafanaDashboardSpecDatasources(
-                    input_name="DS_LOKI", datasource_name=grafana_instance.LOKI_DATASOURCE_UID
-                ),
-                GrafanaDashboardSpecDatasources(input_name="DS_MIMIR", datasource_name="mimir"),
-            ],
-            json=(
-                Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/att_gateway_exporter/home-gateway.json"
-            ).read_text(),
-        ),
+        NAME,
+        datasources={"DS_LOKI": grafana_instance.LOKI_DATASOURCE_UID, "DS_MIMIR": "mimir"},
+        folder="Network",
+        json=(
+            Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/att_gateway_exporter/home-gateway.json"
+        ).read_text(),
     )
     return chart

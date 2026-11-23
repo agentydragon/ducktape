@@ -12,6 +12,7 @@ import (
 	"time"
 
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 
 	actionpb "github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
@@ -228,23 +229,6 @@ func at(t *testing.T, document any, path ...any) any {
 	return document
 }
 
-// eventually runs poll until it reports true, and fails the test if it does not within callDeadline.
-func eventually(t *testing.T, what string, poll func() bool) {
-	t.Helper()
-	ticker := time.NewTicker(20 * time.Millisecond)
-	defer ticker.Stop()
-	expired := time.After(callDeadline)
-	for !poll() {
-		select {
-		case <-ticker.C:
-		case <-expired:
-			t.Fatalf("timed out waiting for %s", what)
-		case <-t.Context().Done():
-			t.Fatalf("test ended while waiting for %s", what)
-		}
-	}
-}
-
 // wake makes the inbox due now, as the passing of its retry delay does. An inbox a worker holds stays its own until
 // it releases it.
 func wake(t *testing.T, service running) {
@@ -323,7 +307,7 @@ func TestAnAgentIsNotifiedOfAnActionAndAcknowledgesItsEntriesAfterALostResponseA
 
 	// The service reads the request's events, prepares the notice and submits it; the Dispatcher commits it and the
 	// response is lost, so the service submits the same command again.
-	eventually(t, "the notice to be submitted twice", func() bool {
+	eventually.Eventually(t, "the notice to be submitted twice", func() bool {
 		wake(t, service)
 		return len(dispatcher.commands()) >= 2
 	})
@@ -362,7 +346,7 @@ func TestAnAgentIsNotifiedOfAnActionAndAcknowledgesItsEntriesAfterALostResponseA
 			return service.notifications.ReadInbox(ctx, &notificationspb.ReadInboxRequest{SessionId: testSession, AfterCursor: after, Limit: &limit})
 		})
 	}
-	eventually(t, "the notice to be confirmed", func() bool {
+	eventually.Eventually(t, "the notice to be confirmed", func() bool {
 		wake(t, service)
 		code, read := readInbox(0, identityToken)
 		if code != codes.OK {
@@ -450,7 +434,7 @@ func grantSend(t *testing.T, identityName, targetSandbox string) *policyapi.Poli
 			}
 		})
 	}
-	eventually(t, "the binding to be ready", func() bool {
+	eventually.Eventually(t, "the binding to be ready", func() bool {
 		var current policyapi.PolicyBinding
 		if err := apiClient.Get(t.Context(), client.ObjectKeyFromObject(binding), &current); err != nil {
 			t.Fatal(err)
@@ -493,13 +477,15 @@ func TestAnAgentMessagesASessionItIsGrantedAndFollowsTheMessageToItsAcknowledgem
 		t.Fatalf("send = %s %v", code, sent)
 	}
 	id := at(t, sent, "message", "id").(string)
-	if at(t, sent, "message", "destinationRef", "uid") != "" {
-		t.Errorf("Session-addressed message exposed a Sandbox UID: %v", at(t, sent, "message", "destinationRef"))
+	if message, ok := at(t, sent, "message").(map[string]any); ok {
+		if _, present := message["destinationRef"]; present {
+			t.Errorf("Session-addressed message exposed a Sandbox destination: %v", message["destinationRef"])
+		}
 	}
 
 	// The recipient Session is told of its inbox and nothing more: neither the notice nor its retry after the lost
 	// response carries the message.
-	eventually(t, "the notice to be submitted twice", func() bool {
+	eventually.Eventually(t, "the notice to be submitted twice", func() bool {
 		wake(t, service)
 		return len(dispatcher.commands()) >= 2
 	})
@@ -577,7 +563,7 @@ func TestAnAgentMessagesASessionItIsGrantedAndFollowsTheMessageToItsAcknowledgem
 	if err := apiClient.Delete(t.Context(), binding); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "sends to be refused", func() bool {
+	eventually.Eventually(t, "sends to be refused", func() bool {
 		code, _ := agentGRPC(t, otherIdentityToken, func(ctx context.Context) (proto.Message, error) {
 			return service.notifications.SendMessage(ctx, message("after-revocation"))
 		})

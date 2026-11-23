@@ -1,4 +1,4 @@
-"""Shared gRPC metadata used by public Runner Gateway callers."""
+"""Shared gRPC metadata used by callers of the Environments Runtime proxy."""
 
 SANDBOX_HEADER = "x-agentplane-sandbox"
 SANDBOX_NAMESPACE_HEADER = "x-agentplane-sandbox-namespace"

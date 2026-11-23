@@ -41,33 +41,19 @@ def test_critic_run(synced_db: Database, test_snapshot):
 
 @pytest.fixture
 async def temp_creds(synced_db: Database, test_critic_run) -> AgentCredentials:
-    """Ensure agent role exists with RLS scoping.
-
-    Returns:
-        AgentCredentials for the critic agent
-    """
+    """Ensure agent role exists with RLS scoping."""
     return await ensure_agent_role(synced_db.config, test_critic_run)
 
 
 @pytest.fixture
 def temp_engine(synced_db: Database, temp_creds) -> Engine:
-    """Create SQLAlchemy engine using temporary user credentials.
-
-    Returns:
-        SQLAlchemy Engine connected as the temporary user
-    """
+    """Create SQLAlchemy engine using temporary user credentials."""
     user_config = synced_db.config.with_user(temp_creds.username, temp_creds.password)
     return create_engine(user_config.url)
 
 
 def insert_issue(conn: Connection, issue_id: str, rationale: str) -> None:
-    """Insert a reported issue using temp user credentials.
-
-    Args:
-        conn: Database connection (must be from temp user engine)
-        issue_id: Issue identifier
-        rationale: Issue rationale
-    """
+    """Insert a reported issue using temp user credentials; `conn` must come from the temp user engine."""
     conn.execute(
         text("""
             INSERT INTO reported_issues (agent_run_id, issue_id, rationale)
@@ -78,13 +64,7 @@ def insert_issue(conn: Connection, issue_id: str, rationale: str) -> None:
 
 
 def insert_occurrence(conn: Connection, issue_id: str, locations: list[LocationAnchor]) -> None:
-    """Insert a reported issue occurrence using temp user credentials.
-
-    Args:
-        conn: Database connection (must be from temp user engine)
-        issue_id: Issue ID this occurrence belongs to
-        locations: List of LocationAnchor objects specifying where the occurrence is
-    """
+    """Insert a reported issue occurrence using temp user credentials; `conn` must come from the temp user engine."""
     locations_json = json.dumps([loc.model_dump(exclude_none=True) for loc in locations])
     conn.execute(
         text("""

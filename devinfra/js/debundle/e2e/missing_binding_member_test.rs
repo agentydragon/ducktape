@@ -46,12 +46,5 @@ export { a, c };
             ),
         ],
     );
-    let rejected = run_rejection_fixture(opts);
-    for needle in ["missing_one", "missing_two", "mod_x", "mod_y"] {
-        assert!(
-            rejected.stderr.contains(needle),
-            "rejection stderr should mention `{needle}`; got:\n{}",
-            rejected.stderr,
-        );
-    }
+    expect_rejection_containing_all(opts, &["missing_one", "missing_two", "mod_x", "mod_y"]);
 }

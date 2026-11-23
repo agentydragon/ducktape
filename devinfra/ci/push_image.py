@@ -1,22 +1,7 @@
-"""Publish one image, unless the registry already holds exactly these bytes.
+"""Publish an OCI layout if its locally built digest differs from the published digest.
 
-The planner it fans out from fails open: an image whose digest `bazel-ci` never
-reported, whose digest blob could not be read, or whose invocation ids were empty
-lands in the push matrix on the grounds that "unproven" is not "unchanged". That
-verdict is a guess, and this job is where it gets checked — it has built the image
-itself, so it holds the digest the planner lacked.
-
-Pushing anyway is not free and not idempotent. Every push mints a fresh
-`devel-<timestamp>-<sha>` tag, Flux ImagePolicy picks the newest one, and its
-image-automation controller commits the new tag back to this repository — so an
-image that did not change still costs a commit, a reconcile and a rollout. Before
-`manifold-mcp-server` was decommissioned and removed from the image roster, that
-happened once per devel merge: its target lives in a nested module and is absent from
-the `//...` sweep the planner reads.
-
-Comparing here rather than teaching the planner to see that target keeps the check
-in one place and covers the other fail-open reasons too, which no amount of build
-coverage can remove.
+The planner can schedule this job before it knows the digest. Rechecking here avoids
+minting a fresh tag that would trigger a Flux commit and rollout for identical bytes.
 """
 
 from __future__ import annotations
@@ -46,15 +31,8 @@ def push(
 ) -> bool:
     """Publish `oci_dir` as `repo:tag` unless the registry already holds that content.
 
-    Return whether the image needs publishing. In check-only mode, just read digests.
-
-    A registry that cannot be read fails the job, unlike the planner, which
-    publishes whatever it could not prove unchanged. The asymmetry is real: the
-    planner's mistake costs one runner, while publishing here costs a tag Flux
-    commits back and rolls out, which is the churn this check exists to stop. A
-    read failure is also unlikely to be survivable — the push that follows goes to
-    the same registry with the same credentials — and a push not made is recovered
-    by the next merge, which still sees the difference.
+    Check-only mode returns the same decision without writing tags. An unreadable
+    registry raises before either write.
     """
     local = oci_dir.with_name(oci_dir.name + DIGEST_SUFFIX).read_text().strip()
     digest = (

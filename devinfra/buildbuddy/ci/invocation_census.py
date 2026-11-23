@@ -15,8 +15,8 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
+from devinfra.buildbuddy import cli
 from devinfra.buildbuddy.ci.invocation_ids import invocation_id
-from devinfra.buildbuddy.cli import CLIError, run as bbapi
 
 _METADATA_FIELDS = (
     "durationUsec",
@@ -207,8 +207,8 @@ def parse_status_response(payload: Any, *, invocation: str | None = None) -> Sta
 
 def query_live(invocation: str, *, timeout_seconds: int) -> QueryResult:
     try:
-        raw = bbapi("--json", "invocation", "status", invocation, timeout=timeout_seconds)
-    except CLIError as error:
+        raw = cli.run("--json", "invocation", "status", invocation, timeout=timeout_seconds)
+    except cli.CLIError as error:
         cause = error.__cause__
         if isinstance(cause, subprocess.TimeoutExpired):
             kind = "timeout"

@@ -9,21 +9,11 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/operator_action_servicepb"
 	"github.com/agentydragon/ducktape/agentplane/action_service/internal/linkage"
 	"github.com/agentydragon/ducktape/agentplane/action_service/testing/oauthprovider"
-	"k8s.io/apimachinery/pkg/util/wait"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 )
 
 // due grants tokens that are due for refresh as soon as they are granted: they expire within a minute.
 var due = oauthprovider.Options{ExpiresIn: 30, RefreshTokens: true}
-
-// eventually waits for the condition, and fails the test once awaitBound passes without it.
-func eventually(t *testing.T, what string, condition func() bool) {
-	t.Helper()
-	err := wait.PollUntilContextTimeout(t.Context(), 20*time.Millisecond, awaitBound, true,
-		func(context.Context) (bool, error) { return condition(), nil })
-	if err != nil {
-		t.Fatalf("gave up waiting for %s: %v", what, err)
-	}
-}
 
 func TestATokenDueForRefreshIsRefreshedWhenRead(t *testing.T) {
 	f := newFixture(t)
@@ -155,7 +145,7 @@ func TestOneReplicaAtATimeRefreshesAToken(t *testing.T) {
 		}
 		refreshed <- token
 	}()
-	eventually(t, "the first replica's refresh", func() bool { return len(provider.Requests("refresh_token")) == 1 })
+	eventually.Eventually(t, "the first replica's refresh", func() bool { return len(provider.Requests("refresh_token")) == 1 })
 	// The first replica's claim holds the token: the second serves it as it stands.
 	token, err := second.Token(t.Context(), testServer)
 	if err != nil || token.AccessToken != "test-access-token-1" {

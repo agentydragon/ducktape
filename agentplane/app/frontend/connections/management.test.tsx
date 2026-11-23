@@ -10,6 +10,7 @@ import {
   GrantStatus,
   type Connection,
 } from "../../../mcp_edge/api/connection/connection_service_pb";
+import { Code } from "../../../proto/google/rpc/code_pb";
 import { IdentitySchema, ServiceAccountSchema } from "../../../proto/identity_pb";
 import { answerConnectionFacade, mountConnectionService, type Sent } from "./testing/test_support";
 import { Connections } from "./management";
@@ -202,7 +203,7 @@ it("refreshes stale unlink state without destructive automatic retry", async () 
   const sent = serve(() => rows, {
     unbound: () => {
       rows = [create(ConnectionSchema, { ...rows[0], displayName: "Changed elsewhere", version: 4n })];
-      return Response.json({ detail: "stale" }, { status: 409 });
+      return Response.json({ code: Code.ABORTED, message: "Connection version changed", details: [] }, { status: 409 });
     },
   });
   const container = await render();
@@ -254,7 +255,7 @@ it("loads the latest state on a rename conflict without retrying", async () => {
   const sent = serve(() => rows, {
     renamed: () => {
       rows = [create(ConnectionSchema, { ...rows[0], displayName: "Test renamed elsewhere", version: 4n })];
-      return Response.json({ detail: "stale" }, { status: 409 });
+      return Response.json({ code: Code.ABORTED, message: "Connection version changed", details: [] }, { status: 409 });
     },
   });
   const container = await render();
@@ -269,6 +270,22 @@ it("loads the latest state on a rename conflict without retrying", async () => {
   expect(renames(sent)).toHaveLength(1);
   expect(reads(sent)).toBe(2);
 });
+
+it("shows the server error for a 409 without a stale version", async () => {
+  const sent = serve(undefined, {
+    renamed: () =>
+      Response.json({ code: Code.ALREADY_EXISTS, message: "Name already exists", details: [] }, { status: 409 }),
+  });
+  const container = await render();
+  await type(nameField(container), "Another name");
+  await pressEnter(nameField(container));
+  await vi.waitFor(() =>
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("Name already exists")
+  );
+  expect(renames(sent)).toHaveLength(1);
+  expect(reads(sent)).toBe(1);
+});
+
 it("distinguishes loading failures from an empty inventory", async () => {
   serve(() => Response.json({ detail: "Service unavailable" }, { status: 503 }));
   const container = await render();

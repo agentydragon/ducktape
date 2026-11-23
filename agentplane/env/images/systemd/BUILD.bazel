@@ -3,5 +3,6 @@ exports_files([
     "agentplane.slice",
     "agentplane-workloads.slice",
     "agentplane-executors.slice",
+    "agentplane-commands.slice",
     "apply-resource-limits",
 ])

@@ -63,17 +63,17 @@ doesn't yet have a conversion defined.
 > "We swapped freezers — move everything from the old chest to the new
 > upright."
 
-Tools: `list_location_stock` → bulk `stock_transfer`. Currently
-untested by eval.
+Tools: `stock_get` → `stock_entries_list` (per-entry locations) → bulk
+`stock_transfer`. Currently untested by eval.
 
 ### Edit + `clear_fields` semantics
 
-> "Remove the best-before date from these three stock entries — they're
-> pantry staples that don't expire."
+> "Remove the price from these three stock entries — I entered it by mistake."
 
-Tools: `stock_entries_list` → `stock_entry_edit` with
-`clear_fields=["best_before_date"]`. Tests whether the agent distinguishes
-"set to null" from "set to today" and respects the enum of nullable fields.
+Tools: `stock_entries_list` → `stock_entry_edit` with `clear_fields=["price"]`.
+Tests whether the agent distinguishes "set to null" from "set to 0" and respects
+the enum of nullable fields (`price`, `purchased_date`, `note`; `best_before_date`
+is not clearable, see "Clearing expiry on a stock entry").
 
 ### Ambiguous name resolution
 
@@ -198,4 +198,3 @@ eval to confirm the agent doesn't misfire.
    success criteria.
 3. Register it in `CASES`.
 4. Run `bb run //grocy_mcp/eval:cli_bin -- --case <id> --api anthropic`.
-5. Drop the rollout into `sample_rollouts/<id>/` alongside the others.

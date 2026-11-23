@@ -1,6 +1,6 @@
 //! Inspect export surfaces, preserving the distinction between external names and local identities.
 use anyhow::{Result, bail};
-use binding_targets::{declaration_name_strings, module_export_name};
+use binding_targets::{declaration_name_strings, public_export_name};
 use js_ast::{is_binding_identifier, str_value};
 use std::collections::{BTreeMap, BTreeSet};
 use swc_ecma_ast::*;
@@ -31,11 +31,7 @@ pub(super) fn collect_and_validate_boundary_mapping(
                     let ExportSpecifier::Named(named_spec) = specifier else {
                         continue;
                     };
-                    let exported = named_spec
-                        .exported
-                        .as_ref()
-                        .map(module_export_name)
-                        .unwrap_or_else(|| module_export_name(&named_spec.orig));
+                    let exported = public_export_name(named_spec);
                     let local = match (&named.src, &named_spec.orig) {
                         (None, ModuleExportName::Ident(local)) => Some(local.sym.to_string()),
                         _ => None,
@@ -113,13 +109,7 @@ pub(super) fn collect_exported_names(module: &Module) -> BTreeSet<String> {
             ModuleItem::ModuleDecl(ModuleDecl::ExportNamed(named)) => {
                 for specifier in &named.specifiers {
                     if let ExportSpecifier::Named(named_specifier) = specifier {
-                        names.insert(
-                            named_specifier
-                                .exported
-                                .as_ref()
-                                .map(module_export_name)
-                                .unwrap_or_else(|| module_export_name(&named_specifier.orig)),
-                        );
+                        names.insert(public_export_name(named_specifier));
                     }
                 }
             }
@@ -244,12 +234,7 @@ pub(super) fn collect_local_idents_by_export_name(module: &Module) -> BTreeMap<S
             let ModuleExportName::Ident(orig) = &named_spec.orig else {
                 continue;
             };
-            let export_name = named_spec
-                .exported
-                .as_ref()
-                .map(module_export_name)
-                .unwrap_or_else(|| orig.sym.to_string());
-            out.insert(export_name, orig.to_id());
+            out.insert(public_export_name(named_spec), orig.to_id());
         }
     }
     out

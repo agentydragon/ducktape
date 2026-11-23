@@ -16,16 +16,9 @@ import logging
 import os
 import shutil
 import subprocess
-import tempfile
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
-
-# Label format constants
-_CANONICAL_SIGIL = "@@"
-_REPO_SIGIL = "@"
-_PKG_SEP = "//"
-_TARGET_SEP = ":"
 
 
 def get_build_workspace_directory() -> Path:
@@ -44,25 +37,7 @@ def get_build_working_directory() -> Path:
 
 @dataclasses.dataclass(frozen=True)
 class BazelLabel:
-    """A structured Bazel label with explicit repo, package and name fields.
-
-    Not a ``str`` subtype — a plain string cannot flow in where a
-    ``BazelLabel`` is expected, and a ``BazelLabel`` cannot be used as a
-    ``str`` without an explicit conversion.
-
-    Construct from a raw query-output string with :meth:`parse` (raises on
-    bad format) or :meth:`try_parse` (returns ``None`` on bad format).
-
-    Attributes:
-        repo:    Canonical repo name (without leading ``@``); empty string
-                 for the main repository.
-        package: Package directory path (e.g. ``Path("foo/bar")``);
-                 ``Path("")`` for the root package.
-        name:    Bazel target name within the package — an opaque identifier
-                 that for source files happens to be a relative path
-                 (e.g. ``"sub/qux.go"``), but for rule targets is just a
-                 plain name (e.g. ``"my_library"``).
-    """
+    """A query label. The main repo has an empty name and the root package is `Path()`."""
 
     repo: str
     package: Path
@@ -70,40 +45,17 @@ class BazelLabel:
 
     @classmethod
     def parse(cls, s: str) -> BazelLabel:
-        """Parse a label string as produced by ``bazel query``.
+        """Parse main, apparent (`@repo`) and canonical (`@@repo`) labels, including short forms."""
+        prefix, separator, rest = s.partition("//")
+        if not separator or (prefix and not prefix.startswith("@")):
+            raise ValueError(f"Invalid Bazel label: {s!r}")
+        repo = prefix.removeprefix("@@") if prefix.startswith("@@") else prefix.removeprefix("@")
 
-        Handles ``//pkg:target``, ``@repo//pkg:target`` and the Bzlmod
-        canonical ``@@repo//pkg:target`` forms.
-
-        Also accepts short package forms such as ``//pkg``, where the target
-        name defaults to the final package component. Raises :class:`ValueError`
-        for unrecognised formats or empty short-form packages. Use
-        :meth:`try_parse` if ``None`` is preferred over an exception.
-        """
-        if s.startswith(_CANONICAL_SIGIL):
-            rest_after_sigil = s.removeprefix(_CANONICAL_SIGIL)
-            if _PKG_SEP not in rest_after_sigil:
-                raise ValueError(f"Invalid Bazel label (no {_PKG_SEP!r} after {_CANONICAL_SIGIL!r}): {s!r}")
-            repo, rest = rest_after_sigil.split(_PKG_SEP, 1)
-        elif s.startswith(_REPO_SIGIL):
-            rest_after_sigil = s.removeprefix(_REPO_SIGIL)
-            if _PKG_SEP not in rest_after_sigil:
-                raise ValueError(f"Invalid Bazel label (no {_PKG_SEP!r} after {_REPO_SIGIL!r}): {s!r}")
-            repo, rest = rest_after_sigil.split(_PKG_SEP, 1)
-        elif s.startswith(_PKG_SEP):
-            repo, rest = "", s.removeprefix(_PKG_SEP)
-        else:
-            raise ValueError(f"Invalid Bazel label (must start with {_PKG_SEP!r} or {_REPO_SIGIL!r}): {s!r}")
-
-        if _TARGET_SEP not in rest:
-            # Short form: //pkg means //pkg:pkg (name = last component)
-            package = rest
+        package, colon, name = rest.partition(":")
+        if not colon:
             if not package:
-                raise ValueError(f"Invalid Bazel label (no {_TARGET_SEP!r} separator and empty package): {s!r}")
+                raise ValueError(f"Invalid Bazel label (empty short form): {s!r}")
             name = Path(package).name
-            return cls(repo=repo, package=Path(package), name=name)
-
-        package, name = rest.split(_TARGET_SEP, 1)
         return cls(repo=repo, package=Path(package), name=name)
 
     @classmethod
@@ -132,11 +84,8 @@ class BazelLabel:
     def path(self) -> Path | None:
         """Workspace-relative path for local source file labels.
 
-        Returns ``package / name`` for local labels, ``None`` for external.
-
-        TODO: Ideally we'd verify that this label actually refers to a source
-        file (``kind('source file', ...)``) before treating ``name`` as a path,
-        since rule-target names are opaque identifiers, not file paths.
+        Callers must select source files (e.g. ``kind('source file', ...)``).
+        A rule target's name need not denote a file.
         """
         if self.is_external:
             return None
@@ -195,77 +144,18 @@ class BazelWorkspace:
 
     root: Path
     backend: BazelBackend
-    output_base: Path | None = None
-    startup_flags: tuple[str, ...] = ()
 
-    def __post_init__(self) -> None:
-        if self.backend != BazelBackend.LOCAL:
-            if self.output_base is not None:
-                raise ValueError(f"output_base is not supported with {self.backend}")
-            if self.startup_flags:
-                raise ValueError(f"startup_flags is not supported with {self.backend}")
-
-    @property
-    def _bazel_prefix(self) -> tuple[str, ...]:
-        """Base bazel command with optional --output_base and startup flags."""
-        cmd = list(self.backend.command)
-        if self.output_base is not None:
-            cmd.append(f"--output_base={self.output_base}")
-        cmd.extend(self.startup_flags)
-        return tuple(cmd)
-
-    def query(
-        self,
-        expr: str,
-        *,
-        persist_dir: Path | None = None,
-        keep_going: bool = False,
-        timeout: int | None = None,
-        universe_scope: str | None = None,
-        profile_path: Path | None = None,
-    ) -> list[BazelLabel]:
+    def query(self, expr: str, *, keep_going: bool = False) -> list[BazelLabel]:
         """Run ``bazel query`` and return parsed labels.
 
-        Short queries are passed as a positional arg (works with both local
-        bazel and ``bbr``).  Queries exceeding 100 KB fall back to
-        ``--query_file`` (local only — ``bbr`` cannot access local temp
-        files).
+        ``expr`` is one command-line argument (works with both local bazel and
+        ``bbr``), so it must fit the 128 KiB Linux per-argument limit.
         """
-        cmd = [*self._bazel_prefix, "query", "--output=label"]
+        cmd = [*self.backend.command, "query", "--output=label"]
         if keep_going:
             cmd.append("--keep_going")
-        if universe_scope is not None:
-            cmd.append(f"--universe_scope={universe_scope}")
-        if profile_path is not None:
-            cmd.extend([f"--profile={profile_path}", "--generate_json_trace_profile"])
-        if persist_dir is not None:
-            (persist_dir / "query").write_text(expr)
-        # Prefer inline query arg (works with both local bazel and bbr).
-        # Fall back to --query_file for large queries (local only — bbr
-        # can't access local temp files on the runner).
-        max_inline_bytes = 100_000  # conservative; Linux MAX_ARG_STRLEN is 128 KiB
-        query_file_path: Path | None = None
-        if len(expr.encode()) <= max_inline_bytes:
-            cmd.append(expr)
-        elif self.backend == BazelBackend.LOCAL:
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".bazelquery", delete=False) as f:
-                f.write(expr)
-            query_file_path = Path(f.name)
-            cmd.append(f"--query_file={query_file_path}")
-        else:
-            raise RuntimeError(
-                f"Query too large ({len(expr)} chars) for command line,"
-                f" and --query_file is not supported with {self.backend}"
-            )
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, cwd=self.root, check=False, timeout=timeout)
-        finally:
-            if query_file_path is not None:
-                query_file_path.unlink(missing_ok=True)
-        if persist_dir is not None:
-            (persist_dir / "stdout").write_text(result.stdout)
-            (persist_dir / "stderr").write_text(result.stderr)
-            (persist_dir / "exit_code").write_text(str(result.returncode))
+        cmd.append(expr)
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=self.root, check=False)
         ok_codes = {0, 3} if keep_going else {0}
         if result.returncode not in ok_codes:
             error = subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
@@ -280,16 +170,3 @@ class BazelWorkspace:
         # repo each time and doesn't benefit from bbr's runner recycling.
         labels = (BazelLabel.try_parse(line) for line in result.stdout.splitlines())
         return [label for label in labels if label is not None]
-
-    def test(self, targets: list[str], *, check_up_to_date: bool = False, timeout: int | None = None) -> int:
-        """Run ``bazel test`` and return the exit code."""
-        cmd = [*self._bazel_prefix, "test"]
-        if check_up_to_date:
-            cmd.append("--check_tests_up_to_date")
-        cmd.extend(targets)
-        result = subprocess.run(cmd, check=False, cwd=self.root, timeout=timeout)
-        return result.returncode
-
-    def shutdown(self) -> None:
-        """Shut down the Bazel server for this workspace."""
-        subprocess.run([*self._bazel_prefix, "shutdown"], cwd=self.root, check=False, capture_output=True)

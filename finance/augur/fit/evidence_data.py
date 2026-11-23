@@ -65,9 +65,8 @@ class ExogenousEvidence:
     """Observed monthly evidence, keyed by the typed series it describes.
 
     `LevelSeriesKey`, not wire-id strings: this layer BUILDS the typed keys
-    (`HomeValueKey(location_id=…)`), and its consumer used to flatten them to strings here
-    and parse them straight back at `fit/data.py`. The typed value existed at both ends and
-    only the middle was stringly typed, which bought nothing and cost the `parse` round trip.
+    (`HomeValueKey(location_id=…)`) and hands them to `fit/data.py` still typed, never flattened
+    to strings and parsed back.
     """
 
     series_names: tuple[LevelSeriesKey, ...]

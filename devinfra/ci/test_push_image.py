@@ -12,7 +12,7 @@ from devinfra.oci.crane import Crane, CraneError
 class FakeCrane(Crane):
     """Registry stub: repo -> {tag: digest}, recording what gets published.
 
-    A real `Crane` with the subprocess replaced, as `util/test_crane.py` does — the
+    A real `Crane` with the subprocess replaced, as `devinfra/oci/test_crane.py` does — the
     binary is never resolved because nothing reaches `_run`.
     """
 
@@ -71,11 +71,6 @@ def test_a_repository_with_nothing_published_yet_is_pushed(tmp_path: Path) -> No
 
 
 def test_an_unreadable_registry_aborts_rather_than_publishing(tmp_path: Path) -> None:
-    """The opposite of the planner's rule, deliberately. The planner publishes what it
-    could not prove unchanged because its mistake costs one runner; publishing here
-    costs a tag Flux commits back and rolls out. A push not made is recovered by the
-    next merge, which still sees the difference."""
-
     class Unreachable(FakeCrane):
         def digest_or_none(self, image_ref: str) -> str | None:
             raise CraneError(("digest", image_ref), 1, "unexpected status code 500", "")

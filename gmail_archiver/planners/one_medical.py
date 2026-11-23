@@ -15,7 +15,6 @@ class OneMedicalPlanner:
     def plan(self, inbox: GmailInbox) -> Plan:
         plan = Plan(planner=self)
 
-        # Fetch messages using inbox interface
         query = 'from:notifications@care.onemedical.com subject:"Action Item from" subject:"at One Medical" in:inbox'
         messages = inbox.fetch_messages(query)
 
@@ -32,11 +31,9 @@ class OneMedicalPlanner:
         # Sort by internal date (newest first)
         sorted_messages = sorted(messages, key=lambda m: m.internal_date, reverse=True)
 
-        # Keep newest
         newest = sorted_messages[0]
         plan.add_action(message=newest, labels_to_add=[], labels_to_remove=[], reason="Newest reminder")
 
-        # Archive rest
         duplicates = sorted_messages[1:]
         for msg in duplicates:
             plan.add_action(

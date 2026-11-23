@@ -197,11 +197,7 @@ fn apply_output(
 
 fn assert_apply_success(fixture: &GraphFixture, assignments_path: &Path) {
     let output = apply_output(fixture, assignments_path, &[]);
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    process::assert_success(&output);
 }
 
 fn assert_apply_rejected(fixture: &GraphFixture, assignments_path: &Path, diagnostics: &[&str]) {
@@ -486,11 +482,7 @@ fn apply_ignores_modules_owned_by_other_chunks_and_preserves_case_sensitive_root
             .arg(&order),
     )
     .unwrap_or_else(|err| panic!("{err}"));
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    process::assert_success(&output);
     assert!(existing_destination.exists());
     assert_ne!(fs::read(&existing_destination).unwrap(), destination_before);
     assert!(!modules.join("chunks/Main/existingcase.yaml").exists());
@@ -622,11 +614,7 @@ fn applies_reviewed_selector_override_to_new_residual_claim() {
             selector_overrides.to_str().unwrap(),
         ],
     );
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    process::assert_success(&output);
     let destination: serde_yaml::Value =
         serde_yaml::from_slice(&fs::read(fixture.modules.join("state/alpha.yaml")).unwrap())
             .unwrap();

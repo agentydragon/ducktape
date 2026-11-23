@@ -136,8 +136,8 @@ fence that forces traffic into whatever does.
 - unsetting proxy env vars inside the command does not restore egress
 
 **Pass**: all denials hold and the allowed paths work, with the deny coming from
-the GitOps-owned policy (`cluster/k8s/agents/openshell/openclaw/policy.yaml`,
-`network_policies: {}` default-deny) rather than from image defaults.
+the sandbox's own GitOps-owned policy (`network_policies: {}` default-deny) rather
+than from image defaults.
 
 **Scope caveat that must be stated in the result**: this confines the
 **sandbox**, where `exec` runs. It does **not** confine the gateway, which holds

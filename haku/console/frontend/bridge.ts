@@ -4,7 +4,7 @@
 // See docs/containment.md → "The Agent UI bridge protocol".
 //
 // The wire shapes (Inbound/Outbound/GeolocationOptions/GeoPosition) plus the client helpers live in
-// the shared @haku/console-bridge package (haku/js/bridge_protocol), which both sides import. The
+// the shared @haku/console-bridge package (haku/shared/bridge_protocol), which both sides import. The
 // inbound validators and the open-link whitelist stay HERE, unshared and PR-gated, so a compromised
 // iframe can't widen them.
 import type { GeolocationOptions, Inbound } from "@haku/console-bridge/protocol";

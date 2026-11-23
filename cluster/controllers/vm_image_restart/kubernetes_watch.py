@@ -1,127 +1,66 @@
-"""List-and-watch over Kubernetes kinds, folded into stores owned by the caller.
-
-Every kind runs its own loop: a list replaces that kind wholesale (the resync), a watch from the
-list's `resourceVersion` applies changes until the server ends it after `resync_seconds`, and the
-loop lists again. A failed cycle backs off and relists.
-
-`on_cycle` fires only past a watch the server ended on schedule. A reader that needs to distinguish
-a frozen store from a quiet one can compare that timestamp against `resync_seconds`.
-"""
+"""Keep the opted-in KubeVirt VM and VMI in sync with the API."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from typing import Any
 
-from kubernetes_asyncio import watch as k8s_watch
-from tenacity import AsyncRetrying, before_sleep_log, wait_exponential
+from kubernetes_asyncio import client, watch
+from tenacity import before_sleep_log, retry, wait_exponential
 
 logger = logging.getLogger(__name__)
 
-
-def _as_listed(obj: Any) -> Any:
-    return obj
+WATCH_TIMEOUT_SECONDS = 300
 
 
-@dataclass(frozen=True)
-class WatchedKind[K, T]:
-    """One kind to keep in sync: how to list it, and how to fold objects into the caller's store."""
+async def watch_kubevirt_resource(
+    api: client.CustomObjectsApi,
+    namespace: str,
+    plural: str,
+    name: str,
+    store: dict[str, dict[str, Any]],
+    changed: asyncio.Event,
+) -> None:
+    """Relist after each watch and retry failed cycles with backoff."""
+    list_objects = api.list_namespaced_custom_object
+    args = ("kubevirt.io", "v1", namespace, plural)
+    field_selector = f"metadata.name={name}"
+    request_timeout = (10, WATCH_TIMEOUT_SECONDS + 30)
 
-    name: str
-    list: Callable[..., Awaitable[Any]]
-    args: tuple[Any, ...]
-    key: Callable[[T], K]
-    names: Callable[[], set[K]]
-    apply: Callable[[K, T | None], None]
-    parse: Callable[[Any], T] = _as_listed
-    kwargs: Mapping[str, Any] = field(default_factory=dict)
+    @retry(wait=wait_exponential(max=30), before_sleep=before_sleep_log(logger, logging.WARNING))
+    async def cycle() -> None:
+        listed = await list_objects(*args, field_selector=field_selector, _request_timeout=request_timeout)
+        resource_version = listed["metadata"]["resourceVersion"]
+        current = {str(obj["metadata"]["name"]): obj for obj in listed["items"]}
+        store.clear()
+        store.update(current)
+        changed.set()
 
-
-class ListWatch:
-    def __init__(
-        self,
-        *,
-        kinds: Sequence[WatchedKind],
-        resync_seconds: int,
-        on_change: Callable[[WatchedKind], Awaitable[None]],
-        on_cycle: Callable[[WatchedKind, datetime], Awaitable[None]],
-        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
-    ) -> None:
-        self._kinds = tuple(kinds)
-        self._resync_seconds = resync_seconds
-        self._on_change = on_change
-        self._on_cycle = on_cycle
-        self._clock = clock
-        self._listed: set[str] = set()
-
-    @property
-    def synced(self) -> bool:
-        """Whether every kind has been listed at least once, so the store is complete."""
-        return len(self._listed) == len(self._kinds)
-
-    async def run(self) -> None:
-        """Watch until cancelled."""
-        started = self._clock()
-        for kind in self._kinds:
-            await self._on_cycle(kind, started)
-        async with asyncio.TaskGroup() as group:
-            for kind in self._kinds:
-                group.create_task(self._watch_forever(kind), name=f"list-watch-{kind.name}")
-
-    async def _watch_forever(self, kind: WatchedKind) -> None:
-        while True:
-            async for attempt in AsyncRetrying(
-                wait=wait_exponential(max=30), before_sleep=before_sleep_log(logger, logging.WARNING)
-            ):
-                with attempt:
-                    await self._cycle(kind)
-
-    async def _cycle(self, kind: WatchedKind) -> None:
-        listed = await kind.list(*kind.args, **kind.kwargs)
-        # Custom objects list as a dict; core kinds as a typed list.
-        items = listed["items"] if isinstance(listed, dict) else listed.items
-        version = (
-            listed["metadata"]["resourceVersion"] if isinstance(listed, dict) else listed.metadata.resource_version
-        )
-        parsed = {kind.key(obj): obj for obj in map(kind.parse, items)}
-        for key in kind.names() - set(parsed):
-            kind.apply(key, None)
-        for key, obj in parsed.items():
-            kind.apply(key, obj)
-        self._listed.add(kind.name)
-        await self._on_change(kind)
-        watcher = k8s_watch.Watch()
+        watcher = watch.Watch()
         try:
-            # Integer seconds: the API server parses timeoutSeconds with strconv.ParseInt, so a float
-            # reaches it as "300.0" and every watch is refused with 400.
+            # timeoutSeconds must be an integer or the API server refuses the watch.
             async for event in watcher.stream(
-                kind.list, *kind.args, **kind.kwargs, resource_version=version, timeout_seconds=self._resync_seconds
+                list_objects,
+                *args,
+                field_selector=field_selector,
+                _request_timeout=request_timeout,
+                resource_version=resource_version,
+                timeout_seconds=WATCH_TIMEOUT_SECONDS,
             ):
                 match event["type"]:
                     case "ADDED" | "MODIFIED":
-                        obj = kind.parse(event["object"])
-                        kind.apply(kind.key(obj), obj)
+                        obj = event["object"]
+                        store[str(obj["metadata"]["name"])] = obj
                     case "DELETED":
-                        kind.apply(kind.key(kind.parse(event["object"])), None)
+                        store.pop(str(event["object"]["metadata"]["name"]), None)
                     case "BOOKMARK":
                         continue
                     case other:
-                        raise RuntimeError(f"watch of {kind.name} returned event type {other!r}")
-                await self._on_change(kind)
+                        raise RuntimeError(f"watch of {plural} returned event type {other!r}")
+                changed.set()
         finally:
             watcher.stop()
-        # Only here, past the watch the server ended on schedule: a cycle that raised out of the
-        # loop above is exactly the case this timestamp is meant to stop advancing for.
-        await self._on_cycle(kind, self._clock())
 
-
-def apply_to[K, T](store: dict[K, T], key: K, obj: T | None) -> None:
-    """The usual `apply`: replace the object under its key, or remove it when `obj` is `None`."""
-    if obj is None:
-        store.pop(key, None)
-    else:
-        store[key] = obj
+    while True:
+        await cycle()

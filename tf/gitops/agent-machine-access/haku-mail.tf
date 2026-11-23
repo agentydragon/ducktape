@@ -1,6 +1,3 @@
-# ============================================================================
-# haku-mail — Haku's mailbox identity for the Stalwart mailserver
-# ============================================================================
 # Stalwart (cluster/k8s/haku/mailbox) authenticates its `haku` mail account
 # exclusively via OIDC bearer tokens: its directory points at this provider's
 # issuer and pins requireAudience to this client_id, so kubectl-sandbox JWTs

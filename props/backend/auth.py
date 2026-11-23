@@ -41,9 +41,6 @@ from props.db.models import AgentRun, AgentType
 logger = logging.getLogger(__name__)
 
 
-# --- Role markers (the varying part of each identity) ---
-
-
 @dataclass(frozen=True)
 class AdminRole:
     """Full admin access."""
@@ -63,9 +60,6 @@ class AgentRole:
 
 
 Role = AdminRole | EvaluatorRole | AgentRole
-
-
-# --- Request identity ---
 
 
 @dataclass(frozen=True)

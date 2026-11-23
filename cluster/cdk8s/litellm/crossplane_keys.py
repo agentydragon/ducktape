@@ -39,14 +39,14 @@ from litellm_team_crds.io.crossplane.m.litellm import (
 
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.litellm.endpoint import API_BASE, NAMESPACE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
-from model_catalog.policies import KEY_MODEL_LANES
+from cluster.cdk8s.reflector import mirror_annotations
+from model_catalog.policies import AGENTPLANE_STAGING_MODEL_LANES, KEY_MODEL_LANES
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/crossplane-keys"
 NAME = "litellm-crossplane-keys"
-NAMESPACE = "litellm"
-_LITELLM_API_BASE = "http://litellm.litellm.svc.cluster.local:4000"
 _PROVIDER_CONFIG_SECRET = "litellm-crossplane-provider-credentials"
 
 
@@ -110,17 +110,11 @@ def _publish_key(
     reader: ServiceAccount,
     key_name: str,
     connection_secret: str,
-    target_secret: str,
-    data_key: str = "api-key",
     annotations: Mapping[str, str] | None = None,
 ) -> None:
+    target_secret = f"litellm-key-{key_name}"
     store = single_secret_store(
-        chart,
-        f"crossplane-key-{key_name}",
-        reader=reader,
-        source_namespace=NAMESPACE,
-        source_secret=connection_secret,
-        consumer_namespace=NAMESPACE,
+        chart, f"crossplane-key-{key_name}", reader=reader, source_namespace=NAMESPACE, source_secret=connection_secret
     )
     ExternalSecret(
         chart,
@@ -128,7 +122,7 @@ def _publish_key(
         metadata=ApiObjectMetadata(name=target_secret, namespace=NAMESPACE),
         refresh_interval="1h",
         secret_store_ref=SecretStoreRef.cluster(store),
-        data=[remote_data(connection_secret, "attribute.key", secret_key=data_key)],
+        data=[remote_data(connection_secret, "attribute.key", secret_key="api-key")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         template=ExternalSecretSpecTargetTemplate(
             metadata=ExternalSecretSpecTargetTemplateMetadata(annotations=dict(annotations or {})), type="Opaque"
@@ -143,8 +137,6 @@ class _DynamicKey:
     consumer: str
     max_budget: int | None = None
     budget_duration: str | None = None
-    target_secret: str | None = None
-    data_key: str = "api-key"
     annotations: Mapping[str, str] = field(default_factory=dict)
 
 
@@ -163,7 +155,6 @@ def chart(app: App) -> Chart:
         reader=reader,
         source_namespace=NAMESPACE,
         source_secret="litellm-master-key",
-        consumer_namespace=NAMESPACE,
     )
     ExternalSecret(
         chart,
@@ -174,7 +165,7 @@ def chart(app: App) -> Chart:
         data=[remote_data("litellm-master-key", "api-key", secret_key="api_key")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
         template=ExternalSecretSpecTargetTemplate(
-            type="Opaque", data={"credentials": ('{"api_base":"' + _LITELLM_API_BASE + '","api_key":"{{ .api_key }}"}')}
+            type="Opaque", data={"credentials": ('{"api_base":"' + API_BASE + '","api_key":"{{ .api_key }}"}')}
         ),
     )
 
@@ -192,33 +183,16 @@ def chart(app: App) -> Chart:
         ),
     )
 
-    Team(
-        chart,
-        "team-codex-clients",
-        metadata=ApiObjectMetadata(name="team-codex-clients", namespace=NAMESPACE),
-        spec=_team_spec(
-            name="team-codex-clients",
-            fallbacks=[route.id for route in KEY_MODEL_LANES["codex_client_models"].fallbacks],
-        ),
-    )
-    Team(
-        chart,
-        "team-gemini-clients",
-        metadata=ApiObjectMetadata(name="team-gemini-clients", namespace=NAMESPACE),
-        spec=_team_spec(
-            name="team-gemini-clients",
-            fallbacks=[route.id for route in KEY_MODEL_LANES["gemini_client_models"].fallbacks],
-        ),
-    )
-    Team(
-        chart,
-        "team-antigravity-clients",
-        metadata=ApiObjectMetadata(name="team-antigravity-clients", namespace=NAMESPACE),
-        spec=_team_spec(
-            name="team-antigravity-clients",
-            fallbacks=[route.id for route in KEY_MODEL_LANES["antigravity_client_models"].fallbacks],
-        ),
-    )
+    for client in ("codex", "gemini", "antigravity"):
+        team_name = f"team-{client}-clients"
+        Team(
+            chart,
+            team_name,
+            metadata=ApiObjectMetadata(name=team_name, namespace=NAMESPACE),
+            spec=_team_spec(
+                name=team_name, fallbacks=[route.id for route in KEY_MODEL_LANES[f"{client}_client_models"].fallbacks]
+            ),
+        )
 
     dynamic_keys = [
         _DynamicKey(
@@ -240,24 +214,8 @@ def chart(app: App) -> Chart:
         ),
         _DynamicKey(
             name="agentplane-staging",
-            models=_lane_models(
-                "gpt6_oai_lane_models", "claude_client_models", "antigravity_client_models", "ollama_chat_client_models"
-            ),
+            models=_lane_models(*AGENTPLANE_STAGING_MODEL_LANES),
             consumer="agentplane-staging",
-        ),
-        _DynamicKey(
-            name="codex-pod",
-            models=_lane_models("gpt6_oai_lane_models"),
-            consumer="codex-pod",
-            max_budget=50,
-            budget_duration="30d",
-            annotations={
-                "description": "LiteLLM virtual key for the codex-pod agent (chatgpt-sub/oai-responses/gpt-6-* models only); reflected into codex-pod as LITELLM_API_KEY",
-                "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "codex-pod",
-                "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "codex-pod",
-            },
         ),
         _DynamicKey(
             name="public-coder-agent",
@@ -271,24 +229,7 @@ def chart(app: App) -> Chart:
             consumer="public-coder-agent",
             annotations={
                 "description": "LiteLLM virtual key for public-coder-agent OpenClaw and least-credential runner-proxy-mediated Haku Console Codex shells; Gemini chat models, plus embeddings",
-                "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "public-coder-agent,haku-console",
-                "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "public-coder-agent,haku-console",
-            },
-        ),
-        _DynamicKey(
-            name="codex-pod-messages",
-            models=_lane_models("gpt6_codex_client_models"),
-            consumer="codex-pod codex-claude",
-            target_secret="litellm-codex-pod-messages-key",
-            data_key="CODEX_LITELLM_KEY",
-            annotations={
-                "description": "GPT-6-only LiteLLM Messages key for codex-pod; reflected as CODEX_LITELLM_KEY",
-                "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "codex-pod",
-                "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "codex-pod",
+                **mirror_annotations(["public-coder-agent", "haku-console"]),
             },
         ),
         _DynamicKey(
@@ -297,16 +238,10 @@ def chart(app: App) -> Chart:
             consumer="retired standalone Codex workspaces; key retained for future use",
             annotations={
                 "description": "LiteLLM virtual key for a future Codex workspace lane (chatgpt-sub/oai-responses/gpt-6-* models only); reflected into agent-workspaces if restored",
-                "reflector.v1.k8s.emberstack.com/reflection-allowed": "true",
-                "reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces": "agent-workspaces",
-                "reflector.v1.k8s.emberstack.com/reflection-auto-enabled": "true",
-                "reflector.v1.k8s.emberstack.com/reflection-auto-namespaces": "agent-workspaces",
+                **mirror_annotations(["agent-workspaces"]),
             },
         ),
     ]
-    # Keep the canonical aliases unchanged during the ownership transfer. The old
-    # Terraform Kustomization completes its apply (including deletes) before this one
-    # starts, so there is no duplicate-alias window.
     for key in dynamic_keys:
         connection_secret = f"litellm-crossplane-key-{key.name}"
         metadata_secret = f"litellm-key-metadata-{key.name}"
@@ -328,21 +263,10 @@ def chart(app: App) -> Chart:
                 max_budget=key.max_budget,
                 budget_duration=key.budget_duration,
                 connection_secret=connection_secret,
-                team={
-                    "codex-clients": "team-codex-clients",
-                    "gemini-clients": "team-gemini-clients",
-                    "antigravity-clients": "team-antigravity-clients",
-                }.get(key.name),
             ),
         )
         _publish_key(
-            chart,
-            reader=reader,
-            key_name=key.name,
-            connection_secret=connection_secret,
-            target_secret=key.target_secret or f"litellm-key-{key.name}",
-            data_key=key.data_key,
-            annotations=key.annotations,
+            chart, reader=reader, key_name=key.name, connection_secret=connection_secret, annotations=key.annotations
         )
 
     for name, models, consumer, team in (

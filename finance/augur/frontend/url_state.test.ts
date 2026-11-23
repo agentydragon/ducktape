@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { replaceSearchParams } from "./url_state";
 
-function browserAt(search = "?unknown=keep&fmt=exact") {
+function browserAt(search = "?unknown=keep&tab=budget") {
   const replaceState = vi.fn();
   return {
     browser: {
@@ -17,7 +17,7 @@ describe("replaceSearchParams", () => {
   it("updates owned parameters while preserving unrelated URL state", () => {
     const { browser, replaceState } = browserAt();
 
-    expect(replaceSearchParams({ scenarios: "new", fmt: null, scale: "log" }, browser)).toBe(true);
+    expect(replaceSearchParams({ scenarios: "new", tab: null, scale: "log" }, browser)).toBe(true);
     expect(replaceState).toHaveBeenCalledExactlyOnceWith(null, "", "/augur?unknown=keep&scenarios=new&scale=log#chart");
   });
 

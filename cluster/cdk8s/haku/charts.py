@@ -1,32 +1,27 @@
 """The console resource chart -- database, schema migration, and the console itself --
 shared by manifest generation and tests (synthesized in memory via `cdk8s.Testing`).
 
-The database and migration used to be Kustomizations of their own, ordered ahead of the
-console by `dependsOn`. One Kustomization has no such ordering, so the migration Job retries
-until its preconditions hold rather than relying on the layer beneath it already being Ready.
+One Kustomization applies all three with no ordering between them, so the migration Job
+retries until its preconditions hold (migration.py).
 """
 
 from __future__ import annotations
 
 from cdk8s import App, Chart
-from flux_kustomize.io.fluxcd.toolkit.kustomize import (
-    KustomizationSpecDeletionPolicy,
-    KustomizationSpecHealthCheckExprs,
-)
+from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s import namespaces
+from cluster.cdk8s.cnpg.health import database_health
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_external_secret
-from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.haku import console
 from cluster.cdk8s.haku.console import Console
-from cluster.cdk8s.haku.database import Db
+from cluster.cdk8s.haku.database import NAMESPACE, Db
 from cluster.cdk8s.haku.migration import Migration
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 
 NAME = console.NAME
-NAMESPACE = console.NAMESPACE
 PATH = f"{HAND_WRITTEN_ROOT}/haku/console"
 # Long enough for the slowest cold path -- CNPG bootstrapping a fresh two-instance Cluster,
 # then the migration converging on its retries behind it.
@@ -79,11 +74,7 @@ def haku_console(
         # would take the console's approval ledger with them.
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         # Nothing downstream reconciles until CNPG accepts connections.
-        health_check_exprs=[
-            KustomizationSpecHealthCheckExprs(
-                api_version="postgresql.cnpg.io/v1", kind="Database", current=CNPG_DATABASE_READY
-            )
-        ],
+        health_check_exprs=[database_health()],
         depends_on=flux_kustomization_depends_on_many(
             # The Cluster CRD and CNPG's failurePolicy: Fail webhook.
             cnpg,

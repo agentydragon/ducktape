@@ -2,7 +2,7 @@
 
 from cdk8s import App, Chart
 
-from cluster.cdk8s import opentofu, terraform
+from cluster.cdk8s import opentofu
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
 NAME = "agent-machine-access"
@@ -16,7 +16,6 @@ def chart(app: App) -> Chart:
         app,
         module_name=NAME,
         identity_name=KUBERNETES_IDENTITY,
-        schema=terraform.gitops_state_schema(NAME),
         secret_accesses=(
             (
                 "agents-infra-secrets",

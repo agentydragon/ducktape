@@ -1,97 +1,65 @@
-# Container Images
+# Container images
 
-**New in-cluster images default to our own Forgejo registry** (`git.allegedly.works`,
-operator decision on #5003): a private package pulled with a bot credential provisioned
-in code, no manual visibility step — see [Forgejo-hosted images](#forgejo-hosted-images)
-below. Weigh the tradeoff there before using it for a pull-critical workload.
-
-GHCR (`ghcr.io/agentydragon/<image>`) is the exception, for images that must be
-publicly pullable or must survive a Forgejo outage. Most existing images still live
-there. GHCR packages must be public (no pull credentials on cluster nodes) — and
-because GitHub exposes **no API to set package visibility**, a new GHCR package must be
-flipped public **once, by hand, in the UI** (the `check public images` CI guard
-detects any that aren't).
-
-Props agent runtime images are published to the Forgejo registry via the props
-registry proxy (`props.allegedly.works` → `git.allegedly.works/props/*`).
+Use the private Forgejo registry for new in-cluster images. A Forgejo outage can prevent a pod on a new node
+from pulling its image. Use GHCR when the workload must survive that outage or the image needs anonymous
+distribution. [Registry decision](https://github.com/agentydragon/ducktape/pull/5003#issuecomment-5447713281)
 
 ## Adding a new container image
 
-1. **Build**: Prefer Bazel (`oci_image` + `oci_load` from `@rules_oci`). Use GitHub
-   Actions only when Bazel can't build it (e.g., multi-stage Docker builds with
-   external toolchains). Set `org.opencontainers.image.source` label.
-   Example: <../../third_party/activitywatch/BUILD.bazel>
+**Publish the image.** Choose the build path that owns it.
 
-2. **Push**: Add an entry to <../../devinfra/ci/image_targets.json> (the image roster
-   SSOT the `push-images` workflow reads): the key is the published image name, with
-   `target` (the Bazel `oci_image` label), `test` (its test gate), and — the default
-   for new in-cluster images — `"registry": "forgejo"`; omitting `registry` publishes
-   to GHCR. The workflow builds the image on RBE, downloads it to the runner, and
-   `crane push`es it. Pushes are deduped by content digest against the newest existing
-   `devel-*` tag — unchanged images are no-ops, so Flux ImagePolicy doesn't churn
-   deployments. Set `org.opencontainers.image.source` on the `oci_image` to link a
-   GHCR package to the repo on first push.
+- **Bazel.** Declare the `oci_image` and `oci_load`, set the `org.opencontainers.image.source` label, and add
+  the published name to the image roster. Set `target` to the OCI image label, `test` to the applicable test
+  gate, and `registry` to `forgejo`. Omitting `registry` selects GHCR. On devel the planner and push job
+  compare the image digest with the registry's `latest` tag. A changed digest gets a pinned
+  `devel-<timestamp>-<sha7>` tag. [Build example](../../third_party/activitywatch/BUILD.bazel) ·
+  [Image roster](../../devinfra/ci/image_targets.json) ·
+  [Publication decisions](../../devinfra/ci/docs/publish_planning.md)
+- **Nix.** For a flake image or KubeVirt containerDisk, add the flake attribute, repository, input paths, and
+  optional smoke script to the Nix roster. Include new input paths in the workflow triggers so a change starts
+  CI. PRs build selected images and run their verification gates. Devel publishes verified images.
+  [Nix image roster](../../devinfra/ci/nix_images.json) ·
+  [Nix image workflow](../../.github/workflows/nix-images.yml)
+- **Bespoke workflows.** Use a dedicated GitHub Actions workflow when neither build path fits. Authenticate to
+  the destination registry before pushing. For GHCR, grant `packages: write`. Forgejo uses the Actions secrets
+  described below. The Props agent publisher has a separate registry proxy and digest/tag scheme. Its workflow
+  job is parked and records the prerequisites for revival.
+  [Props publisher job](../../.github/workflows/push-images.yml)
 
-3. **Tag policy — avoid `:latest`**: Use Flux image automation to track pinned tags
-   (`{branch}-{timestamp}-{sha7}`). For in-cluster images:
-   - Create `ImageRepository` + `ImagePolicy` in `generated/flux-image-automation-forgejo/`
-     (with `secretRef: forgejo-images-creds` on the repository) or, for a GHCR image,
-     in `generated/flux-image-automation-ghcr/`
-   - Add `{"$imagepolicy": "flux-system:<policy-name>"}` comment to the image field
-   - **GHCR only: add the `ImageRepository` to the GitHub webhook receiver** in
-     [`flux_webhook.py`](../cdk8s/flux_webhook.py) — without this, the image only
-     gets picked up on the 5m poll interval instead of immediately on push. A Forgejo
-     image needs nothing here: the `forgejo-images` Receiver is built from the same
-     roster that generates its `ImageRepository`, and `cluster/validation` fails an
-     `ImageRepository` that no Receiver lists.
-   - Flux updates the tag in-repo on each new push
+**Track the pinned tag in Flux** when the cluster deploys the image.
 
-   For images not deployed in-cluster, pin the tag in the consuming BUILD.bazel.
+1. For a `ducktape-ci` Forgejo image, add its policy name to `IMAGES`. The roster generates its
+   `ImageRepository`, newest-tag `ImagePolicy`, and package webhook Receiver entry. Use the existing
+   package-name override when the policy and registry names differ. For GHCR, define the repository and policy
+   in the owning chart and add the repository to the GitHub Receiver. The `tf-runner` chart shows that path.
+   [Forgejo roster](../cdk8s/forgejo_registry/image_automation.py) ·
+   [GHCR chart example](../cdk8s/tofu_controller_release.py) · [GitHub Receiver](../cdk8s/flux_webhook.py)
+2. Pin the image in the workload's hand-written `image-pins/kustomization.yaml` under `cluster/k8s/`. A
+   `newTag` field takes a **tag-only** marker such as `# {"$imagepolicy": "flux-system:airlock:tag"}`. The
+   bare marker writes the full image reference into that field and breaks the pull. Regenerate the manifests
+   with `bb run //cluster/cdk8s:generate_manifests`.
+   [Airlock example](../k8s/agents/airlock/image-pins/kustomization.yaml) ·
+   [cdk8s image pin conventions](cdk8s.md#live-image-automation)
+3. When renaming a registry path, publish the first tagged image at the new path before switching Flux to it.
+   Otherwise automation can revert the workload to the old path. For an image consumed outside the cluster,
+   pin the published tag in the consuming build or configuration.
 
-4. **Nix path** (a flake `dockerTools` image or KubeVirt containerDisk): add it to
-   <../../devinfra/ci/nix_images.json> and its input paths to the triggers of
-   <../../.github/workflows/nix-images.yml>, which builds every changed Nix image on one runner,
-   smoke-tests it on PRs and publishes it from devel.
-
-5. **GitHub Actions path** (when neither Bazel nor Nix is viable):
-   - Workflow in `.github/workflows/<name>-image.yml`
-   - Use `docker/build-push-action` with `packages: write` permission
-
-**Gotcha — Flux image automation race**: When renaming image paths, push at least one
-image to the new path before updating `ImageRepository` resources. Otherwise Flux reverts
-to the old path.
+For a new GHCR package, set its visibility to public in the GitHub package settings after the first push and
+verify an anonymous pull of the pinned tag.
+[GitHub package visibility](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility)
 
 ## Forgejo-hosted images
 
-The default for a new in-cluster image: a **private** package in our own registry (no
-GHCR "make public" toil, credential provisioned in code). Historical reference:
-`codex-pod` (<../../x/codex_pod_image/deploy/README.md>); its automatic build/publish and
-Flux image scan are retired.
+The tenant is `git.allegedly.works/ducktape-ci`. OpenTofu provisions the user and package webhook from the
+cluster-owned credential. The GitHub secrets sync supplies `FORGEJO_IMAGES_USERNAME` and
+`FORGEJO_IMAGES_PASSWORD` to publishing workflows. [Tenant module](../../tf/gitops/forgejo-images) ·
+[GitHub secrets sync](../../tf/gitops/github-secrets-sync/README.md)
 
-1. **Tenant + credential** — `cluster/k8s/forgejo-images/` provisions the
-   `ducktape-ci` Forgejo user (`tf/gitops/forgejo-images`, password from the SOPS
-   `forgejo-images-creds` Secret) and reflects that Secret (dockerconfigjson) into
-   `flux-system` (Flux scan `secretRef`) and consuming namespaces (kubelet
-   `imagePullSecrets`). The `github-secrets-sync` OpenTofu module publishes the same credential as
-   `FORGEJO_IMAGES_USERNAME` and `FORGEJO_IMAGES_PASSWORD` GitHub Actions secrets;
-   publishing steps consume those secrets directly.
-2. **Push** — for Bazel-built images, set `"registry": "forgejo"` on the image's
-   entry in <../../devinfra/ci/image_targets.json>; the workflow pushes
-   `git.allegedly.works/ducktape-ci/<image>:<tag>` with the same
-   `{branch}-{timestamp}-{sha7}` tag. For bespoke workflows, use
-   `skopeo copy … docker://git.allegedly.works/ducktape-ci/<image>:<tag>
---dest-creds "$FORGEJO_IMAGES_USERNAME:$FORGEJO_IMAGES_PASSWORD"`. Direct to
-   Forgejo — no proxy (unlike props).
-3. **Auto-roll** — add `ImageRepository` (with `secretRef: forgejo-images-creds`)
-   - `ImagePolicy` under `cluster/generated/flux-image-automation-forgejo/`, and the
-     `{"$imagepolicy": "flux-system:<name>"}` marker on the image field. The
-     cluster-wide `all-images` `ImageUpdateAutomation` updates it, and Forgejo's
-     `package` webhook (the `receiver` in `forgejo-images`) scans the image on push.
-4. **Consume** — image `git.allegedly.works/ducktape-ci/<image>` +
-   `imagePullSecrets: [{name: forgejo-images-creds}]`. The app's Flux Kustomization
-   does not depend on `forgejo-images`: kubelet retries the pull until the
-   credential lands.
+The registry chart creates a copy of `forgejo-images-creds` in `flux-system` for authenticated image scans. In
+a workload namespace, use the pull-credentials helper to create the Docker config Secret through ESO and
+reference it in `imagePullSecrets`. Kubelet retries the pull while the credential arrives.
+[Registry chart](../cdk8s/forgejo_registry/chart.py) ·
+[Pull-credentials helper](../cdk8s/forgejo_registry/pull_credentials.py)
 
-**Tradeoff**: unlike GHCR (external), a Forgejo outage means these pods can't pull.
-Fine for non-critical workloads (agent pods); weigh per-image before moving
-pull-critical ones.
+The archived Codex pod documents an earlier Forgejo consumer and its retired publication and image scan.
+[Codex pod deployment](../../x/codex_pod_image/deploy/README.md)

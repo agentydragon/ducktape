@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
-from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import k8s
+from cdk8s import ApiObjectMetadata, App, Chart, Size
+from cdk8s_plus_34 import Cpu, k8s
 from external_dns_crds.io.k8s.externaldns import DnsEndpoint, DnsEndpointSpec, DnsEndpointSpecEndpoints
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from cluster.cdk8s import external_creds, namespaces, node_scheduling
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
-from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.namespaces import Vpa, VpaProfile
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.route53 import HOSTED_ZONES
+from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
 from cluster.scripts import nebula_mesh
 
 NAME = "external-dns"
@@ -21,11 +22,26 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 RECORDS_OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}-records"
 _CREDENTIALS_SOURCE = "aws-route53-external-dns-credentials"
 _CREDENTIALS_SECRET = "aws-route53-credentials"
+_CPU_REQUEST = Cpu.millis(25).amount
+_MEMORY_REQUEST = Size.mebibytes(64).as_string()
 
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND)
+    namespaces.namespace(
+        chart,
+        "namespace",
+        name=NAMESPACE,
+        vpa=VpaProfile(
+            Vpa.INITIAL,
+            (
+                ContainerPolicy.cpu_and_memory_requests_only(
+                    NAME, cpu_floor=_CPU_REQUEST, memory_floor=_MEMORY_REQUEST
+                ),
+                ContainerPolicy(controlled_values=ControlledValues.REQUESTS_ONLY, mode="Off"),
+            ),
+        ),
+    )
     k8s.KubeServiceAccount(
         chart, "external-creds-reader", metadata=k8s.ObjectMeta(name="external-creds-reader", namespace=NAMESPACE)
     )
@@ -70,7 +86,10 @@ def chart(app: App) -> Chart:
                 for key in ("AWS_ACCESS_KEY_ID", "AWS_REGION", "AWS_SECRET_ACCESS_KEY")
             ],
             "nodeSelector": dict(node_scheduling.HIL_OVH_NODE_SELECTOR),
-            "resources": {"requests": {"cpu": "25m", "memory": "64Mi"}, "limits": {"cpu": "250m", "memory": "256Mi"}},
+            "resources": {
+                "requests": {"cpu": _CPU_REQUEST, "memory": _MEMORY_REQUEST},
+                "limits": {"cpu": "250m", "memory": "256Mi"},
+            },
         },
     )
     return chart
@@ -79,11 +98,8 @@ def chart(app: App) -> Chart:
 def records_chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
     """The static endpoints that do not come from HTTPRoutes."""
     chart = Chart(app, f"{NAME}-records", disable_resource_name_hashes=True)
-    public_nodes = mesh.public_kubernetes_nodes().values()
-    gateway_ips = sorted({ip for node in public_nodes if (ip := node.public_ip) is not None})
-    api_ips = sorted(
-        {ip for node in public_nodes if node.role == "control-plane" and (ip := node.public_ip) is not None}
-    )
+    gateway_ips = nebula_mesh.public_dns_targets(mesh.public_kubernetes_nodes())
+    api_ips = nebula_mesh.public_dns_targets(mesh.control_planes())
     DnsEndpoint(
         chart,
         "static-records",

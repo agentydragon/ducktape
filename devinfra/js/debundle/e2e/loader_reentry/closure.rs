@@ -54,19 +54,7 @@ fn rejected_loader_derivation_with_priority(
             .with_extra_chunks(extra_chunks)
             .with_host_behavior(host),
     );
-    let conflicts = rejected.atomic_group_conflicts();
-    assert!(
-        conflicts.iter().any(|conflict| {
-            let modules: Vec<_> = conflict["claims"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|claim| claim["module"].as_str().unwrap())
-                .collect();
-            modules.contains(&"values/dynamic") && modules.contains(&"values/later")
-        }),
-        "{conflicts:#?}"
-    );
+    rejected.assert_atomic_conflict(&["values/dynamic", "values/later"], &[]);
     let report = export_reentry_report(&rejected.report_root);
     assert_eq!(report["policy"], "conservative");
     assert_eq!(report["loader"]["rule"], "loader_closure");
@@ -975,6 +963,12 @@ fn reentry_provider() -> &'static str {
     )
 }
 
+/// Reach-back is real reentry: under Bun 1.3.13 a chunk that imports the target
+/// and is required while the target evaluates runs against its partial
+/// namespace (hoisted functions and earlier exports read back, a later `const`
+/// throws `ReferenceError`). Indicative only: the audited host is Bun 1.4.3, and
+/// gaffer-private #667's probe covers only a request for the evaluating module
+/// itself.
 #[test]
 fn reach_back_reenters_only_through_the_names_the_window_imports() {
     let window = "import { loadHelper } from \"./provider.js\";\nexport function use() { return loadHelper(); }\n";

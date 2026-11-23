@@ -101,7 +101,7 @@ type Client struct {
 }
 
 // New validates federation settings and prepares lazy verifiers. Login-provider discovery is
-// deferred until a refresh token is needed, as the Python Authlib client does.
+// deferred until a refresh token is needed.
 func New(cfg Config, loginOIDC auth.OIDCConfig) (*Client, error) {
 	if err := validateConfig(cfg, loginOIDC); err != nil {
 		return nil, err

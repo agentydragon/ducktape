@@ -10,6 +10,7 @@ type APIStyle string
 
 const (
 	APIStyleResponses         APIStyle = "responses"
+	APIStyleChatCompletions   APIStyle = "chat_completions"
 	APIStyleAnthropicMessages APIStyle = "anthropic_messages"
 )
 

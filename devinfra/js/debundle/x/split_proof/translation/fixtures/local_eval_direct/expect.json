@@ -1,0 +1,1 @@
+{ "code": 1, "contains": "direct `eval`", "node_stdout": ["side\nresult 1\n", "side\nresult 1\n"] }

@@ -13,14 +13,7 @@ from typing import Annotated, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
-from study_casino.events import (
-    BlackjackSettlementOutcome,
-    Card,
-    GameEventRead,
-    LedgerEventRead,
-    RouletteOutcome,
-    SlotsOutcome,
-)
+from study_casino.events import BlackjackSettlementOutcome, Card, RouletteOutcome, SlotsOutcome
 from study_casino.models import HandStatus, RouletteBetType
 
 _ACTION_ID_PATTERN = r"^[a-zA-Z0-9._:@-]+$"
@@ -37,7 +30,8 @@ class ActionRequest(BaseModel):
 # Every action endpoint puts a different payload into `ActionResponse.result`.
 # Each variant has an explicit `kind` discriminator. Constructors supply the
 # literal default; serialized input must carry the tag. Migration 0006 backfills
-# older server-action ledger results. Rollout: docs/action_result_discriminators.md.
+# older server-action ledger results, so stored results carry it. Images from
+# before #10880 reject tagged results: strip the tags before rolling back to one.
 
 
 class SessionCompleteResult(BaseModel):
@@ -204,9 +198,7 @@ class ActionResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     client_action_id: str
-    event: LedgerEventRead
     result: ActionResult
-    game_event: GameEventRead | None = None
 
 
 class SessionCompleteRequest(ActionRequest):

@@ -169,7 +169,6 @@ spec:
     - cluster/parked/
     - secrets/shared/
     - agentplane/crds/manifests/
-    - cluster/charts/browsertrix/
     - props/deploy/
     - tf/gitops/
   timeout: 5m

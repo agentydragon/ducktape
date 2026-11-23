@@ -1,6 +1,6 @@
 # Paperless TODO
 
-> **Status: parked.** The manifests are suspended under `cluster/parked/` and the
+> **Status: parked.** The manifests are parked under `cluster/parked/` and the
 > former `paperless-app` artifact generator was removed when Paperless was parked.
 > Re-establish and verify the source, artifact, and Flux wiring before implementing
 > this revival backlog.
@@ -38,9 +38,9 @@ fresh-install branch is off, so signup closes and the SSO login page behaves nor
 
 ## Re-establish deployment and bootstrap ordering on revival
 
-The parked Flux declaration still names `paperless-app`, but its former artifact-generator
-entry and active source tree were removed when the app was parked. Re-establish and verify
-that source and artifact path before restoring the Flux registration.
+The `paperless-app` Flux registration, its former artifact-generator entry and its active
+source tree were all removed when the app was parked. Re-establish and verify that source
+and artifact path before restoring the Flux registration.
 
 Once the app is wired again, decide how to sequence the Deployment and
 `paperless-bootstrap-group` Job. If they remain in one Flux Kustomization, the Job must

@@ -1,11 +1,4 @@
-"""The real Go Action facade and its operator federation boundary.
-
-The retired ASGI-only checks moved to Go tests alongside the owning behavior:
-``TestGeneratedActionFacadeUsesNativeRPCAndRequestBoundBearer``,
-``TestExchangePostsAssertionAndVerifiesTargetIdentity``,
-``TestRefusedRefreshEndsSession``, ``TestOIDCCallbackAndTwoOperatorsWorkAcrossReplicas``, and
-``TestConcurrentCrossReplicaCallbacksConsumePendingLoginOnce``.
-"""
+"""The real Go Action facade and its operator federation boundary."""
 
 from __future__ import annotations
 

@@ -3,10 +3,9 @@
 //! The dependency-graph report interns module identity: a reference is a
 //! [`ModuleKey`] (`"logical:N"`) and each module's canonical
 //! [`spec::ModulePath`] + destination kind live once in the module table
-//! (`ModuleQuotientReport::nodes`, a list of [`ModuleEntry`]). Tests
-//! across several crates build that table — and the source-unit/edge/atomic-group
-//! report nodes around it — the same way, so the builders live here
-//! instead of being copy-pasted per test module.
+//! (`ModuleQuotientReport::nodes`, a list of [`ModuleEntry`]). These builders
+//! create that table and the source-unit, edge and atomic-group report nodes
+//! around it.
 //!
 //! Convention: a test destination key's string **is** the module's
 //! canonical path (e.g. `"residual"`, `"ui/plugins"`), so [`module_table`]
@@ -70,15 +69,6 @@ pub fn member(binding: &str, export_name: &str) -> BindingReport {
 /// A declared binding whose export name equals the binding id.
 pub fn binding(name: &str) -> BindingReport {
     member(name, name)
-}
-
-/// Active-claims map (binding name → canonical module path) from clean
-/// spec paths.
-pub fn claims(pairs: &[(&str, &str)]) -> BTreeMap<String, ModulePath> {
-    pairs
-        .iter()
-        .map(|(binding, path)| (binding.to_string(), ModulePath::parse(path, "").unwrap()))
-        .collect()
 }
 
 /// SourceUnit node with an explicit destination. The source location is
@@ -227,31 +217,6 @@ pub fn atomic_group_for(id: &str, source_units: &[&SourceUnitReport]) -> AtomicG
         size_lines_estimate: line_range.size_estimate(),
         source_line_range: line_range.into_array(),
         ordinal_span: max_ordinal.saturating_sub(min_ordinal),
-    }
-}
-
-/// Constraining eager atomic-group edge. The underlying dependency-edge id
-/// is derived from `id` by substituting `atomic` → `edge`; use
-/// [`atomic_edge_for_dependency_edge`] to spell it explicitly.
-pub fn atomic_edge(id: &str, source: &str, target: &str) -> AtomicGroupEdgeReport {
-    atomic_edge_for_dependency_edge(id, source, target, &id.replace("atomic", "edge"))
-}
-
-/// [`atomic_edge`] with the underlying dependency-edge id spelled
-/// explicitly.
-pub fn atomic_edge_for_dependency_edge(
-    id: &str,
-    source: &str,
-    target: &str,
-    dependency_edge_id: &str,
-) -> AtomicGroupEdgeReport {
-    AtomicGroupEdgeReport {
-        id: id.to_string(),
-        source: source.to_string(),
-        target: target.to_string(),
-        edge_kinds: vec![DepKind::EagerUse],
-        dependency_edge_ids: vec![dependency_edge_id.to_string()],
-        constrains_init_order: true,
     }
 }
 

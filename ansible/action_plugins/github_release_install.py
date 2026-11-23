@@ -11,17 +11,12 @@ Features:
 
 Usage:
   github_release_install:
-    # Required parameters
-    repo: "owner/repo"  # GitHub repository
-
-    # Optional common parameters
-    release_spec:
+    release_spec:                       # Which release to install
+      repo: "owner/repo"                # GitHub repository; required
       version: "v1.0.0|latest"          # Version to install (defaults to latest)
       asset_pattern: ".*amd64\\.deb$"   # Regex pattern to select asset
       acknowledged_version: "v1.0.0"    # Last version seen/acknowledged by user
-
-    # Optional release data from previous task
-    release_data: "{{ release_data }}"
+                                        # (fails if a newer version is available)
 
     method: deb  # Installation method (deb, binary, archive)
 
@@ -40,24 +35,15 @@ Usage:
       extract_file: "tool"              # Extract only this file from archive
 
 Example:
-  # One-step installation process
   - name: Install AppImageLauncher
     github_release_install:
-      repo: "TheAssassin/AppImageLauncher"
+      release_spec:
+        repo: "TheAssassin/AppImageLauncher"
+        version: "v3.0.0-alpha-4"
+        acknowledged_version: "v3.0.0-alpha-4"
+        asset_pattern: ".*_{{ common_dpkg_arch }}\\.deb$"
       method: deb
-      version: "v3.0.0-alpha-4"
-      acknowledged_version: "v3.0.0-alpha-4"
-      asset_pattern: ".*_{{ common_dpkg_arch }}\\.deb$"
     become: true
-
-  # Separate release info gathering
-  - name: Show available releases
-    github_release_install:
-      repo: "TheAssassin/AppImageLauncher"
-      method: deb
-      version: "latest"
-      asset_pattern: ".*_{{ common_dpkg_arch }}\\.deb$"
-    register: release_data
 """
 
 from __future__ import annotations
@@ -177,11 +163,7 @@ class ActionModule(ActionBase):
         return result
 
     def _create_installer(self, args: dict[str, Any]) -> GitHubInstaller:
-        """Create installer instance based on method.
-
-        Raises:
-            ActionError: If installer creation fails
-        """
+        """Create installer instance based on method."""
         # Pass all arguments to the installer class, which will extract what it needs
         # The installer class constructor is responsible for validating required params
         if not (method := args.get("method")):
@@ -211,29 +193,13 @@ class ActionModule(ActionBase):
 
         args = self._task.args.copy()
 
-        # Check if we have release_data from a previous task
-        if "release_data" not in args:
-            # todo dedupe
-            if "release_spec" not in args:
-                return _fail(result, "Missing required parameter: release_data xor release_spec")
-            release_data = ReleaseSpec(**args["release_spec"]).resolve()
-            if release_data.get("failed"):
-                # For version acknowledgment failures, return a clean result
-                if "acknowledged_version" in release_data:
-                    return {
-                        "failed": True,
-                        "msg": release_data["msg"],
-                        "latest_version": release_data.get("latest_version"),
-                        "acknowledged_version": release_data.get("acknowledged_version"),
-                        "repo": release_data.get("repo"),
-                    }
-                return _fail(result, release_data["msg"])
-            result["release_data"] = release_data
-        # todo dedupe
-        elif not (release_data := args.get("release_data")):
-            return _fail(result, "Missing required parameter: release_data xor release_spec")
-        if not (asset_url := release_data.get("asset_url")):
-            return _fail(result, "No asset URL in release info")
+        if "release_spec" not in args:
+            return _fail(result, "Missing required parameter: release_spec")
+        release_data = ReleaseSpec(**args["release_spec"]).resolve()
+        if release_data.get("failed"):
+            # resolve() reports its own failure: `msg`, plus the version details of an unacknowledged release.
+            return result | release_data
+        asset_url = release_data["asset_url"]
 
         # Install the release
         try:
@@ -250,7 +216,7 @@ class ActionModule(ActionBase):
                 module_args=installer.install_module_args(asset_url),
                 task_vars=task_vars,
                 tmp=tmp,
-            ) | installer.get_additional_info(asset_url)
+            )
 
         result["install_result"] = install_result
 

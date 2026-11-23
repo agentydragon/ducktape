@@ -2,7 +2,7 @@
 
 First cut scan after recalibrating the Noisebridge Kaitian CM1309. Machine model, the
 Z conversion factor (`f ≈ 3.69`), the 0.1-commanded Z quantum, and the focus result
-(7.4 mm spacer) are in <../calibration-log.md>.
+(7.4 mm spacer) are in <../calibration_log.md>.
 
 ## Setup
 

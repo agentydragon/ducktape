@@ -210,8 +210,6 @@ spec:
                 - http://cpap-card.cpap-sync.svc:80
                 - --git-url
                 - $(GIT_REPO_URL)
-                - --wifi-interface
-                - ""
               env:
                 - name: TMPDIR
                   value: /workdir

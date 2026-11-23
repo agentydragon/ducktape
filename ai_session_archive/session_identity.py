@@ -10,7 +10,7 @@ from ai_session_archive.source_paths import HarnessRoot, SourceLocation, classif
 
 
 def _session_id_for_path(machine_id: str, harness: Harness, source_path: str) -> UUID:
-    return uuid5(NAMESPACE_URL, f"ai-session:{machine_id}:{harness.value}:{source_path}")
+    return uuid5(NAMESPACE_URL, f"ai-session:{machine_id}:{harness}:{source_path}")
 
 
 class SourceSessionIdentity:

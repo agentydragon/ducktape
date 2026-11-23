@@ -11,10 +11,9 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 import grpc
 import pytest
 
-from agentplane.env.config import Endpoint, SVIDEndpoint
 from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.gateway import Gateway
-from agentplane.env.e2e.testing.history_tunnel import history_tunnel
+from agentplane.env.e2e.testing.history_ingress import history_ingress
 from agentplane.env.e2e.testing.process import RunningRunner, history_snapshot
 from agentplane.grpc.calls import ServiceError
 from agentplane.harness_host import harness_host_pb2
@@ -310,10 +309,8 @@ async def running(
     config: RunnerTestConfig, gateway: Gateway, history_service: GoHistoryService
 ) -> AsyncIterator[RunningRunner]:
     """Start the Go executable against a scriptable control peer and real History ingress."""
-    async with history_tunnel(history_service.ingress_target) as proxy:
-        ingress = Endpoint(
-            target=history_service.ingress_target,
-            svid=SVIDEndpoint(server_uri="spiffe://agentplane/history-ingress", proxy_address=proxy),
-        )
-        async with RunningRunner(config, gateway, history=history_service.reader, ingress_endpoint=ingress) as runner:
-            yield runner
+    async with (
+        history_ingress(history_service.ingress_target) as ingress,
+        RunningRunner(config, gateway, history=history_service.reader, ingress_endpoint=ingress) as runner,
+    ):
+        yield runner

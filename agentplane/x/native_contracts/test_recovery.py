@@ -3,9 +3,8 @@
 import asyncio
 import os
 import shutil
-import signal
-from collections.abc import Awaitable, Callable, Iterator
-from contextlib import aclosing, contextmanager
+from collections.abc import Awaitable, Callable
+from contextlib import aclosing
 from uuid import uuid4
 
 import grpc
@@ -259,15 +258,6 @@ async def test_active_runtime_crash_preserves_history_and_does_not_resubmit_the_
     events.assert_contiguous(entries)
 
 
-@contextmanager
-def paused(process: asyncio.subprocess.Process) -> Iterator[None]:
-    process.send_signal(signal.SIGSTOP)
-    try:
-        yield
-    finally:
-        process.send_signal(signal.SIGCONT)
-
-
 async def test_history_outage_replays_the_runtime_journal_and_resumes_the_reader_cursor(
     gateway_service: GatewayProcess,
     dispatcher: SessionDispatcherClient,
@@ -294,7 +284,7 @@ async def test_history_outage_replays_the_runtime_journal_and_resumes_the_reader
         request_timeout_s=0.5,
         channel_credentials=history_service.reader.channel_credentials,
     ) as reader:
-        with paused(history_service.process.process):
+        with history_service.process.paused():
             with pytest.raises(TimeoutError):
                 await reader.read_session_events(session_id)
             await model.reply(request, Text("OFFLINE"))

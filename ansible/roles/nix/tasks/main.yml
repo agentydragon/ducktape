@@ -45,7 +45,7 @@
     - { key: "experimental-features", value: "nix-command flakes" }
     - { key: "trusted-users", value: "root {{ nix_trusted_users | default(ansible_user_id) }}" }
   become: true
-  notify: restart nix-daemon
+  notify: Restart nix-daemon
 
 - name: Ensure nix-daemon is started and enabled
   ansible.builtin.systemd:

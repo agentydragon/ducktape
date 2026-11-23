@@ -9,16 +9,17 @@ from agentplane.app.testing.client import Client
 from agentplane.proto import session_pb2
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.native_platform import sandbox_harness_host
 from agentplane.system_tests.driver.offered_models import models_offered_for
 from agentplane.system_tests.driver.scenario import ScenarioResources
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import traced_scenario
 from agentplane.system_tests.scenarios import vm_sandbox
 
-# gazelle:include_dep //agentplane/system_tests/deployment:pytest_plugin
+# gazelle:include_dep //agentplane/system_tests/vm:pytest_plugin
 # gazelle:include_dep //agentplane/system_tests:app_fixtures
 # gazelle:include_dep @pypi//protobuf
-pytest_plugins = ("agentplane.system_tests.deployment.pytest_plugin", "agentplane.system_tests.app_fixtures")
+pytest_plugins = ("agentplane.system_tests.vm.pytest_plugin", "agentplane.system_tests.app_fixtures")
 
 
 @pytest.mark.vm_sandboxes
@@ -32,13 +33,14 @@ async def test_codex_tool_oom(
     scripted: ScriptedUpstream,
 ) -> None:
     models = await models_offered_for(client, [session_pb2.HARNESS_CODEX])
-    async with scenario_resources() as (owned_client, sandbox):
+    async with scenario_resources() as (owned_client, sandbox), sandbox_harness_host(cluster) as control:
         await traced_scenario(
             "codex-tool-oom",
             vm_sandbox.codex_tool_oom(
                 cluster,
                 owned_client,
                 dispatcher,
+                control,
                 sandbox,
                 models[session_pb2.HARNESS_CODEX],
                 scripted,

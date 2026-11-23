@@ -2,7 +2,9 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
+from agentplane.env.config import ExecutionLimits
 from agentplane.sandboxes.testing.identity import SandboxIdentity
 
 
@@ -30,5 +32,7 @@ class RunnerTestConfig:
     claude: NativeLaunch | None = None
     codex: NativeLaunch | None = None
     debug_checkpoint: tuple[str, str] | None = None
-    codex_executor_url: str | None = None
-    codex_executor_socket: Path | None = None
+    executor_url: str | None = None
+    executor_socket: Path | None = None
+    executor_implementation: Literal["native", "codex"] = "native"
+    executor_limits: ExecutionLimits | None = None

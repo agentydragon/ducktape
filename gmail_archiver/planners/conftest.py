@@ -15,7 +15,6 @@ def make_email():
         id: str = "test-msg-id",
         thread_id: str | None = None,
         sender: str = "test@example.com",
-        recipient: str | None = None,
         subject: str = "Test Subject",
         date: str = "Mon, 1 Jan 2024 12:00:00 +0000",
         internal_date: int = 1704110400000,  # 2024-01-01 12:00:00 UTC in ms
@@ -26,8 +25,6 @@ def make_email():
         # Build RFC822 message bytes
         msg = StdEmailMessage()
         msg["From"] = sender
-        if recipient:
-            msg["To"] = recipient
         msg["Subject"] = subject
         msg["Date"] = date
         msg.set_content(body)

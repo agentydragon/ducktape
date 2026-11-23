@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/x509"
 	"errors"
-	"net"
 	"os"
 	"path/filepath"
 	"sync"
@@ -18,6 +17,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	peertlstesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	delegationpb "github.com/agentydragon/ducktape/agentplane/proto/delegation"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/google/uuid"
 	mcpauth "github.com/modelcontextprotocol/go-sdk/auth"
 	"google.golang.org/grpc"
@@ -55,34 +55,31 @@ func (s *watchActionServer) WatchActionRequest(_ *pb.WatchActionRequestRequest, 
 	return stream.Context().Err()
 }
 
-func startActionServer(t *testing.T) (string, <-chan metadata.MD) {
+func startActionServer(t *testing.T, options ...grpc.ServerOption) (string, <-chan metadata.MD) {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	server := grpc.NewServer()
+	server := grpc.NewServer(options...)
 	started := make(chan metadata.MD, 1)
 	pb.RegisterActionServiceServer(server, &watchActionServer{started: started})
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	t.Cleanup(func() { _ = listener.Close() })
-	return listener.Addr().String(), started
+	return grpcserver.Serve(t, server), started
 }
 
-func startMutualTLSActionServer(t *testing.T, credentials grpc.ServerOption) (string, <-chan metadata.MD) {
+func wantDelegation(t *testing.T, md metadata.MD) {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
+	delegations := md.Get(auth.DelegationMetadataKey)
+	if len(delegations) != 1 {
+		t.Fatalf("delegation metadata values %d, want one", len(delegations))
+	}
+	envelope := new(delegationpb.Delegation)
+	if err := proto.Unmarshal([]byte(delegations[0]), envelope); err != nil {
 		t.Fatal(err)
 	}
-	server := grpc.NewServer(credentials)
-	started := make(chan metadata.MD, 1)
-	pb.RegisterActionServiceServer(server, &watchActionServer{started: started})
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	t.Cleanup(func() { _ = listener.Close() })
-	return listener.Addr().String(), started
+	if got := envelope.GetIdentity(); got == nil || got.GetName() != testIdentity.Name || got.GetUid() != testIdentity.UID {
+		t.Fatalf("effective Identity %v", got)
+	}
+	provenance := envelope.GetConnection()
+	if provenance == nil || provenance.GetConnectionId() != testConnectionID || provenance.GetGrantId() != testGrantID {
+		t.Fatalf("Connection provenance %v", provenance)
+	}
 }
 
 func TestConnectionDelegationUsesProjectedActorTokenAndTypedProvenance(t *testing.T) {
@@ -126,21 +123,7 @@ func TestConnectionDelegationUsesProjectedActorTokenAndTypedProvenance(t *testin
 	if got := md.Get("authorization"); len(got) != 1 || got[0] != auth.DelegatedScheme+" "+projectedToken {
 		t.Fatalf("Action actor credentials %q", got)
 	}
-	delegations := md.Get(auth.DelegationMetadataKey)
-	if len(delegations) != 1 {
-		t.Fatalf("delegation metadata values %d, want one", len(delegations))
-	}
-	envelope := new(delegationpb.Delegation)
-	if err := proto.Unmarshal([]byte(delegations[0]), envelope); err != nil {
-		t.Fatal(err)
-	}
-	if got := envelope.GetIdentity(); got == nil || got.GetName() != testIdentity.Name || got.GetUid() != testIdentity.UID {
-		t.Fatalf("effective Identity %v", got)
-	}
-	provenance := envelope.GetConnection()
-	if provenance == nil || provenance.GetConnectionId() != testConnectionID || provenance.GetGrantId() != testGrantID {
-		t.Fatalf("Connection provenance %v", provenance)
-	}
+	wantDelegation(t, md)
 
 	mu.Lock()
 	revoked = true
@@ -187,7 +170,7 @@ func TestConnectionDelegationUsesMCPServiceSVIDWithoutBearerFallback(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	target, started := startMutualTLSActionServer(t, grpc.Creds(serverCredentials))
+	target, started := startActionServer(t, grpc.Creds(serverCredentials))
 	transport := &peertls.ClientTLS{
 		CAFile: ca.RootFile, ServerURI: peertls.ActionsURI,
 		CertFile: clientCertificate.CertFile, KeyFile: clientCertificate.KeyFile, ClientURI: peertls.MCPEdgeURI,
@@ -220,19 +203,5 @@ func TestConnectionDelegationUsesMCPServiceSVIDWithoutBearerFallback(t *testing.
 	if got := md.Get("authorization"); len(got) != 0 {
 		t.Fatalf("service SVID call included authorization metadata %q", got)
 	}
-	delegations := md.Get(auth.DelegationMetadataKey)
-	if len(delegations) != 1 {
-		t.Fatalf("delegation metadata values %d, want one", len(delegations))
-	}
-	envelope := new(delegationpb.Delegation)
-	if err := proto.Unmarshal([]byte(delegations[0]), envelope); err != nil {
-		t.Fatal(err)
-	}
-	if got := envelope.GetIdentity(); got == nil || got.GetName() != testIdentity.Name || got.GetUid() != testIdentity.UID {
-		t.Fatalf("effective Identity %v", got)
-	}
-	provenance := envelope.GetConnection()
-	if provenance == nil || provenance.GetConnectionId() != testConnectionID || provenance.GetGrantId() != testGrantID {
-		t.Fatalf("Connection provenance %v", provenance)
-	}
+	wantDelegation(t, md)
 }

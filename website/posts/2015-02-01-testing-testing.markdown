@@ -79,7 +79,7 @@ entries in my private journal reduced in time to sentences, mementos,
 and finally, reaching perfection, nothing. I wish I could keep a habit better.
 
 <figure>
-<img src="/images/haskell-logo-400px.svg" style="width: 150px;"
+<img src="/images/haskell-logo.svg" style="width: 150px;"
      title="The Haskell logo" alt="Haskell programming language logo">
 </figure>
 

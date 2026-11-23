@@ -668,7 +668,7 @@ impl<E: Serialize + std::fmt::Display> Serialize for SelectorOutcome<E> {
     }
 }
 
-/// What one free identifier of a template means (<../SPEC.md> § Matching).
+/// What one free identifier of a template means (SPEC.md § Matching).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum IdentifierMeaning {

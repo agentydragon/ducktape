@@ -112,7 +112,7 @@
 //!   executor (sealed module-wide walk + `SealedScopeRenameApplier`) is
 //!   the only mutation of the real body; derivation runs on a scratch
 //!   clone of the un-renamed body (see "Derive clone").
-//! - **Per-plan import ledger** (`lower_single_plan`): cross-module +
+//! - **Per-plan import ledger** (`prepare_module_emission`): cross-module +
 //!   residual-entry import-local mints. Separate from the naturalize
 //!   ledger because of a cross-module phase cycle, not code shape:
 //!   collection needs this module's post-naturalize body facts AND
@@ -132,7 +132,7 @@
 //! the architecture rather than residual defense:
 //!
 //! - **`chunk_renames` over moved module bodies**
-//!   (`lower_single_plan`'s `cross_module_chunk_renames` pass): the
+//!   (`prepare_module_emission`'s `cross_module_chunk_renames` pass): the
 //!   entry-side seal validates against entry's post-split body only, so
 //!   a target can still be captured inside a moved body; that
 //!   application's capture check is the moved body's only occupancy
@@ -1223,8 +1223,6 @@ mod tests {
         );
     }
 
-    // --- minting ---
-
     #[test]
     fn mint_returns_base_when_untaken_and_suffixes_past_collisions() {
         let mut ledger = RenameLedger::default();
@@ -1254,8 +1252,6 @@ mod tests {
         assert!(!ledger.claim(RenameScope::Chunk, "readable"));
         assert_eq!(ledger.mint(RenameScope::Chunk, "readable"), "readable$1");
     }
-
-    // --- explicit occupancy validation (hard errors) ---
 
     #[test]
     fn chunk_explicit_target_colliding_with_root_binding_is_a_hard_error() {
@@ -1427,8 +1423,6 @@ mod tests {
         assert!(sealed.module_renames_by_name(ModuleId(0)).is_empty());
     }
 
-    // --- heuristic drop policies ---
-
     #[test]
     fn module_heuristic_targeting_an_explicit_target_is_dropped() {
         let module = RenameScope::Module(ModuleId(0));
@@ -1465,8 +1459,6 @@ mod tests {
             BTreeMap::from([("a".to_string(), "plan_name".to_string())]),
         );
     }
-
-    // --- Function-scope occupancy (validated_bound replay) ---
 
     fn function_validation(
         scope: RenameScope,

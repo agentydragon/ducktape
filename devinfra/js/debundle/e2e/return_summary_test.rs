@@ -3,7 +3,9 @@
 use analysis::{DependencyGraphReport, reports::schema::EdgeRoleReport};
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::source_unit_for_binding;
-use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged};
+use debundle_e2e_support::saved_analysis::{
+    assert_same_invocation_trees, assert_staged_entry_output, path, staged,
+};
 use debundle_e2e_support::*;
 
 fn independent_callbacks(wrapper: &str, callee: &str, namespace: bool) {
@@ -417,7 +419,7 @@ const observed = selected();
 const later = 7;
 console.log(observed, effects, later);
 "#;
-    let (stage, _fixture) = staged(
+    assert_staged_entry_output(
         FixtureOpts::new(
             source,
             vec![
@@ -437,21 +439,6 @@ console.log(observed, effects, later);
             ],
         )
         .with_unassigned_mode(unassigned_mode_inline()),
+        "41 1 7\n",
     );
-    assert_node_output(&stage.root().join("snapshot/static/app.js"), "41 1 7\n", "");
-    let fresh = stage.run(&[]);
-    let saved = stage.run(&["--analysis", path(&stage.artifact)]);
-    for invocation in [&fresh, &saved] {
-        assert!(
-            invocation.result.status.success(),
-            "effectful helper return summary rejected an equivalent split:\n{}",
-            invocation.result.stderr
-        );
-        assert_node_output(
-            &invocation.output_root().join("app/static/app/entry.js"),
-            "41 1 7\n",
-            "",
-        );
-    }
-    assert_same_invocation_trees(&fresh, &saved);
 }

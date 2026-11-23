@@ -17,7 +17,8 @@ The library's existing public test helpers are re-exported by `mod.rs`:
 - `process.rs` owns the mechanical subprocess boundary: it returns raw
   `std::process::Output` for either exit status, reports spawn/capture failures with
   command and working-directory context, and exposes the explicit Debundle invariant
-  guard. It has no fixture or transcript state.
+  guard and `assert_success`, which reports a failed child's status, stdout and
+  stderr. It has no fixture or transcript state.
 - `failure_workspace.rs` owns a case's lifetime. Flat, tree, graph and staged fixtures
   retain the whole workspace under `$TEST_UNDECLARED_OUTPUTS_DIR/failed-fixtures/`
   when an assertion unwinds through an owning handle, including assertions after a
@@ -52,7 +53,7 @@ For valid vendor marks, use the production spec types (including `WrapperShape` 
 needs to express malformed wire input; a typed builder must not make those cases
 unrepresentable. AST assertions complement, rather than replace, Node behavior checks.
 
-`graph_support.rs` is a separate crate (`debundle_e2e_graph_support`) for helpers that read typed graph reports; its `effect_validation.rs` module owns effect translation validation fixtures and operation-receipt assertions.
+`graph_support.rs` is a separate crate (`debundle_e2e_graph_support`) for helpers that read typed graph reports; its `effect_validation.rs` module owns effect translation validation fixtures and operation-receipt assertions. Keep `analysis` out of `:support`: tests that read typed graphs use `debundle_graph_e2e_test` (`defs.bzl`), which adds `:graph_support`, so an analysis-only edit recompiles and re-lints only tests that depend on `analysis` or `:graph_support`, not every driver.
 
 ## Replay a retained case
 

@@ -37,8 +37,17 @@ RESOURCES = GuestResources(
     ),
     executor=ResourceLimits(
         cpu_quota_micros=200_000,
-        memory_max_bytes=256 * _MIB,
+        memory_max_bytes=128 * _MIB,
         pids_max=128,
+        read_bps=50 * _MIB,
+        write_bps=20 * _MIB,
+        read_iops=1000,
+        write_iops=500,
+    ),
+    executor_workload=ResourceLimits(
+        cpu_quota_micros=200_000,
+        memory_max_bytes=128 * _MIB,
+        pids_max=64,
         read_bps=50 * _MIB,
         write_bps=20 * _MIB,
         read_iops=1000,

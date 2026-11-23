@@ -67,7 +67,7 @@ func (h *AppConfigHandler) GetSandboxForm(ctx context.Context, _ *apppb.GetSandb
 		defaults.IdleSuspendAfterSeconds = seconds
 	}
 	return &apppb.GetSandboxFormResponse{
-		PolicySets: nonNilStrings(sets.GetNames()), NewSandboxDefaults: defaults,
+		PolicySets: sets.GetNames(), NewSandboxDefaults: defaults,
 	}, nil
 }
 
@@ -76,7 +76,7 @@ func (h *AppConfigHandler) ListModels(context.Context, *emptypb.Empty) (*apppb.L
 	for _, model := range h.config.Models.Models {
 		response.Models = append(response.Models, &apppb.ModelOption{
 			Model: model.Model, DisplayName: model.DisplayName,
-			ReasoningEfforts: nonNilStrings(model.ReasoningEfforts),
+			ReasoningEfforts: model.ReasoningEfforts,
 		})
 	}
 
@@ -92,7 +92,7 @@ func (h *AppConfigHandler) ListModels(context.Context, *emptypb.Empty) (*apppb.L
 			continue
 		}
 		response.Harnesses = append(response.Harnesses, &apppb.HarnessModelOffers{
-			Harness: sessionpb.Harness(value), Models: nonNilStrings(h.config.Models.Harnesses[name]),
+			Harness: sessionpb.Harness(value), Models: h.config.Models.Harnesses[name],
 		})
 	}
 	return response, nil
@@ -100,20 +100,20 @@ func (h *AppConfigHandler) ListModels(context.Context, *emptypb.Empty) (*apppb.L
 
 func (h *AppConfigHandler) ListSandboxPresets(context.Context, *emptypb.Empty) (*apppb.ListSandboxPresetsResponse, error) {
 	response := &apppb.ListSandboxPresetsResponse{}
-	for _, preset := range h.config.PresetViews() {
+	for _, name := range h.config.SandboxPresetNames() {
+		preset := h.config.SandboxPresets[name]
+		// The ThreadPreset resolves into the same complete SessionDefaults used when a thread is opened.
+		thread := h.config.ThreadPresets[preset.ThreadPreset]
 		defaults := &apppb.SessionDefaults{
-			Model: preset.SessionDefaults.Model, Cwd: preset.SessionDefaults.CWD,
-			Instructions: preset.SessionDefaults.Instructions, SetupScript: preset.SessionDefaults.SetupScript,
+			Model: thread.Model, Cwd: thread.CWD, Instructions: thread.Instructions, SetupScript: thread.SetupScript,
+			ReasoningEffort: thread.ReasoningEffort,
 		}
-		if value, ok := sessionpb.Harness_value[preset.SessionDefaults.Harness]; ok {
+		if value, ok := sessionpb.Harness_value[thread.Harness]; ok {
 			defaults.Harness = sessionpb.Harness(value)
 		}
-		if preset.SessionDefaults.ReasoningEffort != nil {
-			defaults.ReasoningEffort = preset.SessionDefaults.ReasoningEffort
-		}
 		response.Presets = append(response.Presets, &apppb.SandboxPreset{
-			Name: preset.Name, Title: preset.Title, Template: preset.Template,
-			PolicySets: nonNilStrings(preset.PolicySets), InboxTags: nonNilStrings(preset.InboxTags),
+			Name: name, Title: preset.Title, Template: preset.Template,
+			PolicySets: preset.PolicySets, InboxTags: preset.InboxTags,
 			SessionDefaults: defaults, Bootstrap: preset.Bootstrap,
 		})
 	}
@@ -137,11 +137,4 @@ func (h *AppConfigHandler) GetFrontendConfig(context.Context, *apppb.GetFrontend
 		}
 	}
 	return &apppb.GetFrontendConfigResponse{FrontendConfig: config}, nil
-}
-
-func nonNilStrings(values []string) []string {
-	if values == nil {
-		return []string{}
-	}
-	return values
 }

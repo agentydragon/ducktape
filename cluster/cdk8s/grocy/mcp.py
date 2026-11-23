@@ -20,13 +20,14 @@ from cdk8s_plus_34 import k8s
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import node_scheduling, public_web_pki
 from cluster.cdk8s.authentik import app as authentik  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.flux import ConfigMapArgs, kustomize_kustomization
+from cluster.cdk8s.container_resources import container_resources
+from cluster.cdk8s.flux import ConfigMapArgs, write_kustomization
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.grocy import app as grocy  # `app` is the cdk8s App parameter here
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.mcp_oauth_state import CONSUMER_SECRET, GROCY_SF, GROCY_VALLEJO, add_consumer_credentials
@@ -150,35 +151,26 @@ def _server(scope: Construct, household: str) -> None:
                             name="server",
                             image=_IMAGE,
                             image_pull_policy="Always",
-                            ports=[http.port.k8s_container_port(), metrics.port.k8s_container_port()],
+                            ports=[http.k8s_container_port(), metrics.k8s_container_port()],
                             env=[
                                 *(
                                     key.env_var(env_name(ServerSettings, *path))
                                     for path, key in _secret_settings(household).items()
                                 ),
-                                k8s.EnvVar(name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"),
+                                public_web_pki.SSL_CERT_FILE,
                                 k8s.EnvVar(name="LOG_LEVEL", value="INFO"),
                                 k8s.EnvVar(name=CONFIG_FILE_ENV, value=f"{_CONFIG_DIR}/{_CONFIG_FILE}"),
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "memory": k8s.Quantity.from_string("128Mi"),
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                },
-                                limits={
-                                    # TODO(vpa-memory-audit): 256Mi -> 768Mi. VPA observed 335Mi
-                                    # request / 355Mi upper in grocy-sf (256Mi/256Mi in vallejo),
-                                    # both at or over the old limit. Both households take this
-                                    # limit, so the higher of the two governs.
-                                    "memory": k8s.Quantity.from_string("768Mi"),
-                                    "cpu": k8s.Quantity.from_string("200m"),
-                                },
+                            # TODO(vpa-memory-audit): 256Mi -> 768Mi. VPA observed 335Mi
+                            # request / 355Mi upper in grocy-sf (256Mi/256Mi in vallejo),
+                            # both at or over the old limit. Both households take this
+                            # limit, so the higher of the two governs.
+                            resources=container_resources(
+                                cpu="50m", memory="128Mi", cpu_limit="200m", memory_limit="768Mi"
                             ),
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path=_CONFIG_DIR, read_only=True),
-                                k8s.VolumeMount(
-                                    name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
-                                ),
+                                public_web_pki.VOLUME_MOUNT,
                             ],
                             readiness_probe=k8s.Probe(
                                 tcp_socket=k8s.TcpSocketAction(port=probe_port),
@@ -194,7 +186,7 @@ def _server(scope: Construct, household: str) -> None:
                     ],
                     volumes=[
                         k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name=_CONFIG_MAP)),
-                        k8s.Volume(name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki")),
+                        public_web_pki.VOLUME,
                     ],
                 ),
             ),
@@ -205,9 +197,7 @@ def _server(scope: Construct, household: str) -> None:
         "service",
         metadata=k8s.ObjectMeta(name=http.name, namespace=namespace, labels=http.labels),
         spec=k8s.ServiceSpec(
-            selector=http.pods.selector,
-            ports=[http.port.k8s_service_port(), metrics.port.k8s_service_port()],
-            type="ClusterIP",
+            selector=http.pods.selector, ports=[http.k8s_service_port(), metrics.k8s_service_port()], type="ClusterIP"
         ),
     )
     ServiceMonitor(
@@ -242,11 +232,9 @@ def household_chart(app: App, *, household: str) -> Chart:
 def write_manifests(root: Path) -> None:
     for household in grocy.HOUSEHOLDS:
         directory = output_dir(household)
-        write_yaml(
-            root / directory / "kustomization.yaml",
-            kustomize_kustomization(
-                resources=[write_charts(root, directory, partial(household_chart, household=household))],
-                components=[posixpath.relpath(PINS_DIR, directory)],
-                config_map_generator=[_config_map(household)],
-            ),
+        write_kustomization(
+            root / directory,
+            resources=[write_charts(root, directory, partial(household_chart, household=household))],
+            components=[posixpath.relpath(PINS_DIR, directory)],
+            config_map_generator=[_config_map(household)],
         )

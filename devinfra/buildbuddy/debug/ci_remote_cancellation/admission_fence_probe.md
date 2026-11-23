@@ -77,9 +77,9 @@ unrelated work was performed.
 
 ## Ownership and consequence for CI
 
-GitHub signals the Actions entry shell. `bb_remote_log.sh` forwards TERM to
+GitHub signals the Actions entry shell. `remote_log.sh` forwards TERM to
 `bb`, whose cancellation path owns the outer hosted runner. In parallel,
-`cancel_bb_invocations.py` requests cancellation for the workflow's preassigned
+`cancel_invocations.py` requests cancellation for the workflow's preassigned
 inner test and build invocation IDs. `bazel_ci.py` runs test and then build.
 The build invocation may therefore not exist when its cancellation request
 arrives; an invocation that does exist can still submit new work after an

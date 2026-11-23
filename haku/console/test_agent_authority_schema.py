@@ -7,7 +7,6 @@ schema objects, deferred constraints, triggers, and invalid rows rather than dom
 from __future__ import annotations
 
 import datetime
-import re
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 
@@ -31,18 +30,10 @@ from haku.console.identity.agent import (
 )
 from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.tool_calls import ToolCallStatus
-from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
+from testing.postgres import PUBLIC_RELATION_IDENTITIES, DatabaseClones, PostgresDatabaseTemplate
+from testing.postgres_fixtures import dump_schema_for_migration_check
 
 _UTC = datetime.UTC
-
-
-def _schema(container: PostgresContainer, database: str) -> str:
-    result = container.get_wrapped_container().exec_run(
-        ["pg_dump", "-U", "postgres", "--schema-only", "--no-owner", "--exclude-table=public.alembic_version", database]
-    )
-    assert result.exit_code == 0, result.output.decode()
-    # Random psql restriction keys are transport framing, not schema.
-    return re.sub(r"^\\(?:un)?restrict .*\n", "", result.output.decode(), flags=re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -72,9 +63,9 @@ class StaticAgent:
 
 
 @pytest.fixture
-def db_url(empty_vector_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
+def db_url(empty_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
     """Clone the pristine schema with a sync driver for the physical migration checks."""
-    return database_clones.clone(empty_vector_database_template, drivername="postgresql+psycopg")
+    return database_clones.clone(empty_database_template, drivername="postgresql+psycopg")
 
 
 def _now() -> datetime.datetime:
@@ -615,16 +606,14 @@ def test_database_already_at_head_is_unchanged(postgres_container: PostgresConta
     apply_migrations(db_url)
     database = make_url(db_url).database
     assert database is not None
-    schema_before = _schema(postgres_container, database)
+    schema_before = dump_schema_for_migration_check(postgres_container, database)
     (undeclared_outputs_dir() / "haku_console_schema.sql").write_text(schema_before)
     engine = create_engine(db_url)
     operator_id = uuid4()
     try:
         with engine.connect() as conn:
             head_version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-            public_relations = conn.execute(
-                text("SELECT oid, relname FROM pg_class WHERE relnamespace = 'public'::regnamespace ORDER BY oid")
-            ).all()
+            public_relations = conn.execute(PUBLIC_RELATION_IDENTITIES).all()
 
         with engine.begin() as conn:
             conn.execute(
@@ -638,7 +627,7 @@ def test_database_already_at_head_is_unchanged(postgres_container: PostgresConta
             )
 
         apply_migrations(db_url)
-        assert _schema(postgres_container, database) == schema_before
+        assert dump_schema_for_migration_check(postgres_container, database) == schema_before
 
         with engine.connect() as conn:
             # Re-applying when already at head is a no-op: the stamp is unchanged (asserting a
@@ -652,12 +641,7 @@ def test_database_already_at_head_is_unchanged(postgres_container: PostgresConta
                 ).scalar_one()
                 == 1
             )
-            assert (
-                conn.execute(
-                    text("SELECT oid, relname FROM pg_class WHERE relnamespace = 'public'::regnamespace ORDER BY oid")
-                ).all()
-                == public_relations
-            )
+            assert conn.execute(PUBLIC_RELATION_IDENTITIES).all() == public_relations
     finally:
         engine.dispose()
 

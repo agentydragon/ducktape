@@ -1,6 +1,6 @@
 rule_files:
-  - github-quota.yaml
-  - roaming-node.yaml
+  - github-quota-alerts.yaml
+  - roaming-node-alerts.yaml
 evaluation_interval: 1m
 tests:
   - name: a sampled zero immediately before reset fires and stays latched

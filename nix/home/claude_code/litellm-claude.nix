@@ -7,9 +7,8 @@
 #
 # Reads $CLAUDE_SUBSCRIPTION_LITELLM_KEY, a virtual key scoped to the subscription roster
 # (SSOT in cluster/k8s/litellm/crossplane-keys). CLIProxyAPI holds the OAuth session, so this key never
-# carries it. Mirrors the in-cluster haku-console `claude_code` harness
-# (cluster/k8s/haku/console/config.yaml), which runs this same lane. See ./gateway.nix for
-# the shared wrapper pattern.
+# carries it. Mirrors the in-cluster haku-console `claude_code` harness, which runs this
+# same lane. See ./gateway.nix for the shared wrapper pattern.
 #
 # No maxContextTokens, deliberately: the route embeds a Claude family token, Claude Code
 # normalizes it by substring to the canonical model, and for a recognized model it ignores

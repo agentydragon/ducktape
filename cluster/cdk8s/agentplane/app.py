@@ -10,7 +10,6 @@ from urllib.parse import urlsplit
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
-    ConfigMap,
     ContainerResources,
     Cpu,
     CpuResources,
@@ -21,24 +20,14 @@ from cdk8s_plus_34 import (
     RoleBinding,
     RolePolicyRule,
     ServiceAccount,
-    Volume,
 )
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 from constructs import Construct
 
 from agentplane.app.settings import EnvironmentServicePeer, Settings
 from agentplane.crd_group import GROUP
-from agentplane.net.peertls.config import (
-    ACTIONS_URI,
-    APP_URI,
-    EGRESS_PROXY_URI,
-    HISTORY_SERVICE_URI,
-    MCP_EDGE_URI,
-    NOTIFICATIONS_URI,
-    SANDBOX_CONTROLLER_URI,
-    SESSION_DISPATCHER_URI,
-)
-from cluster.cdk8s import cilium, node_scheduling
+from agentplane.net.peertls.config import ACTIONS_URI, APP_URI, MCP_EDGE_URI, SANDBOX_CONTROLLER_URI
+from cluster.cdk8s import cilium, node_scheduling, public_web_pki
 from cluster.cdk8s.agentplane import (
     actions,
     database,
@@ -47,7 +36,6 @@ from cluster.cdk8s.agentplane import (
     notifications,
     policy_controller,
     runner_gateway,
-    telemetry,
     workload_tls,
 )
 from cluster.cdk8s.agentplane.environment import Environment
@@ -56,6 +44,7 @@ from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
+from cluster.cdk8s.monitoring import alloy_endpoints
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
@@ -120,25 +109,16 @@ class App(Construct):
         self.oidc = oidc_secret(env.namespace)
 
         settings = self.props.config.model_copy()
-        settings.egress_admin_tls = workload_tls.service_client_tls(EGRESS_PROXY_URI, client_uri=APP_URI)
-        settings.egress_admin_token_file = None
-        settings.runner_gateway_tls = workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=APP_URI)
-        settings.runner_gateway_token_file = None
-        settings.session_dispatcher_tls = workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=APP_URI)
-        settings.session_dispatcher_token_file = None
         if environment_service_endpoint is not None:
             settings.environment_service = EnvironmentServicePeer(
-                target=f"{environment_service_endpoint.fqdn}:{environment_service_endpoint.port.number}",
+                target=environment_service_endpoint.authority,
                 request_timeout_s=settings.session_dispatcher_request_timeout_s,
                 tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=APP_URI),
             )
-        settings.history_service_tls = workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=APP_URI)
-        settings.history_service_token_file = None
-        settings.notifications_tls = workload_tls.service_client_tls(NOTIFICATIONS_URI, client_uri=APP_URI)
-        settings.notifications_token_file = None
+        # These operator-token facades are optional in the settings model, so the workload mounts
+        # decide them here rather than in each environment's authored config.
         settings.actions_tls = workload_tls.service_client_tls(ACTIONS_URI, client_uri=APP_URI)
         settings.connection_service_tls = workload_tls.service_client_tls(MCP_EDGE_URI, client_uri=APP_URI)
-        settings.policy_service_token_file = None
         config = SettingsFile(
             self,
             "config",
@@ -160,7 +140,7 @@ class App(Construct):
         role = Role(
             self,
             "role",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             rules=[
                 RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch"]),
                 # The app lists names to present in the operator's create form.
@@ -188,16 +168,13 @@ class App(Construct):
             ],
         )
         RoleBinding(
-            self,
-            "rolebinding",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
-            role=role,
+            self, "rolebinding", metadata=ApiObjectMetadata(name=NAME, namespace=namespace), role=role
         ).add_subjects(app_service_account)
 
     def _container_env(self) -> dict[str, EnvValue]:
         namespace = self.env.namespace
         return {
-            "SSL_CERT_FILE": EnvValue.from_value("/var/run/public-web-pki/ca-certificates.crt"),
+            "SSL_CERT_FILE": EnvValue.from_value(public_web_pki.CA_FILE),
             "AGENTPLANE_DATABASE_URL": self.database_url,
             "AGENTPLANE_OIDC_CLIENT_ID": self.oidc.key("client-id").env_value(self, "oidc-client-id-ref"),
             "AGENTPLANE_OIDC_CLIENT_SECRET": self.oidc.key("client-secret").env_value(self, "oidc-client-secret-ref"),
@@ -208,9 +185,6 @@ class App(Construct):
 
     def _add_workload(self, config: SettingsFile) -> ServiceWorkload:
         env = self._container_env()
-        oidc_secret_reload = self.oidc.name
-        if self.props.oidc_session_secret_name != self.oidc.name:
-            oidc_secret_reload += f",{self.props.oidc_session_secret_name}"
         workload = add_service_workload(
             self,
             self.env,
@@ -219,7 +193,9 @@ class App(Construct):
             image=f"{_APP_IMAGE}:{_PLACEHOLDER_TAG}",
             env_variables={
                 **env,
-                "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": EnvValue.from_value(telemetry.OTLP_HTTP_ENDPOINT + "/v1/traces"),
+                "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": EnvValue.from_value(
+                    alloy_endpoints.OTLP_HTTP_ENDPOINT + "/v1/traces"
+                ),
                 "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL": EnvValue.from_value("http/protobuf"),
             },
             readiness=http_probe("/readyz", port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10),
@@ -237,21 +213,10 @@ class App(Construct):
             placement=self.placement,
             telemetry_enabled=True,
             registry_secret_name=self.registry_secret_name,
-            annotations={
-                # A re-minted client secret otherwise leaves the pod on the old
-                # one, and every login 401s.
-                "secret.reloader.stakater.com/reload": oidc_secret_reload,
-                "configmap.reloader.stakater.com/reload": f"{config.config_map.name},public-web-pki",
-            },
         )
         config.mount_into(workload.container, env=Settings.config_file_env)
         workload_tls.service_certificate(self, self.env, container=workload.container, name=NAME, uri=APP_URI)
-        public_roots = ConfigMap.from_config_map_name(self, "public-web-pki-ref", "public-web-pki")
-        workload.container.mount(
-            "/var/run/public-web-pki",
-            Volume.from_config_map(self, "public-web-pki-volume", public_roots),
-            read_only=True,
-        )
+        public_web_pki.mount(self, workload.container)
         return workload
 
     def _add_http_route(self) -> None:
@@ -282,7 +247,7 @@ class App(Construct):
         NetworkPolicy(
             self,
             "networkpolicy-app",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             endpoint_selector=self.service.pods.selector,
             ingress=[IngressRule.from_gateway(self.service.pod_port)],
             egress=[
@@ -305,7 +270,7 @@ class App(Construct):
                 actions.service(namespace).egress(),
                 *([self.electric.egress()] if self.electric is not None else []),
                 # The browser's same-origin OTLP relay is served by this App Pod and sends HTTP OTLP.
-                telemetry.ALLOY_OTLP_HTTP.egress(),
+                alloy_endpoints.OTLP_HTTP.egress(),
                 database.egress(namespace),
             ],
         )

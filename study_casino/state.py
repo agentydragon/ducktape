@@ -8,7 +8,7 @@ frontend codegen (`//study_casino/frontend/lib:schema_zod`)
 turns into Zod schemas for runtime parsing at the fetch boundary.
 
 State-mutating action requests/responses live in `actions.py`;
-audit-event reads (`GameEventRead`, `LedgerEventRead`) live in `events.py`.
+game outcomes and the stored-event read the stats use (`GameEventRead`) live in `events.py`.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ class BalanceRead(BaseModel):
 
 class CreditStateRead(BaseModel):
     """Read-only streak/daily-bonus state derived server-side — the frontend
-    only displays it (see plans/credit_system_v2.md)."""
+    only displays it."""
 
     model_config = ConfigDict(extra="forbid")
 

@@ -29,8 +29,7 @@ import (
 
 // The labels of a box. The Action Service's Pod and pods/exec grants are namespace-wide and cannot say "only the
 // boxes this Action made", so the boundary is here: every read, exec and delete selects on managedLabel and on the
-// caller's exact Identity incarnation, and a Pod without those labels is not this surface's to act on. The Python service (binding.py, inventory.py)
-// stamps the same labels, so a box either made is the other's.
+// caller's exact Identity incarnation, and a Pod without those labels is not this surface's to act on.
 const (
 	labelPrefix      = "sandbox-actions.agentplane.allegedly.works/"
 	managedLabel     = labelPrefix + "managed"

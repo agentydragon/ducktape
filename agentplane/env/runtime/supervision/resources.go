@@ -2,14 +2,16 @@ package supervision
 
 import (
 	"errors"
+	"math"
 )
 
 const CPUPeriodMicros uint64 = 100000
 
-// WorkloadSlice and ExecutorSlice contain native Agentplane services by role.
+// WorkloadSlice, ExecutorSlice, and CommandSlice contain native Agentplane services by role.
 const (
 	WorkloadSlice = "agentplane-workloads.slice"
 	ExecutorSlice = "agentplane-executors.slice"
+	CommandSlice  = "agentplane-commands.slice"
 )
 
 // ResourceLimits is one cgroup-v2 resource budget. CPU quota is expressed in
@@ -28,6 +30,9 @@ type ResourceLimits struct {
 func (r ResourceLimits) Validate() error {
 	if r.CPUQuotaMicros <= 0 {
 		return errors.New("CPU quota must be positive")
+	}
+	if uint64(r.CPUQuotaMicros) > math.MaxUint64/(1_000_000/CPUPeriodMicros) {
+		return errors.New("CPU quota exceeds the systemd property range")
 	}
 	if r.MemoryMaxBytes <= 0 {
 		return errors.New("memory max must be positive")

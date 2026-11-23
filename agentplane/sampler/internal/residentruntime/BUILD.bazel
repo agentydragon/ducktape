@@ -11,6 +11,7 @@ go_library(
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/sampler/internal/residentruntime",
     deps = [
+        "//agentplane/postgres/wakeups",
         "//agentplane/sampler/internal/executor",
         "//agentplane/sampler/internal/residentruntime/session",
         "//agentplane/sampler/internal/sessionstore",
@@ -36,6 +37,7 @@ go_test(
     deps = [
         "//agentplane/env/jsonrpc",
         "//agentplane/env/runtime/execution:executor_go_proto",
+        "//agentplane/postgres/wakeups",
         "//agentplane/proto:command_go_proto",
         "//agentplane/sampler/api:sampler_go_proto",
         "//agentplane/sampler/internal/codemode",
@@ -49,6 +51,7 @@ go_test(
         "//agentplane/sampler/migrations",
         "//agentplane/sampler/protocol",
         "//agentplane/sampler/providers/responses",
+        "//agentplane/testing/eventually",
         "//agentplane/testing/postgres",
         "@com_github_google_uuid//:uuid",
         "@com_github_lib_pq//:pq",

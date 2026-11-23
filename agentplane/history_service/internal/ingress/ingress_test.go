@@ -26,7 +26,6 @@ import (
 )
 
 const (
-	testAudience  = "test-runner-ingress"
 	testNamespace = "test-sandbox-namespace"
 	// callDeadline only bounds a call that stopped making progress, so a hang fails the test.
 	callDeadline = 30 * time.Second

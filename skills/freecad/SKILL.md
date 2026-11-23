@@ -29,7 +29,8 @@ These are the most common silent failures. Read before writing any code:
 - **Never use `makeDistanceDim`.** It creates non-parametric point-based dimensions. Always
   use `DrawViewDimension` with `References2D = [(view, "EdgeN")]`.
 - **TechDraw HLR requires Xvfb.** `QT_QPA_PLATFORM=offscreen` does NOT provide the OpenGL
-  context the HLR thread needs. Use `xvfb-run -a` or a manual `Xvfb :99` display.
+  context the HLR thread needs. Run the `freecad` binary under a manual `Xvfb :99` display
+  (see Script Execution Model).
 - **TechDraw HLR is async.** After `doc.recompute()`, call `wait_for_view()` — it polls
   `getVisibleEdges()` with `processEvents()`. A bare `time.sleep()` will never deliver the
   Qt signal and `getVisibleEdges()` will stay empty forever.
@@ -70,28 +71,23 @@ of standalone scripts — see the Interactive Mode section below.
 
 FreeCAD has two binaries with very different lifecycle models:
 
-| Binary       | Event loop    | Use for                                                             |
-| ------------ | ------------- | ------------------------------------------------------------------- |
-| `freecadcmd` | No `exec()`   | TechDraw + geometry scripts under `xvfb-run` (module-level pattern) |
-| `freecad`    | `exec()` runs | 3D rendering (Coin3D/OpenGL), QTimer.singleShot pattern             |
+| Binary       | Event loop    | Use for                                                            |
+| ------------ | ------------- | ------------------------------------------------------------------ |
+| `freecadcmd` | No `exec()`   | Geometry scripts without rendering (offscreen)                     |
+| `freecad`    | `exec()` runs | TechDraw and 3D rendering under Xvfb; `run_gui_script` defers work |
 
 ### What needs Xvfb vs offscreen
 
-| Operation                                 | Needs Xvfb? | Notes                                                    |
-| ----------------------------------------- | ----------- | -------------------------------------------------------- |
-| TechDraw HLR / DXF / SVG / PDF export     | **Yes**     | HLR thread needs an OpenGL context; Qt offscreen doesn't |
-| 3D render via Coin3D/pivy                 | **Yes**     | Use `freecad` binary with direct Xvfb (not `xvfb-run`)   |
-| Part Design solid geometry (no rendering) | No          | Use `freecadcmd` with `QT_QPA_PLATFORM=offscreen`        |
+| Operation                                 | Needs Xvfb? | Notes                                                  |
+| ----------------------------------------- | ----------- | ------------------------------------------------------ |
+| TechDraw HLR / DXF / SVG / PDF export     | **Yes**     | Use the `freecad` binary; Qt offscreen has no OpenGL   |
+| 3D render via Coin3D/pivy                 | **Yes**     | Use `freecad` binary with direct Xvfb (not `xvfb-run`) |
+| Part Design solid geometry (no rendering) | No          | Use `freecadcmd` with `QT_QPA_PLATFORM=offscreen`      |
 
-**TechDraw invocation (freecadcmd + xvfb-run):**
-
-```bash
-OUTDIR=/tmp/out xvfb-run -a /opt/FreeCAD.AppImage freecadcmd parametric_sketch.py
-INPUT=/tmp/bracket.FCStd OUTDIR=/tmp/out xvfb-run -a /opt/FreeCAD.AppImage freecadcmd export_page.py
-```
-
-Scripts use module-level code, call `FreeCADGui.showMainWindow()`, and end with `os._exit(0)` to
-bypass the Qt6 TLS crash — see <debug/qt_shutdown_segfault.md>.
+**TechDraw (freecad GUI binary + direct Xvfb):** start Xvfb and run the script exactly as for 3D
+rendering below; the Export section has the commands. Scripts call `init_gui()` at module level
+and hand their work to `run_gui_script(qapp, fn)` (<examples/freecad_helpers.py>), which runs `fn`
+once the event loop starts and always quits the loop.
 
 **3D rendering (freecad GUI binary + direct Xvfb):** Do NOT use `xvfb-run` with the `freecad`
 binary — it can hang. Start Xvfb manually:

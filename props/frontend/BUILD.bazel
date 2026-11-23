@@ -1,6 +1,7 @@
 # gazelle:exclude test_visual.py
 # gazelle:exclude test_navigation.py
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@npm_ducktape//:defs.bzl", "npm_link_all_packages")
 load("//devinfra/js:spa_bundle.bzl", "spa_bundle")
@@ -8,7 +9,7 @@ load("//devinfra/js:ts_library.bzl", "ts_library")
 load("//devinfra/js:typed_eslint.bzl", "typed_eslint_test")
 load("//devinfra/js:vitest.bzl", "vitest_config")
 load("//devinfra/python:defs.bzl", "py_test")
-load("//util/testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
+load("//testing/frontend_visual:py_visual_test.bzl", "py_visual_test")
 
 # Link npm packages for this workspace member.
 npm_link_all_packages(name = "node_modules")
@@ -86,10 +87,6 @@ exports_files(
     visibility = ["//props/backend:__pkg__"],
 )
 
-# ============================================================
-# App entry point
-# ============================================================
-
 js_library(
     name = "app_css",
     srcs = ["src/app.css"],
@@ -116,6 +113,7 @@ ts_library(
         "//props/frontend/src/components:RunTriggerModal",
         "//props/frontend/src/lib:queryClient",
         "//props/frontend/src/lib:runModalContext",
+        "//props/frontend/src/lib:schema",
         "//props/frontend/src/lib:token",
         "//props/frontend/src/lib:types",
         "//props/frontend/src/pages:DefinitionDetailPage",
@@ -142,10 +140,6 @@ ts_library(
         ":node_modules/react-dom",
     ],
 )
-
-# ============================================================
-# Development server
-# ============================================================
 
 # Run: bazel run //props/frontend:dev
 js_binary(
@@ -193,7 +187,9 @@ py_test(
 
 py_test(
     name = "test_dev_server_integration",
-    size = "medium",  # Cold imports, PostgreSQL image load and launcher startup; debug/dev_server_integration_budget.md.
+    # Not a wedge: on a cold RBE worker the run took 92 s with the limit lifted (PostgreSQL image load
+    # 27.8 s, container start 6.9 s), over the 60 s `small` budget.
+    size = "medium",
     srcs = ["test_dev_server_integration.py"],
     data = [":dev"],
     env = {"PROPS_DEV_RLOCATION": "$(rlocationpath :dev)"},
@@ -204,14 +200,10 @@ py_test(
         "//props:conftest",
         "//props/db:database",
         "//props/testing/fixtures:db",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres_fixtures",
         "@rules_python//python/runfiles",
     ],
 )
-
-# ============================================================
-# Production bundle
-# ============================================================
 
 # Tailwind plugin and aliases for the native esbuild() rule (see spa_bundle).
 js_library(
@@ -241,10 +233,6 @@ spa_bundle(
         ":node_modules/react-dom",
     ],
 )
-
-# ============================================================
-# Test harness (visual regression scaffold)
-# ============================================================
 
 ts_library(
     name = "harness_lib",
@@ -277,52 +265,24 @@ ts_library(
     ],
 )
 
-js_binary(
-    name = "build_harness",
-    data = [
-        "tests/harness/esbuild.config.mjs",
-        ":harness_lib",
-        ":node_modules/esbuild",
-        ":node_modules/esbuild-plugin-tailwindcss",
-        ":node_modules/tailwindcss",
-    ],
-    entry_point = "tests/harness/esbuild.config.mjs",
-)
-
-js_run_binary(
+esbuild(
     name = "harness_bundle",
-    srcs = [
-        "tests/harness/esbuild.config.mjs",
-        ":harness_lib",
-    ],
-    outs = [
-        "tests/harness/dist/harness.css",
-        "tests/harness/dist/harness.js",
-    ],
-    args = ["tests/harness/dist"],
-    chdir = package_name(),
-    tool = ":build_harness",
-    visibility = ["//props/frontend/src:__subpackages__"],
+    testonly = True,
+    config = ":esbuild_config",
+    entry_point = "tests/harness/harness.js",
+    format = "iife",
+    minify = False,
+    output = "tests/harness/dist/harness.js",
+    output_css = "tests/harness/dist/harness.css",
+    platform = "browser",
+    sourcemap = "linked",
+    target = ["es2022"],
+    deps = [":harness_lib"],
 )
 
-filegroup(
-    name = "harness_js",
-    srcs = ["tests/harness/dist/harness.js"],
-    visibility = ["//props/frontend/src:__subpackages__"],
-)
-
-# ============================================================
-# Visual regression tests
-#
+# Visual regression tests.
 # Run all:  bazel test //props/frontend:visual
 # Run one:  bazel test //props/frontend:visual --test_filter=DefinitionDetail
-# ============================================================
-
-filegroup(
-    name = "visual_test_assets",
-    srcs = ["tests/harness/index.html"],
-    visibility = ["//props/frontend/src:__subpackages__"],
-)
 
 # small: a shard renders 3 scenarios. The 12 per-scenario targets this replaces were 6.0-9.4s
 # each, almost all of it browser launch and input staging paid once per scenario.
@@ -330,14 +290,14 @@ py_visual_test(
     name = "visual",
     size = "small",
     assets = [
-        ":harness_bundle",
-        ":visual_test_assets",
+        "tests/harness/dist/harness.css",
+        "tests/harness/index.html",
     ],
-    harness = ":harness_js",
+    harness = "tests/harness/dist/harness.js",
     shard_count = 4,
     test_deps = [
-        "//util/testing/frontend_visual:capture",
-        "//util/testing/frontend_visual:viewports",
+        "//testing/frontend_visual:capture",
+        "//testing/frontend_visual:viewports",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -350,13 +310,12 @@ py_visual_test(
 py_visual_test(
     name = "navigation",
     size = "small",
-    assets = [":harness_bundle"],
-    harness = ":harness_js",
+    harness = "tests/harness/dist/harness.js",
     inline_page = True,
-    page_url = "http://props.test/",
+    page_url = "https://props.test/",
     stylesheets = ["tests/harness/dist/harness.css"],
     test_deps = [
-        "//util/testing/frontend_visual:capture",
+        "//testing/frontend_visual:capture",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

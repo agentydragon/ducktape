@@ -222,7 +222,7 @@ func (w *DeliveryWorker) prepare(ctx context.Context, work queuedWork, sandbox S
 		return true, nil
 	}
 	if work.wakeRequestedAt != nil || work.wakeAssessment.GetState() == environmentpb.WakeState_WAKE_STATE_REQUESTED {
-		return w.waitForRequestedWake(ctx, work, owner, sandbox, nil)
+		return w.waitForRequestedWake(ctx, work, owner, sandbox)
 	}
 	if sandbox.Blocker != "sandbox_suspended" {
 		if err := w.recordAssessment(ctx, work, owner, nil, work.wakeAssessment); err != nil {
@@ -364,7 +364,6 @@ func (w *DeliveryWorker) waitForRequestedWake(
 	work queuedWork,
 	owner store.SessionOwner,
 	sandbox SandboxSnapshot,
-	blocker *environmentpb.DeliveryBlocker,
 ) (bool, error) {
 	requestedAt := work.wakeRequestedAt
 	if requestedAt == nil {

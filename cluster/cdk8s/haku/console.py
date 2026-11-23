@@ -6,7 +6,7 @@ backend paths to the API.
 Trust boundary: the console runs in its OWN `haku-console` namespace, not haku-sandbox. As
 reviewed/released ducktape code it sits outside Haku's RBAC (Haku cannot read its secrets or
 logs or patch it) and outside haku-sandbox's egress fence, so it gets ordinary egress and can
-hold secrets Haku may not read (haku/PLAN.md, "The agent-authored console").
+hold secrets Haku may not read.
 
 The API and static shell are separate Deployments so a frontend-only image update never
 restarts operator authentication or background maintenance. Both images carry the
@@ -21,7 +21,6 @@ from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
     ConfigMap,
-    ContainerPort,
     ContainerResources,
     ContainerSecurityContextProps,
     Cpu,
@@ -30,32 +29,35 @@ from cdk8s_plus_34 import (
     DeploymentStrategy,
     EnvValue,
     ImagePullPolicy,
-    ISecret,
     LabelSelector,
     MemoryResources,
     PercentOrAbsolute,
     Pods,
     PodSecurityContextProps,
     Probe,
-    Protocol,
     Role,
     RoleBinding,
     RolePolicyRule,
-    Secret,
-    SecretValue,
     Service,
     ServiceAccount,
-    ServicePort,
     Volume,
 )
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
-from cluster.cdk8s import agent_access_profiles as access, node_scheduling, pod_policy, service_ref
+from cluster.cdk8s import (
+    agent_access_profiles as access,
+    disruption_budget,
+    node_scheduling,
+    pod_policy,
+    public_web_pki,
+    service_ref,
+)
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.haku import console_config, database
+from cluster.cdk8s.haku.database import NAMESPACE
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.settings_file import SettingsFile
@@ -63,7 +65,6 @@ from haku.console.config import CONFIG_FILE_ENV
 from haku.console.settings import Settings
 from util.settings_contract import env_name
 
-NAMESPACE = "haku-console"
 NAME = "haku-console"
 HOSTNAME = "haku.allegedly.works"
 PUBLIC_BASE_URL = f"https://{HOSTNAME}"
@@ -108,15 +109,11 @@ class Console(Construct):
 
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
-        self._secrets: dict[str, ISecret] = {}
 
-        # Narrow runtime identity: claim/exec RBAC on the haku-sandbox pool
-        # (haku/workspaces.py). No Secret, log, exec, or SandboxTemplate access outside that pool.
         service_account = ServiceAccount(
             self, "serviceaccount", metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE), automount_token=True
         )
-        self._add_rbac(service_account)
-        env = self._container_env()
+        self._add_rbac()
         config = SettingsFile(
             self,
             "config",
@@ -124,18 +121,18 @@ class Console(Construct):
             content=yaml_config(console_config.config()),
             path="/etc/haku-console/config/config.yaml",
         )
-        self._add_deployment(service_account, env, config)
+        self._add_deployment(service_account, config)
         self._add_service()
         self._add_service_monitor()
         self._add_static()
         self._add_http_route()
 
-    def _add_rbac(self, service_account: ServiceAccount) -> None:
+    def _add_rbac(self) -> None:
         # Narrow metadata/configuration diagnostics for the agents. Not
         # namespace-diagnostics-reader: that broader role includes pods/log, and console
         # logs can contain operator and personal-service data.
         diagnostics = "agent-haku-console-metadata-reader"
-        Role(
+        role = Role(
             self,
             "diagnostics-role",
             metadata=ApiObjectMetadata(
@@ -159,7 +156,7 @@ class Console(Construct):
                 namespace=NAMESPACE,
                 annotations={"description": "Binds Haku and public-coder to narrow Console metadata diagnostics."},
             ),
-            role=Role.from_role_name(self, "diagnostics-role-ref", diagnostics),
+            role=role,
         ).add_subjects(
             *[
                 subject.imported(self, f"diagnostics-subject-{index}")
@@ -174,23 +171,17 @@ class Console(Construct):
             automount_token=False,
         )
 
-    def _secret(self, name: str) -> ISecret:
-        if name not in self._secrets:
-            self._secrets[name] = Secret.from_secret_name(self, f"secret-{name}", name)
-        return self._secrets[name]
-
-    def _from_secret(self, key: SecretKey, *path: str, optional: bool = False) -> tuple[str, EnvValue]:
+    def _from_secret(self, key: SecretKey, *path: str) -> tuple[str, EnvValue]:
         """The env var for the settings leaf at `path`, read from `key`."""
-        return env_name(Settings, *path), EnvValue.from_secret_value(
-            SecretValue(secret=self._secret(key.secret.name), key=key.key), optional=optional
-        )
+        name = env_name(Settings, *path)
+        return name, key.env_value(self, name)
 
     def _container_env(self) -> dict[str, EnvValue]:
         oidc = SecretRef(namespace=NAMESPACE, name="haku-console-oidc")
         image_metadata = ConfigMap.from_config_map_name(self, "image-metadata-ref", IMAGE_METADATA_CONFIG_MAP)
         return dict(
             [
-                ("SSL_CERT_FILE", EnvValue.from_value("/var/run/public-web-pki/ca-certificates.crt")),
+                ("SSL_CERT_FILE", EnvValue.from_value(public_web_pki.CA_FILE)),
                 (env_name(Settings, "image_tag"), EnvValue.from_config_map(image_metadata, _IMAGE_TAG_KEY)),
                 # Capability tier: the launch-routine action. The console builds both the fire
                 # URL and the claude.ai/code deep-link from this routine (trigger) id; the bearer
@@ -224,7 +215,7 @@ class Console(Construct):
                 self._from_secret(oidc.key("operator_client_id"), "operator_oidc", "client_id"),
                 self._from_secret(oidc.key("operator_client_secret"), "operator_oidc", "client_secret"),
                 self._from_secret(oidc.key("operator_session_secret"), "operator_oidc", "session_secret"),
-                # The Authentik user-id namespace both providers above share (sub_mode=user_id).
+                # The Authentik user-id namespace the operator provider uses (sub_mode=user_id).
                 (
                     env_name(Settings, "operator_identity", "trust_domain"),
                     EnvValue.from_value("auth.allegedly.works/authentik-user-id/v1"),
@@ -232,22 +223,11 @@ class Console(Construct):
             ]
         )
 
-    def _add_deployment(self, service_account: ServiceAccount, env: dict[str, EnvValue], config: SettingsFile) -> None:
+    def _add_deployment(self, service_account: ServiceAccount, config: SettingsFile) -> None:
         deployment = Deployment(
             self,
             "deployment",
-            metadata=ApiObjectMetadata(
-                name=NAME,
-                namespace=NAMESPACE,
-                labels=_API.pods.selector,
-                annotations={
-                    # Only the API's own mounted ConfigMap and credentials, never reloader's
-                    # blanket auto mode: the projected static-image metadata changes on every
-                    # frontend release and must not restart API/MCP/background work.
-                    "configmap.reloader.stakater.com/reload": f"{config.config_map.name},public-web-pki",
-                    "secret.reloader.stakater.com/reload": ",".join(sorted(self._secrets)),
-                },
-            ),
+            metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE, labels=_API.pods.selector),
             pod_metadata=ApiObjectMetadata(labels=_API.pods.selector),
             select=False,
             replicas=2,
@@ -270,8 +250,8 @@ class Console(Construct):
             name="server",
             image=f"{IMAGE}:{PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
-            ports=[_API.port.container_port()],
-            env_variables=env,
+            ports=[_API.container_port()],
+            env_variables=self._container_env(),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50), limit=Cpu.millis(500)),
                 # TODO(vpa-memory-audit): 512Mi -> 3Gi. VPA observed a 1.29Gi request / 1.74Gi
@@ -292,12 +272,7 @@ class Console(Construct):
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False),
         )
         container.mount("/tmp", Volume.from_empty_dir(self, "tmp-volume", "tmp"))
-        public_roots = ConfigMap.from_config_map_name(self, "public-web-pki-ref", "public-web-pki")
-        container.mount(
-            "/var/run/public-web-pki",
-            Volume.from_config_map(self, "public-web-pki-volume", public_roots),
-            read_only=True,
-        )
+        public_web_pki.mount(self, container)
         config.mount_into(container, env=CONFIG_FILE_ENV)
         static_metadata = ConfigMap.from_config_map_name(self, "static-metadata-ref", STATIC_METADATA_CONFIG_MAP)
         container.mount(
@@ -311,20 +286,13 @@ class Console(Construct):
         pod_policy.harden(deployment)
 
     def _add_service(self) -> None:
+        disruption_budget.add_disruption_budget(self, "disruption-budget", name=_API.name, pods=_API.pods)
         Service(
             self,
             "service",
             metadata=ApiObjectMetadata(name=_API.name, namespace=NAMESPACE, labels=_API.labels),
             selector=Pods.select(self, "pods", labels=_API.pods.selector),
-            ports=[
-                _API.port.service_port(),
-                ServicePort(
-                    name=_METRICS.port.name,
-                    port=_METRICS.port.number,
-                    target_port=_METRICS.pod_port,
-                    protocol=Protocol.TCP,
-                ),
-            ],
+            ports=[_API.service_port(), _METRICS.service_port()],
         )
 
     def _add_service_monitor(self) -> None:
@@ -352,6 +320,8 @@ class Console(Construct):
             security_context=PodSecurityContextProps(ensure_non_root=True, user=1000, group=1000, fs_group=1000),
         )
         deployment.select(LabelSelector.of(labels=_STATIC.pods.selector))
+        # Spread each revision across hosts; with one eligible host, keep one replica running.
+        node_scheduling.set_topology_spread(deployment, node_scheduling.hostname_spread(_STATIC.pods.selector))
         container = deployment.add_container(
             name="static",
             image=f"{_STATIC_IMAGE}:{PLACEHOLDER_TAG}",
@@ -364,7 +334,7 @@ class Console(Construct):
                 "HAKU_CONSOLE_AUTH_ORIGIN": EnvValue.from_value(_AUTHENTIK),
                 "HAKU_CONSOLE_API_UPSTREAM": EnvValue.from_value(f"{_API.host}:{_API.port.number}"),
             },
-            ports=[ContainerPort(name=_STATIC.port.name, number=_STATIC.pod_port, protocol=Protocol.TCP)],
+            ports=[_STATIC.container_port()],
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(10), limit=Cpu.millis(100)),
                 memory=MemoryResources(request=Size.mebibytes(32), limit=Size.mebibytes(128)),
@@ -378,25 +348,18 @@ class Console(Construct):
         # The entrypoint writes the envsubst-rendered config here before nginx starts.
         container.mount("/etc/nginx/conf.d", Volume.from_empty_dir(self, "nginx-conf-volume", "nginx-conf"))
         pod_policy.harden(deployment)
+        disruption_budget.add_disruption_budget(self, "static-disruption-budget", name=_STATIC.name, pods=_STATIC.pods)
         Service(
             self,
             "static-service",
             metadata=ApiObjectMetadata(name=_STATIC.name, namespace=NAMESPACE, labels=_STATIC.labels),
             selector=Pods.select(self, "static-pods", labels=_STATIC.pods.selector),
-            ports=[
-                ServicePort(
-                    name=_STATIC.port.name,
-                    port=_STATIC.port.number,
-                    target_port=_STATIC.pod_port,
-                    protocol=Protocol.TCP,
-                )
-            ],
+            ports=[_STATIC.service_port()],
         )
 
     def _add_http_route(self) -> None:
         # Gateway -> static shell -> API, with no forward-auth outpost: the console owns its
-        # auth. The timeout clears the `sandbox` server's exec budget (max_exec_timeout_seconds
-        # plus the 15s the console waits beyond it) and the MCP/OAuth streams.
+        # auth. The timeout clears the MCP/OAuth streams.
         https_route(
             self,
             "httproute",

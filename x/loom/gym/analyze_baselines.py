@@ -25,11 +25,9 @@ import matplotlib.pyplot as plt
 from inspect_ai.log import list_eval_logs, read_eval_log
 
 from x.loom.gym.market_seed_tasks import MARKET_SEED_RECORDS
-from x.loom.gym.scoring import cluster_bootstrap_ci
+from x.loom.gym.scoring import binary_losses, cluster_bootstrap_ci
 
 plt.switch_backend("Agg")  # headless rendering
-
-_EPS = 1e-6
 
 
 @dataclass(frozen=True)
@@ -63,13 +61,8 @@ def crowd_baseline() -> dict[str, TaskResult]:
     out: dict[str, TaskResult] = {}
     for r in MARKET_SEED_RECORDS:
         p_yes = r.prob_at_as_of
-        realized = p_yes if r.resolved_yes else 1.0 - p_yes
-        out[r.task_id] = TaskResult(
-            task_id=r.task_id,
-            log_loss=-math.log(max(realized, _EPS)),
-            brier=(p_yes - float(r.resolved_yes)) ** 2,
-            p=p_yes,
-        )
+        metrics = binary_losses(p_yes, r.resolved_yes)
+        out[r.task_id] = TaskResult(task_id=r.task_id, log_loss=metrics["log_loss"], brier=metrics["brier"], p=p_yes)
     return out
 
 

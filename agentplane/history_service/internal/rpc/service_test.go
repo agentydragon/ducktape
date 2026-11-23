@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"maps"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -35,8 +34,9 @@ import (
 )
 
 const (
-	testAudience  = "test-history-service"
-	testNamespace = "test-reader-namespace"
+	testAudience        = "test-history-service"
+	testNamespace       = "test-reader-namespace"
+	testPolicyNamespace = "test-history-policies"
 	// callDeadline only bounds a call that stopped making progress, so a hang fails the test.
 	callDeadline = 30 * time.Second
 )
@@ -70,37 +70,29 @@ func newServer(t *testing.T, lease time.Duration) testServer {
 	return newServerTimingOut(t, lease, callDeadline)
 }
 
-// newServerTimingOut serves the API over the shared database with a hub listening to the channels the watch
-// follows.
-func newServerTimingOut(t *testing.T, lease, requestTimeout time.Duration) testServer {
+// newSVIDResolver admits the workload callers of the test API server.
+func newSVIDResolver(t *testing.T) *auth.SVIDResolver {
 	t.Helper()
-	db := postgres.Open(t, integrationDatabase.URL)
-	hub, err := wakeups.Listen(t.Context(), integrationDatabase.URL, storage.ChannelHistory, projection.ChannelSummaries, storage.ChannelSessions)
+	svids, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{testNamespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { hub.Close() })
-	svids, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{testNamespace}, &resolver.Identities{PolicyNamespace: "test-history-policies"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	history := storage.NewStore(db, storage.Options{SettleDeltas: true})
-	service := NewService(Options{
-		Reader:  &reads.Reader{DB: db, History: history, NativeFrameReadBatchSize: 200},
-		Wakeups: hub, RequestTimeout: requestTimeout, WatchLease: lease,
-	})
-	methods, err := Methods(svids).WithServiceCallers(ReadMethods(), []string{peertls.AppURI})
-	if err != nil {
-		t.Fatal(err)
-	}
-	connection := grpcmethods.ServeTLSWithTimeout(t, requestTimeout, peertls.HistoryIngressURI, methods, func(server *grpc.Server) {
-		historypb.RegisterHistoryServiceServer(server, service)
-	}, peertls.AppURI)
-	return testServer{service: service, hub: hub, client: historypb.NewHistoryServiceClient(grpcmethods.AsCaller(connection, peertls.AppURI)), history: history, db: db}
+	return svids
 }
 
+// newServerTimingOut serves the API to the app as a direct service reader.
+func newServerTimingOut(t *testing.T, lease, requestTimeout time.Duration) testServer {
+	t.Helper()
+	server, connect := newServiceAccessServer(t, lease, requestTimeout, []string{peertls.AppURI}, nil, nil)
+	server.client = connect(t, peertls.AppURI)
+	return server
+}
+
+// newServiceAccessServer serves the API over the shared database with a hub listening to the channels the watch
+// follows. The app may connect whether or not it is among directCallers.
 func newServiceAccessServer(
 	t *testing.T,
+	lease, requestTimeout time.Duration,
 	directCallers []string,
 	serviceDelegators []auth.ServiceDelegator,
 	identities auth.IdentityUIDReader,
@@ -112,29 +104,25 @@ func newServiceAccessServer(
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { hub.Close() })
-	svids, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{testNamespace}, &resolver.Identities{PolicyNamespace: "test-history-policies"})
-	if err != nil {
-		t.Fatal(err)
-	}
 	history := storage.NewStore(db, storage.Options{SettleDeltas: true})
 	service := NewService(Options{
 		Reader:  &reads.Reader{DB: db, History: history, NativeFrameReadBatchSize: 200},
-		Wakeups: hub, RequestTimeout: callDeadline, WatchLease: time.Second,
+		Wakeups: hub, RequestTimeout: requestTimeout, WatchLease: lease,
 	})
-	methods := Methods(svids)
-	methods, err = methods.WithServiceCallers(ReadMethods(), directCallers)
+	methods, err := Methods(newSVIDResolver(t)).WithServiceCallers(ReadMethods(), directCallers)
 	if err != nil {
 		t.Fatal(err)
 	}
-	methods, err = methods.WithServiceDelegation(ReadMethods(), serviceDelegators, identities)
-	if err != nil {
-		t.Fatal(err)
+	if len(serviceDelegators) > 0 {
+		if methods, err = methods.WithServiceDelegation(ReadMethods(), serviceDelegators, identities); err != nil {
+			t.Fatal(err)
+		}
 	}
 	callerURIs := append([]string{peertls.AppURI}, directCallers...)
 	for _, delegator := range serviceDelegators {
 		callerURIs = append(callerURIs, delegator.SPIFFEID)
 	}
-	connection := grpcmethods.ServeTLSWithTimeout(t, callDeadline, peertls.HistoryIngressURI, methods, func(server *grpc.Server) {
+	connection := grpcmethods.ServeTLSWithTimeout(t, requestTimeout, peertls.HistoryIngressURI, methods, func(server *grpc.Server) {
 		historypb.RegisterHistoryServiceServer(server, service)
 	}, callerURIs...)
 	connect := func(t *testing.T, caller string) historypb.HistoryServiceClient {
@@ -166,18 +154,14 @@ func (s testServer) record(t *testing.T) (uuid.UUID, uint64) {
 	return sessionID, position
 }
 
-func (s testServer) recordAs(t *testing.T, identity storage.Identity) (uuid.UUID, uint64) {
+func (s testServer) recordAs(t *testing.T, identity storage.Identity) uuid.UUID {
 	t.Helper()
 	sessionID := uuid.New()
 	if _, err := s.history.BindSamplerWriter(t.Context(), sessionID, testWriter,
 		storage.Sandbox{Namespace: testNamespace, Name: testWriter.Name, UID: uuid.NewString()}, &identity); err != nil {
 		t.Fatal(err)
 	}
-	var position uint64
-	if err := s.db.QueryRowContext(t.Context(), "SELECT recorded_position FROM session_history WHERE id = $1", sessionID).Scan(&position); err != nil {
-		t.Fatal(err)
-	}
-	return sessionID, position
+	return sessionID
 }
 
 // Legacy account tuples are retained audit data, never new ownership assignments.
@@ -204,11 +188,7 @@ func testEntry(cursor uint64) *eventlogpb.EventEntry {
 }
 
 func TestEveryRPCRequiresAWorkloadSVID(t *testing.T) {
-	svids, err := auth.NewKubernetesSVIDResolver(kube.Config, []string{testNamespace}, &resolver.Identities{PolicyNamespace: "test-history-policies"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	methods := Methods(svids)
+	methods := Methods(newSVIDResolver(t))
 	register := func(server *grpc.Server) {
 		historypb.RegisterHistoryServiceServer(server, historypb.UnimplementedHistoryServiceServer{})
 	}
@@ -335,12 +315,14 @@ func TestServiceReaderAndDelegatedServiceUseSeparateReadScopes(t *testing.T) {
 	other := storage.Identity{Name: "service-scope-other-" + uuid.NewString(), UID: uuid.NewString()}
 	server, connect := newServiceAccessServer(
 		t,
+		time.Second,
+		callDeadline,
 		[]string{peertls.NotificationsURI},
 		[]auth.ServiceDelegator{{SPIFFEID: peertls.ActionsURI}},
 		newLiveIdentities(owner, other),
 	)
-	owned, _ := server.recordAs(t, owner)
-	foreign, _ := server.recordAs(t, other)
+	owned := server.recordAs(t, owner)
+	foreign := server.recordAs(t, other)
 	legacy, _ := server.record(t)
 	for _, sessionID := range []uuid.UUID{owned, foreign, legacy} {
 		if _, err := server.history.Append(t.Context(), sessionID, []*eventlogpb.EventEntry{testEntry(1)}); err != nil {
@@ -432,7 +414,6 @@ func TestACallThatOutlastsTheRequestTimeoutIsAbandoned(t *testing.T) {
 }
 
 type liveIdentities struct {
-	mu   sync.RWMutex
 	uids map[string]string
 }
 
@@ -445,14 +426,6 @@ func newLiveIdentities(identities ...storage.Identity) *liveIdentities {
 }
 
 func (live *liveIdentities) GetIdentityUID(_ context.Context, name string) (string, bool, error) {
-	live.mu.RLock()
-	defer live.mu.RUnlock()
 	uid, found := live.uids[name]
 	return uid, found, nil
-}
-
-func (live *liveIdentities) replace(name, uid string) {
-	live.mu.Lock()
-	defer live.mu.Unlock()
-	live.uids[name] = uid
 }

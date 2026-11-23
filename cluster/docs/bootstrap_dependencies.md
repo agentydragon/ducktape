@@ -68,11 +68,12 @@ Cluster-side SOPS files also need the Flux decryption identity as a recipient.
 | `secrets/k8s-ca.crt`                      | K8s cluster CA cert (plaintext)       | None                                                     | L7: kubelet TLS on NixOS workers                                                           |
 | `secrets/k8s-worker.yaml`                 | k8s bootstrap token                   | Admin age key                                            | L7: kubelet TLS bootstrap on NixOS workers                                                 |
 
-**If nebula CA is lost**: Generate new CA with `nebula-cert ca`, write cert
-to `secrets/nebula/ca.crt`, encrypt key to `secrets/nebula/ca.sops.key`.
-Then explicitly regenerate and persist every node certificate/key under
-`secrets/nebula/`, apply the Talos machine configuration, and update all NixOS
-worker Nebula files (L7).
+**If nebula CA is lost**: Generate a new CA with `nebula-cert ca -name "allegedly.works"`,
+write the cert to `secrets/nebula/ca.crt`, and encrypt the key to
+`secrets/nebula/ca.sops.key`. Then explicitly regenerate and persist every node
+certificate/key under `secrets/nebula/` (<secrets.md> "Generating a new cert"), run
+`tofu apply` to embed the new Talos node certificates and keys, run `nixos-rebuild switch`
+on the NixOS workers (L7), and run `ansible-playbook atlas.yaml --tags nebula`.
 
 **If `secrets/shared/cluster-secrets-age.yaml` is lost**: regenerate and redeploy per
 <secrets.md> § "Rotating the Cluster Age Key".
@@ -97,10 +98,13 @@ backend. Resources have `lifecycle { prevent_destroy = true }`.
 | `proxmox_virtual_environment_user_token.persistent` | L2: users           | Terraform API token                      | L3: Proxmox VM creation       |
 | `talos_machine_secrets.cluster`                     | `var.talos_version` | CA keypairs, bootstrap token, etcd certs | L3: all Talos machine configs |
 
-**If tofu state is lost**: restore the state or import surviving resources before
-applying. Recover Talos machine secrets from `secrets/talos-machine-secrets.sops.yaml`
-using the import procedure in `cluster/terraform/main/talos-machine-secrets.tf`.
-Preserve the Nebula identities in `secrets/nebula/`.
+**If tofu state is lost** (cluster still running): restore the state or `tofu import`
+the surviving resources (Proxmox users, roles and tokens) before applying. Recover Talos
+machine secrets from `secrets/talos-machine-secrets.sops.yaml` using the import procedure
+in `cluster/terraform/main/talos-machine-secrets.tf`. Preserve the Nebula identities in
+`secrets/nebula/`; they and the cluster age key (`secrets/shared/cluster-secrets-age.yaml`)
+are SOPS-backed in git, so they survive state loss. Then `tofu apply` to reconcile state
+with reality. If Flux is still running, L5 and above need no action.
 
 ## L3: Infrastructure
 
@@ -203,9 +207,7 @@ If the CA changed, existing kubelet TLS state is invalid:
 
 **If only Nebula certificates rotate**: deploy the updated identities; retain kubelet TLS state when the Kubernetes CA is unchanged.
 
-## Recovery Scenarios
-
-### Full bootstrap from zero
+## Full bootstrap from zero
 
 1. Ensure the operator can decrypt SOPS inputs and reach the infrastructure APIs
 2. Ensure L1 SOPS secrets exist in git (Nebula identities, cluster age key, infrastructure credentials)
@@ -215,23 +217,5 @@ If the CA changed, existing kubelet TLS state is invalid:
 6. Deploy the persisted Nebula identities and exported kubelet bootstrap material to NixOS workers
 7. Migrate state to in-cluster PG: `tofu init -migrate-state` — **verify with `tofu state list` before deleting temp PG**
 
-### Lost tofu state (but cluster running)
-
-1. Import existing resources: `tofu import` for Proxmox users/roles/tokens
-2. Preserve persisted Nebula identities and import the SOPS-backed Talos machine secrets
-3. `tofu apply` to reconcile state with reality
-4. If Flux still running: no action needed for L5+
-
-### Lost Nebula CA
-
-1. Generate new CA: `nebula-cert ca -name "allegedly.works"`
-2. Write cert to `secrets/nebula/ca.crt`, encrypt key to `secrets/nebula/ca.sops.key`
-3. Regenerate and persist every node identity (see <secrets.md> "Generating a new cert")
-4. `tofu apply` to embed the new Talos node certificates and keys
-5. `nixos-rebuild switch` on NixOS workers; `ansible-playbook atlas.yaml --tags nebula`
-
-### Lost cluster age key
-
-Regenerate and redeploy per <secrets.md> § "Rotating the Cluster Age Key". The
-key is also SOPS-backed in `secrets/shared/cluster-secrets-age.yaml`, so it
-survives tofu-state loss.
+To recover one lost layer instead, use that layer's "If … is lost" paragraph (L1: Nebula CA, cluster age key,
+cluster tokens, OVH credentials; L2: tofu state).

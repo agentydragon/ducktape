@@ -7,6 +7,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
+	"google.golang.org/protobuf/proto"
 )
 
 const fakeWakeServiceSPIFFEID = "spiffe://fake-wake-service.invalid/runner"
@@ -54,7 +55,7 @@ func TestWakeCallerMapsActionAttributionToServiceAndPreservesOtherKinds(t *testi
 			attribution: &AdmissionAttribution{EffectiveCaller: account},
 			check: func(caller lifecycle.WakeCaller) bool {
 				got, ok := caller.(lifecycle.AccountWakeCaller)
-				return ok && sameServiceAccountIdentity(got.Account, account)
+				return ok && proto.Equal(got.Account, account)
 			},
 		},
 		{

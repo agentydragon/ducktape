@@ -14,12 +14,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-const (
-	autosuspendBootstrap = "Bootstrap"
-	autosuspendAdmission = "Admission"
-	// Keep the stable EnvironmentRuntimeFacts enum value while execution is carried over typed gRPC.
-	autosuspendExecution = "ExecutorRelay"
-)
+const autosuspendAdmission = "Admission"
 
 func (r *Runtime) harnessHostSessions(ctx context.Context) ([]*harnesshostpb.Session, error) {
 	sessions, err := r.sessionInventory(ctx)
@@ -151,7 +146,7 @@ func sessionLifecycleBlocker(blocker lifecycle.Blocker) *sessionpb.EnvironmentRu
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_SESSION_PROCESS
 	case lifecycle.CodexAppServerPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_CODEX_APP_SERVER
-	case lifecycle.CodexExecServerPending:
+	case lifecycle.ExecutionBackendPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_CODEX_EXEC_SERVER
 	case lifecycle.BootstrapPending:
 		kind = sessionpb.EnvironmentRuntimeLifecycleBlockerKind_ENVIRONMENT_RUNTIME_LIFECYCLE_BLOCKER_KIND_BOOTSTRAP

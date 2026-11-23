@@ -14,11 +14,12 @@ than failing, since the harness is the writer and a newer pin may add kinds. Inb
 parsed with `wire.parse_frame`; outbound frames are the models the drivers construct, serialized at
 the pipe.
 
-Three consumers: the live-capture probe in <capture/README.md>, which runs a scenario against a
-real model; the [scripted harness tests](#scripted-harness-tests), which drive the same run facades
-against a loopback model the test controls; and Runtime in <../env/runtime/docs/session_protocol.md>, which reuses
-the frame constructors and launch configuration behind its harness-neutral protocol over its own
-supervised native-process pipe (`../env/runtime/supervision/`).
+Two consumers: the live-capture probe in <capture/README.md>, which runs a scenario against a
+real model, and the [scripted harness tests](#scripted-harness-tests), which drive the same run facades
+against a loopback model the test controls. Runtime (<../env/runtime/docs/session_protocol.md>) is not
+one: its Go adapters in `../env/runtime/internal/harnesses/` parse and build the harness frames
+themselves behind its harness-neutral protocol, over its own supervised native-process pipe
+(`../env/runtime/supervision/`).
 
 ## Scripted harness tests
 

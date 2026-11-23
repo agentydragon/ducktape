@@ -6,8 +6,6 @@ use crate::*;
 
 use raw_js_test_support::parse;
 
-// --- Redundant `purity: pure` hint detection ---------------------------
-
 /// Run `analyze_chunk` with the given hints applied, then
 /// return the list of `(binding_name, reason)` pairs the analyzer
 /// reports as redundant. Used by the test cases below to pin the
@@ -183,8 +181,6 @@ fn hint_on_opaque_key_accessor_is_load_bearing() {
         )]
     );
 }
-
-// --- Redundant `pure_members` hint detection ---------------------------
 
 fn pure_member_hints(
     entries: &[(&str, &[&str])],

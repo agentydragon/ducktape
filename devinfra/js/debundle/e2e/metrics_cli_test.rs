@@ -3,8 +3,8 @@
 use debundle_e2e_support::run_rejection_fixture_with_args;
 use debundle_e2e_support::saved_analysis::{path, rejected_split};
 use debundle_e2e_support::{
-    FixtureOpts, Member, analyzer_path, assert_entry_output, logical_module, projector_path,
-    run_fixture, run_fixture_with_args, write_validate_fixture_spec,
+    FixtureOpts, Member, analyzer_path, assert_entry_output, logical_module, process,
+    projector_path, run_fixture, run_fixture_with_args, write_validate_fixture_spec,
 };
 use serde_json::Value;
 use std::fs;
@@ -92,12 +92,7 @@ fn standalone_project_analysis_and_analyze_export_metrics_with_standard_resource
         service_name,
         resource_attributes,
     );
-    assert!(
-        projection_result.status.success(),
-        "standalone project-analysis exited {:?}\nstderr:\n{}",
-        projection_result.status.code(),
-        String::from_utf8_lossy(&projection_result.stderr),
-    );
+    process::assert_success(&projection_result);
     assert!(
         projection.is_file(),
         "project-analysis wrote its projection"
@@ -147,12 +142,7 @@ fn standalone_project_analysis_and_analyze_export_metrics_with_standard_resource
         service_name,
         resource_attributes,
     );
-    assert!(
-        analysis_result.status.success(),
-        "standalone analyze exited {:?}\nstderr:\n{}",
-        analysis_result.status.code(),
-        String::from_utf8_lossy(&analysis_result.stderr),
-    );
+    process::assert_success(&analysis_result);
     assert!(analysis.is_file(), "analyze wrote its artifact");
     let analysis_rows = read_metrics(&analysis_metrics);
     assert!(!analysis_rows.is_empty(), "analyze exported metric records");

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/harness"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	"go.uber.org/zap"
 )
@@ -13,7 +14,7 @@ import (
 func (s *Session) runSetup(ctx context.Context, script string) error {
 	err := s.deps.waitBootstrap(ctx)
 	if err == nil {
-		err = s.Emit(ctx, observation(&eventpb.SetupStarted{}), nil)
+		err = s.Emit(ctx, harness.Observation(&eventpb.SetupStarted{}), nil)
 	}
 	if err == nil {
 		cwd, e := s.deps.ensureWorkspace(ctx, s.Session().Cwd)
@@ -27,16 +28,16 @@ func (s *Session) runSetup(ctx context.Context, script string) error {
 				} else {
 					out.Stream = &eventpb.SetupOutput_Stderr{Stderr: data}
 				}
-				return s.Emit(ctx, observation(out), nil)
+				return s.Emit(ctx, harness.Observation(out), nil)
 			})
 			if err == nil {
-				err = s.Emit(ctx, observation(&eventpb.SetupFinished{ExitCode: int32(code)}), nil)
+				err = s.Emit(ctx, harness.Observation(&eventpb.SetupFinished{ExitCode: int32(code)}), nil)
 			}
 		}
 	}
 	if err != nil {
 		zap.L().Error("session setup interrupted", zap.String("session", s.id), zap.Error(err))
-		if outcomeErr := s.Emit(ctx, observation(&eventpb.SetupInterrupted{}), nil); outcomeErr != nil {
+		if outcomeErr := s.Emit(ctx, harness.Observation(&eventpb.SetupInterrupted{}), nil); outcomeErr != nil {
 			return errors.Join(err, outcomeErr)
 		}
 	}

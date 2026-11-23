@@ -181,6 +181,9 @@ immutable: false
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "home-assistant", "controlledValues": "RequestsOnly", "minAllowed": {"memory": "512Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "caddy", "controlledValues": "RequestsOnly", "minAllowed": {"memory": "40Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
+    goldilocks.fairwinds.com/vpa-update-mode: initial
   labels:
     app.kubernetes.io/name: home-assistant
   name: home-assistant

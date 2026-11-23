@@ -4,27 +4,32 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/adapter"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/codexexecserver"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/backend"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
+	"github.com/agentydragon/ducktape/agentplane/env/runtime/execution/typedproxy"
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/supervision"
 	"github.com/sethvargo/go-retry"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 )
 
 // ErrFencedBackendLoss reports an established executor backend loss after the
-// Execution adapter drained and the backend's process domain was fenced. For the
+// Execution adapter closed and the backend's process domain was fenced. For the
 // companion backend this includes proof of a fresh idle executor generation.
 // Runtime can replace the API lifetime without replacing Runtime.
 var ErrFencedBackendLoss = errors.New("execution backend loss was fenced")
 
-// RunEmbedded keeps the native backend under the Runtime process lifetime. The
+// RunEmbedded keeps the supervised backend under the Runtime process lifetime. The
 // Runtime holds the environment owner and serializes attempts through its Execution
 // controller; each prior service must return fenced before its successor starts.
-// The ready callback publishes the typed adapter after native readiness.
+// The ready callback publishes the typed adapter after backend readiness.
 func RunEmbedded(ctx context.Context, config Config, ready func(executorpb.ExecutorServer, context.Context)) error {
 	if ready == nil {
 		return errors.New("embedded Execution API requires a ready callback")
@@ -39,12 +44,12 @@ func runOwned(ctx context.Context, config Config, ready func(executorpb.Executor
 		return err
 	}
 	var supervisor *supervision.Supervisor
-	switch config.Backend {
-	case "companion":
+	switch config.Owner {
+	case backend.OwnerCompanion:
 		fence, finish := context.WithTimeout(ctx, 90*time.Second)
-		err = codexexecserver.FenceContainer(fence, config.ContainerSocket, "")
+		err = backend.FenceContainer(fence, config.ContainerSocket, "")
 		finish()
-	case "systemd":
+	case backend.OwnerSystemd:
 		supervisor = config.Supervisor
 	}
 	if err != nil {
@@ -56,18 +61,25 @@ func runOwned(ctx context.Context, config Config, ready func(executorpb.Executor
 			return config.ProcessHost.Launch(ctx, "execution-service", config.ProcessGeneration, supervisor, processConfig)
 		}
 	}
-	return runWithReady(ctx, config, codexexecserver.NativeStart(codexexecserver.NativeConfig{
-		Config: codexexecserver.Config{URL: config.ExecutorURL, ContainerSocket: config.ContainerSocket}, Binary: config.Binary,
-		StateDir: config.WorkingDirectory, Environment: config.Environment, Supervisor: supervisor, LaunchProcess: launchProcess,
+	return runWithReady(ctx, config, backend.StartOwned(backend.StartConfig{
+		Config: backend.Config{
+			URL: config.ExecutorURL, Owner: config.Owner, ContainerSocket: config.ContainerSocket,
+			Implementation: config.Implementation, LimitsJSON: config.LimitsJSON, Placement: config.Placement,
+		},
+		Binary: config.binary(), StateDir: config.WorkingDirectory, Environment: config.Environment, Supervisor: supervisor, CommandSupervisor: config.CommandSupervisor, LaunchProcess: launchProcess,
 	}), ready)
 }
 
-func runWithReady(ctx context.Context, config Config, start codexexecserver.Start, ready func(executorpb.ExecutorServer, context.Context)) (result error) {
+func runWithReady(ctx context.Context, config Config, start backend.Start, ready func(executorpb.ExecutorServer, context.Context)) (result error) {
 	readinessConfig, err := config.Readiness.Resolve()
 	if err != nil {
 		return err
 	}
 	config.Readiness = readinessConfig
+	config.Implementation, err = backend.ResolveImplementation(config.Implementation)
+	if err != nil {
+		return err
+	}
 	lifetime, cancel := context.WithCancel(ctx)
 	defer cancel()
 	instance, err := start(lifetime)
@@ -98,11 +110,35 @@ func runWithReady(ctx context.Context, config Config, start codexexecserver.Star
 		case <-lifetime.Done():
 		}
 	}()
+	var backendConn *grpc.ClientConn
+	checkBackend := adapter.ProbeAt(config.ExecutorURL)
+	if config.Implementation == backend.ImplementationNative {
+		endpoint, err := url.Parse(config.ExecutorURL)
+		if err != nil {
+			return err
+		}
+		backendConn, err = grpc.NewClient("passthrough:///"+endpoint.Host, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		if err != nil {
+			return err
+		}
+		defer backendConn.Close()
+		healthClient := healthpb.NewHealthClient(backendConn)
+		checkBackend = func(ctx context.Context) error {
+			result, err := healthClient.Check(ctx, &healthpb.HealthCheckRequest{})
+			if err != nil {
+				return err
+			}
+			if result.GetStatus() != healthpb.HealthCheckResponse_SERVING {
+				return errors.New("typed execution backend is not serving")
+			}
+			return nil
+		}
+	}
 	readiness, endReadiness := context.WithTimeout(lifetime, config.Readiness.Timeout)
 	err = retry.Do(readiness, retry.NewConstant(config.Readiness.ProbeInterval), func(ctx context.Context) error {
 		probeCtx, endProbe := context.WithTimeout(ctx, config.Readiness.ProbeTimeout)
 		defer endProbe()
-		if err := codexexecserver.ProbeAt(config.ExecutorURL)(probeCtx); err != nil {
+		if err := checkBackend(probeCtx); err != nil {
 			return retry.RetryableError(err)
 		}
 		return nil
@@ -115,7 +151,7 @@ func runWithReady(ctx context.Context, config Config, start codexexecserver.Star
 				if backendErr == nil {
 					backendErr = errors.New("execution backend stopped")
 				}
-				if errors.Is(backendErr, codexexecserver.ErrExecutionBackendLost) {
+				if errors.Is(backendErr, backend.ErrExecutionBackendLost) {
 					fencedBackendLoss = backendErr
 					return nil
 				}
@@ -130,19 +166,29 @@ func runWithReady(ctx context.Context, config Config, start codexexecserver.Star
 		}
 		return fmt.Errorf("execution backend readiness: %w", err)
 	}
-	go func() {
-		if err := codexexecserver.Monitor(lifetime, config.ExecutorURL); err != nil {
+	monitor := func(label string, check backend.Probe) {
+		if err := backend.Monitor(lifetime, label, check); err != nil {
 			select {
 			case backendDone <- err:
 			default:
 			}
 			cancel()
 		}
-	}()
-	executionAdapter, err := adapter.New(adapter.Config{
-		Context: lifetime, Admit: config.admit,
-		Acquire: func(context.Context) (string, error) { return config.ExecutorURL, nil },
-	})
+	}
+	go monitor("execution backend stopped responding", checkBackend)
+
+	var executionAdapter interface {
+		executorpb.ExecutorServer
+		Close() error
+	}
+	if config.Implementation == backend.ImplementationCodex {
+		executionAdapter, err = adapter.New(adapter.Config{
+			Context: lifetime, Admit: config.admit,
+			Acquire: func(context.Context) (string, error) { return config.ExecutorURL, nil },
+		})
+	} else {
+		executionAdapter, err = typedproxy.New(lifetime, executorpb.NewExecutorClient(backendConn), config.admit)
+	}
 	if err != nil {
 		return err
 	}
@@ -176,7 +222,7 @@ func runWithReady(ctx context.Context, config Config, start codexexecserver.Star
 		default:
 		}
 	}
-	if errors.Is(err, codexexecserver.ErrExecutionBackendLost) {
+	if errors.Is(err, backend.ErrExecutionBackendLost) {
 		fencedBackendLoss = err
 		err = nil
 	}
@@ -195,17 +241,28 @@ func (c Config) admit(ctx context.Context, scope *executorpb.ExecutionScope, _ b
 	if scope == nil || scope.Destination == nil || scope.Destination.Owner == nil || scope.SessionId == "" || len(scope.SessionId) > 128 {
 		return status.Error(codes.InvalidArgument, "execution scope is incomplete")
 	}
-	destination := scope.Destination
-	if destination.Target == nil || destination.Target.Namespace == "" || destination.Target.Name == "" || destination.Target.Uid == "" ||
-		destination.Target.Namespace != c.Namespace || destination.Target.Name != c.SandboxName || destination.Target.Uid != c.SandboxUID ||
-		destination.Owner == nil || destination.Owner.Namespace != destination.Target.Namespace || destination.Owner.Name != c.SandboxName {
-		return status.Error(codes.PermissionDenied, "execution destination names another Sandbox")
-	}
-	if scope.ExpectedIncarnationUid != c.IncarnationUID {
-		return status.Error(codes.FailedPrecondition, "Sandbox incarnation changed")
+	if err := ValidateScopeBinding(scope, c.Namespace, c.SandboxName, c.SandboxUID, c.IncarnationUID); err != nil {
+		return err
 	}
 	if err := ctx.Err(); err != nil {
 		return status.FromContextError(err).Err()
 	}
 	return accept(ctx)
+}
+
+// ValidateScopeBinding checks the request destination and expected incarnation
+// against one Sandbox. FailedPrecondition means the destination matched but
+// the incarnation differed. Each caller validates shape and proves its authority.
+func ValidateScopeBinding(scope *executorpb.ExecutionScope, namespace, name, sandboxUID, incarnationUID string) error {
+	destination := scope.GetDestination()
+	target, owner := destination.GetTarget(), destination.GetOwner()
+	if target.GetNamespace() == "" || target.GetName() == "" || target.GetUid() == "" ||
+		target.GetNamespace() != namespace || target.GetName() != name || target.GetUid() != sandboxUID ||
+		owner.GetNamespace() != namespace || owner.GetName() != name {
+		return status.Error(codes.PermissionDenied, "execution destination names another Sandbox")
+	}
+	if scope.GetExpectedIncarnationUid() != incarnationUID {
+		return status.Error(codes.FailedPrecondition, "Sandbox incarnation changed")
+	}
+	return nil
 }

@@ -77,6 +77,38 @@ def wait_for_view(view, qapp, timeout=15.0, poll_interval=0.05):
     raise TimeoutError(f"TechDraw view not ready after {timeout}s")
 
 
+def landscape_page(doc):
+    """Add a blank A4 landscape drawing page to the document."""
+    tmpl_path = os.path.join(FreeCAD.getResourceDir(), "Mod", "TechDraw", "Templates", "ISO", "A4_Landscape_blank.svg")  # noqa: PTH118
+    page = doc.addObject("TechDraw::DrawPage", "Page")
+    tmpl = doc.addObject("TechDraw::DrawSVGTemplate", "Template")
+    tmpl.Template = tmpl_path
+    page.Template = tmpl
+    return page
+
+
+def top_view(doc, page, source, qapp):
+    """Make the 1:1 top view used by the planar examples and wait for its visible edges."""
+    view = doc.addObject("TechDraw::DrawViewPart", "TopView")
+    page.addView(view)
+    view.Source = [source]
+    view.Direction = FreeCAD.Vector(0, 0, 1)
+    view.Scale = 1.0
+    view.X = 150
+    view.Y = 120
+
+    log("recompute + wait_for_view (TechDraw HLR)")
+    doc.recompute(None, True, True)
+    wait_for_view(view, qapp)
+    doc.recompute(None, True, True)
+    pump(qapp, 0.5)
+
+    n_edges = len(view.getVisibleEdges())
+    log(f"TechDraw view: {n_edges} visible edges")
+    assert n_edges > 0, "TechDraw view has 0 edges — Qt event pump may have failed"
+    return view
+
+
 def run_gui_script(qapp, fn):
     """Schedule fn to run after QApplication::exec() starts, always quitting exec() on completion.
 
@@ -97,7 +129,7 @@ def run_gui_script(qapp, fn):
             for name in list(FreeCAD.listDocuments().keys()):
                 FreeCAD.closeDocument(name)
         except Exception:
-            pass
+            traceback.print_exc(file=sys.stderr)
 
     def _wrapper():
         try:

@@ -11,12 +11,16 @@ MCP server providing Claude Desktop access to the [Habitify API](https://docs.ha
 ## Setup
 
 ```bash
-pip install -e .
 export HABITIFY_API_KEY=your_key  # From Habitify app settings
-habitify install  # Installs to Claude Desktop
+bb run //x/habitify_mcp:habitify_cli -- mcp
 ```
 
-CLI: `habitify mcp` (stdio), `habitify mcp --transport=sse --port=8080`, `habitify test`.
+CLI: `bb run //x/habitify_mcp:habitify_cli -- <cmd>` with `mcp` (stdio) or `mcp --transport=sse --port=8080`.
+
+Claude Desktop registration needs a server launcher that survives Bazel cleanup. The experimental
+`install` command writes a Python MCP SDK entry. That SDK rejects the Habitify FastMCP factory at startup.
+See the [local server configuration guide](https://modelcontextprotocol.io/docs/develop/connect-local-servers)
+for the Desktop launch contract.
 
 ## Environment Variables
 
@@ -25,4 +29,14 @@ CLI: `habitify mcp` (stdio), `habitify mcp --transport=sse --port=8080`, `habiti
 
 ## Development
 
-API reference examples in `habitify_api_reference/` (regenerate with `python collect_references.py`).
+Launch [MCP Inspector](https://modelcontextprotocol.io/docs/2026-07-28/tools/inspector)
+with the Habitify stdio server. Install Node.js with `npx` using a version supported by Inspector.
+
+```bash
+bb run //x/habitify_mcp:mcp_dev_runner
+```
+
+Set `HABITIFY_API_KEY` in the environment or pass `--api-key` after `--`.
+Pass `--debug` for verbose server logs. The runner removes its private session config when Inspector exits.
+
+API reference captures: [`api_reference/`](api_reference/README.md). Read its collector warning before regenerating them.

@@ -45,7 +45,7 @@ const (
 // IsServiceURI accepts the fixed first-party service identities. Workload credential
 // URIs have a separate grammar and are never service identities.
 func IsServiceURI(uri string) bool {
-	return uri == SessionsURI || uri == RuntimeProxyURI || uri == EnvironmentsURI || uri == AppURI || uri == MCPEdgeURI || uri == GatewayURI || uri == SandboxControllerURI || isWorkloadServiceURI(uri)
+	return uri == SessionsURI || uri == RuntimeProxyURI || uri == EnvironmentsURI || uri == AppURI || uri == GatewayURI || isWorkloadServiceURI(uri)
 }
 
 // EgressProxyURI is the fixed identity of the optional workload-authenticated
@@ -175,17 +175,6 @@ func (c Config) ServerCredentials(expectedPeerURI string) (credentials.Transport
 		return nil, err
 	}
 	return newExpiringCredentials(tlsconfig.MTLSServerConfig(source, clients, authorize(expected, x509.ExtKeyUsageClientAuth)), true), nil
-}
-
-// WorkloadServerCredentials creates mTLS server credentials for the fixed
-// egress identity and a live EnvironmentRuntime peer. Established connections
-// close when either selected leaf certificate expires.
-func (c Config) WorkloadServerCredentials(localURI string) (credentials.TransportCredentials, error) {
-	config, err := c.WorkloadServerTLSConfig(localURI)
-	if err != nil {
-		return nil, err
-	}
-	return newExpiringCredentials(config, true), nil
 }
 
 // ClientTLSConfig creates HTTPS proxy credentials pinned to the egress proxy's
@@ -423,9 +412,7 @@ func peerIdentityFromTLSState(state tls.ConnectionState, usage *x509.ExtKeyUsage
 		return "", fmt.Errorf("TLS peer identity: %w", err)
 	}
 	if _, err := parseIdentity(id.String()); err != nil {
-		if id.String() != EgressProxyURI {
-			return "", fmt.Errorf("TLS peer has an unsupported identity: %w", err)
-		}
+		return "", fmt.Errorf("TLS peer has an unsupported identity: %w", err)
 	}
 	return id.String(), nil
 }

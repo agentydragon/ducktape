@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"reflect"
 	"slices"
 	"testing"
@@ -22,6 +21,7 @@ import (
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/testing/grpcmethods"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -85,7 +85,8 @@ func fixture(t *testing.T, objects ...client.Object) (policyClients, *serviceTes
 	return fixtureWithWriters(t, []string{peertls.AppURI}, objects...)
 }
 
-func fixtureWithWriters(t *testing.T, writers []string, objects ...client.Object) (policyClients, *serviceTestClient) {
+// newTestService is the PolicyService over a fake cluster holding objects, with its per-method admission rules.
+func newTestService(t *testing.T, readers, writers []string, objects ...client.Object) (*Service, auth.Methods, *serviceTestClient) {
 	t.Helper()
 	scheme := runtime.NewScheme()
 	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, policyapi.AddToScheme, sandboxapi.AddToScheme, workloadapi.AddToScheme} {
@@ -94,7 +95,7 @@ func fixtureWithWriters(t *testing.T, writers []string, objects ...client.Object
 		}
 	}
 	kube := &serviceTestClient{WithWatch: fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()}
-	service, err := New("policies", []string{"policies", "fake-workloads"}, kube, []string{peertls.AppURI}, writers)
+	service, err := New("policies", []string{"policies", "fake-workloads"}, kube, readers, writers)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,6 +103,12 @@ func fixtureWithWriters(t *testing.T, writers []string, objects ...client.Object
 	if err != nil {
 		t.Fatal(err)
 	}
+	return service, methods, kube
+}
+
+func fixtureWithWriters(t *testing.T, writers []string, objects ...client.Object) (policyClients, *serviceTestClient) {
+	t.Helper()
+	service, methods, kube := newTestService(t, []string{peertls.AppURI}, writers, objects...)
 	connection := grpcmethods.ServeTLSWithTimeout(t, time.Second, peertls.PolicyControllerURI, methods, func(server *grpc.Server) {
 		policypb.RegisterPolicyServiceServer(server, service)
 	}, peertls.AppURI, peertls.NotificationsURI)
@@ -113,22 +120,7 @@ func fixtureWithWriters(t *testing.T, writers []string, objects ...client.Object
 }
 
 func TestPolicyServicePeerTLSUsesSeparateReadAndWriteAllowlists(t *testing.T) {
-	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, policyapi.AddToScheme, sandboxapi.AddToScheme, workloadapi.AddToScheme} {
-		if err := add(scheme); err != nil {
-			t.Fatal(err)
-		}
-	}
-	kube := &serviceTestClient{WithWatch: fake.NewClientBuilder().WithScheme(scheme).WithObjects(policySet("base")).Build()}
-	service, err := New("policies", []string{"policies", "fake-workloads"}, kube,
-		[]string{peertls.ActionsURI}, []string{peertls.EgressProxyURI})
-	if err != nil {
-		t.Fatal(err)
-	}
-	methods, err := service.Methods()
-	if err != nil {
-		t.Fatal(err)
-	}
+	service, methods, _ := newTestService(t, []string{peertls.ActionsURI}, []string{peertls.EgressProxyURI}, policySet("base"))
 
 	for _, method := range grpcmethods.Of(policypb.PolicyService_ServiceDesc) {
 		ctx := metadata.NewIncomingContext(t.Context(), metadata.Pairs("authorization", "Bearer test-token"))
@@ -147,16 +139,11 @@ func TestPolicyServicePeerTLSUsesSeparateReadAndWriteAllowlists(t *testing.T) {
 	}
 	server := grpc.NewServer(append(methods.ServerOptions(time.Second), grpc.Creds(serverCredentials))...)
 	policypb.RegisterPolicyServiceServer(server, service)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
+	address := grpcserver.Serve(t, server)
 
 	dial := func(t *testing.T, tlsConfig *tls.Config) policypb.PolicyServiceClient {
 		t.Helper()
-		connection, err := grpc.NewClient(listener.Addr().String(), grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+		connection, err := grpc.NewClient(address, grpc.WithNoProxy(), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -226,9 +213,7 @@ func testContext(t *testing.T) context.Context {
 
 func tokenContext(t *testing.T, token string) context.Context {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	t.Cleanup(cancel)
-	return metadata.NewOutgoingContext(ctx, metadata.Pairs("authorization", "Bearer "+token))
+	return metadata.NewOutgoingContext(testContext(t), metadata.Pairs("authorization", "Bearer "+token))
 }
 
 func binding(name, subject string, sets ...string) *policyapi.PolicyBinding {
@@ -246,33 +231,28 @@ func policySet(name string) *policyapi.PolicySet {
 	return &policyapi.PolicySet{ObjectMeta: metav1.ObjectMeta{Namespace: "policies", Name: name, UID: types.UID("uid-" + name), Generation: 1}, Spec: policyapi.PolicySetSpec{Rules: []policyapi.Rule{{Type: "action_auto_approve", Policy: &policyapi.ActionPolicy{Type: "exact_actions", Actions: map[string]policyapi.ActionNames{"group": {"inspect", "write"}}}}}}}
 }
 
-func TestPolicyWritesAreRestrictedToTheConfiguredWriterService(t *testing.T) {
-	api, _ := fixture(
-		t,
-		testSandbox("worker", "sandbox-uid"), testIdentity("agent-worker", nil), policySet("base"),
-	)
-	grant := &policypb.GrantSandboxPolicyBindingRequest{SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", PolicySets: []string{"base"}}
-	if _, err := api["unlisted"].GrantSandboxPolicyBinding(testContext(t), grant); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("non-writer grant: %v", err)
-	}
-	revoke := &policypb.RevokeSandboxPolicyBindingRequest{SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", BindingName: "grant", BindingUid: "binding-uid"}
-	if _, err := api["unlisted"].RevokeSandboxPolicyBinding(testContext(t), revoke); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("non-writer revoke: %v", err)
-	}
-}
-
-func TestEmptyWriterAllowlistDeniesPolicyWrites(t *testing.T) {
-	api, _ := fixtureWithWriters(
-		t, nil,
-		testSandbox("worker", "sandbox-uid"), testIdentity("agent-worker", nil), policySet("base"),
-	)
-	grant := &policypb.GrantSandboxPolicyBindingRequest{SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", PolicySets: []string{"base"}}
-	if _, err := api["app"].GrantSandboxPolicyBinding(testContext(t), grant); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("grant with empty writer allowlist: %v", err)
-	}
-	revoke := &policypb.RevokeSandboxPolicyBindingRequest{SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", BindingName: "grant", BindingUid: "binding-uid"}
-	if _, err := api["app"].RevokeSandboxPolicyBinding(testContext(t), revoke); status.Code(err) != codes.PermissionDenied {
-		t.Fatalf("revoke with empty writer allowlist: %v", err)
+func TestPolicyWritesAreDeniedToCallersOutsideTheWriterAllowlist(t *testing.T) {
+	for name, tc := range map[string]struct {
+		writers []string
+		caller  string
+	}{
+		"a caller the allowlist does not name": {[]string{peertls.AppURI}, "unlisted"},
+		"an empty allowlist":                   {nil, "app"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			api, _ := fixtureWithWriters(
+				t, tc.writers,
+				testSandbox("worker", "sandbox-uid"), testIdentity("agent-worker", nil), policySet("base"),
+			)
+			grant := &policypb.GrantSandboxPolicyBindingRequest{SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", PolicySets: []string{"base"}}
+			if _, err := api[tc.caller].GrantSandboxPolicyBinding(testContext(t), grant); status.Code(err) != codes.PermissionDenied {
+				t.Fatalf("grant: %v", err)
+			}
+			revoke := &policypb.RevokeSandboxPolicyBindingRequest{SandboxNamespace: "policies", SandboxName: "worker", SandboxUid: "sandbox-uid", BindingName: "grant", BindingUid: "binding-uid"}
+			if _, err := api[tc.caller].RevokeSandboxPolicyBinding(testContext(t), revoke); status.Code(err) != codes.PermissionDenied {
+				t.Fatalf("revoke: %v", err)
+			}
+		})
 	}
 }
 

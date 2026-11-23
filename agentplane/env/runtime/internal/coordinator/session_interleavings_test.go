@@ -3,7 +3,6 @@ package coordinator
 import (
 	"context"
 	"fmt"
-	"net"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
@@ -213,10 +213,6 @@ func TestForwardedInterruptCannotAdmitAfterQuiescedBoundary(t *testing.T) {
 	var once sync.Once
 	releaseCall := func() { once.Do(func() { close(release) }) }
 	t.Cleanup(releaseCall)
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer(grpc.UnaryInterceptor(func(ctx context.Context, request any, _ *grpc.UnaryServerInfo, next grpc.UnaryHandler) (any, error) {
 		if interrupt, ok := request.(*harnesshostpb.InterruptTurnRequest); ok && interrupt.GetCommandId() == "delayed-interrupt" {
 			close(entered)
@@ -230,9 +226,7 @@ func TestForwardedInterruptCannotAdmitAfterQuiescedBoundary(t *testing.T) {
 	}))
 	environmentruntimepb.RegisterEnvironmentRuntimeServer(server, r.control)
 	harnesshostpb.RegisterHarnessHostServer(server, &harnessHost{runtime: r})
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(grpcserver.Serve(t, server), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		t.Fatal(err)
 	}

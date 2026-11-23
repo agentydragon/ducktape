@@ -4,18 +4,19 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Final, cast
 
 import aiodocker
 import anyio
 from fastmcp.server import FastMCP
 from tenacity import AsyncRetrying, retry_if_result, wait_fixed
 
-from mcp_infra.constants import SLEEP_FOREVER_CMD
 from mcp_infra.exec.docker.types import ContainerExecServerConfig, ResolvedExecInput
 from util.exec.models import MAX_BYTES_CAP, BaseExecResult, render_raw_to_result
 
 logger = logging.getLogger(__name__)
+
+SLEEP_FOREVER_CMD: Final[list[str]] = ["/bin/sh", "-lc", "sleep infinity"]
 
 # Docker exec stream type codes
 STREAM_TYPE_STDOUT = 1
@@ -26,7 +27,7 @@ DOCKER_EXIT_GRACE_S = 5
 @dataclass
 class ContainerSessionState:
     docker_client: aiodocker.Docker
-    container_id: str | None
+    container_id: str
     opts: ContainerExecServerConfig
 
 
@@ -70,6 +71,8 @@ async def scoped_container(client: aiodocker.Docker, config: ContainerExecServer
     try:
         yield container_id
     finally:
+        # Shielded because a client disconnect can cancel the enclosing AnyIO scope (seen with an in-process
+        # FastMCP client); `asyncio.shield` would not help. See mcp_infra/AGENTS.md § MCP conventions.
         with anyio.CancelScope(shield=True):
             try:
                 container = await client.containers.get(container_id)
@@ -87,9 +90,6 @@ async def scoped_container(client: aiodocker.Docker, config: ContainerExecServer
                 logger.exception(f"Container cleanup failed for {container_id}")
 
 
-# ---- Lifespan factory (per-session container) ----
-
-
 def make_container_lifespan(config: ContainerExecServerConfig, docker_client: aiodocker.Docker):
     """Create lifespan context manager for container session.
 
@@ -103,9 +103,6 @@ def make_container_lifespan(config: ContainerExecServerConfig, docker_client: ai
             yield ContainerSessionState(docker_client=docker_client, container_id=container_id, opts=config)
 
     return lifespan
-
-
-# ---- Helpers (small, focused) ----------------------------------------------
 
 
 async def _collect_from_exec_stream(stream, stdout_buf: bytearray, stderr_buf: bytearray) -> None:
@@ -147,9 +144,6 @@ async def run_session_container(
 ) -> tuple[bytearray, bytearray, int | None, bool]:
     """Run command in per-session container using aiodocker exec."""
     container_id = session.container_id
-    if container_id is None:
-        raise RuntimeError("No per-session container available")
-
     logger.debug(f"Executing command in container {container_id[:12]}: {cmd!r} (timeout_ms={input.timeout_ms})")
 
     container_instance = await session.docker_client.containers.get(container_id)

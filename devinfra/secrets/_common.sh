@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
-# Shared helpers and common secrets for env scripts.
+# Shared helpers for env scripts.
 # Not intended to be run directly — sourced by cli_env.sh, web_env.sh, ci_env.sh.
-#
-# Age recipients that can decrypt secrets in this file:
-#   buildbuddy.yaml: admin, all user keys, claude-web
 #
 # On failure, writes diagnostics to stderr. Scripts export vars directly
 # into the current shell — source them, don't eval their stdout.

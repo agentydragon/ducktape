@@ -1,5 +1,5 @@
 from aiquota.models import QuotaWindow
-from aiquota.pace import binding_tint, compute_pace, tint_for
+from aiquota.pace import compute_pace, tint_for
 
 
 def test_compute_pace_on_track() -> None:
@@ -50,13 +50,3 @@ def test_tint_for_cool() -> None:
 
 def test_tint_for_unknown() -> None:
     assert tint_for(None, None, is_short=False) == "unknown"
-
-
-def test_binding_tint_short_hot_wins() -> None:
-    assert binding_tint("hot", "ok") == "hot"
-    assert binding_tint("hot", "cool") == "hot"
-
-
-def test_binding_tint_takes_worse() -> None:
-    assert binding_tint("warn", "ok") == "warn"
-    assert binding_tint("ok", "warn") == "warn"

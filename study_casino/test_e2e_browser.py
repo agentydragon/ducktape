@@ -8,22 +8,21 @@ stuck on `syncing`.
 from __future__ import annotations
 
 import asyncio
-import json
 import re
 import time
-import urllib.request
 from collections.abc import Iterator
 from pathlib import Path
-from typing import cast
 
 import pytest
-from playwright.async_api import Page, Route
-from python.runfiles import Runfiles
+from playwright.async_api import Page, Route, expect
 
+import study_casino.app
 from study_casino.app import create_app
 from study_casino.changelog import LATEST_CHANGELOG_ID
 from study_casino.config import Settings
-from util.testing.asgi import serve_app_sync
+from study_casino.conftest import post_json
+from study_casino.events import Card
+from testing.asgi import serve_app_sync
 
 # pytest_plugins loads util.playwright by name; gazelle cannot see the dependency.
 # gazelle:include_dep //util:playwright
@@ -35,8 +34,7 @@ pytest_plugins = ("util.playwright",)
 
 
 @pytest.fixture
-def casino_server(db_url: str) -> Iterator[str]:
-    frontend_dist = Path(str(Runfiles.CreateOrRaise().root() / "ducktape/study_casino/frontend/dist/index.html")).parent
+def casino_server(db_url: str, frontend_dist: Path) -> Iterator[str]:
     app = create_app(Settings(database_url=db_url, frontend_dist_dir=frontend_dist))
     with serve_app_sync(app) as base_url:
         yield base_url
@@ -44,36 +42,22 @@ def casino_server(db_url: str) -> Iterator[str]:
 
 def _attach_logs(page: Page) -> list[str]:
     logs: list[str] = []
-    page.on("pageerror", lambda e: logs.append(f"pageerror: {e}\n{getattr(e, 'stack', '')}"))
+    page.on("pageerror", lambda e: logs.append(f"pageerror: {e}\n{e.stack}"))
     page.on("console", lambda m: logs.append(f"[{m.type}] {m.text}"))
     return logs
 
 
-def _post_json(base_url: str, path: str, payload: dict[str, object]) -> dict[str, object]:
-    req = urllib.request.Request(
-        f"{base_url}{path}",
-        data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        assert resp.status == 200
-        decoded = json.loads(resp.read().decode())
-        assert isinstance(decoded, dict)
-        return cast(dict[str, object], decoded)
-
-
 def _ack_changelog(base_url: str) -> None:
     """Ack the changelog so the "what's new" modal doesn't intercept clicks."""
-    _post_json(
+    post_json(
         base_url,
         "/actions/changelog/ack",
         {"client_action_id": f"test.changelog:{time.time_ns()}", "last_id": LATEST_CHANGELOG_ID},
     )
 
 
-def _seed_credits(base_url: str, credits: int) -> None:
-    _post_json(
+def _seed_credits(base_url: str, credits: float) -> None:
+    post_json(
         base_url,
         "/actions/import",
         {
@@ -94,10 +78,7 @@ async def test_state_5xx_shows_offline_not_stuck_syncing(page: Page, casino_serv
 
     await page.route("**/state", handle_state)
     await page.goto(casino_server)
-    print(f"\n[e2e] page loaded for 5xx test, title={await page.title()!r}")
-
     await page.wait_for_selector("[data-testid='sync-banner-offline']", state="visible", timeout=30_000)
-    print(f"[e2e] offline banner appeared, logs={logs}")
     assert await page.locator("[data-testid='sync-banner-syncing']").count() == 0, (
         f"syncing banner still present\nlogs={logs}"
     )
@@ -105,12 +86,22 @@ async def test_state_5xx_shows_offline_not_stuck_syncing(page: Page, casino_serv
 
 async def test_roulette_spin_sets_finite_wheel_transform(page: Page, casino_server: str) -> None:
     """Roulette consumes the nested action result and animates toward a real pocket."""
-    await asyncio.to_thread(_seed_credits, casino_server, 100)
+    await asyncio.to_thread(_seed_credits, casino_server, 100.5)
     logs = _attach_logs(page)
 
     await page.goto(casino_server)
     await page.wait_for_selector("[data-testid='sync-icon-ok']", state="visible", timeout=30_000)
     await page.get_by_role("button", name="casino").click()
+    amount = page.get_by_role("spinbutton")
+    await amount.fill("0")
+    await expect(amount).to_have_value("1")
+    await amount.fill("200")
+    await expect(amount).to_have_value("100.5")
+    await page.get_by_role("button", name="5", exact=True).click()
+    await expect(amount).to_have_value("5")
+    await page.get_by_role("button", name="ALL", exact=True).click()
+    await expect(amount).to_have_value("100.5")
+    await page.get_by_role("button", name="10", exact=True).click()
     await page.get_by_role("button", name=re.compile(r"^Spin . 10 cr$")).click()
 
     await page.wait_for_function(
@@ -125,6 +116,94 @@ async def test_roulette_spin_sets_finite_wheel_transform(page: Page, casino_serv
     )
 
     assert not [line for line in logs if line.startswith("pageerror:")], f"browser errors during roulette spin\n{logs}"
+
+
+@pytest.fixture
+def blackjack_shoe(monkeypatch: pytest.MonkeyPatch) -> None:
+    # From the end: player 9 and 8, dealer 7 and K, then a 2 for hit or double.
+    shoe = [Card(rank=rank, suit="♠") for rank in ("2", "K", "8", "7", "9")]
+    monkeypatch.setattr(study_casino.app, "make_shoe", lambda _rng: shoe)
+
+
+@pytest.mark.usefixtures("blackjack_shoe")
+@pytest.mark.parametrize(("move", "credits", "payout"), [("stand", 15, 20), ("double", 20, 40)])
+async def test_blackjack_hides_hole_card_until_settlement(
+    page: Page, casino_server: str, move: str, credits: int, payout: int
+) -> None:
+    await asyncio.to_thread(_seed_credits, casino_server, credits)
+    logs = _attach_logs(page)
+    await page.goto(casino_server)
+    await page.wait_for_selector("[data-testid='sync-icon-ok']", state="visible", timeout=30_000)
+    await page.get_by_role("button", name="casino").click()
+    await page.get_by_role("button", name="blackjack").click()
+    await expect(page.get_by_role("button", name="25", exact=True)).to_be_disabled()
+    deal = page.get_by_role("button", name="Deal · 10 cr")
+    dealer = page.get_by_role("group", name="Dealer hand")
+    player = page.get_by_role("group", name="Player hand")
+    dealer_upcard = dealer.get_by_text("7 + ?", exact=True)
+    dealer_hole_card = dealer.get_by_text("K", exact=True)
+
+    async with page.expect_response("**/casino/blackjack/deal") as dealt:
+        await deal.click()
+    hand = (await (await dealt.value).json())["result"]
+    assert hand["dealer_cards"] == [{"rank": "7", "suit": "♠"}]
+    assert hand["dealer_value"] == 7
+    assert hand["settlement"] is None
+    await expect(dealer_upcard).to_be_visible()
+    await expect(dealer_hole_card).to_have_count(0)
+    await expect(player.get_by_text("17", exact=True)).to_be_visible()
+
+    hit = page.get_by_role("button", name="Hit", exact=True)
+    stand = page.get_by_role("button", name="Stand", exact=True)
+    double = page.get_by_role("button", name=re.compile(r"^Double "))
+    if move == "stand":
+        await expect(page.get_by_role("button", name="Double (not enough credits)")).to_be_disabled()
+        async with page.expect_response("**/casino/blackjack/hit") as hit_response:
+            await hit.click()
+        hit_hand = (await (await hit_response.value).json())["result"]
+        assert hit_hand["dealer_cards"] == hand["dealer_cards"]
+        assert hit_hand["dealer_value"] == 7
+        assert hit_hand["settlement"] is None
+        await expect(player.get_by_text("19", exact=True)).to_be_visible()
+
+    finish = asyncio.Event()
+    move_url = f"**/casino/blackjack/{move}"
+
+    async def delay_move(route: Route) -> None:
+        await finish.wait()
+        if move == "stand":
+            # Reject this attempt before it reaches the server. The retry below uses the real endpoint.
+            await route.fulfill(status=409, json={"detail": {"rule": "test", "message": "Retry this move"}})
+        else:
+            await route.continue_()
+
+    await page.route(move_url, delay_move, times=1)
+    move_button = stand if move == "stand" else double
+    await move_button.click()
+    try:
+        await expect(page.get_by_text("Dealer plays...")).to_be_visible()
+        await expect(stand).to_have_count(0)
+        await expect(dealer_upcard).to_be_visible()
+        await expect(dealer_hole_card).to_have_count(0)
+    finally:
+        finish.set()
+
+    if move == "stand":
+        await expect(stand).to_be_enabled()
+        await expect(dealer_upcard).to_be_visible()
+        await stand.click()
+    await expect(dealer_hole_card.first).to_be_visible()
+    await expect(dealer_upcard).to_have_count(0)
+    await expect(dealer.get_by_text("17", exact=True)).to_be_visible()
+    await expect(player.get_by_text("19", exact=True)).to_be_visible()
+    await expect(page.get_by_role("status").get_by_text(f"+{payout} tokens", exact=True)).to_be_visible()
+
+    await page.get_by_role("button", name="New hand").click()
+    await expect(dealer_hole_card).to_have_count(0)
+    await expect(player.get_by_text("19", exact=True)).to_have_count(0)
+    # Both fixtures now have fewer than ten credits.
+    await expect(deal).to_be_disabled()
+    assert not [line for line in logs if line.startswith("pageerror:")], f"browser errors during blackjack\n{logs}"
 
 
 async def test_changelog_modal_blocks_until_acked_and_ack_persists(page: Page, casino_server: str) -> None:
@@ -199,6 +278,12 @@ async def test_slots_spin_does_not_throw_on_server_action_response(page: Page, c
     await page.get_by_role("button", name="casino").click()
     await page.get_by_role("button", name="slots").click()
     await page.get_by_role("button", name=re.compile(r"^Spin . 5 cr$")).click()
-    await page.wait_for_timeout(500)
+
+    # The button reads `Spinning...` from the server result until the reels settle; a mapping error leaves it stuck.
+    spinning = page.get_by_role("button", name="Spinning...")
+    await spinning.wait_for(state="visible", timeout=10_000)
+    await expect(page.get_by_role("spinbutton")).to_be_disabled()
+    await expect(page.get_by_role("button", name="5", exact=True)).to_be_disabled()
+    await spinning.wait_for(state="hidden", timeout=10_000)
 
     assert not [line for line in logs if line.startswith("pageerror:")], f"browser errors during slots spin\n{logs}"

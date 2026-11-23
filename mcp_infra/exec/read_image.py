@@ -6,7 +6,7 @@ import base64
 import mimetypes
 import os
 
-import mcp.types as mcp_types
+from mcp.types import ImageContent
 
 MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10MB
 
@@ -14,15 +14,11 @@ MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10MB
 SUPPORTED_MIME_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
 
 
-def validate_and_encode_image(data: bytes, path: str | os.PathLike[str]) -> mcp_types.ImageContent:
+def validate_and_encode_image(data: bytes, path: str | os.PathLike[str]) -> ImageContent:
     """Validate image bytes and encode to ImageContent.
 
-    Args:
-        data: Raw image bytes
-        path: Original path (used for mime type detection)
-
-    Raises:
-        ValueError: If mime type is not an image or size exceeds limit
+    `path` only drives mime type detection. Raises ValueError if the mime type is not an image or the size exceeds
+    the limit.
     """
     mime_type, _ = mimetypes.guess_type(path)
     if not mime_type or mime_type not in SUPPORTED_MIME_TYPES:
@@ -34,4 +30,4 @@ def validate_and_encode_image(data: bytes, path: str | os.PathLike[str]) -> mcp_
         raise ValueError(f"Image too large: {len(data)} bytes (limit: {MAX_IMAGE_BYTES})")
 
     encoded = base64.standard_b64encode(data).decode("ascii")
-    return mcp_types.ImageContent(type="image", mimeType=mime_type, data=encoded)
+    return ImageContent(type="image", mimeType=mime_type, data=encoded)

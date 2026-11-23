@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -13,10 +14,26 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/eventcodec"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"google.golang.org/protobuf/proto"
 )
 
-func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command, ownerKey string, validate func(*Session) error) (*eventlogpb.EventEntry, error) {
+var (
+	ErrSessionBlocked        = fmt.Errorf("session is blocked: %w", protocol.ErrPrecondition)
+	ErrInterruptTurnInactive = fmt.Errorf("interrupt target is not the active turn: %w", protocol.ErrPrecondition)
+	ErrInterruptOwnerMissing = fmt.Errorf("interrupt target has no sampler owner: %w", protocol.ErrPrecondition)
+)
+
+// AdmissionState holds the projected session and evidence read under its admission lock.
+// ProviderRoutes is only valid during the validation callback.
+type AdmissionState struct {
+	Session           *Session
+	Conversation      *Conversation
+	HasQueuedCommands bool
+	ProviderRoutes    func() ([]ProviderRequest, error)
+}
+
+func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command, ownerKey string, validate func(AdmissionState) error) (*eventlogpb.EventEntry, error) {
 	if command == nil || command.GetCommandId() == "" || ownerKey == "" {
 		return nil, protocol.ErrInvalid
 	}
@@ -54,11 +71,12 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 			return err
 		}
 		if session.Blocked {
-			return protocol.ErrPrecondition
+			return ErrSessionBlocked
 		}
 		if validate != nil {
 			// Validate against the state after earlier commands, under the admission lock.
 			projected := *session
+			hasQueuedCommands := false
 			rows, err := tx.QueryContext(ctx, `SELECT payload FROM sampler_command
                 WHERE session_id=$1 AND outcome=$2 ORDER BY admission`, id,
 				int32(samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED))
@@ -67,6 +85,7 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 			}
 			defer rows.Close()
 			for rows.Next() {
+				hasQueuedCommands = true
 				var wire []byte
 				if err := rows.Scan(&wire); err != nil {
 					return err
@@ -86,13 +105,23 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 				return err
 			}
 			rows.Close()
-			if err := validate(&projected); err != nil {
+			if err := validate(AdmissionState{
+				Session:           &projected,
+				Conversation:      conversation,
+				HasQueuedCommands: hasQueuedCommands,
+				ProviderRoutes: func() ([]ProviderRequest, error) {
+					return providerRoutes(ctx, tx, conversation.ID)
+				},
+			}); err != nil {
 				return err
 			}
 		}
 		if interrupt := command.GetInterruptTurn(); interrupt != nil {
-			if session.ActiveTurn == nil || *session.ActiveTurn != interrupt.GetTurnId() || conversation.Owner == nil {
-				return protocol.ErrPrecondition
+			if session.ActiveTurn == nil || *session.ActiveTurn != interrupt.GetTurnId() {
+				return ErrInterruptTurnInactive
+			}
+			if conversation.Owner == nil {
+				return ErrInterruptOwnerMissing
 			}
 			if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_interrupt(id,conversation_id,generation,target_turn,result)
 				VALUES($1,$2,$3,$4,NULL)`, uuid.New(), conversation.ID, conversation.Generation, interrupt.GetTurnId()); err != nil {
@@ -186,12 +215,13 @@ func (s *Store) Checkpoint(ctx context.Context, id, target string) (*uint64, err
 }
 
 func (s *Store) CommitCheckpoint(ctx context.Context, id, target string, cursor uint64) error {
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		if _, _, err := lockSession(ctx, tx, id); err != nil {
-			return err
-		}
-		_, err := tx.ExecContext(ctx, `INSERT INTO sampler_export_checkpoint(session_id,destination,cursor) VALUES($1,$2,$3)
-			ON CONFLICT(session_id,destination) DO UPDATE SET cursor=GREATEST(sampler_export_checkpoint.cursor,EXCLUDED.cursor)`, id, target, cursor)
-		return err
-	})
+	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
+	defer cancel()
+	_, err := s.db.ExecContext(ctx, `INSERT INTO sampler_export_checkpoint(session_id,destination,cursor) VALUES($1,$2,$3)
+		ON CONFLICT(session_id,destination) DO UPDATE SET cursor=GREATEST(sampler_export_checkpoint.cursor,EXCLUDED.cursor)`, id, target, cursor)
+	var violation *pq.Error
+	if errors.As(err, &violation) && violation.Constraint == "sampler_export_checkpoint_session_id_fkey" && violation.Code == "23503" {
+		return protocol.ErrMissing
+	}
+	return err
 }

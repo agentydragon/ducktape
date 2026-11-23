@@ -31,15 +31,6 @@ func exec(t *testing.T, db *sql.DB, query string) {
 	}
 }
 
-func count(t *testing.T, db *sql.DB, query string) int {
-	t.Helper()
-	var n int
-	if err := db.QueryRowContext(t.Context(), query).Scan(&n); err != nil {
-		t.Fatal(err)
-	}
-	return n
-}
-
 func seed(t *testing.T, db *sql.DB) {
 	t.Helper()
 	exec(t, db, `INSERT INTO action_request (id, idempotency_key, arguments, state, version, created_at, updated_at, title, caller_namespace, caller_name, action_group, action_name) VALUES ('00000000-0000-0000-0000-000000000001', 'key', '{"human":true}', 'denied', 1, now(), now(), 'keep', 'ns', 'name', 'group', 'action')`)
@@ -52,10 +43,10 @@ func TestFreshBaseline(t *testing.T) {
 		t.Fatal(err)
 	}
 	seed(t, db)
-	if got := count(t, db, `SELECT count(*) FROM action_service_goose_version WHERE version_id=10 AND is_applied`); got != 1 {
+	if got := postgres.Count(t, db, `SELECT count(*) FROM action_service_goose_version WHERE version_id=10 AND is_applied`); got != 1 {
 		t.Fatalf("baseline rows = %d", got)
 	}
-	if got := count(t, db, `SELECT count(*) FROM action_request WHERE arguments='{"human":true}'::jsonb`); got != 1 {
+	if got := postgres.Count(t, db, `SELECT count(*) FROM action_request WHERE arguments='{"human":true}'::jsonb`); got != 1 {
 		t.Fatalf("request rows = %d", got)
 	}
 }
@@ -108,7 +99,7 @@ func TestDelegationAttributionMigrationAndOlderWriterCompatibility(t *testing.T)
 		title, caller_namespace, caller_name, action_group, action_name)
 		VALUES ('00000000-0000-0000-0000-000000000002', 'old-writer', '{}', 'decision_pending', 1, now(), now(),
 			'old writer', 'ns', 'old-writer', 'group', 'action')`)
-	if got := count(t, db, `SELECT count(*) FROM action_request WHERE id = '00000000-0000-0000-0000-000000000002'
+	if got := postgres.Count(t, db, `SELECT count(*) FROM action_request WHERE id = '00000000-0000-0000-0000-000000000002'
 		AND delegation_actor_proto IS NULL AND provenance_session_id IS NULL
 		AND provenance_connection_id IS NULL AND provenance_connection_grant_id IS NULL`); got != 1 {
 		t.Fatalf("old writer row attribution NULL count = %d, want 1", got)
@@ -156,14 +147,14 @@ func TestExecutionHeartbeatMigrationPreservesExecutionsAndExecutorLiveness(t *te
 	if err := Up(t.Context(), db); err != nil {
 		t.Fatal(err)
 	}
-	if got := count(t, db, `SELECT count(*) FROM action_execution
+	if got := postgres.Count(t, db, `SELECT count(*) FROM action_execution
 		WHERE id = '00000000-0000-0000-0000-000000000002'
 		AND request_id = '00000000-0000-0000-0000-000000000001' AND state = 'succeeded'`); got != 1 {
 		t.Fatalf("preserved execution rows = %d, want 1", got)
 	}
 	exec(t, db, `UPDATE action_executor_heartbeat SET heartbeat_at = heartbeat_at + interval '1 minute'
 		WHERE executor_id = 'test-executor'`)
-	if got := count(t, db, `SELECT count(*) FROM action_executor_heartbeat
+	if got := postgres.Count(t, db, `SELECT count(*) FROM action_executor_heartbeat
 		WHERE executor_id = 'test-executor' AND heartbeat_at = started_at + interval '1 minute'`); got != 1 {
 		t.Fatalf("live executor heartbeat rows = %d, want 1", got)
 	}

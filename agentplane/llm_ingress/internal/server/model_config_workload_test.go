@@ -52,28 +52,6 @@ func TestWorkloadModelConfigGRPCUsesVerifiedTLSHTTPPeer(t *testing.T) {
 	}
 }
 
-func TestWorkloadModelConfigGRPCServesAnIdentityCaller(t *testing.T) {
-	workload := workloadauthtesting.NewIdentityWorkload(t, api, testNamespace, "llm-model-config-identity", testPolicyNamespace)
-	ca := transporttesting.NewCA(t)
-	serverCredentials := ca.Issue(t, peertls.LLMIngressURI)
-	clientCredentials := ca.IssueWithUsage(t, workload.URI, x509.ExtKeyUsageClientAuth)
-	svid, err := auth.NewSVIDResolver(workload.Objects, []string{testNamespace}, &resolver.Identities{PolicyNamespace: testPolicyNamespace})
-	if err != nil {
-		t.Fatal(err)
-	}
-	grpcServer := newModelConfigServer(auth.AnySubject(svid), &modelConfigService{
-		models: map[string]modelConfig{"configured": {Model: "configured", TotalContextBudgetTokens: 8192}},
-	})
-	client := newWorkloadModelConfigGRPCClient(t, serveWorkloadModelConfigHTTP2(t, grpcServer, serverCredentials), clientCredentials, clientCredentials)
-
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
-	response, err := modelconfigpb.NewModelConfigServiceClient(client).GetModelConfig(ctx, &modelconfigpb.GetModelConfigRequest{Model: "configured"})
-	if err != nil || response.GetTotalContextBudgetTokens() != 8192 {
-		t.Fatalf("Identity SVID model config = %v, %v; want configured budget", response, err)
-	}
-}
-
 func TestWorkloadModelConfigGRPCRejectsUntrustedExpiredAndUnacceptedLeavesBeforeHandler(t *testing.T) {
 	for _, test := range []struct {
 		name                string

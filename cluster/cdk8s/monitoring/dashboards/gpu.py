@@ -1,12 +1,11 @@
 """GPU telemetry dashboard authored with Grafana Foundation SDK builders."""
 
-from grafana_foundation_sdk.builders import gauge
+from grafana_foundation_sdk.builders import gauge, timeseries
 from grafana_foundation_sdk.builders.common import ReduceDataOptions, VizLegendOptions
-from grafana_foundation_sdk.builders.dashboard import Dashboard, QueryVariable
-from grafana_foundation_sdk.builders.timeseries import Panel as TimeSeriesPanel
+from grafana_foundation_sdk.builders.dashboard import Dashboard
 from grafana_foundation_sdk.models import common, dashboard
 
-from cluster.cdk8s.monitoring.dashboards.foundation import line_panel, mimir, mimir_query
+from cluster.cdk8s.monitoring.dashboards.foundation import line_panel, mimir, mimir_multi_query_variable, mimir_query
 
 _INSTANCE_QUERY = "label_values(DCGM_FI_DEV_GPU_TEMP, instance)"
 _GPU_QUERY = 'label_values(DCGM_FI_DEV_GPU_TEMP{instance=~"$instance"}, gpu)'
@@ -14,8 +13,8 @@ _GPU_FILTER = 'instance=~"$instance",gpu=~"$gpu"'
 
 
 def _gpu_timeseries(
-    panel_id: int, title: str, expression: str, legend: str, unit: str, position: dashboard.GridPos
-) -> TimeSeriesPanel:
+    panel_id: int, title: str, expression: str, unit: str, position: dashboard.GridPos
+) -> timeseries.Panel:
     return (
         line_panel()
         .id(panel_id)
@@ -23,7 +22,7 @@ def _gpu_timeseries(
         .grid_pos(position)
         .unit(unit)
         .legend(VizLegendOptions().display_mode(common.LegendDisplayMode.TABLE).show_legend(True))
-        .with_target(mimir_query(expression, legend))
+        .with_target(mimir_query(expression, "GPU {{gpu}} ({{UUID}})"))
     )
 
 
@@ -56,30 +55,8 @@ def build_dashboard() -> dashboard.Dashboard:
         .version(1)
         .refresh("1m")
         .time("now-6h", "now")
-        .with_variable(
-            QueryVariable("instance")
-            .label("Instance")
-            .datasource(mimir())
-            .definition(_INSTANCE_QUERY)
-            .query(_INSTANCE_QUERY)
-            .include_all(True)
-            .multi(True)
-            .all_value(".*")
-            .refresh(dashboard.VariableRefresh.ON_DASHBOARD_LOAD)
-            .current(dashboard.VariableOption(text="All", value=["$__all"]))
-        )
-        .with_variable(
-            QueryVariable("gpu")
-            .label("GPU")
-            .datasource(mimir())
-            .definition(_GPU_QUERY)
-            .query(_GPU_QUERY)
-            .include_all(True)
-            .multi(True)
-            .all_value(".*")
-            .refresh(dashboard.VariableRefresh.ON_DASHBOARD_LOAD)
-            .current(dashboard.VariableOption(text="All", value=["$__all"]))
-        )
+        .with_variable(mimir_multi_query_variable("instance", "Instance", _INSTANCE_QUERY))
+        .with_variable(mimir_multi_query_variable("gpu", "GPU", _GPU_QUERY))
         .with_panel(
             _gpu_gauge(
                 2,
@@ -103,7 +80,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 1,
                 "GPU Temperature",
                 f"max by (UUID, gpu) (DCGM_FI_DEV_GPU_TEMP{{{_GPU_FILTER}}})",
-                "GPU {{gpu}} ({{UUID}})",
                 "celsius",
                 dashboard.GridPos(h=8, w=12, y=8),
             )
@@ -113,7 +89,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 4,
                 "GPU Power Usage",
                 f"max by (UUID, gpu) (DCGM_FI_DEV_POWER_USAGE{{{_GPU_FILTER}}})",
-                "GPU {{gpu}} ({{UUID}})",
                 "watt",
                 dashboard.GridPos(h=8, w=12, x=12, y=8),
             )
@@ -123,7 +98,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 5,
                 "GPU SM Clocks",
                 f"max by (UUID, gpu) (DCGM_FI_DEV_SM_CLOCK{{{_GPU_FILTER}}}) * 1000000",
-                "GPU {{gpu}} ({{UUID}})",
                 "hertz",
                 dashboard.GridPos(h=8, w=12, y=16),
             )
@@ -133,7 +107,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 6,
                 "GPU Utilization",
                 f"max by (UUID, gpu) (DCGM_FI_DEV_GPU_UTIL{{{_GPU_FILTER}}})",
-                "GPU {{gpu}} ({{UUID}})",
                 "percent",
                 dashboard.GridPos(h=8, w=12, x=12, y=16),
             )
@@ -143,7 +116,6 @@ def build_dashboard() -> dashboard.Dashboard:
                 7,
                 "GPU Framebuffer Mem Used",
                 f"max by (UUID, gpu) (DCGM_FI_DEV_FB_USED{{{_GPU_FILTER}}}) * 1024 * 1024",
-                "GPU {{gpu}} ({{UUID}})",
                 "bytes",
                 dashboard.GridPos(h=8, w=24, y=24),
             )

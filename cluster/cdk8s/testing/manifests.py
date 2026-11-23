@@ -1,0 +1,26 @@
+from collections.abc import Iterable
+from typing import Any, cast
+
+import yaml
+from more_itertools import one
+
+
+def find_resource(
+    documents: Iterable[dict[str, Any]], kind: str, name: str, *, namespace: str | None = None
+) -> dict[str, Any]:
+    """The one document of `kind` named `name` (in `namespace`, if given); raises unless exactly one matches.
+
+    A document without `metadata`, such as a `kustomization.yaml`, never matches.
+    """
+    return one(
+        doc
+        for doc in documents
+        if doc["kind"] == kind
+        and doc.get("metadata", {}).get("name") == name
+        and (namespace is None or doc["metadata"].get("namespace") == namespace)
+    )
+
+
+def config_map_yaml(documents: Iterable[dict[str, Any]], name: str, key: str) -> dict[str, Any]:
+    """The YAML mapping under `key` of the one ConfigMap named `name`."""
+    return cast(dict[str, Any], yaml.safe_load(find_resource(documents, "ConfigMap", name)["data"][key]))

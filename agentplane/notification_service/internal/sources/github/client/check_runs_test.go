@@ -53,12 +53,12 @@ func TestCheckRunsPaginatesLatestRunsAndPreservesNativeFacts(t *testing.T) {
 	}
 	want := []githubmodel.CheckRun{
 		{HeadSHA: fixture.SHA, ID: 105, Name: "queue", Status: githubmodel.CheckRunQueued, DetailsURL: "https://ci.test/queue"},
-		{HeadSHA: fixture.SHA, ID: 202, AppID: 7001, Name: "build", Status: githubmodel.CheckRunCompleted, Conclusion: stringPointer("success"), DetailsURL: "https://ci.test/build/202", StartedAt: ciUTC(2026, 10, 27, 8, 2, 3), CompletedAt: ciUTC(2026, 10, 27, 8, 4, 5)},
+		{HeadSHA: fixture.SHA, ID: 202, AppID: 7001, Name: "build", Status: githubmodel.CheckRunCompleted, Conclusion: new("success"), DetailsURL: "https://ci.test/build/202", StartedAt: ciUTC(2026, 10, 27, 8, 2, 3), CompletedAt: ciUTC(2026, 10, 27, 8, 4, 5)},
 		{HeadSHA: fixture.SHA, ID: 203, Name: "run", Status: githubmodel.CheckRunInProgress},
 		{HeadSHA: fixture.SHA, ID: 204, Name: "wait", Status: githubmodel.CheckRunWaiting},
 		{HeadSHA: fixture.SHA, ID: 205, Name: "pending", Status: githubmodel.CheckRunPending},
 		{HeadSHA: fixture.SHA, ID: 206, Name: "requested", Status: githubmodel.CheckRunRequested},
-		{HeadSHA: fixture.SHA, ID: 303, AppID: 7001, Name: "build", Status: githubmodel.CheckRunCompleted, Conclusion: stringPointer("failure"), DetailsURL: "https://ci.test/build/303"},
+		{HeadSHA: fixture.SHA, ID: 303, AppID: 7001, Name: "build", Status: githubmodel.CheckRunCompleted, Conclusion: new("failure"), DetailsURL: "https://ci.test/build/303"},
 	}
 	if !reflect.DeepEqual(runs, want) {
 		t.Errorf("CheckRuns() = %+v, want %+v", runs, want)
@@ -129,30 +129,6 @@ func TestCheckRunsRejectsNonImmutableSHAWithoutRequest(t *testing.T) {
 	}
 }
 
-func TestCheckRunsReturnsTypedFailureFromLaterPage(t *testing.T) {
-	fake := fixture.NewFake(t)
-	fake.Handler = func(w http.ResponseWriter, r *http.Request, path string) bool {
-		if !strings.HasSuffix(path, "/check-runs") {
-			return false
-		}
-		if r.URL.Query().Get("page") == "1" {
-			replyPage(w, r, path, "filter=latest&per_page=100", 2, `{"total_count":1,"check_runs":[]}`)
-		} else {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprint(w, `{"message":"unavailable"}`)
-		}
-		return true
-	}
-
-	runs, err := newTestClient(t, fake).CheckRuns(t.Context(), "owner/repo", fixture.SHA, installationID)
-	if failure := fixture.AsError[*StatusError](t, err); failure.StatusCode != http.StatusServiceUnavailable {
-		t.Errorf("failure %+v", failure)
-	}
-	if runs != nil {
-		t.Errorf("CheckRuns() on error = %#v, want nil", runs)
-	}
-}
-
 func TestCheckRunsConclusionsRemainTypedAndExact(t *testing.T) {
 	for _, value := range []string{"success", "failure", "neutral", "cancelled", "timed_out", "action_required", "stale", "skipped", "startup_failure"} {
 		t.Run(value, func(t *testing.T) {
@@ -169,8 +145,6 @@ func TestCheckRunsConclusionsRemainTypedAndExact(t *testing.T) {
 		})
 	}
 }
-
-func stringPointer(value string) *string { return &value }
 
 func ciUTC(year int, month time.Month, day, hour, minute, second int) *time.Time {
 	value := time.Date(year, month, day, hour, minute, second, 0, time.UTC)

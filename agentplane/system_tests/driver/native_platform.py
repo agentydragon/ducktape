@@ -15,13 +15,13 @@ from agentplane.proto import identity_pb2
 from agentplane.session_dispatcher.client import SandboxControlClient, SandboxRunner
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
 from agentplane.system_tests.driver.cluster import Cluster
+from agentplane.system_tests.driver.dispatcher_transport import forward
 from agentplane.system_tests.driver.environment_transport import (
     ENVIRONMENT_PORT,
     ENVIRONMENT_SERVICE,
     EnvironmentServiceClient,
 )
 from agentplane.system_tests.driver.native_auth import NATIVE_CLIENT_SVID_SECRET, RUNTIME_PROXY_TEST_READER_SECRET
-from agentplane.system_tests.driver.port_forward import PortForward, async_port_forward
 from agentplane.system_tests.driver.tls import service_svid_credentials
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -54,11 +54,9 @@ class NativePlatformClients:
         )
         return SandboxRunner(self.control, destination, host_control=self.host_control)
 
-    async def ready_runner(
-        self, target: identity_pb2.EnvironmentTarget, *, timeout_s: float = RUNNER_READY_SECONDS
-    ) -> SandboxRunner:
+    async def ready_runner(self, target: identity_pb2.EnvironmentTarget) -> SandboxRunner:
         """Wait for this exact Runner using only retry-safe status reads."""
-        async with asyncio.timeout(timeout_s):
+        async with asyncio.timeout(RUNNER_READY_SECONDS):
             while True:
                 runner = self.runner(target)
                 try:
@@ -73,12 +71,30 @@ class NativePlatformClients:
 
 
 @asynccontextmanager
+async def native_history_client(
+    cluster: Cluster, credentials: grpc.ChannelCredentials | None = None
+) -> AsyncIterator[HistoryServiceClient]:
+    if credentials is None:
+        credentials = await service_svid_credentials(cluster, NATIVE_CLIENT_SVID_SECRET)
+    async with (
+        forward(cluster, f"service/{HISTORY_SERVICE}", remote_port=SERVICE_PORT) as target,
+        HistoryServiceClient(
+            target,
+            request_timeout_s=REQUEST_TIMEOUT_SECONDS,
+            channel_credentials=credentials,
+            server_name=f"{HISTORY_SERVICE}.{cluster.namespace}.svc.cluster.local",
+        ) as history,
+    ):
+        yield history
+
+
+@asynccontextmanager
 async def native_platform_clients(cluster: Cluster) -> AsyncIterator[NativePlatformClients]:
     """Open native Environment, Dispatcher, History, and Runner-control clients once."""
     async with AsyncExitStack() as opened:
         credentials = await service_svid_credentials(cluster, NATIVE_CLIENT_SVID_SECRET)
         environment_target = await opened.enter_async_context(
-            _service_forward(cluster, ENVIRONMENT_SERVICE, ENVIRONMENT_PORT)
+            forward(cluster, f"service/{ENVIRONMENT_SERVICE}", remote_port=ENVIRONMENT_PORT)
         )
         environment = await opened.enter_async_context(
             EnvironmentServiceClient.connect(
@@ -88,25 +104,17 @@ async def native_platform_clients(cluster: Cluster) -> AsyncIterator[NativePlatf
             )
         )
         dispatcher_target = await opened.enter_async_context(
-            _service_forward(cluster, DISPATCHER_SERVICE, SERVICE_PORT)
+            forward(cluster, f"service/{DISPATCHER_SERVICE}", remote_port=SERVICE_PORT)
         )
         dispatcher = await opened.enter_async_context(
             SessionDispatcherClient.connect(
                 dispatcher_target,
-                token_file=None,
                 request_timeout_s=REQUEST_TIMEOUT_SECONDS,
                 channel_credentials=credentials,
                 server_name=f"{DISPATCHER_SERVICE}.{cluster.namespace}.svc.cluster.local",
             )
         )
-        history_target = await opened.enter_async_context(_service_forward(cluster, HISTORY_SERVICE, SERVICE_PORT))
-        history = HistoryServiceClient(
-            history_target,
-            request_timeout_s=REQUEST_TIMEOUT_SECONDS,
-            channel_credentials=credentials,
-            server_name=f"{HISTORY_SERVICE}.{cluster.namespace}.svc.cluster.local",
-        )
-        await opened.enter_async_context(history)
+        history = await opened.enter_async_context(native_history_client(cluster, credentials))
         yield NativePlatformClients(
             cluster=cluster,
             environment=environment,
@@ -114,14 +122,12 @@ async def native_platform_clients(cluster: Cluster) -> AsyncIterator[NativePlatf
             history=history,
             control=SandboxControlClient(
                 control_target=environment_target,
-                token_file=None,
                 request_timeout_s=REQUEST_TIMEOUT_SECONDS,
                 channel_credentials=await service_svid_credentials(cluster, RUNTIME_PROXY_TEST_READER_SECRET),
                 server_name=f"{ENVIRONMENT_SERVICE}.{cluster.namespace}.svc.cluster.local",
             ),
             host_control=SandboxControlClient(
                 control_target=environment_target,
-                token_file=None,
                 request_timeout_s=REQUEST_TIMEOUT_SECONDS,
                 channel_credentials=await service_svid_credentials(cluster, "sessions-client-workload-tls"),
                 server_name=f"{ENVIRONMENT_SERVICE}.{cluster.namespace}.svc.cluster.local",
@@ -133,25 +139,10 @@ async def native_platform_clients(cluster: Cluster) -> AsyncIterator[NativePlatf
 async def sandbox_harness_host(cluster: Cluster) -> AsyncIterator[SandboxControlClient]:
     """Open the session reader's authenticated HarnessHost route for exact Sandbox status."""
     credentials = await service_svid_credentials(cluster, "sessions-client-workload-tls")
-    async with _service_forward(cluster, ENVIRONMENT_SERVICE, ENVIRONMENT_PORT) as target:
+    async with forward(cluster, f"service/{ENVIRONMENT_SERVICE}", remote_port=ENVIRONMENT_PORT) as target:
         yield SandboxControlClient(
             control_target=target,
-            token_file=None,
             request_timeout_s=REQUEST_TIMEOUT_SECONDS,
             channel_credentials=credentials,
             server_name=f"{ENVIRONMENT_SERVICE}.{cluster.namespace}.svc.cluster.local",
         )
-
-
-@asynccontextmanager
-async def _service_forward(cluster: Cluster, service: str, port: int) -> AsyncIterator[str]:
-    forward = PortForward(
-        cluster.command("port-forward"),
-        resource=f"service/{service}",
-        local_address="127.0.0.1",
-        local_port=None,
-        remote_port=port,
-        readiness_timeout_s=30,
-    )
-    async with async_port_forward(forward) as target:
-        yield target

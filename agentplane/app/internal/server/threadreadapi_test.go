@@ -28,6 +28,7 @@ import (
 )
 
 type threadReadStoreFake struct {
+	threadhttp.NoticeStore
 	rows []threads.Thread
 }
 
@@ -378,5 +379,63 @@ func TestArchiveThreadWithoutHistoryCannotBypassDispatcher(t *testing.T) {
 				t.Fatalf("archive = %v, rows=%v, reads=%d, requested=%s", err, store.rows, dispatcher.calls, dispatcher.requestedID)
 			}
 		})
+	}
+}
+
+// The App stores the operator's attention only after it establishes access to the requested Session.
+func TestNoticeAcknowledgementScope(t *testing.T) {
+	id := uuid.New()
+	notice := &apppb.CommandNoticeRevision{CommandId: "c", ReceiptVersion: 40000000000000001}
+	for _, tc := range []struct {
+		name    string
+		session *dispatcherpb.Session
+		err     error
+		code    codes.Code
+	}{
+		{"missing Session", nil, status.Error(codes.NotFound, "Session missing"), codes.NotFound},
+		{"forbidden", nil, status.Error(codes.PermissionDenied, "Session forbidden"), codes.PermissionDenied},
+		{"different Session", threadReadIdleSession(uuid.New()), nil, codes.Unavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := threadhttp.NewHandler(threadhttp.Dependencies{Dispatcher: &threadReadDispatcherFake{session: tc.session, err: tc.err}})
+			_, err := h.AcknowledgeCommandNotice(t.Context(), &apppb.AcknowledgeCommandNoticeRequest{ThreadId: id.String(), Notice: notice})
+			if status.Code(err) != tc.code {
+				t.Fatalf("acknowledge: %v", err)
+			}
+			_, err = h.BatchGetCommandNoticeAcknowledgements(t.Context(), &apppb.BatchGetCommandNoticeAcknowledgementsRequest{ThreadId: id.String(), Notices: []*apppb.CommandNoticeRevision{notice}})
+			if status.Code(err) != tc.code {
+				t.Fatalf("lookup: %v", err)
+			}
+			_, err = h.ListCommandNoticeAcknowledgements(t.Context(), &apppb.ListCommandNoticeAcknowledgementsRequest{ThreadId: id.String()})
+			if status.Code(err) != tc.code {
+				t.Fatalf("history: %v", err)
+			}
+		})
+	}
+}
+
+func TestNoticeAcknowledgementGatewayRequiresBrowserLogin(t *testing.T) {
+	fixture := testauth.New(t)
+	server := newHTTPServer(fixture.Auth)
+	h := threadhttp.NewHandler(threadhttp.Dependencies{})
+	if err := h.RegisterRoutes(server); err != nil {
+		t.Fatal(err)
+	}
+	handler := server.Handler(fixture.Auth)
+	path := "/upstream/app/v1/threads/" + uuid.NewString() + "/notice-acknowledgements"
+	for _, req := range []struct{ method, path string }{{"GET", path}, {"POST", path}, {"POST", path + ":batchGet"}} {
+		for _, authorized := range []bool{false, true} {
+			r := httptest.NewRequest(req.method, req.path, nil)
+			want := http.StatusUnauthorized
+			if authorized {
+				fixture.Authorize(r)
+				want = http.StatusForbidden
+			}
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, r)
+			if rec.Code != want {
+				t.Fatalf("%s %s: %d, want %d", req.method, req.path, rec.Code, want)
+			}
+		}
 	}
 }

@@ -9,11 +9,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from cdk8s import App, Chart
+from cdk8s import App, Chart, Yaml
 
 from cluster.cdk8s import node_scheduling
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization
-from cluster.cdk8s.generation import write_yaml
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, helm_repository_source_ref, oci_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 
@@ -79,9 +77,5 @@ def write_helmrelease(root: Path) -> str:
     `kustomization.yaml`."""
     (release,) = _helmrelease_chart(App()).to_json()
     (root / OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
-    write_yaml(root / OUTPUT_DIR / _HELMRELEASE_FILE, release)
+    (root / OUTPUT_DIR / _HELMRELEASE_FILE).write_text(Yaml.format_objects([release]))
     return _HELMRELEASE_FILE
-
-
-def talos_cloud_controller_manager(chart: Chart, directory: RenderedDirectory) -> Kustomization:
-    return flux_kustomization(chart, NAME, directory, interval="30m", target_namespace=NAMESPACE)

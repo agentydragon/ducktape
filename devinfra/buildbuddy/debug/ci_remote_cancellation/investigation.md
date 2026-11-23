@@ -3,9 +3,9 @@
 **Status: open, 2026-10-28 UTC.** Explain why a VM test action associated with a
 canceled CI job ran to completion, determine the remote producer's actual stop
 latency, and establish whether that action still had a live consumer. CI now
-disables remote retries as a partial mitigation
-([#12468](https://github.com/agentydragon/ducktape/pull/12468)); a complete
-cancellation fix remains open.
+limits remote retries to one as a partial mitigation (`.bazelrc` has the history,
+starting with [#12468](https://github.com/agentydragon/ducktape/pull/12468)); a
+complete cancellation fix remains open.
 
 ## What is established
 

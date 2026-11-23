@@ -9,7 +9,6 @@ import asyncio
 import logging
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -32,18 +31,15 @@ from mcp_infra.exec.docker.types import BindMount
 from skills.eval_infra.docker_exec import scratch_exec_server
 from skills.eval_infra.eval_sandbox import SKILL_PATH
 from skills.eval_infra.skill_staging import StagedSkill, stage_skill
+from skills.info_gathering.evals.harness import output_dir_from_args, run_output_paths, save_summary
 from skills.info_gathering.evals.twenty_questions.prompts import (
     build_guesser_system,
     first_user_message,
     load_sim_prompt,
 )
-from skills.info_gathering.evals.twenty_questions.result_types import Correct, LogEntry, Player, RunSummary, Timeout
-from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
-    add_common_args,
-    output_dir_from_args,
-    resolve_args,
-)
-from skills.info_gathering.evals.twenty_questions.x.shared.output import run_output_paths, save_summary
+from skills.info_gathering.evals.twenty_questions.result_types import Correct, Player, RunSummary
+from skills.info_gathering.evals.twenty_questions.x.shared.cli import add_common_args, resolve_args
+from skills.info_gathering.evals.twenty_questions.x.shared.game_record import GameRecord, write_transcript
 from skills.info_gathering.evals.twenty_questions.x.shared.variants import VARIANTS
 from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
 
@@ -58,18 +54,8 @@ _MAX_GAME_STEPS = 200  # Safety cap.
 
 
 @dataclass
-class GameState:
-    turn_limit: int
-    turn: int = 0
-    result: Correct | Timeout | None = None
-    invalid_input_count: int = 0
-    log_entries: list[LogEntry] = field(default_factory=list)
+class GameState(GameRecord):
     sim_input: list[TResponseInputItem] = field(default_factory=list)
-
-    def record(self, player: Player, content: str, tool_calls: list[dict[str, object]] | None = None) -> None:
-        self.log_entries.append(
-            LogEntry(timestamp=datetime.now(UTC), player=player, content=content, tool_calls=tool_calls or [])
-        )
 
 
 def _make_exec_tool(mcp_client: Client) -> FunctionTool:
@@ -157,29 +143,26 @@ async def run_twenty_questions(
     async def ask_yes_no_question(question: str) -> str:
         """Ask a yes/no question. Uses one turn."""
         state.turn += 1
-        state.record(Player.GUESSER, question, [{"name": "ask_yes_no_question", "args": {"question": question}}])
+        state.record(Player.GUESSER, question, "ask_yes_no_question", question=question)
         logger.info("Guesser (turn %d): %s", state.turn, question[:200])
 
         sim_response, is_correct, is_invalid, invalid_reason = await _run_sim(f"Question: {question}")
 
         if is_invalid:
             state.invalid_input_count += 1
-            state.record(
-                Player.SIMULATOR, invalid_reason or "", [{"name": "invalid_input", "args": {"reason": invalid_reason}}]
-            )
+            state.record(Player.SIMULATOR, invalid_reason or "", "invalid_input", reason=invalid_reason)
             state.turn -= 1
             return invalid_reason or ""
 
         if is_correct:
-            state.record(Player.SIMULATOR, "", [{"name": "correct_answer", "args": {}}])
+            state.record(Player.SIMULATOR, "", "correct_answer")
             state.result = Correct(turns=state.turn)
             return "Correct! You guessed it!"
 
         if sim_response:
-            state.record(Player.SIMULATOR, sim_response, [{"name": "answer", "args": {"response": sim_response}}])
+            state.record(Player.SIMULATOR, sim_response, "answer", response=sim_response)
             logger.info("Simulator: %s", sim_response)
-            if state.turn >= state.turn_limit and state.result is None:
-                state.result = Timeout(limit=state.turn_limit)
+            state.check_turn_limit()
             return sim_response
 
         return "error"
@@ -188,21 +171,20 @@ async def run_twenty_questions(
     async def guess_answer(answer_text: str) -> str:
         """Guess the secret answer. Uses one turn."""
         state.turn += 1
-        state.record(Player.GUESSER, answer_text, [{"name": "guess_answer", "args": {"answer": answer_text}}])
+        state.record(Player.GUESSER, answer_text, "guess_answer", answer=answer_text)
         logger.info("Guesser (turn %d) guesses: %s", state.turn, answer_text[:200])
 
         sim_response, is_correct, _, _ = await _run_sim(f"My answer is: {answer_text}")
 
         if is_correct:
-            state.record(Player.SIMULATOR, "", [{"name": "correct_answer", "args": {}}])
+            state.record(Player.SIMULATOR, "", "correct_answer")
             state.result = Correct(turns=state.turn)
             return "Correct! You guessed it!"
 
         if sim_response:
-            state.record(Player.SIMULATOR, sim_response, [{"name": "answer", "args": {"response": sim_response}}])
+            state.record(Player.SIMULATOR, sim_response, "answer", response=sim_response)
             logger.info("Simulator: %s", sim_response)
-            if state.turn >= state.turn_limit and state.result is None:
-                state.result = Timeout(limit=state.turn_limit)
+            state.check_turn_limit()
             return sim_response
 
         return "no"
@@ -231,12 +213,8 @@ async def run_twenty_questions(
             guesser_result = await Runner.run(guesser_agent, input=guesser_input, max_turns=_GUESSER_MAX_TOOL_ROUNDS)
             guesser_input = guesser_result.to_input_list()
 
-    if state.result is None:
-        state.result = Timeout(limit=variant.turn_limit)
-
-    with calls_path.open("w") as f:
-        for entry in state.log_entries:
-            f.write(entry.model_dump_json() + "\n")
+    result = state.finish()
+    write_transcript(calls_path, state.log_entries)
 
     summary = RunSummary(
         eval_name=name,
@@ -244,7 +222,7 @@ async def run_twenty_questions(
         model=model,
         api=api,
         turns=state.turn,
-        result=state.result,
+        result=result,
         invalid_input_count=state.invalid_input_count,
     )
     save_summary(summary=summary, summary_path=summary_path)

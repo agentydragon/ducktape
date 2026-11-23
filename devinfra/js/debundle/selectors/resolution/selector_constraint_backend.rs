@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::hash::{Hash, Hasher};
 
-use selector_ir::{SelectorTargetId, VariableDomain};
+use selector_ir::{SelectorProjectedValue, SelectorTargetId, VariableDomain};
 use source_identity::SourceUnitId;
 
 const SHARED_SPARSE_DOMAIN_THRESHOLD: usize = 1024;
@@ -29,21 +29,6 @@ pub struct AllDifferentConstraintId(pub usize);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BackendValueId(pub i64);
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum ConstraintValue {
-    SourceUnit(SourceUnitId),
-    String(String),
-}
-
-impl ConstraintValue {
-    pub fn domain(&self) -> VariableDomain {
-        match self {
-            Self::SourceUnit(_) => VariableDomain::SourceUnit,
-            Self::String(_) => VariableDomain::String,
-        }
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CompiledVariableDomain {
@@ -254,32 +239,36 @@ impl DomainValueDictionary {
         }
     }
 
-    pub fn encode(&self, value: &ConstraintValue) -> Option<BackendValueId> {
+    pub fn encode(&self, value: &SelectorProjectedValue) -> Option<BackendValueId> {
         let index = match value {
-            ConstraintValue::SourceUnit(value) => self
+            SelectorProjectedValue::SourceUnit(value) => self
                 .source_units
                 .iter()
                 .position(|candidate| candidate == value),
-            ConstraintValue::String(value) => {
+            SelectorProjectedValue::String(value) => {
                 self.strings.iter().position(|candidate| candidate == value)
             }
         }?;
         Some(BackendValueId(index.try_into().ok()?))
     }
 
-    fn decode(&self, domain: VariableDomain, value: BackendValueId) -> Option<ConstraintValue> {
+    fn decode(
+        &self,
+        domain: VariableDomain,
+        value: BackendValueId,
+    ) -> Option<SelectorProjectedValue> {
         let index = backend_value_index(value).ok()?;
         match domain {
             VariableDomain::SourceUnit => self
                 .source_units
                 .get(index)
                 .copied()
-                .map(ConstraintValue::SourceUnit),
+                .map(SelectorProjectedValue::SourceUnit),
             VariableDomain::String => self
                 .strings
                 .get(index)
                 .cloned()
-                .map(ConstraintValue::String),
+                .map(SelectorProjectedValue::String),
         }
     }
 }
@@ -322,7 +311,8 @@ impl CompiledSelectorProblem {
     pub fn decode_assignment(
         &self,
         assignment: &BackendAssignment,
-    ) -> Result<BTreeMap<ConstraintVariableId, ConstraintValue>, BackendAssignmentError> {
+    ) -> Result<BTreeMap<ConstraintVariableId, SelectorProjectedValue>, BackendAssignmentError>
+    {
         let variables = self
             .variables
             .iter()
@@ -379,7 +369,7 @@ impl CompiledSelectorProblem {
         &self,
         domain: VariableDomain,
         value: BackendValueId,
-    ) -> Option<ConstraintValue> {
+    ) -> Option<SelectorProjectedValue> {
         self.value_dictionary.decode(domain, value)
     }
 }
@@ -465,7 +455,7 @@ impl CompiledSelectorProblemBuilder {
     pub fn add_full_domain_values(
         &mut self,
         domain: VariableDomain,
-        values: impl IntoIterator<Item = ConstraintValue>,
+        values: impl IntoIterator<Item = SelectorProjectedValue>,
     ) -> Result<(), CompiledSelectorProblemError> {
         let mut ids = Vec::new();
         for value in values {
@@ -530,7 +520,7 @@ impl CompiledSelectorProblemBuilder {
     pub fn add_allowed_tuples(
         &mut self,
         variables: Vec<ConstraintVariableId>,
-        tuples: Vec<Vec<ConstraintValue>>,
+        tuples: Vec<Vec<SelectorProjectedValue>>,
     ) -> Result<AllowedTupleConstraintId, CompiledSelectorProblemError> {
         let domains = self.validate_allowed_tuple_variables(&variables)?;
         let id = AllowedTupleConstraintId(self.allowed_tuples.len());
@@ -802,11 +792,11 @@ impl CompiledSelectorProblemBuilder {
 
     fn intern_value(
         &mut self,
-        value: ConstraintValue,
+        value: SelectorProjectedValue,
     ) -> Result<BackendValueId, CompiledSelectorProblemError> {
         match value {
-            ConstraintValue::SourceUnit(value) => self.intern_source_unit(value),
-            ConstraintValue::String(value) => self.intern_string(&value),
+            SelectorProjectedValue::SourceUnit(value) => self.intern_source_unit(value),
+            SelectorProjectedValue::String(value) => self.intern_string(&value),
         }
     }
 
@@ -1611,7 +1601,7 @@ mod tests {
             model
                 .add_allowed_tuples(
                     vec![variable],
-                    vec![vec![ConstraintValue::String(value.to_string())]],
+                    vec![vec![SelectorProjectedValue::String(value.to_string())]],
                 )
                 .unwrap();
         }
@@ -1628,7 +1618,7 @@ mod tests {
         model
             .add_full_domain_values(
                 VariableDomain::String,
-                ["a", "c"].map(|value| ConstraintValue::String(value.to_string())),
+                ["a", "c"].map(|value| SelectorProjectedValue::String(value.to_string())),
             )
             .unwrap();
         let left = model.add_variable(VariableDomain::String, None);

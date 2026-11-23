@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
@@ -10,18 +11,6 @@ from cert_manager_crds.io.cert_manager import Certificate, CertificateSpec
 from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetCreationPolicy,
     ExternalSecretSpecTargetDeletionPolicy,
-)
-from flux_imagepolicy_crds.io.fluxcd.toolkit.image import (
-    ImagePolicySpecFilterTags,
-    ImagePolicySpecImageRepositoryRef,
-    ImagePolicySpecPolicy,
-    ImagePolicySpecPolicyAlphabetical,
-    ImagePolicySpecPolicyAlphabeticalOrder,
-)
-from flux_imagerepository_crds.io.fluxcd.toolkit.image import (
-    ImageRepository,
-    ImageRepositorySpec,
-    ImageRepositorySpecSecretRef,
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
@@ -31,9 +20,10 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
     PodMonitorSpecSelector,
 )
 
-from cluster.cdk8s import pod_policy
+from cluster.cdk8s import node_scheduling, piraeus_storage, pod_policy, public_web_pki
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.cert_manager.interception_ca import interception_root_ca
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
@@ -42,17 +32,26 @@ from cluster.cdk8s.flux import (
     flux_kustomization,
     flux_kustomization_depends_on_many,
 )
+from cluster.cdk8s.forgejo_registry import image_automation as forgejo_images, pull_credentials
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
+from cluster.cdk8s.namespaces import initial_request_annotations
 from cluster.cdk8s.platform_sessions import config
-from cluster.cdk8s.providers.flux.image_policy import ImagePolicy
+from cluster.cdk8s.secret_ref import SecretRef
+from cluster.cdk8s.service_ref import Port
+from cluster.cdk8s.volume_claim import volume_claim
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 NAMESPACE = "platform-sessions"
 NAME = "platform-sessions-remote"
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}-image-pins"
 GATEWAY = "platform-sessions-gateway"
+GATEWAY_PORT = Port(name="http", number=8080)
+PUBLIC_HOSTNAME = "platform-sessions.allegedly.works"
+_PROVIDER_HTTPS = Port(name="https", number=8443)
+_PROVIDER_GRPC = Port(name="grpc", number=8444)
+_PROVIDER_METRICS = Port(name="metrics", number=9091)
 SHARED_PROVIDERS_IMAGE = "platform-sessions-providers"
-REGISTRY = "git.allegedly.works/ducktape-ci"
 PROVIDERS = tuple(str(item["id"]) for item in config.INTEGRATIONS["integrations"])
 BASE_INTEGRATIONS = [item for item in config.INTEGRATIONS["integrations"] if item["id"] != "myquest-canary"]
 BASE_PROVIDERS = tuple(str(item["id"]) for item in BASE_INTEGRATIONS)
@@ -66,7 +65,7 @@ BEARER_FILES = (
     "chatgpt-read",
     "blueshield-read",
 )
-_GW_IMAGE = f"{REGISTRY}/{GATEWAY}:unset"
+_GW_IMAGE = f"{forgejo_images.REGISTRY}/{GATEWAY}:unset"
 _TRUST = "/var/run/provider-trust/ca.crt"
 _TOKEN_DIR = "/var/run/provider-credentials"
 _RECORD_CA_SECRET = "platform-sessions-recorder-ca"
@@ -74,6 +73,7 @@ _RECORD_BUNDLE = "platform-sessions-recorder-trust"
 _RECORD_CA_DIR = "/var/run/session-recorder-ca"
 _RECORD_TRUST_DIR = "/var/run/session-recorder-trust"
 _RECORD_PORT = 18080
+_CPU_REQUEST = "50m"
 
 
 def _provider_name(instance: str) -> str:
@@ -99,8 +99,8 @@ def _connections_json(instances: tuple[str, ...]) -> str:
     return json.dumps(
         {
             instance: {
-                "origin": f"https://{_provider_dns(instance)}:8443",
-                "control_target": f"{_provider_dns(instance)}:8444",
+                "origin": f"https://{_provider_dns(instance)}:{_PROVIDER_HTTPS.number}",
+                "control_target": f"{_provider_dns(instance)}:{_PROVIDER_GRPC.number}",
                 "control_token_file": f"{_TOKEN_DIR}/{instance}/control",
                 "owner_token_file": f"{_TOKEN_DIR}/{instance}/owner",
                 "route_token_file": f"{_TOKEN_DIR}/{instance}/route",
@@ -185,10 +185,7 @@ def _container_security() -> k8s.SecurityContext:
 
 
 def _resources(*, memory_request: str = "128Mi", memory_limit: str = "1Gi") -> k8s.ResourceRequirements:
-    return k8s.ResourceRequirements(
-        requests={"cpu": k8s.Quantity.from_string("50m"), "memory": k8s.Quantity.from_string(memory_request)},
-        limits={"cpu": k8s.Quantity.from_string("1"), "memory": k8s.Quantity.from_string(memory_limit)},
-    )
+    return container_resources(cpu=_CPU_REQUEST, memory=memory_request, cpu_limit="1", memory_limit=memory_limit)
 
 
 def _deployment(
@@ -198,13 +195,18 @@ def _deployment(
     volumes: list[k8s.Volume],
     *,
     selector_name: str,
-    node_selector: dict[str, str] | None = None,
+    node_selector: Mapping[str, str] | None = None,
     init_containers: list[k8s.Container] | None = None,
+    vpa_policy: ContainerPolicy | None = None,
 ) -> None:
     deployment = k8s.KubeDeployment(
         chart,
         f"{name}-deployment",
-        metadata=k8s.ObjectMeta(name=name, namespace=NAMESPACE),
+        metadata=k8s.ObjectMeta(
+            name=name,
+            namespace=NAMESPACE,
+            annotations=initial_request_annotations(vpa_policy) if vpa_policy is not None else None,
+        ),
         spec=k8s.DeploymentSpec(
             replicas=1,
             strategy=k8s.DeploymentStrategy(type="Recreate"),
@@ -213,7 +215,7 @@ def _deployment(
                 metadata=k8s.ObjectMeta(labels={"app": selector_name}),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
-                    image_pull_secrets=[k8s.LocalObjectReference(name="forgejo-images-creds")],
+                    image_pull_secrets=[k8s.LocalObjectReference(name=pull_credentials.SECRET_NAME)],
                     node_selector=node_selector,
                     security_context=_security(),
                     containers=[container],
@@ -248,9 +250,7 @@ def _add_provider(chart: Chart, instance: str) -> None:
         mint_bearer_secret(
             chart,
             f"{name}-{role}",
-            name=f"{name}-{role}",
-            namespace=NAMESPACE,
-            key="token",
+            target=SecretRef(namespace=NAMESPACE, name=f"{name}-{role}").key("token"),
             creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
             deletion_policy=ExternalSecretSpecTargetDeletionPolicy.RETAIN,
             immutable=True,
@@ -265,56 +265,69 @@ def _add_provider(chart: Chart, instance: str) -> None:
         ),
     )
 
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         chart,
         f"{name}-piraeus",
-        metadata=k8s.ObjectMeta(
-            name=f"{name}-piraeus", namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
-        ),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-ssd-2-autodiskful",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("1Gi")}),
-        ),
+        name=f"{name}-piraeus",
+        namespace=NAMESPACE,
+        storage_class=piraeus_storage.SSD_REPLICATED,
+        size="1Gi",
+        annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
     )
 
     # Keep the capture PVC even when recording is disabled; it contains user data.
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         chart,
         f"{name}-captures",
-        metadata=k8s.ObjectMeta(
-            name=f"{name}-captures", namespace=NAMESPACE, annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"}
-        ),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-hdd-local",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("20Gi")}),
-        ),
+        name=f"{name}-captures",
+        namespace=NAMESPACE,
+        storage_class=piraeus_storage.HDD_LOCAL,
+        size="20Gi",
+        annotations={"kustomize.toolkit.fluxcd.io/prune": "disabled"},
     )
 
 
-def _image_policy(chart: Chart, name: str) -> None:
-    # Provider images are built by gaffer-private and use main-* tags.
-    repository = ImageRepository(
-        chart,
-        f"{name}-image-repository",
-        metadata=ApiObjectMetadata(name=name, namespace="flux-system"),
-        spec=ImageRepositorySpec(
-            image=f"{REGISTRY}/{name}",
-            interval="5m",
-            secret_ref=ImageRepositorySpecSecretRef(name="forgejo-images-creds"),
-        ),
+def recorder_containers() -> list[k8s.Container]:
+    """The CA initializer and native sidecar for providers recording upstream traffic."""
+    recorder_listening = k8s.ExecAction(
+        command=[
+            "python",
+            "-c",
+            f"import socket; socket.create_connection(('127.0.0.1', {_RECORD_PORT}), timeout=2).close()",
+        ]
     )
-    ImagePolicy(
-        chart,
-        f"{name}-image-policy",
-        metadata=ApiObjectMetadata(name=name, namespace="flux-system"),
-        image_repository_ref=ImagePolicySpecImageRepositoryRef(name=repository.name),
-        filter_tags=ImagePolicySpecFilterTags(pattern=r"^main-\d{14}-[0-9a-f]{7}$"),
-        policy=ImagePolicySpecPolicy(
-            alphabetical=ImagePolicySpecPolicyAlphabetical(order=ImagePolicySpecPolicyAlphabeticalOrder.ASC)
+    return [
+        k8s.Container(
+            name="recorder-ca-init",
+            image="busybox:1.38",
+            command=["sh", "-c", "umask 077; cat /ca/tls.key /ca/tls.crt > /config/mitmproxy-ca.pem"],
+            volume_mounts=[
+                k8s.VolumeMount(name="recorder-ca", mount_path="/ca", read_only=True),
+                k8s.VolumeMount(name="recorder-config", mount_path="/config"),
+            ],
+            security_context=_container_security(),
+            resources=_resources(),
         ),
-    )
+        k8s.Container(
+            name="upstream-recorder",
+            image="mitmproxy/mitmproxy:12.2.3",
+            # Start the recorder before providers dispatch their first probe.
+            restart_policy="Always",
+            command=[
+                "sh",
+                "-c",
+                f"umask 077; exec mitmdump -q --listen-host 127.0.0.1 --listen-port {_RECORD_PORT} --set confdir=/config -w '+/captures/%Y-%m-%d.mitm'",
+            ],
+            readiness_probe=k8s.Probe(exec=recorder_listening),
+            startup_probe=k8s.Probe(exec=recorder_listening, period_seconds=2, failure_threshold=30),
+            volume_mounts=[
+                k8s.VolumeMount(name="recorder-config", mount_path="/config"),
+                k8s.VolumeMount(name="captures", mount_path="/captures"),
+            ],
+            security_context=_container_security(),
+            resources=_resources(),
+        ),
+    ]
 
 
 def _provider_workload(chart: Chart, instance: str, *, provider_type: str, record_upstream_traffic: bool) -> None:
@@ -331,7 +344,9 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
         config_map=k8s.ConfigMapVolumeSource(name=CANARY_CONFIG.name if instance == "myquest-canary" else CONFIG.name),
     )
     tmp = k8s.Volume(name="tmp", empty_dir=k8s.EmptyDirVolumeSource())
-    provider_health_get = k8s.HttpGetAction(path="/healthz", scheme="HTTPS", port=k8s.IntOrString.from_string("https"))
+    provider_health_get = k8s.HttpGetAction(
+        path="/healthz", scheme="HTTPS", port=k8s.IntOrString.from_string(_PROVIDER_HTTPS.name)
+    )
     provider_health = k8s.Probe(http_get=provider_health_get)
     recorder_env = (
         [
@@ -372,79 +387,39 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
         if record_upstream_traffic
         else []
     )
-    recorder_init = (
-        [
-            k8s.Container(
-                name="recorder-ca-init",
-                image="busybox:1.38",
-                command=["sh", "-c", "umask 077; cat /ca/tls.key /ca/tls.crt > /config/mitmproxy-ca.pem"],
-                volume_mounts=[
-                    k8s.VolumeMount(name="recorder-ca", mount_path="/ca", read_only=True),
-                    k8s.VolumeMount(name="recorder-config", mount_path="/config"),
-                ],
-                security_context=_container_security(),
-                resources=_resources(),
+    # Retain the memory reservations for providers with sampled working-set peaks near those requests.
+    # Recorder and other init-container resources are outside these policies.
+    vpa_policy: ContainerPolicy | None
+    match instance:
+        case "anthropic" | "chatgpt" | "openai":
+            vpa_policy = ContainerPolicy.cpu_and_memory_requests_only("provider", memory_floor="128Mi")
+        case "blueshield":
+            vpa_policy = ContainerPolicy.cpu_and_memory_requests_only("provider", memory_floor="416Mi")
+        case "quest-scheduler":
+            vpa_policy = ContainerPolicy.cpu_and_memory_requests_only("provider", memory_floor="576Mi")
+        case "myquest" | "myquest-canary":
+            # The browser peaked at 986 MiB and used 158m CPU over five minutes during startup.
+            vpa_policy = ContainerPolicy.cpu_and_memory_requests_only("provider", cpu_floor="175m", memory_floor="1Gi")
+        case "thrive":
+            # Reserve above the 652 MiB sampled peak and retain the existing CPU reservation.
+            vpa_policy = ContainerPolicy.cpu_and_memory_requests_only(
+                "provider", cpu_floor=_CPU_REQUEST, memory_floor="768Mi"
             )
-        ]
-        if record_upstream_traffic
-        else []
-    )
-    recorder_sidecars = (
-        [
-            k8s.Container(
-                name="upstream-recorder",
-                image="mitmproxy/mitmproxy:12.2.3",
-                # Start the recorder before providers dispatch their first probe.
-                restart_policy="Always",
-                command=[
-                    "sh",
-                    "-c",
-                    "umask 077; exec mitmdump -q --listen-host 127.0.0.1 --listen-port 18080 --set confdir=/config -w '+/captures/%Y-%m-%d.mitm'",
-                ],
-                readiness_probe=k8s.Probe(
-                    exec=k8s.ExecAction(
-                        command=[
-                            "python",
-                            "-c",
-                            "import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()",
-                        ]
-                    )
-                ),
-                startup_probe=k8s.Probe(
-                    exec=k8s.ExecAction(
-                        command=[
-                            "python",
-                            "-c",
-                            "import socket; socket.create_connection(('127.0.0.1', 18080), timeout=2).close()",
-                        ]
-                    ),
-                    period_seconds=2,
-                    failure_threshold=30,
-                ),
-                volume_mounts=[
-                    k8s.VolumeMount(name="recorder-config", mount_path="/config"),
-                    k8s.VolumeMount(name="captures", mount_path="/captures"),
-                ],
-                security_context=_container_security(),
-                resources=_resources(),
-            )
-        ]
-        if record_upstream_traffic
-        else []
-    )
+        case _:
+            vpa_policy = None
     _deployment(
         chart,
         instance,
         k8s.Container(
             name="provider",
-            image=f"{REGISTRY}/{_provider_image(instance)}:unset",
+            image=f"{forgejo_images.REGISTRY}/{_provider_image(instance)}:unset",
             args=[
                 "--integration-config",
                 f"/etc/platform-sessions/{instance}-integration.json",
                 "--instance-id",
                 instance,
                 "--control-address",
-                "0.0.0.0:8444",
+                f"0.0.0.0:{_PROVIDER_GRPC.number}",
                 "--control-token-file",
                 f"{_TOKEN_DIR}/control",
                 "--owner-token-file",
@@ -452,9 +427,9 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
                 "--route-token-file",
                 f"{_TOKEN_DIR}/route",
                 "--http-port",
-                "8443",
+                str(_PROVIDER_HTTPS.number),
                 "--metrics-port",
-                "9091",
+                str(_PROVIDER_METRICS.number),
                 "--tls-cert",
                 "/var/run/provider-tls/tls.crt",
                 "--tls-key",
@@ -483,9 +458,8 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
                 ),
             ],
             ports=[
-                k8s.ContainerPort(name="https", container_port=8443),
-                k8s.ContainerPort(name="grpc", container_port=8444),
-                k8s.ContainerPort(name="metrics", container_port=9091),
+                k8s.ContainerPort(name=port.name, container_port=port.number)
+                for port in (_PROVIDER_HTTPS, _PROVIDER_GRPC, _PROVIDER_METRICS)
             ],
             readiness_probe=provider_health,
             liveness_probe=provider_health,
@@ -520,15 +494,16 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
             *recorder_volumes,
         ],
         selector_name=name,
-        node_selector={"topology.kubernetes.io/zone": "hil-ovh"},
-        init_containers=[*recorder_init, *recorder_sidecars],
+        node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
+        init_containers=recorder_containers() if record_upstream_traffic else [],
+        vpa_policy=vpa_policy,
     )
     _service(
         chart,
         instance,
         [
-            k8s.ServicePort(name="https", port=8443, target_port=k8s.IntOrString.from_string("https")),
-            k8s.ServicePort(name="grpc", port=8444, target_port=k8s.IntOrString.from_string("grpc")),
+            k8s.ServicePort(name=port.name, port=port.number, target_port=k8s.IntOrString.from_string(port.name))
+            for port in (_PROVIDER_HTTPS, _PROVIDER_GRPC)
         ],
         selector_name=name,
     )
@@ -539,13 +514,18 @@ def _provider_workload(chart: Chart, instance: str, *, provider_type: str, recor
         metadata=ApiObjectMetadata(name=instance, namespace=NAMESPACE),
         spec=PodMonitorSpec(
             selector=PodMonitorSpecSelector(match_labels={"app": name}),
-            pod_metrics_endpoints=[PodMonitorSpecPodMetricsEndpoints(port="metrics", path="/metrics", interval="1m")],
+            pod_metrics_endpoints=[
+                PodMonitorSpecPodMetricsEndpoints(port=_PROVIDER_METRICS.name, path="/metrics", interval="1m")
+            ],
         ),
     )
 
 
 def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
-    if record_upstream_traffic:
+    recorded = set(BASE_PROVIDERS) - {"myquest"} if record_upstream_traffic else set()
+    if config.MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC:
+        recorded.add("myquest-canary")
+    if recorded:
         interception_root_ca(
             chart,
             name="platform-sessions-recorder-root-ca",
@@ -558,17 +538,11 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
     for integration in config.INTEGRATIONS["integrations"]:
         instance = str(integration["id"])
         _add_provider(chart, instance)
-        if instance == "myquest-canary":
-            provider_recording = config.MYQUEST_CANARY_RECORD_UPSTREAM_TRAFFIC
-        elif instance == "myquest":
-            provider_recording = False
-        else:
-            provider_recording = record_upstream_traffic
         _provider_workload(
-            chart, instance, provider_type=str(integration["type"]), record_upstream_traffic=provider_recording
+            chart, instance, provider_type=str(integration["type"]), record_upstream_traffic=instance in recorded
         )
     for image in PROVIDER_IMAGES:
-        _image_policy(chart, image)
+        forgejo_images.track_ci_image(chart, image, prefix="main")
     provider_credentials = k8s.Volume(
         name="provider-credentials",
         projected=k8s.ProjectedVolumeSource(
@@ -580,7 +554,9 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
             ],
         ),
     )
-    gateway_health = k8s.Probe(http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string("http")))
+    gateway_health = k8s.Probe(
+        http_get=k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_string(GATEWAY_PORT.name))
+    )
     _deployment(
         chart,
         "gateway",
@@ -589,28 +565,28 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
             image=_GW_IMAGE,
             env_from=[k8s.EnvFromSource(secret_ref=k8s.SecretEnvSource(name="platform-sessions-oidc"))],
             env=[
-                k8s.EnvVar(name="PLATFORM_SESSIONS_PUBLIC_BASE_URL", value="https://platform-sessions.allegedly.works"),
-                k8s.EnvVar(name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"),
+                k8s.EnvVar(name="PLATFORM_SESSIONS_PUBLIC_BASE_URL", value=f"https://{PUBLIC_HOSTNAME}"),
+                public_web_pki.SSL_CERT_FILE,
                 _config_env(
                     "PLATFORM_SESSIONS_INTEGRATION_CONFIG", "gateway-integrations.json", config_map=CANARY_CONFIG
                 ),
                 _config_env("PLATFORM_SESSIONS_BEARERS", "bearers.json"),
                 _config_env("PLATFORM_SESSIONS_PROVIDER_CONNECTIONS", "connections.json", config_map=CANARY_CONFIG),
             ],
-            ports=[k8s.ContainerPort(name="http", container_port=8080)],
+            ports=[k8s.ContainerPort(name=GATEWAY_PORT.name, container_port=GATEWAY_PORT.number)],
             readiness_probe=gateway_health,
             liveness_probe=gateway_health,
             resources=_resources(),
             security_context=_container_security(),
             volume_mounts=[
                 k8s.VolumeMount(name="provider-credentials", mount_path=_TOKEN_DIR, read_only=True),
-                k8s.VolumeMount(name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True),
+                public_web_pki.VOLUME_MOUNT,
                 k8s.VolumeMount(name="bearers", mount_path="/var/run/platform-sessions", read_only=True),
                 k8s.VolumeMount(name="trust", mount_path="/var/run/provider-trust", read_only=True),
             ],
         ),
         [
-            k8s.Volume(name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki")),
+            public_web_pki.VOLUME,
             provider_credentials,
             k8s.Volume(
                 name="bearers",
@@ -627,11 +603,18 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
             ),
         ],
         selector_name=GATEWAY,
+        vpa_policy=ContainerPolicy.cpu_and_memory_requests_only("gateway"),
     )
     _service(
         chart,
         "gateway",
-        [k8s.ServicePort(name="http", port=8080, target_port=k8s.IntOrString.from_string("http"))],
+        [
+            k8s.ServicePort(
+                name=GATEWAY_PORT.name,
+                port=GATEWAY_PORT.number,
+                target_port=k8s.IntOrString.from_string(GATEWAY_PORT.name),
+            )
+        ],
         selector_name=GATEWAY,
     )
 

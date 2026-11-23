@@ -215,6 +215,5 @@ Missing:
 
 - Whether a future optional judge is a classifier, a judge agent, or both in series, and what "sensitive"
   means as data classes the judge is told about rather than left to infer.
-- How the ingress admits a workload: the sandbox identity's own token (TokenReview, as the
-  egress proxy does) or a per-workload secret the deploy pipeline mints; the former needs no
-  new secret.
+- How the ingress admits a workload: the Sandbox's own workload SVID, as the egress proxy does, or a
+  per-workload secret the deploy pipeline mints; the former needs no new secret.

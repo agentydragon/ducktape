@@ -1,7 +1,4 @@
-"""Typer-based CLI entry for props.
-
-Incremental migration target: we will gradually move subcommands here.
-"""
+"""Typer-based CLI entry for props."""
 
 from __future__ import annotations
 
@@ -15,8 +12,6 @@ from typer_di import TyperDI
 from props.cli.cmd_db import db_app
 from props.db.database import Database
 from util.logging import LogLevel, make_logging_callback
-
-logger = logging.getLogger(__name__)
 
 app = TyperDI(help="props — properties tooling", add_completion=False)
 
@@ -46,7 +41,6 @@ def _init_logging_and_db(
     _logging_callback(log_output=log_output, log_level=log_level)
 
     # Suppress verbose OpenAI HTTP request/response logging (too noisy at DEBUG level)
-    logging.getLogger("openai.http").setLevel(logging.WARNING)
     logging.getLogger("openai._base_client").setLevel(logging.WARNING)
 
     # Configure Rich traceback for CLI errors (increased detail for debugging)

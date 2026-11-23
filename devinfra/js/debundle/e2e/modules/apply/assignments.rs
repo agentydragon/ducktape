@@ -4,7 +4,7 @@ use super::support::{apply_args_with_order, import_order_file};
 use debundle_e2e_graph_support::GraphFixture;
 use debundle_e2e_support::{
     VariableDeclarationKind, VariableInitializerKind, assert_module_variable_declarators,
-    parse_stdout_json, read_tree,
+    parse_stdout_json, process, read_tree,
 };
 use serde_json::{Value, json};
 use std::fs;
@@ -279,11 +279,7 @@ fn generated_residual_dependency_can_remain_in_its_actual_module() {
     }]);
     let path = batch(&fixture, changes.clone());
     let checked = check_graph(&fixture, &path);
-    assert!(
-        checked.status.success(),
-        "{}",
-        String::from_utf8_lossy(&checked.stderr)
-    );
+    process::assert_success(&checked);
 
     // The old priority still names the later generated group by its baseline
     // index. Materialization compacts that group after the middle group moves,
@@ -327,42 +323,19 @@ fn generated_residual_dependency_can_remain_in_its_actual_module() {
     assert_eq!(read_tree(&fixture.modules), before);
     let config_path = fixture.root().join("spec_config.yaml");
     let config_before = fs::read(&config_path).unwrap();
+    let stale_args = apply_args_with_order(&fixture, Path::new(&path), Path::new(stale_order));
     fixture.assert_rejected_unchanged(
-        &[
-            "modules",
-            "apply",
-            "--assignments",
-            &fixture
-                .write_physical_assignment_batch(
-                    "stale-assignments.json",
-                    &serde_json::from_slice(&fs::read(&path).unwrap()).unwrap(),
-                )
-                .to_string_lossy(),
-            "--modules",
-            fixture.root().join("modules").to_str().unwrap(),
-            "--import-order",
-            stale_order,
-            "--tree-config",
-            config_path.to_str().unwrap(),
-        ],
+        &stale_args.iter().map(String::as_str).collect::<Vec<_>>(),
         &["import priority must contain every emitted nonentry module exactly once"],
     );
     assert_eq!(fs::read(config_path).unwrap(), config_before);
 
     let before = read_tree(&fixture.modules);
     let preview = apply(&fixture, &path, true, &[]);
-    assert!(
-        preview.status.success(),
-        "{}",
-        String::from_utf8_lossy(&preview.stderr)
-    );
+    process::assert_success(&preview);
     assert_eq!(read_tree(&fixture.modules), before);
     let result = apply(&fixture, &path, false, &[]);
-    assert!(
-        result.status.success(),
-        "{}",
-        String::from_utf8_lossy(&result.stderr)
-    );
+    process::assert_success(&result);
     assert_eq!(
         parse_stdout_json(&result)["residual_source_units_claimed"],
         1

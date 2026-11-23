@@ -84,11 +84,7 @@ fn names_only_rename_reports_its_file_and_binding() {
         "alpha",
         "ReadableAlpha",
     ]);
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+    process::assert_success(&out);
     let report = parse_stdout_json(&out);
     assert_core(&report, "rename", "applied", "names_only");
     assert!(report.get("needs_full_assessment").is_none(), "{report}");
@@ -239,11 +235,7 @@ fn atom_split_also_writes_current_cycles_for_gate_queries() {
         "--format",
         "json",
     ]);
-    assert!(
-        listed.status.success(),
-        "{}",
-        String::from_utf8_lossy(&listed.stderr)
-    );
+    process::assert_success(&listed);
     let listed = parse_stdout_json(&listed);
     assert_eq!(
         listed["blocking_sccs"].as_array().unwrap().len(),
@@ -260,11 +252,7 @@ fn atom_split_also_writes_current_cycles_for_gate_queries() {
         "--format",
         "json",
     ]);
-    assert!(
-        described.status.success(),
-        "{}",
-        String::from_utf8_lossy(&described.stderr)
-    );
+    process::assert_success(&described);
     let described = parse_stdout_json(&described);
     assert_eq!(
         described["modules"].as_array().unwrap().len(),
@@ -387,11 +375,7 @@ fn merge_cycle_report_drives_gate_list_then_a_passing_edit_clears_it() {
             "--format",
             "json",
         ]);
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
+        process::assert_success(&out);
         parse_stdout_json(&out)
     };
     let report = gate_list();

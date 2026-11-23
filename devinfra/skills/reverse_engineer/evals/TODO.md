@@ -1,13 +1,13 @@
 # reverse_engineer evals — TODO
 
 This file tracks future specimens and eval variants. The
-`go_crypto_server` reference under `specimens/` is the seed; everything
+`go_crypto_server` reference under `tasks/` is the seed; everything
 below is a separate planning round to scope and land.
 
 ## Additional language specimens
 
 Each shares the same protocol shape and crypto contract as
-`specimens/go_crypto_server` so that the rubric items (s-box, round
+`tasks/go_crypto_server` so that the rubric items (s-box, round
 constants, base32 alphabet, MAC construction, endpoint set) can be reused
 verbatim across implementations. What changes per specimen is the
 build-time scrambling and the language-specific recovery angles.
@@ -52,7 +52,7 @@ build-time scrambling and the language-specific recovery angles.
   vs the skill's generality? Drives where to invest —
   per-specimen-runbook generation vs skill prose. Origin: the 1h
   Sonnet timeout review at
-  <evals/x/notes/2026_04_29_sonnet_review_haiku.md> showed Sonnet's
+  <devinfra/skills/reverse_engineer/evals/x/notes/2026_04_29_sonnet_review_haiku.md> showed Sonnet's
   failure was triage (over-disassembly, no checkpointing,
   cipher-guessing without ground truth) rather than skill knowledge,
   and the hinted arm would isolate that.

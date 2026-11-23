@@ -1,4 +1,4 @@
-"""Plaid webhook authentication and envelope validation."""
+"""Plaid webhook authentication."""
 
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ class PlaidWebhookVerifier:
             raise InvalidPlaidWebhookError("Plaid-Verification is outside the five-minute validity window")
         claimed_hash = claims.request_body_sha256
         actual_hash = hashlib.sha256(body).hexdigest()
-        if not isinstance(claimed_hash, str) or not hmac.compare_digest(actual_hash, claimed_hash):
+        if not hmac.compare_digest(actual_hash, claimed_hash):
             raise InvalidPlaidWebhookError("Plaid-Verification does not match the raw request body")
 
     async def _verification_key(self, kid: str) -> jwt.PyJWK:

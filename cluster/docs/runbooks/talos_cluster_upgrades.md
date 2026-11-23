@@ -22,10 +22,10 @@ replacement and loss of etcd quorum.
 - Cordon and drain with Kubernetes eviction, without `--force` or
   `--disable-eviction`. A PDB rejection is a stop-and-investigate signal, not
   something to bypass.
-- Never delete a PVC or PV as part of a Talos OS upgrade. Local-path data stays
-  on its original node; a pod using it may remain Pending until that node is
-  back and uncordoned. EmptyDir contents are ephemeral and are discarded by
-  `--delete-emptydir-data`.
+- Never delete a PVC or PV as part of a Talos OS upgrade.
+  [Strict-local Piraeus](../piraeus.md#storage-classes) data stays on its original
+  node; a pod using it may remain Pending until that node is back and uncordoned.
+  EmptyDir contents are ephemeral and are discarded by `--delete-emptydir-data`.
 - Before rolling a node with a SeaweedFS volume server, verify that every
   volume hosted there currently has its required healthy replica count and is
   not solely stored on the target. It is acceptable for the planned outage to

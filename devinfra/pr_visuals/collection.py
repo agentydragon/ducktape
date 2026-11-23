@@ -59,7 +59,6 @@ class CollectionIssue:
     result: ResultKey | None = None
     related_results: tuple[ResultKey, ...] = ()
     output: OutputKey | None = None
-    artifact: str | None = None
     record: str | None = None
     invocation: str | None = None
     target: str | None = None
@@ -283,15 +282,12 @@ def collect_materialized_outputs(
         message: str,
         *,
         output: OutputKey | None = None,
-        artifact: str | None = None,
         record: str | None = None,
         related_results: tuple[ResultKey, ...] = (),
     ) -> None:
         nonlocal fatal
         fatal = True
-        issue = CollectionIssue(
-            message, result=key, related_results=related_results, output=output, artifact=artifact, record=record
-        )
+        issue = CollectionIssue(message, result=key, related_results=related_results, output=output, record=record)
         errors.append(issue)
         per_result[key].append(issue)
 

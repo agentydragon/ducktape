@@ -9,10 +9,10 @@ from __future__ import annotations
 import argparse
 import gzip
 import json
-import shutil
 import subprocess
 import sys
 import time
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -35,8 +35,6 @@ CLICKHOUSE_COMMAND = [
     "clickhouse-client",
     "--readonly",
     "2",
-    "--max_execution_time",
-    "25",
     "--max_memory_usage",
     "536870912",
     "--max_block_size",
@@ -158,15 +156,17 @@ def checkpoint_chunks(
     checkpoint_dir: Path, start: datetime, end: datetime
 ) -> list[tuple[datetime, datetime, list[dict[str, Any]]]]:
     chunks = []
-    for path in checkpoint_dir.glob("*.json.gz"):
+    for path in checkpoint_dir.glob("*Z--*Z.json.gz"):
         chunk_start, chunk_end, rows = read_checkpoint(path)
+        if path != checkpoint_path(checkpoint_dir, chunk_start, chunk_end):
+            raise ValueError(f"{path}: checkpoint filename and stored interval disagree")
         if chunk_start >= start and chunk_end <= end:
             chunks.append((chunk_start, chunk_end, rows))
     chunks.sort(key=lambda chunk: chunk[0])
     return chunks
 
 
-def write_checkpoint(checkpoint_dir: Path, start: datetime, end: datetime, rows: list[dict[str, Any]]) -> None:
+def write_checkpoint(checkpoint_dir: Path, start: datetime, end: datetime, rows: list[dict[str, Any]]) -> Path:
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     path = checkpoint_path(checkpoint_dir, start, end)
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -177,124 +177,89 @@ def write_checkpoint(checkpoint_dir: Path, start: datetime, end: datetime, rows:
             separators=(",", ":"),
         )
     temporary.replace(path)
+    return path
 
 
-def run_query(
-    sql: str,
-    *,
-    template: str,
-    window_start: datetime,
-    window_end: datetime,
-    min_hours: float = 1,
-    max_execution_seconds: int = 60,
-    checkpoint_dir: Path | None = None,
-) -> tuple[list[dict[str, Any]], int, int]:
-    if checkpoint_dir is not None:
-        chunks = checkpoint_chunks(checkpoint_dir, window_start, window_end)
-        if chunks:
-            combined: list[dict[str, Any]] = []
-            cursor = window_start
-            query_seconds = 0
-            query_windows = 0
-            for chunk_start, chunk_end, rows in chunks:
-                if chunk_start < cursor:
-                    raise RuntimeError("overlapping aggregate checkpoints; refusing to double-count usage")
-                if chunk_start > cursor:
-                    gap_rows, elapsed, windows = run_query(
-                        query_for_window(template, cursor, chunk_start),
-                        template=template,
-                        window_start=cursor,
-                        window_end=chunk_start,
-                        min_hours=min_hours,
-                        max_execution_seconds=max_execution_seconds,
-                        checkpoint_dir=checkpoint_dir,
-                    )
-                    combined.extend(gap_rows)
-                    query_seconds += elapsed
-                    query_windows += windows
-                combined.extend(rows)
-                cursor = chunk_end
-            if cursor < window_end:
-                gap_rows, elapsed, windows = run_query(
-                    query_for_window(template, cursor, window_end),
-                    template=template,
-                    window_start=cursor,
-                    window_end=window_end,
-                    min_hours=min_hours,
-                    max_execution_seconds=max_execution_seconds,
-                    checkpoint_dir=checkpoint_dir,
-                )
+@dataclass
+class WindowedQuery:
+    template: str
+    max_execution_seconds: int
+    checkpoint_dir: Path | None = None
+    used_checkpoints: set[Path] = field(default_factory=set, init=False)
+
+    def run(self, start: datetime, end: datetime) -> tuple[list[dict[str, Any]], int, int]:
+        if self.checkpoint_dir is None:
+            return self._query(start, end)
+        chunks = checkpoint_chunks(self.checkpoint_dir, start, end)
+        combined: list[dict[str, Any]] = []
+        query_seconds = 0
+        query_windows = len(chunks)
+        cursor = start
+        for chunk_start, chunk_end, rows in chunks:
+            if chunk_start < cursor:
+                raise RuntimeError("overlapping aggregate checkpoints; refusing to double-count usage")
+            if chunk_start > cursor:
+                gap_rows, elapsed, windows = self._query(cursor, chunk_start)
                 combined.extend(gap_rows)
                 query_seconds += elapsed
                 query_windows += windows
-            return combined, query_seconds, query_windows + len(chunks)
+            self.used_checkpoints.add(checkpoint_path(self.checkpoint_dir, chunk_start, chunk_end))
+            combined.extend(rows)
+            cursor = chunk_end
+        if cursor < end:
+            gap_rows, elapsed, windows = self._query(cursor, end)
+            combined.extend(gap_rows)
+            query_seconds += elapsed
+            query_windows += windows
+        return combined, query_seconds, query_windows
 
-    started = time.monotonic()
-    command = CLICKHOUSE_COMMAND.copy()
-    command[command.index("25")] = str(max_execution_seconds)
-    try:
-        result = subprocess.run(
-            command, input=sql, text=True, capture_output=True, timeout=max_execution_seconds + 20, check=False
-        )
-    except subprocess.TimeoutExpired:
-        result = None
+    def _query(self, window_start: datetime, window_end: datetime) -> tuple[list[dict[str, Any]], int, int]:
+        started = time.monotonic()
+        command = [*CLICKHOUSE_COMMAND, "--max_execution_time", str(self.max_execution_seconds)]
+        sql = query_for_window(self.template, window_start, window_end)
+        try:
+            result = subprocess.run(
+                command, input=sql, text=True, capture_output=True, timeout=self.max_execution_seconds + 20, check=False
+            )
+        except subprocess.TimeoutExpired:
+            result = None
 
-    if result is not None and result.returncode == 0:
-        rows = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
-        if checkpoint_dir is not None:
-            write_checkpoint(checkpoint_dir, window_start, window_end, rows)
-        return rows, round(time.monotonic() - started), 1
+        if result is not None and result.returncode == 0:
+            rows = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+            if self.checkpoint_dir is not None:
+                self.used_checkpoints.add(write_checkpoint(self.checkpoint_dir, window_start, window_end, rows))
+            return rows, round(time.monotonic() - started), 1
 
-    elapsed = round(time.monotonic() - started)
-    retryable = result is None or any(
-        marker in result.stderr for marker in ("TIMEOUT_EXCEEDED", "MEMORY_LIMIT_EXCEEDED")
-    )
-    if retryable and (window_end - window_start).total_seconds() / 3600 > min_hours:
+        elapsed = round(time.monotonic() - started)
         failure_kind = (
             "client_timeout"
             if result is None
             else next(
-                (marker for marker in ("MEMORY_LIMIT_EXCEEDED", "TIMEOUT_EXCEEDED") if marker in result.stderr),
-                "retryable_clickhouse_failure",
+                (marker for marker in ("MEMORY_LIMIT_EXCEEDED", "TIMEOUT_EXCEEDED") if marker in result.stderr), None
             )
         )
-        midpoint = window_start + (window_end - window_start) / 2
-        midpoint = midpoint.replace(minute=0, second=0, microsecond=0)
-        if midpoint <= window_start or midpoint >= window_end:
-            midpoint = window_start + timedelta(minutes=30)
-        print(
-            f"splitting {failure_kind} {iso_utc(window_start)}..{iso_utc(window_end)} into smaller UTC windows ({elapsed}s)",
-            file=sys.stderr,
-            flush=True,
-        )
-        left, left_seconds, left_windows = run_query(
-            query_for_window(template, window_start, midpoint),
-            template=template,
-            window_start=window_start,
-            window_end=midpoint,
-            min_hours=min_hours,
-            max_execution_seconds=max_execution_seconds,
-            checkpoint_dir=checkpoint_dir,
-        )
-        right, right_seconds, right_windows = run_query(
-            query_for_window(template, midpoint, window_end),
-            template=template,
-            window_start=midpoint,
-            window_end=window_end,
-            min_hours=min_hours,
-            max_execution_seconds=max_execution_seconds,
-            checkpoint_dir=checkpoint_dir,
-        )
-        return left + right, left_seconds + right_seconds, left_windows + right_windows
+        if failure_kind and window_end - window_start > timedelta(hours=1):
+            midpoint = window_start + (window_end - window_start) / 2
+            midpoint = midpoint.replace(minute=0, second=0, microsecond=0)
+            if midpoint <= window_start or midpoint >= window_end:
+                midpoint = window_start + timedelta(minutes=30)
+            print(
+                f"splitting {failure_kind} {iso_utc(window_start)}..{iso_utc(window_end)} into smaller UTC windows ({elapsed}s)",
+                file=sys.stderr,
+                flush=True,
+            )
+            left, left_seconds, left_windows = self._query(window_start, midpoint)
+            right, right_seconds, right_windows = self._query(midpoint, window_end)
+            return left + right, left_seconds + right_seconds, left_windows + right_windows
 
-    if result is None:
-        raise RuntimeError(
-            f"ClickHouse query timed out at minimum window {iso_utc(window_start)}..{iso_utc(window_end)}"
+        if result is None:
+            raise RuntimeError(
+                f"ClickHouse query timed out at minimum window {iso_utc(window_start)}..{iso_utc(window_end)}"
+            )
+        detail = next(
+            (line.strip() for line in result.stderr.splitlines() if "DB::Exception" in line), "ClickHouse query failed"
         )
-    detail = next(
-        (line.strip() for line in result.stderr.splitlines() if "DB::Exception" in line), "ClickHouse query failed"
-    )
-    raise RuntimeError(f"{detail}; minimum window {iso_utc(window_start)}..{iso_utc(window_end)}")
+        raise RuntimeError(f"{detail}; minimum window {iso_utc(window_start)}..{iso_utc(window_end)}")
 
 
 def int_or_zero(value: Any) -> int:
@@ -650,6 +615,17 @@ def write_json_gzip(path: Path, value: Any) -> None:
         compressed.write(json.dumps(value, indent=2, sort_keys=True) + "\n")
 
 
+def write_usage_reports(
+    output_dir: Path, five_minute: dict[str, Any], hourly_rows: list[dict[str, Any]], weekly_rows: list[dict[str, Any]]
+) -> None:
+    common = {key: value for key, value in five_minute.items() if key != "rows"}
+    write_json_gzip(output_dir / "langfuse-usage-five-minute.json.gz", five_minute)
+    write_json_gzip(
+        output_dir / "langfuse-usage-hourly.json.gz", {**common, "bucket_width": "1 hour", "rows": hourly_rows}
+    )
+    write_json(output_dir / "langfuse-usage-weekly.json", {**common, "bucket_width": "1 week", "rows": weekly_rows})
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -680,26 +656,20 @@ def main() -> None:
     args = parser.parse_args()
     if args.end <= args.start:
         parser.error("--end must be after --start")
+    window = timedelta(hours=args.window_hours)
+    if window <= timedelta(0):
+        parser.error("--window-hours must advance the query window")
 
-    template = FIVE_MINUTE_SQL.read_text()
     checkpoint_dir = args.checkpoint_dir
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    usage_query = WindowedQuery(FIVE_MINUTE_SQL.read_text(), args.max_execution_seconds, checkpoint_dir)
     raw_rows: list[dict[str, Any]] = []
-    window = timedelta(hours=args.window_hours)
     cursor = args.start
     query_seconds = 0
     window_index = 0
     while cursor < args.end:
         stop = min(cursor + window, args.end)
-        statement = query_for_window(template, cursor, stop)
-        chunk, elapsed, actual_windows = run_query(
-            statement,
-            template=template,
-            window_start=cursor,
-            window_end=stop,
-            max_execution_seconds=args.max_execution_seconds,
-            checkpoint_dir=checkpoint_dir,
-        )
+        chunk, elapsed, actual_windows = usage_query.run(cursor, stop)
         window_index += actual_windows
         raw_rows.extend(chunk)
         query_seconds += elapsed
@@ -740,7 +710,7 @@ def main() -> None:
             "within_window_dedup_applied": True,
             "cross_window_collision_status": "unverified_global_audit_memory_limit"
             if args.skip_identifier_audit
-            else "audited",
+            else "pending",
         },
         "definitions": {
             "uncached_input_tokens": "Per-call input is reduced by cache-read and cache-write tokens only when per-call totals prove input includes cache; input is retained only when totals prove it excludes cache or no positive cache is reported and cache categories are reported. Unknown, mixed, or unreported cache/inclusivity groups are null and flagged. Provider labels do not determine inclusivity.",
@@ -760,31 +730,19 @@ def main() -> None:
     }
     hourly_rows = aggregate_records(normalized_rows, hourly_bucket)
     weekly_rows = aggregate_records(normalized_rows, weekly_bucket)
-    common = {key: value for key, value in five_minute.items() if key != "rows"}
-    write_json_gzip(args.output_dir / "langfuse-usage-five-minute.json.gz", five_minute)
-    write_json_gzip(
-        args.output_dir / "langfuse-usage-hourly.json.gz", {**common, "bucket_width": "1 hour", "rows": hourly_rows}
-    )
-    write_json(
-        args.output_dir / "langfuse-usage-weekly.json", {**common, "bucket_width": "1 week", "rows": weekly_rows}
-    )
+    write_usage_reports(args.output_dir, five_minute, hourly_rows, weekly_rows)
     print(
         f"wrote {len(normalized_rows)} five-minute, {len(hourly_rows)} hourly, {len(weekly_rows)} weekly aggregate rows",
         file=sys.stderr,
     )
 
-    audit_template = ID_AUDIT_SQL.read_text()
     audit_rows: list[dict[str, Any]]
     if args.skip_identifier_audit:
         audit_rows, audit_seconds, audit_windows = [], 0, 0
     else:
-        audit_rows, audit_seconds, audit_windows = run_query(
-            query_for_window(audit_template, args.start, args.end),
-            template=audit_template,
-            window_start=args.start,
-            window_end=args.end,
-            max_execution_seconds=120,
-        )
+        audit_query = WindowedQuery(ID_AUDIT_SQL.read_text(), max_execution_seconds=120)
+        audit_rows, audit_seconds, audit_windows = audit_query.run(args.start, args.end)
+        five_minute["request_dedup_scope"]["cross_window_collision_status"] = "audited"
     id_audit = {
         "schema_version": 1,
         "source": "langfuse_clickhouse",
@@ -850,16 +808,10 @@ def main() -> None:
     }
     five_minute["request_dedup_audit"] = dedup_audit
     id_audit["request_dedup_audit"] = dedup_audit
-    common = {key: value for key, value in five_minute.items() if key != "rows"}
-    write_json_gzip(args.output_dir / "langfuse-usage-five-minute.json.gz", five_minute)
-    write_json_gzip(
-        args.output_dir / "langfuse-usage-hourly.json.gz", {**common, "bucket_width": "1 hour", "rows": hourly_rows}
-    )
-    write_json(
-        args.output_dir / "langfuse-usage-weekly.json", {**common, "bucket_width": "1 week", "rows": weekly_rows}
-    )
+    write_usage_reports(args.output_dir, five_minute, hourly_rows, weekly_rows)
     write_json(args.output_dir / "langfuse-usage-identifier-audit.json", id_audit)
-    shutil.rmtree(checkpoint_dir)
+    for path in usage_query.used_checkpoints:
+        path.unlink(missing_ok=True)
     print(f"wrote aggregate identifier audit using {audit_windows} query window(s)", file=sys.stderr)
 
 

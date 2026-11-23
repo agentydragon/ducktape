@@ -1,5 +1,5 @@
 # Manual maintenance only; this file is not included in Flux.
-# Use an image containing compact-history after all serving readers support migration 16.
+# Use an image containing compact-history.
 apiVersion: batch/v1
 kind: Job
 metadata:

@@ -42,6 +42,27 @@ may add constraints but never drop callback reads or rebinds. Benchmark fixtures
   evidence of duplicate work.
 - **Duplicate parses.** `propose-commutations` cloned and reparsed the verified
   source to build its selector index; reuse `PreparedSource::module()`.
+- **Scoping an unknown call's callback reach.** Provider-chunk and export-region
+  scoping left 0 `callback_pool_limit` events under 64, even as an offline upper
+  bound. Tana: median pool 617; of 399 distinct escaped callbacks 64 come
+  through vendor calls, and `new Fx` (86), `Object.*` (75) and class-array
+  iteration (64) account for 225. Claude CLI 2.1.292: median 1,241; conservative
+  export reentry puts every exported callable in the pool and 87% of events fit
+  without them, so the
+  [reentry policy](../../SPEC.md#reentry-through-imported-names) is the lever,
+  not havoc reach.
+- **Raising `MAX_SYNCHRONOUS_CALLBACK_POOL`.** From 64 to 512, the Tana main
+  chunk's `compute_chunk_analysis` did not finish in 31 min on a `-c opt` build
+  (64: 46 s). Invoking the real pools instead of summarizing them is unusable at
+  this size.
+- **Reachability bounds on pools.** Admitting an escaped callback only when its
+  holder is reachable from the call's arguments, publications, globals or
+  vendor-held objects leaves Tana's median pool at 121 (max 187), so held
+  escapes alone exceed 64. Only proving that escaped callbacks are never
+  reinvoked during initialization (median pool 23) is decisive for its
+  1,805-module SCC. Reported reach was `bounded` for 1 of 120 Tana and 4 of 88
+  Claude constructions; the rest were `borrowed_receiver`, `tainted_input` or
+  `unknown_callee`.
 
 ## Memory lifetime
 

@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from cluster.cdk8s.litellm.upstreams import UPSTREAM_BINDINGS
 from model_catalog.catalog import (
     HIDDEN_ALIASES,
     SERVED_ROUTES,
+    TABBYAPI_CHAT,
     ApiShape,
     EmbeddingLimits,
     Provider,
@@ -15,19 +14,6 @@ from model_catalog.catalog import (
     RouteAlias,
     shape_mode,
 )
-
-
-@dataclass(frozen=True)
-class ConfigMapSpec:
-    """The generated files belonging to one LiteLLM proxy."""
-
-    name: str
-    namespace: str
-    data: dict[str, object]
-
-    @property
-    def config_map_name(self) -> str:
-        return "config"
 
 
 def model_entry(entry: Route | RouteAlias) -> dict:
@@ -54,7 +40,13 @@ def model_entry(entry: Route | RouteAlias) -> dict:
         # Fail instead of silently embedding a truncated prefix, including Ollama's
         # retry at num_batch after a runner rejects a longer input.
         params["truncate"] = False
-    if route.num_ctx is not None:
+    if upstream == TABBYAPI_CHAT:
+        params.update(
+            allowed_openai_params=["reasoning_effort"],
+            # TabbyAPI implements Chat Completions; let LiteLLM translate Responses.
+            use_chat_completions_api=True,
+        )
+    elif route.num_ctx is not None:
         params["extra_body"] = {"options": {"num_ctx": route.num_ctx}}
     if upstream.provider == Provider.TANA:
         params.update(
@@ -142,7 +134,3 @@ def main_proxy_config() -> dict:
             "disable_spend_logs": True,
         },
     }
-
-
-def proxy_configs() -> tuple[ConfigMapSpec, ...]:
-    return (ConfigMapSpec("litellm", "litellm", {"config.yaml": main_proxy_config()}),)

@@ -50,7 +50,6 @@ py_test(
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
         "@pypi//pyyaml",
-        "@pypi//tenacity",
         "@rules_python//python/runfiles",
     ],
 )

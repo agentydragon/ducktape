@@ -659,11 +659,9 @@ function mockFetch(input: RequestInfo | URL): Promise<Response> {
                 next_cursor: null,
                 resume_token: null,
               }
-            : fixture === "completed-activity"
+            : fixture === "completed-activity" || fixture === "noisy"
               ? { data: [noisySession], next_cursor: null, resume_token: null }
-              : fixture === "noisy"
-                ? { data: [noisySession], next_cursor: null, resume_token: null }
-                : sessionPage
+              : sessionPage
       )
     );
   }

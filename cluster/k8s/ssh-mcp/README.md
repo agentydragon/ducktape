@@ -64,11 +64,11 @@ its Cilium policy permits port 22 to the switch address. The host key is pinned 
 
 ## Network path
 
-The egress policy selects real cluster nodes by entity rather than by CIDR, non-node Pod targets
-by `toEndpoints`, and the non-k8s Nebula peer `atlas` by `toCIDR`; target hostnames are pinned
-with `hostAliases`. The switch is a direct LAN IP target, selected by a `/32` `toCIDR` rule, and
-the backend Deployment is pinned to the `home-lan` node so it shares the switch route used by
-the Tofu runner. The generated source is <../../cdk8s/ssh_mcp/backend.py>.
+The egress policy selects real cluster nodes by entity rather than by CIDR, and the non-k8s
+Nebula peer `atlas` by `toCIDR`; target hostnames are pinned with `hostAliases`. The switch
+is a direct LAN IP target, selected by a `/32` `toCIDR` rule, and the backend Deployment is
+pinned to the `home-lan` node so it shares the switch route used by the Tofu runner. The
+generated source is <../../cdk8s/ssh_mcp/backend.py>.
 
 `wyrm2`/`rugged` are cluster nodes reached over Nebula, so neither a CIDR selector nor
 cluster DNS resolves them the way a host on the mesh does — hence entities + hostAliases.

@@ -33,15 +33,11 @@ from laser.lightburn.lbrn2_writer import (
 )
 from laser.ruida.rd_format import MAX_LAYERS as MAX_RD_LAYERS, RdJob, RdLayer, RdRect
 
-# ── Cut parameter enum ─────────────────────────────────────────────────────────
-
 
 class CutParam(StrEnum):
     """Named laser cut parameters that can be scanned or held constant."""
 
     POWER_PCT = "power_pct"  # sets both min_power and max_power simultaneously
-    POWER_MIN_PCT = "power_min_pct"
-    POWER_MAX_PCT = "power_max_pct"
     SPEED_MM_S = "speed_mm_s"
     KERF_MM = "kerf_mm"
     Z_OFFSET_MM = "z_offset_mm"
@@ -53,8 +49,6 @@ _PARAM: dict[CutParam, tuple[str, str, bool]] = {
     # (label, unit, abbreviate_in_subtitle) — when abbreviate_in_subtitle is
     # True, the subtitle omits the label and just prints "value unit".
     CutParam.POWER_PCT: ("PWR", "%", False),
-    CutParam.POWER_MIN_PCT: ("PWR min", "%", False),
-    CutParam.POWER_MAX_PCT: ("PWR max", "%", False),
     CutParam.SPEED_MM_S: ("Speed", "mm/s", True),
     CutParam.KERF_MM: ("Kerf", "mm", False),
     CutParam.Z_OFFSET_MM: ("Z", "mm", False),
@@ -93,9 +87,6 @@ def _param_short_label(param: CutParam) -> str:
         sep = "" if unit == "%" else " "
         return f"{label}{sep}{unit}"
     return label
-
-
-# ── Pydantic config models ─────────────────────────────────────────────────────
 
 
 class AxisConfig(BaseModel):
@@ -241,12 +232,6 @@ class GridConfig(BaseModel):
             axes.append(("cols", self.cols.param))
         if self.rows is not None:
             axes.append(("rows", self.rows.param))
-        for name, param in axes:
-            if param in (CutParam.POWER_MIN_PCT, CutParam.POWER_MAX_PCT):
-                raise ValueError(
-                    f"{name}.param={param!r} is not allowed as an axis parameter; "
-                    f"use 'power_pct' instead to vary min and max power together"
-                )
         seen: dict[CutParam, str] = {}
         for name, param in axes:
             if param in seen:
@@ -255,17 +240,10 @@ class GridConfig(BaseModel):
         return self
 
 
-# ── Parameter helpers ──────────────────────────────────────────────────────────
-
-
 def _apply_param(cut: CutSetting, param: CutParam, value: float) -> None:
     """Apply a named parameter value to a CutSetting."""
     if param == CutParam.POWER_PCT:
         cut.min_power = value
-        cut.max_power = value
-    elif param == CutParam.POWER_MIN_PCT:
-        cut.min_power = value
-    elif param == CutParam.POWER_MAX_PCT:
         cut.max_power = value
     elif param == CutParam.SPEED_MM_S:
         cut.speed = value
@@ -281,10 +259,8 @@ def _apply_param(cut: CutSetting, param: CutParam, value: float) -> None:
 
 def _get_param(cut: CutSetting, param: CutParam) -> float:
     """Read a named parameter value from a CutSetting."""
-    if param in (CutParam.POWER_PCT, CutParam.POWER_MAX_PCT):
+    if param == CutParam.POWER_PCT:
         return cut.max_power
-    if param == CutParam.POWER_MIN_PCT:
-        return cut.min_power
     if param == CutParam.SPEED_MM_S:
         return cut.speed
     if param == CutParam.KERF_MM:
@@ -305,10 +281,6 @@ def _constant_params(config: GridConfig) -> list[CutParam]:
         varied.add(config.cols.param)
     if config.rows is not None:
         varied.add(config.rows.param)
-    if CutParam.POWER_PCT in varied:
-        varied |= {CutParam.POWER_MIN_PCT, CutParam.POWER_MAX_PCT}
-    if CutParam.POWER_MIN_PCT in varied or CutParam.POWER_MAX_PCT in varied:
-        varied.add(CutParam.POWER_PCT)
 
     return [
         param
@@ -352,30 +324,10 @@ def _full_subtitle(config: GridConfig) -> str:
 
 
 def _auto_label(param: CutParam) -> str:
-    """Build an axis label from a CutParam (e.g. POWER_MAX_PCT → 'Power max [%]')."""
+    """Build an axis label from a CutParam (e.g. SPEED_MM_S → 'Speed [mm/s]')."""
     label, unit, _abbrev = _PARAM[param]
     return f"{label} [{unit}]" if unit else label
 
-
-def _cell_energy(config: GridConfig, outer_params: list[tuple[CutParam, float]], x_val: float, y_val: float) -> float:
-    """Energy proxy for sort ordering: higher value = more fire risk.
-
-    Computes max_power * num_passes / speed from the effective parameter values.
-    """
-    power = config.cut.power_max_pct
-    speed = config.cut.speed_mm_s
-    passes = config.cut.num_passes
-    for param, val in [(config.x.param, x_val), (config.y.param, y_val), *outer_params]:
-        if param in (CutParam.POWER_PCT, CutParam.POWER_MAX_PCT):
-            power = val
-        elif param == CutParam.SPEED_MM_S:
-            speed = val
-        elif param == CutParam.NUM_PASSES:
-            passes = round(val)
-    return power * passes / speed
-
-
-# ── Layout constants ───────────────────────────────────────────────────────────
 
 _SPACING = 3.0  # mm between text elements
 _MARGIN_LEFT = 5.0  # mm left of the Y-axis label
@@ -386,9 +338,6 @@ _TEXT_LAYER = 0  # layer index reserved for text labels
 def _estimate_text_width(text: str, height: float) -> float:
     """Rough rendered text width estimate (approx 0.55 x height per char)."""
     return len(text) * height * 0.55
-
-
-# ── Grid generation ────────────────────────────────────────────────────────────
 
 
 def _make_text(
@@ -426,16 +375,9 @@ def _x_label_height(config: GridConfig) -> float:
 
 @dataclass
 class _CellSpec:
-    """A cell's parameter values and grid position indices (no absolute position).
+    """Effective cut settings and grid position before layer indices are assigned."""
 
-    Used for energy-based sorting before assigning layer indices. Both
-    generate() (LightBurn) and generate_rd() (Ruida) compute absolute
-    positions from these grid indices using their own coordinate systems.
-    """
-
-    x_val: float
-    y_val: float
-    outer_params: list[tuple[CutParam, float]]
+    cut: CutSetting
     outer_col: int  # index into config.cols.values (0 if no cols axis)
     outer_row: int  # index into config.rows.values (0 if no rows axis)
     inner_col: int  # index into config.x.values
@@ -458,30 +400,16 @@ def _sorted_cell_specs(config: GridConfig) -> list[_CellSpec]:
 
             for row_i, y_val in enumerate(config.y.values):
                 for col_j, x_val in enumerate(config.x.values):
-                    specs.append(
-                        _CellSpec(
-                            x_val=x_val,
-                            y_val=y_val,
-                            outer_params=outer_params,
-                            outer_col=oc_j,
-                            outer_row=or_i,
-                            inner_col=col_j,
-                            inner_row=row_i,
-                        )
-                    )
+                    cut = config.cut.to_cut_setting(0, "")
+                    _apply_param(cut, config.x.param, x_val)
+                    _apply_param(cut, config.y.param, y_val)
+                    for param, value in outer_params:
+                        _apply_param(cut, param, value)
+                    specs.append(_CellSpec(cut=cut, outer_col=oc_j, outer_row=or_i, inner_col=col_j, inner_row=row_i))
 
-    specs.sort(key=lambda c: _cell_energy(config, c.outer_params, c.x_val, c.y_val))
+    # Cut lower-energy cells first. Use the settings that will actually be emitted.
+    specs.sort(key=lambda cell: cell.cut.max_power * cell.cut.num_passes / cell.cut.speed)
     return specs
-
-
-def _cell_cut_setting(config: GridConfig, spec: _CellSpec, index: int, name: str) -> CutSetting:
-    """Create a CutSetting for a grid cell, applying the cell's parameter values."""
-    cut = config.cut.to_cut_setting(index, name)
-    _apply_param(cut, config.x.param, spec.x_val)
-    _apply_param(cut, config.y.param, spec.y_val)
-    for param, value in spec.outer_params:
-        _apply_param(cut, param, value)
-    return cut
 
 
 def _generate_subgrid_labels(
@@ -649,7 +577,6 @@ def generate(config: GridConfig) -> LightBurnProject:
     x_ah = _x_label_height(config)
     subgrid_gap = config.geometry.subgrid_gap_mm
 
-    # ── Horizontal layout ─────────────────────────────────────────────────────
     x_cursor = _MARGIN_LEFT
 
     # Outer rows axis labels (rotated, left side)
@@ -677,7 +604,6 @@ def generate(config: GridConfig) -> LightBurnProject:
     all_cell_right = cell_grid_lefts[-1] + cell_grid_w
     centre_x = (all_cell_left + all_cell_right) / 2.0
 
-    # ── Vertical layout ───────────────────────────────────────────────────────
     subtitle_text = _full_subtitle(config)
 
     # Outer cols axis labels (above sub-grids)
@@ -813,8 +739,9 @@ def generate(config: GridConfig) -> LightBurnProject:
     sorted_cells = _sorted_cell_specs(config)
     next_layer_index = 1
     for spec in sorted_cells:
-        cut = _cell_cut_setting(config, spec, next_layer_index, f"C{next_layer_index:02d}")
-        cut_settings.append(cut)
+        spec.cut.index = next_layer_index
+        spec.cut.name = f"C{next_layer_index:02d}"
+        cut_settings.append(spec.cut)
 
         sg_top = subgrid_cell_grid_tops[spec.outer_row]
         cx = cell_grid_lefts[spec.outer_col] + config.geometry.cell_size_mm / 2.0 + spec.inner_col * inner_stride
@@ -941,7 +868,7 @@ def generate_rd(config: GridConfig) -> RdJob:
     rects: list[RdRect] = []
 
     for i, spec in enumerate(sorted_cells):
-        cut = _cell_cut_setting(config, spec, i, "")
+        cut = spec.cut
         layers.append(
             RdLayer(
                 index=i,
@@ -1007,9 +934,6 @@ def generate_rd(config: GridConfig) -> RdJob:
         )
 
     return RdJob(layers=layers, rects=rects)
-
-
-# ── CLI ────────────────────────────────────────────────────────────────────────
 
 
 def main(argv: list[str] | None = None) -> None:

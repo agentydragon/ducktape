@@ -212,7 +212,7 @@ class AppState:
             logger.error(
                 "Plaid SDK call failed after its request stopped waiting (exception_type=%s, endpoint=%s)",
                 type(error).__name__,
-                getattr(error, "endpoint", None),
+                error.endpoint if isinstance(error, PlaidClientError) else None,
             )
 
     async def drain_lifespan_operations(self) -> None:

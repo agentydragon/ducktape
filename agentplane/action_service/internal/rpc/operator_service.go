@@ -19,10 +19,11 @@ type OperatorService struct {
 	// gate admitted each call; a watch asks it again before every frame.
 	gate     *grpcgate.Gate
 	linkages *linkage.Authority
+	previews IntegrationPreviews
 }
 
-func NewOperatorService(requests *store.Store, updates *wakeups.Hub, gate *grpcgate.Gate, linkages *linkage.Authority) *OperatorService {
-	return &OperatorService{store: requests, updates: updates, gate: gate, linkages: linkages}
+func NewOperatorService(requests *store.Store, updates *wakeups.Hub, gate *grpcgate.Gate, linkages *linkage.Authority, previews IntegrationPreviews) *OperatorService {
+	return &OperatorService{store: requests, updates: updates, gate: gate, linkages: linkages, previews: previews}
 }
 
 // DecideActionRequest records the Decision. The store queues an allowed request for dispatch in the same

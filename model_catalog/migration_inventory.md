@@ -85,10 +85,10 @@ The settled boundaries are:
 
 Source disposition and remaining work:
 
-| Files / boundary                                                                   | Disposition / remaining question                                                                                                                                                                                  |
-| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cluster/cdk8s/model_selections.py`; Agentplane environment and preset definitions | Reviewed 2026-10-10: retain named-route offerings and explicit preset defaults. Staging/testing public-coder defaults select Luna; Haku selects Qwen 256K. No reconstructed default slugs or second roster found. |
-| Ingress `app.py`, `settings.py`; runner lookup and session handling                | Should exposed model IDs differ from LiteLLM IDs? Translation remains a TODO, not an implemented or activated mapping. Coordinate request/response identity, authorization and accounting.                        |
+| Files / boundary                                                                              | Disposition / remaining question                                                                                                                                                                                  |
+| --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster/cdk8s/agentplane/model_selections.py`; Agentplane environment and preset definitions | Reviewed 2026-10-10: retain named-route offerings and explicit preset defaults. Staging/testing public-coder defaults select Luna; Haku selects Qwen 256K. No reconstructed default slugs or second roster found. |
+| Ingress `app.py`, `settings.py`; runner lookup and session handling                           | Should exposed model IDs differ from LiteLLM IDs? Translation remains a TODO, not an implemented or activated mapping. Coordinate request/response identity, authorization and accounting.                        |
 
 Runtime acceptance remains open: verify new-runner startup/session/model-switch
 behavior and existing-runner inference/stream continuity. Source wiring and template

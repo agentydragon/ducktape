@@ -1,7 +1,7 @@
 """Critic-specific mock utilities."""
 
 from openai_utils.model import FunctionCallItem
-from props.agents.critic.main import InsertIssueArgs, InsertOccurrenceArgs, ReportFailureArgs, SubmitArgs
+from props.agents.critic.main import InsertIssueArgs, InsertOccurrenceArgs, SubmitArgs
 from props.testing.mocks import SubprocessExecMock
 
 
@@ -33,7 +33,3 @@ class CriticMock(SubprocessExecMock):
     def submit(self, *, issues_count: int, summary: str) -> FunctionCallItem:
         """Submit the critique."""
         return self.tool_call("submit", SubmitArgs(issues_count=issues_count, summary=summary))
-
-    def report_failure(self, message: str) -> FunctionCallItem:
-        """Report that the critique could not be completed."""
-        return self.tool_call("report_failure", ReportFailureArgs(message=message))

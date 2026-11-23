@@ -1,72 +1,26 @@
-# Roaming laptop nodes
+# Roaming worker follow-ups
 
-Laptops (`iguana`, `rugged`; mesh role `laptop`) are cluster nodes that come and go.
+[Worker setup and scheduling](../roaming_laptop_worker.md).
+[Offline behavior and fencing constraints](../../roaming_node_controller/README.md).
 
-## Goals
+## Validate real reconnects
 
-- Managed like every other node: same mesh, NixOS kubelet, central logs and metrics while
-  online.
-- Opportunistic capacity: disposable CI jobs, `rugged`'s local LLM behind LiteLLM,
-  strict-local Piraeus volumes.
-- A laptop's identity persists while offline. Its Node object stays, so PVCs, PV affinity,
-  labels and its Piraeus satellite are remembered and come back with it. Deleting the Node on
-  suspend is ruled out.
-- Offline is a normal state: no alerts, and no blocked DaemonSet rollout, Helm wait or Flux
-  health check.
-- A laptop that is online and broken still alerts.
+- **Resume:** At the next laptop resume after the out-of-service taint has landed,
+  verify taint removal, Cilium agent and Envoy readiness, and pod networking.
+  Both DaemonSets have narrowed tolerations in [Cilium values](../../terraform/main/cilium-values.yaml).
+  On 2026-11-14, `rugged` was tainted while offline, untainted 2 seconds after
+  kubelet returned, and its DaemonSet pods returned within seconds.
+- **Restrictive NAT:** Exercise cross-node pod traffic from `rugged` behind a
+  mobile hotspot or restrictive corporate NAT. Verify Nebula relay fallback
+  under workload traffic.
 
-## Problem
+## Retire obsolete alert suppressions
 
-Kubernetes has one representation for a Node without a kubelet: NotReady/Unreachable. Every
-consumer reads that as a failure. A DaemonSet keeps counting the node as desired. A pod
-deleted there stays Terminating and holds the rollout budget. Helm and Flux wait on those
-counts, and stock alerts fire. Each consumer has been patched separately:
+After the resume check, review seven days of `ALERTS` before pruning the remaining
+null routes in [the Alertmanager config](../../cdk8s/monitoring/stack.py).
+`RoamingNodeOffline` inhibits alerts carrying the offline node's label.
+Unlabelled pod, DaemonSet, Deployment and Job alerts need their own review,
+including pods that stay Pending because a volume pins them to the laptop.
 
-- `maxUnavailable` above the laptop count on each DaemonSet (`monitoring/loki.py`,
-  `monitoring/alloy.py`, `node_feature_discovery.py`), pinned by
-  `test_roaming_daemonset_capacity` against `nebula-mesh.json`.
-- `disableWait` on kube-prometheus-stack, promtail and NFD, and a sequential manual Cilium
-  rollout (`cilium.tf`).
-- Forked kube-prometheus-stack rules excluding the roaming taint (`monitoring/rules.py`),
-  re-diffed every chart bump. Alerts without a `node` label (`KubePodCrashLooping`,
-  `KubeDaemonSetRolloutStuck`, `KubeDeployment*`, `KubeJobFailed`, node-exporter
-  `TargetDown`) go to the null receiver cluster-wide (`monitoring/stack.py`).
-- A hard-coded `only_when_node_ready="rugged"` on the Piraeus `lvm-metrics` collector alert.
-
-The tax grows with laptops × components.
-
-## Design
-
-Give "offline" a real representation that upstream controllers already honor: the
-non-graceful node shutdown taint, `node.kubernetes.io/out-of-service`. The
-[roaming node controller](../../roaming_node_controller/README.md) adds it after 5 minutes of
-kubelet silence and removes it on the first heartbeat. Its README records which upstream
-mechanisms react and how. A custom taint was rejected because pod GC force-deletes Terminating
-pods only for this key, and without that the DaemonSet deadlock remains.
-
-The static `node-role.kubernetes.io/roaming` taint stays. It keeps ordinary workloads off
-laptops and selects which nodes the controller manages.
-
-Rejected alternatives:
-
-- **Medik8s Node Healthcheck plus Self Node Remediation's out-of-service strategy:** its agent
-  reboots a node that loses API contact, which is wrong for a laptop on a flaky link.
-- **Per-laptop k3s clusters with federation (Liqo, virtual-kubelet):** out of proportion for
-  two laptops.
-
-## Remaining work
-
-Verified live on 2026-11-14 with `rugged`: tainted while offline, untainted 2 s after its
-kubelet returned, every DaemonSet pod back within seconds. The DaemonSet `maxUnavailable`
-floors and Helm `disableWait` are gone.
-
-- **Cilium:** verify on the next laptop resume that its agent and envoy, which no longer
-  tolerate the taint, come back and the laptop's pods get networking.
-- **Alerts:** node-labelled alerts are inhibited by `RoamingNodeOffline`. Remove the
-  null routes for pod, DaemonSet, Deployment and Job alerts in `monitoring/stack.py` after
-  the Cilium check above and a review of 7 days of `ALERTS`. The taint lands 5 minutes
-  after the kubelet goes silent, so an alert with a shorter `for` still fires in between:
-  the Piraeus `lvm-metrics` alerts (2m) keep their `only_when_node_ready` guard.
-
-Out of scope: `KubeVersionMismatch` (NixOS kubelets ahead of Talos) is version drift, not
-absence.
+Keep [the Piraeus collector's Ready guard](../../cdk8s/piraeus_metrics.py) during
+this cleanup. `KubeVersionMismatch` tracks a separate kubelet version issue.

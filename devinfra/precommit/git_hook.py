@@ -51,6 +51,7 @@ def _staged_deltas(repo: pygit2.Repository) -> tuple[pygit2.Tree | None, list[py
     else:
         head_tree = repo.head.peel(pygit2.Tree)
         base = head_tree
+    # Index vs HEAD only: `repo.status()` also scans the working tree and is much slower.
     repo.index.read()
     return head_tree, list(repo.index.diff_to_tree(base).deltas)
 

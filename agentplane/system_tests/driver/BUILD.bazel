@@ -15,15 +15,14 @@ py_library(
     testonly = True,
     srcs = ["agent.py"],
     deps = [
+        ":scripted_turn",
         ":tracing",
         ":turn",
         "//agentplane/app/testing:client",
         "//agentplane/app/testing:history_reads",
         "//agentplane/app/testing:models",
         "//agentplane/history_service/api/history:history_service_pb2",
-        "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:event_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/session_dispatcher/dispatcher:testing_client",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb2",
@@ -42,7 +41,6 @@ py_library(
         ":cluster",
         ":port_forward",
         ":tls",
-        ":tracing",
         "//agentplane/session_dispatcher/dispatcher:testing_client",
         "@pypi//grpcio",
     ],
@@ -52,7 +50,6 @@ py_library(
     name = "dispatcher_operations",
     srcs = ["dispatcher_operations.py"],
     deps = [
-        ":dispatcher_transport",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb2",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb2_grpc",
         "@pypi//grpcio",  # keep: mypy follows generated gRPC interfaces
@@ -116,8 +113,6 @@ py_test(
 py_test(
     name = "test_agent",
     srcs = ["test_agent.py"],
-    # The driver regression exercises the test driver, but owns only these offline cases.
-    args = ["$(location test_agent.py)"],
     deps = [
         ":agent",
         "//:conftest",
@@ -145,13 +140,16 @@ py_library(
         ":turn",
         "//agentplane/grpc:calls",
         "//agentplane/history_service:client",
+        "//agentplane/history_service/api/history:history_service_pb2",
         "//agentplane/history_service/testing:session_events",
+        "//agentplane/proto:event_pb2",
         "//agentplane/proto:session_pb2",
         "//agentplane/session_dispatcher/dispatcher:testing_client",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb2",
         "//agentplane/testing:scripted_model",
         "@pypi//grpcio",
         "@pypi//protobuf",
+        "@pypi//tenacity",
     ],
 )
 
@@ -170,7 +168,6 @@ py_library(
 py_test(
     name = "test_session",
     srcs = ["test_session.py"],
-    args = ["$(location test_session.py)"],
     deps = [
         ":session",
         "//:conftest",
@@ -213,8 +210,8 @@ py_test(
 )
 
 py_library(
-    name = "ollama_catalog",
-    srcs = ["ollama_catalog.py"],
+    name = "tabbyapi_catalog",
+    srcs = ["tabbyapi_catalog.py"],
     deps = [
         "//agentplane/env/runtime:harness",
         "//agentplane/proto:session_pb2",
@@ -224,10 +221,10 @@ py_library(
 )
 
 py_test(
-    name = "test_ollama_catalog",
-    srcs = ["test_ollama_catalog.py"],
+    name = "test_tabbyapi_catalog",
+    srcs = ["test_tabbyapi_catalog.py"],
     deps = [
-        ":ollama_catalog",
+        ":tabbyapi_catalog",
         "//:conftest",
         "//agentplane/proto:session_pb2",
         "//agentplane/sandboxes/runtimeconfig:model_catalog",
@@ -315,10 +312,10 @@ py_library(
         ":identity",
         ":native_auth",
         ":sandbox_cleanup",
+        ":sandbox_object",
         ":sandbox_ownership",
         ":tls",
         ":tracing",
-        "//agentplane:sandbox_resource",
         "//agentplane/grpc:calls",
         "//agentplane/history_service:client",
         "//agentplane/proto:identity_pb2",
@@ -435,19 +432,6 @@ py_test(
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//pytest",
-    ],
-)
-
-py_library(
-    name = "session_setup",
-    srcs = ["session_setup.py"],
-    deps = [
-        ":tracing",
-        "//agentplane/app/testing:client",
-        "//agentplane/app/testing:history_reads",
-        "//agentplane/proto:session_pb2",
-        "//agentplane/session_dispatcher/dispatcher:testing_client",
-        "@pypi//protobuf",
     ],
 )
 
@@ -580,7 +564,7 @@ py_library(
     srcs = ["egress_decisions.py"],
     deps = [
         ":cluster",
-        ":port_forward",
+        ":dispatcher_transport",
         ":tls",
         "//agentplane/egress/api/admin:egress_admin_pb2",
         "//agentplane/egress/api/admin:egress_admin_pb2_grpc",
@@ -776,9 +760,9 @@ py_library(
     srcs = ["native_platform.py"],
     deps = [
         ":cluster",
+        ":dispatcher_transport",
         ":environment_transport",
         ":native_auth",
-        ":port_forward",
         ":tls",
         "//agentplane/grpc:calls",
         "//agentplane/history_service:client",
@@ -802,6 +786,7 @@ py_library(
         ":sandbox",
         ":sandbox_cleanup",
         ":sandbox_ownership",
+        ":tracing",
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/proto:identity_pb2",
         "@pypi//protobuf",
@@ -918,5 +903,27 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
         "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "sandbox_object",
+    srcs = ["sandbox_object.py"],
+    deps = [
+        ":cluster",
+        "//agentplane:sandbox_resource",
+    ],
+)
+
+py_library(
+    name = "scripted_turn",
+    srcs = ["scripted_turn.py"],
+    deps = [
+        ":turn",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb2",
+        "//agentplane/testing:scripted_model",
+        "@pypi//protobuf",
     ],
 )

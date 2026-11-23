@@ -33,18 +33,6 @@
   display: block;
 }
 
-/* The card identity header floats its status selector beside the title, then lets the text use
-   the full width below it. */
-.haku-card-head {
-  display: flow-root;
-}
-
-.haku-card-head-actions {
-  float: right;
-  margin-left: var(--mantine-spacing-sm);
-  margin-bottom: 0.35rem;
-}
-
-.haku-card-head > :not(.haku-card-head-actions) + :not(.haku-card-head-actions) {
+.haku-card-head > * + * {
   margin-top: 2px;
 }

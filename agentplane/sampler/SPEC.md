@@ -86,9 +86,7 @@ kubelet probes do not require TLS. There is no plaintext application RPC listene
 `FollowEvents` and `Compact`. They are not part of the Session Dispatcher delivery API. HarnessHost
 owns Session creation, control and current status, including `ListSessions` and `WatchSessions`.
 
-This V1 placement retains the existing Sandbox-backed identity, admission, notification, wake and
-deletion behavior. Its exact executor environment is required and fixed for the Session. It does not
-add optional attachments or allow an environment-free central Session.
+This V1 placement requires an exact executor environment, fixed for the Session.
 
 `spec.instructions` is the caller's briefing. Callers that expose an additive
 `additional_instructions` parameter map it to this field; it never replaces Agentplane guidance.
@@ -132,7 +130,7 @@ lets the sampling request finish, because a cut stream leaves its intent uncerta
 `notify()` outputs before its steering input.
 
 Dispatcher routes `SessionSpec.placement=central_sampler_v1` directly to a configured sampler. Its
-native RuntimeProxyClient continues to serve wrapped Codex/Claude selected by
+native `HarnessHostClient` continues to serve wrapped Codex/Claude selected by
 `environment_hosted.harness`. There is no central-to-native fallback. Initial open
 requires a ready incarnation; later central commands do not wake or wait for executor readiness.
 The Sandbox UID stays fixed. A verified new incarnation of that same Sandbox can be adopted at
@@ -154,7 +152,9 @@ reconciliation described below; an in-flight provider request may be interrupted
 
 Provider requests have independent `provider_response_header_timeout_seconds` and
 `provider_idle_timeout_seconds` budgets, defaulting to 120 and 600 seconds. The header budget
-covers request transmission through response headers while preserving the connection's configured
+covers request transmission through response headers; each model route may override this budget with
+`response_header_timeout_seconds`. The selected budget also extends that attempt's initial lease. The
+header budget preserves the connection's configured
 transport and TLS behavior. The semantic-idle budget starts after the response head is durably
 recorded. Only a validated semantic event that is durably recorded resets it: nonempty content,
 function-argument, and custom-tool-input deltas; first valid item-added/item-done transitions for a
@@ -270,8 +270,6 @@ effect.
 Reconciliation is level-triggered: the runtime subscribes before its initial ownership/work scan,
 then work notifications and listener reconnects wake further scans of committed rows. Periodic
 scans also read those rows, so missed or coalesced notifications do not strand work.
-`central_sampler_work` uses the existing database and adds no migration, durable notification row,
-deployment resource, or Session setting.
 
 Pod CPU and memory limits are aggregate bounds for the Go service and the shared host, so container
 exhaustion can interrupt all live Sessions. `store()` / `load()` values and live JavaScript cells
@@ -303,7 +301,7 @@ The pinned code-mode host V1 passes `delegate/response` errors to JavaScript as 
 the delegate response has a `message` field but no structured error or cause field. Catching code
 must parse the JSON string for these fields; native `Error` properties require a host protocol change.
 
-Process handles inherit upstream's detached retention limit: pinned Codex 0.166.0 retains a
+Process handles inherit upstream's detached retention limit: pinned Codex 0.171.0 retains a
 disconnected native session for 30 seconds, then expires it and terminates processes still running
 in that session. This is upstream behavior, not sampler or adapter persistence. The adapter's gRPC
 `OpenSession` stream owns its local WebSocket connection to that Codex session; stream lifetime and
@@ -331,7 +329,7 @@ missing cell), unknown or `null` tool arguments are rejected, and audio truncati
 tokens from data URL size rather than decoded duration.
 
 A flat top-level `models` map allowlists public route IDs and reasoning efforts. Each entry binds a
-named `connection`, explicit `provider_model`, `api` (`responses` or `anthropic_messages`) and
+named `connection`, explicit `provider_model`, `api` (`responses`, `anthropic_messages` or `chat_completions`) and
 `exec_encoding`. Connections declare a base URL and `auth.type` (`bearer`, `agentplane_ingress` or
 `anthropic_api_key`). Bearer and Anthropic API key connections require exactly one inline credential
 or rotating credential file. Agentplane ingress accepts that credential mode or, with `tls`, a
@@ -357,10 +355,26 @@ retained in provider history and answered with the matching function or custom t
 unsupported-call error; it is not dispatched, and the model may continue. Malformed call shapes,
 unsupported output items, duplicate call IDs, and configured names used with the wrong item type
 remain validation failures.
-Model changes cannot change connection, provider model, API, dialect or exec encoding within a
-Session. Matching wire formats do not establish that a different model accepts retained signed
-thinking, encrypted reasoning or compaction items; cross-model continuation is conservatively
-rejected with `FAILED_PRECONDITION`. Route aliases for the same provider model remain eligible.
+
+### Model changes
+
+Model changes preserve the Session's API and current reasoning effort. Aliases for the same
+connection, provider model, dialect, exec encoding and provider continuation settings remain
+eligible.
+
+An idle and settled Session can switch between ChatGPT subscription Responses Lite models on the
+same Agentplane ingress connection and tool encoding. Retained sampling and compaction requests
+must match the endpoint, account, API and history projection. This evidence also covers removed
+routes. The switch requires settled tool calls and no pending or queued work. A message queued
+after the switch uses the selected replacement. The sampler sends the active conversation window
+unchanged, including any opaque compaction, and preserves the full transcript. The provider may
+omit incompatible reasoning, as documented in
+[OpenAI's Responses reasoning guide](https://developers.openai.com/api/docs/guides/reasoning#reasoning-item-removal-across-requests).
+
+A removed Chat Completions route can still be replaced by another Chat Completions route in an idle,
+settled Session. The sampler replays the retained messages and tool calls. Other route changes
+require the original continuation contract. The sampler declines incompatible switches with
+`FAILED_PRECONDITION`.
 Anthropic also requires the same request options to preserve signed continuation. Route contracts must remain fixed
 for retained Sessions; changing a contract requires a new route ID. Model changes require the
 target to allow the current effort; effort changes must be allowed by the current model.
@@ -382,9 +396,7 @@ continuation, matching Codex. `response.completed.output` is retained as evidenc
 but does not replace or supplement them: Antigravity through LiteLLM can rewrite
 reasoning and add terminal-only messages.
 
-Each conversation is pinned to an explicit API: `responses` or `anthropic_messages`. Responses
-context contains native Responses items; Anthropic context contains native Messages API messages.
-Neither protocol is stored inside the other's item envelope. Protocol adapters own input rendering,
+Each conversation is pinned to its API and retains its native items or messages. Protocol adapters own input rendering,
 call/result pairing, completion, effort controls, and compaction. They derive generic tool invocations
 with call IDs and native source-record ordinals; these execution decisions are not extra conversation
 records. The shared runtime owns effect intents, execution, leases, interruption, and recovery.
@@ -393,6 +405,51 @@ stream event and its derived History observations commit atomically before parsi
 evidence failure stops the stream without acknowledging the pending effect.
 Each provider-evidence write also requires its sampling or compaction intent to remain the current
 open intent under the owner fence, so late stream evidence from a settled or superseded intent is rejected.
+
+Chat Completions streams one choice over `/v1/chat/completions` using JSON `exec`. A valid
+`stop` or `tool_calls` followed by `[DONE]` commits the assembled assistant message.
+Tool arguments must be complete JSON objects before any call can execute. The store retains
+reasoning content when supplied and pairs each tool result with its native call ID. Later
+notifications use system messages. The route uses the provider's default reasoning setting.
+Image tool results become text notices.
+
+A Chat Completions route with `chat_compaction` supports manual compaction and can set
+`auto_compact_tokens` to trigger at the last streamed usage total. The sampler keeps
+`keep_recent_turns` user turns verbatim. The summary request reuses the system message, tools and
+conversation, then appends a user message asking for a handoff summary of older turns. It sets
+`tool_choice: "none"` and an output budget of `max_tokens`. This preserves the prompt prefix for
+providers that cache it. The cut is at a user message, so retained tool calls and their results
+stay together. A complete nonempty text summary replaces the active
+prefix only if it reduces the serialized context. The full transcript remains available in History.
+The sampler commits the summary request before dispatch and reuses its exact body on retry.
+Automatic compaction waits for a settled context with an older turn available.
+
+The route can set `chat_compaction.summary_prompt_template` and
+`chat_compaction.replacement` in the sampler settings ConfigMap. These are Go text templates.
+The prompt receives `.KeepRecentTurns`. The replacement receives `.Summary` and
+`.KeepRecentTurns`, and must include the summary verbatim. Choose `assistant` or `user`
+for the replacement role. The environment notice and retained native turns follow it.
+A replacement rendered as a user message does not count as an authored turn. With both
+settings omitted, the sampler uses its built-in handoff prompt and assistant-message wrapper.
+
+```yaml
+chat_compaction:
+  max_tokens: 8192
+  keep_recent_turns: 2
+  summary_prompt_template: |
+    Write a handoff with goals, decisions, and open work.
+    The latest {{.KeepRecentTurns}} user turns will be kept verbatim.
+  replacement:
+    role: user
+    template: |
+      <handoff>
+      {{.Summary}}
+      </handoff>
+```
+
+The sampler validates templates at startup. A retry uses the original rendered request.
+Changing the replacement settings while a summary request is pending prevents applying
+that summary under the new settings.
 
 Anthropic preserves signed thinking, redacted thinking and compaction content without translating
 their fields.
@@ -547,11 +604,13 @@ state and other live cells/processes. JavaScript syntax errors and exceptions li
 normal `Script failed` output. Internal store, host-protocol and transport failures are not
 classified as model input errors.
 
-Provider sampling and compaction use at most three attempts per prepared step. HTTP 408, 429 and
-5xx, upstream transport/truncated-stream failures, and response-head/semantic-idle timeouts are
-transient. After the joined call ends, the owner abandons its exact intent, retains raw evidence,
-and records retry due time using PostgreSQL. Backoff starts at one second and doubles, honoring
-`Retry-After` up to 30 seconds. A retry has a fresh intent ID, the same accepted command and step,
+Provider sampling and compaction use at most `provider_attempt_budget` attempts per prepared step (default 3, range 1–16). HTTP 408, 429 and
+5xx, upstream transport/truncated-stream failures, response-head/semantic-idle timeouts, and a
+Chat Completions stream that reports `tool_calls` without emitting any calls are transient.
+The sampler logs a warning for the empty tool-call response. After the joined call ends, the
+owner abandons its exact intent, retains raw evidence,
+and records retry due time using PostgreSQL. Backoff starts at `provider_retry_initial_backoff_seconds` (default 1) and doubles, honoring
+`Retry-After` up to `provider_retry_max_backoff_seconds` (default 30). A retry has a fresh intent ID, the same accepted command and step,
 and the frozen prepared body; steering input and notifications wait until that step settles.
 Changed routing or parser profiles fail the command rather than silently rerouting its request.
 Compaction also pins its kept-suffix and effort-restoration policy, so a configuration change
@@ -715,9 +774,8 @@ Dispatcher does not relay tools.
 The adapter permits at most eight open or opening `OpenSession` streams per Runner. This is a limit
 on live adapter connections, not Codex native sessions, sampler conversations, or the sampler's
 `max_live_sessions` setting. The sampler releases its connection when no live cells or processes
-require it; Runner drain or observer fencing closes it as well. The adapter introduces no durable
-session persistence or process policy. A stream loss leaves the native Codex session detached for up
-to 30 seconds, after which pinned Codex 0.166.0 expires it and terminates remaining processes. See
+require it; Runner drain or observer fencing closes it as well. A stream loss leaves the native Codex session detached for up
+to 30 seconds, after which pinned Codex 0.171.0 expires it and terminates remaining processes. See
 the [Executor API resource and lifecycle contract](../env/runtime/execution/SPEC.md) for connection budgets
 and ownership.
 
@@ -728,7 +786,7 @@ the JavaScript promise is rejected without replay. Cursor-based `process/read` m
 same execution session and retry once with the same ID and cursor. The adapter returns exact native
 frames to the sampler's existing boundary journal without exposing native JSON as an execution API.
 For `view_image` block reads, frame payloads are stored as byte counts and SHA-256 digests so raw
-image bytes remain excluded from the journal. Dispatcher does not relay tools. Every provider
+image bytes remain excluded from the journal. Every provider
 request carries Codex's `gpt-6.1-sol` base instructions as Responses `instructions` or Anthropic
 `system`, whatever the model. The stored effective Session prompt is added as standing guidance;
 it does not replace the provider/harness base. Standing instructions are supported; remote
@@ -829,8 +887,8 @@ service applies its Goose migrations before serving. Repeated startup preserves
 Session identities, conversation, effect-journal, process, command, evidence and export state.
 Acceptance tests start the actual Go binary and inspect its database separately. Durable sampler
 state, owner fencing, content projections and evidence commits are implemented in
-`internal/sessionstore`; runtime scheduling, executor effects and provider transport stay in the
-`central_sampler` package. Pure provider tool schemas shared by those layers live in
+`internal/sessionstore`; runtime scheduling and provider I/O stay in `internal/residentruntime`, and
+executor effects in `internal/executor`. Pure provider tool schemas shared by those layers live in
 `internal/toolcontract`. The History exporter depends on the narrow `historyexport.Outbox` contract.
 
 `sampler_conversation.api` pins the native protocol. `sampler_content` stores typed, content-addressed
@@ -844,7 +902,7 @@ Content IDs hash the kind and standard-JSON payload with a versioned domain sepa
 bytes, avoiding JSONB number normalization after hashing. This is a provider representation, not a
 general JSON node format or serializer.
 
-Native `anthropic`/`responses` packages own their private stored types, packing/reconstruction
+Native `anthropic`/`responses`/`chatcompletions` packages own their private stored types, packing/reconstruction
 codecs, API types, request construction, streaming and continuation semantics. They use the
 sampler-private `internal/content` content reader/writer: typed IDs/kinds, standard JSON encoding,
 content hashing and integrity checks. The content package imports neither provider nor semantic
@@ -872,6 +930,12 @@ these concrete native fields and Go's standard JSON encoder, rather than rerunni
 policy. Input/messages follows from the pinned API. Rendered bytes leave preparation only after
 commit. Separate provider calls retain distinct request IDs even when their inputs are identical.
 
+For a fresh sampling call, the owner prepares execution and environment notices together with
+the request in the intent transaction. It keeps the decoded transcript and active context until
+the call settles. Preparation and Finish can reuse those items after checking the context heads
+and control values under the owner lock. If either changed, the sampler loads the current items.
+The journal cursor, interrupts and lease checks still come from PostgreSQL at the time of use.
+
 Each sampling and compaction intent also records its provider step, 1-based attempt number, finite
 budget, predecessor, original accepted command, owner generation and PostgreSQL-clock attempt lease;
 an eligible transient abandonment stores its retry due time in that same journal row. Existing
@@ -885,8 +949,12 @@ frontier carries a named suppression reason and cannot reuse that frozen request
 after the model-visible reset uses a fresh prepared request in the runtime recovery path. Partial
 sampling evidence remains retained, while observed response items are reconciled `ABSENT`; no
 partial tool call is committed or dispatched before Finish. Semantic progress renews the attempt
-lease only after its event evidence is durable. Initial leases cover response-head and semantic-idle
-budgets plus three bounded database operations; subsequent renewals cover semantic idle plus two.
+lease in the transaction that records the event and its projected observations. The local idle
+timer resets after that transaction commits. Initial leases cover response-head and semantic-idle
+budgets plus three bounded database operations. On semantic progress, the sampler adds the idle
+budget and two operation budgets to the PostgreSQL time and rounds the expiry up to the next
+`provider_progress_lease_coalescing_seconds` boundary (default 30). It writes the attempt row only when that deadline changes. Every evidence
+append still checks the live lease and owner generation.
 A new owner can abandon an unfinished provider intent while old-owner writes remain fenced.
 Proven host loss prepares fresh model-visible reset context while preserving step ancestry,
 attempt count and budget. There is no elapsed turn deadline.
@@ -903,20 +971,11 @@ Compaction atomically verifies the expected active context and lease before repl
 settling its intent/command. It never rewrites the transcript. New responses append to both the
 transcript and active context using shared content records.
 
-Migration 13 atomically clears the disposable staging sampler state and replaces inline
-transcript/context storage with content-addressed tables. It clears conversations, Sessions,
-intents, commands, events, export checkpoints, process/cell bookkeeping, interrupts and notifications.
-Existing sampler Sessions cannot resume after this cutover; create new Sessions. The History
-service's database and executor storage are unchanged. The runtime reads only the new format.
-Stop old sampler replicas before applying this migration. Afterward ordinary restarts retain
-new-format data; migration 13 never resets it again.
-
-Baseline 11 creates the initial schema on a fresh empty database. An existing database is adopted
-only with completed Goose version 10, including the earlier baseline and export checkpoint migration,
-and a validated native schema. Adoption preserves existing rows through version 12; migration 13
-intentionally clears them. Older or partial histories fail startup and require the previous image
+Baseline 15 creates the initial schema on a fresh empty database. An existing database is adopted
+only with completed Goose version 14 (the audit rewrite) and a validated native schema. Adoption
+preserves existing rows. Older or partial histories fail startup and require the previous image
 to finish upgrading them. Later schema changes use new Goose migrations. Schema rollback
 requires restoring the pre-migration database backup together with the old service image.
 
-The staging sampler Deployment uses two rolling replicas. This schema cutover requires stopping
-old replicas; later compatible migrations can roll normally. The host-instance marker is nullable.
+The staging sampler Deployment uses two rolling replicas. Compatible migrations can roll normally.
+The host-instance marker is nullable.

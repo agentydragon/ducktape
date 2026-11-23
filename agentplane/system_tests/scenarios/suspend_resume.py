@@ -18,13 +18,13 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.app.testing.client import Client
 from agentplane.app.testing.history_reads import SessionEventReader
-from agentplane.env.runtime.harness import Harness
 from agentplane.environments.v1 import environment_service_pb2
 from agentplane.harness_host import harness_host_pb2
 from agentplane.native.codex.testing import responses_sse
 from agentplane.proto import event_log_pb2, event_pb2, identity_pb2, session_pb2
 from agentplane.session_dispatcher.client import SandboxControlClient
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
+from agentplane.system_tests.driver.action_cli import CLI
 from agentplane.system_tests.driver.agent import (
     TURN_SECONDS,
     WORKING_DIRECTORY,
@@ -36,6 +36,7 @@ from agentplane.system_tests.driver.app_sandbox import wait_until_running
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
 from agentplane.system_tests.driver.identity import API_VERSION
+from agentplane.system_tests.driver.offered_models import models_offered_for
 from agentplane.system_tests.driver.sandbox import POD_TEMPLATE, Sandboxes
 from agentplane.system_tests.driver.scripted_upstream import ScriptedUpstream
 from agentplane.system_tests.driver.tracing import tracer
@@ -204,7 +205,7 @@ async def operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_c
     target = view.target
 
     harness = session_pb2.HARNESS_CODEX
-    model_name = (await client.models()).harnesses[Harness.CODEX][0]
+    model_name = (await models_offered_for(client, [harness]))[harness]
     agent = await Agent.create(
         client,
         dispatcher,
@@ -220,7 +221,7 @@ async def operator_resumes_an_idle_pod_without_granting_its_identity_lifecycle_c
     assert view.actions.resume_token
     resume_command = shlex.join(
         [
-            "/run/agentplane/environment/bin/agentplane",
+            CLI,
             "--json",
             "environments",
             "resume",
@@ -345,23 +346,23 @@ async def an_identity_creates_a_native_session_only_with_an_explicit_binding_gra
     assert view.identity_name
     assert view.kubernetes_diagnostics.HasField("pod")
     target = view.target
-    model_name = (await client.models()).harnesses[Harness.CODEX][0]
+    harness = session_pb2.HARNESS_CODEX
+    model_name = (await models_offered_for(client, [harness]))[harness]
     agent = await Agent.create(
         client,
         dispatcher,
         sandbox=target.name,
         sandbox_uid=target.uid,
-        harness=session_pb2.HARNESS_CODEX,
+        harness=harness,
         model=model_name,
         cwd=WORKING_DIRECTORY,
     )
-    model = scripted.model(view.kubernetes_diagnostics.pod.name, session_pb2.HARNESS_CODEX)
+    model = scripted.model(view.kubernetes_diagnostics.pod.name, harness)
     session_id = str(uuid4())
     spec = session_pb2.SessionSpec(
         placement=session_pb2.SessionPlacement(
             environment_hosted=session_pb2.EnvironmentHostedPlacement(
-                environment=session_pb2.ExactEnvironment(name=target.name, uid=target.uid),
-                harness=session_pb2.HARNESS_CODEX,
+                environment=session_pb2.ExactEnvironment(name=target.name, uid=target.uid), harness=harness
             )
         ),
         cwd=WORKING_DIRECTORY,
@@ -370,7 +371,7 @@ async def an_identity_creates_a_native_session_only_with_an_explicit_binding_gra
     )
     command = shlex.join(
         [
-            "/run/agentplane/environment/bin/agentplane",
+            CLI,
             "--json",
             "session-dispatcher",
             "create",
@@ -484,16 +485,13 @@ class _ResumeRun:
 
     async def create(self, harness: session_pb2.Harness, *, cwd: str, instructions: str = "") -> Agent:
         """A Thread on the first model the deployment offers `harness`, with no native process yet."""
-        harness_name = session_pb2.Harness.Name(harness)
-        offered = (await self.client.models()).harnesses[Harness(harness_name)]
-        assert offered, f"the deployment offers no model for {harness_name}"
         agent = await Agent.create(
             self.client,
             self.dispatcher,
             sandbox=self.view.target.name,
             sandbox_uid=self.view.target.uid,
             harness=harness,
-            model=offered[0],
+            model=(await models_offered_for(self.client, [harness]))[harness],
             cwd=cwd,
             instructions=instructions,
         )

@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
-	githubstate "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/state" // Distinguishes GitHub persistence from local state values.
 	"github.com/google/uuid"
 )
 
@@ -158,7 +158,7 @@ func TestRecordingNeedsTheClaimOfTheInbox(t *testing.T) {
 			step := g.prepare(t, sub)
 			g.exec(t, lose, g.inbox)
 
-			if err := g.record(t, claim, step); !errors.Is(err, ErrClaimLost) {
+			if err := g.record(t, claim, step); !errors.Is(err, inboxstore.ErrClaimLost) {
 				t.Fatalf("recording = %v, want ErrClaimLost", err)
 			}
 			g.requireInboxUntouched(t)
@@ -251,17 +251,17 @@ func TestAPageReadUnderAFenceThatNoLongerHoldsIsNotRecorded(t *testing.T) {
 	}
 }
 
-// expireAccessWhenAppended makes every grant of the App expire as soon as an entry is appended to the inbox, as if
-// the page took longer than the grant had left.
-func (g githubFixture) expireAccessWhenAppended(t *testing.T) {
+// whenAppended runs the body of a trigger function as soon as an entry is appended to the inbox, as if the page
+// took longer than something it depends on had left.
+func (g githubFixture) whenAppended(t *testing.T, name, body string) {
 	t.Helper()
-	name := "expire_access_" + strings.ReplaceAll(uuid.NewString(), "-", "_")
+	name += "_" + strings.ReplaceAll(uuid.NewString(), "-", "_")
 	g.exec(t, fmt.Sprintf(`
 		CREATE FUNCTION %[1]s() RETURNS trigger LANGUAGE plpgsql AS $$
 		BEGIN
-			UPDATE github_repository_access SET valid_until = now() - interval '1 second' WHERE app_id = %[2]d;
+			%[2]s;
 			RETURN NEW;
-		END $$`, name, g.app))
+		END $$`, name, body))
 	g.exec(t, fmt.Sprintf(`CREATE TRIGGER %[1]s AFTER INSERT ON entry FOR EACH ROW WHEN (NEW.inbox_id = '%[2]s') EXECUTE FUNCTION %[1]s()`,
 		name, g.inbox))
 	t.Cleanup(func() {
@@ -273,24 +273,31 @@ func (g githubFixture) expireAccessWhenAppended(t *testing.T) {
 	})
 }
 
+// expireAccessWhenAppended makes every grant of the App expire as soon as an entry is appended to the inbox, as if
+// the page took longer than the grant had left.
+func (g githubFixture) expireAccessWhenAppended(t *testing.T) {
+	t.Helper()
+	g.whenAppended(t, "expire_access",
+		fmt.Sprintf(`UPDATE github_repository_access SET valid_until = now() - interval '1 second' WHERE app_id = %d`, g.app))
+}
+
 func (g githubFixture) expireSubscriptionWhenAppended(t *testing.T) {
 	t.Helper()
-	name := "expire_subscription_" + strings.ReplaceAll(uuid.NewString(), "-", "_")
-	g.exec(t, fmt.Sprintf(`
-		CREATE FUNCTION %[1]s() RETURNS trigger LANGUAGE plpgsql AS $$
-		BEGIN
-			UPDATE subscription SET expires_at = now() - interval '1 second' WHERE inbox_id = NEW.inbox_id;
-			RETURN NEW;
-		END $$`, name))
-	g.exec(t, fmt.Sprintf(`CREATE TRIGGER %[1]s AFTER INSERT ON entry FOR EACH ROW WHEN (NEW.inbox_id = '%[2]s') EXECUTE FUNCTION %[1]s()`,
-		name, g.inbox))
-	t.Cleanup(func() {
-		for _, statement := range []string{"DROP TRIGGER " + name + " ON entry", "DROP FUNCTION " + name + "()"} {
-			if _, err := g.db.ExecContext(context.Background(), statement); err != nil {
-				t.Error(err)
-			}
-		}
-	})
+	g.whenAppended(t, "expire_subscription",
+		`UPDATE subscription SET expires_at = now() - interval '1 second' WHERE inbox_id = NEW.inbox_id`)
+}
+
+// requireRolledBack records the step, which must be deferred, and requires the whole page to have left no trace.
+func (g githubFixture) requireRolledBack(t *testing.T, sub githubSubscription, claim inboxstore.Claim, step githubStep) {
+	t.Helper()
+	requireDeferred(t, g.record(t, claim, step))
+	g.requireInboxUntouched(t)
+	if state := g.subscriptionState(t, sub.ID); state.lastSuccess.Valid {
+		t.Errorf("last success = %v, want none recorded", state.lastSuccess)
+	}
+	if got := g.count(t, `SELECT count(*) FROM subscription_match WHERE subscription_id = $1`, sub.ID); got != 0 {
+		t.Errorf("%d matches kept, want none", got)
+	}
 }
 
 func TestAGrantExpiringWhileAPageIsAppendedRollsTheWholePageBack(t *testing.T) {
@@ -305,18 +312,7 @@ func TestAGrantExpiringWhileAPageIsAppendedRollsTheWholePageBack(t *testing.T) {
 	}
 	g.expireAccessWhenAppended(t)
 
-	var deferred *githubstate.RefreshDeferredError
-	if err := g.record(t, claim, step); !errors.As(err, &deferred) {
-		t.Fatalf("recording = %v, want it deferred", err)
-	}
-
-	g.requireInboxUntouched(t)
-	if state := g.subscriptionState(t, sub.ID); state.lastSuccess.Valid {
-		t.Errorf("last success = %v, want none recorded", state.lastSuccess)
-	}
-	if got := g.count(t, `SELECT count(*) FROM subscription_match WHERE subscription_id = $1`, sub.ID); got != 0 {
-		t.Errorf("%d matches kept, want none", got)
-	}
+	g.requireRolledBack(t, sub, claim, step)
 }
 
 func TestASubscriptionExpiringWhileAPageIsAppendedRollsTheWholePageBack(t *testing.T) {
@@ -330,18 +326,7 @@ func TestASubscriptionExpiringWhileAPageIsAppendedRollsTheWholePageBack(t *testi
 	}
 	g.expireSubscriptionWhenAppended(t)
 
-	var deferred *githubstate.RefreshDeferredError
-	if err := g.record(t, claim, step); !errors.As(err, &deferred) {
-		t.Fatalf("recording = %v, want it deferred", err)
-	}
-
-	g.requireInboxUntouched(t)
-	if state := g.subscriptionState(t, sub.ID); state.lastSuccess.Valid {
-		t.Errorf("last success = %v, want none recorded", state.lastSuccess)
-	}
-	if got := g.count(t, `SELECT count(*) FROM subscription_match WHERE subscription_id = $1`, sub.ID); got != 0 {
-		t.Errorf("%d matches kept, want none", got)
-	}
+	g.requireRolledBack(t, sub, claim, step)
 	var expiresAt time.Time
 	if err := g.db.QueryRowContext(t.Context(), `SELECT expires_at FROM subscription WHERE id = $1`, sub.ID).Scan(&expiresAt); err != nil {
 		t.Fatal(err)
@@ -374,7 +359,7 @@ func TestRecordingWakesWorkersOnlyWhenItChangesWhatTheyFollow(t *testing.T) {
 	check("a page for a cancelled subscription", false, record(step))
 	check("a page without the claim", false, func() {
 		g.exec(t, `UPDATE inbox SET claim = gen_random_uuid() WHERE id = $1`, g.inbox)
-		if err := g.record(t, claim, step); !errors.Is(err, ErrClaimLost) {
+		if err := g.record(t, claim, step); !errors.Is(err, inboxstore.ErrClaimLost) {
 			t.Error(err)
 		}
 	})

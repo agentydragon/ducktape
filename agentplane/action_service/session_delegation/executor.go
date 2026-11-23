@@ -36,7 +36,6 @@ import (
 // Actions' projected audience credentials plus that explicit, per-call delegation envelope.
 type Executor struct {
 	group       string
-	binding     catalog.SessionDelegationBinding
 	environment environmentpb.EnvironmentServiceClient
 	dispatcher  dispatcherpb.SessionDispatcherClient
 	history     historypb.HistoryServiceClient
@@ -45,7 +44,6 @@ type Executor struct {
 
 func NewExecutor(
 	group string,
-	binding catalog.SessionDelegationBinding,
 	environment environmentpb.EnvironmentServiceClient,
 	dispatcher dispatcherpb.SessionDispatcherClient,
 	history historypb.HistoryServiceClient,
@@ -54,7 +52,7 @@ func NewExecutor(
 	if err != nil {
 		return nil, err
 	}
-	return &Executor{group: group, binding: binding, environment: environment, dispatcher: dispatcher, history: history, inputs: inputs}, nil
+	return &Executor{group: group, environment: environment, dispatcher: dispatcher, history: history, inputs: inputs}, nil
 }
 
 // Actions are only the implemented, reviewed operations belonging to this ActionGroup.
@@ -224,7 +222,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 			// Dispatcher lookup errors are source facts. History errors are captured separately inside
 			// ObserveInput's observation projection and return without entering this error path.
 			result.Dispatch.Kind = "partial"
-			result.Dispatch.Error = sanitizedSourceError(err)
+			result.Dispatch.Error = sessionclient.NewSourceError(err)
 			return result, nil
 		}
 		return result, nil
@@ -250,7 +248,7 @@ func (e *Executor) dispatch(ctx context.Context, request store.ExecutionRequest)
 			}
 			// ReadTurns can return already projected turns alongside a context error. Its coverage
 			// error belongs to History, so attach it there and keep the partial page.
-			page.Error = sanitizedSourceError(err)
+			page.Error = sessionclient.NewSourceError(err)
 		}
 		return page, nil
 	case contract.ActionCancelInput:
@@ -325,7 +323,7 @@ func (e *Executor) getSession(ctx context.Context, request store.ExecutionReques
 	if err != nil {
 		// GetSession may return facts read before the context ended. Keep those facts and report
 		// the aggregate interruption without misattributing it to either source.
-		return sessionSnapshotResult{SessionSnapshot: snapshot, ReadError: sanitizedSourceError(err)}, nil
+		return sessionSnapshotResult{SessionSnapshot: snapshot, ReadError: sessionclient.NewSourceError(err)}, nil
 	}
 	return sessionSnapshotResult{SessionSnapshot: snapshot}, nil
 }
@@ -370,29 +368,6 @@ func protoEnvelope(field string, message proto.Message) (json.RawMessage, error)
 // readFailure is safe to return as a failed Action because reads do not mutate backend state.
 func readFailure(source string, err error) error {
 	return refuse(action_servicepb.ExecutionErrorKind_EXECUTION_ERROR_KIND_SOURCE_UNAVAILABLE, "%s read failed: %s", source, status.Convert(err).Code())
-}
-
-func sanitizedSourceError(err error) *sessionclient.SourceError {
-	code := status.Code(err)
-	if code == codes.Unknown {
-		code = codes.Unavailable
-	}
-	message := "service unavailable"
-	switch code {
-	case codes.Canceled:
-		message = "read canceled"
-	case codes.DeadlineExceeded:
-		message = "read deadline expired"
-	case codes.NotFound:
-		message = "not found"
-	case codes.PermissionDenied, codes.Unauthenticated:
-		message = "permission denied"
-	case codes.InvalidArgument:
-		message = "invalid request"
-	case codes.DataLoss:
-		message = "retained history has a gap"
-	}
-	return &sessionclient.SourceError{Code: code.String(), Message: message}
 }
 
 // writeFailure distinguishes explicit backend refusals from transport/deadline errors whose mutation outcome is unknown.

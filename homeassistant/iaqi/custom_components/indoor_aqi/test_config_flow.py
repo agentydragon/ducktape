@@ -25,7 +25,6 @@ async def _init_config_flow(hass: HomeAssistant, data: dict | None = None):
 
 
 async def test_import_flow(hass: HomeAssistant):
-    """Test the import flow."""
     # Define some test data
     test_data = {"monitors": [{"name": "Test AQI", "sensors": {"co2": "sensor.test_co2", "pm25": "sensor.test_pm25"}}]}
 
@@ -58,7 +57,6 @@ async def test_import_flow_already_exists(hass: HomeAssistant):
 
 
 async def test_import_flow_empty_data(hass: HomeAssistant):
-    """Test the import flow with empty data."""
     # Try to import with empty data
     result = await _init_config_flow(hass, data=None)
 

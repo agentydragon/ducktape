@@ -22,7 +22,7 @@ verify every step.
 
 ## Core loop
 
-```
+```text
 1. FRAME      → Define what's uncertain, why it matters, what "done" looks like
 2. ENUMERATE  → Survey the full action space: what levers do you have? (see below)
 3. GROUND     → Establish priors from real data, reference classes, empirical distributions
@@ -86,7 +86,7 @@ should not start above ~60-70% confidence unless the evidence is overwhelming.
 
 Format for the epistemic state document:
 
-```
+```text
 Hypothesis check:
 H1 (current best): [hypothesis] — P = 0.45
 H2: [alternative] — P = 0.25 (because: [reasoning])
@@ -225,7 +225,7 @@ Consolidated list of all [VIBE]-tagged items in the document, with:
 
 **User responses**: Include the exact question asked AND the exact verbatim answer:
 
-```
+```text
 Q: "On a scale of 1-5, how important is walking distance to transit?"
 A (verbatim): "Probably a 4, but I'd go to 3 if the place had parking"
 Interpretation: Transit importance ~0.7-0.8 weight, but substitutable with parking.
@@ -235,7 +235,7 @@ Update: [explain the Bayesian update with explicit numbers]
 **Research results**: Include URL, date accessed, relevant excerpt (keep it short but
 sufficient to justify the update), and ideally a content hash or archive link:
 
-```
+```text
 Source: BLS Occupational Outlook Handbook, https://www.bls.gov/ooh/..., accessed 2025-03-14
 Finding: Median salary for [role] is $X (2024 data, n=Y workers)
 Update: Sets U3 prior to LogNormal(μ=log(X), σ=0.3) based on BLS methodology
@@ -367,7 +367,7 @@ uncertainties are roughly independent, a flat prioritized list is fine.
 
 Notation for the epistemic state document:
 
-```
+```text
 ├─ Ask: "Budget above or below $3000/mo?" [IG: 0.95 bits, cost: low]
 │  ├─ IF above → Ask: "Nob Hill vs. Pacific Heights?" [IG: 0.7 bits]
 │  └─ IF below → Ask: "Commute time or space more important?" [IG: 0.8 bits]
@@ -412,7 +412,7 @@ matters. Don't show the epistemic state machinery unless asked.
 
 What the user sees:
 
-```
+```text
 Have you seen Inception? If yes, did you like it?
 (This helps me calibrate your taste for complex sci-fi — ~0.8 bits)
 ```
@@ -493,7 +493,7 @@ your deliverable.
 
 **Execution loop**:
 
-```
+```text
 while budget > 0 and not stopping_criteria_met:
     1. Review current epistemic state
     2. Enumerate candidate next actions with estimated cost and VOI

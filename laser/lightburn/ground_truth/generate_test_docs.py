@@ -77,9 +77,6 @@ def _write(project: LightBurnProject, path: Path) -> None:
     print(f"  {path}")
 
 
-# ── Test 1: Anchors (non-rotated + rotated) ──────────────────────────────────
-
-
 def gen_anchors(out_dir: Path) -> None:
     """3x3 grid of HAlign x VAlign at crosshairs, plain and rotated 90 CCW."""
     shapes: list[AnyShape] = []
@@ -139,9 +136,6 @@ def gen_anchors(out_dir: Path) -> None:
         mirror_y=False,
     )
     _write(project, out_dir / "test_anchors.lbrn2")
-
-
-# ── Test 2: XForm (coordinates, rotation, scale) ─────────────────────────────
 
 
 def gen_xform(out_dir: Path) -> None:
@@ -229,9 +223,6 @@ def gen_xform(out_dir: Path) -> None:
     _write(project, out_dir / "test_xform.lbrn2")
 
 
-# ── Test 3: MirrorX/MirrorY root attributes ──────────────────────────────────
-
-
 def _mirror_test_content() -> tuple[list[CutSetting], list[AnyShape]]:
     """Asymmetric marker pattern for mirror flag testing."""
     shapes: list[AnyShape] = []
@@ -265,9 +256,6 @@ def gen_mirror_flags(out_dir: Path) -> None:
         ),
         out_dir / "test_mirror_on.lbrn2",
     )
-
-
-# ── CLI ───────────────────────────────────────────────────────────────────────
 
 
 def main(argv: list[str] | None = None) -> None:

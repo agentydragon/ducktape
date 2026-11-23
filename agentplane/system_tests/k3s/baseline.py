@@ -150,19 +150,35 @@ def _archive_json(archive: tarfile.TarFile, name: str, value: object) -> None:
 
 def _prepare_docker_namespaces() -> None:
     """Let nested K3s manage the action's private network and cgroup namespaces."""
-    if not Path("/.dockerenv").exists() or Path("/proc/self/cgroup").read_text().strip() != "0::/":
+    if not Path("/.dockerenv").exists():
         raise RuntimeError("expected a Docker action with private namespaces")
+    membership = Path("/proc/self/cgroup").read_text().strip()
+    if membership not in {"0::/", "0::/init"}:
+        raise RuntimeError("expected a Docker action with private namespaces")
+
+    network_sysctls = "/proc/sys/net"
+    root = Path("/sys/fs/cgroup")
+    network_read_only = os.statvfs(network_sysctls).f_flag & os.ST_RDONLY
+    cgroup_read_only = os.statvfs(root).f_flag & os.ST_RDONLY
+    if membership == "0::/init":
+        # A recycled action inherits the mounts and delegation established by its first K3s start.
+        # Check that this process is in the mounted init group before trusting that delegation.
+        init_procs = root / "init/cgroup.procs"
+        if not (network_read_only or cgroup_read_only) and init_procs.is_file():
+            controllers = set((root / "cgroup.controllers").read_text().split())
+            delegated = set((root / "cgroup.subtree_control").read_text().split())
+            if controllers and controllers <= delegated and str(os.getpid()) in init_procs.read_text().split():
+                return
+        raise RuntimeError("Docker action in /init lacks prepared network or cgroup namespaces")
+
     # kube-proxy and the CNI configure network sysctls. Keep the guest-wide /proc/sys
     # read-only; these sysctls belong to the action's network namespace.
-    network_sysctls = "/proc/sys/net"
-    if os.statvfs(network_sysctls).f_flag & os.ST_RDONLY:
+    if network_read_only:
         run("mount", "--bind", network_sysctls, network_sysctls)
         run("mount", "-o", "remount,rw,bind", network_sysctls)
-    root = Path("/sys/fs/cgroup")
-    if not os.statvfs(root).f_flag & os.ST_RDONLY:
-        return
-    run("mount", "-o", "remount,rw", str(root))
-    _enable_child_cgroup_controllers(root)
+    if cgroup_read_only:
+        run("mount", "-o", "remount,rw", str(root))
+        _enable_child_cgroup_controllers(root)
 
 
 def _enable_child_cgroup_controllers(root: Path) -> None:

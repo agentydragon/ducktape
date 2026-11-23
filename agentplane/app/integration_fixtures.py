@@ -2,7 +2,6 @@
 
 import subprocess
 from collections.abc import AsyncIterator, Iterator
-from pathlib import Path
 
 import httpx
 import pytest
@@ -10,7 +9,6 @@ from python.runfiles import Runfiles
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.app.testing.gateway_fixtures import (
-    app_token_file,
     dispatcher_database_url,
     gateway_service,
     sandbox,
@@ -20,7 +18,6 @@ from agentplane.app.testing.gateway_fixtures import (
 from agentplane.app.testing.history import SessionHistory
 from agentplane.app.testing.replication_process import AppProcess, GatewayAccess, SandboxesAccess, app_process
 from agentplane.app.testing.thread_test_support import ThreadHTTP
-from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.fixtures import (
     history_on,
     history_service,
@@ -36,22 +33,21 @@ from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.electric_role import ensure_electric_role
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
 from agentplane.testing.kubernetes_apiserver_fixtures import api_server, kubeconfig
-from util.db_url import render_postgresql_url
-from util.net import refusing_tcp_endpoint
-from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
-from util.testing.postgres_fixtures import (
+from testing.postgres import DatabaseClones, PostgresDatabaseTemplate
+from testing.postgres_fixtures import (
     database_clones,
     database_names,
     postgres_admin_url,
     postgres_container,
     postgres_image,
 )
-from util.testing.sqlalchemy_engines import managed_async_engine
+from testing.sqlalchemy_engines import managed_async_engine
+from util.db_url import render_postgresql_url
+from util.net import refusing_tcp_endpoint
 
 # These imported fixtures and the hook are part of this plugin's public pytest surface.
 __all__ = [
     "api_server",
-    "app_token_file",
     "database_clones",
     "database_names",
     "dispatcher_database_url",
@@ -120,11 +116,6 @@ async def history(history_service: GoHistoryService) -> AsyncIterator[History]:
 
 
 @pytest.fixture
-def history_client(history_service: GoHistoryService) -> HistoryServiceClient:
-    return history_service.reader
-
-
-@pytest.fixture
 def event_logs(history: History, namespace: SandboxNamespace, sandbox: SandboxCluster) -> SessionHistory:
     return SessionHistory(history, sandbox_namespaces={sandbox.name: sandbox.namespace, "live": namespace.name})
 
@@ -164,21 +155,23 @@ def app_config() -> dict[str, object]:
 
 
 @pytest.fixture
+def gateway_access(gateway_service: GatewayProcess) -> GatewayAccess:
+    return GatewayAccess(gateway_service.target, gateway_service.client_tls, gateway_service.environment_service.ca)
+
+
+@pytest.fixture
 async def app(
     db_url: str,
     history_service: GoHistoryService,
     sandbox: SandboxCluster,
-    gateway_service: GatewayProcess,
-    app_token_file: Path,
+    gateway_access: GatewayAccess,
     app_config: dict[str, object],
 ) -> AsyncIterator[AppProcess]:
     async with app_process(
         db_url,
         history_service,
         sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
-        gateway=GatewayAccess(
-            gateway_service.target, None, gateway_service.client_tls, gateway_service.environment_service.ca
-        ),
+        gateway=gateway_access,
         config=app_config,
     ) as process:
         yield process

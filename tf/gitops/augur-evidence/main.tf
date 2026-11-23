@@ -108,21 +108,3 @@ resource "kubernetes_secret" "augur_evidence_git_read_source" {
     repo_url = "http://forgejo-http.forgejo:3000/${forgejo_user.writer.login}/${forgejo_repository.evidence.name}.git"
   }
 }
-
-# The budget ExternalSecrets adopt the Secrets these addresses created there.
-# CLEANUP(added 2026-09-28): Remove once the augur_evidence state has forgotten
-# both addresses, which happens on the first apply after the unit is revived.
-# Never destroy the ESO-owned Secrets.
-removed {
-  from = kubernetes_secret.augur_evidence_git_write
-  lifecycle {
-    destroy = false
-  }
-}
-
-removed {
-  from = kubernetes_secret.augur_evidence_git_read
-  lifecycle {
-    destroy = false
-  }
-}

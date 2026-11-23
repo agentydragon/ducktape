@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 import { Badge, Code, Group, Stack, Text } from "@mantine/core";
+import { pullRequestCreated, awaitingGitHubSubmission } from "./receipts";
 
 import type { ActionPresentation } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
@@ -75,9 +76,10 @@ export const createPullRequestCollapsed: ArgumentsPreview = definePreview(
 export const createPullRequestPane: ArgumentsPreview = definePreview(zCreatePullRequestArguments, CreatePullRequest);
 
 export const createPullRequestPresentation: ActionPresentation = {
+  outcome: awaitingGitHubSubmission,
   fallbackLabel: "Open GitHub pull request",
   label: createPullRequestLabel,
   pane: { collapsed: createPullRequestCollapsed, opened: createPullRequestPane },
-  details: { arguments: createPullRequestPane },
+  details: { arguments: createPullRequestPane, result: pullRequestCreated },
   offersCardDecisionButtons: offersCardDecisionButtonsPullRequest,
 };

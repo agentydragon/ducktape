@@ -18,9 +18,7 @@ name:
   model,
   haikuModel ? null,
   gatewayDiscovery ? false,
-  isDemo ? true,
   disallowedTools ? [ ],
-  runtimeInputs ? [ ],
   maxContextTokens ? null,
   maxOutputTokens ? null,
 }:
@@ -41,21 +39,20 @@ let
   # default Sonnet model, but switching to Opus or Fable mid-session via the discovered roster
   # loses 1M context — there's no way to get both a friendly in-session model picker and a 1M
   # variant of a model that isn't the wrapper's hardcoded default.
-  envLines =
-    lib.optional isDemo "IS_DEMO=1"
-    ++ [
-      ''ANTHROPIC_BASE_URL="${baseUrl}"''
-      ''ANTHROPIC_AUTH_TOKEN="${"$"}(cat ${authTokenFile})"''
-      ''ANTHROPIC_MODEL="${model}"''
-    ]
-    ++ lib.optional (haikuModel != null) ''ANTHROPIC_DEFAULT_HAIKU_MODEL="${haikuModel}"''
-    ++ lib.optional gatewayDiscovery "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1"
-    ++ lib.optional (
-      maxContextTokens != null
-    ) "CLAUDE_CODE_MAX_CONTEXT_TOKENS=${toString maxContextTokens}"
-    ++ lib.optional (
-      maxOutputTokens != null
-    ) "CLAUDE_CODE_MAX_OUTPUT_TOKENS=${toString maxOutputTokens}";
+  envLines = [
+    "IS_DEMO=1"
+    ''ANTHROPIC_BASE_URL="${baseUrl}"''
+    ''ANTHROPIC_AUTH_TOKEN="${"$"}(cat ${authTokenFile})"''
+    ''ANTHROPIC_MODEL="${model}"''
+  ]
+  ++ lib.optional (haikuModel != null) ''ANTHROPIC_DEFAULT_HAIKU_MODEL="${haikuModel}"''
+  ++ lib.optional gatewayDiscovery "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1"
+  ++ lib.optional (
+    maxContextTokens != null
+  ) "CLAUDE_CODE_MAX_CONTEXT_TOKENS=${toString maxContextTokens}"
+  ++ lib.optional (
+    maxOutputTokens != null
+  ) "CLAUDE_CODE_MAX_OUTPUT_TOKENS=${toString maxOutputTokens}";
   # ` \\\n  ` = space, backslash (line continuation), newline, 2-space indent.
   envBlock = lib.concatStringsSep " \\\n  " envLines;
   claudeLine =
@@ -66,7 +63,7 @@ let
 in
 pkgs.writeShellApplication {
   inherit name;
-  runtimeInputs = [ pkgs.coreutils ] ++ runtimeInputs;
+  runtimeInputs = [ pkgs.coreutils ];
   text = ''
     exec env -u ANTHROPIC_API_KEY \
       ${envBlock} \

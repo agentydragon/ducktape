@@ -2,15 +2,17 @@
 
 ## Summary
 
-All FreeCAD scripts that call `Gui.showMainWindow()` must end with `os._exit(0)` to
-prevent a segfault during Qt6 cleanup. Scripts that never initialize the GUI (`FreeCADGui`
-not imported) do not crash and do not need `os._exit(0)`.
+All FreeCAD scripts that call `Gui.showMainWindow()` under `freecadcmd` must end with
+`os._exit(0)` to prevent a segfault during Qt6 cleanup. Scripts that never initialize the GUI
+(`FreeCADGui` not imported) do not crash and do not need `os._exit(0)`. The shipped TechDraw and
+3D scripts now run under the `freecad` GUI binary and end through `run_gui_script`
+(`examples/freecad_helpers.py`), which quits the running event loop, so they do not take this path.
 
 ## Stack Trace
 
 Captured empirically from FreeCAD 1.1.0 under xvfb:
 
-```
+```text
 #0  /lib/x86_64-linux-gnu/libc.so.6(+0x45330)         — TLS access, already freed
 #1  QThreadStorageData::get() const                    — reads OpenGL TLS slot
 #2  QOpenGLContext::currentContext()                   — asks "is this surface current?"
@@ -58,16 +60,18 @@ destroyed cleanly inside the still-running event loop, and the process exits nor
 
 ## Effect on Exit Code
 
+Measured when these scripts still ran under `freecadcmd`.
+
 FreeCAD installs a SIGSEGV handler that catches the crash, prints the backtrace, and
 calls `exit()`. The exit code is not deterministic:
 
-| Script                    | GUI type             | Crash? | Exit code without `os._exit(0)` | Test outcome             |
-| ------------------------- | -------------------- | ------ | ------------------------------- | ------------------------ |
-| `build_cube_with_hole.py` | None                 | No     | 0                               | Pass                     |
-| `parametric_sketch.py`    | TechDraw             | Yes    | 0 (crash handler)               | Pass despite crash       |
-| `build_compound.py`       | TechDraw             | Yes    | 0 (crash handler)               | Pass despite crash       |
-| `export_page.py`          | TechDraw             | Yes    | 0 (crash handler)               | Pass despite crash       |
-| `render_fcstd.py`         | 3D viewport + OpenGL | Yes    | 1                               | **Fail** without `_exit` |
+| Script                         | GUI type             | Crash? | Exit code without `os._exit(0)` | Test outcome             |
+| ------------------------------ | -------------------- | ------ | ------------------------------- | ------------------------ |
+| `cube_with_hole/build.py`      | None                 | No     | 0                               | Pass                     |
+| `bracket/parametric_sketch.py` | TechDraw             | Yes    | 0 (crash handler)               | Pass despite crash       |
+| `compound/build.py`            | TechDraw             | Yes    | 0 (crash handler)               | Pass despite crash       |
+| `export_page.py`               | TechDraw             | Yes    | 0 (crash handler)               | Pass despite crash       |
+| `render_fcstd.py`              | 3D viewport + OpenGL | Yes    | 1                               | **Fail** without `_exit` |
 
 `render_fcstd.py` exits 1 because a live OpenGL context is in a more entangled state
 when the crash fires. The other scripts only set up OpenGL infrastructure for TechDraw's

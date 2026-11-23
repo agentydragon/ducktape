@@ -4,9 +4,10 @@ Label models and helpers live in `gmail_api.labels`.
 See: https://developers.google.com/gmail/api/reference/rest
 """
 
-from enum import StrEnum
+from pydantic import BaseModel, ConfigDict, Field
 
-from pydantic import BaseModel, Field
+from gmail_api.filters import FilterCriteria as ApiFilterCriteria
+from gmail_api.messages import MessagePartHeader
 
 
 class GmailMessageMinimal(BaseModel):
@@ -25,30 +26,20 @@ class GmailMessageMinimal(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class GmailHeader(BaseModel):
-    """A single email header from Gmail API."""
-
-    name: str
-    value: str
-
-
 class GmailMessagePayload(BaseModel):
     """Payload section of Gmail message (format=metadata)."""
 
-    headers: list[GmailHeader] = Field(default_factory=list)
+    headers: list[MessagePartHeader] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
 
 
-class GmailMessageWithHeaders(BaseModel):
+class GmailMessageWithHeaders(GmailMessageMinimal):
     """Gmail message with headers from API response (format=metadata).
 
     Use this when you need Subject, From, Date, etc. headers but not the body.
     """
 
-    id: str
-    thread_id: str | None = Field(default=None, alias="threadId")
-    label_ids: list[str] = Field(default_factory=list, alias="labelIds")
     internal_date: str = Field(alias="internalDate")  # milliseconds since epoch as string
     snippet: str | None = None
     payload: GmailMessagePayload = Field(default_factory=GmailMessagePayload)
@@ -75,28 +66,10 @@ class GmailMessageWithHeaders(BaseModel):
         return self.get_header("Date")
 
 
-# Filter models
+class FilterCriteria(ApiFilterCriteria):
+    """Reject unknown criteria so local replay cannot match more messages than the Gmail filter."""
 
-
-class SizeComparison(StrEnum):
-    LARGER = "larger"
-    SMALLER = "smaller"
-
-
-class FilterCriteria(BaseModel):
-    """Gmail filter matching criteria."""
-
-    from_: str | None = Field(default=None, alias="from")
-    to: str | None = None
-    subject: str | None = None
-    query: str | None = None
-    negated_query: str | None = Field(default=None, alias="negatedQuery")
-    has_attachment: bool | None = Field(default=None, alias="hasAttachment")
-    exclude_chats: bool | None = Field(default=None, alias="excludeChats")
-    size: int | None = None
-    size_comparison: SizeComparison | None = Field(default=None, alias="sizeComparison")
-
-    model_config = {"populate_by_name": True, "extra": "forbid"}
+    model_config = ConfigDict(extra="forbid")
 
 
 class FilterAction(BaseModel):

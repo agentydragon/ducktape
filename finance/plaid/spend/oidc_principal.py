@@ -1,4 +1,4 @@
-"""Pinned access-token verification with concrete Authentik and Dex claim contracts."""
+"""Pinned access-token verification with the Authentik claim contract."""
 
 from __future__ import annotations
 
@@ -269,15 +269,4 @@ class AuthentikOidcPrincipalResolver(OidcPrincipalResolver):
 
     def _validate_authorized_party(self, claims: Mapping[str, Any]) -> None:
         if claims.get("azp") != self._client_id:
-            raise InvalidOidcPrincipalError
-
-
-class DexOidcPrincipalResolver(OidcPrincipalResolver):
-    """Dex omits azp for single-audience tokens; a supplied azp must still match.
-
-    Cross-client/multiple-audience tokens remain outside this verifier's contract.
-    """
-
-    def _validate_authorized_party(self, claims: Mapping[str, Any]) -> None:
-        if "azp" in claims and claims["azp"] != self._client_id:
             raise InvalidOidcPrincipalError

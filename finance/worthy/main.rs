@@ -3,14 +3,15 @@
 use alphavantage_converter::AlphaVantageConverter;
 use asset::Asset;
 use chrono::prelude::*;
+use clap::Parser;
 use config::{Config, ConverterConfig, SourceConfig};
 use converter::Converter;
 use denomination::Denomination;
-use exchange_rate::ExchangeRate;
 use flags::Opt;
 use futures::prelude::*;
 use glob::glob;
 use ibflex_source::IBFlexSource;
+use json_output::{ConverterSnapshot, ConverterType, SourceSnapshot, SourceType};
 use log::{info, trace, warn};
 use rust_decimal::prelude::*;
 use rust_decimal_macros::*;
@@ -19,10 +20,8 @@ use source::Source;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::ffi::OsStr;
-use std::fs::File;
-use std::io::prelude::*;
+use std::fs::{self, File};
 use std::path::Path;
-use structopt::StructOpt;
 use term_table::{Table, TableStyle, row::Row, table_cell::Alignment, table_cell::TableCell};
 
 // TODO: cache conversions
@@ -44,18 +43,6 @@ fn asset_to_money(x: &Asset) -> Money<'_, iso::Currency> {
         }
         _ => panic!("arg"),
     }
-}
-
-enum SourceType {
-    Hardcoded,
-    IBFlex,
-}
-
-struct SourceSnapshot {
-    id: String,
-    name: String,
-    source_type: SourceType,
-    snapshot: Vec<Asset>,
 }
 
 async fn get_source_snapshots(
@@ -84,18 +71,6 @@ async fn get_source_snapshots(
         })
         .collect()
         .await
-}
-
-enum ConverterType {
-    AlphaVantage,
-    // Historical snapshot provenance; no longer a configurable converter.
-    Fixer,
-}
-
-struct ConverterSnapshot {
-    id: String,
-    converter_type: ConverterType,
-    snapshot: Vec<ExchangeRate>,
 }
 
 async fn get_converter_snapshots(
@@ -156,6 +131,16 @@ fn get_snapshot_paths(config: &Config) -> Vec<String> {
     paths
 }
 
+fn asset_totals_by_denomination(
+    source_snapshots: &[SourceSnapshot],
+) -> HashMap<&Denomination, Decimal> {
+    let mut totals = HashMap::new();
+    for asset in source_snapshots.iter().flat_map(|source| &source.snapshot) {
+        *totals.entry(&asset.denomination).or_insert(Decimal::ZERO) += asset.amount;
+    }
+    totals
+}
+
 async fn model_and_show(
     config: &Config,
     converter_snapshots: &[ConverterSnapshot],
@@ -170,16 +155,7 @@ async fn model_and_show(
         .collect();
     info!("All conversions: {all_conversions:?}");
 
-    // TODO: deduplicate
-    let mut all_assets = HashMap::new();
-    for ss in source_snapshots.iter() {
-        for asset in ss.snapshot.iter() {
-            all_assets
-                .entry(asset.denomination.clone())
-                .or_insert(Decimal::ZERO);
-            *all_assets.get_mut(&asset.denomination).unwrap() += asset.amount;
-        }
-    }
+    let all_assets = asset_totals_by_denomination(source_snapshots);
     info!("All assets: {all_assets:?}");
 
     let in_common_currency = common_currency::in_common_currency(&all_conversions, &base);
@@ -387,20 +363,14 @@ async fn model_and_show(
     // TODO(agentydragon): Make configurable
     // How many more years to model for (i.e., remaining lifetime)
     let deadline = dec!(75.0);
-    render_table(
-        deadline,
-        &total,
-        &config.modelling,
-        &base,
-        &in_common_currency,
-    );
+    render_table(deadline, &total, &config.modelling, &in_common_currency);
     total
 }
 
 #[tokio::main]
 async fn main() {
     env_logger::init();
-    let opt = Opt::from_args();
+    let opt = Opt::parse();
     trace!("Options: {opt:?}");
 
     let xdg_dirs = xdg::BaseDirectories::with_prefix("worthy");
@@ -416,16 +386,7 @@ async fn main() {
             // TODO(agentydragon): would be quite nice to do this via futures...
             let source_snapshots = get_source_snapshots(&config.source_config).await;
 
-            // TODO: deduplicate
-            let mut all_assets = HashMap::new();
-            for ss in source_snapshots.iter() {
-                for asset in ss.snapshot.iter() {
-                    all_assets
-                        .entry(asset.denomination.clone())
-                        .or_insert(Decimal::ZERO);
-                    *all_assets.get_mut(&asset.denomination).unwrap() += asset.amount;
-                }
-            }
+            let all_assets = asset_totals_by_denomination(&source_snapshots);
             info!("All assets: {all_assets:?}");
 
             // TODO: check it exists
@@ -434,7 +395,7 @@ async fn main() {
             };
 
             let converter_snapshots = get_converter_snapshots(
-                &all_assets.keys().collect::<Vec<_>>(),
+                &all_assets.keys().copied().collect::<Vec<_>>(),
                 &config.converter_config,
                 &base,
             )
@@ -444,28 +405,17 @@ async fn main() {
 
             // Save JSON snapshot.
             let json_snapshot = json_output::Snapshot {
-                // TODO(agentydragon): should be shared
                 timestamp: now,
-                source_snapshot: source_snapshots
-                    .iter()
-                    .map(source_snapshot_to_json)
-                    .collect(),
-                converter_snapshots: converter_snapshots
-                    .iter()
-                    .map(converter_snapshot_to_json)
-                    .collect(),
-                total: asset_to_json(&total),
+                source_snapshot: source_snapshots,
+                converter_snapshots,
+                total,
             };
             let s = serde_json::to_string_pretty(&json_snapshot).unwrap();
 
             let output_path =
                 shellexpand::tilde(&config.dated_json_output).replace("%s", &now.to_rfc3339());
 
-            {
-                let mut file = File::create(&output_path).unwrap();
-                file.write_all(s.bytes().collect::<Vec<_>>().as_slice())
-                    .unwrap();
-            }
+            fs::write(output_path, s).unwrap();
         }
         ModelLastSnapshot => {
             let paths = get_snapshot_paths(&config);
@@ -473,17 +423,12 @@ async fn main() {
             let file = File::open(loaded_path).unwrap();
             let snapshot: json_output::Snapshot = serde_json::from_reader(file).unwrap();
 
-            let converter_snapshots: Vec<ConverterSnapshot> = snapshot
-                .converter_snapshots
-                .iter()
-                .map(converter_snapshot_from_json)
-                .collect();
-            let source_snapshots: Vec<SourceSnapshot> = snapshot
-                .source_snapshot
-                .iter()
-                .map(source_snapshot_from_json)
-                .collect();
-            let _total = model_and_show(&config, &converter_snapshots, &source_snapshots).await;
+            model_and_show(
+                &config,
+                &snapshot.converter_snapshots,
+                &snapshot.source_snapshot,
+            )
+            .await;
         }
         Csv => {
             let paths = get_snapshot_paths(&config);
@@ -513,133 +458,10 @@ async fn main() {
     }
 }
 
-fn converter_snapshot_to_json(
-    converter_snapshot: &ConverterSnapshot,
-) -> json_output::ConverterSnapshot {
-    json_output::ConverterSnapshot {
-        id: converter_snapshot.id.clone(),
-        converter_type: match converter_snapshot.converter_type {
-            ConverterType::AlphaVantage => json_output::ConverterType::AlphaVantage,
-            ConverterType::Fixer => json_output::ConverterType::Fixer,
-        },
-        snapshot: converter_snapshot
-            .snapshot
-            .iter()
-            .map(exchange_rate_to_json)
-            .collect(),
-    }
-}
-
-fn converter_snapshot_from_json(
-    converter_snapshot: &json_output::ConverterSnapshot,
-) -> ConverterSnapshot {
-    ConverterSnapshot {
-        id: converter_snapshot.id.clone(),
-        converter_type: match converter_snapshot.converter_type {
-            json_output::ConverterType::AlphaVantage => ConverterType::AlphaVantage,
-            json_output::ConverterType::Fixer => ConverterType::Fixer,
-        },
-        snapshot: converter_snapshot
-            .snapshot
-            .iter()
-            .map(exchange_rate_from_json)
-            .collect(),
-    }
-}
-
-fn exchange_rate_from_json(c: &json_output::Conversion) -> ExchangeRate {
-    let json_output::Conversion {
-        source,
-        target,
-        target_per_source,
-    } = c;
-    ExchangeRate {
-        from: denomination_from_json(source),
-        to: denomination_from_json(target),
-        rate: *target_per_source,
-    }
-}
-
-fn exchange_rate_to_json(exchange_rate: &ExchangeRate) -> json_output::Conversion {
-    let ExchangeRate { from, to, rate } = exchange_rate;
-    json_output::Conversion {
-        source: denomination_to_json(from),
-        target: denomination_to_json(to),
-        target_per_source: *rate,
-    }
-}
-
-fn source_snapshot_to_json(source_snapshot: &SourceSnapshot) -> json_output::SourceSnapshot {
-    json_output::SourceSnapshot {
-        id: source_snapshot.id.clone(),
-        name: source_snapshot.name.clone(),
-        source_type: match source_snapshot.source_type {
-            SourceType::Hardcoded => json_output::SourceType::Hardcoded,
-            SourceType::IBFlex => json_output::SourceType::IBFlex,
-        },
-        snapshot: source_snapshot.snapshot.iter().map(asset_to_json).collect(),
-    }
-}
-
-fn source_snapshot_from_json(json_snapshot: &json_output::SourceSnapshot) -> SourceSnapshot {
-    SourceSnapshot {
-        id: json_snapshot.id.clone(),
-        name: json_snapshot.name.clone(),
-        source_type: match json_snapshot.source_type {
-            json_output::SourceType::Hardcoded => SourceType::Hardcoded,
-            json_output::SourceType::IBFlex => SourceType::IBFlex,
-        },
-        snapshot: json_snapshot.snapshot.iter().map(asset_from_json).collect(),
-    }
-}
-
-fn denomination_to_json(denomination: &Denomination) -> json_output::Denomination {
-    match denomination {
-        Denomination::Currency { currency } => json_output::Denomination::Currency {
-            symbol: currency.clone(),
-        },
-        Denomination::Cryptocurrency { symbol } => json_output::Denomination::Cryptocurrency {
-            symbol: symbol.clone(),
-        },
-        Denomination::Stock { stock } => json_output::Denomination::Stock {
-            symbol: stock.clone(),
-        },
-    }
-}
-
-fn denomination_from_json(denomination: &json_output::Denomination) -> Denomination {
-    match denomination {
-        json_output::Denomination::Currency { symbol } => Denomination::Currency {
-            currency: symbol.clone(),
-        },
-        json_output::Denomination::Cryptocurrency { symbol } => Denomination::Cryptocurrency {
-            symbol: symbol.clone(),
-        },
-        json_output::Denomination::Stock { symbol } => Denomination::Stock {
-            stock: symbol.clone(),
-        },
-    }
-}
-
-fn asset_to_json(asset: &Asset) -> json_output::Asset {
-    json_output::Asset {
-        denomination: denomination_to_json(&asset.denomination),
-        amount: asset.amount,
-    }
-}
-
-fn asset_from_json(asset: &json_output::Asset) -> Asset {
-    Asset {
-        denomination: denomination_from_json(&asset.denomination),
-        amount: asset.amount,
-    }
-}
-
 fn render_table(
     deadline: Decimal,
     total: &Asset,
     modelling: &config::ModellingConfig,
-    base: &Denomination,
     in_common_currency: &HashMap<Denomination, Decimal>,
 ) {
     let mut table = Table::new();
@@ -689,29 +511,29 @@ fn render_table(
         results.push(TableCell::new(format!("{}", asset_to_money(goal))));
 
         for yearly_yield in &modelling.yearly_yields {
-            let result = model_fi_info(
+            let result = model_in_common_currency(
                 total,
                 in_common_currency,
                 *yearly_yield,
-                goal.clone(),
+                goal,
                 &modelling.monthly_saving,
                 deadline,
             );
             use model_rs::State::*;
-            results.push(TableCell::new(match result.model_fi_info.state {
+            results.push(TableCell::new(match result.state {
                 NotReached { .. } => {
                     // 2693 = unicode anchor
                     // 1F4B0 = bag with money
                     format!(
                         "💰 ≥{}\n{}",
                         asset_to_money(&Asset {
-                            amount: result.model_fi_info.need_to_last_until_deadline,
-                            denomination: base.clone()
+                            amount: result.need_to_last_until_deadline,
+                            denomination: total.denomination.clone()
                         }),
-                        result.model_fi_info.lasts_until_short_string()
+                        result.lasts_until_short_string()
                     )
                 }
-                Reached { .. } => result.model_fi_info.lasts_until_short_string(),
+                Reached { .. } => result.lasts_until_short_string(),
             }));
         }
         table.add_row(Row::new(results));
@@ -719,10 +541,7 @@ fn render_table(
     print!("{}", table.render());
 }
 
-struct FiInfo {
-    model_fi_info: model_rs::FiInfo,
-}
-
+// TODO(agentydragon): Also show a monthly spend bounded by the modelling deadline.
 fn get_perpetual(
     total: &Asset,
     yearly_yield: Decimal,
@@ -736,37 +555,20 @@ fn get_perpetual(
     }
 }
 
-// Yearly yield: 0.03 means assumed yearly yield of 3%.
-fn model_fi_info(
+fn model_in_common_currency(
     total: &Asset,
     common_prices: &HashMap<Denomination, Decimal>,
     yearly_yield: Decimal,
-    monthly_goal: Asset,
+    monthly_goal: &Asset,
     monthly_saving: &Asset,
     deadline: Decimal,
-) -> FiInfo {
-    // TODO(agentydragon): make the monthly spend limited to the deadline, not
-    // perpetual
-    //
-    // does not seem to work so well - sometimes is smaller than perpetual,
-    // which it should not be:
-    //
-    //i_prime := math.Log(1 + yearly_yield)
-    //f := math.Pow(1+yearly_yield, deadline)
-    //projectedInCommon := (total.Amount * i_prime * f / (f - 1)) / 12
-    //projectedMonthlySpend :=
-    //	makeCurrency(monthly_goal.Denomination.Symbol, projectedInCommon/common_prices[monthly_goal.Denomination])
-    //fmt.Printf("yearly yield %.2g%%, monthly goal %s, projected monthly spend %s, perpetual %s\n", yearly_yield*100.0, monthly_goal,
-    //	projectedMonthlySpend)
-
+) -> model_rs::FiInfo {
     let to_common = |x: &Asset| -> Decimal { common_prices[&x.denomination] * x.amount };
-    FiInfo {
-        model_fi_info: model_rs::model_fi_info(
-            to_common(total),
-            yearly_yield,
-            to_common(&monthly_goal),
-            to_common(monthly_saving),
-            deadline,
-        ),
-    }
+    model_rs::model_fi_info(
+        to_common(total),
+        yearly_yield,
+        to_common(monthly_goal),
+        to_common(monthly_saving),
+        deadline,
+    )
 }

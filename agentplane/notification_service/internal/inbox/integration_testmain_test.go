@@ -4,9 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -35,40 +33,17 @@ func newStorageIntegrationDatabase(t *testing.T) (*sql.DB, context.Context) {
 	return db, t.Context()
 }
 
-func explainLines(ctx context.Context, tx transaction.Tx, query string, args ...any) (string, error) {
-	rows, err := tx.QueryContext(ctx, "EXPLAIN (COSTS OFF) "+query, args...)
-	if err != nil {
-		return "", err
-	}
-	var plan strings.Builder
-	for rows.Next() {
-		var line string
-		if err := rows.Scan(&line); err != nil {
-			_ = rows.Close()
-			return "", err
-		}
-		plan.WriteString(line)
-		plan.WriteByte('\n')
-	}
-	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
-		return "", err
-	}
-	return plan.String(), nil
-}
-
 func defaultQuotas() Quotas {
 	return Quotas{InboxesPerAccount: 64, ActiveSubscriptionsPerInbox: 64, EntriesPerInbox: 10_000}
 }
 
-// fixture is a Store over the shared database, for an owner no other test uses, so tests do not see each
-// other's inboxes. The owner acts as the Sandbox incarnation sandboxUID, at first the one body's destination names.
+// fixture is a Store over the shared database, for an Identity no other test uses, so tests do not see each
+// other's inboxes.
 type fixture struct {
 	*Store
-	db         *sql.DB
-	owner      model.ServiceAccount
-	identity   model.Identity
-	sandboxUID string
-	sessionID  string
+	db        *sql.DB
+	identity  model.Identity
+	sessionID string
 }
 
 func newFixture(t *testing.T, quotas Quotas) fixture {
@@ -86,27 +61,10 @@ func newIsolatedFixture(t *testing.T, quotas Quotas) fixture {
 func fixtureForDatabase(t *testing.T, db *sql.DB, quotas Quotas) fixture {
 	t.Helper()
 	return fixture{
-		Store: New(db, transaction.New(db), quotas), db: db, owner: newOwner(),
-		identity:   model.Identity{Name: "identity-" + uuid.NewString(), UID: uuid.NewString()},
-		sandboxUID: testSandboxUID, sessionID: uuid.NewString(),
+		Store: New(db, transaction.New(db), quotas), db: db,
+		identity:  model.Identity{Name: "identity-" + uuid.NewString(), UID: uuid.NewString()},
+		sessionID: uuid.NewString(),
 	}
-}
-
-func newOwner() model.ServiceAccount {
-	return model.ServiceAccount{Namespace: "test-namespace", Name: "owner-" + uuid.NewString()}
-}
-
-func (f fixture) insertInbox(t *testing.T, key string, ref model.DestinationRef, sessionID string) uuid.UUID {
-	t.Helper()
-	id := uuid.New()
-	f.exec(t, `
-		INSERT INTO inbox (id, owner_namespace, owner_name, destination_key,
-			destination_namespace, destination_name, destination_uid, session_id,
-			last_cursor, acknowledged, covered, expired_through, retired, updated_at, next_attempt, claim_until,
-			owner_identity_name, owner_identity_uid)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0, 0, 0, false, now(), now(), now(), $9, $10)`,
-		id, ref.Namespace, ref.Name, key, ref.Namespace, ref.Name, ref.UID, sessionID, f.identity.Name, f.identity.UID)
-	return id
 }
 
 func entryPayloadForTest(t *testing.T, event sourceadapter.EventIdentity) string {
@@ -154,27 +112,20 @@ func testMergeabilityPayload(pullRequestNumber int64) githubstoragecodec.Mergeab
 	}
 }
 
-// testSandboxUID is the Sandbox incarnation body's destination names.
-const testSandboxUID = "test-uid"
-
-// incarnation is the fixture's owner as its Sandbox incarnation.
+// incarnation is the fixture's Identity as an inbox owner.
 func (f fixture) incarnation() Owner {
-	return Owner{Identity: f.identity, SandboxUID: f.sandboxUID}
+	return Owner{Identity: f.identity}
 }
 
 // body is a creation following one Action request, for the fixture's one Session. Copies keep the request and
 // change what they set.
 func (f fixture) body(key string) sourceadapter.Subscribe {
-	body := sessionBody(key, f.sessionID)
-	body.DestinationRef.Namespace, body.DestinationRef.Name = f.owner.Namespace, f.owner.Name
-	body.DestinationRef.UID = f.sandboxUID
-	return body
+	return sessionBody(key, f.sessionID)
 }
 
 // sessionBody is a creation for the given Session.
 func sessionBody(key, sessionID string) sourceadapter.Subscribe {
 	return sourceadapter.Subscribe{
-		DestinationRef: model.DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: testSandboxUID},
 		SessionID:      sessionID,
 		IdempotencyKey: key,
 		Source:         sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: uuid.New()}),
@@ -184,9 +135,7 @@ func sessionBody(key, sessionID string) sourceadapter.Subscribe {
 
 func (f fixture) subscribe(t *testing.T, creation sourceadapter.Subscribe) Subscription {
 	t.Helper()
-	owner := f.incarnation()
-	owner.SandboxUID = creation.DestinationRef.UID
-	subscription, err := f.Subscribe(t.Context(), owner, creation, sourceadapter.ActionsAuthorization{})
+	subscription, err := f.Subscribe(t.Context(), f.incarnation(), creation, sourceadapter.ActionsAuthorization{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -286,13 +235,4 @@ func (f fixture) cleanAll(t *testing.T) {
 		}
 		after = last
 	}
-}
-
-func countQuery(t *testing.T, ctx context.Context, db *sql.DB, query string, args ...any) int {
-	t.Helper()
-	var count int
-	if err := db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	return count
 }

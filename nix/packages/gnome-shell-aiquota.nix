@@ -20,7 +20,7 @@ python314Packages.buildPythonApplication {
     with python314Packages;
     [
       atomicwrites
-      dbus-next
+      dbus-fast
       httpx
       httpx-sse
       platformdirs
@@ -53,12 +53,18 @@ python314Packages.buildPythonApplication {
     ')
   '';
 
-  nativeBuildInputs = [ pkgs.unzip ];
+  nativeBuildInputs = [
+    pkgs.glib
+    pkgs.unzip
+  ];
   postInstall = ''
     uuid="aiquota@allegedly.works"
     extDir="$out/share/gnome-shell/extensions/$uuid"
     mkdir -p "$extDir"
     unzip -o ${extensionZip} -d "$extDir"
+    if [ -d "$extDir/schemas" ]; then
+      glib-compile-schemas "$extDir/schemas"
+    fi
   '';
 
   passthru.extensionUuid = "aiquota@allegedly.works";

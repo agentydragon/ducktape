@@ -70,12 +70,4 @@ func TestSystemStatusUsesGeneratedProtoJSONAndCallerAuthentication(t *testing.T)
 			t.Errorf("checkedAt %q is not ProtoJSON timestamp: %v", component.CheckedAt, err)
 		}
 	}
-
-	request = httptest.NewRequest(http.MethodGet, "/system/status", nil)
-	fixture.Authorize(request)
-	response = httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusNotFound {
-		t.Fatalf("legacy Huma system status route = %d: %s", response.Code, response.Body.String())
-	}
 }

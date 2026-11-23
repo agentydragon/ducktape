@@ -1,6 +1,7 @@
 """FilterPlanner - integrates YAML filters with the Plan system."""
 
-from gmail_archiver.gmail_api_models import FilterCriteria, GmailFilter, SizeComparison
+from gmail_api.filters import SizeComparison
+from gmail_archiver.gmail_api_models import FilterCriteria, GmailFilter
 from gmail_archiver.inbox import GmailInbox
 from gmail_archiver.plan import Plan
 
@@ -40,9 +41,8 @@ def criteria_to_gmail_query(criteria: FilterCriteria) -> str:
 class GmailFilterPlanner:
     """Planner that applies a Gmail API filter to matching emails."""
 
-    def __init__(self, gmail_filter: GmailFilter, labels_by_id: dict[str, str], additional_query: str | None = None):
+    def __init__(self, gmail_filter: GmailFilter, additional_query: str | None = None):
         self.gmail_filter = gmail_filter
-        self.labels_by_id = labels_by_id
         self.additional_query = additional_query
 
         # Build display name from filter criteria using the same query builder

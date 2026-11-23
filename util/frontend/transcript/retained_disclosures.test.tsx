@@ -1,39 +1,26 @@
 // @vitest-environment happy-dom
 
-import { MantineProvider } from "@mantine/core";
 import { act, type JSX } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, expect, it } from "vitest";
 
+import { cleanupMounted, mountWithMantine } from "../testing/react";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
 
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const roots: ReturnType<typeof createRoot>[] = [];
-
-afterEach(async () => {
-  for (const root of roots.splice(0)) await act(async () => root.unmount());
-});
+afterEach(cleanupMounted);
 
 it("restores an open disclosure after its virtualized row remounts", async () => {
-  const container = document.createElement("div");
-  const root = createRoot(container);
-  roots.push(root);
-  const render = async (visible: boolean) =>
-    act(async () =>
-      root.render(
-        <MantineProvider env="test">
-          <RetainedDisclosureProvider>
-            {visible && (
-              <RetainedDisclosure id="item:tool:output" summary="Output">
-                <span>selected output</span>
-              </RetainedDisclosure>
-            )}
-          </RetainedDisclosureProvider>
-        </MantineProvider>
-      )
-    );
+  const row = (visible: boolean) => (
+    <RetainedDisclosureProvider>
+      {visible && (
+        <RetainedDisclosure id="item:tool:output" summary="Output">
+          <span>selected output</span>
+        </RetainedDisclosure>
+      )}
+    </RetainedDisclosureProvider>
+  );
+  const { container, rerender } = await mountWithMantine(row(true));
+  const render = async (visible: boolean) => rerender(row(visible));
 
-  await render(true);
   const control = container.querySelector<HTMLButtonElement>(".ui-disclosure-summary")!;
   await act(async () => control.click());
   expect(container.textContent).toContain("selected output");
@@ -58,22 +45,13 @@ function ButtonDisclosure({ id, defaultOpen = false }: { id: string; defaultOpen
 }
 
 it("uses its default open state until the reader makes a choice", async () => {
-  const container = document.createElement("div");
-  const root = createRoot(container);
-  roots.push(root);
-  const render = async (visible: boolean) =>
-    act(async () =>
-      root.render(
-        <MantineProvider env="test">
-          <RetainedDisclosureProvider>
-            {visible && <ButtonDisclosure id="output" defaultOpen />}
-          </RetainedDisclosureProvider>
-        </MantineProvider>
-      )
-    );
+  const row = (visible: boolean) => (
+    <RetainedDisclosureProvider>{visible && <ButtonDisclosure id="output" defaultOpen />}</RetainedDisclosureProvider>
+  );
+  const { container, rerender } = await mountWithMantine(row(true));
+  const render = async (visible: boolean) => rerender(row(visible));
   const press = async () => act(async () => container.querySelector("button")!.click());
 
-  await render(true);
   expect(container.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
   await press();
   expect(container.querySelector("button")?.getAttribute("aria-expanded")).toBe("false");
@@ -84,22 +62,15 @@ it("uses its default open state until the reader makes a choice", async () => {
 });
 
 it("restores a button-toggled disclosure after its virtualized row remounts", async () => {
-  const container = document.createElement("div");
-  const root = createRoot(container);
-  roots.push(root);
-  const render = async (visible: boolean) =>
-    act(async () =>
-      root.render(
-        <MantineProvider env="test">
-          <RetainedDisclosureProvider>
-            {visible && <ButtonDisclosure id="item:message:evidence" />}
-          </RetainedDisclosureProvider>
-        </MantineProvider>
-      )
-    );
+  const row = (visible: boolean) => (
+    <RetainedDisclosureProvider>
+      {visible && <ButtonDisclosure id="item:message:evidence" />}
+    </RetainedDisclosureProvider>
+  );
+  const { container, rerender } = await mountWithMantine(row(true));
+  const render = async (visible: boolean) => rerender(row(visible));
   const press = async () => act(async () => container.querySelector("button")!.click());
 
-  await render(true);
   await press();
   expect(container.querySelector("button")?.getAttribute("aria-expanded")).toBe("true");
 
@@ -115,21 +86,15 @@ it("restores a button-toggled disclosure after its virtualized row remounts", as
 });
 
 it("evicts old disclosure choices and keeps a replacement source closed", async () => {
-  const container = document.createElement("div");
-  const root = createRoot(container);
-  roots.push(root);
-  const render = async (source: string, item: number) =>
-    act(async () =>
-      root.render(
-        <MantineProvider env="test">
-          <RetainedDisclosureProvider>
-            <RetainedDisclosure id={`${source}:epoch:${item}:evidence`} summary="Evidence">
-              <span data-retained-content>{`${source} evidence ${item}`}</span>
-            </RetainedDisclosure>
-          </RetainedDisclosureProvider>
-        </MantineProvider>
-      )
-    );
+  const row = (source: string, item: number) => (
+    <RetainedDisclosureProvider>
+      <RetainedDisclosure id={`${source}:epoch:${item}:evidence`} summary="Evidence">
+        <span data-retained-content>{`${source} evidence ${item}`}</span>
+      </RetainedDisclosure>
+    </RetainedDisclosureProvider>
+  );
+  const { container, rerender } = await mountWithMantine(row("original", 0));
+  const render = async (source: string, item: number) => rerender(row(source, item));
 
   for (let item = 0; item < 129; item++) {
     await render("original", item);

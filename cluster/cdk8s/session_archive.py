@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import PurePosixPath
+
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Duration, JsonPatch, Size
 from cdk8s_plus_34 import (
     ContainerResources,
@@ -24,9 +26,16 @@ from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from ai_session_archive.web_settings import WebSettings
-from cluster.cdk8s import cilium, node_scheduling, pod_policy, probes, session_backup
+from cluster.cdk8s import cilium, disruption_budget, node_scheduling, pod_policy, probes, session_backup
 from cluster.cdk8s.cnpg import cluster
-from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.container_resources import container_resources
+from cluster.cdk8s.flux import (
+    Kustomization,
+    RenderedDirectory,
+    SecretGeneratorArgs,
+    flux_kustomization,
+    flux_kustomization_depends_on_many,
+)
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
@@ -44,12 +53,17 @@ DATABASE = cluster.PostgresRef.generated(name="session-archive-db-hdd", namespac
 _WEB_IMAGE = "git.allegedly.works/ducktape-ci/ai-session-archive-web:unset"
 _IMPORTER_IMAGE = "git.allegedly.works/ducktape-ci/ai-session-archive-importer:unset"
 _OIDC = SecretRef(namespace=NAMESPACE, name="ai-session-archive-oidc")
-_RESTIC_CREDENTIALS_PATH = session_backup.IMPORTER_CREDENTIALS_PATH
-_WEB_PORT = 8080
-_WEB_LABELS = {"app.kubernetes.io/name": NAME}
-_WEB = ServiceRef(name=NAME, port=Port(name="http", number=_WEB_PORT), pods=Pods(NAMESPACE, tuple(_WEB_LABELS.items())))
-_IMPORTER_LABELS = session_backup.IMPORTER_LABELS
-_IMPORTER_ENDPOINT = cilium.endpoint_labels(NAMESPACE, _IMPORTER_LABELS["app.kubernetes.io/name"])
+_CREDENTIALS_PATH = PurePosixPath("/run/session-backup/session-backup.yaml")
+CREDENTIALS_SOURCE = "session-backup.sops.yaml"
+CREDENTIALS = SecretGeneratorArgs(
+    name="session-backup-importer-credentials",
+    namespace=NAMESPACE,
+    files=[f"{_CREDENTIALS_PATH.name}={CREDENTIALS_SOURCE}"],
+)
+_WEB = ServiceRef(
+    name=NAME, port=Port(name="http", number=8080), pods=Pods(NAMESPACE, (("app.kubernetes.io/name", NAME),))
+)
+IMPORTER = Pods(NAMESPACE, (("app.kubernetes.io/name", f"{NAME}-importer"),))
 _CLAUDE_ROOT = "/.claude"
 _CODEX_ROOT = "/.codex"
 _SOURCE_HOSTS = (
@@ -90,10 +104,7 @@ def _migration_container() -> k8s.Container:
         args=["--migrate-database"],
         image_pull_policy="IfNotPresent",
         env=[DATABASE.app_secret.key("uri").env_var("DATABASE_URL")],
-        resources=k8s.ResourceRequirements(
-            requests={"cpu": k8s.Quantity.from_string("50m"), "memory": k8s.Quantity.from_string("128Mi")},
-            limits={"memory": k8s.Quantity.from_string("512Mi")},
-        ),
+        resources=container_resources(cpu="50m", memory="128Mi", memory_limit="512Mi"),
     )
 
 
@@ -101,7 +112,7 @@ def _web_environment(chart: Chart) -> dict[str, EnvValue]:
     return {
         env_name(WebSettings, "database_url"): DATABASE.app_secret.key("uri").env_value(chart, "database-url-ref"),
         env_name(WebSettings, "public_base_url"): EnvValue.from_value(f"https://{HOSTNAME}"),
-        env_name(WebSettings, "port"): EnvValue.from_value(str(_WEB_PORT)),
+        env_name(WebSettings, "port"): EnvValue.from_value(str(_WEB.pod_port)),
         **{
             env_name(WebSettings, field): _OIDC.key(env_name(WebSettings, field)).env_value(chart, f"{field}-ref")
             for field in (
@@ -122,10 +133,10 @@ def _web(chart: Chart) -> None:
         metadata=ApiObjectMetadata(
             name=NAME,
             namespace=NAMESPACE,
-            labels=_WEB_LABELS,
+            labels=_WEB.pods.selector,
             annotations={"description": "Owner-authenticated browser and API for the session archive."},
         ),
-        pod_metadata=ApiObjectMetadata(labels=_WEB_LABELS),
+        pod_metadata=ApiObjectMetadata(labels=_WEB.pods.selector),
         replicas=2,
         strategy=DeploymentStrategy.rolling_update(),
         select=False,
@@ -134,15 +145,15 @@ def _web(chart: Chart) -> None:
         security_context=PodSecurityContextProps(ensure_non_root=True, user=_UID, group=_UID, fs_group=_UID),
     )
     # Deployment selectors are immutable, so keep the existing labels.
-    workload.select(LabelSelector.of(labels=_WEB_LABELS))
+    workload.select(LabelSelector.of(labels=_WEB.pods.selector))
     workload.add_container(
         name=NAME,
         image=_WEB_IMAGE,
         image_pull_policy=ImagePullPolicy.IF_NOT_PRESENT,
         env_variables=_web_environment(chart),
-        ports=[_WEB.port.container_port()],
-        readiness=Probe.from_http_get("/healthz", port=_WEB_PORT, period_seconds=Duration.seconds(10)),
-        liveness=probes.http_probe("/healthz", port=_WEB_PORT, initial_delay_seconds=30, period_seconds=20),
+        ports=[_WEB.container_port()],
+        readiness=Probe.from_http_get("/healthz", port=_WEB.pod_port, period_seconds=Duration.seconds(10)),
+        liveness=probes.http_probe("/healthz", port=_WEB.pod_port, initial_delay_seconds=30, period_seconds=20),
         resources=ContainerResources(
             cpu=CpuResources(request=Cpu.millis(50)),
             memory=MemoryResources(request=Size.mebibytes(256), limit=Size.gibibytes(1)),
@@ -154,6 +165,7 @@ def _web(chart: Chart) -> None:
     ApiObject.of(workload).add_json_patch(JsonPatch.add("/spec/template/spec/initContainers", [_migration_container()]))
     pod_policy.harden(workload)
     pod_policy.place(workload, node_scheduling.HIL_OVH)
+    disruption_budget.add_disruption_budget(chart, "web-disruption-budget", name=_WEB.name, pods=_WEB.pods)
 
     Service(
         chart,
@@ -173,20 +185,16 @@ def _web(chart: Chart) -> None:
     )
 
 
-def _restic_credentials_volume() -> k8s.Volume:
-    return k8s.Volume(
+def _importer_job(chart: Chart, host: str, display_name: str, schedule: str) -> k8s.KubeCronJob:
+    labels = {**IMPORTER.selector, "app.kubernetes.io/instance": host}
+    credentials_volume = k8s.Volume(
         name="restic-credentials",
         secret=k8s.SecretVolumeSource(
-            secret_name=session_backup.IMPORTER_CREDENTIALS_SECRET,
+            secret_name=CREDENTIALS.name,
             default_mode=0o440,
-            items=[k8s.KeyToPath(key="session-backup.yaml", path="session-backup.yaml")],
+            items=[k8s.KeyToPath(key=_CREDENTIALS_PATH.name, path=_CREDENTIALS_PATH.name)],
         ),
     )
-
-
-def _importer_job(chart: Chart, host: str, display_name: str, schedule: str) -> k8s.KubeCronJob:
-    labels = {**_IMPORTER_LABELS, "app.kubernetes.io/instance": host}
-    credentials_volume = _restic_credentials_volume()
     job = k8s.KubeCronJob(
         chart,
         f"import-{host}-cronjob",
@@ -235,7 +243,7 @@ def _importer_job(chart: Chart, host: str, display_name: str, schedule: str) -> 
                                         "--codex-root",
                                         _CODEX_ROOT,
                                         "--credentials-file",
-                                        _RESTIC_CREDENTIALS_PATH,
+                                        str(_CREDENTIALS_PATH),
                                     ],
                                     env=[
                                         DATABASE.app_secret.key("uri").env_var("DATABASE_URL"),
@@ -244,20 +252,13 @@ def _importer_job(chart: Chart, host: str, display_name: str, schedule: str) -> 
                                         ),
                                         k8s.EnvVar(name="RESTIC_CACHE_DIR", value="/tmp/restic-cache"),
                                     ],
-                                    resources=k8s.ResourceRequirements(
-                                        requests={
-                                            "cpu": k8s.Quantity.from_string("250m"),
-                                            "memory": k8s.Quantity.from_string("512Mi"),
-                                        },
-                                        limits={
-                                            "cpu": k8s.Quantity.from_string("2"),
-                                            "memory": k8s.Quantity.from_string("2Gi"),
-                                        },
+                                    resources=container_resources(
+                                        cpu="250m", memory="512Mi", cpu_limit="2", memory_limit="2Gi"
                                     ),
                                     volume_mounts=[
                                         k8s.VolumeMount(
                                             name=credentials_volume.name,
-                                            mount_path="/run/session-backup",
+                                            mount_path=str(_CREDENTIALS_PATH.parent),
                                             read_only=True,
                                         )
                                     ],
@@ -294,7 +295,7 @@ def _network_policies(chart: Chart) -> None:
         chart,
         "importer-network-policy",
         metadata=ApiObjectMetadata(name=f"{NAME}-importer", namespace=NAMESPACE),
-        endpoint_selector=_IMPORTER_ENDPOINT,
+        endpoint_selector=IMPORTER.cilium,
         ingress=[],
         egress=[
             cilium.dns_egress(resolves=["*"]),

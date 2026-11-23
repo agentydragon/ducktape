@@ -12,8 +12,8 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthCh
 
 from cluster.cdk8s import flux
 from cluster.cdk8s.agentplane import egress
-from cluster.cdk8s.flux import kustomize_kustomization
-from cluster.cdk8s.generation import write_app, write_yaml
+from cluster.cdk8s.flux import write_kustomization
+from cluster.cdk8s.generation import write_app
 
 _HEALTH_CHECK_KINDS = ("Namespace", "Cluster", "Database", "Deployment", "Certificate", "Bundle", "Job")
 
@@ -63,21 +63,19 @@ def write_environment_manifests(
     chart = build(app)
     for build_more in more_charts:
         build_more(app)
-    write_yaml(
-        root / layout.output_dir / "kustomization.yaml",
-        kustomize_kustomization(
-            resources=[
-                write_app(
-                    root,
-                    layout.output_dir,
-                    app,
-                    # The interception proxy terminates TLS for the namespace; its allowlist is the
-                    # egress PolicySets, not SNI on its own egress rule.
-                    unpinned_https_egress={egress.NAME.removeprefix("agentplane-")},
-                ),
-                *layout.extra_resources,
-            ],
-            components=[posixpath.relpath(layout.image_pins, layout.output_dir)],
-        ),
+    write_kustomization(
+        root / layout.output_dir,
+        resources=[
+            write_app(
+                root,
+                layout.output_dir,
+                app,
+                # The interception proxy terminates TLS for the namespace; its allowlist is the
+                # egress PolicySets, not SNI on its own egress rule.
+                unpinned_https_egress={egress.NAME},
+            ),
+            *layout.extra_resources,
+        ],
+        components=[posixpath.relpath(layout.image_pins, layout.output_dir)],
     )
     return chart

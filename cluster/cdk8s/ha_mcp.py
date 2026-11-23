@@ -1,8 +1,8 @@
 """Everything ha-mcp needs, generated into one Kustomization: its Namespace, the ESO copy of
 the Home Assistant token the Home Assistant provisioner keeps valid (cluster/cdk8s/home_assistant),
 and the ConfigMap/Deployment/Service/CiliumNetworkPolicy/ServiceMonitor for the MCP server itself.
-cdk8s generates all of it, so there's no real need to keep the Namespace/credentials/app split
-into separate directories the way hand-written manifests once did -- see cluster/docs/cdk8s.md.
+cdk8s generates all of it, so the Namespace, credentials and app share one directory
+(cluster/docs/cdk8s.md).
 
 The facade container's image tag is a deliberate placeholder ("unset") -- the hand-written
 `PINS_DIR` Component, which the directory includes across the roots, overrides it at
@@ -19,11 +19,9 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
-    Capability,
     ConfigMap,
     ContainerResources,
     ContainerSecurityContextProps,
-    ContainerSecutiryContextCapabilities,
     Cpu,
     CpuResources,
     Deployment,
@@ -39,7 +37,7 @@ from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitor
 
-from cluster.cdk8s import cilium, namespaces, pod_policy
+from cluster.cdk8s import cilium, namespaces, pod_policy, public_web_pki
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.forgejo_registry.pull_credentials import (
@@ -54,8 +52,11 @@ from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPo
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 NAME = "ha-mcp"
+_CPU_REQUEST_MILLIS = 50
+_BACKEND_MEMORY_LIMIT_MIB = 1024
 _NAMESPACE = "ha-mcp"
 OUTPUT_DIR = f"{GENERATED_ROOT}/agents/ha-mcp/app"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/agents/ha-mcp/app-image-pins"
@@ -102,7 +103,6 @@ def _home_assistant_token(scope: Construct) -> None:
                 reader=reader,
                 source_namespace=home_assistant.HA_MCP_TOKEN.secret_namespace,
                 source_secret=home_assistant.HA_MCP_TOKEN.secret_name,
-                consumer_namespace=_NAMESPACE,
             )
         ),
         data=[remote_data(home_assistant.HA_MCP_TOKEN.secret_name, "token", secret_key=_HOME_ASSISTANT_TOKEN.key)],
@@ -124,12 +124,7 @@ class HaMcpApp(Construct):
         # (cluster/cdk8s/agentplane/staging.py): this namespace also holds the Home Assistant admin
         # token, which no store may reach.
         mint_bearer_secret(
-            self,
-            "bearer-external-secret",
-            name=BEARER.secret.name,
-            namespace=BEARER.secret.namespace,
-            key=BEARER.key,
-            creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+            self, "bearer-external-secret", target=BEARER, creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER
         )
         config_map = self._add_config_map()
         deployment = self._add_deployment(config_map)
@@ -182,12 +177,13 @@ class HaMcpApp(Construct):
                 namespace=_NAMESPACE,
                 labels=FACADE.pods.selector,
                 annotations={
+                    **namespaces.initial_request_annotations(ContainerPolicy.cpu_and_memory_requests_only("ha-mcp")),
                     "description": (
                         "Writable Home Assistant MCP server behind the shared MCP facade, cluster-internal "
                         "and gated by a static bearer that only agentplane-staging's Action Service holds. "
                         "The upstream HA token remains server-side, and the Action Service applies its own "
                         "per-call approval policy."
-                    )
+                    ),
                 },
             ),
             pod_metadata=ApiObjectMetadata(labels=FACADE.pods.selector),
@@ -210,14 +206,12 @@ class HaMcpApp(Construct):
                 "HOMEASSISTANT_TOKEN": _HOME_ASSISTANT_TOKEN.env_value(self, "ha-mcp-home-assistant-token-ref")
             },
             resources=ContainerResources(
-                cpu=CpuResources(request=Cpu.millis(50), limit=Cpu.millis(500)),
-                memory=MemoryResources(request=Size.mebibytes(256), limit=Size.gibibytes(1)),
+                cpu=CpuResources(request=Cpu.millis(_CPU_REQUEST_MILLIS), limit=Cpu.millis(500)),
+                memory=MemoryResources(request=Size.mebibytes(256), limit=Size.mebibytes(_BACKEND_MEMORY_LIMIT_MIB)),
             ),
             readiness=http_probe("/healthz", port=_UPSTREAM.number, initial_delay_seconds=5),
             liveness=http_probe("/healthz", port=_UPSTREAM.number, initial_delay_seconds=20, period_seconds=20),
-            security_context=ContainerSecurityContextProps(
-                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]), user=999, group=999
-            ),
+            security_context=ContainerSecurityContextProps(user=999, group=999),
         )
         deployment.containers[0].mount("/tmp", tmp_volume)
         deployment.containers[0].mount(_APP_DATA_DIR, data_volume)
@@ -226,13 +220,13 @@ class HaMcpApp(Construct):
             name="facade",
             image=f"{_APP_FACADE_IMAGE_NAME}:{_PLACEHOLDER_TAG}",
             image_pull_policy=ImagePullPolicy.ALWAYS,
-            ports=[FACADE.port.container_port(), _METRICS.port.container_port()],
+            ports=[FACADE.container_port(), _METRICS.container_port()],
             env_from=[EnvFrom(config_map=config_map)],
             env_variables={
                 # The same token agentplane-staging's Action Service presents (its ESO copy of
                 # this Secret) -- one source of truth, no drift.
                 "MCP_FACADE_CLIENT_AUTH__STATIC_BEARER": BEARER.env_value(self, "ha-mcp-bearer-ref"),
-                "SSL_CERT_FILE": EnvValue.from_value("/var/run/public-web-pki/ca-certificates.crt"),
+                "SSL_CERT_FILE": EnvValue.from_value(public_web_pki.CA_FILE),
             },
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50), limit=Cpu.millis(200)),
@@ -247,12 +241,7 @@ class HaMcpApp(Construct):
             # could break the running facade. Same rationale as litellm/proxy.py.
             security_context=ContainerSecurityContextProps(read_only_root_filesystem=False, ensure_non_root=False),
         )
-        public_roots = ConfigMap.from_config_map_name(self, "public-web-pki-ref", "public-web-pki")
-        facade.mount(
-            "/var/run/public-web-pki",
-            Volume.from_config_map(self, "public-web-pki-volume", public_roots),
-            read_only=True,
-        )
+        public_web_pki.mount(self, facade)
         pod_policy.harden(deployment)
         return deployment
 
@@ -262,7 +251,7 @@ class HaMcpApp(Construct):
             "service",
             metadata=ApiObjectMetadata(name=FACADE.name, namespace=_NAMESPACE, labels=FACADE.labels),
             selector=deployment,
-            ports=[FACADE.port.service_port(), _METRICS.port.service_port()],
+            ports=[FACADE.service_port(), _METRICS.service_port()],
         )
 
     def _add_network_policy(self) -> None:
@@ -304,7 +293,7 @@ class HaMcp(Construct):
     def __init__(self, scope: Construct, id: str) -> None:
         super().__init__(scope, id)
         namespaces.namespace(
-            self, "namespace", name=_NAMESPACE, vpa=Vpa.DISABLED, labels={"app.kubernetes.io/name": _NAMESPACE}
+            self, "namespace", name=_NAMESPACE, vpa=Vpa.RECOMMEND, labels={"app.kubernetes.io/name": _NAMESPACE}
         )
         _home_assistant_token(self)
         HaMcpApp(self, "app")

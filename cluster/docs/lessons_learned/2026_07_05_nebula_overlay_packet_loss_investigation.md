@@ -2,7 +2,6 @@
 
 **Status: explained by OVH class limits plus underlay asymmetry, not Nebula-primary.**
 Tracking issue: agentydragon/ducktape#2917.
-The live follow-up is in <../../../cluster/debug/nebula_inter_node_perf/>.
 
 ## Symptom
 
@@ -24,9 +23,13 @@ the public path is already slow, lossy, and asymmetric.
 
 ## 2026-07-07 follow-up: public underlay is already near class limits
 
-The reduced evidence report is in <../../../cluster/debug/nebula_inter_node_perf/>.
+Method: temporary node-pinned `nicolaka/netshoot:v0.13` pods. `hostNetwork` client/server pairs measured the public
+`eno1` path and the Nebula host route (`10.42.0.0/16 dev nebula1`); ordinary pod pairs measured the pod overlay.
+`iperf3 -J` gave TCP throughput, retransmits and UDP loss. The hosts gave `ip route`, `tracepath`, `ethtool -S`
+(receiver drops: `rx_missed_errors`, `rx_fifo_errors`, `rx_no_buffer_count`, `rx_queue_*_drops`), `ip -s link`,
+`tc -s qdisc` and selected Talos `/proc`/`/sys` counters.
 
-The authenticated OVH API reports these live network specs:
+The authenticated OVH API (`/dedicated/server/{serviceName}/specifications/network`) reports these live network specs:
 
 - KS-5 nodes (`102453`, `103656`, `103711`): `OvhToOvh=500 Mbps`,
   `OvhToInternet=500 Mbps`, `InternetToOvh=500 Mbps`, `connection=1000 Mbps`,
@@ -35,7 +38,9 @@ The authenticated OVH API reports these live network specs:
   `OvhToInternet=300 Mbps`, `InternetToOvh=300 Mbps`, `connection=1000 Mbps`,
   no vRack bandwidth.
 
-So same-DC OVH traffic on these Eco/Kimsufi nodes is explicitly not a private 1 Gbps path.
+So same-DC OVH traffic on these Eco/Kimsufi nodes is explicitly not a private 1 Gbps path. The public Kimsufi catalog
+(<https://eco.us.ovhcloud.com/?display=list&range=kimsufi>) agrees: no private bandwidth; public bandwidth 300-500 Mbps
+for KS-5 depending on variant, 300 Mbps for KS-GAME.
 
 | Pair / topology                         | Public host path              | Nebula host path              | Pod overlay                   |
 | --------------------------------------- | ----------------------------- | ----------------------------- | ----------------------------- |
@@ -46,13 +51,29 @@ So same-DC OVH traffic on these Eco/Kimsufi nodes is explicitly not a private 1 
 | Bench source `103656 -> 104952`         | 492.3 Mbps, 26.4k retransmits | 390.2 Mbps, 11.6k retransmits | 439.6 Mbps, 17.9k retransmits |
 | Bench source reverse `104952 -> 103656` | 842.3 Mbps, 210 retransmits   | 764.6 Mbps, 231 retransmits   | 696.7 Mbps, 1.3k retransmits  |
 
+Public-path TCP out of `104952` reaches 848.7 and 842.3 Mbps, so the OVH limit is not a simple hard bidirectional
+shaper over short tests; the live included bandwidth is still 300 Mbps for the class.
+
 UDP tests also lose packets on the direct public path. Example: `102453 -> 103711` lost
 1.35% at 300 Mbps, 1.51% at 450 Mbps, and 24.03% at 650 Mbps on public `eno1`;
 Nebula was close behind at 1.46%, 2.48%, and 27.65%. Repeating with 1200-byte UDP
 payloads did not remove loss, so this is not an MTU artifact.
 
+UDP loss with 1200-byte payloads, payload rate to loss (public path unless noted):
+
+- KS-GAME `104963 -> 104952`: 250/280/300/330 Mbps lost 7.17/13.41/16.72/22.77%.
+- KS-GAME `104952 -> 104963`: 280/300/650/850 Mbps lost 2.22/1.76/4.20/5.16%, with 551.1 and 575.8 Mbps achieved at
+  650 and 850.
+- KS-5 `102453 -> 103711`: 430/470/500/540 Mbps lost 7.31/9.19/10.35/16.33%.
+- KS-GAME pair `104963 <-> 104952`, public vs Nebula: 300 Mbps lost 7.73% vs 12.75%; 650 Mbps lost 56.15% vs 58.88%.
+
 Focused receiver-NIC counter probes did not move `104952`'s local RX drop counters during
 slow inbound public transfers, so the loss/shape is upstream of the destination host NIC.
+
+Same-`/24` OVH peers still hairpin through the OVH gateway (`104963 -> 104952`:
+`147.135.104.5 via 147.135.104.254 dev eno1`, `tracepath` PMTU 1500, 2 hops); cross-`/24` public paths cross several OVH
+hops at sub-ms RTT with PMTU 1500. Host routes and MTUs (1500 public, 1420 Nebula, 1370 pod) match
+[the network model](../network.md).
 
 Conclusion: Nebula has overhead, but the primary ceiling and asymmetry are already present on
 the routed OVH public path and line up with the purchased service classes. Do not ship another
@@ -75,10 +96,15 @@ merged on plausibility, then measurement disproved it. Diagnose with real data f
 
 ## Next
 
-- Escalate the public-path asymmetry to OVH only if the below-nominal loss needs explanation;
-  the overall ceiling is close to live service specs.
+- Escalate the public-path asymmetry to OVH only if the below-nominal loss needs explanation, attaching the public-path
+  `iperf3` results; the overall ceiling is close to live service specs. Likely contributors: soft or asymmetric OVH
+  enforcement, especially for traffic into `104952`, and overlay overhead plus concurrent cluster traffic sharing the
+  same included bandwidth.
 - Treat storage benchmarks across `local-path-ovh-{hdd,ssd}` as topology-sensitive: a client
   on `103656` can hit an HDD volume server locally, but SSD volume servers are only on
-  `104952`/`104963`, so SSD results include remote inter-node network cost.
+  `104952`/`104963` (KS-GAME, 300 Mbps `OvhToOvh`), so SSD results include remote inter-node network cost.
+  If same-DC storage traffic must approach line rate, use higher-bandwidth or vRack-capable hardware, or add topology
+  awareness.
 - Separately investigate `103656` background `rx_missed_errors` growth. It is real host-health
-  noise, but this run did not tie it to the slow `104952` inbound path.
+  noise: it also grew during tests where `103656` was not on the measured path, so this run did not tie it to the slow
+  `104952` inbound path.

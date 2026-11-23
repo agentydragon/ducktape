@@ -1,0 +1,13 @@
+const v2 = ({ value: ((0 + 5) * ((5 < 0) ? 1 : 7)) });
+const v3 = ({ value: (((3 + 3) < 7) ? ((6 < 3) ? 4 : 2) : 1) });
+const v4 = (v5) => v1(3);
+const v6 = v4;
+let v7 = (v3.value + 5);
+(globalThis.saved = v4);
+const v8 = ({ value: v7 });
+{ (v7++); const v9 = (v7 + v7); }
+const v0 = () => 8;
+const v1 = v0;
+(v7 = (v7 - (9 + 3)));
+console.log("callback", globalThis.saved(v7));
+console.log("final", (((((v7 - v7) < 3) ? v7 : v8.value) < 3) ? (v4(v7) - v7) : ((v7 - v7) * 5)));

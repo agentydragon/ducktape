@@ -56,10 +56,10 @@
       "filename": "cpap.skill"
     },
     {
-      "name": "buildbuddy_api",
-      "pkg": "skill-buildbuddy_api",
-      "target": "//devinfra/buildbuddy/skill/buildbuddy_api:buildbuddy_api_skill",
-      "filename": "buildbuddy_api.skill"
+      "name": "buildbuddy",
+      "pkg": "skill-buildbuddy",
+      "target": "//devinfra/buildbuddy/skill:buildbuddy_skill",
+      "filename": "buildbuddy.skill"
     },
     {
       "name": "cihealth",
@@ -132,6 +132,12 @@
       "pkg": "skill-debundle_stabilize",
       "target": "//devinfra/js/debundle/skills/debundle_stabilize:debundle_stabilize_skill",
       "filename": "debundle_stabilize.skill"
+    },
+    {
+      "name": "action_report",
+      "pkg": "skill-action_report",
+      "target": "//skills/action_report:action_report_skill",
+      "filename": "action_report.skill"
     },
     {
       "name": "backtrace",

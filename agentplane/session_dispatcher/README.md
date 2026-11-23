@@ -53,29 +53,15 @@ Source lives under `agentplane/session_dispatcher/`: `cmd/` owns signal/log setu
 - `dispatcher/`: durable admission, watch, delivery, guarded wake and scheduling ownership.
 - `internal/store/`: Session and dispatch persistence, leases, retention and notification reads.
 - `migrations/`: Goose migrations for the Dispatcher database.
-- `client.py`: the Python Runner proxy client; `testing/` provides narrow consumer peers and
+- `client.py`: the Python Environments Runtime proxy client; `testing/` provides narrow consumer peers and
   `gateway_process.py` runs the real binary for cross-language acceptance.
 
-Listener settings accept ordinary TCP `host:port` addresses and `fd:N`, where `N`
-is the descriptor number **in the child process** (at least 3). An inherited
-socket must already be bound and listening on TCP. Invalid descriptors fail startup without
-falling back to another address.
+`rpc.listen_address` accepts a TCP address or an inherited `fd:N` as documented by
+[`agentplane/net/listener`](../net/listener/README.md).
 
-Startup follows Go's `ListenAndServe`/`Serve` separation: `listenAndServe` obtains
-and owns the listener, while `serve` takes a `net.Listener`. FD parsing and conversion stay at the process
-boundary; serving code never handles descriptor numbers. `net.FileListener`
-duplicates the descriptor, so startup closes the inherited descriptor after
-conversion and closes the resulting listener on exit, including setup failure.
-The parent closes its own socket copy after spawning the child.
-
-For Go parents, `exec.Cmd.ExtraFiles` assigns child descriptors `3+i`; Python's
-`pass_fds` preserves descriptor numbers. The launcher supplies the corresponding
-`fd:N` values. Client addresses come from the parent's held listener, without
-startup files or log parsing.
-
-Build `//agentplane/session_dispatcher/cmd:runner-gateway` or `//agentplane/session_dispatcher:image`.
+Build `//agentplane/session_dispatcher/cmd:sessions` or `//agentplane/session_dispatcher:image`.
 The same binary embeds Goose migrations and applies them before request handling or workers start.
-`runner-gateway --migrate-only` initializes a database using the same lifecycle and
+`sessions --migrate-only` initializes a database using the same lifecycle and
 `AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL`. PostgreSQL session locks serialize simultaneous
 startup attempts. Integration tests exercise real PostgreSQL and queue-to-Runner delivery over
 the separate Environments mTLS receiver on RBE.
@@ -101,6 +87,67 @@ share one image; schema changes remain compatible with old replicas during rolli
 `//agentplane/session_dispatcher/migrations:test_migrations` covers fresh schema creation,
 idempotent application and concurrent migrations.
 
+### Enum storage rollout
+
+The Dispatcher is moving dispatch operation, delivery state, and Session materialization
+to the public protobuf enum numbers. The rollout covers live dispatches, deletion
+receipts, and Sessions. Their text columns retain the exact historical values through
+the compatibility phases.
+
+1. **Expand the schema.** Migration 00031 adds nullable integer shadows and mirrors
+   text writes. Existing readers and writers still use text. The migration installs
+   the procedure below without rewriting or backfilling the tables. Verify an old
+   Sessions binary can still start, write, and serve existing receipts before cutover.
+2. **Backfill, verify, and deploy SQL writer compatibility.** Run the backfill and
+   checks below before applying the migration that permits numeric writes. Verify both
+   writer generations update both representations, and build the numeric indexes
+   concurrently. Keep a tested backup and a rollback path to the text-reading binary.
+3. **Switch the Go store to numeric reads and writes.** Verify both deployed writer
+   generations, authorized reads, and watches resumed from pre-cutover tokens.
+   Legacy operation and Session spellings without a number still fail projection.
+   An unmappable legacy delivery state stays out of exact state filters and projects as
+   `UNKNOWN` where the old receipt projection did.
+
+Remove the text columns and conversion layer in a separate migration only after all
+text readers and writers have left, any unmappable rows have an approved disposition,
+and backup restore and rollback tests demonstrate that no supported recovery uses
+the old columns.
+
+#### Backfill and completeness
+
+After 00031, use a terminal with the Dispatcher database connection already configured.
+Run this as an autocommit statement. The procedure walks each primary key or version
+index in bounded batches, commits between batches, and can be rerun after interruption.
+It fills only the numeric shadows, preserving receipt versions, Session watch positions,
+and original text.
+
+```sql
+CALL backfill_dispatch_enum_values(1000);
+```
+
+Run the following query after backfill. All three `out_of_sync` counts must be zero
+before cutover. Review nonzero `unmappable` counts separately; their original text stays
+in place, with a NULL shadow. Exact stored `UNKNOWN` is a mapped value.
+
+```sql
+SELECT 'dispatch' AS relation,
+       count(*) FILTER (WHERE operation_value IS DISTINCT FROM dispatch_operation_value(operation)
+                          OR state_value IS DISTINCT FROM dispatch_state_value(state)) AS out_of_sync,
+       count(*) FILTER (WHERE operation_value IS NULL OR state_value IS NULL) AS unmappable
+FROM dispatch
+UNION ALL
+SELECT 'dispatch_tombstone',
+       count(*) FILTER (WHERE operation_value IS DISTINCT FROM dispatch_operation_value(operation)
+                          OR state_value IS DISTINCT FROM dispatch_state_value(state)),
+       count(*) FILTER (WHERE operation_value IS NULL OR state_value IS NULL)
+FROM dispatch_tombstone
+UNION ALL
+SELECT 'session',
+       count(*) FILTER (WHERE state_value IS DISTINCT FROM session_materialization_value(state)),
+       count(*) FILTER (WHERE state_value IS NULL)
+FROM session;
+```
+
 ## Optional central sampler
 
 The optional `central_sampler` configures one gRPC target and its service TLS credentials.
@@ -110,8 +157,6 @@ environment (`central_sampler_v1`); callers do not choose a service endpoint. Th
 HarnessHost creation requests and commands to the configured sampler; wrapped native Sessions use
 the same [`HarnessHostClient`](dispatcher/runtime_client.go) through the Environments proxy. Central
 controls bypass executor readiness/wake checks after Session creation.
-Central sampler V1 retains the existing Sandbox identity and requires the bound Sandbox object; it
-does not support optional attachments or environment-free Sessions.
 
 Executor runs in Environments, independently of Dispatcher admission. The sampler presents its own
 narrow service SVID grant there; this process has no Executor receiver. See the

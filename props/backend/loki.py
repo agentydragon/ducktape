@@ -9,14 +9,11 @@ to the DB (only the run's status is) — this is how they're read back.
 
 from __future__ import annotations
 
-import logging
 import os
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import httpx
-
-logger = logging.getLogger(__name__)
 
 # In-cluster Loki read (SimpleScalable) — overridable for tests / other clusters.
 DEFAULT_LOKI_URL = "http://loki-read.loki.svc.cluster.local:3100"

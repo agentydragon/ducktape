@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
 	"github.com/invopop/jsonschema"
 	// Both schema libraries use the package name jsonschema.
 	validator "github.com/santhosh-tekuri/jsonschema/v6"
@@ -27,7 +28,7 @@ type InputOptions struct {
 type Input[T any] struct {
 	name       string
 	definition ActionDefinition
-	validator  *validator.Schema
+	validator  *CompiledSchema
 }
 
 // NewInput reflects T as a closed JSON object, applies binding constraints, and compiles the
@@ -71,10 +72,11 @@ func NewInput[T any](options InputOptions) (Input[T], error) {
 	return Input[T]{
 		name: options.Name,
 		definition: ActionDefinition{
-			Description: options.Description,
-			InputSchema: document,
-			Title:       options.Title,
-			Annotations: options.Annotations,
+			Description:           options.Description,
+			InputSchema:           document,
+			InputSchemaValidation: &action_servicepb.InputSchemaValidation{Status: action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_ENFORCED},
+			Title:                 options.Title,
+			Annotations:           options.Annotations,
 		},
 		validator: compiled,
 	}, nil
@@ -85,8 +87,8 @@ func (input Input[T]) Name() string { return input.name }
 // Definition returns this input's read-only Action definition.
 func (input Input[T]) Definition() ActionDefinition { return input.definition }
 
-// Decode validates and decodes arguments into T. All malformed or rejected arguments have the
-// same ErrInvalidArguments result as the existing Action decoder.
+// Decode validates and decodes arguments into T. Malformed and mismatched arguments return ErrInvalidArguments;
+// pattern evaluation failures return ErrPatternEvaluation.
 func (input Input[T]) Decode(arguments json.RawMessage) (T, error) {
 	var value T
 	if err := DecodeArguments(input.validator, arguments, &value); err != nil {

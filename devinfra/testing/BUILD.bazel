@@ -6,8 +6,8 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_testonly = True)
 
 py_library(
-    name = "bazel_snapshot_extension",
-    srcs = ["bazel_snapshot_extension.py"],
+    name = "syrupy_plugin",
+    srcs = ["syrupy_plugin.py"],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//pytest",
@@ -73,6 +73,16 @@ py_test(
     deps = [
         "//:conftest",
         "//devinfra/testing:sharding",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_syrupy_plugin",
+    srcs = ["test_syrupy_plugin.py"],
+    deps = [
+        "//:conftest",
+        "//devinfra/testing:syrupy_plugin",
         "@pypi//pytest",
     ],
 )

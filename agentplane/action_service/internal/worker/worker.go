@@ -37,7 +37,6 @@ type Timing struct {
 	Stop time.Duration
 }
 
-// DefaultTiming is the Python service's.
 func DefaultTiming() Timing {
 	return Timing{
 		Lease: 30 * time.Second, Sweep: 5 * time.Second,

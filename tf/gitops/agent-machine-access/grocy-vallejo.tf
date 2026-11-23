@@ -1,5 +1,3 @@
-# --- Grocy Vallejo household (proxy provider + MCP OAuth2) ---
-
 # Membership group gating both the user-facing Grocy Vallejo webapp and its
 # MCP. Replaces the previous "authentik Admins" binding so non-admins can be
 # granted household access without elevating them to platform admins.
@@ -112,6 +110,3 @@ resource "kubernetes_secret" "grocy_mcp_oidc_vallejo_source" {
     grocy_proxy_client_id = authentik_provider_proxy.grocy_vallejo.client_id
   }
 }
-
-
-# --- Tana MCP facade (public OAuth facade, downstream static bearer) ---

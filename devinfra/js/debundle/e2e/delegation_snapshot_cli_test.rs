@@ -3,18 +3,16 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Command, Output};
 
-use debundle_e2e_support::{TreeFixture, debundler_path, run_tree_graph_fixture, tree_spec_args};
+use debundle_e2e_support::{
+    TreeFixture, debundler_path, process, run_tree_graph_fixture, tree_spec_args,
+};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
 fn checked(command: &mut Command) -> Value {
     let output = debundle_e2e_support::process::debundle_output(command)
         .unwrap_or_else(|err| panic!("{err}"));
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    process::assert_success(&output);
     serde_json::from_slice(&output.stdout).expect("structured command result")
 }
 
@@ -131,11 +129,7 @@ fn delegated_workers_replay_after_original_inputs_are_removed_and_edit_independe
     let replay =
         debundle_e2e_support::process::debundle_output(Command::new(argv[0]).args(&argv[1..]))
             .unwrap();
-    assert!(
-        replay.status.success(),
-        "{}",
-        String::from_utf8_lossy(&replay.stderr)
-    );
+    process::assert_success(&replay);
     assert!(first.join("output/app/main/entry.js").is_file());
 
     let modules = Path::new(first_report["modules"].as_str().unwrap());
@@ -173,11 +167,7 @@ fn unmapped_output_replay_stays_inside_relocated_spec_root() {
             .arg(&original_out),
     )
     .unwrap();
-    assert!(
-        original.status.success(),
-        "{}",
-        String::from_utf8_lossy(&original.stderr)
-    );
+    process::assert_success(&original);
     let original_graph = original_out.join("reports/tree/main/dependency_graph.json.gz");
     let workers = TempDir::new().unwrap();
     let destination = workers.path().join("worker");
@@ -249,11 +239,7 @@ fn unmapped_output_replay_stays_inside_relocated_spec_root() {
             .current_dir(spec_root),
     )
     .unwrap();
-    assert!(
-        replay.status.success(),
-        "{}",
-        String::from_utf8_lossy(&replay.stderr)
-    );
+    process::assert_success(&replay);
     let refreshed_graph = out_root.join("reports/tree/main/dependency_graph.json.gz");
     assert!(refreshed_graph.is_file());
     assert!(out_root.join("app/main/entry.js").is_file());
@@ -272,11 +258,7 @@ fn unmapped_output_replay_stays_inside_relocated_spec_root() {
             .args(["--format", "json"]),
     )
     .unwrap();
-    assert!(
-        refreshed.status.success(),
-        "{}",
-        String::from_utf8_lossy(&refreshed.stderr)
-    );
+    process::assert_success(&refreshed);
     assert!(!fixture.root().exists());
     assert!(!original_out.exists());
 }
@@ -362,11 +344,7 @@ fn snapshot_replays_bundled_swap_with_existence_only_package_input() {
             .arg(&fixture.out_root),
     )
     .unwrap();
-    assert!(
-        original.status.success(),
-        "{}",
-        String::from_utf8_lossy(&original.stderr)
-    );
+    process::assert_success(&original);
     let original_app = app_files(&fixture.out_root.join("app"));
 
     let workers = TempDir::new().unwrap();
@@ -388,11 +366,7 @@ fn snapshot_replays_bundled_swap_with_existence_only_package_input() {
     let replay =
         debundle_e2e_support::process::debundle_output(Command::new(argv[0]).args(&argv[1..]))
             .unwrap();
-    assert!(
-        replay.status.success(),
-        "{}",
-        String::from_utf8_lossy(&replay.stderr)
-    );
+    process::assert_success(&replay);
     let snapshot_file = Path::new(
         report["graph_package_roots"]["fixture-package"]
             .as_str()
@@ -543,11 +517,7 @@ fn browser_snapshot_replay_keeps_html_assets_and_summary_after_original_removal(
             .arg(&fixture.out_root),
     )
     .unwrap();
-    assert!(
-        original.status.success(),
-        "{}",
-        String::from_utf8_lossy(&original.stderr)
-    );
+    process::assert_success(&original);
 
     let workers = TempDir::new().unwrap();
     let destination = workers.path().join("browser worker");
@@ -577,11 +547,7 @@ fn browser_snapshot_replay_keeps_html_assets_and_summary_after_original_removal(
     let replay =
         debundle_e2e_support::process::debundle_output(Command::new(argv[0]).args(&argv[1..]))
             .unwrap();
-    assert!(
-        replay.status.success(),
-        "{}",
-        String::from_utf8_lossy(&replay.stderr)
-    );
+    process::assert_success(&replay);
     assert!(destination.join("output/app/index.html").is_file());
     assert_eq!(
         fs::read_to_string(destination.join("output/app/style.css")).unwrap(),

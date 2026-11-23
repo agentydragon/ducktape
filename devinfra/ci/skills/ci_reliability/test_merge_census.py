@@ -8,7 +8,7 @@ import pytest
 from devinfra.ci.skills.ci_reliability.scripts import merge_census
 
 
-class FakeGitHub:
+class FakeGitHub(merge_census.GhCli):
     def __init__(self, rows_by_day: dict[str, list[dict[str, Any]]], reported: dict[str, int] | None = None):
         self.rows_by_day = rows_by_day
         self.reported = reported or {day: len(rows) for day, rows in rows_by_day.items()}

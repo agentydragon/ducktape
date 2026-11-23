@@ -3,8 +3,9 @@ from datetime import UTC, datetime
 import httpx
 import pytest
 
+from aiquota.config import AnthropicPlatformSettings
 from aiquota.models import FetchError, FetchSuccess
-from aiquota.providers.anthropic_platform import AnthropicPlatformProvider, AnthropicPlatformSettings
+from aiquota.providers.anthropic_platform import AnthropicPlatformProvider
 from aiquota.providers.client import provider_client
 
 

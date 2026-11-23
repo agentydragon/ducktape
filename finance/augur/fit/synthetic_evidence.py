@@ -1,6 +1,6 @@
 """Generate a small, loader-valid synthetic evidence set for tests.
 
-The real FRED/Yahoo/Zillow blobs are no longer vendored in the repo; the in-cluster
+The real FRED/Yahoo/Zillow blobs are not vendored in the repo; the in-cluster
 deployment reads live data from the git-synced `AUGUR_EVIDENCE_DIR`, and tests point
 that same env var at a directory this module fills with deterministic synthetic series.
 

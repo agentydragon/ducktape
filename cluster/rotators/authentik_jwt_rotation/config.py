@@ -1,6 +1,6 @@
 """The rotator's configuration schema: the roster `rotate.py --config` reads.
 
-Kept apart from `rotate.py` so the cdk8s generator (cluster/cdk8s/authentik/jwt_rotation.py),
+Kept apart from `rotate.py` so the cdk8s generator (cluster/cdk8s/authentik/jwt_roster.py),
 which builds the roster from these models, imports pydantic and nothing of the runtime.
 """
 
@@ -40,12 +40,6 @@ class K8sSecretOutput(BaseModel):
     referenced from the start, and the first run overwrites it (a stale
     `expires_unencrypted` forces the mint). That is exactly the failure mode
     `probe` exists to catch: "a seed placeholder never overwritten".
-
-    `haku-openclaw-spike-kube-token` is the worked example of getting
-    this wrong -- #3772 deferred the resource line behind a comment asking a
-    human to remember, the rotator landed the manifest 4.5 min later, and CI on
-    `devel` stayed red ~4h48m until #3780 added the line. A comment promising a
-    follow-up is not a mechanism.
     """
 
     path: Path = Field(description="Repo-relative path for the Secret manifest (under cluster/k8s/, *.sops.yaml)")
@@ -123,6 +117,10 @@ class Rotation(BaseModel):
         return self
 
     @property
+    def output_paths(self) -> list[Path]:
+        return [self.sops_file, self.k8s_secret.path] if self.k8s_secret else [self.sops_file]
+
+    @property
     def expected_issuer(self) -> str:
         return f"{AUTH_BASE}/application/o/{self.provider_slug}/"
 
@@ -133,6 +131,5 @@ class Config(BaseModel):
         default=24, description="Mint a fresh token once remaining validity drops below this"
     )
     github_repo: str = "agentydragon/ducktape"
-    sops_config: str = Field(default=".sops.yaml", description="Repo path sops reads to pick the recipient set")
     git_author_name: str = "authentik-jwt-rotation"
     git_author_email: str = "noreply@allegedly.works"

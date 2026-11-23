@@ -141,17 +141,6 @@ class Consumption:
         return self.mandatory + self.flexible + self.provisional
 
 
-def empty_portfolio() -> PortfolioView:
-    return PortfolioView(
-        status="unavailable",
-        net_minor_units=None,
-        assets_minor_units=None,
-        liabilities_minor_units=None,
-        excluded_minor_units=None,
-        sources=[],
-    )
-
-
 def disabled_view(now: datetime, time_zone: str, today: date_type) -> SustainabilityView:
     return SustainabilityView(
         generated_at=now,
@@ -172,7 +161,7 @@ def disabled_view(now: datetime, time_zone: str, today: date_type) -> Sustainabi
         tax_adjusted_draw_rate=None,
         effective_tax_rate=None,
         reference_draw_rates=[Decimal("0.03"), Decimal("0.04")],
-        portfolio=empty_portfolio(),
+        portfolio=PortfolioView.unavailable([]),
         history=[],
         issues=["Sustainability is not configured."],
         known_issues=[],

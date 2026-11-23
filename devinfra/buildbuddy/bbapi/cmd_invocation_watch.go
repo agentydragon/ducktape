@@ -34,7 +34,7 @@ func invocationWatchCmd() *cobra.Command {
 
 The log comes from BuildBuddy's event log, which is written from the Build Event
 Stream. Use --fail-on-test-failure to exit as soon as BuildBuddy indexes a
-non-passing test result, even if Bazel is still running other tests. Use
+failed or timed-out test, even if Bazel is still running other tests. Use
 --result-file to atomically write a versioned JSON outcome as soon as a terminal
 invocation status is observed, while keeping the live log on stdout. Log
 streaming continues after that status is recorded.`,
@@ -44,7 +44,7 @@ streaming continues after that status is recorded.`,
 		}),
 	}
 	cmd.Flags().DurationVar(&pollInterval, "poll-interval", 2*time.Second, "How often to check for new log chunks")
-	cmd.Flags().BoolVar(&failOnTestFailure, "fail-on-test-failure", false, "Exit when the first non-passing test result is indexed")
+	cmd.Flags().BoolVar(&failOnTestFailure, "fail-on-test-failure", false, "Exit when the first failed or timed-out test is indexed")
 	cmd.Flags().StringVar(&resultFile, "result-file", "", "Write pending and final JSON watch states to this file")
 	return cmd
 }
@@ -144,20 +144,21 @@ func getInvocation(c *client, invocationID string) (*invocationpb.Invocation, er
 }
 
 func failedTest(c *client, invocationID, groupID string) (string, error) {
-	status := commonpb.Status_FAILED
-	req := &targetpb.GetTargetRequest{
-		RequestContext: &ctxpb.RequestContext{GroupId: groupID},
-		InvocationId:   invocationID,
-		Status:         &status,
-	}
-	resp, err := c.rpc.GetTarget(context.Background(), req)
-	if err != nil {
-		return "", err
-	}
-	for _, group := range resp.GetTargetGroups() {
-		for _, target := range group.GetTargets() {
-			if target.GetMetadata().GetLabel() != "" {
-				return target.GetMetadata().GetLabel(), nil
+	for _, testStatus := range []commonpb.Status{commonpb.Status_FAILED, commonpb.Status_TIMED_OUT} {
+		req := &targetpb.GetTargetRequest{
+			RequestContext: &ctxpb.RequestContext{GroupId: groupID},
+			InvocationId:   invocationID,
+			Status:         &testStatus,
+		}
+		resp, err := c.rpc.GetTarget(context.Background(), req)
+		if err != nil {
+			return "", err
+		}
+		for _, group := range resp.GetTargetGroups() {
+			for _, target := range group.GetTargets() {
+				if label := target.GetMetadata().GetLabel(); label != "" {
+					return label, nil
+				}
 			}
 		}
 	}

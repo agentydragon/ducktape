@@ -5,7 +5,7 @@ This is the props backend that includes:
 - Critic Run API: /api/runs/critic
 
 The data-plane proxies are separate services:
-- LLM proxy (/v1/responses and /v1/chat/completions): props/llm_proxy
+- LLM proxy (/v1/responses, /v1/chat/completions and /v1/messages): props/llm_proxy
 - Registry proxy (/v2/*): props/registry_proxy
 
 Note: wait_until_graded is implemented inside containers by polling the grading_pending
@@ -23,14 +23,14 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
+from props.backend.api import build_app
 from props.backend.oidc import build_oauth, load_oidc_settings
-from props.backend.routes import agent_definitions, auth_routes, ground_truth, model_metadata, runs, stats
 from props.config import PropsConfig, load_config_from_env
 from props.core.oci_utils import RegistryProxyConfig, get_registry_proxy_config
 from props.db.config import DatabaseConfig
@@ -64,7 +64,6 @@ class BackendDeps:
 
     config: PropsConfig
     registry_proxy_config: RegistryProxyConfig
-    backend_url: str
     grader_model: str | None = None
     host: str = "127.0.0.1"
     port: int = 8000
@@ -107,7 +106,6 @@ def _make_lifespan(deps: BackendDeps):
         app.state.registry = None
         app.state.admin_db = None
         db_config = DatabaseConfig()
-        app.state.config = deps.config
 
         try:
             async with AsyncExitStack() as resources:
@@ -143,7 +141,7 @@ def _make_lifespan(deps: BackendDeps):
                     executor=executor,
                     db=db,
                     db_config=db_config,
-                    backend_url=deps.backend_url,
+                    backend_url=deps.config.backend_url,
                     agent_base_env=deps.config.agent_env,
                     registry_config=deps.registry_proxy_config,
                     model_parallelism_limits=model_parallelism_limits,
@@ -189,13 +187,8 @@ def _make_lifespan(deps: BackendDeps):
 
 
 def create_app(*, deps: BackendDeps, static_dir: Path | None = None) -> FastAPI:
-    app = FastAPI(
-        title="Props Backend",
-        description="Props backend: dashboard and eval APIs",
-        version="0.1.0",
-        lifespan=_make_lifespan(deps),
-        debug=True,
-    )
+    oidc_settings = load_oidc_settings()
+    app = build_app(lifespan=_make_lifespan(deps), sso_enabled=oidc_settings is not None)
     app.state.startup_complete = False
 
     cors_origins = os.environ.get(ENV_CORS_ORIGINS, DEFAULT_CORS_ORIGINS)
@@ -210,7 +203,6 @@ def create_app(*, deps: BackendDeps, static_dir: Path | None = None) -> FastAPI:
     # Optional Authentik SSO for browser users. When unconfigured (local dev,
     # tests, docker-compose) the dashboard stays token-only; machine clients
     # always use the Postgres-credential Bearer/Basic path in auth.py.
-    oidc_settings = load_oidc_settings()
     app.state.oidc_settings = oidc_settings
     app.state.oauth = None
     if oidc_settings is not None:
@@ -222,28 +214,9 @@ def create_app(*, deps: BackendDeps, static_dir: Path | None = None) -> FastAPI:
             same_site="lax",
         )
         app.state.oauth = build_oauth(oidc_settings)
-        app.include_router(auth_routes.router)
         logger.info("OIDC SSO enabled (issuer=%s)", oidc_settings.issuer)
     else:
         logger.info("OIDC SSO not configured; dashboard uses token auth only")
-
-    app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
-    app.include_router(runs.router, prefix="/api/runs", tags=["runs"])
-    app.include_router(ground_truth.router, prefix="/api/gt", tags=["ground_truth"])
-    app.include_router(agent_definitions.router, prefix="/api/definitions", tags=["definitions"])
-    app.include_router(model_metadata.router, prefix="/api/model_metadata", tags=["model_metadata"])
-
-    @app.get("/health")
-    def health() -> dict[str, str]:
-        # Liveness begins only after the startup probe succeeds.
-        return {"status": "ok"}
-
-    @app.get("/readyz")
-    def readyz(response: Response) -> dict[str, str]:
-        if app.state.startup_complete:
-            return {"status": "ready"}
-        response.status_code = 503
-        return {"status": "starting"}
 
     @app.exception_handler(Exception)
     async def debug_exception_handler(request: Request, exc: Exception) -> PlainTextResponse:
@@ -262,7 +235,6 @@ def default_deps(*, host: str, port: int) -> BackendDeps:
     return BackendDeps(
         config=config,
         registry_proxy_config=get_registry_proxy_config(),
-        backend_url=config.backend_url,
         grader_model=config.grader_model,
         host=host,
         port=port,

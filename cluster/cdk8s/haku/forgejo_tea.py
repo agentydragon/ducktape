@@ -1,5 +1,5 @@
 """haku-forgejo-tea: the SOPS-encrypted Forgejo API token Reflector mirrors into haku-ci's KEDA
-scaler. The Secret stays hand-written; this builds the directory's Flux Kustomization."""
+scaler. The Secret stays hand-written."""
 
 from __future__ import annotations
 

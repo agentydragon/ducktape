@@ -1,5 +1,6 @@
 import type { JSX } from "react";
 import { Code, Stack, Text } from "@mantine/core";
+import { pullRequestUpdated, awaitingGitHubSubmission } from "./receipts";
 
 import type { ActionPresentation } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
@@ -71,9 +72,10 @@ export function offersCardDecisionButtonsUpdatePullRequest(args: unknown): boole
 }
 
 export const updatePullRequestPresentation: ActionPresentation = {
+  outcome: awaitingGitHubSubmission,
   fallbackLabel: "Update GitHub pull request",
   label: updatePullRequestLabel,
   pane: { collapsed: updatePullRequestCollapsed, opened: updatePullRequestPane },
-  details: { arguments: updatePullRequestPane },
+  details: { arguments: updatePullRequestPane, result: pullRequestUpdated },
   offersCardDecisionButtons: offersCardDecisionButtonsUpdatePullRequest,
 };

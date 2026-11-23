@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -111,71 +112,6 @@ type apiKeyTestManager struct {
 func (m *apiKeyTestManager) GetClient() client.Client   { return m.kube }
 func (m *apiKeyTestManager) GetScheme() *runtime.Scheme { return m.scheme }
 
-func TestAPIKeyReconciliation(t *testing.T) {
-	api := &fakeBuildBuddyAPIKey{keys: make(map[string]fakeAPIKeyRecord)}
-	kube := newAPIKeyTestClient(t)
-	e := &apiKeyExternal{kube: kube, api: api}
-	cr := newAPIKeyResource()
-	ctx := context.Background()
-
-	_, err := e.Create(ctx, cr)
-	if err != nil {
-		t.Fatal("create API key:", err)
-	}
-	if meta.GetExternalName(cr) != "fake-api-key-id" {
-		t.Fatal("create did not set the ID")
-	}
-	status, err := json.Marshal(cr.Status)
-	if err != nil || strings.Contains(string(status), "fake-generated-key") {
-		t.Fatal("API-key value was stored in managed-resource status")
-	}
-	if api.createCalls != 1 {
-		t.Fatalf("expected one create call, got %d", api.createCalls)
-	}
-
-	if err := kube.Create(ctx, ownedAPIKeySecret(cr, "fake-generated-key")); err != nil {
-		t.Fatal("create test connection Secret:", err)
-	}
-	observation, err := e.Observe(ctx, cr)
-	if err != nil || !observation.ResourceExists || !observation.ResourceUpToDate {
-		t.Fatalf("observe created API key: %+v %v", observation, err)
-	}
-	if string(observation.ConnectionDetails[apiKeyConnectionSecretKey]) != "fake-generated-key" {
-		t.Fatal("observe did not read back the key for connection Secret publication")
-	}
-	if cr.Status.AtProvider.GroupID != "fake-group" || cr.Status.AtProvider.Label != "test-key" {
-		t.Fatal("observation did not record non-secret group-key metadata")
-	}
-
-	api.keys[meta.GetExternalName(cr)] = fakeAPIKeyRecord{
-		groupID: "fake-group",
-		key:     buildbuddy.APIKey{ID: meta.GetExternalName(cr), Label: "drifted", Capabilities: []string{"CACHE_WRITE"}},
-		value:   []byte("fake-generated-key"),
-	}
-	observation, err = e.Observe(ctx, cr)
-	if err != nil || observation.ResourceUpToDate {
-		t.Fatalf("observe drifted metadata: %+v %v", observation, err)
-	}
-	updated, err := e.Update(ctx, cr)
-	if err != nil {
-		t.Fatal("update API-key metadata:", err)
-	}
-	if api.updateCalls != 1 {
-		t.Fatalf("expected one metadata update, got %d", api.updateCalls)
-	}
-	if string(updated.ConnectionDetails[apiKeyConnectionSecretKey]) != "fake-generated-key" {
-		t.Fatal("metadata update did not preserve the existing connection detail")
-	}
-
-	cr.DeletionTimestamp = &metav1.Time{}
-	if _, err := e.Delete(ctx, cr); err != nil {
-		t.Fatal("delete API key:", err)
-	}
-	if api.deleteCalls != 1 || len(api.keys) != 0 {
-		t.Fatal("Delete did not revoke the group-owned key")
-	}
-}
-
 func TestAPIKeyCreationFailsClosedOnCreateError(t *testing.T) {
 	api := &fakeBuildBuddyAPIKey{keys: make(map[string]fakeAPIKeyRecord), createErr: errors.New("fake create failed"), commitBeforeErr: true}
 	e := &apiKeyExternal{kube: newAPIKeyTestClient(t), api: api}
@@ -198,7 +134,7 @@ func TestAPIKeyCreationFailsClosedOnCreateError(t *testing.T) {
 	}
 }
 
-func TestAPIKeyReconcilerCreatesAndPreservesConnectionSecret(t *testing.T) {
+func TestAPIKeyReconcilerLifecycle(t *testing.T) {
 	ctx := context.Background()
 	cr := newAPIKeyResource()
 	api := &fakeBuildBuddyAPIKey{keys: make(map[string]fakeAPIKeyRecord)}
@@ -215,8 +151,9 @@ func TestAPIKeyReconcilerCreatesAndPreservesConnectionSecret(t *testing.T) {
 	if err := kube.Get(ctx, req.NamespacedName, stored); err != nil {
 		t.Fatal("get reconciled API key:", err)
 	}
-	if got := meta.GetExternalName(stored); got != "fake-api-key-id" || got == cr.Name {
-		t.Fatalf("expected BuildBuddy-assigned external name, got %q", got)
+	id := meta.GetExternalName(stored)
+	if _, exists := api.keys[id]; !exists {
+		t.Fatalf("external name %q does not identify the created BuildBuddy key", id)
 	}
 	secret := &corev1.Secret{}
 	secretKey := types.NamespacedName{Namespace: cr.Namespace, Name: cr.Spec.WriteConnectionSecretToReference.Name}
@@ -230,25 +167,46 @@ func TestAPIKeyReconcilerCreatesAndPreservesConnectionSecret(t *testing.T) {
 	if got := string(secret.Data[apiKeyConnectionSecretKey]); got != "fake-generated-key" {
 		t.Fatalf("publisher stored wrong API-key value: %q", got)
 	}
-	if api.createCalls != 1 {
-		t.Fatalf("expected one Create call, got %d", api.createCalls)
-	}
-
+	record := api.keys[id]
+	record.key.Label = "drifted"
+	record.key.VisibleToDevelopers = false
+	record.key.Capabilities = nil
+	api.keys[id] = record
 	if _, err := r.Reconcile(ctx, req); err != nil {
-		t.Fatal("reconcile existing API key:", err)
+		t.Fatal("reconcile drifted API key:", err)
 	}
-	if err := kube.Get(ctx, secretKey, secret); err != nil {
-		t.Fatal("get API-key Secret after second reconcile:", err)
+	key := api.keys[id].key
+	if key.Label != cr.Spec.ForProvider.Label || !key.VisibleToDevelopers || !slices.Equal(key.Capabilities, []string{"CACHE_WRITE"}) {
+		t.Fatalf("reconcile did not restore the remote metadata: %+v", key)
 	}
-	if got := string(secret.Data[apiKeyConnectionSecretKey]); got != "fake-generated-key" {
-		t.Fatalf("second observation/publication lost API-key value: %q", got)
+	if _, err := r.Reconcile(ctx, req); err != nil {
+		t.Fatal("observe restored API key:", err)
 	}
-	if api.createCalls != 1 {
-		t.Fatalf("second reconcile unexpectedly created another key, got %d Create calls", api.createCalls)
+	if api.createCalls != 1 || api.updateCalls != 1 {
+		t.Fatalf("expected one create and one repair, got %d creates and %d updates", api.createCalls, api.updateCalls)
+	}
+	if err := kube.Get(ctx, secretKey, secret); err != nil || string(secret.Data[apiKeyConnectionSecretKey]) != "fake-generated-key" {
+		t.Fatalf("connection Secret lost the original key after repair: %v", err)
+	}
+	if err := kube.Get(ctx, req.NamespacedName, stored); err != nil {
+		t.Fatal("get observed API key:", err)
+	}
+	if stored.Status.AtProvider.GroupID != "fake-group" || stored.Status.AtProvider.Label != key.Label {
+		t.Fatal("observation did not persist the group and label")
 	}
 	status, err := json.Marshal(stored.Status)
 	if err != nil || strings.Contains(string(status), "fake-generated-key") {
 		t.Fatal("API-key value was stored in managed-resource status")
+	}
+
+	if err := kube.Delete(ctx, stored); err != nil {
+		t.Fatal("delete managed API key:", err)
+	}
+	if _, err := r.Reconcile(ctx, req); err != nil {
+		t.Fatal("reconcile deletion:", err)
+	}
+	if len(api.keys) != 0 {
+		t.Fatal("deleting the managed resource did not revoke the BuildBuddy key")
 	}
 }
 

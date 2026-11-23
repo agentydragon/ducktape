@@ -10,7 +10,7 @@ py_library(
     name = "piraeus_metrics",
     testonly = True,
     srcs = ["piraeus_metrics.py"],
-    deps = ["//util/testing/frontend_visual:context"],
+    deps = ["//testing/frontend_visual:context"],
 )
 
 grafana_dashboard_visual_test(
@@ -227,6 +227,15 @@ grafana_dashboard(
 grafana_dashboard(
     name = "cpap_gateway_disk",
     srcs = ["cpap_gateway_disk.py"],
+    deps = [
+        ":foundation",
+        "@pypi//grafana_foundation_sdk",
+    ],
+)
+
+grafana_dashboard(
+    name = "tabbyapi",
+    srcs = ["tabbyapi.py"],
     deps = [
         ":foundation",
         "@pypi//grafana_foundation_sdk",

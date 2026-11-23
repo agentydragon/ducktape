@@ -1,57 +1,26 @@
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import { Badge, Card, Center, Loader, Table, Text, Title } from "@mantine/core";
 
 import { useNavigate } from "react-router";
 import type { SnapshotsListResponse } from "$lib/schema";
 import { fetchSnapshots } from "$lib/api/client";
+import { splitColor } from "$lib/colors";
+import { snapshotListQueryKey } from "$lib/queryKeys";
 
 interface Props {
   initialData?: SnapshotsListResponse["snapshots"];
 }
 
-function splitColor(split: string): string {
-  switch (split) {
-    case "train":
-      return "blue";
-    case "valid":
-      return "green";
-    case "test":
-      return "violet";
-    default:
-      return "gray";
-  }
-}
-
 export default function SnapshotsPage({ initialData }: Props) {
   const navigate = useNavigate();
-  const [snapshots, setSnapshots] = useState<SnapshotsListResponse["snapshots"]>(initialData ?? []);
-  const [loading, setLoading] = useState(!initialData);
-  const [error, setError] = useState<string | null>(null);
+  const query = useQuery({ queryKey: snapshotListQueryKey(), queryFn: fetchSnapshots, enabled: !initialData });
+  const snapshots = initialData ?? query.data?.snapshots;
 
-  useEffect(() => {
-    if (initialData) return;
-
-    let current = true;
-    setLoading(true);
-    setError(null);
-    void fetchSnapshots()
-      .then((data) => {
-        if (current) setSnapshots(data.snapshots);
-      })
-      .catch((reason: unknown) => {
-        if (current) setError(reason instanceof Error ? reason.message : "Failed to load snapshots");
-      })
-      .finally(() => {
-        if (current) setLoading(false);
-      });
-
-    return () => {
-      current = false;
-    };
-  }, [initialData]);
-
-  if (loading) {
+  if (query.error) {
+    return <Text c="red">{query.error instanceof Error ? query.error.message : "Failed to load snapshots"}</Text>;
+  }
+  if (!snapshots) {
     return (
       <Center mih={160}>
         <Loader size="sm" />
@@ -59,7 +28,6 @@ export default function SnapshotsPage({ initialData }: Props) {
       </Center>
     );
   }
-  if (error) return <Text c="red">{error}</Text>;
 
   return (
     <Card shadow="sm" radius="md" p="md">

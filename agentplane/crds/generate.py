@@ -7,7 +7,7 @@ controller-gen. Flux packages the CRDs directly from
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, cast
 
@@ -17,39 +17,27 @@ from python.runfiles import Runfiles
 from devinfra.bazel.workspace import get_build_workspace_directory
 
 CRDS_DIR = Path("agentplane/crds/manifests")
-CRD_FILES = (
-    "crd-egresscredentials.yaml",
-    "crd-policysets.yaml",
-    "crd-policybindings.yaml",
-    "crd-identities.yaml",
-    "crd-kubernetesrolesets.yaml",
-    "crd-serviceaccountgrants.yaml",
-    "crd-managedserviceaccounts.yaml",
-    "crd-sandboxtemplates.yaml",
-    "crd-sandboxes.yaml",
-    "crd-workloadcredentials.yaml",
-)
-SANDBOX_CRDS = {
-    "crd-sandboxtemplates.yaml": "agentplane.allegedly.works_sandboxtemplates.yaml",
-    "crd-sandboxes.yaml": "agentplane.allegedly.works_sandboxes.yaml",
-}
-EGRESS_CRDS = {"crd-egresscredentials.yaml": "agentplane.allegedly.works_egresscredentials.yaml"}
 SANDBOX_GENERATED_CRDS = "ducktape/agentplane/sandboxes/api/generated_crds"
 EGRESS_GENERATED_CRDS = "ducktape/agentplane/egress/api/v1alpha1/generated_crds"
 POLICY_GENERATED_CRDS = "ducktape/agentplane/policy/api/v1alpha1/generated_crds"
 WORKLOAD_IDENTITY_GENERATED_CRDS = "ducktape/agentplane/identity/credentials/api/v1alpha1/generated_crds"
-WORKLOAD_IDENTITY_CRDS = {"crd-workloadcredentials.yaml": "agentplane.allegedly.works_workloadcredentials.yaml"}
-POLICY_CRDS = {
-    "crd-policysets.yaml": "agentplane.allegedly.works_policysets.yaml",
-    "crd-policybindings.yaml": "agentplane.allegedly.works_policybindings.yaml",
-    "crd-identities.yaml": "agentplane.allegedly.works_identities.yaml",
-    "crd-kubernetesrolesets.yaml": "agentplane.allegedly.works_kubernetesrolesets.yaml",
-    "crd-serviceaccountgrants.yaml": "agentplane.allegedly.works_serviceaccountgrants.yaml",
-    "crd-managedserviceaccounts.yaml": "agentplane.allegedly.works_managedserviceaccounts.yaml",
+# Each CRD file in `CRDS_DIR` -> runfiles directory holding the controller-gen output it is rendered from.
+GENERATED_CRDS = {
+    "crd-egresscredentials.yaml": EGRESS_GENERATED_CRDS,
+    "crd-policysets.yaml": POLICY_GENERATED_CRDS,
+    "crd-policybindings.yaml": POLICY_GENERATED_CRDS,
+    "crd-identities.yaml": POLICY_GENERATED_CRDS,
+    "crd-kubernetesrolesets.yaml": POLICY_GENERATED_CRDS,
+    "crd-serviceaccountgrants.yaml": POLICY_GENERATED_CRDS,
+    "crd-managedserviceaccounts.yaml": POLICY_GENERATED_CRDS,
+    "crd-sandboxtemplates.yaml": SANDBOX_GENERATED_CRDS,
+    "crd-sandboxes.yaml": SANDBOX_GENERATED_CRDS,
+    "crd-workloadcredentials.yaml": WORKLOAD_IDENTITY_GENERATED_CRDS,
 }
+CRD_FILES = tuple(GENERATED_CRDS)
 
 
-def _generated_crd(generated: str) -> dict[str, Any]:
+def _render_crd(generated: str) -> str:
     crd = cast(dict[str, Any], yaml.safe_load(generated))
     annotations = crd["metadata"].get("annotations", {})
     annotations.pop("controller-gen.kubebuilder.io/version", None)
@@ -58,11 +46,6 @@ def _generated_crd(generated: str) -> dict[str, Any]:
     for version in crd["spec"]["versions"]:
         if version.get("subresources") == {}:
             del version["subresources"]
-    return crd
-
-
-def _sandbox_crd(generated: str) -> str:
-    crd = _generated_crd(generated)
     if crd["spec"]["names"]["kind"] == "SandboxTemplate":
         claim = crd["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"]["properties"][
             "workspaceVolume"
@@ -78,51 +61,17 @@ def _sandbox_crd(generated: str) -> str:
     return yaml.safe_dump(crd, sort_keys=False)
 
 
-def generated_files(
-    crds: Mapping[str, str],
-    sandbox_crds: Mapping[str, str],
-    egress_crds: Mapping[str, str],
-    policy_crds: Mapping[str, str],
-    workload_identity_crds: Mapping[str, str],
-) -> Iterator[tuple[Path, str]]:
-    """(repo-relative path, content) of each generated CRD."""
-    for crd_file, committed in crds.items():
-        if crd_file in SANDBOX_CRDS:
-            text = _sandbox_crd(sandbox_crds[crd_file])
-            yield CRDS_DIR / crd_file, text
-        elif crd_file in EGRESS_CRDS:
-            generated = egress_crds[crd_file]
-            text = yaml.safe_dump(_generated_crd(generated), sort_keys=False)
-            yield CRDS_DIR / crd_file, text
-        elif crd_file in POLICY_CRDS:
-            text = yaml.safe_dump(_generated_crd(policy_crds[crd_file]), sort_keys=False)
-            yield CRDS_DIR / crd_file, text
-        elif crd_file in WORKLOAD_IDENTITY_CRDS:
-            yield CRDS_DIR / crd_file, yaml.safe_dump(_generated_crd(workload_identity_crds[crd_file]), sort_keys=False)
-        else:
-            yield CRDS_DIR / crd_file, committed
+def render_crds(runfiles_root: Path) -> Iterator[tuple[Path, str]]:
+    """(repo-relative path, content) of each CRD rendered from its controller-gen output."""
+    for name, directory in GENERATED_CRDS.items():
+        # controller-gen names its output `<group>_<plural>.yaml`; the committed file is `crd-<plural>.yaml`.
+        source = runfiles_root / directory / f"agentplane.allegedly.works_{name.removeprefix('crd-')}"
+        yield CRDS_DIR / name, _render_crd(source.read_text())
 
 
 def main() -> None:
     root = get_build_workspace_directory()
-    runfiles_root = Runfiles.CreateOrRaise().root()
-    sandbox_generated = runfiles_root / SANDBOX_GENERATED_CRDS
-    egress_generated = runfiles_root / EGRESS_GENERATED_CRDS
-    sandbox_crds = {name: (sandbox_generated / source).read_text() for name, source in SANDBOX_CRDS.items()}
-    egress_crds = {name: (egress_generated / source).read_text() for name, source in EGRESS_CRDS.items()}
-    policy_generated = runfiles_root / POLICY_GENERATED_CRDS
-    policy_crds = {name: (policy_generated / source).read_text() for name, source in POLICY_CRDS.items()}
-    workload_identity_generated = runfiles_root / WORKLOAD_IDENTITY_GENERATED_CRDS
-    workload_identity_crds = {
-        name: (workload_identity_generated / source).read_text() for name, source in WORKLOAD_IDENTITY_CRDS.items()
-    }
-    for relative, content in generated_files(
-        {name: (root / CRDS_DIR / name).read_text() for name in CRD_FILES},
-        sandbox_crds,
-        egress_crds,
-        policy_crds,
-        workload_identity_crds,
-    ):
+    for relative, content in render_crds(Runfiles.CreateOrRaise().root()):
         (root / relative).write_text(content)
 
 

@@ -8,23 +8,21 @@ import { hasScreenshotGrant, setScreenshotGrant } from "./screenshot_grant";
 
 describe("initialFrameSrc", () => {
   it("pins the origin and carries the route into the frame's pathname", () => {
-    expect(initialFrameSrc("https://haku-ui.allegedly.works/", "/runs")).toBe("https://haku-ui.allegedly.works/runs");
-    expect(initialFrameSrc("https://haku-ui.allegedly.works/", "/garden/notes%2Ffoo.md")).toBe(
-      "https://haku-ui.allegedly.works/garden/notes%2Ffoo.md"
+    expect(initialFrameSrc("https://haku-ui.example.test/", "/runs")).toBe("https://haku-ui.example.test/runs");
+    expect(initialFrameSrc("https://haku-ui.example.test/", "/garden/notes%2Ffoo.md")).toBe(
+      "https://haku-ui.example.test/garden/notes%2Ffoo.md"
     );
     // Legacy hash-form console URLs still restore (the leading # is stripped).
-    expect(initialFrameSrc("https://haku-ui.allegedly.works/", "#/runs")).toBe("https://haku-ui.allegedly.works/runs");
+    expect(initialFrameSrc("https://haku-ui.example.test/", "#/runs")).toBe("https://haku-ui.example.test/runs");
   });
 
   it("falls back to the bare uiUrl when the route is absent or not a valid route path", () => {
-    expect(initialFrameSrc("https://haku-ui.allegedly.works/", "")).toBe("https://haku-ui.allegedly.works/");
-    expect(initialFrameSrc("https://haku-ui.allegedly.works/", "runs")).toBe("https://haku-ui.allegedly.works/");
-    expect(initialFrameSrc("https://haku-ui.allegedly.works/", "https://evil.example")).toBe(
-      "https://haku-ui.allegedly.works/"
+    expect(initialFrameSrc("https://haku-ui.example.test/", "")).toBe("https://haku-ui.example.test/");
+    expect(initialFrameSrc("https://haku-ui.example.test/", "runs")).toBe("https://haku-ui.example.test/");
+    expect(initialFrameSrc("https://haku-ui.example.test/", "https://evil.example")).toBe(
+      "https://haku-ui.example.test/"
     );
-    expect(initialFrameSrc("https://haku-ui.allegedly.works/", "//evil.example/x")).toBe(
-      "https://haku-ui.allegedly.works/"
-    );
+    expect(initialFrameSrc("https://haku-ui.example.test/", "//evil.example/x")).toBe("https://haku-ui.example.test/");
   });
 });
 

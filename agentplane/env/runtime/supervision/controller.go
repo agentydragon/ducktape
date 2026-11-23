@@ -55,9 +55,6 @@ func (c *Controller) MapInput(ctx context.Context, _ *zap.Logger, r controller.Q
 }
 
 func (c *Controller) Reconcile(ctx context.Context, _ *zap.Logger, r controller.QRuntime, ptr resource.Pointer) error {
-	if c.host == nil {
-		return errors.New("process lifecycle is not configured")
-	}
 	host := c.host
 	id := ptr.ID()
 	desiredResource, err := safe.ReaderGet[*typed.Resource[DesiredState, resourceExtension[DesiredState]]](ctx, r, resourceFor(c.host.namespace, id, DesiredState{}).Metadata())
@@ -326,10 +323,6 @@ func applyProcessFacts(current Status, snapshot processHostSnapshot) Status {
 	}
 	if snapshot.startErr != nil {
 		current.StartError = snapshot.startErr.Error()
-		var refusal *LaunchRefusal
-		if errors.As(snapshot.startErr, &refusal) {
-			current.StartRefusal = refusal.Reason
-		}
 	}
 	if snapshot.exitObserved && snapshot.exitErr != nil {
 		current.ExitError = snapshot.exitErr.Error()

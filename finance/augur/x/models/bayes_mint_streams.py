@@ -40,7 +40,6 @@ run-to-run bit-reproducible, so persist the returned summary; don't re-fit at de
 
 from __future__ import annotations
 
-import datetime as dt
 import math
 from dataclasses import dataclass
 
@@ -51,9 +50,9 @@ import numpyro
 import numpyro.distributions as dist
 from numpyro.infer import MCMC, NUTS
 
+from finance.augur.dates import months_between
 from finance.augur.x.models.private_equity_fit import PriceObservation, ValuationObservation
 
-_DAYS_PER_MONTH = 365.2425 / 12.0
 _MONTHS_PER_YEAR = 12.0
 
 
@@ -272,10 +271,6 @@ def _generative(
         numpyro.sample("price_obs", dist.Normal(log_price_model, price_log_sigma), obs=price_log_obs)
 
 
-def _months_since(observed_at: dt.date, origin: dt.date) -> float:
-    return (observed_at - origin).days / _DAYS_PER_MONTH
-
-
 def fit_bayesian_mint_streams_prior(
     prices: list[PriceObservation],
     valuations: list[ValuationObservation],
@@ -310,10 +305,12 @@ def fit_bayesian_mint_streams_prior(
     all_dates = [obs.observed_at for obs in prices] + [obs.observed_at for obs in valuations]
     origin = min(all_dates)
     last_date = max(all_dates)
-    observation_window_months = _months_since(last_date, origin)
+    observation_window_months = months_between(origin, last_date)
     n_months = round(observation_window_months)
 
-    primary_event_month_idx = np.array([round(_months_since(v.observed_at, origin)) for v in primaries], dtype=np.int64)
+    primary_event_month_idx = np.array(
+        [round(months_between(origin, v.observed_at)) for v in primaries], dtype=np.int64
+    )
     primary_event_month_idx = np.clip(primary_event_month_idx, 1, n_months)  # avoid event-at-t=0
     primary_log_v_post_obs = np.array([math.log(v.valuation_usd) for v in primaries], dtype=np.float64)
     primary_log_v_post_sigma = np.array([v.uncertainty_log_sigma for v in primaries], dtype=np.float64)
@@ -321,13 +318,13 @@ def fit_bayesian_mint_streams_prior(
     primary_cash_usd = np.array([v.cash_raised_usd for v in primaries], dtype=np.float64)
 
     secondary_month_idx = np.array(
-        [round(_months_since(v.observed_at, origin)) for v in non_primary_valuations], dtype=np.int64
+        [round(months_between(origin, v.observed_at)) for v in non_primary_valuations], dtype=np.int64
     )
     secondary_month_idx = np.clip(secondary_month_idx, 0, n_months)
     secondary_log_v_obs = np.array([math.log(v.valuation_usd) for v in non_primary_valuations], dtype=np.float64)
     secondary_log_v_sigma = np.array([v.uncertainty_log_sigma for v in non_primary_valuations], dtype=np.float64)
 
-    price_month_idx = np.array([round(_months_since(p.observed_at, origin)) for p in prices], dtype=np.int64)
+    price_month_idx = np.array([round(months_between(origin, p.observed_at)) for p in prices], dtype=np.int64)
     price_month_idx = np.clip(price_month_idx, 0, n_months)
     price_log_obs = np.array([math.log(p.price_usd_per_share) for p in prices], dtype=np.float64)
     price_log_sigma = np.array([p.uncertainty_log_sigma for p in prices], dtype=np.float64)

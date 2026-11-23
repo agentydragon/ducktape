@@ -38,28 +38,12 @@ Targeting is not just a scoping preference here: `cluster/k8s/TODO.md` records
 that an untargeted `tofu plan` on this root still stalls during provider
 refresh.
 
-## Enabling
+## Why the broad key rather than a narrow one
 
-The Flux Kustomization ships `suspend: true`. One step remains, and it needs
-SOPS decryption:
-
-1. **Re-encrypt the two OVH files to the cluster key.** `.sops.yaml` already
-   lists `*cluster-secrets` as a recipient of
-   `secrets/ovh-{credentials,rescue-ssh}.sops.yaml`; the ciphertext has not
-   caught up:
-
-   ```bash
-   sops updatekeys secrets/ovh-credentials.sops.yaml
-   sops updatekeys secrets/ovh-rescue-ssh.sops.yaml
-   ```
-
-2. Drop `suspend: true` from the Kustomization's generator and commit both.
-
-No new Secret to plant: the runner reads `SOPS_AGE_KEY` from the existing
+The runner reads `SOPS_AGE_KEY` from the existing
 `flux-system/sops-age-cluster-secrets`, the same identity Flux decrypts
-manifests with.
-
-### Why the broad key rather than a narrow one
+manifests with. `secrets/ovh-{credentials,rescue-ssh}.sops.yaml` list its key as
+a recipient.
 
 `tf-runner-role` is a `ClusterRole`, bound cluster-wide, granting
 `get/list/watch/create/update/patch/delete` on `secrets` in **every** namespace.
@@ -122,11 +106,10 @@ sparseCheckout: [cluster/k8s/, props/deploy/, tf/gitops/]
 
 `cluster/terraform/` is not among them, so the runner's checkout has no such
 directory and the plan dies with
-`terraform path not found: stat …/cluster/terraform/main`. That list cannot be
-extended: `cluster/k8s/flux/flux-system/gotk-sync.yaml` is flux-generated and marked
-DO NOT EDIT. Hence `infra-drift-source`, scoped to what this plan reads and
-nothing else, which also keeps the shared artifact every other Flux consumer
-pulls from growing.
+`terraform path not found: stat …/cluster/terraform/main`. The repository owns
+`gotk-sync.yaml` despite its generated header, but adding the directory there
+would enlarge the shared artifact. `infra-drift-source` is scoped to what this
+plan reads.
 
 It uses `ignore`, not `sparseCheckout`, because `sparseCheckout` takes
 directories and this root reads a repo-root **file** (`nebula-mesh.json`).
@@ -147,17 +130,11 @@ evaluated, in `locals` and in resource arguments alike. So the rule is not
 > every `file()`-family call in the root must resolve, however narrow
 > `spec.targets` is.
 
-All five call sites, and the file each needs:
-
-| Call                                    | Where                    | Reads                                                                   |
-| --------------------------------------- | ------------------------ | ----------------------------------------------------------------------- |
-| `nebula.tf:17` `jsondecode(file(…))`    | `locals`                 | `nebula-mesh.json` (repo root)                                          |
-| `talos-ccm.tf:14` `yamldecode(file(…))` | `locals`                 | `cluster/generated/talos-cloud-controller-manager/helmrelease.k8s.yaml` |
-| `flux.tf:23` `filesha256(…)`            | `null_resource` triggers | `cluster/k8s/flux/flux-system/gotk-components.yaml`                     |
-| `flux.tf:24` `filesha256(…)`            | `null_resource` triggers | `cluster/k8s/flux/flux-system/gotk-sync.yaml`                           |
-| `cilium.tf:44` `filesha256(…)`          | `null_resource` triggers | `cilium-values.yaml`, inside the root module                            |
-
-The `ignore` rules carry all of them. The rest of `cluster/k8s` (10 MB) is read
+Check the current calls with
+`rg -n '\b(file[a-z0-9]*|templatefile)\s*\(' cluster/terraform/main -g '*.tf'`.
+The [ignore rules](source.gitignore) include the root module, `nebula-mesh.json`,
+the generated Talos cloud-controller-manager HelmRelease, and Flux bootstrap files.
+The rest of `cluster/k8s` (10 MB) is read
 by nothing and stays out. `cluster/scripts/configure_game_mitigation.py` also
 stays out: it is interpolated into a `local-exec` command string, not read by a
 `file()` call, so nothing opens it at plan time.
@@ -171,23 +148,3 @@ property the first `-target` pass of `bazel run //cluster:bootstrap` relies on.
 by `!/cluster/terraform` alone silently yields nothing; each level needs its own
 `!/cluster` + `/cluster/*` pair. Verify a change to these rules against `git` in
 a scratch tree rather than reasoning about it.
-
-## Exercised; four failures to get a plan
-
-All missing paths, all loud and harmless — `planOnly` means nothing can be
-applied whatever happens:
-
-1. `terraform path not found` — the shared `flux-system` source omits
-   `cluster/terraform/`; fixed by this dedicated source.
-2. `nebula.tf:17` — `sparseCheckout` cannot express a repo-root file; fixed by
-   switching to `ignore`.
-3. `talos-ccm.tf:14` — second `file()` call, in a `locals` block.
-4. `flux.tf:23-24` — two more, in resource `triggers`.
-
-Rounds 3 and 4 were the same mistake twice: predicting that `-target` would
-prune a call site instead of carrying every file the root reads. It does not
-prune any of them. The table above is that enumeration, so the next `file()`
-added to this root is a lookup rather than a fifth round.
-
-Confirmed working along the way: `tofu init` reaches the registry and installs
-`ovh/ovh`, which no other `Terraform` CR in this cluster uses.

@@ -9,7 +9,7 @@ use std::path::Path;
 
 /// Caller-relative module specifier for a generated bundled facade:
 /// `facade_app_path` rebased against the caller file's output-tree
-/// directory. Shared by the bundled wave and lowering's
+/// directory. Shared by the pass-through emission rewriter and lowering's
 /// construction-time facade imports (where `caller_file_path` is the
 /// materialized module's target file).
 pub fn bundled_facade_import_source(
@@ -25,8 +25,8 @@ pub fn bundled_facade_import_source(
 
 /// Resolve a directive source to its target chunk for swap
 /// classification: artifact-index resolution first, then the
-/// materialized-output longest-prefix fallback. Shared by the wave
-/// dispatchers, the consumer gate, and lowering's construction-time
+/// materialized-output longest-prefix fallback. Shared by the pass-through
+/// emission rewriter, the consumer gate, and lowering's construction-time
 /// vendor consultation (which resolves the source chunk's original
 /// directives from the same coordinate system).
 pub fn resolve_partial_swap_import_target(
@@ -71,13 +71,11 @@ fn resolve_materialized_output_import_target(
 }
 
 /// Precomputed longest-prefix-match index for resolving partial-swap
-/// relative imports to their target chunk. Built once per
-/// `apply_*partial_vendor_swaps` invocation; replaces the per-import-decl
-/// O(N_chunks) scan over `ChunkTable`.
+/// relative imports to their target chunk. Built once per pass, so lookups
+/// need no per-import-decl O(N_chunks) scan over `ChunkTable`.
 ///
 /// Per chunk we register candidate keys derived from the chunk name plus,
-/// for slash-bearing names, the post-first-slash stripped form (mirroring
-/// the original `materialized_output_chunk_match_len` two-shape match):
+/// for slash-bearing names, the post-first-slash stripped form:
 ///   * `by_exact["<name>.js"]`         — exact match against
 ///     `resolved_path` (match_len = name.len()).
 ///   * `by_dir_prefix["<name>"]`       — `resolved_path` is
@@ -85,8 +83,8 @@ fn resolve_materialized_output_import_target(
 ///
 /// Lookup checks the exact map plus walks `resolved_path`'s `/`-bounded
 /// ancestors longest-to-shortest against `by_dir_prefix`, then combines
-/// the two candidates with longest-match-wins / tie-breaks-as-`None`
-/// (same semantics as the prior linear scan, including `ambiguous`).
+/// the two candidates: longest match wins; an equal-length tie between
+/// different chunks, or an ambiguous entry, yields `None`.
 pub struct MaterializedOutputChunkIndex {
     by_exact: HashMap<String, ChunkEntry>,
     by_dir_prefix: HashMap<String, ChunkEntry>,
@@ -154,8 +152,7 @@ impl MaterializedOutputChunkIndex {
                     // Equal lengths: ambiguous unless both resolve to the
                     // same Unique chunk (only possible when an exact
                     // `"<name>.js"` key happens to also be a registered
-                    // dir-prefix for the same chunk, which the original
-                    // semantics never produced — but we keep the check
+                    // dir-prefix for the same chunk; the check stays
                     // explicit).
                     match (a, b) {
                         (ChunkEntry::Unique(ax, _), ChunkEntry::Unique(bx, _)) if ax == bx => a,

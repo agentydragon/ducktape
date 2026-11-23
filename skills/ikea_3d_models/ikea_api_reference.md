@@ -27,7 +27,7 @@ Origins:
 
 ### 2a. Structured search API (preferred — `search_ikea.py` uses this)
 
-```
+```http
 GET https://sik.search.blue.cdtapps.com/{market}/{lang}/search-result-page
       ?q={query}&types=PRODUCT&size={n}&c=sr&v=20240110
 ```
@@ -45,7 +45,7 @@ reliably contain product links).
 
 ### 2b. Direct product page navigation
 
-```
+```text
 https://www.ikea.com/us/en/p/{product-slug}-{8-digit-item-number}/
 ```
 
@@ -89,15 +89,15 @@ The label "art number" is the item number with dots removed:
 
 ## 3. Downloading the GLB (rotera static — primary, no auth)
 
-```
+```http
 GET https://web-api.ikea.com/{market}/{lang}/rotera/static/models/{itemNumber}-mini.glb
 ```
 
 - `Content-Type: model/gltf-binary`; binary GLB (glTF 2.0, **Draco-compressed**)
 - `404` if no 3D model exists for that item (discontinued / never scanned)
 - `400` for invalid URL variants (e.g. dropping the `-mini` suffix)
-- HEAD-probe before downloading to distinguish 200 / 404 (the download script
-  does this).
+- Probe the status before downloading to distinguish 200 / 404 (the download
+  script does this with a GET whose body is discarded).
 
 The `-mini` suffix is the simplified model served to the browser 3D viewer —
 a complete, valid GLB with reduced geometry. There is no reliable non-`-mini`
@@ -107,7 +107,7 @@ rotera variant.
 
 ## 4. Metadata JSON (rotera) — OPTIONAL, cookie-gated, skill avoids it
 
-```
+```http
 GET https://web-api.ikea.com/{market}/{lang}/rotera/data/model/{itemNumber}/
 ```
 
@@ -133,7 +133,7 @@ JavaScript** — there is no queryable/guessable endpoint. It must be scraped.
 Some products have a higher-detail model served via the `dimma`/geomagical
 pipeline:
 
-```
+```text
 https://web-api.ikea.com/dimma/assets/geomagical/{itemNumber}/{variantCode}/
     simple/glb_draco/{hash}-G-{itemNumber}-{revision}-simple+draco.glb?cn=pip
 ```

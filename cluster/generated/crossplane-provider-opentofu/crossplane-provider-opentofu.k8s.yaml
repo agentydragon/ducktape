@@ -251,6 +251,25 @@ data:
           cluster: cluster
           user: opentofu-github-secrets-sync
     current-context: root
+  opentofu-gitlab-spike: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: cluster
+        cluster:
+          server: https://kubernetes.default.svc
+          certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    users:
+      - name: opentofu-gitlab-spike
+        user:
+          tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          as: system:serviceaccount:crossplane-system:opentofu-gitlab-spike
+    contexts:
+      - name: root
+        context:
+          cluster: cluster
+          user: opentofu-gitlab-spike
+    current-context: root
   opentofu-haku-state: |
     apiVersion: v1
     kind: Config
@@ -288,6 +307,25 @@ data:
         context:
           cluster: cluster
           user: opentofu-sso-providers
+    current-context: root
+  opentofu-thrive-scrape: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: cluster
+        cluster:
+          server: https://kubernetes.default.svc
+          certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    users:
+      - name: opentofu-thrive-scrape
+        user:
+          tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+          as: system:serviceaccount:crossplane-system:opentofu-thrive-scrape
+    contexts:
+      - name: root
+        context:
+          cluster: cluster
+          user: opentofu-thrive-scrape
     current-context: root
 immutable: false
 ---

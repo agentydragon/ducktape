@@ -59,9 +59,6 @@ export function claudeRecordPresentation(record: EventRecord): RecordPresentatio
 }
 
 export function claudeToolEvents(record: EventRecord): ToolEvent[] {
-  if (record.parse_error != null) return [];
-  const parsed = object(record.parsed);
-  if (parsed?.type !== "user" && parsed?.type !== "assistant") return [];
   const content = claudeContent(record);
   if (content === null) return [];
   return content.flatMap<ToolEvent>((value, blockIndex) => {

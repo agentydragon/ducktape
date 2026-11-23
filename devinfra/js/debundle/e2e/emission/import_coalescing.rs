@@ -96,16 +96,56 @@ fn collect_import_bindings(source: &str, expected_src: &str) -> Vec<(String, Str
     bindings
 }
 
+/// Emit `source` with `members` moved into `module`, beside a `vendor.js` holding
+/// `vendor`. The module must import from it in `named` statements with named or
+/// default specifiers and `namespace` namespace-only statements, carrying exactly
+/// `bindings` as `(local, imported)` pairs in first-seen order. The entry must
+/// still print `stdout`.
+fn assert_consolidated_vendor_imports(
+    source: &str,
+    vendor: &str,
+    module: &str,
+    members: &[Member],
+    (named, namespace): (usize, usize),
+    bindings: &[(&str, &str)],
+    stdout: &str,
+) {
+    let extra_files = [("static/app/vendor.js", vendor)];
+    let mut opts = FixtureOpts::new(source, vec![logical_module(module, members)]);
+    opts.extra_files = &extra_files;
+    let fixture = run_fixture(opts);
+
+    let path = fixture
+        .out_root
+        .join(format!("static/app/modules/{module}.js"));
+    let emitted = fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+
+    let (actual_named, actual_namespace, _side_effect) =
+        count_imports_from(&emitted, "../vendor.js");
+    assert_eq!(
+        (actual_named, actual_namespace),
+        (named, namespace),
+        "expected {named} named/default and {namespace} namespace-only `import ... from \"../vendor.js\";` statements; {module} was:\n{emitted}",
+    );
+
+    let actual_bindings = collect_import_bindings(&emitted, "../vendor.js");
+    let actual_bindings: Vec<_> = actual_bindings
+        .iter()
+        .map(|(local, imported)| (local.as_str(), imported.as_str()))
+        .collect();
+    assert_eq!(
+        actual_bindings, bindings,
+        "every original (local, imported) pair must survive consolidation; {module} was:\n{emitted}",
+    );
+
+    assert_entry_output(&fixture, stdout);
+}
+
 #[test]
 fn moved_body_reimports_three_same_source_specifiers_in_one_statement() {
-    // Source chunk has three named imports from `./vendor.js`
-    // (esbuild's per-binding import emit shape, common after vendor
-    // chunk-splitting). A moved function body references all three
-    // locals, so the materializer must emit re-imports in the
-    // destination module — one ImportDecl per binding would mean
-    // three separate statements; the emitter consolidates them into
-    // ONE `import { a as x, b as y, c as z } from "../vendor.js"`.
-    let mut opts = FixtureOpts::new(
+    // esbuild's one-import-per-binding shape: three statements from one source become one re-import.
+    assert_consolidated_vendor_imports(
         r#"import { a as x } from "./vendor.js";
 import { b as y } from "./vendor.js";
 import { c as z } from "./vendor.js";
@@ -115,47 +155,19 @@ function bridge() {
 console.log(bridge());
 export { bridge };
 "#,
-        vec![logical_module("mod_bridge", &[Member::new("bridge")])],
-    );
-    opts.extra_files = &[(
-        "static/app/vendor.js",
         "export const a = 1;\nexport const b = 2;\nexport const c = 3;\n",
-    )];
-    let fixture = run_fixture(opts);
-
-    let mod_bridge = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_bridge.js"))
-        .expect("read mod_bridge.js");
-
-    let (named, _namespace, _side_effect) = count_imports_from(&mod_bridge, "../vendor.js");
-    assert_eq!(
-        named, 1,
-        "expected one consolidated `import {{ ... }} from \"../vendor.js\";` statement, got {named}; mod_bridge was:\n{mod_bridge}",
+        "mod_bridge",
+        &[Member::new("bridge")],
+        (1, 0),
+        &[("x", "a"), ("y", "b"), ("z", "c")],
+        "6\n",
     );
-
-    let bindings = collect_import_bindings(&mod_bridge, "../vendor.js");
-    assert_eq!(
-        bindings,
-        vec![
-            ("x".to_string(), "a".to_string()),
-            ("y".to_string(), "b".to_string()),
-            ("z".to_string(), "c".to_string()),
-        ],
-        "consolidated statement must preserve every original (local, imported) pair; mod_bridge was:\n{mod_bridge}",
-    );
-
-    // Behaviour preservation: every binding is still bound; the
-    // moved body evaluates against the same vendor exports.
-    assert_entry_output(&fixture, "6\n");
 }
 
 #[test]
 fn moved_body_reimports_default_plus_named_in_one_statement() {
-    // Default + named imports from the same source coalesce into a
-    // single `import D, { a as x, b as y } from "<src>"` statement
-    // (ESM grammar allows mixing a DefaultBinding with NamedImports
-    // in one ImportClause; the emitter sorts default before named so
-    // the resulting syntax is valid).
-    let mut opts = FixtureOpts::new(
+    // A default binding and named bindings share one clause, default first.
+    assert_consolidated_vendor_imports(
         r#"import D from "./vendor.js";
 import { a as x } from "./vendor.js";
 import { b as y } from "./vendor.js";
@@ -165,44 +177,19 @@ function bridge() {
 console.log(bridge());
 export { bridge };
 "#,
-        vec![logical_module("mod_bridge", &[Member::new("bridge")])],
-    );
-    opts.extra_files = &[(
-        "static/app/vendor.js",
         "export default 10;\nexport const a = 1;\nexport const b = 2;\n",
-    )];
-    let fixture = run_fixture(opts);
-
-    let mod_bridge = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_bridge.js"))
-        .expect("read mod_bridge.js");
-
-    let (named, _namespace, _side_effect) = count_imports_from(&mod_bridge, "../vendor.js");
-    assert_eq!(
-        named, 1,
-        "expected default + named imports to consolidate into one statement; got {named} in:\n{mod_bridge}",
+        "mod_bridge",
+        &[Member::new("bridge")],
+        (1, 0),
+        &[("D", "default"), ("x", "a"), ("y", "b")],
+        "13\n",
     );
-    let bindings = collect_import_bindings(&mod_bridge, "../vendor.js");
-    assert_eq!(
-        bindings,
-        vec![
-            ("D".to_string(), "default".to_string()),
-            ("x".to_string(), "a".to_string()),
-            ("y".to_string(), "b".to_string()),
-        ],
-        "consolidated statement must keep the default + every named binding; mod_bridge was:\n{mod_bridge}",
-    );
-
-    assert_entry_output(&fixture, "13\n");
 }
 
 #[test]
 fn moved_body_emits_namespace_specifier_on_its_own_statement() {
-    // ESM grammar forbids mixing NameSpaceImport with NamedImports
-    // in one ImportClause. When a moved body needs both a namespace
-    // re-import AND named re-imports from the same source, the
-    // emitter emits two ImportDecls: a namespace-only statement and
-    // a named-only statement.
-    let mut opts = FixtureOpts::new(
+    // The namespace import stays its own statement beside one named statement.
+    assert_consolidated_vendor_imports(
         r#"import * as ns from "./vendor.js";
 import { a as x } from "./vendor.js";
 import { b as y } from "./vendor.js";
@@ -212,80 +199,31 @@ function bridge() {
 console.log(bridge());
 export { bridge };
 "#,
-        vec![logical_module("mod_bridge", &[Member::new("bridge")])],
-    );
-    opts.extra_files = &[(
-        "static/app/vendor.js",
         "export const a = 1;\nexport const b = 2;\n",
-    )];
-    let fixture = run_fixture(opts);
-
-    let mod_bridge = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_bridge.js"))
-        .expect("read mod_bridge.js");
-
-    let (named, namespace, _side_effect) = count_imports_from(&mod_bridge, "../vendor.js");
-    assert_eq!(
-        (named, namespace),
+        "mod_bridge",
+        &[Member::new("bridge")],
         (1, 1),
-        "expected one consolidated named-import ImportDecl plus one namespace-only ImportDecl; got named={named} namespace={namespace} in:\n{mod_bridge}",
+        &[("ns", "*"), ("x", "a"), ("y", "b")],
+        "4\n",
     );
-
-    let bindings = collect_import_bindings(&mod_bridge, "../vendor.js");
-    assert_eq!(
-        bindings,
-        vec![
-            ("ns".to_string(), "*".to_string()),
-            ("x".to_string(), "a".to_string()),
-            ("y".to_string(), "b".to_string()),
-        ],
-        "every original (local, imported) pair must survive across the two statements; mod_bridge was:\n{mod_bridge}",
-    );
-
-    assert_entry_output(&fixture, "4\n");
 }
 
 #[test]
 fn imported_binding_reexports_from_same_source_consolidate_in_one_statement() {
-    // The BindingKind::Imported reexport loop emits one
-    // `import { <imported> as <local> } from "<src>"` per re-exported
-    // binding. When a single logical module re-exports multiple
-    // bindings from the same source, the emitter groups them by
-    // source so all specifiers land in one consolidated ImportDecl.
-    let mut opts = FixtureOpts::new(
+    // The `BindingKind::Imported` reexport loop groups bindings from one source into one statement.
+    assert_consolidated_vendor_imports(
         r#"import { x as a, y as b } from "./vendor.js";
 console.log(a, b);
 export { a, b };
 "#,
-        vec![logical_module(
-            "mod_re",
-            &[
-                Member::renamed_with_kind("Re_a", "a", Some("import_specifier")),
-                Member::renamed_with_kind("Re_b", "b", Some("import_specifier")),
-            ],
-        )],
-    );
-    opts.extra_files = &[(
-        "static/app/vendor.js",
         "export const x = 1;\nexport const y = 2;\n",
-    )];
-    let fixture = run_fixture(opts);
-
-    let mod_re = fs::read_to_string(fixture.out_root.join("static/app/modules/mod_re.js"))
-        .expect("read mod_re.js");
-
-    let (named, _namespace, _side_effect) = count_imports_from(&mod_re, "../vendor.js");
-    assert_eq!(
-        named, 1,
-        "expected one consolidated reexport ImportDecl for both bindings; got {named} in:\n{mod_re}",
-    );
-    let bindings = collect_import_bindings(&mod_re, "../vendor.js");
-    assert_eq!(
-        bindings,
-        vec![
-            ("a".to_string(), "x".to_string()),
-            ("b".to_string(), "y".to_string()),
+        "mod_re",
+        &[
+            Member::renamed_with_kind("Re_a", "a", Some("import_specifier")),
+            Member::renamed_with_kind("Re_b", "b", Some("import_specifier")),
         ],
-        "consolidated reexport statement must carry both bindings; mod_re was:\n{mod_re}",
+        (1, 0),
+        &[("a", "x"), ("b", "y")],
+        "1 2\n",
     );
-    assert_entry_output(&fixture, "1 2\n");
 }

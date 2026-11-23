@@ -13,11 +13,12 @@ from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import Promet
 from python.runfiles import Runfiles
 
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
-from cluster.cdk8s.seaweedfs import cluster, namespace, public_s3
+from cluster.cdk8s.seaweedfs import namespace, public_s3
+from cluster.cdk8s.seaweedfs.endpoints import S3
 
 NAME = "seaweedfs-monitoring"
 _PROMQL_DIR = Runfiles.CreateOrRaise().root() / "ducktape/cluster/cdk8s/seaweedfs"
-_S3_GATEWAY_SERVICES = (f"{cluster.NAME}-s3", public_s3.NAME)
+_S3_GATEWAY_SERVICES = (S3.name, public_s3.NAME)
 _S3_GATEWAY_SERVICE_MATCHER = "|".join(_S3_GATEWAY_SERVICES)
 
 

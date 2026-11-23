@@ -6,8 +6,8 @@ py_library(
     visibility = ["//:__subpackages__"],
     deps = [
         ":wrappers",
-        "//tana/domain:constants",
         "//tana/domain:nodes",
+        "//tana/domain:system_nodes",
         "//tana/domain:types",
     ],
 )

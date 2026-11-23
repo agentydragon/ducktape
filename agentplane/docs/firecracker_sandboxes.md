@@ -5,11 +5,13 @@ Pod. It is an alternative to `spec.pod` and `spec.vm`; exactly one arm is requir
 is a trusted, privileged host process. The guest runs the same Environment Runtime, systemd
 supervision, harnesses and Execution Service as the NixOS KubeVirt image.
 
-This backend is opt-in. `Environment.firecracker_sandboxes` defaults to false; this change does not
-add a staging launch preset or migrate existing Sandboxes. Enabling it requires a KVM-capable
-x86-64 node, the `devices.kubevirt.io/kvm` device resource, `/dev/net/tun`, native sidecars,
-Kubernetes image volumes and permission to run a privileged launcher. The launcher uses the Pod
-network namespace, not host networking, host PID or host cgroups.
+The staging configuration includes the **Firecracker** launch preset, which selects the
+`environment-firecracker` template, standard policies and a Codex thread. Staging launch is held
+pending a cluster integration and admission decision. A server-side dry run rejected the
+privileged launcher under staging's baseline policy ([#18421](https://github.com/agentydragon/ducktape/pull/18421)).
+The launcher image targets x86-64. The Pod requests `devices.kubevirt.io/kvm` and requires
+`/dev/net/tun`, native sidecars, Kubernetes image volumes and permission to run a privileged
+container. The launcher runs in the Pod network namespace.
 
 ## Template and images
 
@@ -26,7 +28,8 @@ Three artifacts have separate release boundaries:
 - `agentplane-runner-disk`: existing independently built runner image, including the root-only
   Firecracker thaw agent. `/disk/runner.img` is the read-only EROFS device used by the guest.
 - `agentplane-firecracker-launcher`: `//agentplane/firecracker:image`, with the pinned Firecracker
-  VMM, disk tooling and Go supervisor. It never exposes the Firecracker API socket over TCP.
+  VMM, disk tooling and Go supervisor. It never exposes the Firecracker API socket over TCP. Its
+  contract: [`agentplane/firecracker/SPEC.md`](../firecracker/SPEC.md).
 
 The guest device order is fixed by
 [`firecracker_guest_contract.json`](../env/images/firecracker_guest_contract.json): root, runner,
@@ -44,6 +47,14 @@ PVC capacity. The opt-in chart reserves 100 GiB for state because it also stores
 runner disk and full memory/disk checkpoints. Size this PVC for the actual guest root, memory and
 workspace contents, including both old and new checkpoints during capture. Snapshots contain
 private keys and workload memory and need the same storage access controls as retained state.
+
+The launcher requests guest RAM plus 512 MiB for the VMM and supervisor. Its container
+limit adds another guest-sized allowance because a full checkpoint writes a new buffered
+file while the old snapshot still backs the restored guest. For staging's 8 GiB guest,
+the launcher requests 8.5 GiB and has a 16.5 GiB limit. The Pod is Burstable. Concurrent
+checkpoints compete for node memory above their requests, so node pressure can still
+evict a Sandbox. A launcher OOM or eviction loses same-Pod continuation and can leave
+normal Sandbox deletion waiting.
 
 ## Control and RAM suspension
 
@@ -172,18 +183,19 @@ sequential restores exposed guest clock rollback, and its in-guest lock could on
 second opener within the same continuation. Agentplane's end-to-end acceptance is evaluated
 separately below.
 
-This backend adds controller/admission, generated-template, guest thaw, checkpoint consistency and
-supervisor ordering tests. A deployment acceptance run must additionally boot the published NixOS
-image, connect the real Gateway/Runtime, suspend a running Session twice, rotate credentials while
-suspended, and verify the same processes and journals continue without replay. The ordinary RBE
-pool has no KVM. The CI
-[`test_firecracker`](../system_tests/firecracker/README.md) suite runs its
-disposable k3s stack on the existing `wyrm2-kvm-vm` BuildBuddy executor. It uses a small Bazel-built Debian guest with the production launcher and runner disk,
-creates its Sandbox through the app, and checks a
-scripted Codex tool turn followed by one RAM-preserving suspend/resume. It asserts unchanged Pod,
-guest and Runtime boot identities, native process identity, and a progressing child with a
-random memory-resident marker. The suite reissues credentials while running and while suspended,
-then verifies Runtime serves the new leaf through a fresh authenticated TLS handshake. Acceptance
-uses only the lighter Bazel-built filesystem; it does not validate the production NixOS guest.
-Cilium policy enforcement remains outside this suite's coverage. Never run the fixture's host-cgroup cleanup in a privileged
-live-cluster Pod.
+Controller/admission, generated-template, guest thaw, checkpoint consistency and supervisor ordering
+have automated coverage. The CI [`test_firecracker`](../system_tests/firecracker/README.md) suite
+uses a small Bazel-built Debian guest with the production launcher and runner disk on a dedicated
+KVM worker. It creates Sandboxes through Environments and checks a scripted Codex tool turn
+through Dispatcher and History, followed by two RAM-preserving suspend/resume cycles. It asserts
+unchanged Pod, guest and Runtime boot identities, native process identity, and a progressing child
+with a random memory-resident marker. The suite reissues credentials while running and while
+suspended, then verifies the Runtime serves the new leaf through a fresh authenticated TLS
+handshake. Both cases passed with the App absent in
+[#19045](https://github.com/agentydragon/ducktape/pull/19045).
+
+The staging canary must exercise the selected admission policy and Cilium isolation, then boot the
+published NixOS image, connect Environments to the guest Runtime, complete two suspends of a live
+Session, verify credential rotation while suspended, and confirm process and journal continuity
+without replay. Verify final deletion after reconnect and cleanup of the disposable Sandbox.
+Never run the fixture's host-cgroup cleanup in a privileged live-cluster Pod.

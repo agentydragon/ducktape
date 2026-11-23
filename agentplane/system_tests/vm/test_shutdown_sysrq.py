@@ -2,11 +2,12 @@
 
 import os
 import subprocess
-import tarfile
 from pathlib import Path
 
 import pytest_bazel
 from python.runfiles import Runfiles
+
+from agentplane.system_tests.vm import guest_busybox
 
 
 def test_worker_skips_after_proof_and_requests_dump_without_proof(tmp_path: Path) -> None:
@@ -15,13 +16,7 @@ def test_worker_skips_after_proof_and_requests_dump_without_proof(tmp_path: Path
     busybox_tar = runfiles.Rlocation(os.environ["SYSRQ_BUSYBOX_RLOCATION"])
     assert script is not None
     assert busybox_tar is not None
-    busybox = tmp_path / "busybox"
-    with tarfile.open(busybox_tar) as archive:
-        member = next(member for member in archive if member.name.endswith("bin/busybox"))
-        source = archive.extractfile(member)
-        assert source is not None
-        busybox.write_bytes(source.read())
-    busybox.chmod(0o755)
+    busybox = guest_busybox.extract(busybox_tar, tmp_path)
     proof = tmp_path / "proof"
     trigger = tmp_path / "trigger"
     trigger.write_text("unchanged")

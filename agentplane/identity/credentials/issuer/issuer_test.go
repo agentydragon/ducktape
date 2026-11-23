@@ -224,15 +224,7 @@ func TestIssuerHandlesStoredLegacyRecordAfterIdentitySchemaTightens(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	server, err := kubeapiserver.Start(kubeapiserver.WithCRDs(certificateCRD))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := server.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	server := kubeapiserver.StartForTest(t, kubeapiserver.WithCRDs(certificateCRD))
 	ctx := t.Context()
 	dynamicClient, err := dynamic.NewForConfig(server.Config)
 	if err != nil {

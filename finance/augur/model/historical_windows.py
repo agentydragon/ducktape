@@ -353,12 +353,10 @@ def macro_history_from_frames(frames: dict[str, pl.DataFrame]) -> MacroHistory:
     )
 
 
-# ── Assembling the record ────────────────────────────────────────────────────────────────
-#
 # Here rather than in `fit` because of what it is, not where it started: `fit` ESTIMATES
 # parameters, and this only reads and aligns. Putting it there also made `model` import `fit`
 # to realize a provider — a cycle whose only escape was a deferred import, which is the sort of
-# workaround that is easier to add than to notice later.──
+# workaround that is easier to add than to notice later.
 
 SEAM_ANCHOR_MONTHS = 12
 """Overlap months averaged to align a spliced series at its seam. See `splice_monthly_frames`."""

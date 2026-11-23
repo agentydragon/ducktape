@@ -18,18 +18,23 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/sampler/providers/chatcompletions"
 	"github.com/google/uuid"
 )
 
-func TestCompactionRecoveryRejectsChangedSuffixOrEffortPolicy(t *testing.T) {
-	for _, field := range []string{"keep_recent_turns", "per_message_effort"} {
+func TestCompactionRecoveryRejectsChangedPolicy(t *testing.T) {
+	for _, field := range []string{"keep_recent_turns", "per_message_effort", "replacement_template"} {
 		t.Run(field, func(t *testing.T) {
 			store := runtimetesting.NewStore(t, integrationDatabase)
+			api, effort := protocol.APIStyleAnthropicMessages, "high"
+			if field == "replacement_template" {
+				api, effort = protocol.APIStyleChatCompletions, ""
+			}
 			session, err := runtimetesting.OpenStoreSession(t, store, &sessionconfig.Configuration{
 				SessionId: uuid.NewString(),
-				Spec:      &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model", ReasoningEffort: "high"},
+				Spec:      &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model", ReasoningEffort: effort},
 			},
-				"fixture-account", protocol.APIStyleAnthropicMessages)
+				"fixture-account", api)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -40,12 +45,27 @@ func TestCompactionRecoveryRejectsChangedSuffixOrEffortPolicy(t *testing.T) {
 			if err := store.AppendInput(t.Context(), owner, strings.Repeat("original conversation ", 64)); err != nil {
 				t.Fatal(err)
 			}
+			if api == protocol.APIStyleChatCompletions {
+				if err := store.AppendInput(t.Context(), owner, "retained turn"); err != nil {
+					t.Fatal(err)
+				}
+			}
 			admitProviderCommand(t, store, owner, session.ID, "compaction-control", true)
 			config := testsupport.AnthropicTestConfig()
 			config.AnthropicMessages.Compaction = &anthropic.CompactionConfig{MaxTokens: 1000}
 			connection := samplersettings.ConnectionConfig{
 				BaseURL: "https://provider.example.invalid",
 				Auth:    samplersettings.AuthConfig{Type: samplersettings.AuthTypeAnthropicAPIKey, Credential: "fixture-key"},
+			}
+			if api == protocol.APIStyleChatCompletions {
+				config = samplersettings.ModelConfig{
+					API: api, ProviderModel: "fixture-model", Connection: "chat", ExecEncoding: protocol.ExecEncodingJSON,
+					ChatCompaction: &chatcompletions.CompactionConfig{
+						MaxTokens: 1000, KeepRecentTurns: 1,
+						Replacement: &chatcompletions.CompactionReplacement{Role: "user", Template: "Handoff: {{.Summary}}"},
+					},
+				}
+				connection.Auth.Type = samplersettings.AuthTypeBearer
 			}
 			conversation, err := store.Read(t.Context(), owner)
 			if err != nil {
@@ -55,7 +75,7 @@ func TestCompactionRecoveryRejectsChangedSuffixOrEffortPolicy(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			plan, err := adapter.PrepareCompaction(conversation, session, &sessionstore.ExecutionState{}, protocol.SessionAttribution{}, "")
+			plan, err := adapter.PrepareCompaction(conversation, session, protocol.SessionAttribution{}, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -72,10 +92,13 @@ func TestCompactionRecoveryRejectsChangedSuffixOrEffortPolicy(t *testing.T) {
 			if _, err := store.DB().ExecContext(t.Context(), `UPDATE sampler_intent SET provider_retry_not_before=clock_timestamp()-interval '1 second' WHERE id=$1`, intentID); err != nil {
 				t.Fatal(err)
 			}
-			if field == "keep_recent_turns" {
+			switch field {
+			case "keep_recent_turns":
 				config.AnthropicMessages.Compaction.KeepRecentTurns = 1
-			} else {
+			case "per_message_effort":
 				config.AnthropicMessages.PerMessageEffort = false
+			case "replacement_template":
+				config.ChatCompaction.Replacement.Template = "<checkpoint>{{.Summary}}</checkpoint>"
 			}
 			runtime := &Driver{store: store, settings: samplersettings.Settings{
 				Models:      map[string]samplersettings.ModelConfig{session.Model: config},

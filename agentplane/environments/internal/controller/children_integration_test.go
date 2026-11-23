@@ -10,11 +10,12 @@ import (
 	"testing"
 	"time"
 
-	workloadapi "github.com/agentydragon/ducktape/agentplane/identity/credentials/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/issuer"
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/testing/testscheme"
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -23,11 +24,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -39,14 +37,6 @@ import (
 
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 )
-
-func eventually(t *testing.T, check func() bool) {
-	t.Helper()
-	if err := wait.PollUntilContextTimeout(context.Background(), 10*time.Millisecond, 30*time.Second, true,
-		func(context.Context) (bool, error) { return check(), nil }); err != nil {
-		t.Fatal(err)
-	}
-}
 
 func withCertificateCRD(t *testing.T) kubeapiserver.Option {
 	t.Helper()
@@ -144,15 +134,7 @@ func runFakeCertificateSigner(ctx context.Context, objects client.Client, namesp
 
 func TestManagerCacheSyncNeedsOnlyGrantedSandboxWatchKinds(t *testing.T) {
 	const ns = "sandbox-controller-watch-contract"
-	kube, err := kubeapiserver.Start(kubeapiserver.WithAPIServerFlag("authorization-mode", "RBAC"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := kube.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	kube := kubeapiserver.StartForTest(t, kubeapiserver.WithAPIServerFlag("authorization-mode", "RBAC"))
 	ctx := context.Background()
 	if _, err := kube.Clientset.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: ns}}, metav1.CreateOptions{}); err != nil {
 		t.Fatal(err)
@@ -181,14 +163,7 @@ func TestManagerCacheSyncNeedsOnlyGrantedSandboxWatchKinds(t *testing.T) {
 	controllerConfig.Username, controllerConfig.Password = "", ""
 	controllerConfig.TLSClientConfig.CertFile, controllerConfig.TLSClientConfig.KeyFile = "", ""
 	controllerConfig.TLSClientConfig.CertData, controllerConfig.TLSClientConfig.KeyData = nil, nil
-	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{
-		clientgoscheme.AddToScheme, sandboxapi.AddToScheme, policyapi.AddToScheme, workloadapi.AddToScheme, kubevirtv1.AddToScheme,
-	} {
-		if err := add(scheme); err != nil {
-			t.Fatal(err)
-		}
-	}
+	scheme := testscheme.New(t)
 	byObject, err := CacheByObject(false)
 	if err != nil {
 		t.Fatal(err)
@@ -226,17 +201,7 @@ func TestManagerCacheSyncNeedsOnlyGrantedSandboxWatchKinds(t *testing.T) {
 // Exercise a real API server without KubeVirt and real SSA field ownership and manager watches.
 func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	ctrl.SetLogger(logr.FromSlogHandler(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug})))
-	kube, err := kubeapiserver.Start(
-		withCertificateCRD(t),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := kube.Stop(); err != nil {
-			t.Error(err)
-		}
-	})
+	kube := kubeapiserver.StartForTest(t, withCertificateCRD(t))
 	config := kube.Config
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
 	if err != nil {
@@ -245,14 +210,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	if _, err := discoveryClient.ServerResourcesForGroupVersion(kubevirtv1.GroupVersion.String()); !apierrors.IsNotFound(err) {
 		t.Fatalf("envtest unexpectedly serves KubeVirt: %v", err)
 	}
-	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{
-		clientgoscheme.AddToScheme, sandboxapi.AddToScheme, policyapi.AddToScheme, kubevirtv1.AddToScheme, workloadapi.AddToScheme,
-	} {
-		if err := add(scheme); err != nil {
-			t.Fatal(err)
-		}
-	}
+	scheme := testscheme.New(t)
 	const ns = "child-ssa"
 	byObject, err := CacheByObject(false)
 	if err != nil {
@@ -326,12 +284,12 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	if err := objects.Create(ctx, sandbox); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, func() bool { return objects.Get(ctx, key, &corev1.Pod{}) == nil })
+	eventually.Eventually(t, "the Sandbox's Pod", func() bool { return objects.Get(ctx, key, &corev1.Pod{}) == nil })
 	// The app and Runner Gateway hold patch on Sandboxes but not sandboxes/status: neither the main
 	// resource's status nor credential annotations on the Sandbox can rebind the Environment Runtime credential.
 	var pod corev1.Pod
 	var bound sandboxapi.RunnerCredential
-	eventually(t, func() bool {
+	eventually.Eventually(t, "the Sandbox to bind its Pod's credential", func() bool {
 		var current sandboxapi.Sandbox
 		if objects.Get(ctx, key, &pod) != nil || objects.Get(ctx, key, &current) != nil || current.Status.RunnerCredential == nil {
 			return false
@@ -381,7 +339,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	if err := objects.Update(ctx, &launch); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, func() bool {
+	eventually.Eventually(t, "the launch ConfigMap to be repaired", func() bool {
 		return objects.Get(ctx, launchKey, &launch) == nil && launch.Data[LaunchFile] == wantLaunch && launch.Data["unrelated"] == "keep"
 	})
 	version := launch.ResourceVersion
@@ -395,7 +353,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 	if err := objects.Delete(ctx, &launch); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, func() bool {
+	eventually.Eventually(t, "the launch ConfigMap to be recreated", func() bool {
 		return objects.Get(ctx, launchKey, &launch) == nil && launch.UID != deletedUID && launch.Data[LaunchFile] == wantLaunch
 	})
 	for _, test := range []struct {
@@ -413,7 +371,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 				t.Fatal(err)
 			}
 			otherKey := client.ObjectKeyFromObject(other)
-			eventually(t, func() bool {
+			eventually.Eventually(t, "the Running reason "+test.reason, func() bool {
 				if objects.Get(ctx, otherKey, other) != nil {
 					return false
 				}
@@ -437,7 +395,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 			t.Fatal(err)
 		}
 		otherKey := client.ObjectKeyFromObject(other)
-		eventually(t, func() bool {
+		eventually.Eventually(t, "the Running reason TemplateInvalid", func() bool {
 			if objects.Get(ctx, otherKey, other) != nil {
 				return false
 			}
@@ -448,7 +406,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 		if err := objects.Update(ctx, changed); err != nil {
 			t.Fatal(err)
 		}
-		eventually(t, func() bool { return objects.Get(ctx, otherKey, &corev1.Pod{}) == nil })
+		eventually.Eventually(t, "the Pod of the repaired template", func() bool { return objects.Get(ctx, otherKey, &corev1.Pod{}) == nil })
 	})
 	t.Run("cache-holds-only-labeled-objects", func(t *testing.T) {
 		for _, test := range []struct {
@@ -471,7 +429,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 				if err := objects.Create(ctx, test.labeled); err != nil {
 					t.Fatal(err)
 				}
-				eventually(t, func() bool {
+				eventually.Eventually(t, "the labeled "+test.kind+" to be cached", func() bool {
 					return mgr.GetCache().Get(ctx, client.ObjectKeyFromObject(test.labeled), test.labeled.DeepCopyObject().(client.Object)) == nil
 				})
 				if err := mgr.GetCache().Get(ctx, client.ObjectKeyFromObject(test.unlabeled), test.unlabeled.DeepCopyObject().(client.Object)); !apierrors.IsNotFound(err) {
@@ -495,7 +453,7 @@ func TestChildApplyOwnershipAndDriftWithoutKubeVirt(t *testing.T) {
 		t.Fatal(err)
 	}
 	vmKey := client.ObjectKeyFromObject(vmSandbox)
-	eventually(t, func() bool {
+	eventually.Eventually(t, "the Running reason KubeVirtMissing", func() bool {
 		if objects.Get(ctx, vmKey, vmSandbox) != nil {
 			return false
 		}

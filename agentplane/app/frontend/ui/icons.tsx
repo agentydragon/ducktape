@@ -17,7 +17,6 @@ import IconCircleX from "@tabler/icons-react/dist/esm/icons/IconCircleX.mjs";
 import IconClock from "@tabler/icons-react/dist/esm/icons/IconClock.mjs";
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
 import IconHeartbeat from "@tabler/icons-react/dist/esm/icons/IconHeartbeat.mjs";
-import IconHelpCircle from "@tabler/icons-react/dist/esm/icons/IconHelpCircle.mjs";
 import IconHistory from "@tabler/icons-react/dist/esm/icons/IconHistory.mjs";
 import IconId from "@tabler/icons-react/dist/esm/icons/IconId.mjs";
 import IconListCheck from "@tabler/icons-react/dist/esm/icons/IconListCheck.mjs";
@@ -50,7 +49,6 @@ export {
   IconClock,
   IconDotsVertical,
   IconHeartbeat,
-  IconHelpCircle,
   IconHistory,
   IconId,
   IconListCheck,

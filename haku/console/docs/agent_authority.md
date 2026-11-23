@@ -3,10 +3,10 @@
 The Console owns canonical Operator and Agent identity for its browser-managed Agent catalog. The
 browser login remains at `/auth/*`; `/api/agent-enrollment/agents` lists Agents for the authenticated
 Operator and permits profile changes only for eligible Agents. Static Agent configuration and
-startup reconciliation are retired. Revision `0138` disables existing static Agents and revokes
+startup reconciliation are retired. The pre-squash upgrade to `0138` disabled existing static Agents and revoked
 their active bindings while retaining their rows as history.
 
-Alembic revision `0081` is the forward-only database baseline. The retained identity graph is:
+Alembic revision `0138` is the forward-only database baseline. The retained identity graph is:
 
 ```text
 Operator -> IdentityAnchor -> OidcIdentity

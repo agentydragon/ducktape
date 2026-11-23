@@ -1,9 +1,13 @@
 """Current Cilium agent metrics verified against the live Mimir scrape."""
 
-from grafana_foundation_sdk.builders.dashboard import Dashboard, QueryVariable
+from grafana_foundation_sdk.builders.dashboard import Dashboard
 from grafana_foundation_sdk.models import dashboard
 
-from cluster.cdk8s.monitoring.dashboards.foundation import mimir, mimir_query, mimir_timeseries_panel
+from cluster.cdk8s.monitoring.dashboards.foundation import (
+    mimir_multi_query_variable,
+    mimir_query,
+    mimir_timeseries_panel,
+)
 
 _JOB = 'job="cilium-agent", pod=~"$pod"'
 
@@ -36,16 +40,9 @@ def build_dashboard() -> dashboard.Dashboard:
         .time("now-3h", "now")
         .version(1)
         .with_variable(
-            QueryVariable("pod")
-            .label("Pod")
-            .datasource(mimir())
-            .definition('label_values(cilium_process_cpu_seconds_total{job="cilium-agent"}, pod)')
-            .query('label_values(cilium_process_cpu_seconds_total{job="cilium-agent"}, pod)')
-            .include_all(True)
-            .multi(True)
-            .all_value(".*")
-            .refresh(dashboard.VariableRefresh.ON_DASHBOARD_LOAD)
-            .current(dashboard.VariableOption(text="All", value=["$__all"]))
+            mimir_multi_query_variable(
+                "pod", "Pod", 'label_values(cilium_process_cpu_seconds_total{job="cilium-agent"}, pod)'
+            )
         )
         .with_panel(
             mimir_timeseries_panel(

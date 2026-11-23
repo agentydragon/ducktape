@@ -1,7 +1,9 @@
 package main
 
 import (
+	"io"
 	"net"
+	"os"
 	"testing"
 	"time"
 
@@ -25,7 +27,41 @@ func startBuildBuddyTestServer(t *testing.T, service bbspb.BuildBuddyServiceServ
 	t.Setenv("BUILDBUDDY_URL", "http://"+listener.Addr().String())
 }
 
-func TestMatchGlob(t *testing.T) {
+// setJSONOutput selects the --json output mode for the test and restores the previous mode afterwards.
+func setJSONOutput(t *testing.T, enabled bool) {
+	t.Helper()
+	previous := jsonOutput
+	jsonOutput = enabled
+	t.Cleanup(func() { jsonOutput = previous })
+}
+
+// captureStdout returns what run wrote to os.Stdout together with run's error, so a test can
+// check that a failed command printed nothing.
+func captureStdout(t *testing.T, run func() error) ([]byte, error) {
+	t.Helper()
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	previousStdout := os.Stdout
+	os.Stdout = writer
+	defer func() {
+		os.Stdout = previousStdout
+		_ = reader.Close()
+	}()
+	runErr := run()
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	os.Stdout = previousStdout
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+	return output, runErr
+}
+
+func TestNameMatcher(t *testing.T) {
 	tests := []struct {
 		pattern string
 		s       string
@@ -38,19 +74,22 @@ func TestMatchGlob(t *testing.T) {
 		{"test_*/*.ambr", "test_foo/snapshot.ambr", true},
 		{"test_*/*.ambr", "other/snapshot.ambr", false},
 		{"no-star", "no-star", true},
-		{"no-star", "no-stardust", false},
+		{"no-star", "no-stardust", true},
 		{"*.log", "foo/bar/test.log", true},
+		{"*.log", "logs.log/nested/test.log", true},
+		{"steps[0]/*.patch", "steps[0]/generated.patch", true},
+		{"aa*aa", "aaa", false},
 		{"*test.outputs/*", "foo/test.outputs/snapshot.ambr", true},
 		{"test.outputs/*", "test.outputs/snapshot.ambr", true},
 		{"test.outputs/*", "foo/test.outputs/snapshot.ambr", false},
 		{"*.ambr", "", false},
 		{"", "", true},
-		{"", "nonempty", false},
+		{"", "nonempty", true},
 	}
 	for _, tt := range tests {
-		got := matchGlob(tt.pattern, tt.s)
+		got := nameMatcher(tt.pattern)(tt.s)
 		if got != tt.want {
-			t.Errorf("matchGlob(%q, %q) = %v, want %v", tt.pattern, tt.s, got, tt.want)
+			t.Errorf("nameMatcher(%q)(%q) = %v, want %v", tt.pattern, tt.s, got, tt.want)
 		}
 	}
 }

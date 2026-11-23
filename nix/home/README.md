@@ -4,15 +4,20 @@ Home-manager user configurations for multiple machines.
 
 ## Directory Structure
 
-```
+```text
 nix/home/
 ├── programs/              # Generic home-manager-style modules (could be upstreamed)
 ├── modules/               # Custom modules (solarized, gnome-shell-keybindings, etc.)
-├── skills/                # Shared skills for Claude Code, Codex, Gemini CLI, OpenCode
 ├── tests/                 # Nix tests for modules and integrations
 ├── allowed-commands.nix   # Personal SSOT: allowed bash commands
-├── claude_code/            # Personal integration: Claude Code
-├── gemini_cli.nix         # Personal integration: Gemini CLI
+├── mcp-servers.nix        # Personal SSOT: remote MCP servers wired into every agent harness
+├── skills.nix             # Shared skill deployment helper
+├── claude_code/           # Personal integration: Claude Code
+├── codex/                 # Personal integration: Codex
+├── opencode/              # Personal integration: OpenCode
+├── crush/                 # Personal integration: Crush
+├── gemini_cli.nix         # Personal integration: Gemini CLI (import disabled in home.nix)
+├── config/, services/, shell/, terminals/   # Neovim config, user services, shell init, terminal setup
 ├── home.nix               # Main home-manager configuration
 └── hosts/*.nix            # Host-specific configurations
 ```
@@ -36,13 +41,13 @@ Files at the root level (`claude_code/`, `gemini_cli.nix`, etc.) are **personal 
 Example:
 
 ```nix
-# gemini_cli.nix - personal integration
+# gemini_cli.nix - personal integration (abridged)
 let
   allowed = import ./allowed-commands.nix;
 in {
   programs.gemini-cli = {
     enable = true;
-    policies.allowed-commands = allowed.prefixCommands ++ allowed.exactCommands;
+    policies.allowed-commands = map (toGeminiRule 300) allowed.noSudo;
   };
 }
 ```
@@ -60,6 +65,12 @@ in {
 Shared data used by both home-manager and NixOS lives in `../lib/`:
 
 - **`inspection-commands.nix`**: System inspection commands requiring sudo
+
+## Atlas (Debian/Proxmox) gotchas
+
+- Debian's `/etc/profile` resets `PATH` unconditionally and breaks Nix paths: don't source it from shell init (`shell/`).
+- Failed root Nix installs leave backup files, `nixbld` users/groups and `/nix` behind, which block reinstalls. The `nix` Ansible role skips the install when `/nix` exists.
+- Multi-user Nix needs `NIX_REMOTE=daemon` for proper operation.
 
 ## Usage
 

@@ -58,6 +58,7 @@ func warnExpiryDecline(sessionID, commandID, reason string, fields ...any) {
 // A Slot coordinates one driver's residency with replica scheduling.
 // Leases and their fencing remain the driver's responsibility.
 type Slot interface {
+	SubscribeTurn(conversationID string) (<-chan struct{}, func(), error)
 	Wake() <-chan struct{}
 	Drain() <-chan struct{}
 	IsStopping() bool

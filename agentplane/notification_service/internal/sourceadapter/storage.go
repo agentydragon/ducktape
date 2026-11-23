@@ -1,7 +1,6 @@
 package sourceadapter
 
 import (
-	"database/sql"
 	"errors"
 	"fmt"
 
@@ -18,13 +17,6 @@ func EncodeSubscriptionCreation(creation Subscribe) ([]byte, string, error) {
 		return nil, "", err
 	}
 	stored := &storagepb.SubscriptionCreation{SessionId: creation.SessionID, LifetimeDays: creation.LifetimeDays}
-	if creation.DestinationRef != (model.DestinationRef{}) {
-		stored.DestinationRef = &storagepb.DestinationRef{
-			Namespace: creation.DestinationRef.Namespace,
-			Name:      creation.DestinationRef.Name,
-			Uid:       creation.DestinationRef.UID,
-		}
-	}
 	provider, err := subscriptionSourceProvider(creation.Source)
 	if err != nil {
 		return nil, "", err
@@ -60,11 +52,6 @@ func DecodeSubscriptionCreation(data []byte, idempotencyKey, provider string) (S
 		SessionID: stored.GetSessionId(), IdempotencyKey: idempotencyKey,
 		LifetimeDays: stored.GetLifetimeDays(),
 	}
-	// Older writers stored the destination here. It remains readable during rollback but no longer
-	// participates in a Session's subscription identity or idempotency.
-	if ref := stored.GetDestinationRef(); ref != nil {
-		creation.DestinationRef = model.DestinationRef{Namespace: ref.GetNamespace(), Name: ref.GetName(), UID: ref.GetUid()}
-	}
 	switch source := stored.GetSource().(type) {
 	case *storagepb.SubscriptionCreation_Actions:
 		if source.Actions == nil {
@@ -98,16 +85,8 @@ func DecodeSubscriptionCreation(data []byte, idempotencyKey, provider string) (S
 }
 
 // DecodeStoredSubscriptionCreation checks the relational discriminator against the typed protobuf.
-func DecodeStoredSubscriptionCreation(
-	id uuid.UUID, typed sql.Null[[]byte], provider sql.NullString, idempotencyKey string,
-) (Subscribe, error) {
-	if typed.Valid != provider.Valid {
-		return Subscribe{}, fmt.Errorf("subscription %s has incomplete typed creation fields", id)
-	}
-	if !typed.Valid {
-		return Subscribe{}, fmt.Errorf("subscription %s has no typed creation", id)
-	}
-	creation, err := DecodeSubscriptionCreation(typed.V, idempotencyKey, provider.String)
+func DecodeStoredSubscriptionCreation(id uuid.UUID, typed []byte, provider, idempotencyKey string) (Subscribe, error) {
+	creation, err := DecodeSubscriptionCreation(typed, idempotencyKey, provider)
 	if err != nil {
 		return Subscribe{}, fmt.Errorf("subscription %s typed creation: %w", id, err)
 	}

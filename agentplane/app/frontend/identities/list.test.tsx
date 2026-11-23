@@ -1,24 +1,17 @@
 // @vitest-environment happy-dom
 import { create } from "@bufbuild/protobuf";
-import { MantineProvider } from "@mantine/core";
-import { act } from "react";
-import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { cleanupMounted, renderWithMantine } from "../../../../util/frontend/testing/react";
 import { IdentitySchema, PolicyBindingSchema } from "../../../policy/v1/policy_service_pb";
 import { IdentityList } from "./list";
 
 const mocks = vi.hoisted(() => ({ identities: vi.fn(), resources: vi.fn() }));
 vi.mock("../policy/watch", () => ({ useIdentities: mocks.identities, usePolicyResources: mocks.resources }));
 vi.mock("../egress/credential_watch", () => ({ useCredentialMetadata: () => new Map() }));
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;
-afterEach(async () => {
-  await act(async () => root.unmount());
-  container.remove();
-});
+afterEach(cleanupMounted);
 
 const identities = ["referenced-identity", "unreferenced-identity"].map((name) =>
   create(IdentitySchema, { identity: { namespace: "fake-policies", name, uid: `uid-${name}` } })
@@ -31,17 +24,10 @@ const standingGrant = create(PolicyBindingSchema, {
 async function render(route: string): Promise<void> {
   mocks.identities.mockReturnValue({ identities, error: null });
   mocks.resources.mockReturnValue({ resources: { bindings: [standingGrant], sets: [] }, error: null });
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root.render(
-      <MantineProvider env="test">
-        <MemoryRouter initialEntries={[route]}>
-          <IdentityList onOpen={() => {}} />
-        </MemoryRouter>
-      </MantineProvider>
-    )
+  container = await renderWithMantine(
+    <MemoryRouter initialEntries={[route]}>
+      <IdentityList onOpen={() => {}} />
+    </MemoryRouter>
   );
 }
 function listed(): string[] {

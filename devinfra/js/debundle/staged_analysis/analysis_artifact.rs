@@ -132,16 +132,9 @@ pub fn read_body(body: &[u8], ordinals: &ContextOrdinals) -> Result<AnalysisArti
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::program_summary::{ProgramSummaryOptions, collect_program_summary};
+    use crate::test_support::{collect_test_program_summary, test_bundle_parsed_in};
     use analysis::AnalysisInputs;
-    use analysis_projection::AnalysisProjection;
-    use artifact::reports::{ChunkAnalysisReport, ChunkFileRecord};
-    use artifact::{
-        ArtifactIndexes, ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole,
-        JsChunk, JsFile, JsFileBody,
-    };
-    use program_analysis::analyze_program_shallow;
-    use source_identity::ChunkTable;
+    use artifact::{ChunkBundle, JsFile};
     use std::process::Command;
     use swc_common::{GLOBALS, Globals};
 
@@ -167,70 +160,6 @@ mod tests {
         ),
     ];
 
-    /// Parses `CHUNKS` in `parse_order` into retained ASTs, so whole-program
-    /// analysis reads the same modules the test numbers.
-    fn bundle(parse_order: &[usize]) -> ChunkBundle {
-        let mut parsed = BTreeMap::new();
-        for &index in parse_order {
-            let (name, source) = CHUNKS[index];
-            let entry = format!("{}.js", name.rsplit('/').next().expect("named chunk"));
-            let module = js_ast::parse_js_module(&format!("{name}/{entry}"), source)
-                .expect("fixture parses");
-            parsed.insert(index, (entry, module));
-        }
-        let mut chunk_table = ChunkTable::default();
-        let chunks = CHUNKS
-            .iter()
-            .enumerate()
-            .map(|(index, (name, _))| {
-                let (entry, module) = parsed.remove(&index).expect("every chunk parsed");
-                let analysis = analyze_program_shallow(&module);
-                let source_path = format!("{name}.js");
-                ChunkArtifact {
-                    chunk_id: chunk_table.intern((*name).to_string()),
-                    js: JsChunk {
-                        entry_file: entry.clone(),
-                        files: vec![JsFile {
-                            path: entry.clone(),
-                            body: JsFileBody::Ast(module),
-                            header_lines: Vec::new(),
-                            binding_comments: BTreeMap::new(),
-                            leading_item_comments: BTreeMap::new(),
-                            metadata: FileMetadata {
-                                chunk_id: (*name).to_string(),
-                                chunk_file: entry.clone(),
-                                role: FileRole::Entry,
-                                source_path: source_path.clone(),
-                            },
-                        }],
-                        metadata: ChunkMetadata {
-                            source_path: source_path.clone(),
-                        },
-                    },
-                    analysis: ChunkAnalysisReport {
-                        chunk_id: (*name).to_string(),
-                        source_path,
-                        entry_file: entry.clone(),
-                        counts: Default::default(),
-                        files: vec![ChunkFileRecord {
-                            file: entry,
-                            role: FileRole::Entry,
-                        }],
-                        imports: analysis.imports,
-                        export_aliases: analysis.export_aliases,
-                        unresolved_exports: Vec::new(),
-                        kept_top_level_declarations: Vec::new(),
-                        runtime_facts: analysis.runtime_facts,
-                    },
-                }
-            })
-            .collect();
-        ChunkBundle {
-            chunks,
-            chunk_table,
-        }
-    }
-
     fn modules(artifact: &ChunkBundle) -> impl Iterator<Item = &swc_ecma_ast::Module> {
         artifact.chunks.iter().map(|chunk| {
             &chunk
@@ -246,31 +175,7 @@ mod tests {
         let mut assertion = spec::ChunkExportPurity::default();
         assertion.pure_exports.insert("wrap".to_string());
         let assertions = BTreeMap::from([("static/peer".to_string(), assertion)]);
-        let indexes = ArtifactIndexes::build(artifact).expect("build indexes");
-        let no_options = BTreeMap::new();
-        let host_behavior = spec::HostBehavior::default();
-        let program_summary = collect_program_summary(
-            artifact,
-            &indexes,
-            &AnalysisProjection::new(
-                &no_options,
-                &assertions,
-                &host_behavior,
-                None,
-                BTreeMap::new(),
-                analysis_projection::AnalysisSourceSites::default(),
-                BTreeMap::new(),
-            )
-            .expect("empty projection is valid"),
-            ProgramSummaryOptions {
-                graph_provenance: None,
-                vendor_plan: None,
-                replacement_packages: &BTreeMap::new(),
-            },
-            None,
-            &analysis::diagnostics::Diagnostics::default(),
-        )
-        .expect("program summary analysis succeeds");
+        let program_summary = collect_test_program_summary(artifact, &assertions);
         let chunks = artifact
             .chunks
             .iter()
@@ -341,7 +246,7 @@ mod tests {
     #[test]
     fn decodes_into_a_fresh_globals() {
         let (bytes, debug_first) = GLOBALS.set(&Globals::new(), || {
-            let artifact = bundle(&[0, 1]);
+            let artifact = test_bundle_parsed_in(CHUNKS, &[0, 1]);
             let body = analyze(&artifact);
             assert_shared_imported_cause(&body);
             let ordinals = ContextOrdinals::new(modules(&artifact));
@@ -354,7 +259,7 @@ mod tests {
             // Parsing a module first and the chunks in reverse shifts every
             // context number away from the first `Globals`.
             js_ast::parse_js_module("shift.js", "let a = () => { let b; };").expect("parses");
-            let artifact = bundle(&[1, 0]);
+            let artifact = test_bundle_parsed_in(CHUNKS, &[1, 0]);
             let fresh = analyze(&artifact);
             let ordinals = ContextOrdinals::new(modules(&artifact));
             let (read, body) = read_header(&bytes).expect("header");
@@ -386,7 +291,7 @@ mod tests {
             &[0, 1]
         };
         js_ast::with_swc_globals(|| {
-            let artifact = bundle(order);
+            let artifact = test_bundle_parsed_in(CHUNKS, order);
             let body = analyze(&artifact);
             let ordinals = ContextOrdinals::new(modules(&artifact));
             std::fs::write(

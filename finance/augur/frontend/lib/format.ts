@@ -8,7 +8,7 @@ export function fmtUsd(value: unknown) {
   });
 }
 
-export function fmtUsdCompact(value: unknown) {
+function fmtUsdCompact(value: unknown) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "n/a";
   return number.toLocaleString("en-US", {
@@ -37,7 +37,7 @@ function groupedInteger(value: bigint) {
  * contain the full signed Int64 range. `currencyQuantum` is an exact decimal
  * such as "0.01", "1", or "0.05" supplied by the product response.
  */
-export function currencyQuantaDecimal(value: unknown, currencyQuantum: unknown) {
+function currencyQuantaDecimal(value: unknown, currencyQuantum: unknown) {
   if (typeof value !== "string" && typeof value !== "bigint" && typeof value !== "number") return null;
   let quanta;
   try {

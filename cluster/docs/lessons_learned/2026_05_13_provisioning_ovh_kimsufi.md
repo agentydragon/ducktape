@@ -92,24 +92,6 @@ To re-key without the admin private key, **the data is often recoverable from el
 - `tofu-state-db-credentials` is also in the cluster as a k8s Secret (the live source).
   Fetch via `kubectl -n tofu-state get secret tofu-state-db-credentials`.
 
-### 4b. Nebula per-node certs (in `terraform/main/nebula-certs/`) are not in git
-
-`null_resource.nebula_node_cert` writes per-node `.crt`/`.key` files to a local
-directory and the downstream `data.local_file` / `data.local_sensitive_file` reads
-them. The state has the resource but the files are wherever it last ran — not on
-a fresh machine.
-
-Trying to apply from a fresh machine fails with
-`./nebula-certs/<fqdn>.crt: no such file or directory` for every existing node.
-
-**Recovery (without admin key, without re-signing)**: the cert and key are embedded
-verbatim in `machine_configuration_input` on every `talos_machine_configuration_apply.*`
-state entry (via `nebula_extension_config` in `nebula.tf`). Extract them out with
-`tofu state pull | jq | regex` and write back to `nebula-certs/<fqdn>.{crt,key}`.
-
-(The naive alternative — `tofu taint` and let it re-sign — would rotate every node's
-cert simultaneously, causing the whole mesh to reconverge.)
-
 ### 4c. PG backend access from non-cluster-workers
 
 `tofu init` needs the PG backend at `tofu-state-db-rw.tofu-state`. From a worker

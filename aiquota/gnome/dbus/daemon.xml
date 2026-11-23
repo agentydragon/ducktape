@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<node>
+  <interface name="works.allegedly.AiQuota1">
+    <method name="GetView">
+      <arg name="view" type="s" direction="out"/>
+    </method>
+    <signal name="ViewChanged">
+      <arg name="view" type="s"/>
+    </signal>
+    <property name="Status" type="s" access="read"/>
+    <property name="Error" type="s" access="read"/>
+    <property name="LastAttemptAt" type="d" access="read"/>
+    <property name="NextRetryAt" type="d" access="read"/>
+  </interface>
+</node>

@@ -80,53 +80,6 @@ def _thread_state(path: Path) -> dict[str, object]:
     }
 
 
-def _sample_qemu(proc_root: Path, pod_uid: str) -> dict[str, object]:
-    matches = []
-    scanned = 0
-    scan_deadline = time.monotonic() + MAX_SCAN_SECONDS
-    truncated = False
-    incomplete = False
-    for comm in proc_root.glob("[0-9]*/comm"):
-        if scanned >= MAX_PROCESSES_SCANNED or time.monotonic() >= scan_deadline:
-            truncated = True
-            break
-        scanned += 1
-        process = comm.parent
-        try:
-            if not comm.read_text().startswith("qemu"):
-                continue
-            if host_qemu._pod_uid_in_cgroup((process / "cgroup").read_text(), pod_uid):
-                matches.append(process)
-        except FileNotFoundError, ProcessLookupError:
-            continue
-        except OSError:
-            incomplete = True
-            continue
-    if len(matches) != 1:
-        return {
-            "matching_qemu_processes": len(matches),
-            "process_scan_truncated": truncated,
-            "process_scan_incomplete": incomplete or truncated,
-        }
-    process = matches[0]
-    tasks = sorted((process / "task").glob("[0-9]*"), key=lambda path: int(path.name))
-    states = []
-    for task in tasks[:MAX_THREADS]:
-        try:
-            states.append(_thread_state(task))
-        except OSError as error:
-            states.append({"tid": int(task.name), "error": type(error).__name__})
-    return {
-        "matching_qemu_processes": 1,
-        "pid": int(process.name),
-        "threads": states,
-        "thread_count": len(tasks),
-        "threads_truncated": len(tasks) > MAX_THREADS,
-        "process_scan_truncated": truncated,
-        "process_scan_incomplete": incomplete or truncated,
-    }
-
-
 def capture_readiness_failure(view: environment_service_pb2.EnvironmentDescriptor, artifact_root: Path) -> Path:
     """Write one passive, exact-Pod-UID QEMU snapshot for a VM that missed readiness."""
     target = view.target
@@ -305,6 +258,10 @@ def _sample_qemus(proc_root: Path, pod_uids: list[str]) -> tuple[dict[str, dict[
             )
         result[pod_uid] = process_status
     return result, scan_status
+
+
+def _sample_qemu(proc_root: Path, pod_uid: str) -> dict[str, object]:
+    return _sample_qemus(proc_root, [pod_uid])[0][pod_uid]
 
 
 def _write_full_suite_summary(path: Path, summary: dict[str, object]) -> None:

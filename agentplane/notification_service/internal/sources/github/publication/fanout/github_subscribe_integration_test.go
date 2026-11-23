@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	"github.com/agentydragon/ducktape/agentplane/notification_service/internal/sourceadapter"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
@@ -24,7 +25,7 @@ func requireConstraint(t *testing.T, err error, code pq.ErrorCode, constraint st
 }
 
 func (g githubFixture) creation(source githubmodel.Source, key string) sourceadapter.Subscribe {
-	return sourceadapter.Subscribe{DestinationRef: g.destination, SessionID: g.sessionID, IdempotencyKey: key, Source: sourceadapter.WrapGitHubSource(source), LifetimeDays: 7}
+	return sourceadapter.Subscribe{SessionID: g.sessionID, IdempotencyKey: key, Source: sourceadapter.WrapGitHubSource(source), LifetimeDays: 7}
 }
 
 func TestAGitHubSubscriptionIsBoundToTheAccessItWasAuthorizedUnder(t *testing.T) {
@@ -178,7 +179,7 @@ func TestFilterOrderAndDuplicatesDoNotChangeTheSubscriptionIdentity(t *testing.T
 		githubmodel.EventFilter{Event: githubmodel.EventIssueComment, Actions: []string{"deleted"}},
 		githubmodel.EventFilter{Event: githubmodel.EventCheckRun, Actions: []string{"completed"}},
 	))
-	if _, err := g.Subscribe(t.Context(), g.incarnation(), changed, authorization); !errors.Is(err, ErrIdempotencyKeyReused) {
+	if _, err := g.Subscribe(t.Context(), g.incarnation(), changed, authorization); !errors.Is(err, inboxstore.ErrIdempotencyKeyReused) {
 		t.Fatalf("error = %v, want ErrIdempotencyKeyReused", err)
 	}
 }

@@ -8,6 +8,8 @@ from datetime import datetime
 from pathlib import PurePosixPath
 from typing import BinaryIO
 
+from python.runfiles import Runfiles
+
 
 class ResticOutputError(ValueError):
     pass
@@ -42,6 +44,11 @@ class ResticFile:
 class ResticChange:
     path: str
     modifier: str
+
+
+def find_pinned_restic_binary() -> str:
+    """The pinned Restic in Bazel runfiles. The calling target must list `//third_party/restic` in `data`."""
+    return str(Runfiles.CreateOrRaise().root() / "ducktape/third_party/restic/restic_bin")
 
 
 class ResticRepository:

@@ -34,15 +34,14 @@ Parameters that can be varied on X or Y axes, or held constant:
 | Parameter       | Description                      | Unit |
 | --------------- | -------------------------------- | ---- |
 | `power_pct`     | Min and max power (set together) | %    |
-| `power_min_pct` | Minimum power only               | %    |
-| `power_max_pct` | Maximum power only               | %    |
 | `speed_mm_s`    | Cut speed                        | mm/s |
 | `kerf_mm`       | Kerf compensation offset         | mm   |
 | `z_offset_mm`   | Z offset at start of layer       | mm   |
 | `z_per_pass_mm` | Z step per pass (typically ≤ 0)  | mm   |
 | `num_passes`    | Number of passes                 | —    |
 
-These parameters apply to LightBurn `.lbrn2` output. Ruida `.rd` output has a
+`power_min_pct` and `power_max_pct` are constants of the `[cut]` table only; vary power on an
+axis with `power_pct`. These parameters apply to LightBurn `.lbrn2` output. Ruida `.rd` output has a
 narrower contract: only `power_pct` and `speed_mm_s` may be sweep axes;
 `kerf_mm` must be zero, and `z_offset_mm`, `z_per_pass_mm`, and `num_passes`
 must remain at their defaults (0, 0, and 1) for every cut layer, including an
@@ -51,7 +50,7 @@ does not include the title, subtitle, axis labels, legend, or in-cell text.
 
 ## Layout
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────────┐
 │  Title: "6.08mm ply, Lauan"                                          │
 │  Subtitle: "Z=−0.1, 15 mm/s, kerf 0.1 mm"                           │
@@ -86,7 +85,7 @@ a complete 2D grid at a specific combination of outer parameter values.
 - **4-parameter sweep**: add both `[cols]` and `[rows]` (grid of sub-grids)
 - All axis params (`x`, `y`, `cols`, `rows`) must be distinct
 
-```
+```text
               Title
               Subtitle
 
@@ -158,26 +157,13 @@ padded a configurable amount outside the grid cells.
 For `.rd` output, the whole grid is shifted so the border starts at `(0, 0)`;
 the configured padding between the border and cells is preserved.
 
-### LightBurn Layer Structure
+### Layer order
 
-| Layer index      | Content                                        |
-| ---------------- | ---------------------------------------------- |
-| 0                | All text (title, labels, values, in-cell text) |
-| 1 … N×M          | One cut layer per grid cell (N cols × M rows)  |
-| N×M+1 (optional) | Border rectangle layer                         |
-
-Each grid cell gets its own `CutSetting` because the combination of X and Y parameter
-values is unique per cell. Layer 0 uses a distinct, low-power cut setting for marking.
-
-#### Layer structure (3D/4D)
-
-| Layer index    | Content                                             |
-| -------------- | --------------------------------------------------- |
-| 0              | All text (title, labels, values, in-cell text)      |
-| 1 … T          | One cut layer per cell, sequential across sub-grids |
-| T+1 (optional) | Border rectangle layer                              |
-
-Cells are numbered sequentially: outer_row × outer_col × inner_row × inner_col.
+Both exporters give each cell its own layer and sort all cells by
+`max_power × num_passes / speed` in ascending order to start with lower-energy cuts.
+Ties keep grid order, traversing the sub-grids and then their cells row by row.
+LightBurn reserves layer 0 for low-power text marking. Ruida starts with the first
+cell at layer 0. In both formats, the optional border has the last layer.
 
 ### 3D/4D Layout Details
 

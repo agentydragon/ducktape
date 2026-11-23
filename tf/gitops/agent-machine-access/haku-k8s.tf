@@ -1,6 +1,3 @@
-# ============================================================================
-# haku-k8s — Haku's k8s identity, reusing the shared client_credentials provider
-# ============================================================================
 # Haku mints its k8s JWT through the EXISTING
 # kubectl-sandbox-client-credentials OAuth2 provider — no dedicated provider,
 # so no kube-apiserver issuer entry and no cluster bootstrap. Instead of a

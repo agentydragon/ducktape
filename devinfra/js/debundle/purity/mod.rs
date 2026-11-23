@@ -70,7 +70,7 @@ pub(crate) use purity_type::Effects;
 pub(crate) use redundant_hints::*;
 pub(crate) use ts_enum_iife::*;
 
-// Public API: importable at `purity::<item>` exactly as before the split.
+// Public API: importable at `purity::<item>`.
 pub use code_graph::ChunkCodeGraph;
 pub use purity_type::{Purity, PurityReason, PurityRule};
 pub use redundant_hints::{

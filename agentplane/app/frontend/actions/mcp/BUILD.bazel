@@ -76,9 +76,7 @@ agentplane_vitest_test(
         "//:node_modules/vitest",
         "//agentplane/action_service/api/contracts:action_service_pb",
         "//agentplane/action_service/api/contracts:operator_action_service_pb",
-        "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions/testing:harness",
-        "//agentplane/app/frontend/transport:client",
     ],
 )
 

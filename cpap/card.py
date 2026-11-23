@@ -34,12 +34,11 @@
 - `GET /client?command=Getallfiles` — returns empty `<photos/>`
 - `GET /client?command=GetFolders` — returns bare XML declaration
 - `GET /pdclient.cgi?command=getcardmode` — redirects to welcome page without login
+- `/pdclient.cgi?command=gconfig` / `sconfig` / `Login` / `reboot` — the firmware's own scripts
+  use `/publicdir/sendurl` and `/config` for login and settings instead; see `gateway/restore.py`
 
 ### Unverified (not tested on this firmware)
 
-- `/pdclient.cgi?command=gconfig` / `sconfig` — card WiFi config read/write
-- `/pdclient.cgi?command=Login` — admin login
-- `/pdclient.cgi?command=reboot` — reboot card
 - `/upload` (POST) — file upload
 - `/upload?DEL=` — file delete
 """
@@ -60,7 +59,6 @@ DEFAULT_BASE = "http://192.168.4.1"
 class FileEntry:
     """A file or directory entry from GETFILELIST."""
 
-    name: str  # long filename, e.g. "20260419_040533_BRP.edf"
     size: int  # bytes (0 for directories)
     create_time: int  # unix timestamp
     img_url: str  # files: download URL; dirs: GETFILELIST URL for recursion
@@ -69,7 +67,6 @@ class FileEntry:
     @classmethod
     def _from_xml(cls, element: ET.Element) -> FileEntry:
         return cls(
-            name=element.findtext("name") or "",
             size=int(element.findtext("fileSize") or 0),
             create_time=int(element.findtext("createTime") or 0),
             img_url=element.findtext("imgURL") or "",

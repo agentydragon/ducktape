@@ -5,15 +5,19 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
 
+test_suite(name = "tests")
+
 py_binary(
     name = "main_bin",
     main_module = "agentplane.x.indexing.main",
+    tags = ["manual"],
     deps = [":main"],
 )
 
 aspect_py_binary(
     name = "image_bin",
     main = "main.py",
+    tags = ["manual"],
     deps = [":main"],
 )
 
@@ -22,6 +26,7 @@ py_image_layer(
     binary = ":image_bin",
     group = "1000",
     owner = "1000",
+    tags = ["manual"],
 )
 
 oci_image(
@@ -33,6 +38,7 @@ oci_image(
         extra_env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
     ),
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tags = ["manual"],
     tars = [
         ":layers",
         "//third_party/debian_slim:cacerts",
@@ -43,6 +49,7 @@ oci_image(
 py_library(
     name = "app",
     srcs = ["app.py"],
+    tags = ["manual"],
     deps = [
         ":embedder",
         ":maintenance",
@@ -55,6 +62,7 @@ py_library(
 py_library(
     name = "main",
     srcs = ["main.py"],
+    tags = ["manual"],
     deps = [
         ":app",
         ":maintenance",
@@ -74,6 +82,7 @@ py_library(
 py_library(
     name = "maintenance",
     srcs = ["maintenance.py"],
+    tags = ["manual"],
     deps = [
         ":embedder",
         ":source",
@@ -84,6 +93,7 @@ py_library(
 py_library(
     name = "source",
     srcs = ["source.py"],
+    tags = ["manual"],
     deps = [
         ":settings",
         "@pypi//pathspec",
@@ -94,6 +104,7 @@ py_library(
 py_library(
     name = "store",
     srcs = ["store.py"],
+    tags = ["manual"],
     deps = [
         ":chunking",
         ":content",
@@ -121,13 +132,14 @@ py_library(
     name = "conftest",
     testonly = True,
     srcs = ["conftest.py"],
+    tags = ["manual"],
     deps = [
         ":chunking",
         ":store",
+        "//testing:postgres",
+        "//testing:postgres_fixtures",
+        "//testing:sqlalchemy_engines",
         "//third_party/containers:pgvector_pg18",
-        "//util/testing:postgres",
-        "//util/testing:postgres_fixtures",
-        "//util/testing:sqlalchemy_engines",
         "@pypi//asyncpg",
         "@pypi//psycopg",
         "@pypi//pygit2",
@@ -176,6 +188,7 @@ py_test(
 py_library(
     name = "settings",
     srcs = ["settings.py"],
+    tags = ["manual"],
     visibility = [
         "//agentplane:__subpackages__",
         "//cluster/cdk8s/agentplane_index:__pkg__",
@@ -190,21 +203,25 @@ py_library(
 py_library(
     name = "chunking",
     srcs = ["chunking.py"],
+    tags = ["manual"],
 )
 
 py_library(
     name = "content",
     srcs = ["content.py"],
+    tags = ["manual"],
 )
 
 py_library(
     name = "embedder",
     srcs = ["embedder.py"],
+    tags = ["manual"],
 )
 
 py_library(
     name = "openai_embedder",
     srcs = ["openai_embedder.py"],
+    tags = ["manual"],
     deps = ["@pypi//openai"],
 )
 

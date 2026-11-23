@@ -227,7 +227,9 @@ func failureFromError(err error) *Failure {
 	return failure
 }
 
-func findFailure(err error, kinds ...FailureKind) *Failure {
+// FindFailure retains error-tree matching across wrapped and joined failures.
+// Settlement searches for admission failures before the remote failure that caused them.
+func FindFailure(err error, kinds ...FailureKind) *Failure {
 	if failure, ok := err.(*Failure); ok {
 		for _, kind := range kinds {
 			if failure.Kind == kind {
@@ -238,12 +240,12 @@ func findFailure(err error, kinds ...FailureKind) *Failure {
 	switch wrapped := err.(type) {
 	case interface{ Unwrap() []error }:
 		for _, cause := range wrapped.Unwrap() {
-			if failure := findFailure(cause, kinds...); failure != nil {
+			if failure := FindFailure(cause, kinds...); failure != nil {
 				return failure
 			}
 		}
 	case interface{ Unwrap() error }:
-		return findFailure(wrapped.Unwrap(), kinds...)
+		return FindFailure(wrapped.Unwrap(), kinds...)
 	}
 	return nil
 }

@@ -38,8 +38,9 @@ callback identity must remain unchanged.
 
 ## Credential ownership
 
-The SOPS sources are `secrets/wyrm2-credentials.sops.yaml` and
-`secrets/rugged-credentials.sops.yaml` beneath this directory. Each is one Secret
+The SOPS sources were `secrets/wyrm2-credentials.sops.yaml` and
+`secrets/rugged-credentials.sops.yaml` beneath this directory; the retirement deleted them
+(<../README.md>). Each was one Secret
 whose `stringData.username` and `stringData.password` fields contain one fixed
 client ID and password. Flux and the corresponding host's user identity consume
 that same file; one host is not granted decryption of the other's credential.

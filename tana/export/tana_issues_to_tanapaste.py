@@ -3,7 +3,7 @@
 import sys
 from pathlib import Path
 
-from tana.export.convert import RenderContext
+from tana.export.convert import RenderContext, format_tanapaste
 from tana.graph.loader import load_workspace
 from tana.query.filters import filter_open_issues
 
@@ -30,14 +30,14 @@ def main():
     issue_ids = list(filter_open_issues(store))
 
     # Export the given issues as a flat TanaPaste document
-    lines = ["%%tana%%"]
+    lines: list[str] = []
     ctx = RenderContext(store, "tana")
     for issue_id in issue_ids:
         lines.extend(ctx.render_node(store[issue_id]))
         lines.append("")  # Empty line between issues
 
     # Output to stdout
-    print("\n".join(lines).rstrip())
+    print(format_tanapaste(lines), end="")
 
     # Report to stderr
     print(f"Open issues exported: {len(issue_ids)}", file=sys.stderr)

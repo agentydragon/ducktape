@@ -1,4 +1,9 @@
-"""Fixture PKI cleanup preserves resources not owned by the fixture."""
+"""Fixture PKI cleanup preserves resources not owned by the fixture.
+
+The fixture root and workload CA live in the retained `cert-manager` namespace, so deleting the fixture namespaces
+keeps them; cleanup must remove both. A workload CA that outlives its recreated root (new key) no longer verifies
+against it (`unknown authority`) although the Certificates are `Ready` and the Bundles `Synced`.
+"""
 
 import json
 from typing import Any

@@ -78,7 +78,6 @@ ts_library(
         "//props/frontend/src/lib:DefinitionIdLink",
         "//props/frontend/src/lib:formatters",
         "//props/frontend/src/lib:schema",
-        "//props/frontend/src/lib:types",
     ],
 )
 
@@ -94,6 +93,5 @@ ts_library(
         "//props/frontend/src/lib:colors",
         "//props/frontend/src/lib:formatters",
         "//props/frontend/src/lib:schema",
-        "//props/frontend/src/lib:types",
     ],
 )

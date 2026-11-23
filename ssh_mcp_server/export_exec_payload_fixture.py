@@ -13,7 +13,8 @@ from unittest.mock import patch
 from fastmcp import Client
 
 from ssh_mcp_server import server as ssh_server
-from ssh_mcp_server.server import SshSettings, TargetConfig, build_mcp
+from ssh_mcp_server.server import build_mcp
+from ssh_mcp_server.settings import SshSettings, TargetConfig
 
 
 async def _producer_payload() -> dict[str, Any]:

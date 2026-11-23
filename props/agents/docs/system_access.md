@@ -25,7 +25,7 @@ RLS policies automatically filter queries:
 
 - **INSERT/UPDATE:** Only for rows with `agent_run_id = current_agent_run_id()`
 - **SELECT:** Filtered based on your agent type (see access table below)
-- **DELETE:** Not granted; use soft deletes
+- **DELETE:** Same scope as INSERT/UPDATE
 
 ## Schema Discovery
 

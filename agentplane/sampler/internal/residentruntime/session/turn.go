@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/codemode"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
@@ -12,12 +11,18 @@ import (
 )
 
 func (r *Driver) controlledAdvance(ctx context.Context, sessionID string, owner sessionstore.Owner, live *liveHost, client *http.Client, session *sessionstore.Session) (sessionstore.TurnResult, error) {
+	// Subscribe before reading: a concurrent commit is in the snapshot or queues a wakeup.
+	changed, unsubscribe, err := r.slot.SubscribeTurn(owner.ConversationID)
+	if err != nil {
+		return "", err
+	}
+	defer unsubscribe()
 	interrupts, err := r.store.PendingInterrupts(ctx, owner)
 	if err != nil {
 		return "", err
 	}
 	if len(interrupts) > 0 {
-		return r.applyInterrupt(ctx, sessionID, owner, live, interrupts)
+		return r.applyInterrupt(ctx, owner, live, interrupts)
 	}
 	advanceCtx, cancel := context.WithCancel(ctx)
 	type advanceResult struct {
@@ -29,8 +34,10 @@ func (r *Driver) controlledAdvance(ctx context.Context, sessionID string, owner 
 		result, err := r.advance(advanceCtx, owner, live, client, session)
 		completed <- advanceResult{result: result, err: err}
 	}()
-	ticker := time.NewTicker(50 * time.Millisecond)
-	defer ticker.Stop()
+	var foreground <-chan struct{}
+	if live != nil && live.code != nil {
+		foreground = live.code.ForegroundStarted()
+	}
 	joined := false
 	defer func() {
 		cancel()
@@ -56,32 +63,33 @@ func (r *Driver) controlledAdvance(ctx context.Context, sessionID string, owner 
 				return "", err
 			}
 			return "", errors.New("code-mode session detached during advance")
-		case <-ticker.C:
-			interrupts, err := r.store.PendingInterrupts(ctx, owner)
+		case <-changed:
+		case <-foreground:
+		}
+		interrupts, err := r.store.PendingInterrupts(ctx, owner)
+		if err != nil {
+			return "", err
+		}
+		if len(interrupts) == 0 && foreground != nil && live.code.HasForeground() {
+			steering, err := r.store.HasSteeringInput(ctx, owner, sessionID)
 			if err != nil {
 				return "", err
 			}
-			if len(interrupts) == 0 && live != nil && live.code.HasForeground() {
-				steering, err := r.store.HasSteeringInput(ctx, owner, sessionID)
-				if err != nil {
+			if steering {
+				if _, err := live.code.YieldForeground(ctx); err != nil {
 					return "", err
 				}
-				if steering {
-					if _, err := live.code.YieldForeground(ctx); err != nil {
-						return "", err
-					}
-				}
 			}
-			if len(interrupts) > 0 {
-				conversation, readErr := r.store.Read(ctx, owner)
-				if readErr != nil {
-					return "", readErr
-				}
-				cancel()
-				<-completed
-				joined = true
-				return r.applyInterrupt(ctx, sessionID, owner, live, interrupts, conversation.Pending)
+		}
+		if len(interrupts) > 0 {
+			conversation, readErr := r.store.Read(ctx, owner)
+			if readErr != nil {
+				return "", readErr
 			}
+			cancel()
+			<-completed
+			joined = true
+			return r.applyInterrupt(ctx, owner, live, interrupts, conversation.Pending)
 		}
 	}
 }
@@ -105,7 +113,10 @@ func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *li
 		return sessionstore.TurnCompact, nil
 	}
 	config, configured := r.settings.Models[session.Model]
-	if !configured || conversation.API != config.API {
+	if !configured {
+		return "", &protocol.KnownFailureError{Message: "The selected model route is no longer configured. Choose an available model to continue."}
+	}
+	if conversation.API != config.API {
 		return "", protocol.ErrPrecondition
 	}
 
@@ -221,7 +232,7 @@ func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *li
 	if conversation.API != config.API {
 		return "", protocol.ErrPrecondition
 	}
-	threshold := adapter.AutoCompactTokens(r.settings.AutoCompactTokens)
+	threshold := adapter.AutoCompactTokens(r.settings.AutoCompactTokens, conversation.Context())
 
 	if frontier == nil && threshold != nil && conversation.ContextTokens != nil && *conversation.ContextTokens >= *threshold && len(state.Cells) == 0 {
 		if err := r.compact(ctx, owner, session.Model); err != nil {
@@ -229,7 +240,7 @@ func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *li
 		}
 		return sessionstore.TurnCompact, nil
 	}
-	if frontier == nil || frontier.RetrySuppressed == sessionstore.ProviderRetrySuppressionHostLoss {
+	if frontier != nil && frontier.RetrySuppressed == sessionstore.ProviderRetrySuppressionHostLoss {
 		conversation, err = r.store.PrepareSamplingContext(ctx, owner, state)
 		if err != nil {
 			return "", &deferredProviderError{cause: err}
@@ -246,11 +257,12 @@ func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *li
 	}
 	preparation := adapter.Prepare(session, metadata)
 	request := sessionstore.ProviderRequestIntent(sessionstore.PendingIntentSampling, connection, config)
-	policy := runtimeProviderAttemptPolicy(r.settings)
+	policy := runtimeProviderAttemptPolicy(r.settings, r.settings.Models[session.Model], frontier)
 	var intentID string
 	var wire []byte
+	var snapshot *sessionstore.ProviderAttemptSnapshot
 	if frontier == nil {
-		intentID, wire, err = r.store.Begin(ctx, owner, request, preparation, &policy)
+		intentID, wire, snapshot, err = r.store.BeginPreparedSampling(ctx, owner, conversation, state, request, preparation, policy)
 	} else if frontier.RetrySuppressed == sessionstore.ProviderRetrySuppressionHostLoss {
 		intentID, wire, err = r.store.BeginSamplingAfterHostLoss(ctx, owner, session.ID, frontier.IntentID, request, preparation, policy)
 	} else {
@@ -263,25 +275,37 @@ func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *li
 	if err != nil {
 		return "", err
 	}
-	candidate := conversation.Transcript.Clone()
-	err = candidate.AppendRecords(response.Records)
-	if err == nil {
-		var pending []protocol.ToolInvocation
-		pending, err = candidate.PendingCalls()
+	validate := func(transcript protocol.Context) error {
+		pending, err := transcript.PendingCalls()
+		if err != nil {
+			return err
+		}
 		for _, call := range pending {
 			if !call.HasValidShape() || (call.IsConfiguredToolName(config.ExecEncoding) && !call.IsModelTool(config.ExecEncoding)) {
-				err = &protocol.KnownFailureError{Evidence: map[string]any{"reason": "invalid model tool encoding", "call": call}}
-				break
+				return &protocol.KnownFailureError{Evidence: map[string]any{"reason": "invalid model tool encoding", "call": call}}
 			}
 		}
+		return nil
 	}
-	if err != nil {
+	err = r.finishProvider(ctx, owner, intentID, func(writeCtx context.Context) error {
+		if snapshot != nil {
+			return r.store.FinishPreparedSampling(writeCtx, owner, intentID, snapshot, response.Audit, response.Records, response.ContextTokens, validate)
+		}
+		// Recovery replays the durable request and has no prepared snapshot.
+		candidate := conversation.Transcript.Clone()
+		if err := candidate.AppendRecords(response.Records); err != nil {
+			return &sessionstore.InvalidSamplingContinuationError{Cause: err}
+		}
+		if err := validate(candidate); err != nil {
+			return &sessionstore.InvalidSamplingContinuationError{Cause: err}
+		}
+		return r.store.Finish(writeCtx, owner, intentID, response.Audit, response.Records, response.ContextTokens)
+	})
+	if errors.As(err, new(*sessionstore.InvalidSamplingContinuationError)) {
 		failure := &protocol.KnownFailureError{Evidence: map[string]any{"reason": "invalid native conversation continuation", "response": response.Audit, "error": err.Error()}}
 		return "", r.providerFailure(ctx, owner, session, intentID, failure)
 	}
-	if err := r.finishProvider(ctx, owner, intentID, func(writeCtx context.Context) error {
-		return r.store.Finish(writeCtx, owner, intentID, response.Audit, response.Records, response.ContextTokens)
-	}); err != nil {
+	if err != nil {
 		return "", err
 	}
 	return sessionstore.TurnSample, nil

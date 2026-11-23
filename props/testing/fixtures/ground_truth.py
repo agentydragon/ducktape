@@ -19,11 +19,6 @@ def get_tp_occurrences_for_snapshot(snapshot_slug: str, session: Session) -> lis
     return [(row.tp_id, row.occurrence_id) for row in rows]
 
 
-# ---------------------------------------------------------------------------
-# ORM fixtures for real TP/FP occurrences from git fixtures
-# ---------------------------------------------------------------------------
-
-
 @pytest.fixture
 def example_subtract_orm(synced_test_session: Session) -> Example:
     """ORM Example for subtract.py file-set from git-synced fixture."""

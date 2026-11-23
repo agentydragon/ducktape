@@ -42,10 +42,6 @@ class Spend(BaseModel):
     disabled_reason: str | None = None
 
     @property
-    def has_usage_totals(self) -> bool:
-        return self.enabled is True and self.limit is not None and self.used is not None
-
-    @property
     def utilization_percent(self) -> float:
         if self.percent is not None:
             return self.percent

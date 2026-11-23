@@ -8,6 +8,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore/internal/contentdb"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/sampler/providers/chatcompletions"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 )
 
@@ -27,6 +28,8 @@ func newNativeContext(api protocol.APIStyle) (protocol.Context, error) {
 		return &responses.Context{}, nil
 	case protocol.APIStyleAnthropicMessages:
 		return &anthropic.Context{}, nil
+	case protocol.APIStyleChatCompletions:
+		return &chatcompletions.Context{}, nil
 	default:
 		return nil, protocol.ErrInvalid
 	}

@@ -16,7 +16,6 @@ import (
 
 	"google.golang.org/grpc"
 
-	apppb "github.com/agentydragon/ducktape/agentplane/app/appservicepb"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/server/testauth"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/sessionclient"
@@ -25,7 +24,6 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
-	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -36,8 +34,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
-
-func sessionTestStringPtr(value string) *string { return &value }
 
 func TestSessionRoutesRequireCallerAuthentication(t *testing.T) {
 	authentication, err := auth.New(auth.Config{})
@@ -117,7 +113,7 @@ func sessionTestGateway(t *testing.T, peer *sessionTestPeer) (http.Handler, *tes
 	config := settings.Config{
 		SandboxNamespace: "test-sandboxes",
 		SandboxPresets:   map[string]settings.SandboxPreset{"work": {ThreadPreset: "default"}},
-		ThreadPresets:    map[string]settings.ThreadPreset{"default": {Harness: "HARNESS_CODEX", Model: "preset-model", CWD: "/work/{session_id}", ReasoningEffort: sessionTestStringPtr("high"), Instructions: "preset", SetupScript: "setup"}},
+		ThreadPresets:    map[string]settings.ThreadPreset{"default": {Harness: "HARNESS_CODEX", Model: "preset-model", CWD: "/work/{session_id}", ReasoningEffort: new("high"), Instructions: "preset", SetupScript: "setup"}},
 	}
 	server := newHTTPServer(authentication)
 	handler := sessionhttp.NewHandler(sessionhttp.Dependencies{
@@ -188,8 +184,8 @@ func TestSessionGatewayPreservesPresetPresenceAndWireContract(t *testing.T) {
 		wantHarness                             sessionpb.Harness
 		wantModel, wantInstructions, wantEffort string
 	}{
-		{"omitted", `{}`, "", sessionTestStringPtr("setup"), sessionpb.Harness_HARNESS_CODEX, "preset-model", "preset", "high"},
-		{"empty", `{"model":"","instructions":"","reasoning_effort":""}`, `,"setup_script":""`, sessionTestStringPtr(""), sessionpb.Harness_HARNESS_CODEX, "", "", ""},
+		{"omitted", `{}`, "", new("setup"), sessionpb.Harness_HARNESS_CODEX, "preset-model", "preset", "high"},
+		{"empty", `{"model":"","instructions":"","reasoning_effort":""}`, `,"setup_script":""`, new(""), sessionpb.Harness_HARNESS_CODEX, "", "", ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			peer := &sessionTestPeer{sandbox: &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Namespace: "test-sandboxes", Name: "demo", Uid: "uid"}, Configuration: &environmentpb.EnvironmentConfiguration{Preset: proto.String("work")}}}
@@ -278,39 +274,6 @@ func TestSessionGatewayPreservesConflictAndUncertainOutcomes(t *testing.T) {
 		if response.Code != test.wantHTTP || codes.Code(body.Code) != test.wantCode || body.Detail == "" || !reflect.DeepEqual(peer.calls, test.wantCalls) {
 			t.Fatalf("status %d body %+v calls %v", response.Code, body, peer.calls)
 		}
-	}
-}
-
-// Frozen pre-facade Huma boundary: exercise the request emitted by the generated browser codec
-// against the parser still serving in old app replicas during a rolling deployment.
-func TestGeneratedSessionRequestAcceptedByLegacyHuma(t *testing.T) {
-	type legacyBody struct {
-		SessionID   uuid.UUID      `json:"session_id" format:"uuid"`
-		SandboxUID  string         `json:"sandbox_uid" minLength:"1"`
-		Spec        map[string]any `json:"spec"`
-		SetupScript *string        `json:"setup_script,omitempty"`
-	}
-	type legacyInput struct {
-		Name string `path:"name"`
-		Body legacyBody
-	}
-	server := newHTTPServer(nil)
-	var received *legacyInput
-	huma.Register[legacyInput, struct{}](server.API(), huma.Operation{OperationID: "legacyOpen", Method: http.MethodPost, Path: "/sandboxes/{name}/sessions", DefaultStatus: http.StatusCreated}, func(_ context.Context, input *legacyInput) (*struct{}, error) {
-		received = input
-		return &struct{}{}, nil
-	})
-	request := &apppb.CreateSessionRequest{}
-	if err := protojson.Unmarshal([]byte(`{"session_id":"b351b316-fdc4-4f50-a642-758992ae3323","sandbox_uid":"uid","spec":{"model":"test"},"setup_script":""}`), request); err != nil {
-		t.Fatal(err)
-	}
-	encoded, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	response := sessionTestRequest(nil, server.Handler(nil), http.MethodPost, "/sandboxes/demo/sessions", string(encoded))
-	if response.Code != http.StatusCreated || received == nil || received.Name != "demo" || received.Body.Spec["model"] != "test" || received.Body.SetupScript == nil || *received.Body.SetupScript != "" {
-		t.Fatalf("legacy status %d body %s received %+v", response.Code, response.Body.String(), received)
 	}
 }
 

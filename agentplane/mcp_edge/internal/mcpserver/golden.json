@@ -6692,7 +6692,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"actions\":[{\"group\":\"test-mcp\",\"name\":\"alpha\",\"available\":true},{\"group\":\"test-mcp\",\"name\":\"beta\",\"available\":true},{\"group\":\"test-sandbox\",\"name\":\"exec\",\"available\":true}]}"
+      "text": "{\"actions\":[{\"group\":\"test-mcp\",\"name\":\"alpha\",\"available\":true,\"input_schema_validation\":{\"status\":\"unknown\"}},{\"group\":\"test-mcp\",\"name\":\"beta\",\"available\":true,\"input_schema_validation\":{\"status\":\"unknown\"}},{\"group\":\"test-sandbox\",\"name\":\"exec\",\"available\":true,\"input_schema_validation\":{\"status\":\"unknown\"}}]}"
      }
     ],
     "structuredContent": {
@@ -6700,17 +6700,26 @@
       {
        "group": "test-mcp",
        "name": "alpha",
-       "available": true
+       "available": true,
+       "input_schema_validation": {
+        "status": "unknown"
+       }
       },
       {
        "group": "test-mcp",
        "name": "beta",
-       "available": true
+       "available": true,
+       "input_schema_validation": {
+        "status": "unknown"
+       }
       },
       {
        "group": "test-sandbox",
        "name": "exec",
-       "available": true
+       "available": true,
+       "input_schema_validation": {
+        "status": "unknown"
+       }
       }
      ]
     },
@@ -6730,7 +6739,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"actions\":[{\"group\":\"test-mcp\",\"name\":\"alpha\",\"available\":true}],\"next_after\":{\"group\":\"test-mcp\",\"name\":\"alpha\"}}"
+      "text": "{\"actions\":[{\"group\":\"test-mcp\",\"name\":\"alpha\",\"available\":true,\"input_schema_validation\":{\"status\":\"unknown\"}}],\"next_after\":{\"group\":\"test-mcp\",\"name\":\"alpha\"}}"
      }
     ],
     "structuredContent": {
@@ -6738,7 +6747,10 @@
       {
        "group": "test-mcp",
        "name": "alpha",
-       "available": true
+       "available": true,
+       "input_schema_validation": {
+        "status": "unknown"
+       }
       }
      ],
      "next_after": {
@@ -6766,7 +6778,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"actions\":[{\"group\":\"test-mcp\",\"name\":\"beta\",\"available\":true}],\"next_after\":{\"group\":\"test-mcp\",\"name\":\"beta\"}}"
+      "text": "{\"actions\":[{\"group\":\"test-mcp\",\"name\":\"beta\",\"available\":true,\"input_schema_validation\":{\"status\":\"unknown\"}}],\"next_after\":{\"group\":\"test-mcp\",\"name\":\"beta\"}}"
      }
     ],
     "structuredContent": {
@@ -6774,7 +6786,10 @@
       {
        "group": "test-mcp",
        "name": "beta",
-       "available": true
+       "available": true,
+       "input_schema_validation": {
+        "status": "unknown"
+       }
       }
      ],
      "next_after": {
@@ -6798,7 +6813,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"actions\":[{\"group\":\"test-sandbox\",\"name\":\"exec\",\"available\":true}]}"
+      "text": "{\"actions\":[{\"group\":\"test-sandbox\",\"name\":\"exec\",\"available\":true,\"input_schema_validation\":{\"status\":\"unknown\"}}]}"
      }
     ],
     "structuredContent": {
@@ -6806,7 +6821,10 @@
       {
        "group": "test-sandbox",
        "name": "exec",
-       "available": true
+       "available": true,
+       "input_schema_validation": {
+        "status": "unknown"
+       }
       }
      ]
     },
@@ -6851,7 +6869,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"actions\":[{\"group\":\"test-mcp\",\"name\":\"alpha\",\"available\":true,\"input_schema\":{\"type\":\"object\",\"properties\":{\"message\":{\"type\":\"string\",\"description\":\"test message\",\"default\":null},\"count\":{\"type\":\"number\",\"minimum\":0.5,\"maximum\":10}},\"required\":[\"message\"],\"additionalProperties\":false},\"description\":\"test-alpha-description é 🚀\"},{\"group\":\"test-mcp\",\"name\":\"beta\",\"available\":true,\"input_schema\":{},\"description\":\"test-beta-description\"},{\"group\":\"test-sandbox\",\"name\":\"exec\",\"available\":true,\"input_schema\":{\"type\":\"object\"},\"description\":\"test-exec\"}]}"
+      "text": "{\"actions\":[{\"group\":\"test-mcp\",\"name\":\"alpha\",\"available\":true,\"input_schema\":{\"type\":\"object\",\"properties\":{\"message\":{\"type\":\"string\",\"description\":\"test message\",\"default\":null},\"count\":{\"type\":\"number\",\"minimum\":0.5,\"maximum\":10}},\"required\":[\"message\"],\"additionalProperties\":false},\"description\":\"test-alpha-description é 🚀\",\"input_schema_validation\":{\"status\":\"unknown\"}},{\"group\":\"test-mcp\",\"name\":\"beta\",\"available\":true,\"input_schema\":{},\"description\":\"test-beta-description\",\"input_schema_validation\":{\"status\":\"unknown\"}},{\"group\":\"test-sandbox\",\"name\":\"exec\",\"available\":true,\"input_schema\":{\"type\":\"object\"},\"description\":\"test-exec\",\"input_schema_validation\":{\"status\":\"unknown\"}}]}"
      }
     ],
     "structuredContent": {
@@ -6879,14 +6897,20 @@
         ],
         "additionalProperties": false
        },
-       "description": "test-alpha-description é 🚀"
+       "description": "test-alpha-description é 🚀",
+       "input_schema_validation": {
+        "status": "unknown"
+       }
       },
       {
        "group": "test-mcp",
        "name": "beta",
        "available": true,
        "input_schema": {},
-       "description": "test-beta-description"
+       "description": "test-beta-description",
+       "input_schema_validation": {
+        "status": "unknown"
+       }
       },
       {
        "group": "test-sandbox",
@@ -6895,7 +6919,10 @@
        "input_schema": {
         "type": "object"
        },
-       "description": "test-exec"
+       "description": "test-exec",
+       "input_schema_validation": {
+        "status": "unknown"
+       }
       }
      ]
     },
@@ -6958,13 +6985,16 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"group\":\"test-mcp\",\"name\":\"alpha\",\"available\":true}"
+      "text": "{\"group\":\"test-mcp\",\"name\":\"alpha\",\"available\":true,\"input_schema_validation\":{\"status\":\"unknown\"}}"
      }
     ],
     "structuredContent": {
      "group": "test-mcp",
      "name": "alpha",
-     "available": true
+     "available": true,
+     "input_schema_validation": {
+      "status": "unknown"
+     }
     },
     "isError": false
    }
@@ -6987,7 +7017,7 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"group\":\"test-mcp\",\"name\":\"alpha\",\"available\":true,\"input_schema\":{\"type\":\"object\",\"properties\":{\"message\":{\"type\":\"string\",\"description\":\"test message\",\"default\":null},\"count\":{\"type\":\"number\",\"minimum\":0.5,\"maximum\":10}},\"required\":[\"message\"],\"additionalProperties\":false},\"description\":\"test-alpha-description é 🚀\"}"
+      "text": "{\"group\":\"test-mcp\",\"name\":\"alpha\",\"available\":true,\"input_schema\":{\"type\":\"object\",\"properties\":{\"message\":{\"type\":\"string\",\"description\":\"test message\",\"default\":null},\"count\":{\"type\":\"number\",\"minimum\":0.5,\"maximum\":10}},\"required\":[\"message\"],\"additionalProperties\":false},\"description\":\"test-alpha-description é 🚀\",\"input_schema_validation\":{\"status\":\"unknown\"}}"
      }
     ],
     "structuredContent": {
@@ -7013,7 +7043,10 @@
       ],
       "additionalProperties": false
      },
-     "description": "test-alpha-description é 🚀"
+     "description": "test-alpha-description é 🚀",
+     "input_schema_validation": {
+      "status": "unknown"
+     }
     },
     "isError": false
    }
@@ -7035,14 +7068,17 @@
     "content": [
      {
       "type": "text",
-      "text": "{\"group\":\"test-mcp\",\"name\":\"beta\",\"available\":true,\"input_schema\":{}}"
+      "text": "{\"group\":\"test-mcp\",\"name\":\"beta\",\"available\":true,\"input_schema\":{},\"input_schema_validation\":{\"status\":\"unknown\"}}"
      }
     ],
     "structuredContent": {
      "group": "test-mcp",
      "name": "beta",
      "available": true,
-     "input_schema": {}
+     "input_schema": {},
+     "input_schema_validation": {
+      "status": "unknown"
+     }
     },
     "isError": false
    }

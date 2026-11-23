@@ -134,27 +134,53 @@ subjects:
     kind: Group
     name: oidc-ksbx-groups:kubectl-sandbox-users
 ---
-apiVersion: kyverno.io/v2
-kind: CleanupPolicy
+apiVersion: policies.kyverno.io/v1
+kind: NamespacedDeletingPolicy
 metadata:
   name: sandbox-janitor
   namespace: claude-sandbox
 spec:
   conditions:
-    all:
-      - key: "{{ time_since('', '{{ target.metadata.creationTimestamp }}', '') }}"
-        operator: GreaterThan
-        value: 168h
-  match:
-    any:
-      - resources:
-          kinds:
-            - Pod
-            - Deployment
-            - StatefulSet
-            - Job
-            - CronJob
-            - Service
+    - expression: time.now() - timestamp(object.metadata.creationTimestamp) > duration('168h')
+      name: older-than-7-days
+  matchConstraints:
+    resourceRules:
+      - apiGroups:
+          - ""
+        apiVersions:
+          - v1
+        resources:
+          - pods
+      - apiGroups:
+          - apps
+        apiVersions:
+          - v1
+        resources:
+          - deployments
+      - apiGroups:
+          - apps
+        apiVersions:
+          - v1
+        resources:
+          - statefulsets
+      - apiGroups:
+          - batch
+        apiVersions:
+          - v1
+        resources:
+          - jobs
+      - apiGroups:
+          - batch
+        apiVersions:
+          - v1
+        resources:
+          - cronjobs
+      - apiGroups:
+          - ""
+        apiVersions:
+          - v1
+        resources:
+          - services
   schedule: 20 * * * *
 ---
 apiVersion: rbac.authorization.k8s.io/v1

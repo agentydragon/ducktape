@@ -16,6 +16,8 @@ py_library(
     imports = ["."],
     visibility = ["//inventree_utils:__pkg__"],
     deps = [
+        "//inventree_utils/beautifier:config",
+        "//inventree_utils/beautifier:inventree_util",
         "//inventree_utils/samplebooks_import:samplebooks_parts_data",
         "@pypi//inventree",
         "@pypi//pint",

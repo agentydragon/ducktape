@@ -29,9 +29,7 @@ The environments group reads the EnvironmentService discovery API. It adds no au
 no state. The 'agentplane actions guide' command prints Action workflow guides bundled in this
 image without a service call. Each live group reads its AGENTPLANE_*_URL; when a
 AGENTPLANE_*_CREDENTIAL is configured, the CLI sends it as bearer metadata. A group fails alone with
-exit 2 when its URL is missing; environments uses AGENTPLANE_ENVIRONMENTS_URL and its optional bearer
-when configured, with AGENTPLANE_SESSIONS_URL and its optional bearer as the compatibility fallback.
-An environments credential without its URL is a configuration error.
+exit 2 when its URL is missing.
 
 With --json stdout is the service's own JSON, unmodified: one value, or one per line for a list. Text
 is for reading, not parsing. stdout is the answer and stderr the diagnostics; after exit 1-5 or 15

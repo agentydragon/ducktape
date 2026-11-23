@@ -17,18 +17,6 @@ import (
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 )
 
-func getBinding(t *testing.T, c client.Client) *policyapi.PolicyBinding {
-	t.Helper()
-	var binding policyapi.PolicyBinding
-	if err := c.Get(context.Background(), sandboxKey, &binding); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		t.Fatal(err)
-	}
-	return &binding
-}
-
 const testIdentityUID = "00000000-0000-4000-8000-00000000000a"
 
 func testIdentity(name string, uid types.UID) *policyapi.Identity {
@@ -74,7 +62,7 @@ func assertNoAccountOrBinding(t *testing.T, c client.Client) {
 	if len(accounts.Items) != 0 {
 		t.Errorf("ServiceAccounts = %v, want none", accounts.Items)
 	}
-	if binding := getBinding(t, c); binding != nil {
+	if binding := getOrNil[policyapi.PolicyBinding](t, c, sandboxKey); binding != nil {
 		t.Errorf("PolicyBinding = %+v, want none", binding.Spec)
 	}
 }

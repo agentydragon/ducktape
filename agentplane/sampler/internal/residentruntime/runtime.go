@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/executor"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/residentruntime/session"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
@@ -13,6 +14,7 @@ import (
 )
 
 type Runtime struct {
+	turnWakeups     *wakeups.Hub
 	store           *sessionstore.Store
 	settings        samplersettings.Settings
 	claimLease      func(context.Context, string, time.Duration) (sessionstore.Owner, error)

@@ -8,9 +8,16 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
     name = "server",
     srcs = ["server.py"],
     deps = [
+        ":settings",
         "//mcp_infra:static_bearer",
         "@pypi//fastmcp_slim",
         "@pypi//mcp",
@@ -34,6 +41,7 @@ py_library(
     srcs = ["export_frontend_schema.py"],
     deps = [
         ":server",
+        ":settings",
         "@pypi//fastmcp_slim",
     ],
 )
@@ -73,6 +81,7 @@ py_library(
     srcs = ["export_exec_payload_fixture.py"],
     deps = [
         ":server",
+        ":settings",
         "@pypi//fastmcp_slim",
     ],
 )
@@ -105,6 +114,7 @@ py_test(
     srcs = ["test_server.py"],
     deps = [
         ":server",
+        ":settings",
         "//:conftest",
         "@pypi//fastmcp_slim",
         "@pypi//httpx",

@@ -52,10 +52,7 @@ def test_parse_invalid_raises(raw: str) -> None:
         (BazelLabel(repo="", package=Path("foo/bar"), name="baz.py"), Path("foo/bar/baz.py")),
         (BazelLabel(repo="", package=Path("foo/bar"), name="sub/qux.go"), Path("foo/bar/sub/qux.go")),
         (BazelLabel(repo="", package=Path(), name="root.txt"), Path("root.txt")),
-        (
-            BazelLabel(repo="", package=Path("cluster/scripts"), name="get-passwords"),
-            Path("cluster/scripts/get-passwords"),
-        ),
+        (BazelLabel(repo="", package=Path("foo/bar"), name="tool"), Path("foo/bar/tool")),
         # external → None
         (BazelLabel(repo="repo", package=Path("foo"), name="bar.py"), None),
     ],
@@ -91,25 +88,13 @@ def test_query_parses_labels(tmp_path: Path) -> None:
         result = workspace.query("//...")
     (cmd,), kwargs = mock_run.call_args
     assert cmd[:3] == ["bazelisk", "query", "--output=label"]
-    assert cmd[3] == "//..."  # short queries passed inline, not via --query_file
-    assert kwargs == {"capture_output": True, "text": True, "cwd": tmp_path, "check": False, "timeout": None}
+    assert cmd[3] == "//..."
+    assert kwargs == {"capture_output": True, "text": True, "cwd": tmp_path, "check": False}
     assert result == [
         BazelLabel(repo="", package=Path("foo"), name="bar.py"),
         BazelLabel(repo="ext", package=Path("pkg"), name="target"),
     ]
     assert not any(isinstance(label, str) for label in result)
-
-
-def test_query_persist_dir(tmp_path: Path) -> None:
-    persist_dir = tmp_path / "persist"
-    persist_dir.mkdir()
-    completed = CompletedProcess(args=[], returncode=0, stdout="//foo:bar\n", stderr="")
-    workspace = BazelWorkspace(root=tmp_path, backend=BazelBackend.LOCAL)
-    with patch("devinfra.bazel.workspace.subprocess.run", return_value=completed):
-        workspace.query("//...", persist_dir=persist_dir)
-    assert (persist_dir / "query").read_text() == "//..."
-    assert (persist_dir / "stdout").read_text() == "//foo:bar\n"
-    assert (persist_dir / "exit_code").read_text() == "0"
 
 
 def test_query_filters_bbr_log_lines(tmp_path: Path) -> None:

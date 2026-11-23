@@ -17,5 +17,5 @@ var schema = migrate.Schema{
 	LockID: 0x5452_414A,
 }
 
-// Up applies the app schema before this process starts serving requests or running workers.
+// Up applies the app schema before this process starts serving requests.
 func Up(ctx context.Context, db *sql.DB) error { return schema.Up(ctx, db) }

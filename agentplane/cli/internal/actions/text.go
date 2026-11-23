@@ -31,6 +31,19 @@ func actionEnumText(value string, prefix string) string {
 
 func groupLine(group *action_servicepb.ActionGroup) (string, error) {
 	status := strconv.Itoa(len(group.GetActions())) + " actions"
+	warnings := 0
+	for _, action := range group.GetActions() {
+		if action.GetInputSchemaValidation().GetStatus() == action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED {
+			warnings++
+		}
+	}
+	if warnings > 0 {
+		word := "warning"
+		if warnings != 1 {
+			word += "s"
+		}
+		status += fmt.Sprintf(" (%d schema %s)", warnings, word)
+	}
 	if !group.GetAvailable() {
 		status += " (unavailable)"
 	}
@@ -39,7 +52,11 @@ func groupLine(group *action_servicepb.ActionGroup) (string, error) {
 }
 
 func actionLine(action *action_servicepb.Action) (string, error) {
-	return invocation.Fields(action.GetGroup()+"/"+action.GetName(), invocation.FirstLine(action.GetDescription())), nil
+	line := invocation.Fields(action.GetGroup()+"/"+action.GetName(), invocation.FirstLine(action.GetDescription()))
+	if action.GetInputSchemaValidation().GetStatus() == action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED {
+		line += "  [input schema not enforced]"
+	}
+	return line, nil
 }
 
 func actionDetail(action *action_servicepb.Action) (string, error) {
@@ -47,7 +64,12 @@ func actionDetail(action *action_servicepb.Action) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s/%s\n%s\ninput schema:\n%s", action.GetGroup(), action.GetName(), action.GetDescription(), formatted), nil
+	validation := action.GetInputSchemaValidation()
+	status := actionEnumText(validation.GetStatus().String(), "INPUT_SCHEMA_VALIDATION_STATUS_")
+	if validation.GetDetail() != "" {
+		status += ": " + validation.GetDetail()
+	}
+	return fmt.Sprintf("%s/%s\n%s\ninput schema validation: %s\ninput schema:\n%s", action.GetGroup(), action.GetName(), action.GetDescription(), status, formatted), nil
 }
 
 func policyText(policy *action_servicepb.CallerActionPolicy) (string, error) {

@@ -26,7 +26,6 @@ import (
 
 type interruptTargetKey struct{}
 
-// Run read-only reconciliation off the stdout reader, which must deliver its RPC replies.
 func (s *Session) startHarness(ctx context.Context) (resultErr error) {
 	s.mu.Lock()
 	s.processState = sessionpb.ProcessState_PROCESS_STATE_STARTING
@@ -65,10 +64,7 @@ func (s *Session) startProcess(ctx context.Context, adapter harness.ProcessAdapt
 	if err := s.recoverAdapter(ctx, adapter); err != nil {
 		return err
 	}
-	command, err := adapter.Command()
-	if err != nil {
-		return err
-	}
+	command := adapter.Command()
 	harnessEnv, err := adapter.Environment()
 	if err != nil {
 		return err
@@ -182,7 +178,7 @@ func (s *Session) appServerAttachment() *codexappserver.Attachment {
 				})
 			},
 			Stderr: func(ctx context.Context, text string) error {
-				return s.Emit(ctx, observation(&eventpb.HarnessStderr{Text: text}), nil)
+				return s.Emit(ctx, harness.Observation(&eventpb.HarnessStderr{Text: text}), nil)
 			},
 			End: s.harnessEnded,
 		}
@@ -210,7 +206,7 @@ func (s *Session) prepare(ctx context.Context, adapter harness.Adapter, pid int)
 	s.mu.Unlock()
 	s.recordMu.Unlock()
 	// The native handshake succeeded; persist its observation even if preparation was canceled.
-	if err := s.Emit(s.deps.ctx, observation(&eventpb.HarnessStarted{Resumed: resuming, Pid: int32(pid)}), nil); err != nil {
+	if err := s.Emit(s.deps.ctx, harness.Observation(&eventpb.HarnessStarted{Resumed: resuming, Pid: int32(pid)}), nil); err != nil {
 		return err
 	}
 	if !resuming {
@@ -225,7 +221,7 @@ func (s *Session) prepare(ctx context.Context, adapter harness.Adapter, pid int)
 		if err != nil {
 			return err
 		}
-		if err := s.Emit(s.deps.ctx, observation(report), nil); err != nil {
+		if err := s.Emit(s.deps.ctx, harness.Observation(report), nil); err != nil {
 			return err
 		}
 	}
@@ -384,7 +380,7 @@ func (s *Session) SendNative(ctx context.Context, frame json.RawMessage) error {
 }
 
 func (s *Session) sendNative(ctx, journalCtx context.Context, frame json.RawMessage) error {
-	if err := s.Emit(journalCtx, observation(&eventpb.Native{Direction: eventpb.Direction_DIRECTION_TO_HARNESS, Line: string(frame)}), nil); err != nil {
+	if err := s.Emit(journalCtx, harness.Observation(&eventpb.Native{Direction: eventpb.Direction_DIRECTION_TO_HARNESS, Line: string(frame)}), nil); err != nil {
 		return err
 	}
 	if err := s.journal.CommitBatch(journalCtx); err != nil {
@@ -428,7 +424,7 @@ func (s *Session) receive(ctx context.Context, line []byte, adapter harness.Adap
 	if err := s.checkpointNativeResponse(ctx, line); err != nil {
 		return err
 	}
-	entry, err := s.recordEvent(ctx, observation(&eventpb.Native{Direction: eventpb.Direction_DIRECTION_FROM_HARNESS, Line: string(line)}), nil, nil)
+	entry, err := s.recordEvent(ctx, harness.Observation(&eventpb.Native{Direction: eventpb.Direction_DIRECTION_FROM_HARNESS, Line: string(line)}), nil, nil)
 	if err != nil {
 		return err
 	}
@@ -466,7 +462,7 @@ func (s *Session) harnessEnded(ctx context.Context, code int) error {
 			return err
 		}
 	}
-	if err := s.Emit(ctx, observation(&eventpb.HarnessExited{ExitCode: int32(code), StoppedByRunner: stoppedByRuntime}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.HarnessExited{ExitCode: int32(code), StoppedByRunner: stoppedByRuntime}), nil); err != nil {
 		return err
 	}
 	s.wake()

@@ -40,10 +40,6 @@ def test_quick_reference_rendered(argv: list[str]) -> None:
     for example in ["ws new -t codex exp --ttl 3d", "ws extend exp 24h", "ws rm exp / ws rm --all"]:
         assert example in normalized, f"{example}\n----\n{output}"
 
-
-def test_quick_reference_alignment_survives() -> None:
-    # The two columns stay apart — proves the fenced block rendered verbatim
-    # rather than re-flowed into prose.
-    output = CliRunner().invoke(app, ["--help"]).output
+    # The two columns stay apart when the fenced block renders verbatim.
     line = next(ln for ln in output.splitlines() if "ws templates" in ln)
     assert "ws templates                   LLM lanes" in line

@@ -5,13 +5,25 @@
 `feature.node.kubernetes.io/system-os_release.ID=nixos` label. A separate Alloy DaemonSet receives Talos host logs over loopback TCP; it
 keeps the former `vector-talos-logs` resource identities for an in-place rollout.
 Central Alloy handles Kubernetes events and OTLP; the syslog release handles the
-home switch and gateway. See the [Talos receiver investigation](../../../debug/alloy_talos_receiver.md)
-for protocol checks, rollout verification and rollback.
+home switch and gateway.
 
 The Promtail releases and temporary collector-label gates have been retired.
 New nodes need no collector opt-in. Offline nodes start Alloy when they return;
 their logs can only be recovered while the source files/journal still retain them.
 The first read can replay retained pod files; journal reads are bounded by `max_age`.
+
+## Talos host logs
+
+[`talos.alloy`](../talos.alloy) uses `otelcol.receiver.tcplog` (needs `--stability.level=experimental`):
+Talos sends newline-delimited JSON, not syslog, and `loki.source.syslog` closes idle connections after 120 s
+(`0` selects that default instead of disabling it; Alloy 1.21.1 and 1.22.0), while Talos 1.12.3 and 1.14.0
+notice a closed connection only after a failed write, so the next event is lost. Each raw line reaches Loki as
+`{job="talos-node", node}` at receipt time; no JSON field becomes a label, so filter with `| json`, and Talos's
+own time stays in `talos-time`. The maximum line size is the `tcplog` default of 1 MiB. Delivery is best
+effort: a TCP write is not an acknowledgement, so a receiver restart can drop in-flight events, and the Loki
+writer's queue is in memory (indefinite retries, including HTTP 429; no WAL or volume). Keep `IMAGE` in
+`talos_logs.py` and the `alloy_config` pin in `devinfra/bazel/oci.MODULE.bazel` on one digest so
+`test_talos_logs` exercises the deployed image.
 
 ## State and verification
 
@@ -21,12 +33,15 @@ positions/cursors and the metrics remote-write WAL. Keep component names
 `prometheus.remote_write.mimir` stable so restarts reuse that state. Retirement
 does not delete host files, including old Promtail checkpoints.
 
-After a rollout, check one Ready `alloy-node` per online node and one Ready
-`alloy-journal` per online NixOS node. Query recent Loki logs by `node_name` for pod
-stdout/stderr and by `job="systemd-journal", node` for journals. Verify static-pod
-logs too. Check fresh kubelet/cAdvisor samples in Mimir, remote-write failures and
-queue lag, collector memory, and etcd disk latency. Repeat delivery checks after a
-collector restart or an offline node's return. Readiness alone does not prove delivery.
+After a rollout, check one Ready `alloy-node` per online node, one Ready
+`alloy-journal` per online NixOS node and one Ready `vector-talos-logs` per online
+Talos node (no parse/send failures in its log). Query recent Loki logs by `node_name`
+for pod stdout/stderr, by `job="systemd-journal", node` for journals and by
+`job="talos-node", node` for Talos, where `| json` shows the service fields. Verify
+static-pod logs too. Check fresh kubelet/cAdvisor samples in Mimir, remote-write
+failures and queue lag, collector memory, and etcd disk latency. Repeat delivery
+checks after a collector restart, an offline node's return or, for Talos, a quiet
+interval. Readiness alone does not prove delivery.
 
 Keep the collectors' page-cache memory headroom: the
 [etcd I/O incident](../../../docs/lessons_learned/2026_06_19_etcd_hdd_io_contention.md)

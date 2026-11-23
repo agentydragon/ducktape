@@ -32,7 +32,6 @@ from agentplane.sampler.settings import (
     Settings,
 )
 from agentplane.sampler.testing import (
-    METADATA,
     SamplerTestClient,
     create_request,
     follow_turn,
@@ -43,7 +42,7 @@ from agentplane.sampler.testing import (
 )
 from agentplane.sampler.testing_store import IntentSnapshot, Store
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.sqlalchemy_engines import postgres_async_engine
+from testing.sqlalchemy_engines import postgres_async_engine
 
 TURN_TIMEOUT_SECONDS = 150
 # Bound the live test's wait independently of the sampler's provider phase budgets.
@@ -63,9 +62,7 @@ async def wait_applied(stub: SamplerTestClient, session_id: str, command_id: str
     async with asyncio.timeout(TURN_TIMEOUT_SECONDS):
         while True:
             result = await stub.admin.GetCommand(
-                sampler_admin_pb2.GetCommandRequest(session_id=session_id, command_id=command_id),
-                metadata=METADATA,
-                timeout=10,
+                sampler_admin_pb2.GetCommandRequest(session_id=session_id, command_id=command_id), timeout=10
             )
             if result.outcome == sampler_pb2.COMMAND_OUTCOME_APPLIED:
                 return
@@ -216,7 +213,7 @@ async def test_live_anthropic_exec_compaction_restart_and_signed_thinking_replay
     resumed_marker = f"ANTHROPIC_RESUMED_{uuid4().hex}"
 
     async with service(config) as stub:
-        await stub.CreateSession(request, metadata=METADATA, timeout=10)
+        await stub.CreateSession(request, timeout=10)
         first = await submit(
             stub,
             request.session_id,
@@ -231,7 +228,6 @@ async def test_live_anthropic_exec_compaction_restart_and_signed_thinking_replay
             harness_host_pb2.ChangeReasoningEffortRequest(
                 session_id=request.session_id, command_id="anthropic-effort-change", effort="high"
             ),
-            metadata=METADATA,
             timeout=10,
         )
         await wait_applied(stub, request.session_id, "anthropic-effort-change")
@@ -332,9 +328,7 @@ async def test_live_anthropic_exec_compaction_restart_and_signed_thinking_replay
         retained_thinking = thinking_blocks[-1]
 
         await stub.admin.Compact(
-            sampler_admin_pb2.CompactRequest(session_id=request.session_id, command_id="anthropic-compact"),
-            metadata=METADATA,
-            timeout=10,
+            sampler_admin_pb2.CompactRequest(session_id=request.session_id, command_id="anthropic-compact"), timeout=10
         )
         await wait_applied(stub, request.session_id, "anthropic-compact")
         compacted = await sampler_session(request.session_id, database_url)
@@ -443,7 +437,7 @@ async def test_live_anthropic_prompt_cache_survives_effort_change(
     markers = [f"ANTHROPIC_CACHE_TURN_{index}_{uuid4().hex}" for index in range(1, 4)]
 
     async with service(config) as stub:
-        await stub.CreateSession(request, metadata=METADATA, timeout=10)
+        await stub.CreateSession(request, timeout=10)
         first = await submit(
             stub, request.session_id, "cache-first", f"{markers[0]}: reply READY.", timeout_s=FOLLOW_SECONDS
         )
@@ -457,7 +451,6 @@ async def test_live_anthropic_prompt_cache_survives_effort_change(
             harness_host_pb2.ChangeReasoningEffortRequest(
                 session_id=request.session_id, command_id="cache-effort-change", effort="high"
             ),
-            metadata=METADATA,
             timeout=10,
         )
         await wait_applied(stub, request.session_id, "cache-effort-change")
@@ -528,7 +521,7 @@ async def test_live_anthropic_automatic_compaction_resumes_sampling(
     stable_filler = "stable maple reference " * 2048
 
     async with service(config) as stub:
-        await stub.CreateSession(request, metadata=METADATA, timeout=10)
+        await stub.CreateSession(request, timeout=10)
         first = await submit(
             stub,
             request.session_id,

@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@mantine/core";
 
@@ -13,6 +13,7 @@ import type {
 } from "../lib/schema";
 import IssueComment from "./IssueComment";
 import { CheckCircle, ChevronDown, ChevronRight, MessageSquare, XCircle } from "../lib/icons";
+import { issueColors } from "../lib/colors";
 import { detectLanguage } from "../lib/fileTypes";
 import { highlightLines } from "../lib/highlighting";
 import type { IssueMarker } from "../lib/types";
@@ -24,7 +25,7 @@ interface Props {
   critiqueIssues?: ReportedIssueInfo[];
   gradingEdges?: GradingEdgeInfo[];
   snapshotSlug?: string;
-  targetOccurrenceId?: string | null;
+  targetOccurrence?: { issueId: string; occurrenceId: string };
   defaultCollapsed?: boolean;
 }
 
@@ -62,11 +63,19 @@ export default function FileViewer({
   critiqueIssues = [],
   gradingEdges = [],
   snapshotSlug,
-  targetOccurrenceId = null,
+  targetOccurrence,
   defaultCollapsed = false,
 }: Props) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const [expandedIssues, setExpandedIssues] = useState<Set<string>>(() => new Set());
+
+  const table = useRef<HTMLTableElement>(null);
+  const targetIssueId = targetOccurrence?.issueId;
+  const targetOccurrenceId = targetOccurrence?.occurrenceId;
+  useEffect(() => {
+    if (targetOccurrenceId)
+      table.current?.querySelector("[data-target-occurrence]")?.scrollIntoView({ block: "center" });
+  }, [targetIssueId, targetOccurrenceId, file.path, collapsed]);
 
   const lines = useMemo(() => {
     const raw = file.content.split("\n");
@@ -186,12 +195,6 @@ export default function FileViewer({
     });
   }
 
-  function getOccurrenceUrl(issueId: string, occurrenceId: string): string | undefined {
-    if (!snapshotSlug) return undefined;
-    const routePath = `/snapshots/${snapshotSlug}/${issueId}/${occurrenceId}?file=${encodeURIComponent(file.path)}`;
-    return new URL(`#${routePath}`, window.location.href).href;
-  }
-
   const tpCount = allIssues.filter((issue) => issue.kind === "tp").length;
   const fpCount = allIssues.filter((issue) => issue.kind === "fp").length;
   const critiqueCount = allIssues.filter((issue) => issue.kind === "critique").length;
@@ -223,27 +226,16 @@ export default function FileViewer({
 
       {!collapsed && (
         <div className="overflow-auto max-h-[70vh]">
-          <table className="w-full">
+          <table ref={table} className="w-full">
             <tbody>
               {lines.map((line, index) => {
                 const lineIssues = lineToIssues.get(index) ?? [];
-                const hasTP = lineIssues.some((issue) => issue.kind === "tp");
-                const hasFP = lineIssues.some((issue) => issue.kind === "fp");
-                const hasCritique = lineIssues.some((issue) => issue.kind === "critique");
-                const bgClass = hasTP
-                  ? "bg-green-50 dark:bg-green-950"
-                  : hasFP
-                    ? "bg-red-50 dark:bg-red-950"
-                    : hasCritique
-                      ? "bg-blue-50 dark:bg-blue-950"
-                      : "";
-                const borderClass = hasTP
-                  ? "border-l-4 border-green-500"
-                  : hasFP
-                    ? "border-l-4 border-red-500"
-                    : hasCritique
-                      ? "border-l-4 border-blue-500"
-                      : "";
+                // When issues overlap on a line, TP wins over FP and FP over critique.
+                const lineKind = (["tp", "fp", "critique"] as const).find((kind) =>
+                  lineIssues.some((issue) => issue.kind === kind)
+                );
+                const bgClass = lineKind ? issueColors[lineKind].bg : "";
+                const borderClass = lineKind ? issueColors[lineKind].borderLeft : "";
 
                 return (
                   <Fragment key={index}>
@@ -255,11 +247,11 @@ export default function FileViewer({
                               {lineIssues.map((issue, issueIndex) => (
                                 <Fragment key={`${getIssueKey(issue)}-${issueIndex}`}>
                                   {issue.kind === "tp" ? (
-                                    <CheckCircle size={12} className="text-green-600 dark:text-green-400" />
+                                    <CheckCircle size={12} className={issueColors.tp.text} />
                                   ) : issue.kind === "fp" ? (
-                                    <XCircle size={12} className="text-red-600 dark:text-red-400" />
+                                    <XCircle size={12} className={issueColors.fp.text} />
                                   ) : (
-                                    <MessageSquare size={12} className="text-blue-600 dark:text-blue-400" />
+                                    <MessageSquare size={12} className={issueColors.critique.text} />
                                   )}
                                 </Fragment>
                               ))}
@@ -282,29 +274,26 @@ export default function FileViewer({
                           : fileLocations.some((location) => location.start_line === index + 1);
                       if (!isFirstLine) return null;
 
+                      const isTarget = targetIssueId === issue.issueId && targetOccurrenceId === issue.occurrenceId;
                       const issueKey = getIssueKey(issue);
-                      const copyUrl = issue.occurrenceId
-                        ? getOccurrenceUrl(issue.issueId, issue.occurrenceId)
-                        : undefined;
                       return (
                         <tr key={`${issueKey}-${issueIndex}`}>
                           <td colSpan={2} className="px-4 py-1">
                             <div
-                              id={issue.occurrenceId ? `${issue.issueId}-${issue.occurrenceId}` : undefined}
-                              className={
-                                targetOccurrenceId === issue.occurrenceId ? "ring-2 ring-blue-500 rounded" : ""
-                              }
+                              data-target-occurrence={isTarget || undefined}
+                              className={isTarget ? "ring-2 ring-blue-500 rounded" : ""}
                             >
                               <IssueComment
                                 kind={issue.kind}
-                                issueId={issue.occurrenceId ? `${issue.issueId}/${issue.occurrenceId}` : issue.issueId}
+                                issueId={issue.issueId}
+                                occurrenceId={issue.occurrenceId}
                                 rationale={issue.rationale}
                                 note={issue.note}
                                 allLocations={issue.allLocations}
                                 expanded={expandedIssues.has(issueKey)}
                                 onToggle={() => toggleIssue(issueKey)}
                                 gradingEdges={issue.gradingEdges}
-                                copyUrl={copyUrl}
+                                filePath={file.path}
                                 snapshotSlug={snapshotSlug}
                               />
                             </div>

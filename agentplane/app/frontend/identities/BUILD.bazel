@@ -149,16 +149,14 @@ agentplane_vitest_test(
     deps = [
         ":list",
         "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
-        "//:node_modules/react-dom",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/egress:credential_watch",
         "//agentplane/app/frontend/policy:watch",
         "//agentplane/policy/v1:policy_service_pb",
+        "//util/frontend:react_test_utils",
     ],
 )
 
@@ -192,16 +190,14 @@ agentplane_vitest_test(
         ":client",
         ":identity_page",
         "//:node_modules/@bufbuild/protobuf",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
-        "//:node_modules/react-dom",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/egress:credential_watch",
         "//agentplane/app/frontend/policy:watch",
         "//agentplane/policy/v1:policy_service_pb",
+        "//util/frontend:react_test_utils",
     ],
 )
 

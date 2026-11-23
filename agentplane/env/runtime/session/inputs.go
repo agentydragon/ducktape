@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	lifecycle "github.com/agentydragon/ducktape/agentplane/env/runtime/internal/lifecycle"
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/internal/retained"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/typed"
@@ -23,7 +22,6 @@ func (m *Manager) publishSessionState(s *Session, demand bool) error {
 	var input ReconcileSnapshot
 	s.mu.Lock()
 	input.Harness = s.record.GetPlacement().GetHarness()
-	input.SetupRequested = retained.HasSetupScript(s.record)
 	input.Setup, input.Pending, input.ProcessID = s.setup, len(s.pending), s.processID
 	input.ProcessRunning = s.process != nil && s.process.Running()
 	input.InspectionRunning = s.inspection != nil

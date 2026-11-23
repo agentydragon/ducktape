@@ -1,7 +1,7 @@
 # Python financial execution
 
 Augur has one canonical Python financial world, implemented in
-<../world.py>. The common action session and the configured application runner
+<../world.py>. The common action session and a tracked household on `World.step()`
 share that world; they retain their explicit policy and timing differences.
 There is no native extension, backend selector, or alternate financial evaluator.
 
@@ -13,9 +13,9 @@ There is no native extension, backend selector, or alternate financial evaluator
   income recording, lot basis, trade/payment settlement, and due claims.
 - <../tax_year.py> holds each taxpayer's annual facts; <../tax_authority.py> closes
   the year under the supplied rules (<../tax.py>), records liabilities, and resets
-  annual state to its carryover. Existing supported tax scope is unchanged.
-- <../held_bonds.py>, <../property.py>, and <../private_equity.py> preserve the
-  existing contract cashflows and lifecycle mechanics.
+  annual state to its carryover.
+- <../held_bonds.py>, <../property.py>, and <../private_equity.py> own contract
+  cashflows and lifecycle mechanics.
 - <../tlh.py> owns private TLH cohorts and basis; <../mortgage.py> owns servicing
   state. Outstanding mortgage principal has one authority: the ledger.
 - <../capture.py>, <../books.py>, <../results.py>, and <../events.py> project
@@ -46,5 +46,4 @@ experiment callers use the same Python world.
 
 Use <../session.py> for ordinary batch actions, a tracked `EconomicAgent` on
 `World.step()` for a household that decides each month.
-See <execution_boundary.md>, <money_representation.md>, and
-<../../product/docs/metrics.md>.
+See <money_representation.md> and <../../product/docs/metrics.md>.

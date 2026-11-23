@@ -59,6 +59,13 @@ func printProtoJSON(msg proto.Message) error {
 	return err
 }
 
+func shortSHA(sha string) string {
+	if len(sha) > 8 {
+		return sha[:8]
+	}
+	return sha
+}
+
 func fmtDurationUsec(us int64) string {
 	d := time.Duration(us) * time.Microsecond
 	switch {

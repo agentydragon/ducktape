@@ -7,6 +7,7 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	"github.com/agentydragon/ducktape/agentplane/sandboxes/runtimeconfig"
+	"github.com/agentydragon/ducktape/agentplane/testing/configtest"
 )
 
 const validSettingsYAML = `
@@ -54,17 +55,21 @@ policy_service_tls:
   key_file: /run/agentplane/app/tls.key
   client_uri: spiffe://agentplane/app
 history_service_target: history:9090
+history_service_token_file: /run/history/token
 notifications_url: http://notifications:9090
-listen_address: 0.0.0.0:8080
+notifications_token_file: /run/notifications/token
+runner_gateway_token_file: /run/runner/token
+egress_admin_token_file: /run/egress/token
+` + dispatcherTokenSetting + `listen_address: 0.0.0.0:8080
 log_levels: {}
 `
 
+// dispatcherTokenSetting is the explicit bearer setting that SVID tests remove.
+const dispatcherTokenSetting = "session_dispatcher_token_file: /run/dispatcher/token\n"
+
 func writeConfig(t *testing.T, contents string) string {
 	t.Helper()
-	path := t.TempDir() + "/app.yaml"
-	if err := os.WriteFile(path, []byte(contents), 0600); err != nil {
-		t.Fatal(err)
-	}
+	path := configtest.WriteSettings(t, contents)
 	t.Setenv("AGENTPLANE_CONFIG_FILE", path)
 	t.Setenv("AGENTPLANE_DATABASE_URL", "postgresql://app@postgres/agentplane")
 	return path
@@ -77,7 +82,7 @@ func validTestConfig() Config {
 			Harnesses: map[string][]string{"HARNESS_CLAUDE": {"model-a"}, "HARNESS_CODEX": {"model-a"}},
 		},
 		ThreadPresets: map[string]ThreadPreset{
-			"default": {Title: "Default", Harness: "HARNESS_CODEX", Model: "model-a", ReasoningEffort: stringPtr("low")},
+			"default": {Title: "Default", Harness: "HARNESS_CODEX", Model: "model-a", ReasoningEffort: new("low")},
 		},
 		SandboxPresets: map[string]SandboxPreset{
 			"work": {Title: "Work", Template: "linux", ThreadPreset: "default", InboxTags: []string{"team"}},
@@ -97,8 +102,6 @@ func validTestConfig() Config {
 		SessionDispatcherRequestTimeoutSecs: 20,
 		HistoryServiceTokenFile:             "/var/run/history/token",
 		HistoryServiceRequestTimeoutSeconds: 20,
-		RunnerGatewayRequestTimeoutSeconds:  20,
-		RunnerGatewayLifecycleTimeoutSecs:   310,
 		DatabaseURL:                         "postgresql://app@postgres/agentplane",
 		EgressAdminURL:                      "http://egress:8080",
 		ConnectionServiceURL:                "http://connection:8080",
@@ -111,8 +114,6 @@ func validTestConfig() Config {
 		ListenAddress: "127.0.0.1:8080", EgressAdminTokenFile: "/var/run/egress/token", EgressAdminTimeoutSeconds: 5,
 	}
 }
-
-func stringPtr(value string) *string { return &value }
 
 func TestConfigValidateAcceptsExistingSettingsContract(t *testing.T) {
 	if err := validTestConfig().validate(); err != nil {
@@ -310,7 +311,23 @@ func TestOperatorFacadesKeepOperatorBearerWhenAppSVIDIsConfigured(t *testing.T) 
 	}
 }
 
-func TestLoadConfigDoesNotRestoreAnImplicitTokenInSVIDMode(t *testing.T) {
+func TestLoadConfigUsesOnlyStatedCallerTokens(t *testing.T) {
+	writeConfig(t, validSettingsYAML)
+	config, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.SessionDispatcherTokenFile != "/run/dispatcher/token" ||
+		config.HistoryServiceTokenFile != "/run/history/token" ||
+		config.NotificationsTokenFile != "/run/notifications/token" ||
+		config.RunnerGatewayTokenFile != "/run/runner/token" ||
+		config.EgressAdminTokenFile != "/run/egress/token" {
+		t.Fatalf("stated caller token files changed: %+v", config)
+	}
+	if config.PolicyServiceTokenFile != "" {
+		t.Fatalf("SVID caller gained a bearer token: %q", config.PolicyServiceTokenFile)
+	}
+
 	tlsSettings := `session_dispatcher_tls:
   ca_file: /run/agentplane/workload-trust/ca.pem
   server_uri: spiffe://agentplane/session-dispatcher
@@ -318,18 +335,24 @@ func TestLoadConfigDoesNotRestoreAnImplicitTokenInSVIDMode(t *testing.T) {
   key_file: /run/agentplane/app/tls.key
   client_uri: spiffe://agentplane/app
 `
-	writeConfig(t, validSettingsYAML+tlsSettings)
-	config, err := Load()
+	svidSettings := strings.Replace(validSettingsYAML, dispatcherTokenSetting, "", 1) + tlsSettings
+	writeConfig(t, svidSettings)
+	config, err = Load()
 	if err != nil {
 		t.Fatal(err)
 	}
 	if config.SessionDispatcherTokenFile != "" {
-		t.Fatalf("implicit dispatcher token path = %q, want empty for SVID mode", config.SessionDispatcherTokenFile)
+		t.Fatalf("dispatcher token path = %q, want unset for SVID mode", config.SessionDispatcherTokenFile)
 	}
 
-	writeConfig(t, validSettingsYAML+tlsSettings+"session_dispatcher_token_file: /run/legacy/token\n")
+	writeConfig(t, svidSettings+"session_dispatcher_token_file: /run/legacy/token\n")
 	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "session_dispatcher caller authentication") {
-		t.Fatalf("explicit legacy token with SVID error = %v", err)
+		t.Fatalf("explicit bearer token with SVID error = %v, want caller-authentication error", err)
+	}
+
+	writeConfig(t, strings.Replace(validSettingsYAML, dispatcherTokenSetting, "", 1))
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "session_dispatcher caller authentication") {
+		t.Fatalf("omitted bearer token error = %v, want caller-authentication error", err)
 	}
 }
 
@@ -353,12 +376,14 @@ func TestLoadConfigRequiresOneStrictYAMLFile(t *testing.T) {
 		if c.DatabaseURL != "postgresql://app@postgres/agentplane" {
 			t.Fatalf("database Secret input = %q", c.DatabaseURL)
 		}
-		if c.NotificationsRequestTimeoutSeconds != 5 || c.RunnerGatewayLifecycleTimeoutSecs != 310 {
-			t.Fatalf("omitted defaults changed: notifications=%v lifecycle=%v", c.NotificationsRequestTimeoutSeconds, c.RunnerGatewayLifecycleTimeoutSecs)
+		if c.NotificationsRequestTimeoutSeconds != 5 || c.SessionDispatcherRequestTimeoutSecs != 20 ||
+			c.HistoryServiceRequestTimeoutSeconds != 20 || c.EgressAdminTimeoutSeconds != 5 || c.ShutdownTimeoutSeconds != 5 {
+			t.Fatalf("omitted timeout defaults changed: notifications=%v dispatcher=%v history=%v egress=%v shutdown=%v",
+				c.NotificationsRequestTimeoutSeconds, c.SessionDispatcherRequestTimeoutSecs,
+				c.HistoryServiceRequestTimeoutSeconds, c.EgressAdminTimeoutSeconds, c.ShutdownTimeoutSeconds)
 		}
-		views := c.PresetViews()
-		if len(views) != 2 || views[0].Name != "Work Space" || views[1].Name != "Alpha" || views[0].SessionDefaults.CWD != "/state/workspaces/{session_id}" {
-			t.Fatalf("unexpected browser preset views: %+v", views)
+		if names := c.SandboxPresetNames(); len(names) != 2 || names[0] != "Work Space" || names[1] != "Alpha" || c.ThreadPresets["DefaultThread"].CWD != "/state/workspaces/{session_id}" {
+			t.Fatalf("unexpected Sandbox preset order %v or Thread preset defaults %+v", names, c.ThreadPresets)
 		}
 		if c.ActionFederation.LoginTokenProfile != "authentik" || c.ActionFederation.Target.TokenProfile != "authentik" {
 			t.Fatalf("unexpected federation profile defaults: %+v", c.ActionFederation)

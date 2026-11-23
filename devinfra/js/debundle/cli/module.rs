@@ -288,17 +288,9 @@ pub fn run_merge(
             post_merge_spec(&modules_root, &plans)
         })
     };
-    let checked_order = match validation {
-        Ok(order) => order,
-        Err(err) => {
-            return Err(emit_gate_rejection_json(
-                output,
-                MutationVerb::Merge,
-                merge.edit.format,
-                err,
-            ));
-        }
-    };
+    let checked_order = validation.map_err(|err| {
+        emit_gate_rejection_json(output, MutationVerb::Merge, merge.edit.format, err)
+    })?;
     if !merge.edit.dry_run {
         // Every target is written before any source is deleted. Per-file writes
         // are atomic; this is not a crash-atomic multi-file transaction.
@@ -822,17 +814,9 @@ pub fn run_delete(
                 post_delete_spec(&args.edit.modules_root, delete_paths)
             })
         };
-        let checked_order = match validation {
-            Ok(order) => order,
-            Err(err) => {
-                return Err(emit_gate_rejection_json(
-                    output,
-                    MutationVerb::Delete,
-                    args.edit.format,
-                    err,
-                ));
-            }
-        };
+        let checked_order = validation.map_err(|err| {
+            emit_gate_rejection_json(output, MutationVerb::Delete, args.edit.format, err)
+        })?;
         (gate.outcome(), checked_order)
     };
 

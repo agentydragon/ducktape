@@ -6,7 +6,7 @@ RouterOS accounts:
 - `tofu`: the full-access user the Terraform logs in as. `tf/gitops/home-switch/bootstrap.sh`
   creates it on the switch with a fresh password, which it writes to this directory's
   `tofu-password.sops.yaml`; re-running it rotates the password.
-- `monitoring`: the read-only user the Terraform manages, which a RouterOS exporter will log in as.
+- `monitoring`: the read-only user the Terraform manages, which the MKTXP exporter logs in as.
   ESO mints it.
 - `agentplane`: the SSH user whose public key Tofu installs for Agentplane's SSH MCP backend. Its
   RouterOS password is empty; its private key is separately SOPS-encrypted and mounted into the
@@ -25,31 +25,29 @@ from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCr
 from pydantic import BaseModel, ConfigDict, Field
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 from tofu_controller.io.fluxcd.contrib.infra import (
-    TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumeMounts,
-    TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumes,
-    TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumesConfigMap,
-    TerraformV1Alpha2SpecStoreReadablePlan,
+    TerraformSpecRunnerPodTemplateSpecVolumeMounts,
+    TerraformSpecRunnerPodTemplateSpecVolumes,
+    TerraformSpecRunnerPodTemplateSpecVolumesConfigMap,
+    TerraformSpecStoreReadablePlan,
 )
 
-from cluster.cdk8s import terraform
+from cluster.cdk8s import node_scheduling, terraform
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.monitoring import alloy
+from cluster.cdk8s.monitoring.namespace import NAMESPACE
 from cluster.cdk8s.providers.cert_manager.certificate import CertificatePrivateKey
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 
 NAME = "home-switch"
-NAMESPACE = "monitoring"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}"
 # Written by tf/gitops/home-switch/bootstrap.sh, which names the Secret `home-switch-tofu-password`.
 TOFU_PASSWORD_FILE = "tofu-password.sops.yaml"
 # tf/gitops/home-switch/main.tf and bootstrap.sh read these Secrets and keys by name.
 MONITORING_PASSWORD = SecretRef(namespace=NAMESPACE, name="home-switch-monitoring").key("password")
 TLS_SECRET = "home-switch-tls"
-# The switch is reachable only from the home LAN; OptiPlex is the cluster node on it.
-_HOME_LAN = {"topology.kubernetes.io/zone": "home-lan"}
 # main.tf's provider `ca_certificate` reads the bundle here.
 _CA_BUNDLE_DIR = "/etc/cluster-ca"
 
@@ -71,13 +69,7 @@ class HomeSwitchVars(BaseModel):
 
 def _mint(chart: Chart, id: str, key: SecretKey, description: str) -> None:
     mint_bearer_secret(
-        chart,
-        id,
-        name=key.secret.name,
-        namespace=key.secret.namespace,
-        key=key.key,
-        creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
-        description=description,
+        chart, id, target=key, creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER, description=description
     )
 
 
@@ -119,18 +111,16 @@ def chart(app: App, module: ArtifactGeneratorSpecArtifacts, agentplane_ssh_publi
         # Plans every interval and reports drift; a person approves each apply (README.md).
         auto_apply=False,
         # Secret-bearing attributes come from Secrets, so the plan masks them.
-        store_readable_plan=TerraformV1Alpha2SpecStoreReadablePlan.HUMAN,
-        node_selector=_HOME_LAN,
+        store_readable_plan=TerraformSpecStoreReadablePlan.HUMAN,
+        # Only home LAN nodes can reach the switch.
+        node_selector=node_scheduling.HOME_LAN_NODE_SELECTOR,
         volumes=[
-            TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumes(
-                name="cluster-ca",
-                config_map=TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumesConfigMap(name=cluster_ca.BUNDLE),
+            TerraformSpecRunnerPodTemplateSpecVolumes(
+                name="cluster-ca", config_map=TerraformSpecRunnerPodTemplateSpecVolumesConfigMap(name=cluster_ca.BUNDLE)
             )
         ],
         volume_mounts=[
-            TerraformV1Alpha2SpecRunnerPodTemplateSpecVolumeMounts(
-                name="cluster-ca", mount_path=_CA_BUNDLE_DIR, read_only=True
-            )
+            TerraformSpecRunnerPodTemplateSpecVolumeMounts(name="cluster-ca", mount_path=_CA_BUNDLE_DIR, read_only=True)
         ],
     )
     return chart

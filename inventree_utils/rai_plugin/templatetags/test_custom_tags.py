@@ -1,21 +1,26 @@
-import sys
-from pathlib import Path
+from django.template import Context, Engine
 
-sys.path.append(str(Path(__file__).parent))
 from inventree_utils.rai_plugin.templatetags.custom_tags import ParametersProcessor
 
 
-def test_parameters_processor():
-    parameters = {"Resistance": "1 kΩ", "Tolerance": "1%"}
-    pp = ParametersProcessor(part=None, parameters=parameters)
-    assert pp.show_value == "1kΩ±1%"
-
-
-def test_remaining():
-    parameters = {"Resistance": "1 kΩ", "Tolerance": "1%", "Other": "foo", "Maximum output current": "1 A"}
-    pp = ParametersProcessor(part=None, parameters=parameters)
-    assert pp.max_output_current == "I<sub>out</sub>&leq;1A"
-    assert set(pp.remaining_items) == {"1kΩ±1%", "Other: foo"}
+def test_label_tag_displays_and_consumes_parameters():
+    engine = Engine(libraries={"custom_tags": "inventree_utils.rai_plugin.templatetags.custom_tags"})
+    label = engine.from_string(
+        "{% load custom_tags %}{% parameters_processor as pp %}"
+        "{{ pp.max_output_current }}|"
+        "{{ pp.forward_voltage_at_current }}|"
+        "{% for item in pp.remaining_items %}{{ item }}|{% endfor %}"
+    )
+    parameters = {
+        "Reverse leakage current @ voltage (I_R)": "2 µA @ 5 V",
+        "Other": "foo < bar",
+        "Resistance": "1 kΩ",
+        "Tolerance": "1%",
+        "Maximum output current": "1 A",
+        "Forward voltage @ current": "0.7 V @ 1 A",
+    }
+    html = label.render(Context({"part": None, "parameters": parameters}))
+    assert html == "I<sub>out</sub>&leq;1A|V<sub>F</sub>=0.7V@1A|1kΩ±1%|I<sub>R</sub>=2µA@5V|Other: foo &lt; bar|"
 
 
 def test_input_voltage_range():

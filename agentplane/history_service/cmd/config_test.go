@@ -48,23 +48,6 @@ func TestSettingsLoadFromTheFileAndRuntimeSecretWithTheirDefaults(t *testing.T) 
 	}
 }
 
-func TestRetiredBearerSettingsAreUnknown(t *testing.T) {
-	for name, file := range map[string]string{
-		"reader accounts":    requiredFile + "reader_accounts: []\n",
-		"account delegation": requiredFile + "delegation: {actor: test-agentplane/actions, identity_callers: true, methods: []}\n",
-		"reader audience":    requiredFile + "token_audience: legacy-reader\n",
-		"writer audience":    strings.Replace(requiredFile, "ingress:\n", "ingress:\n  token_audience: legacy-ingress\n", 1),
-		"sampler accounts":   strings.Replace(requiredFile, "ingress:\n", "ingress:\n  sampler_accounts: []\n", 1),
-		"sampler identities": strings.Replace(requiredFile, "ingress:\n", "ingress:\n  sampler_identity_callers: true\n", 1),
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := loadTestConfig(t, file); err == nil || err.Error() != "invalid History Service settings" {
-				t.Fatalf("retired setting error = %v", err)
-			}
-		})
-	}
-}
-
 func TestServiceReaderAndDelegationTrustRequireExactSPIFFECallers(t *testing.T) {
 	const spiffe = `rpc:
   listen_address: 0.0.0.0:8080

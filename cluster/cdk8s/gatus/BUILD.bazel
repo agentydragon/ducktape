@@ -1,18 +1,13 @@
-# gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/providers/prometheus_operator:servicemonitor
 load("//devinfra/python:defs.bzl", "py_library")
 
 py_library(
     name = "sso",
     srcs = ["sso.py"],
     data = ["//tf/gitops/gatus-sso:inline_source"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/authentik:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:opentofu",
-        "//cluster/cdk8s:terraform",
         "@pypi//cdk8s",
     ],
 )
@@ -33,13 +28,13 @@ py_library(
         "//cluster/cdk8s/authentik:app",
         "//cluster/cdk8s/forgejo:app",
         "//cluster/cdk8s/grocy:app",
-        "//cluster/cdk8s/litellm:proxy",
+        "//cluster/cdk8s/litellm:endpoint",
         "//cluster/cdk8s/matrix",
         "//cluster/cdk8s/monitoring:grafana_instance",
-        "//cluster/cdk8s/monitoring:loki",
+        "//cluster/cdk8s/monitoring:loki_endpoints",
         "//cluster/cdk8s/monitoring:mimir",
         "//cluster/cdk8s/nix_cache:attic",
-        "//cluster/cdk8s/ollama:app",
+        "//cluster/cdk8s/ollama:tabby",
         "//model_catalog:catalog",
         "@pypi//pydantic",
     ],

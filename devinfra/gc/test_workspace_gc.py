@@ -1,7 +1,6 @@
+import fcntl
 import pathlib
 import shutil
-import subprocess
-import sys
 import threading
 from io import StringIO
 
@@ -9,7 +8,7 @@ import pytest
 from rich.console import Console
 
 from devinfra.gc import repo_contents_cache_gc, workspace_gc, workspace_scan
-from devinfra.gc.conftest import GitRepo, link_external, make_base, make_cache_entry
+from devinfra.gc.conftest import GitRepo, hold_posix_lock, link_external, make_base, make_cache_entry
 from devinfra.gc.pull_request import PrInfo
 
 
@@ -26,16 +25,19 @@ def test_main_routes_options_to_default_command(monkeypatch: pytest.MonkeyPatch)
     assert calls == [["all", "--no-prs"]]
 
 
-# Branch names that look like numbers: `tabulate` rewrites a column whose every cell does.
-_NUMERIC_LOOKING_BRANCHES = ["1e5", "2.10", "1.0", "007"]
+def _cells(report: str, column: int) -> list[str]:
+    """One column of a rendered table's rows, excluding the header and summary."""
+    return sorted(line.split()[column] for line in report.splitlines()[1:-1])
 
 
-def _scan_numeric_looking_branches(
+def test_reports_print_numeric_looking_branch_names_verbatim(
     repo: GitRepo, proc: pathlib.Path, mountinfo: pathlib.Path
-) -> workspace_scan.WorkspaceScan:
-    for index, branch in enumerate(_NUMERIC_LOOKING_BRANCHES):
-        repo.worktree(f"wt{index}", branch)  # an empty branch: its worktree and branch are both prunable
-    return workspace_scan.scan_workspace(
+) -> None:
+    # Tabulate rewrites a column when every cell looks like a number.
+    branches = ["1e5", "2.10", "1.0", "007"]
+    for index, branch in enumerate(branches):
+        repo.worktree(f"wt{index}", branch)  # Empty branches and their worktrees are prunable.
+    scan = workspace_scan.scan_workspace(
         repo.path,
         main="main",
         default_branch="main",
@@ -45,32 +47,11 @@ def _scan_numeric_looking_branches(
         mountinfo_path=mountinfo,
     )
 
+    worktrees = workspace_gc.render_worktrees(scan.worktrees, include_kept=False)
+    local_branches = workspace_gc.render_branches(scan.branches, include_kept=False)
 
-def _cells(report: str, column: int) -> list[str]:
-    """One column of a rendered table's rows: not its header line, nor its trailing summary line."""
-    return sorted(line.split()[column] for line in report.splitlines()[1:-1])
-
-
-def test_render_worktrees_prints_numeric_looking_branch_names_verbatim(
-    repo: GitRepo, proc: pathlib.Path, mountinfo: pathlib.Path
-) -> None:
-    scan = _scan_numeric_looking_branches(repo, proc, mountinfo)
-
-    report = workspace_gc.render_worktrees(scan.worktrees, include_kept=False)
-
-    # STATUS, LAST ACTIVITY, WORKTREE, BRANCH: the fourth cell of a row.
-    assert _cells(report, 3) == sorted(_NUMERIC_LOOKING_BRANCHES)
-
-
-def test_render_branches_prints_numeric_looking_branch_names_verbatim(
-    repo: GitRepo, proc: pathlib.Path, mountinfo: pathlib.Path
-) -> None:
-    scan = _scan_numeric_looking_branches(repo, proc, mountinfo)
-
-    report = workspace_gc.render_branches(scan.branches, include_kept=False)
-
-    # STATUS, BRANCH: the second cell of a row. The default branch is kept, so it is not a row.
-    assert _cells(report, 1) == sorted(_NUMERIC_LOOKING_BRANCHES)
+    assert _cells(worktrees, 3) == sorted(branches)  # STATUS, LAST ACTIVITY, WORKTREE, BRANCH
+    assert _cells(local_branches, 1) == sorted(branches)  # STATUS, BRANCH
 
 
 def test_joint_prune_frees_the_repo_cache_entries_of_the_bases_it_removes(
@@ -84,9 +65,9 @@ def test_joint_prune_frees_the_repo_cache_entries_of_the_bases_it_removes(
     checkout = repo.clone("checkout")  # the scan needs the `origin/HEAD` a real clone has
     root = tmp_path / "output"
     contents = repo_contents_cache_gc.repo_contents_cache(root)
-    kept_entry = make_cache_entry(contents, "a" * 64, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
-    freed_entry = make_cache_entry(contents, "b" * 64, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
-    unreferenced_entry = make_cache_entry(contents, "c" * 64, "cccccccc-cccc-cccc-cccc-cccccccccccc")
+    kept_entry = make_cache_entry(contents, "a", "a")
+    freed_entry = make_cache_entry(contents, "b", "b")
+    unreferenced_entry = make_cache_entry(contents, "c", "c")
     kept_base = make_base(root, checkout.path.resolve())
     link_external(kept_base, "kept_repo", kept_entry)
     pruned_base = make_base(root, tmp_path / "gone")
@@ -189,40 +170,13 @@ def test_busy_repo_cache_reports_skipped_entries_compactly(
 ) -> None:
     root = tmp_path / "output"
     contents = repo_contents_cache_gc.repo_contents_cache(root)
-    entries = [
-        make_cache_entry(contents, char * 64, f"{char * 8}-{char * 4}-{char * 4}-{char * 4}-{char * 12}")
-        for char in "ab"
-    ]
+    entries = [make_cache_entry(contents, char, char) for char in "ab"]
     (contents / "gc_lock").touch()
     monkeypatch.setattr(workspace_gc.output_base_gc, "session_env_output_bases", list)
-    holder = subprocess.Popen(
-        [
-            sys.executable,
-            "-c",
-            "import fcntl,sys; f=open(sys.argv[1], 'r+'); fcntl.lockf(f, fcntl.LOCK_SH); print('locked', flush=True); sys.stdin.read(1)",
-            str(contents / "gc_lock"),
-        ],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        text=True,
-    )
-    try:
-        assert holder.stdout is not None
-        assert holder.stdout.readline() == "locked\n"
-        with pytest.raises(SystemExit) as exit_info:
-            workspace_gc.main(
-                [
-                    "repo-cache",
-                    "--output-user-root",
-                    str(root),
-                    "--delete",
-                    "--workers",
-                    "1",
-                    *(["-v"] if verbose else []),
-                ]
-            )
-    finally:
-        holder.communicate("x", timeout=5)
+    with hold_posix_lock(contents / "gc_lock", fcntl.LOCK_SH), pytest.raises(SystemExit) as exit_info:
+        workspace_gc.main(
+            ["repo-cache", "--output-user-root", str(root), "--delete", "--workers", "1", *(["-v"] if verbose else [])]
+        )
     captured = capsys.readouterr()
     assert exit_info.value.code == 0  # skipped entries are reported but do not fail the run
     assert "0 deleted, 2 skipped, 0 failed" in captured.out

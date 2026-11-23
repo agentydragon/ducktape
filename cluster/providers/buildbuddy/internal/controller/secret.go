@@ -53,10 +53,6 @@ func (c *connector) Connect(ctx context.Context, cr *v1alpha1.Secret) (managed.T
 
 // Crossplane grants provider pods broad Secret RBAC. Do not let a managed
 // resource use that privilege to read an arbitrary Secret.
-func (c *connector) validateCredentials(namespace string, credentials v1alpha1.ProviderCredentials) error {
-	return validateProviderCredentials(namespace, c.credentialSecret, credentials)
-}
-
 func validateProviderCredentials(namespace, credentialSecret string, credentials v1alpha1.ProviderCredentials) error {
 	if credentials.Source != xpv2.CredentialsSourceSecret || credentials.SecretRef == nil ||
 		credentials.SecretRef.Namespace != namespace || credentials.SecretRef.Name != credentialSecret {

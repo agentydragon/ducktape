@@ -31,5 +31,5 @@ analysis cache survived between CI runs. The 2026-06 profiling investigation
   actions, not analysis or package loading.
 
 Its instrumentation survives in `.github/workflows/bazel-ci.yml`
-(`devinfra/buildbuddy/ci/runner_probe.py`, `emit_bb_remote_linkage.py`), and it led to
+(`devinfra/buildbuddy/ci/runner_probe.py`, `emit_remote_linkage.py`), and it led to
 PR CI becoming changed-file scoped via bazel-diff in `devinfra/ci/bazel_ci.py`.

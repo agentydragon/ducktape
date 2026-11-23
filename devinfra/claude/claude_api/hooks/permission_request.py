@@ -5,7 +5,7 @@ from typing import Annotated, Any, Literal
 
 from pydantic import Discriminator, Field, Tag
 
-from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase
+from devinfra.claude.claude_api.hooks.hook_base import CamelModel, HookInputBase
 
 # --- PermissionSuggestion types (discriminated union on "type") ---
 
@@ -106,9 +106,6 @@ class DenyDecision(CamelModel):
 PermissionRequestDecision = Annotated[
     Annotated[AllowDecision, Tag("allow")] | Annotated[DenyDecision, Tag("deny")], Discriminator("behavior")
 ]
-
-
-# --- Hook input/output ---
 
 
 class PermissionRequestInput(HookInputBase):

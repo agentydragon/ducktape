@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agentydragon/ducktape/agentplane/app/internal/sandboxes"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/sessionclient"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/settings"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
@@ -16,8 +15,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 func TestSessionDefaultsMergeExplicitFieldsAndHonorSetupPresence(t *testing.T) {
@@ -25,7 +22,7 @@ func TestSessionDefaultsMergeExplicitFieldsAndHonorSetupPresence(t *testing.T) {
 	threadPresets := map[string]settings.ThreadPreset{
 		"default": {
 			Harness: "HARNESS_CODEX", Model: "model-a", CWD: "/state/workspaces/{session_id}",
-			ReasoningEffort: sessionTestStringPtr("high"), Instructions: "from preset", SetupScript: "setup",
+			ReasoningEffort: new("high"), Instructions: "from preset", SetupScript: "setup",
 		},
 	}
 	sandbox := &environmentpb.EnvironmentDescriptor{Target: &identitypb.EnvironmentTarget{Name: "sandbox", Uid: "sandbox-uid"}, Configuration: &environmentpb.EnvironmentConfiguration{Preset: proto.String("work")}}
@@ -58,7 +55,6 @@ func TestSessionDefaultsMergeExplicitFieldsAndHonorSetupPresence(t *testing.T) {
 }
 
 func TestSessionRPCErrorClassifiesWithoutHTTP(t *testing.T) {
-	resource := schema.GroupResource{Group: "agentplane.example", Resource: "sandboxes"}
 	for _, test := range []struct {
 		name       string
 		err        error
@@ -66,19 +62,16 @@ func TestSessionRPCErrorClassifiesWithoutHTTP(t *testing.T) {
 		wantDetail string
 	}{
 		{"sandbox missing", status.Error(codes.NotFound, "demo"), codes.NotFound, "demo"},
-		{"kubernetes missing", apierrors.NewNotFound(resource, "demo"), codes.NotFound, "demo"},
-		{"kubernetes conflict", apierrors.NewConflict(resource, "demo", errors.New("conflict")), codes.FailedPrecondition, "demo"},
-		{"quiescing", &sandboxes.SandboxQuiescingError{Name: "demo"}, codes.Unavailable, "quiescing"},
 		{"canceled", context.Canceled, codes.Canceled, "canceled"},
-		{"deadline", context.DeadlineExceeded, codes.DeadlineExceeded, "Upstream service unavailable"},
+		{"deadline", context.DeadlineExceeded, codes.DeadlineExceeded, "Environment service could not look up the Sandbox"},
 		{"resource exhausted", status.Error(codes.ResourceExhausted, "quota"), codes.ResourceExhausted, "quota"},
 		{"grpc aborted", fmt.Errorf("upstream: %w", status.Error(codes.Aborted, "aborted")), codes.Aborted, "aborted"},
 		{"grpc already exists", status.Error(codes.AlreadyExists, "existing"), codes.AlreadyExists, "existing"},
-		{"grpc internal", status.Error(codes.Internal, "private-upstream-diagnostic"), codes.Internal, "Upstream service unavailable"},
-		{"unknown error", errors.New("private-upstream-diagnostic"), codes.Unavailable, "Upstream service unavailable"},
+		{"grpc internal", status.Error(codes.Internal, "private-upstream-diagnostic"), codes.Internal, "Environment service could not look up the Sandbox"},
+		{"unknown error", errors.New("private-upstream-diagnostic"), codes.Unavailable, "Environment service could not look up the Sandbox"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			got := status.Convert(sessionRPCError(test.err))
+			got := status.Convert(sessionRPCError(test.err, "Environment service could not look up the Sandbox"))
 			if got.Code() != test.wantCode || !strings.Contains(got.Message(), test.wantDetail) || strings.Contains(got.Message(), "private-upstream-diagnostic") {
 				t.Fatalf("got %v, want %v containing %q without private details", got, test.wantCode, test.wantDetail)
 			}
@@ -86,4 +79,10 @@ func TestSessionRPCErrorClassifiesWithoutHTTP(t *testing.T) {
 	}
 }
 
-func sessionTestStringPtr(value string) *string { return &value }
+func TestSessionRPCErrorNamesUnconfirmedDispatcherCreation(t *testing.T) {
+	operation := "Session Dispatcher could not confirm Thread creation; check this attempt before retrying"
+	got := status.Convert(sessionRPCError(status.Error(codes.Unavailable, "private-upstream-diagnostic"), operation))
+	if got.Code() != codes.Unavailable || !strings.Contains(got.Message(), operation) || strings.Contains(got.Message(), "private-upstream-diagnostic") {
+		t.Fatalf("unexpected Dispatcher error: %v", got)
+	}
+}

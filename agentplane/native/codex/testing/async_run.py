@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import itertools
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from agentplane.native.codex import facade, scenarios, wire
+from agentplane.native.codex import driver, scenarios, wire
 from agentplane.native.testing.async_process import AsyncNativeProcess, FrameCursor, FrameResponder
 
 
@@ -18,13 +19,6 @@ class CodexEvents:
 
     async def next(self) -> wire.CodexFrame:
         return wire.parse_frame(await self._frames.next())
-
-    async def response(self, request_id: wire.RequestId) -> wire.Response:
-        while True:
-            match await self.next():
-                case wire.Response(id=received) as frame:
-                    if received == request_id:
-                        return frame
 
     async def turn_started(self, turn_id: str, *, thread_id: str | None = None) -> wire.TurnStarted:
         while True:
@@ -160,7 +154,7 @@ class CodexRun:
         self._responder = responder
         self._dynamic_tools = dynamic_tools
         self._process: AsyncNativeProcess | None = None
-        self._harness: facade.CodexHarness | None = None
+        self._request_numbers = itertools.count(1)
         self._thread_id_value: str | None = None
 
     async def __aenter__(self) -> CodexRun:
@@ -172,33 +166,19 @@ class CodexRun:
             frame_responder=self._responder,
         )
         self._process = await process.__aenter__()
-        self._harness = facade.CodexHarness(
-            process,
-            request_prefix="capture",
-            client_name=scenarios.CLIENT_NAME,
-            base_instructions=scenarios.BASE_INSTRUCTIONS,
-        )
         try:
             await self._initialize()
             if self._resume_thread_id is None:
-                receipt = await self._codex().start_thread(
-                    cwd=self._thread_cwd,
-                    model=self._model,
-                    effort=self._effort,
-                    persist=self._persist,
-                    config=self._config,
-                    instructions=self._instructions,
-                    dynamic_tools=self._dynamic_tools,
-                )
+                thread = await self.start_thread()
             else:
-                receipt = await self._codex().resume_thread(
-                    thread_id=self._resume_thread_id,
+                thread = await self.resume_thread(
+                    self._resume_thread_id,
                     base_instructions=self._resume_base_instructions,
                     instructions=self._resume_instructions,
                 )
-            self._thread_id_value = _response_thread_id(_require(receipt))
+            self._thread_id_value = thread.thread_id
         except BaseException:
-            self._process, self._harness = None, None
+            self._process = None
             await process.close()
             raise
         return self
@@ -210,11 +190,6 @@ class CodexRun:
         if self._process is None:
             raise RuntimeError("Codex run was not started")
         return self._process
-
-    def _codex(self) -> facade.CodexHarness:
-        if self._harness is None:
-            raise RuntimeError("Codex run was not started")
-        return self._harness
 
     @property
     def running(self) -> bool:
@@ -248,12 +223,14 @@ class CodexRun:
         config: dict[str, object] | None = None,
         instructions: str | None = None,
     ) -> CodexThread:
-        """Start another thread through this run's existing app-server connection."""
-        response = _require(
-            await self._codex().start_thread(
+        """Start a thread on this run's app-server connection; unset arguments use the run's own settings."""
+        response = await self._request(
+            driver.thread_start(
+                self._request_id(),
                 cwd=self._thread_cwd if cwd is None else cwd,
                 model=self._model if model is None else model,
                 effort=self._effort if effort is None else effort,
+                base_instructions=scenarios.BASE_INSTRUCTIONS,
                 persist=self._persist if persist is None else persist,
                 config=self._config if config is None else config,
                 instructions=self._instructions if instructions is None else instructions,
@@ -265,9 +242,9 @@ class CodexRun:
     async def resume_thread(
         self, thread_id: str, *, base_instructions: str = "", instructions: str = ""
     ) -> CodexThread:
-        response = _require(
-            await self._codex().resume_thread(
-                thread_id=thread_id, base_instructions=base_instructions, instructions=instructions
+        response = await self._request(
+            driver.thread_resume(
+                self._request_id(), thread_id=thread_id, base_instructions=base_instructions, instructions=instructions
             )
         )
         return CodexThread(self, _response_thread_id(response))
@@ -279,33 +256,53 @@ class CodexRun:
         self, thread_id: str, text: str, *, model: str | None = None, effort: str | None = None
     ) -> CodexTurn:
         events = self.events()
-        response = _require(await self._codex().start_turn(thread_id=thread_id, text=text, model=model, effort=effort))
+        response = await self._request(
+            driver.turn_start(self._request_id(), thread_id=thread_id, text=text, model=model, effort=effort)
+        )
         result = wire.TurnResult.model_validate(response.result)
         return CodexTurn(thread_id, result.turn.id, events)
 
     async def compact(self) -> wire.Response:
         """Start native compaction on an idle thread; caller observes the compaction item lifecycle."""
-        return _require(await self._codex().compact_thread(thread_id=self.thread_id))
+        return await self._request(driver.thread_compact(self._request_id(), thread_id=self.thread_id))
 
     async def steer(self, turn: CodexTurn, text: str) -> wire.Response:
         return await self._steer(self.thread_id, turn, text)
 
     async def _steer(self, thread_id: str, turn: CodexTurn, text: str) -> wire.Response:
         self._assert_turn(thread_id, turn)
-        return _require(await self._codex().steer(thread_id=turn.thread_id, turn_id=turn.id, text=text))
+        return await self._request(
+            driver.steer(self._request_id(), thread_id=turn.thread_id, turn_id=turn.id, text=text)
+        )
 
     async def interrupt(self, turn: CodexTurn) -> wire.Response:
         return await self._interrupt(self.thread_id, turn)
 
     async def _interrupt(self, thread_id: str, turn: CodexTurn) -> wire.Response:
         self._assert_turn(thread_id, turn)
-        return _require(await self._codex().interrupt(thread_id=turn.thread_id, turn_id=turn.id))
+        return await self._request(driver.interrupt(self._request_id(), thread_id=turn.thread_id, turn_id=turn.id))
 
     async def crash(self) -> int:
         return await self._native().crash()
 
     async def _initialize(self) -> None:
-        _require(await self._codex().initialize(experimental_api=self._dynamic_tools is not None))
+        await self._request(
+            driver.initialize(
+                self._request_id(), client_name=scenarios.CLIENT_NAME, experimental_api=self._dynamic_tools is not None
+            )
+        )
+        await self._native().send(wire.InitializedNotification())
+
+    async def _request(self, request: wire.Request) -> wire.Response:
+        """Send `request` and return Codex's response to it; a JSON-RPC error raises."""
+        receipt = await self._native().request(request, matches=lambda frame: frame.get("id") == request.id)
+        response = wire.Response.model_validate(receipt.frame)
+        if response.error is not None:
+            raise RuntimeError(f"Codex request failed: {response.error}")
+        return response
+
+    def _request_id(self) -> str:
+        return f"capture-{next(self._request_numbers)}"
 
     def _assert_turn(self, thread_id: str, turn: CodexTurn) -> None:
         if turn.thread_id != thread_id:
@@ -315,10 +312,3 @@ class CodexRun:
 def _response_thread_id(response: wire.Response) -> str:
     result = wire.ThreadResult.model_validate(response.result)
     return result.thread.id
-
-
-def _require(receipt: facade.CodexReceipt) -> wire.Response:
-    response = receipt.response
-    if response.error is not None:
-        raise RuntimeError(f"Codex request failed: {response.error}")
-    return response

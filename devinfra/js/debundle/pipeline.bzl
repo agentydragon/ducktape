@@ -190,7 +190,8 @@ def _run_debundler(ctx, inputs, outputs, command, mnemonic, progress, tool = Non
         # but their leaf files are symlinks to the host execroot's bazel-bin
         # — so `realpath(file)` lands outside `realpath(dir)` and the check
         # spuriously fails. Disable sandboxing for these actions; inputs are
-        # declared via Bazel attrs, so reproducibility is preserved.
+        # declared via Bazel attrs, so reproducibility is preserved. The checks
+        # required before removing this: debug/2026_11_05_bazel_sandbox_package_roots.md.
         execution_requirements = {"no-sandbox": "1"},
         progress_message = progress,
         mnemonic = mnemonic,

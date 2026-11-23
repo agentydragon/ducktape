@@ -482,31 +482,7 @@ post-handshake bulk traffic), but worth verifying after activation.
 - **`qmicli`**: Can tunnel QMI over MBIM (`--device-open-mbim`), has `--uim-get-card-status`
   but no high-level eSIM download commands.
 
-### lpac Environment Variables
-
-```bash
-LPAC_APDU=mbim
-LPAC_APDU_MBIM_DEVICE=/dev/wwan0mbim0
-LPAC_APDU_MBIM_UIM_SLOT=2          # 1-based; slot 2 = eSIM
-LPAC_APDU_MBIM_USE_PROXY=1         # needed when ModemManager is running
-```
-
-### lpac Commands
-
-```bash
-# List profiles (MM stopped, no proxy needed):
-sudo systemctl stop ModemManager
-sudo LPAC_APDU=mbim LPAC_APDU_MBIM_DEVICE=/dev/wwan0mbim0 LPAC_APDU_MBIM_UIM_SLOT=2 \
-  lpac profile list
-
-# Download new profile:
-sudo LPAC_APDU=mbim LPAC_APDU_MBIM_DEVICE=/dev/wwan0mbim0 LPAC_APDU_MBIM_UIM_SLOT=2 \
-  lpac profile download \
-  -s sm-v4-007-a-gtm.pr.go-esim.com \
-  -m TY93BCW699ZG4WBL3Z8YDWAF05GDUO4D
-
-sudo systemctl start ModemManager
-```
+`lpac` environment variables and commands: <esim.md> § lpac Commands.
 
 ### What Failed (2026-04-20)
 

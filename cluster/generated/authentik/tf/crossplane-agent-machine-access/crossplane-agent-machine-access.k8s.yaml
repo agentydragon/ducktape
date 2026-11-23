@@ -300,8 +300,6 @@ spec:
         }
       }
 
-      # --- Grocy SF household (proxy provider + MCP OAuth2) ---
-
       resource "authentik_group" "grocy_sf_household" {
         name = "SF household"
         users = [
@@ -419,8 +417,6 @@ spec:
         }
       }
 
-      # --- agentplane read-only identity ---
-
       # The account agentplane-staging's egress proxy presents to grocy-sf.allegedly.works for
       # claude-ai sandboxes (`grocy-sf-readonly` in cluster/cdk8s/agentplane/egress_staging_credentials.py),
       # as HTTP Basic with this app password. The outpost turns Basic credentials into a
@@ -463,8 +459,6 @@ spec:
           password = authentik_token.agentplane_grocy_sf_readonly.key
         }
       }
-
-      # --- Grocy Vallejo household (proxy provider + MCP OAuth2) ---
 
       # Membership group gating both the user-facing Grocy Vallejo webapp and its
       # MCP. Replaces the previous "authentik Admins" binding so non-admins can be
@@ -579,14 +573,6 @@ spec:
         }
       }
 
-
-      # --- Tana MCP facade (public OAuth facade, downstream static bearer) ---
-
-      # ============================================================================
-      # haku-console operator browser login (retires the forward-auth proxy outpost).
-      # This provider serves the operator session cookie; the Console MCP OAuth provider and endpoint
-      # have been retired.
-
       resource "authentik_group" "haku_console_access" {
         name  = "haku-console-access"
         users = [data.authentik_user.agentydragon.pk]
@@ -670,9 +656,6 @@ spec:
         }
       }
 
-      # ============================================================================
-      # haku-k8s — Haku's k8s identity, reusing the shared client_credentials provider
-      # ============================================================================
       # Haku mints its k8s JWT through the EXISTING
       # kubectl-sandbox-client-credentials OAuth2 provider — no dedicated provider,
       # so no kube-apiserver issuer entry and no cluster bootstrap. Instead of a
@@ -738,9 +721,6 @@ spec:
         }
       }
 
-      # ============================================================================
-      # haku-mail — Haku's mailbox identity for the Stalwart mailserver
-      # ============================================================================
       # Stalwart (cluster/k8s/haku/mailbox) authenticates its `haku` mail account
       # exclusively via OIDC bearer tokens: its directory points at this provider's
       # issuer and pins requireAudience to this client_id, so kubectl-sandbox JWTs
@@ -809,9 +789,6 @@ spec:
         }
       }
 
-      # ============================================================================
-      # haku-service-account — Haku's shared Authentik service-account identity
-      # ============================================================================
       # The `haku` service account and its app-password token, which haku-mail.tf's
       # stalwart-haku provider binds for Haku's mailbox identity. The `haku_grocy`
       # resource names date from the SA's first use as Haku's read-only grocy-sf identity.
@@ -843,9 +820,6 @@ spec:
         users = [data.authentik_user.agentydragon.pk]
       }
 
-      # ============================================================================
-      # kubectl-passthrough-mcp — Passthrough kubectl MCP (caller's own permissions)
-      # ============================================================================
       # Forwards the caller's Authentik JWT directly to kube-apiserver. The caller
       # gets their own OIDC permissions — not sandbox-scoped.
 
@@ -860,10 +834,9 @@ spec:
         issuer_mode                = "per_provider"
         include_claims_in_id_token = true
 
-        # Same reason as ha-mcp.tf: agentplane-staging's `kubernetes` link holds an operator OAuth
-        # association here, and the Terraform provider's `minutes=10` default renews it ~150x/day, any
-        # one of which can permanently wedge the association. This server was wedged that way on
-        # 2026-07-30.
+        # agentplane-staging's `kubernetes` link holds an operator OAuth association here, and the
+        # Terraform provider's `minutes=10` default renews it ~150x/day, any one of which can
+        # permanently wedge the association. This server was wedged that way on 2026-07-30.
         access_token_validity = "hours=24"
 
         property_mappings = [
@@ -932,12 +905,7 @@ spec:
 
       ## Passthrough server needs no Secret — the OAuth2 provider is public (PKCE)
       ## so there's no client_secret, and passthrough mode doesn't do token exchange.
-      ## The previous kubernetes_secret.kubectl_passthrough_mcp was deleted above;
-      ## TF will destroy the state-only resource on the next apply.
 
-      # ============================================================================
-      # kubectl-sandbox-client-credentials — machine-to-machine OIDC for kubeconfig
-      # ============================================================================
       # Non-interactive Authentik client_credentials provider for direct kubeconfig /
       # kube-api-proxy access and kubectl-machine-mcp. The provider's machine-only
       # scope mapping is an explicit principal-to-groups allowlist.
@@ -1047,7 +1015,7 @@ spec:
         }
       }
 
-      # Read the Authentik bootstrap token from the K8s Secret (populated by ESO from Vault).
+      # K8s Secret holding the Authentik bootstrap token (cluster/k8s/authentik/app/bootstrap-token.sops.yaml).
       data "kubernetes_secret" "authentik_bootstrap" {
         metadata {
           name      = "authentik-bootstrap"
@@ -1059,8 +1027,6 @@ spec:
         url   = "http://authentik-server.authentik.svc.cluster.local"
         token = data.kubernetes_secret.authentik_bootstrap.data["AUTHENTIK_BOOTSTRAP_TOKEN"]
       }
-
-      # --- Shared data sources ---
 
       data "authentik_flow" "authentication" {
         slug = "default-authentication-flow"
@@ -1074,8 +1040,6 @@ spec:
         slug = "default-provider-invalidation-flow"
       }
 
-      # Signing key + OIDC scope property mappings for the grocy-mcp user-login
-      # OAuth2 provider below.
       data "authentik_certificate_key_pair" "self_signed" {
         name = "authentik Self-signed Certificate"
       }
@@ -1095,10 +1059,6 @@ spec:
       data "authentik_property_mapping_provider_scope" "offline_access" {
         managed = "goauthentik.io/providers/oauth2/scope-offline_access"
       }
-
-      # --- Service Account ---
-      # Shared service account for Claude/OpenClaw sandbox agents.
-      # Used for Authentik API access (e.g., querying user info).
 
 
 

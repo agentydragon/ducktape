@@ -172,7 +172,7 @@ func TestAnActionNoExecutorRunsFailsOnceStarted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// As in the Python service, the Execution crossed the no-replay boundary before its Executor was resolved.
+	// The Execution crossed the no-replay boundary before its Executor was resolved.
 	if !slices.Contains(eventStates(events), action_servicepb.ActionState_ACTION_STATE_RUNNING) {
 		t.Errorf("events %v", eventStates(events))
 	}

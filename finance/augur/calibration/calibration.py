@@ -24,8 +24,9 @@ import math
 from bisect import bisect_left
 from collections import Counter
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import date
+from itertools import pairwise
 
 import numpy as np
 import numpy.typing as npt
@@ -562,62 +563,31 @@ def _monotone_probabilities(values: list[float], weights: list[float], *, increa
     return [max(0.0, min(1.0, float(value))) for value in fitted]
 
 
+def _ladder_shares(curve: list[float], *, survival: bool) -> list[float]:
+    """Normalized bucket masses a ladder's cumulative `curve` implies: one between each pair of
+    adjacent rungs, then the open-ended last bucket. A `survival` curve falls from 1 (each rung is
+    `P(value > rung)`); any other rises from 0 (a CDF, or an event by each date). Steps clamp at 0."""
+    levels = [1.0 if survival else 0.0, *curve]
+    steps = [max(0.0, earlier - later if survival else later - earlier) for earlier, later in pairwise(levels)]
+    shares = [*steps, max(0.0, levels[-1] if survival else 1.0 - levels[-1])]
+    total = sum(shares)
+    return [share / total for share in shares] if total > 0.0 else shares
+
+
 def _threshold_ladder_buckets(
     family: ThresholdLadderFamily, *, thresholds: list[float], curve: list[float]
 ) -> list[_DerivedBucket]:
-    buckets: list[_DerivedBucket] = []
-    if family.direction is Direction.ABOVE:
-        previous_probability = 1.0
-        previous_threshold: float | None = None
-        for threshold, probability in zip(thresholds, curve, strict=True):
-            buckets.append(
-                _DerivedBucket(
-                    low=previous_threshold,
-                    high=threshold,
-                    label=_threshold_bucket_label(family, previous_threshold, threshold),
-                    market_id=_synthetic_bucket_id(family, previous_threshold, threshold),
-                    p_market=max(0.0, previous_probability - probability),
-                )
-            )
-            previous_probability = probability
-            previous_threshold = threshold
-        buckets.append(
-            _DerivedBucket(
-                low=previous_threshold,
-                high=None,
-                label=_threshold_bucket_label(family, previous_threshold, None),
-                market_id=_synthetic_bucket_id(family, previous_threshold, None),
-                p_market=max(0.0, previous_probability),
-            )
+    shares = _ladder_shares(curve, survival=family.direction is Direction.ABOVE)
+    return [
+        _DerivedBucket(
+            low=low,
+            high=high,
+            label=_threshold_bucket_label(family, low, high),
+            market_id=_synthetic_bucket_id(family, low, high),
+            p_market=share,
         )
-    else:
-        previous_probability = 0.0
-        previous_threshold = None
-        for threshold, probability in zip(thresholds, curve, strict=True):
-            buckets.append(
-                _DerivedBucket(
-                    low=previous_threshold,
-                    high=threshold,
-                    label=_threshold_bucket_label(family, previous_threshold, threshold),
-                    market_id=_synthetic_bucket_id(family, previous_threshold, threshold),
-                    p_market=max(0.0, probability - previous_probability),
-                )
-            )
-            previous_probability = probability
-            previous_threshold = threshold
-        buckets.append(
-            _DerivedBucket(
-                low=previous_threshold,
-                high=None,
-                label=_threshold_bucket_label(family, previous_threshold, None),
-                market_id=_synthetic_bucket_id(family, previous_threshold, None),
-                p_market=max(0.0, 1.0 - previous_probability),
-            )
-        )
-    total = sum(bucket.p_market for bucket in buckets)
-    if total > 0.0:
-        buckets = [replace(bucket, p_market=bucket.p_market / total) for bucket in buckets]
-    return buckets
+        for (low, high), share in zip(pairwise([None, *thresholds, None]), shares, strict=True)
+    ]
 
 
 def _threshold_bucket_label(family: ThresholdLadderFamily, low: float | None, high: float | None) -> str:
@@ -639,34 +609,17 @@ def _synthetic_bucket_id(family: ThresholdLadderFamily, low: float | None, high:
 
 
 def _date_ladder_buckets(family: DateLadderFamily, *, by_dates: list[date], curve: list[float]) -> list[_DerivedBucket]:
-    buckets: list[_DerivedBucket] = []
-    previous_probability = 0.0
-    previous_date: date | None = None
-    for by_date, probability in zip(by_dates, curve, strict=True):
-        buckets.append(
-            _DerivedBucket(
-                low=None,
-                high=None,
-                label=_date_bucket_label(previous_date, by_date),
-                market_id=_synthetic_date_bucket_id(family, previous_date, by_date),
-                p_market=max(0.0, probability - previous_probability),
-            )
-        )
-        previous_probability = probability
-        previous_date = by_date
-    buckets.append(
+    shares = _ladder_shares(curve, survival=False)
+    return [
         _DerivedBucket(
             low=None,
             high=None,
-            label=_date_bucket_label(previous_date, None),
-            market_id=_synthetic_date_bucket_id(family, previous_date, None),
-            p_market=max(0.0, 1.0 - previous_probability),
+            label=_date_bucket_label(earlier, later),
+            market_id=_synthetic_date_bucket_id(family, earlier, later),
+            p_market=share,
         )
-    )
-    total = sum(bucket.p_market for bucket in buckets)
-    if total > 0.0:
-        buckets = [replace(bucket, p_market=bucket.p_market / total) for bucket in buckets]
-    return buckets
+        for (earlier, later), share in zip(pairwise([None, *by_dates, None]), shares, strict=True)
+    ]
 
 
 def _date_bucket_label(low: date | None, high: date | None) -> str:

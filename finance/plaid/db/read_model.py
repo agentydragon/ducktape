@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import desc, func, select
@@ -20,7 +20,6 @@ from finance.plaid.db.models import (
     LinkRow,
     PlaidApiEventRow,
     SecurityRow,
-    TransactionRow,
 )
 
 
@@ -217,34 +216,3 @@ async def read_current_holdings(
             )
         )
     return tuple(holdings)
-
-
-async def read_transactions(
-    *,
-    session_factory: async_sessionmaker[AsyncSession],
-    start_date: date,
-    end_date: date,
-    account_ids: tuple[str, ...] = (),
-) -> tuple[TransactionRow, ...]:
-    """Posted (non-pending, non-removed) transactions in [start_date, end_date].
-
-    Empty `account_ids` selects every account behind a non-revoked Link -- fine for a
-    single-user deployment where the connection only sees that user's data. ORM rows
-    are returned directly; AsyncSession uses expire_on_commit=False so callers can
-    read attributes after the session closes."""
-    stmt = (
-        select(TransactionRow)
-        .join(LinkRow, LinkRow.item_id == TransactionRow.item_id)
-        .where(
-            TransactionRow.removed.is_(False),
-            TransactionRow.pending.is_(False),
-            TransactionRow.date >= start_date,
-            TransactionRow.date <= end_date,
-            LinkRow.status != "revoked",
-        )
-        .order_by(TransactionRow.date, TransactionRow.transaction_id)
-    )
-    if account_ids:
-        stmt = stmt.where(TransactionRow.account_id.in_(account_ids))
-    async with session_factory() as session:
-        return tuple((await session.execute(stmt)).scalars().all())

@@ -12,7 +12,7 @@ use analysis::top_level_id;
 use anyhow::{Context, Result};
 use artifact::reports::SelectedModuleLowering;
 use artifact::{ArtifactIndexes, ChunkBundle};
-use binding_targets::module_export_name;
+use binding_targets::imported_export_name;
 use js_ast::is_binding_identifier;
 use std::collections::{BTreeMap, BTreeSet};
 use swc_common::{DUMMY_SP, SyntaxContext};
@@ -119,11 +119,7 @@ pub fn naturalize_cross_chunk_imports(
                     let ImportSpecifier::Named(named) = specifier else {
                         continue;
                     };
-                    let imported = named
-                        .imported
-                        .as_ref()
-                        .map(module_export_name)
-                        .unwrap_or_else(|| named.local.sym.to_string());
+                    let imported = imported_export_name(named);
                     let Some(readable) = target_exports.get(&imported) else {
                         continue;
                     };

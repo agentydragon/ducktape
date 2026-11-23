@@ -33,7 +33,7 @@ These docs are the source of truth for the current format (YAML, not libsonnet).
 
 If the file you're documenting doesn't exist in the latest snapshot:
 
-```
+```text
 Cannot upsert - file not in latest snapshot.
 Latest: <snapshot-slug>
 A new snapshot is needed to capture current state.

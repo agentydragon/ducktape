@@ -3,8 +3,8 @@ load("//devinfra/python:defs.bzl", "py_library")
 package(default_testonly = True)
 
 py_library(
-    name = "codex_exec_server_container",
-    srcs = ["codex_exec_server_container.py"],
+    name = "executor_companion",
+    srcs = ["executor_companion.py"],
     data = [
         "//agentplane/env/runtime/execution/cmd:agentplane-execution-service",  # keep: companion process launched by the fixture
         "@agentplane_codex_cli_linux_x64//:files",  # keep: pinned Codex process mounted by the fixture
@@ -19,8 +19,8 @@ py_library(
         "//agentplane/env/runtime/execution/companion/control:control_pb2",
         "//agentplane/env/runtime/execution/companion/control:control_pb2_grpc",
         "//devinfra/oci",
+        "//testing:container_logs",
         "//third_party/containers:debian_slim",
-        "//util/testing:container_logs",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",

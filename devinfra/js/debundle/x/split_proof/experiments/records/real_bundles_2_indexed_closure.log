@@ -1,0 +1,117 @@
+## lodash prefix: 100 statements, 4 contiguous modules
+  [time] read + parse JSON: 2 ms
+  [time] footprints (Lean analysis): 0 ms
+  [time] load spec: 0 ms
+  [time] mkPlan: 1 ms
+  pass  UniqueDefs  (0 ms)
+  pass  ReadsClosed  (0 ms)
+  pass  OrderOk  (1 ms)
+  [time] all seven checks: 3 ms
+  [time] render + write: 0 ms
+  [time] total: 6 ms
+## wall 0.06 s, exit 0
+## lodash prefix: 150 statements, 6 contiguous modules
+  [time] read + parse JSON: 5 ms
+  [time] footprints (Lean analysis): 1 ms
+  [time] load spec: 0 ms
+  [time] mkPlan: 2 ms
+  pass  UniqueDefs  (0 ms)
+  pass  ReadsClosed  (2 ms)
+  pass  OrderOk  (2 ms)
+  [time] all seven checks: 10 ms
+  [time] render + write: 1 ms
+  [time] total: 19 ms
+## wall 0.07 s, exit 0
+## lodash prefix: 200 statements, 8 contiguous modules
+  [time] read + parse JSON: 4 ms
+  [time] footprints (Lean analysis): 1 ms
+  [time] load spec: 0 ms
+  [time] mkPlan: 1 ms
+  pass  UniqueDefs  (0 ms)
+  pass  ReadsClosed  (2 ms)
+  pass  OrderOk  (3 ms)
+  [time] all seven checks: 15 ms
+  [time] render + write: 7 ms
+  [time] total: 28 ms
+## wall 0.09 s, exit 0
+## lodash prefix: 300 statements, 12 contiguous modules
+  [time] read + parse JSON: 6 ms
+  [time] footprints (Lean analysis): 1 ms
+  [time] load spec: 1 ms
+  [time] mkPlan: 3 ms
+  pass  UniqueDefs  (0 ms)
+  pass  ReadsClosed  (4 ms)
+  pass  OrderOk  (5 ms)
+  [time] all seven checks: 43 ms
+  [time] render + write: 2 ms
+  [time] total: 56 ms
+## wall 0.11 s, exit 0
+## lodash (full): 670 statements, 6 contiguous modules
+  [time] read + parse JSON: 12 ms
+  [time] footprints (Lean analysis): 4 ms
+  [time] load spec: 2 ms
+  [time] mkPlan: 12 ms
+  pass  UniqueDefs  (0 ms)
+  pass  ReadsClosed  (26 ms)
+  pass  OrderOk  (28 ms)
+  [time] all seven checks: 371 ms
+  [time] render + write: 3 ms
+  [time] total: 404 ms
+## wall 0.45 s, exit 0
+## semver (full): 59 statements, 4 contiguous modules
+  [time] read + parse JSON: 12 ms
+  [time] footprints (Lean analysis): 3 ms
+  [time] load spec: 2 ms
+  [time] mkPlan: 0 ms
+  pass  UniqueDefs  (0 ms)
+  pass  ReadsClosed  (0 ms)
+  pass  OrderOk  (1 ms)
+  [time] all seven checks: 3 ms
+  [time] render + write: 1 ms
+  [time] total: 21 ms
+## wall 0.07 s, exit 0
+## acorn (full): 447 statements, 5 contiguous modules
+  [time] read + parse JSON: 38 ms
+  [time] footprints (Lean analysis): 7 ms
+  [time] load spec: 5 ms
+  [time] mkPlan: 4 ms
+  pass  UniqueDefs  (0 ms)
+  pass  ReadsClosed  (11 ms)
+  pass  OrderOk  (17 ms)
+  [time] all seven checks: 149 ms
+  [time] render + write: 3 ms
+  [time] total: 206 ms
+## wall 0.27 s, exit 0
+## acorn.min (full): 374 statements, 5 contiguous modules
+  [time] read + parse JSON: 32 ms
+  [time] footprints (Lean analysis): 7 ms
+  [time] load spec: 5 ms
+  [time] mkPlan: 3 ms
+  pass  UniqueDefs  (0 ms)
+  pass  ReadsClosed  (9 ms)
+  FAIL  OrderOk  (10 ms)
+  [time] all seven checks: 95 ms
+rejected; nothing written
+## wall 0.20 s, exit 1
+## zod.min (full): 805 statements, 8 contiguous modules
+  [time] read + parse JSON: 117 ms
+  [time] footprints (Lean analysis): 26 ms
+  [time] load spec: 21 ms
+  [time] mkPlan: 48 ms
+  pass  UniqueDefs  (0 ms)
+  pass  ReadsClosed  (65 ms)
+  FAIL  OrderOk  (68 ms)
+  [time] all seven checks: 2346 ms
+rejected; nothing written
+## wall 2.62 s, exit 1
+## zod (full): 1072 statements, 8 contiguous modules
+  [time] read + parse JSON: 121 ms
+  [time] footprints (Lean analysis): 23 ms
+  [time] load spec: 18 ms
+  [time] mkPlan: 66 ms
+  pass  UniqueDefs  (1 ms)
+  pass  ReadsClosed  (49 ms)
+  FAIL  OrderOk  (52 ms)
+  [time] all seven checks: 4327 ms
+rejected; nothing written
+## wall 4.61 s, exit 1

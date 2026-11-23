@@ -79,7 +79,7 @@ function App() {
                   Spend
                 </Anchor>
               </Grid.Col>
-              <Grid.Col span={8} visibleFrom="lg">
+              <Grid.Col span={7} visibleFrom="lg">
                 <Center>
                   <Tabs.List aria-label="Spend pages">
                     {spendTabs.map((tab) => (
@@ -90,8 +90,8 @@ function App() {
                   </Tabs.List>
                 </Center>
               </Grid.Col>
-              <Grid.Col span={{ base: 6, lg: 2 }}>
-                <Group justify="flex-end" gap="xs">
+              <Grid.Col span={{ base: 6, lg: 3 }}>
+                <Group justify="flex-end" gap="xs" wrap="nowrap">
                   {activeTab === "spending" && (
                     <Badge
                       color={spendData.connectionState === "Live updates" ? "teal" : "gray"}

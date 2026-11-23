@@ -43,7 +43,6 @@ class RenderConfig:
 
     columns: list[Column]
     bar_width: int = 20
-    sort_by: SortMode = SortMode.SIZE
     max_depth: int | None = None
     bar_left_blocks: BlockChars | None = None
     bar_right_blocks: BlockChars | None = None

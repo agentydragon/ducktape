@@ -210,9 +210,9 @@ premises are the 133 and 2,508 `native_integrity_witnesses` rows above.
 The web corpus is inside the quoted 2.3M–5.4M edge range on the devel engine
 (3.15M) and below it on the pinned engine (2.16M); the CLI corpus is above it
 summed over chunks (7.37M) and at 5.10M in its largest chunk. The 106 s /
-3.75 GiB figure from <large_web_corpus_baseline.md> was an older engine
-(`c7168bee`) on an older spec and is not comparable with either canonical row;
-the web corpus's step 0 wall baseline is 1,121 s on an RBE executor.
+3.75 GiB figure measured on an older engine (`c7168bee`) and an older spec is
+not comparable with either canonical row; the web corpus's step 0 wall baseline
+is 1,121 s on an RBE executor.
 
 Private detail (chunk names, conflict members, module paths, the exact
 private commit and spec fingerprints) is in the private repository's note

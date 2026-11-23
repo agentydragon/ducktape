@@ -1,8 +1,10 @@
 apiVersion: v1
 kind: Namespace
 metadata:
+  annotations:
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "trust-manager", "controlledValues": "RequestsOnly", "minAllowed": {"cpu": "25m", "memory": "128Mi"}, "maxAllowed": {"cpu": "100m", "memory": "256Mi"}, "controlledResources": ["cpu", "memory"]}, {"containerName": "*", "controlledValues": "RequestsOnly", "mode": "Off"}]}'
   labels:
-    goldilocks.fairwinds.com/vpa-update-mode: "off"
+    goldilocks.fairwinds.com/vpa-update-mode: auto
   name: cert-manager-trust
 spec: {}
 ---
@@ -25,8 +27,18 @@ spec:
       retries: 3
   interval: 30m
   values:
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: trust-manager
+            topologyKey: kubernetes.io/hostname
+    podDisruptionBudget:
+      enabled: true
+      minAvailable: 1
     priorityClassName: system-cluster-critical
-    replicaCount: 1
+    replicaCount: 2
     tolerations:
       - effect: NoSchedule
         key: node-role.kubernetes.io/control-plane

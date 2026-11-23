@@ -3,7 +3,6 @@ package rpc
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"os"
 	"strings"
 	"testing"
@@ -36,18 +35,14 @@ type requestReadStream struct {
 var rpcIntegrationDatabase *postgres.Database
 
 func TestMain(m *testing.M) {
-	migrate := func(ctx context.Context, db *sql.DB) error { return migrations.Up(ctx, db) }
-	os.Exit(postgres.RunIntegrationTests(migrate, func(database *postgres.Database) int {
-		rpcIntegrationDatabase = database
-		return m.Run()
-	}))
+	os.Exit(postgres.RunIntegrationTests(m.Run, migrations.Up, &rpcIntegrationDatabase))
 }
 
 func newTestStore(t testing.TB) *sessionstore.Store {
 	t.Helper()
 	dsn := rpcIntegrationDatabase.Clone(t)
 	db := postgres.Open(t, dsn)
-	return sessionstore.New(db, 30*time.Second)
+	return sessionstore.New(db, 30*time.Second, nil)
 }
 
 func openStoreSession(t *testing.T, store *sessionstore.Store, request *sessionconfig.Configuration, ownerUID string, api protocol.APIStyle) (*sessionstore.Session, error) {

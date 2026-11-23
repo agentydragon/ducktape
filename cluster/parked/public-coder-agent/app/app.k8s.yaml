@@ -31,7 +31,7 @@ data:
           "haku_console_tpm": {
             "name": "Haku Console TPM",
             "model": {
-              "primary": "litellm/chatgpt-sub/oai-responses/gpt-6-astra"
+              "primary": "litellm/chatgpt-sub/oai-responses/gpt-6.2-astra"
             }
           }
         }
@@ -146,14 +146,25 @@ data:
             "baseUrl": "http://litellm.litellm.svc.cluster.local:4000/v1",
             "models": [
               {
-                "contextWindow": 872000,
-                "id": "chatgpt-sub/oai-responses/gpt-6-astra",
+                "contextWindow": 500000,
+                "id": "chatgpt-sub/oai-responses/gpt-6.1-terra",
                 "input": [
                   "text",
                   "image"
                 ],
                 "maxTokens": 128000,
-                "name": "GPT-6 Astra (Codex subscription via LiteLLM)",
+                "name": "GPT-6.1 Terra (Codex subscription via LiteLLM)",
+                "reasoning": true
+              },
+              {
+                "contextWindow": 872000,
+                "id": "chatgpt-sub/oai-responses/gpt-6.2-astra",
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "maxTokens": 128000,
+                "name": "GPT-6.2 Astra (Codex subscription via LiteLLM)",
                 "reasoning": true
               },
               {
@@ -169,13 +180,13 @@ data:
               },
               {
                 "contextWindow": 372000,
-                "id": "chatgpt-sub/oai-responses/gpt-6-sol",
+                "id": "chatgpt-sub/oai-responses/gpt-6.2-sol",
                 "input": [
                   "text",
                   "image"
                 ],
                 "maxTokens": 128000,
-                "name": "GPT-6 Sol (Codex subscription via LiteLLM)",
+                "name": "GPT-6.2 Sol (Codex subscription via LiteLLM)",
                 "reasoning": true
               },
               {

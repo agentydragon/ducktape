@@ -25,8 +25,6 @@ provider "authentik" {
   token = data.kubernetes_secret.authentik_bootstrap.data["AUTHENTIK_BOOTSTRAP_TOKEN"]
 }
 
-# --- Flows and signing key (looked up, not managed) ---
-
 data "authentik_flow" "implicit_consent" {
   slug = "default-provider-authorization-implicit-consent"
 }
@@ -55,9 +53,7 @@ data "authentik_group" "admins" {
   name = "authentik Admins"
 }
 
-# --- OAuth2 Provider ---
 # client_secret omitted — Authentik auto-generates it.
-
 resource "authentik_provider_oauth2" "gatus" {
   name               = "gatus"
   client_id          = "gatus"
@@ -84,8 +80,6 @@ resource "authentik_provider_oauth2" "gatus" {
   ]
 }
 
-# --- Application ---
-
 resource "authentik_application" "gatus" {
   name              = "Gatus"
   slug              = "gatus"
@@ -96,15 +90,11 @@ resource "authentik_application" "gatus" {
   open_in_new_tab   = true
 }
 
-# --- Access Policy ---
-
 resource "authentik_policy_binding" "gatus_admins" {
   target = authentik_application.gatus.uuid # .id is slug, not UUID; API requires UUID
   group  = data.authentik_group.admins.id
   order  = 0
 }
-
-# --- K8s Secret for Gatus OIDC config ---
 
 resource "kubernetes_secret" "gatus_oidc" {
   metadata {

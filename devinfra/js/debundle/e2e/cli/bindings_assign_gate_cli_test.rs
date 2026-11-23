@@ -103,11 +103,7 @@ fn empty_assign_batch_does_not_parse_or_change_the_tree() {
     ]);
     command.env_remove("DEBUNDLE_GRAPH");
     let output = process::debundle_output(&mut command).unwrap_or_else(|err| panic!("{err}"));
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    process::assert_success(&output);
     let report = parse_stdout_json(&output);
     assert_eq!(report["action"], "noop");
     assert_eq!(report["gate"], "not_required");

@@ -39,37 +39,11 @@ fn unseeded_required_closure_is_checked_previewed_applied_and_runs() {
     assert_eq!(read_tree(&fixture.modules), before);
 
     let plan = fixture.save_json("plan.json", &result["plan"]);
-    fixture.assert_success(&[
-        "modules",
-        "check",
-        "--plan",
+    fixture.assert_plan_checks_previews_applies_and_runs(
         &plan,
-        "--tree-config",
-        &config,
-    ]);
-    fixture.assert_success(&[
-        "modules",
-        "apply",
-        "--plan",
-        &plan,
-        "--modules",
-        fixture.root().join("modules").to_str().unwrap(),
-        "--tree-config",
-        &config,
-        "--dry-run",
-    ]);
-    assert_eq!(read_tree(&fixture.modules), before);
-    fixture.assert_success(&[
-        "modules",
-        "apply",
-        "--plan",
-        &plan,
-        "--modules",
-        fixture.root().join("modules").to_str().unwrap(),
-        "--tree-config",
-        &config,
-    ]);
-    fixture.assert_runs("1 3\n");
+        Some(&fixture.root().join("modules")),
+        "1 3\n",
+    );
 }
 
 #[test]
@@ -103,39 +77,14 @@ fn a_peel_with_repeated_initializers_uses_its_named_reference() {
     ]);
     assert_eq!(result["status"], "found", "{result}");
     assert_eq!(result["residual_units_extracted"], 1);
-    let plan = fixture.save_json("plan.json", &result["plan"]);
-    fixture.assert_success(&[
-        "modules",
-        "check",
-        "--plan",
-        &plan,
-        "--tree-config",
-        &config,
-    ]);
-    fixture.assert_success(&[
-        "modules",
-        "apply",
-        "--plan",
-        &plan,
-        "--modules",
-        fixture.modules.to_str().unwrap(),
-        "--tree-config",
-        &config,
-        "--dry-run",
-    ]);
     assert_eq!(read_tree(&fixture.modules), before_modules);
     assert_eq!(fs::read(&config).unwrap(), before_config);
-    fixture.assert_success(&[
-        "modules",
-        "apply",
-        "--plan",
+    let plan = fixture.save_json("plan.json", &result["plan"]);
+    fixture.assert_plan_checks_previews_applies_and_runs(
         &plan,
-        "--modules",
-        fixture.modules.to_str().unwrap(),
-        "--tree-config",
-        &config,
-    ]);
-    fixture.assert_runs("function\n");
+        Some(&fixture.modules),
+        "function\n",
+    );
 }
 
 #[test]
@@ -158,38 +107,13 @@ fn unseeded_peels_can_claim_an_indistinguishable_run_jointly() {
     let result = fixture.json(&["modules", "propose", "--tree-config", &config]);
     assert_eq!(result["status"], "found", "{result}");
     assert_eq!(result["residual_units_extracted"], 6);
-    let plan = fixture.save_json("plan.json", &result["plan"]);
-    fixture.assert_success(&[
-        "modules",
-        "check",
-        "--plan",
-        &plan,
-        "--tree-config",
-        &config,
-    ]);
-    fixture.assert_success(&[
-        "modules",
-        "apply",
-        "--plan",
-        &plan,
-        "--modules",
-        fixture.modules.to_str().unwrap(),
-        "--tree-config",
-        &config,
-        "--dry-run",
-    ]);
     assert_eq!(read_tree(&fixture.modules), before);
-    fixture.assert_success(&[
-        "modules",
-        "apply",
-        "--plan",
+    let plan = fixture.save_json("plan.json", &result["plan"]);
+    fixture.assert_plan_checks_previews_applies_and_runs(
         &plan,
-        "--modules",
-        fixture.modules.to_str().unwrap(),
-        "--tree-config",
-        &config,
-    ]);
-    fixture.assert_runs("function true true true true\n");
+        Some(&fixture.modules),
+        "function true true true true\n",
+    );
 }
 
 #[test]

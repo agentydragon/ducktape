@@ -105,10 +105,7 @@ async def run_environment_service(
     namespace: str,
     *,
     caller_uri: str,
-    additional_callers: Sequence[str] = (),
     environment_runtime_ca: CertificateAuthority | None = None,
-    runtime_proxy_readers: Sequence[str] = (APP_URI, GATEWAY_SESSIONS_URI),
-    runtime_proxy_session_callers: Sequence[str] = (GATEWAY_SESSIONS_URI,),
     runtime_proxy_controller_callers: Sequence[str] = (),
     runtime_proxy_executor_callers: Sequence[str] = (),
 ) -> AsyncIterator[EnvironmentServiceProcess]:
@@ -131,13 +128,13 @@ async def run_environment_service(
         server_dir.mkdir()
         cert, key = issue_workload_leaf(ca, SANDBOX_CONTROLLER_URI, server_dir, dns_name="localhost")
 
-        service_callers = tuple(dict.fromkeys((caller_uri, *additional_callers)))
+        service_callers = (caller_uri,)
+        runtime_proxy_readers = (APP_URI, GATEWAY_SESSIONS_URI)
         runtime_callers = tuple(
             dict.fromkeys(
                 (
                     *service_callers,
                     *runtime_proxy_readers,
-                    *runtime_proxy_session_callers,
                     *runtime_proxy_controller_callers,
                     *runtime_proxy_executor_callers,
                     GATEWAY_RUNTIME_PROXY_URI,
@@ -166,7 +163,7 @@ async def run_environment_service(
             "ENVIRONMENTS_TEST_RUNTIME_PROXY_KEY": str(runtime_proxy_key),
             "ENVIRONMENTS_TEST_RUNTIME_PROXY_CA": str(ca_file),
             "ENVIRONMENTS_TEST_RUNTIME_READERS": ",".join(runtime_proxy_readers),
-            "ENVIRONMENTS_TEST_RUNTIME_SESSION_CALLERS": ",".join(runtime_proxy_session_callers),
+            "ENVIRONMENTS_TEST_RUNTIME_SESSION_CALLERS": GATEWAY_SESSIONS_URI,
             "ENVIRONMENTS_TEST_RUNTIME_CONTROLLER_CALLERS": ",".join(runtime_proxy_controller_callers),
             "ENVIRONMENTS_TEST_RUNTIME_EXECUTOR_CALLERS": ",".join(runtime_proxy_executor_callers),
         }

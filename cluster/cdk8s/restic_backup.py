@@ -30,6 +30,7 @@ from volsync_replicationsource_crds.backube.volsync import (
 from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
+from cluster.cdk8s.seaweedfs.endpoints import CLUSTER_NAME, S3, S3_HTTP_URL
 
 
 def restic_egress(labels: Mapping[str, str]) -> k8s.NetworkPolicySpec:
@@ -54,18 +55,19 @@ def restic_egress(labels: Mapping[str, str]) -> k8s.NetworkPolicySpec:
             k8s.NetworkPolicyEgressRule(
                 to=[
                     k8s.NetworkPolicyPeer(
-                        namespace_selector=k8s.LabelSelector(match_labels={"kubernetes.io/metadata.name": "seaweedfs"}),
+                        namespace_selector=k8s.LabelSelector(
+                            match_labels={"kubernetes.io/metadata.name": S3.pods.namespace}
+                        ),
                         pod_selector=k8s.LabelSelector(
                             match_labels={
-                                "app.kubernetes.io/component": "s3",
-                                "app.kubernetes.io/instance": "seaweedfs",
+                                **S3.pods.selector,
+                                "app.kubernetes.io/instance": CLUSTER_NAME,
                                 "app.kubernetes.io/managed-by": "seaweedfs-operator",
-                                "app.kubernetes.io/name": "seaweedfs",
                             }
                         ),
                     )
                 ],
-                ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(8333), protocol="TCP")],
+                ports=[k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(S3.pod_port), protocol="TCP")],
             ),
         ],
     )
@@ -115,8 +117,8 @@ class ResticBackup(Construct):
     Secret `repository`, which VolSync reads.
 
     Our policy: keep 7 daily, 4 weekly and 6 monthly snapshots and prune weekly; the mover runs
-    as uid and gid 1000 and reaches only DNS and SeaweedFS's S3 port. `mover_affinity=None`
-    sets none: the Direct mover mounts the source PVC, so a node-local volume already places it.
+    as uid and gid 1000 and reaches only DNS and SeaweedFS's S3 port. It sets no affinity: the
+    Direct mover mounts the source PVC, so a node-local volume already places it.
     `paused=True` stops new syncs and the running mover; the repository and cache stay.
     """
 
@@ -133,7 +135,6 @@ class ResticBackup(Construct):
         s3_credentials: str,
         schedule: str,
         cache_storage_class_name: str,
-        mover_affinity: ReplicationSourceSpecResticMoverAffinity | None = None,
         paused: bool = False,
     ) -> None:
         super().__init__(scope, id)
@@ -191,10 +192,7 @@ class ResticBackup(Construct):
                 merge_policy=ExternalSecretSpecTargetTemplateMergePolicy.MERGE,
                 template_from=[
                     ExternalSecretSpecTargetTemplateTemplateFrom(
-                        literal=(
-                            f"RESTIC_REPOSITORY: s3:http://seaweedfs-s3.seaweedfs.svc:8333/{bucket}\n"
-                            "AWS_DEFAULT_REGION: us-east-1\n"
-                        )
+                        literal=f"RESTIC_REPOSITORY: s3:{S3_HTTP_URL}/{bucket}\nAWS_DEFAULT_REGION: us-east-1\n"
                     )
                 ],
             ),
@@ -219,6 +217,5 @@ class ResticBackup(Construct):
                         type="RuntimeDefault"
                     ),
                 ),
-                mover_affinity=mover_affinity,
             ),
         )

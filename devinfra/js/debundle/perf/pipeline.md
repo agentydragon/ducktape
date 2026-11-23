@@ -47,8 +47,8 @@ Tighten before the next large peel loop:
 - Add focused regression coverage for `ArtifactIndexes` rebuild
   boundaries as more structural artifact mutations are optimized.
 - Profile the debundle action around `materialize_logical_modules` and
-  `apply_emission_rewrites`; avoid whole-graph clone/rescan patterns where
-  a graph pass or indexed lookup can answer the same question.
+  `apply_emission_rewrites_in_place`; avoid whole-graph clone/rescan patterns
+  where a graph pass or indexed lookup can answer the same question.
 - Consider changing per-chunk `file_records` from an ordered vector of
   `(file, role)` pairs into a typed map if output consumers do not depend
   on order. Keep the manifest easy to diff and read.

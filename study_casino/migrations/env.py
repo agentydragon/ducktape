@@ -1,6 +1,6 @@
 """Alembic migration environment for Study Casino.
 
-Connection is injected programmatically by DocStore startup; do not rely on a
+Connection is injected programmatically by `SqlStore` startup; do not rely on a
 checked-in alembic.ini for production.
 """
 

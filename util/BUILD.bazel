@@ -26,10 +26,7 @@ py_library(
     name = "logging",
     srcs = ["logging.py"],
     visibility = ["//visibility:public"],
-    deps = [
-        "@pypi//structlog",
-        "@pypi//typer",
-    ],
+    deps = ["@pypi//typer"],
 )
 
 py_library(
@@ -60,7 +57,7 @@ py_library(
     srcs = ["playwright.py"],
     visibility = ["//visibility:public"],
     deps = [
-        "//util/testing/browser:launcher",
+        "//testing/browser:launcher",
         "@pypi//playwright",
         "@pypi//pytest",
     ],
@@ -78,7 +75,6 @@ py_package(
         ":otel",
         ":typer",
         ":urls",
-        "//devinfra/bazel:subprocess",
         "//devinfra/bazel:workspace",
         "//util/exec:models",
         "//util/exec:subprocess",
@@ -105,8 +101,8 @@ py_library(
     srcs = ["db_migrations.py"],
     visibility = ["//visibility:public"],
     deps = [
+        ":alembic_upgrade",
         ":db_url",
-        "@pypi//alembic",
         "@pypi//psycopg",
         "@pypi//sqlalchemy",
         "@pypi//tenacity",
@@ -174,8 +170,8 @@ py_test(
     deps = [
         ":oidc_login",
         "//:conftest",
-        "//util/testing:asgi",
-        "//util/testing:mock_oidc",
+        "//testing:asgi",
+        "//testing:mock_oidc",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//itsdangerous",
@@ -237,7 +233,7 @@ py_library(
     name = "network_monitor",
     srcs = ["network_monitor.py"],
     visibility = ["//visibility:public"],
-    deps = ["@pypi//dbus_next"],
+    deps = ["@pypi//dbus_fast"],
 )
 
 py_test(
@@ -246,7 +242,7 @@ py_test(
     deps = [
         ":network_monitor",
         "//:conftest",
-        "@pypi//dbus_next",
+        "@pypi//dbus_fast",
     ],
 )
 
@@ -260,8 +256,18 @@ py_wheel(
     name = "network_monitor_wheel",
     distribution = "ducktape-network-monitor",
     python_requires = ">=3.14",
-    requires = ["dbus-next>=0.2.3"],
+    requires = ["dbus-fast>=4.0.0"],
     version = "0.1.0",
     visibility = ["//visibility:public"],
     deps = [":network_monitor_pkg"],
+)
+
+py_library(
+    name = "alembic_upgrade",
+    srcs = ["alembic_upgrade.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
 )

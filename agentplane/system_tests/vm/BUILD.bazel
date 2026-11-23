@@ -70,11 +70,9 @@ py_library(
     srcs = ["supervision.py"],
     deps = [
         ":configuration",
-        "//agentplane/app/testing:client",
         "//agentplane/proto:session_pb2",
-        "//agentplane/session_dispatcher/dispatcher:testing_client",
-        "//agentplane/system_tests/driver:agent",
-        "//agentplane/system_tests/driver:session_setup",
+        "//agentplane/system_tests/driver:native_platform",
+        "//agentplane/system_tests/driver:session",
         "@pypi//protobuf",
     ],
 )
@@ -130,7 +128,6 @@ oci_image(
 
 py_library(
     name = "block_storage",
-    testonly = True,
     srcs = ["block_storage.py"],
     visibility = ["//agentplane/system_tests:__subpackages__"],
     deps = [
@@ -184,8 +181,8 @@ py_library(
     name = "host_qemu",
     srcs = ["host_qemu.py"],
     deps = [
-        ":guest_logs",
         ":iotlb_capture",
+        ":shutdown_diagnostic",
     ],
 )
 
@@ -194,6 +191,7 @@ py_test(
     srcs = ["test_host_qemu.py"],
     deps = [
         ":host_qemu",
+        ":shutdown_diagnostic",
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
@@ -205,6 +203,7 @@ py_test(
     srcs = ["test_guest_logs.py"],
     deps = [
         ":guest_logs",
+        ":shutdown_diagnostic",
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest",
@@ -361,6 +360,7 @@ py_test(
     },
     deps = [
         ":boot_rcu",
+        ":guest_busybox",
         "//:conftest",
         "//agentplane/environments/v1:environment_service_pb2",
         "//agentplane/proto:identity_pb2",
@@ -610,6 +610,7 @@ py_test(
     },
     main = "test_cgroup_pilot_trace.py",
     deps = [
+        ":guest_busybox",
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest_bazel",
@@ -637,6 +638,7 @@ py_test(
     },
     main = "test_delegated_cgroup_stress.py",
     deps = [
+        ":guest_busybox",
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest_bazel",
@@ -658,6 +660,7 @@ py_test(
     },
     main = "test_shutdown_sysrq.py",
     deps = [
+        ":guest_busybox",
         "//:conftest",
         "//agentplane/system_tests:conftest",
         "@pypi//pytest_bazel",
@@ -710,6 +713,17 @@ py_test(
 py_library(
     name = "env_flags",
     srcs = ["env_flags.py"],
+)
+
+py_test(
+    name = "test_env_flags",
+    srcs = ["test_env_flags.py"],
+    deps = [
+        ":env_flags",
+        "//:conftest",
+        "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+    ],
 )
 
 py_library(
@@ -785,6 +799,24 @@ py_test(
         ":tracefs",
         "//:conftest",
         "//agentplane/system_tests:conftest",
+        "@pypi//pytest",
+    ],
+)
+
+py_library(
+    name = "guest_busybox",
+    srcs = ["guest_busybox.py"],
+)
+
+py_library(
+    name = "pytest_plugin",
+    srcs = ["pytest_plugin.py"],
+    deps = [
+        ":guest_logs",
+        ":runtime",
+        "//agentplane/system_tests/deployment:pytest_plugin",
+        "//agentplane/system_tests/deployment:virtualization",
+        "//devinfra/testing:undeclared_outputs",
         "@pypi//pytest",
     ],
 )

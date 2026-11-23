@@ -9,26 +9,20 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from cilium_crds.io.cilium import (
-    CiliumNetworkPolicySpecIngress,
-    CiliumNetworkPolicySpecIngressFromEntities,
-    CiliumNetworkPolicySpecIngressToPorts,
-    CiliumNetworkPolicySpecIngressToPortsPorts,
-    CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
-)
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from airlock.oauth.config import OAuth2ProviderConfig, OAuthConfig, TokenSecretConfig
 from airlock.settings import Settings
-from cluster.cdk8s import namespaces
+from cluster.cdk8s import namespaces, public_web_pki
 from cluster.cdk8s.config_format import yaml_config
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
+from cluster.cdk8s.namespaces import Vpa, VpaProfile
+from cluster.cdk8s.providers.cilium.network_policy import Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import (
     ClusterDataFrom,
     ClusterExternalSecret,
@@ -36,6 +30,7 @@ from cluster.cdk8s.providers.external_secrets.external_secret import (
 )
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.vpa_policy import ContainerPolicy, ControlledValues
 from util.settings_contract import validate_settings_fragment
 
 NAME = "airlock"
@@ -151,14 +146,6 @@ CONFIG_MAP = ConfigMapArgs(
 )
 
 
-def _probe(path: str, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
-    return k8s.Probe(
-        http_get=k8s.HttpGetAction(path=path, port=k8s.IntOrString.from_number(SERVICE.pod_port)),
-        initial_delay_seconds=initial_delay_seconds,
-        period_seconds=period_seconds,
-    )
-
-
 def _provider_client_credentials(provider_name: str) -> SecretRef:
     # `google-write` intentionally shares the Google OAuth client; every other provider uses its own.
     credential_provider = "google" if provider_name == "google-write" else provider_name
@@ -175,6 +162,7 @@ def _provider_client_credential_env(provider_name: str) -> list[k8s.EnvVar]:
 
 
 def _deployment(chart: Chart) -> None:
+    health = k8s.HttpGetAction(path="/healthz", port=k8s.IntOrString.from_number(SERVICE.pod_port))
     k8s.KubeDeployment(
         chart,
         "deployment",
@@ -198,11 +186,11 @@ def _deployment(chart: Chart) -> None:
                             name=NAME,
                             image=f"git.allegedly.works/ducktape-ci/airlock:{_PLACEHOLDER_TAG}",
                             image_pull_policy="Always",
-                            ports=[SERVICE.port.k8s_container_port()],
+                            ports=[SERVICE.k8s_container_port()],
                             env=[
                                 k8s.EnvVar(name="AIRLOCK_IMAGE_TAG", value=_PLACEHOLDER_TAG),
                                 k8s.EnvVar(name="CONFIG_PATH", value=f"{_CONFIG_MOUNT}/config.yaml"),
-                                k8s.EnvVar(name="SSL_CERT_FILE", value="/var/run/public-web-pki/ca-certificates.crt"),
+                                public_web_pki.SSL_CERT_FILE,
                                 _OIDC.key("client-id").env_var("AIRLOCK_OIDC_CLIENT_ID"),
                                 _OIDC.key("client-secret").env_var("AIRLOCK_OIDC_CLIENT_SECRET"),
                                 _SESSION.env_var("AIRLOCK_OIDC_SESSION_SECRET"),
@@ -214,28 +202,19 @@ def _deployment(chart: Chart) -> None:
                             ],
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path=_CONFIG_MOUNT, read_only=True),
-                                k8s.VolumeMount(
-                                    name="public-web-pki", mount_path="/var/run/public-web-pki", read_only=True
-                                ),
+                                public_web_pki.VOLUME_MOUNT,
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "memory": k8s.Quantity.from_string("256Mi"),
-                                    "cpu": k8s.Quantity.from_string("100m"),
-                                },
-                                limits={
-                                    "memory": k8s.Quantity.from_string("512Mi"),
-                                    "cpu": k8s.Quantity.from_string("500m"),
-                                },
+                            resources=container_resources(
+                                cpu="100m", memory="256Mi", cpu_limit="500m", memory_limit="512Mi"
                             ),
-                            liveness_probe=_probe("/healthz", 15, 20),
-                            readiness_probe=_probe("/healthz", 5, 10),
+                            liveness_probe=k8s.Probe(http_get=health, initial_delay_seconds=15, period_seconds=20),
+                            readiness_probe=k8s.Probe(http_get=health, initial_delay_seconds=5, period_seconds=10),
                         )
                     ],
                     # Generated by kustomization.yaml's configMapGenerator.
                     volumes=[
                         k8s.Volume(name="config", config_map=k8s.ConfigMapVolumeSource(name="airlock-config")),
-                        k8s.Volume(name="public-web-pki", config_map=k8s.ConfigMapVolumeSource(name="public-web-pki")),
+                        public_web_pki.VOLUME,
                     ],
                 ),
             ),
@@ -249,9 +228,7 @@ def _session_secret(chart: Chart) -> None:
     mint_bearer_secret(
         chart,
         "session-secret",
-        name=_SESSION.secret.name,
-        namespace=_SESSION.secret.namespace,
-        key=_SESSION.key,
+        target=_SESSION,
         length=64,
         digits=16,
         creation_policy=ExternalSecretSpecTargetCreationPolicy.ORPHAN,
@@ -272,21 +249,6 @@ def _mirror(chart: Chart, name: str, namespaces: list[str]) -> None:
     )
 
 
-def _ingress_from(entity: CiliumNetworkPolicySpecIngressFromEntities) -> CiliumNetworkPolicySpecIngress:
-    return CiliumNetworkPolicySpecIngress(
-        from_entities=[entity],
-        to_ports=[
-            CiliumNetworkPolicySpecIngressToPorts(
-                ports=[
-                    CiliumNetworkPolicySpecIngressToPortsPorts(
-                        port=str(SERVICE.pod_port), protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP
-                    )
-                ]
-            )
-        ],
-    )
-
-
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAME)
@@ -294,17 +256,15 @@ def chart(app: App) -> Chart:
         chart,
         "namespace",
         name=NAME,
-        vpa=Vpa.AUTO,
+        vpa=VpaProfile(
+            Vpa.AUTO,
+            (
+                ContainerPolicy(
+                    controlled_values=ControlledValues.REQUESTS_ONLY, min_allowed={"cpu": "100m", "memory": "128Mi"}
+                ),
+            ),
+        ),
         labels={"name": NAME},
-        annotations={
-            # controlledValues has to be spelled out here: default-vpa-requests-only
-            # only adds the annotation when it is absent, so declaring any policy of
-            # your own opts the namespace out of the default entirely.
-            "goldilocks.fairwinds.com/vpa-resource-policy": (
-                '{ "containerPolicies": [ { "containerName": "*", "controlledValues":'
-                ' "RequestsOnly", "minAllowed": { "cpu": "100m", "memory": "128Mi" } } ] }\n'
-            )
-        },
     )
     _session_secret(chart)
     _deployment(chart)
@@ -330,7 +290,7 @@ def chart(app: App) -> Chart:
         chart,
         "service",
         metadata=k8s.ObjectMeta(name=SERVICE.name, namespace=NAME, labels=SERVICE.labels),
-        spec=k8s.ServiceSpec(selector=SERVICE.pods.selector, ports=[SERVICE.port.k8s_service_port()], type="ClusterIP"),
+        spec=k8s.ServiceSpec(selector=SERVICE.pods.selector, ports=[SERVICE.k8s_service_port()], type="ClusterIP"),
     )
     # Traffic flows directly: Gateway → backend. The backend handles OIDC and protects browser
     # APIs with its same-origin session cookie.
@@ -351,9 +311,9 @@ def chart(app: App) -> Chart:
         metadata=ApiObjectMetadata(name="ingress", namespace=NAME),
         endpoint_selector=SERVICE.pods.selector,
         ingress=[
-            _ingress_from(CiliumNetworkPolicySpecIngressFromEntities.INGRESS),
+            IngressRule.from_gateway(SERVICE.pod_port),
             # Kubelet liveness/readiness probes originate from the node host.
-            _ingress_from(CiliumNetworkPolicySpecIngressFromEntities.HOST),
+            IngressRule.from_entities(Entity.HOST, ports=[SERVICE.pod_port]),
         ],
     )
     # google-access-token carries read-only Google scopes. Never mirrored into a namespace an agent

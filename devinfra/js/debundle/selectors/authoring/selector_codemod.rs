@@ -883,7 +883,6 @@ fn rewrite_name_bindings_to_source_match(
                         local: target.selector_local.clone(),
                         name: member.export_name.clone(),
                     }],
-                    None,
                 ));
                 replacements.insert(member.member_index, None);
             }
@@ -1053,11 +1052,7 @@ fn validate_annotation_field_value(
     Ok(())
 }
 
-fn source_match_claim_value(
-    match_source: &str,
-    bindings: Vec<MigratedSourceBinding>,
-    note: Option<String>,
-) -> Value {
+fn source_match_claim_value(match_source: &str, bindings: Vec<MigratedSourceBinding>) -> Value {
     let mut claim = serde_yaml::Mapping::new();
     claim.insert(yk("match"), Value::String(match_source.to_string()));
     claim.insert(
@@ -1069,9 +1064,6 @@ fn source_match_claim_value(
                 .collect(),
         ),
     );
-    if let Some(note) = note {
-        claim.insert(yk("note"), Value::String(note));
-    }
     Value::Mapping(claim)
 }
 
@@ -1096,7 +1088,6 @@ fn synthesized_source_match_claim_value(synthesized: &SynthesizedSelectorGroup) 
                 name: target.export_name.clone(),
             })
             .collect(),
-        None,
     )
 }
 
@@ -1489,8 +1480,7 @@ fn synthesize_simplest_selector_for_group(
     let rewritten_holes = specialized.rewritten_holes;
 
     // `--candidates N > 1`: collect the rest of the ranked read-off menu beyond the
-    // primary pick (deduped against it). Object/multi-declarator-var menus yield
-    // none until their read-off forms are wired through the menu path.
+    // primary pick (deduped against it).
     let alternatives = if candidates_limit > 1 {
         synthesize_specialized_selector_candidates(index, item, decl, &targets, candidates_limit)?
             .into_iter()
@@ -1515,7 +1505,6 @@ fn synthesize_simplest_selector_for_group(
     ))
 }
 
-// ===========================================================================
 // Anti-unification grouping.
 //
 // `synthesize_simplest_selector_for_group` already groups members that share an
@@ -1536,7 +1525,6 @@ fn synthesize_simplest_selector_for_group(
 // — are equal. The merged run-selector is re-proven through the matcher gate
 // (kind-agnostic multi-statement alignment); on failure the run is emitted as
 // individual selectors, never an unproven group.
-// ===========================================================================
 
 /// Collapse maximal runs of adjacent, same-shape single-target declaration
 /// groups into one run-based grouped source_match. Other groups (multi-declarator var
@@ -1842,9 +1830,7 @@ fn synthesize_specialized_selector(
 }
 
 /// Up to `limit` ranked candidate selectors for the item — the
-/// `synthesize-selectors --candidates N` menu. The function/class read-off forms
-/// return their full ranked walk; object/multi-declarator-var emit only the single
-/// pick for now (their menus are not yet wired through the var/object read-off).
+/// `synthesize-selectors --candidates N` menu.
 fn synthesize_specialized_selector_candidates(
     index: &ChunkSelectorIndex<'_>,
     item: &ModuleItem,

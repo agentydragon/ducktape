@@ -47,6 +47,9 @@ cd "$T" && "$GOROOT/bin/go" build -trimpath -o "$OUT" .
         mnemonic = "GoPlainBinary",
     )
 
+# Not rules_go's `go_binary`: it links without `go build`, so the binary's buildinfo has no `path` or
+# `mod` fields and `go version -m` prints only the toolchain version (`go1.26.2`). The binary-diff recipe
+# needs a plain binary with full module info (`garble_target`) to contrast with the garbled `unknown`.
 plain_binary = rule(
     implementation = _plain_binary_impl,
     attrs = {

@@ -52,10 +52,9 @@ class Scorable(Protocol):
 
     Neither protocol requires a `factor_names`. A factor is a private implementation concept
     of the vector-space/correlation models; a per-series independent model has no basis, and a
-    provider returning a constant for everything is valid and has nothing to name. Requiring it
-    here is what previously forced `IndependentModel` to expose a factor list that only its own
-    test ever read. What a model is asked for is a `HistoricalSeries` — observed series — and
-    what it does with them is its own business.
+    provider returning a constant for everything is valid and has nothing to name. What a model
+    is asked for is a `HistoricalSeries` — observed series — and what it does with them is its
+    own business.
     """
 
     label: str

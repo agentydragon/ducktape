@@ -2,21 +2,6 @@ package coordinator
 
 import "context"
 
-// runtimeCloseStage is the Runtime's ordered shutdown barrier. ReadyToJoin means
-// the COSI engine can stop; the caller still waits for worker joins and owner release.
-type runtimeCloseStage uint8
-
-const (
-	runtimeClosePreparing runtimeCloseStage = iota
-	runtimeCloseNativeStopping
-	runtimeCloseExecutionFencing
-	runtimeCloseHistoryFlushing
-	runtimeCloseSessionsJoining
-	runtimeCloseBootstrapSettling
-	runtimeCloseReadyToJoin
-	runtimeCloseFailed
-)
-
 type runtimeTransitionKind uint8
 
 const (

@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bufio"
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -11,8 +12,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/egress/internal/decision"
 	transport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
+	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func TestPassthroughPreservesDestinationTLSWithoutPolicyOrCallerHeaders(t *testing.T) {
@@ -107,6 +113,61 @@ func TestPassthroughPreservesDestinationTLSWithoutPolicyOrCallerHeaders(t *testi
 			if err == nil && answer.StatusCode == http.StatusOK {
 				t.Fatal("unauthenticated passthrough admitted")
 			}
+		}
+	}
+}
+
+// failIdentityRead lets the real credential resolve until a specific live Identity lookup fails.
+type failIdentityRead struct {
+	client.Reader
+	remaining int
+	err       error
+}
+
+func (r *failIdentityRead) Get(ctx context.Context, key client.ObjectKey, object client.Object, opts ...client.GetOption) error {
+	if _, ok := object.(*policyapi.Identity); ok {
+		r.remaining--
+		if r.remaining == 0 {
+			return r.err
+		}
+	}
+	return r.Reader.Get(ctx, key, object, opts...)
+}
+
+func TestPassthroughIdentityRefusal(t *testing.T) {
+	for _, phase := range []struct {
+		name string
+		read int
+	}{{"initial", 1}, {"post-dial", 2}} {
+		for _, failure := range []struct {
+			name   string
+			err    error
+			status int
+			reason decision.Reason
+		}{
+			{"unavailable", context.DeadlineExceeded, http.StatusBadGateway, decision.Unavailable},
+			{"deleted", apierrors.NewNotFound(schema.GroupResource{Resource: "identities"}, "test"), http.StatusForbidden, decision.TokenRejected},
+		} {
+			t.Run(phase.name+"/"+failure.name, func(t *testing.T) {
+				lab := newLabWithIdentityReader(t, func(reader client.Reader) client.Reader {
+					return &failIdentityRead{Reader: reader, remaining: phase.read, err: failure.err}
+				})
+				server, _ := lab.upstream(t, fixtureHost, false, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+					t.Error("rejected tunnel forwarded a request")
+				}))
+				authority := fixtureHost + ":" + portOf(server)
+				lab.proxy.options.TLSPassthroughTargets = []string{authority}
+				_, response := lab.connect(t, authority, "")
+				defer response.Body.Close()
+				if got := response.Header.Get(deniedHeader); response.StatusCode != failure.status || got != "denied; reason="+string(failure.reason) {
+					t.Errorf("CONNECT returned %s, %s", response.Status, got)
+				}
+				records := lab.records.all()
+				if len(records) != 1 || records[0].Outcome != decision.Deny || records[0].Reason == nil ||
+					*records[0].Reason != failure.reason || records[0].Subject != nil {
+					t.Fatalf("refusal audit = %+v", records)
+				}
+			})
 		}
 	}
 }

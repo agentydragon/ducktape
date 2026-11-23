@@ -12,12 +12,9 @@ Getting these wrong is destructive or silently corrupting.
   "including persistent auth" or "from scratch".
 - **Commit and push before reconciling Flux** — it reads the git remote; reconciling
   uncommitted work applies the old state and looks like a failed change.
-- **Wiping a backing DB orphans tofu state.** `tf/gitops/sso-providers/` (Authentik OAuth2
-  providers) and `props/deploy/forgejo/tofu/` (Forgejo registry user) record IDs of objects
-  in other stateful systems; wiping that DB without clearing tofu state (CNPG
-  `tofu-state-db-ovh`, one schema per `Terraform` CR) yields
-  `Unable to read … not found with id N`. Recovery: <docs/troubleshooting.md>
-  § "Resource ID Desync After Wiping a Backing Datastore".
+- **A backing database restore can invalidate IDs in OpenTofu state.** Preserve the
+  state and identify the reconciler before repairing affected bindings. Authentik and
+  Forgejo examples are in [Resource ID Desync After Wiping a Backing Datastore](docs/troubleshooting.md#resource-id-desync-after-wiping-a-backing-datastore).
 - **DNS and website must survive OVH-only** (README § "OVH-Only Resilience Invariants").
 
 ## Bootstrap
@@ -44,7 +41,7 @@ Getting these wrong is destructive or silently corrupting.
 
 `ovh-nodes.tf` (OVH bare metal), `home-nodes.tf` (home Talos workers), `proxmox-nodes.tf`
 (Proxmox VMs), `talos-machine-secrets.tf` (persistent), `cilium.tf`, `infrastructure.tf`
-(firewall, Talos bootstrap, registry mirrors), `persistent-auth.tf` (`prevent_destroy`),
+(Talos bootstrap, registry mirrors), `persistent-auth.tf` (`prevent_destroy`),
 `nebula.tf` (per-node config + endpoint drift check).
 
 ## Secrets
@@ -62,9 +59,8 @@ minting fresh values for fields you can't recover (i.e. rotate).
   obvious.
 - In-cluster VMs should forward guest logs to a destination the cluster already collects;
   see <docs/troubleshooting.md> § Loki for the KubeVirt path and query.
-- YAML consumed by `configMapGenerator` stays `.yaml` (never disguised as `.txt`): add
-  `cluster-manifest-ignored=true` in root `.gitattributes`, add the path to the kubeconform
-  exclusion in `.pre-commit-config.yaml`, and mark the file as a `configMapGenerator` input.
+- List configuration YAML in its consuming `configMapGenerator` and keep the `.yaml`
+  extension. Exclude application-specific YAML from kubeconform in `.pre-commit-config.yaml`.
 - A `HelmRepository`/`GitRepository` consumed by exactly one `HelmRelease` in the same
   component directory: put it first in `helmrelease.yaml` and list only that file in
   `kustomization.yaml`. Keep separate if reused, independently owned, or a consumer needs
@@ -82,9 +78,9 @@ Guide: <docs/container-images.md>.
   carrying an `$imagepolicy` marker** — `ImageUpdateAutomation` re-serializes the document
   differently from prettier and pushes to `devel` as `chore: update images [skip ci]`
   without CI, turning `devel` red on every image update. Use block style.
-- One `ImageRepository` + one `ImagePolicy` not reused elsewhere: one `<name>-image.yaml`,
-  repository first. `ImageUpdateAutomation` gets its own file. A Receiver reference alone
-  doesn't force a split.
+- For hand-written manifests, keep an `ImageRepository` and its single-use `ImagePolicy`
+  in one `<name>-image.yaml`, repository first. Give `ImageUpdateAutomation` its own file.
+  A Receiver reference alone does not require splitting the pair.
 
 ## Storage Selection
 
@@ -107,6 +103,19 @@ Before operating on SeaweedFS `Bucket`/`S3Identity`/`S3Credentials` objects, rea
 For retirement, follow <docs/runbooks/seaweedfs_s3_retirement.md>; delete the
 identity only after credential and other IAM writers have finalized.
 For volume bytes above what the filer accounts for, follow <docs/runbooks/seaweedfs_orphan_chunks.md>.
+
+### DRBD disk recovery
+
+After a backing-disk I/O failure, do not bulk-clear `DrbdOptions/SkipDisk` and assume
+reattachment healed the volumes. Inventory each resource's consumer, role, disk states,
+and authoritative copy first. For a replicated resource with an active consumer, quiesce
+the consumer and confirm the volume is no longer in use before reattaching its disk; then
+recover one resource at a time, verify resync reaches `UpToDate` with zero out-of-sync
+data, and check the application before proceeding. Preserve the sole healthy copy; do not
+force promotion or discard data to make a sync proceed. Capture DRBD state before and after
+attachment, and investigate a stalled sync rather than waiting indefinitely. This is a
+precaution based on a suspected, not proven, diskless-primary reattachment issue:
+<debug/2026_11_20_ovh_nvme_drbd.md>.
 
 ## Flux Kustomizations
 
@@ -139,10 +148,8 @@ For volume bytes above what the filer accounts for, follow <docs/runbooks/seawee
 
 - A decommissioned or indefinitely suspended app whose source ducktape does **not** own
   (third-party image/chart/tool) moves whole to `cluster/parked/<name>/`, layout unchanged.
-  Its Flux Kustomization stays in the central chart with `spec.suspend: true` and annotation
-  `ducktape.org/parked: "true"` (required for `cluster/parked/` paths by
-  `test_flux_kustomizations_under_parked_path_are_annotated` in
-  `cdk8s/test_generate_manifests.py`).
+  Its Flux Kustomization stays in the central chart with `spec.suspend: true`.
+  `flux_kustomization` sets `ducktape.org/parked: "true"` from the artifact's directory.
 - Ducktape-owned code (`<project>/deploy/`, e.g. `props/deploy/`) keeps its manifests beside
   its source, active or suspended.
 - `cluster/parked` is outside the manifest roots: `cluster/validation` skips it, image
@@ -157,7 +164,8 @@ For volume bytes above what the filer accounts for, follow <docs/runbooks/seawee
 Everything under `cluster/generated`, every `*.k8s.yaml` under `cluster/k8s` or
 `cluster/parked`, and files `.gitattributes` marks `linguist-generated=true` there are
 `bb run //cluster/cdk8s:generate_manifests` output: change the generator and regenerate
-(`//cluster/cdk8s:test_generate_manifests` fails on drift). A directory is under
+(`//cluster/cdk8s:test_generate_manifests` fails on drift). For remote generation and patch retrieval,
+follow <../devinfra/buildbuddy/docs/remote.md#run-repository-writers-remotely-and-retrieve-a-patch>. A directory is under
 `cluster/generated` exactly when the generator writes all of it. Layout rules above bind
 generated directories only where the generator has a knob. Invariants over generated
 objects are fleet rules or tests beside the generator, never new `cluster/validation/` tests

@@ -91,6 +91,5 @@ def inference_credentials(scope: Construct, *, reader: ServiceAccount, credentia
                 reader=reader,
                 source_namespace=source.secret.namespace,
                 source_secret=source.secret.name,
-                consumer_namespace=credentials_namespace,
             ),
         )

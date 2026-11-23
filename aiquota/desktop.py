@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import httpx
-from dbus_next.aio import MessageBus
-from dbus_next.constants import PropertyAccess
-from dbus_next.service import ServiceInterface, dbus_property, method, signal as dbus_signal
+from dbus_fast.aio import MessageBus
+from dbus_fast.constants import PropertyAccess
+from dbus_fast.service import ServiceInterface, dbus_property, method, signal as dbus_signal
 from httpx_sse import ServerSentEvent, aconnect_sse
 from pydantic import ValidationError
 
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     DBusString = str
     DBusDouble = float
 else:
-    # dbus-next 0.2.3 inspects runtime annotations for literal wire signatures;
+    # dbus-fast inspects runtime annotations for literal wire signatures;
     # type checkers need the alias to be `str` instead.
     DBusString = "s"
     DBusDouble = "d"

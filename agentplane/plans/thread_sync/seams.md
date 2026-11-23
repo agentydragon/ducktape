@@ -13,12 +13,12 @@ rendering, scroll anchoring, sending commands — is shared.
 Electric sits behind one module on each side:
 
 - **Backend:** `agentplane/app/internal/electricproxy/electric.go` holds `ElectricProxy` and the
-  `/threads/{thread_id}/sync/*` routes, which `runtime.go` mounts only when `electric_url` is set.
-  Its fold check is `ThreadEpochStore.CurrentEpoch` (`historydata.Store.CurrentEpoch`), which any
-  implementation needs for **P7**. The browser reads projection scope from History's generated
+  `/threads/{thread_id}/sync/*` handler. The app composes it in `internal/server/runtime.go`
+  when `electric_url` is set and mounts it in `internal/server/routes.go`. Its
+  `ThreadEpochStore.CurrentEpoch` adapter checks the current History projection epoch for **P7**. The browser reads projection scope from History's generated
   HTTP facade and follows `WatchSessionSummaries` while the first fold is absent or an epoch retires.
 - **Frontend:** `thread_sync.ts` defines the `ThreadSync` interface, and `page.tsx`
-  reads only that, from a context `app.tsx` fills. `electric_sync.tsx` implements it as
+  reads only that, from a context `shell/app.tsx` fills. `electric_sync.tsx` implements it as
   `electricThreadSync`, on the raw `@electric-sql/client`.
 
 ## Backend
@@ -31,7 +31,7 @@ Electric sits behind one module on each side:
   The non-Electric options also need a delta — rows in a range with `revision_cursor > since`.
   This is a read of the fold rather than a sync protocol, so History should own that contract.
 - **Per implementation:** a package `agentplane/app/internal/server/threadsync/<name>/` owning handlers mounted at
-  `/threads/{thread_id}/sync/<name>/…` through the same `HTTPServer.RegisterRawRoute` authorization
+  `/threads/{thread_id}/sync/<name>/…` through the same `RegisterRawRoute` authorization
   (**C2**), and its own settings. Electric moves there.
   There is no Go interface to implement: each implementation is a set of handlers over the shared stores.
 
@@ -116,8 +116,8 @@ a dynamic `import()` already keeps it off the page.
 
 Each step ships alone, and the first changes no behaviour.
 
-1. Move `proxy/electric.go` into `threadsync/electric/`, and its routes to `/threads/{thread_id}/sync/electric/…`, with the frontend following in the same
-   change.
+1. Move `agentplane/app/internal/electricproxy/electric.go` into `threadsync/electric/`, and its routes to
+   `/threads/{thread_id}/sync/electric/…`, with the frontend following in the same change.
 2. The deployment setting that picks an implementation, which the frontend reads at start.
 3. A second implementation, with the shared range and delta read. The cheapest is the window poll,
    long-polled rather than on a timer (**E6**).

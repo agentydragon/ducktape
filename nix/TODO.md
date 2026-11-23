@@ -68,11 +68,32 @@ enabled on **wyrm2** and **rugged**. Decide whether to enable
 would remain a Home Manager service.
 
 - [ ] Auto-fetch the gaffer pubkey post-cache-creation and PR it into
-      `nix/attic-pubkeys.json` (TODO already noted in the module + `bootstrap.sh`).
+      `nix/attic-pubkeys.json`.
 - [ ] Split the `&ci` age recipient into `&ducktape-ci` and `&gaffer-ci` so the
-      gaffer writer token isn't decryptable by ducktape CI's age key (TODO already
-      noted in `.sops.yaml`).
+      gaffer writer token isn't decryptable by ducktape CI's age key.
 
 - [ ] Move Wyrm2 `/home` to a separate VM volume during a convenient maintenance
       window. Preserve existing home data and define a rollback path; account for
       GNOME session state, mount ordering, and services that use the current home.
+
+## Bring readline, `gh` and git-worktree-switcher config under Home Manager
+
+- readline: `programs.readline` (`nix/home/modules/shell.nix`) sets only `show-all-if-ambiguous`; fold any other
+  `~/.inputrc` tweaks into it.
+- `gh`: `nix/home/home.nix` installs the package without config. Consider `programs.gh` for settings and extensions,
+  and for auth/hosts if feasible.
+- git-worktree-switcher: absent from `nix/`. Find the current workflow (scripts? aliases?), migrate its settings,
+  document best practices.
+
+## Bring the remaining hand-maintained config under Home Manager
+
+- `~/.profile`: conditional `PATH`, CUDA and machine-specific config.
+- Other `~/.config/*` application configs and `~/.local/bin/*` utility scripts.
+- Global npm tools `jscpd` and `madge`: not in nixpkgs, so install by hand with `pnpm add -g jscpd madge`.
+
+## Check the Oh-My-Posh session cache report
+
+Unverified: a session cache key appeared to use `CONFIG` without the config path, so a shell inheriting `POSH_SESSION_ID`
+might reuse another shell's config. Read in a local Oh-My-Posh checkout, not the pinned package; never reproduced.
+Clearing `~/.cache/oh-my-posh` was suggested, but nothing shows it helps and nothing in the repo does it. Reproduce with
+`USE_OHMYPOSH=1` (opt-in; Powerlevel10k is the default in `nix/home/shell/zsh-init.zsh`) before choosing a fix.

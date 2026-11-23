@@ -68,11 +68,12 @@ worker teardown. Cancelled execution metadata had no useful worker timestamps.
 Two intervening probes failed during local API connection/DNS lookup before the
 measurement; they are inconclusive, not successful cancellations.
 
-The regression targets `//devinfra/buildbuddy/ci:test_remote_log` and
-`//devinfra/buildbuddy/ci:test_cancel_invocations` passed in
-[ea66edc0-f550-4f42-9c67-0dbcfe599107](https://app.buildbuddy.io/invocation/ea66edc0-f550-4f42-9c67-0dbcfe599107).
-They cover SIGINT/SIGTERM sent to the entry process, normal command status and
-complete log capture, the exact child-ID request set, empty IDs, and API errors.
+The regression target `//devinfra/buildbuddy/ci:test_remote_log` passed in
+[ea66edc0-f550-4f42-9c67-0dbcfe599107](https://app.buildbuddy.io/invocation/ea66edc0-f550-4f42-9c67-0dbcfe599107),
+together with a `test_cancel_invocations` target that no longer exists. The
+current test covers SIGINT/SIGTERM sent to the entry process, normal command
+status and complete log capture. No test covers the exact child-ID request set,
+empty IDs or API errors of `cancel_invocations.py`.
 
 ## Limits
 

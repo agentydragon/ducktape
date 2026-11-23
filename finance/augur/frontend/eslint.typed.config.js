@@ -1,5 +1,5 @@
 // Type-aware ESLint config for the augur frontend, run as a whole-program TEST
-// (//augur/frontend:eslint_typed_test) rather than via the per-file lint-gate
+// (//finance/augur/frontend:eslint_typed_test) rather than via the per-file lint-gate
 // aspect. Type-aware rules (no-floating-promises, …) need the full TypeScript
 // program built from tsconfig.json, which the granular per-target gate aspect
 // can't provide; a test target gets the whole `:main_lib` closure + tsconfig in

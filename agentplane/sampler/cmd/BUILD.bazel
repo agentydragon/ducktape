@@ -23,7 +23,6 @@ go_library(
         "//agentplane/postgres/migrate",
         "//agentplane/postgres/wakeups",
         "//agentplane/sampler/api:sampler_admin_go_proto",
-        "//agentplane/sampler/api:sampler_go_proto",
         "//agentplane/sampler/historyexport",
         "//agentplane/sampler/internal/actions",
         "//agentplane/sampler/internal/codemode",

@@ -1,8 +1,6 @@
 """Planner for archiving small Square receipt emails."""
 
-import contextlib
 import re
-from datetime import datetime
 from decimal import Decimal
 
 from pydantic import BaseModel
@@ -16,14 +14,14 @@ from gmail_archiver.plan import LABEL_AUTO_CLEANED, Plan
 class SquareReceipt(BaseModel):
     merchant_name: str | None = None
     amount: Decimal | None = None
-    card_type: str | None = None
-    card_last4: str | None = None
-    transaction_datetime: datetime | None = None
-    email_date: datetime | None = None
 
     @classmethod
     def display_columns(cls) -> list[tuple[str, str]]:
         return [("amount", "Amount"), ("merchant_name", "Merchant")]
+
+    @classmethod
+    def hide_subject(cls) -> bool:
+        return False
 
     def format_column(self, key: str) -> str:
         if key == "amount":
@@ -33,46 +31,14 @@ class SquareReceipt(BaseModel):
         return ""
 
 
+# "You paid $27.78 with your Visa ending in 0000 to Test Merchant on Mar 16 2023 at 10:26 AM."
+_PAYMENT_PATTERN = re.compile(r"You paid \$([0-9,]+\.[0-9]{2}) with your \w+ ending in \d{4} to (.+?) on ")
+
+
 def parse_square(email: Email) -> SquareReceipt:
-    # Get email date from parsed Date header
-    email_dt = email.date
-    if email_dt:
-        email_dt = email_dt.replace(tzinfo=None)
-
-    # Extract text using get_text() which handles HTML conversion
-    text = email.get_text()
-
-    # Extract structured data using regex
-    # Pattern: "You paid $27.78 with your Visa ending in 6915 to Bean Scene Cafe on Mar 16 2023 at 10:26 AM."
-    # Captures datetime up to period or end of string
-    amount_decimal = None
-    card_type = None
-    card_last4 = None
-    merchant_name = None
-    transaction_dt = None
-
-    if m := re.search(
-        r"You paid \$([0-9,]+\.[0-9]{2}) with your (\w+) ending in (\d{4}) to (.+?) on ([^.]+?)(?:\.|$)", text
-    ):
-        with contextlib.suppress(ValueError, TypeError):
-            amount_decimal = Decimal(m.group(1).replace(",", ""))
-
-        card_type = m.group(2)
-        card_last4 = m.group(3)
-        merchant_name = m.group(4)
-
-        # Parse transaction datetime - expected format: "Mar 16 2023 at 10:26 AM"
-        with contextlib.suppress(ValueError):
-            transaction_dt = datetime.strptime(m.group(5).strip(), "%b %d %Y at %I:%M %p")
-
-    return SquareReceipt(
-        merchant_name=merchant_name,
-        amount=amount_decimal,
-        card_type=card_type,
-        card_last4=card_last4,
-        transaction_datetime=transaction_dt,
-        email_date=email_dt,
-    )
+    if not (match := _PAYMENT_PATTERN.search(email.get_text())):
+        return SquareReceipt()
+    return SquareReceipt(merchant_name=match.group(2), amount=Decimal(match.group(1).replace(",", "")))
 
 
 class SquarePlanner:
@@ -84,7 +50,6 @@ class SquarePlanner:
     def plan(self, inbox: GmailInbox) -> Plan:
         plan = Plan(planner=self)
 
-        # Fetch messages using inbox interface
         query = "from:receipts@messaging.squareup.com in:inbox"
         messages = inbox.fetch_messages(query)
 

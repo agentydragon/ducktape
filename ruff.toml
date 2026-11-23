@@ -1,18 +1,11 @@
-# Ruff configuration for the entire repository
-# Centralized here (not in pyproject.toml) for clean separation:
-# - Root pyproject.toml: uv overrides and tool config only
-# - ruff.toml: All ruff formatting and linting rules
-# - Bazel's aspect_rules_lint reads this file via Label("//:ruff.toml")
+# Shared Ruff configuration for the devshell, pre-commit and Bazel.
 
 # Prefer one-line formatting when code fits
 line-length = 120
 # Target Python 3.14+ consistently
 target-version = "py314"
 
-# Exclusions: Mirror of .gitattributes rules-lint-ignored patterns for Python files.
-# .gitattributes is the source of truth; this list must stay in sync.
-# Reason: devinfra/format/format.py reads .gitattributes, but ruff check reads ruff.toml.
-# See README.md "Lint/Format Exclusions" section for details.
+# Ruff file exclusions. See devinfra/docs/linting.md for other checks' filters.
 exclude = [  # keep-sorted start
     "cluster/docs/inference/model_comparison",
     "devinfra/lint/x/py_detectors/rules/**/bad/**",
@@ -119,10 +112,6 @@ allowed-confusables = ["σ", "α", "β", "γ", "ε", "×"]
 "cdk8s.Testing.app".msg = "mkdtemps a /tmp/cdk8s.outdir.* per call and never removes it; request the scratch_app fixture (scratch_app_factory in module/session-scoped fixtures; cluster/cdk8s/testing/scratch.py), or use App() outside pytest."
 "cdk8s.Testing.chart".msg = "mkdtemps a /tmp/cdk8s.outdir.* per call and never removes it; request the scratch_chart fixture (cluster/cdk8s/testing/scratch.py)."
 
-[lint.pyupgrade]
-# Target Python 3.12+ - no runtime typing imports needed
-keep-runtime-typing = false
-
 [lint.isort]
 # Don't treat same-package imports specially (no local-folder section)
 detect-same-package = false
@@ -148,7 +137,6 @@ known-first-party = [
     "study_casino",
     "props",
     "difftree",
-    "ducktape_llm_common",
     "finance",
     "gmail_api",
     "gmail_archiver",
@@ -161,7 +149,7 @@ known-first-party = [
     "openai_utils",
     "ssh_mcp_server",
     "tana",
-    "tests",  # test packages (until colocated under main packages)
+    "testing",
     # This list must stay COMPLETE: the lint aspect runs ruff from the bazel exec
     # root, where ruff cannot auto-detect first-party packages (it only sees
     # bazel-out/ copies), so any first-party top-level package missing here gets its
@@ -171,13 +159,11 @@ known-first-party = [
     "aiquota",
     "airlock",
     "att_gateway",
-    "augur",
     "cluster",
     "grafana",
     "haku",
     "nix",
     "platform_sessions",
-    "plaid_utils",
     "skills",
     "third_party",
     "x",

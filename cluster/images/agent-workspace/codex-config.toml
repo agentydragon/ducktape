@@ -3,10 +3,10 @@
 # base URL. `env_key` names the LiteLLM virtual key supplied by a compatible
 # Codex workspace template; without it, Codex has no credentials. `wire_api=responses`: LiteLLM passes /v1/responses straight
 # through to CLIProxyAPI's native Responses surface (no bridge). LiteLLM's
-# hidden bare-slug alias targets that route and lets Codex 0.153+ recognize its
+# hidden bare-slug alias targets that route and lets Codex 0.171+ recognize its
 # bundled Astra metadata; the multi-segment route itself would use fallback
 # metadata.
-model = "gpt-6-astra"
+model = "gpt-6.2-astra"
 model_provider = "litellm"
 model_reasoning_effort = "xhigh"
 # Disposable operator-trusted pod, same as codex-pod: run unattended.

@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
-import hashlib
 import time
 from collections.abc import Callable
 from typing import Any
@@ -17,6 +15,7 @@ import pytest
 from aiohttp import ClientResponse
 from aiohttp.test_utils import TestClient, TestServer
 from authlib.integrations.httpx_client import AsyncOAuth2Client as AuthlibAsyncOAuth2Client
+from authlib.oauth2.rfc7636 import create_s256_code_challenge
 
 from finance.plaid.spend.desktop import oauth as oauth_module
 from finance.plaid.spend.desktop.credentials import SecretServiceTokenStore
@@ -96,7 +95,6 @@ def _install_oauth_transport(
     monkeypatch.setattr(oauth_module, "AsyncOAuth2Client", OAuthClient)
 
 
-@pytest.mark.asyncio
 async def test_callback_http_rejects_wrong_method_and_path() -> None:
     callback_future: asyncio.Future[CallbackResult] = asyncio.get_running_loop().create_future()
     async with _test_client(callback_future) as client:
@@ -113,7 +111,6 @@ async def test_callback_http_rejects_wrong_method_and_path() -> None:
     assert not callback_future.done()
 
 
-@pytest.mark.asyncio
 async def test_callback_http_rejects_wrong_state_and_fails_login() -> None:
     callback_future: asyncio.Future[CallbackResult] = asyncio.get_running_loop().create_future()
     async with _test_client(callback_future) as client:
@@ -126,7 +123,6 @@ async def test_callback_http_rejects_wrong_state_and_fails_login() -> None:
         await callback_future
 
 
-@pytest.mark.asyncio
 async def test_callback_http_returns_provider_error_safely() -> None:
     callback_future: asyncio.Future[CallbackResult] = asyncio.get_running_loop().create_future()
     description = "bad\x1b_request <script> & " + "x" * 300
@@ -146,7 +142,6 @@ async def test_callback_http_returns_provider_error_safely() -> None:
     assert await callback_future == CallbackResult(error="invalid_request", error_description=expected_description)
 
 
-@pytest.mark.asyncio
 async def test_callback_http_requires_code_after_valid_state() -> None:
     callback_future: asyncio.Future[CallbackResult] = asyncio.get_running_loop().create_future()
     async with _test_client(callback_future) as client:
@@ -159,7 +154,6 @@ async def test_callback_http_requires_code_after_valid_state() -> None:
         await callback_future
 
 
-@pytest.mark.asyncio
 async def test_callback_http_completes_login_with_code() -> None:
     callback_future: asyncio.Future[CallbackResult] = asyncio.get_running_loop().create_future()
     async with _test_client(callback_future) as client:
@@ -231,8 +225,7 @@ async def test_login_uses_authlib_for_public_pkce_and_token_exchange(monkeypatch
     assert token_form["redirect_uri"] == [REDIRECT_URI]
     assert "client_secret" not in token_form
     verifier = token_form["code_verifier"][0]
-    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest())
-    assert authorization_params["code_challenge"] == [challenge.rstrip(b"=").decode("ascii")]
+    assert authorization_params["code_challenge"] == [create_s256_code_challenge(verifier)]
     assert store.refresh_token == "login-refresh-token"
     assert store.saved == ["login-refresh-token"]
     assert authenticator.access_token == "login-access-token"

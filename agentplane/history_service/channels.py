@@ -1,12 +1,8 @@
-"""The History Service's NOTIFY channels, on one LISTEN connection per replica."""
+"""History Service NOTIFY channels that Python code raises, matching `projection.ChannelSummaries` in Go."""
 
 from enum import StrEnum
 
 
 class Channel(StrEnum):
-    # Raw Session history was committed.
-    HISTORY = "agentplane_session_history_changes"
     # The fold committed Session summaries.
     SUMMARIES = "agentplane_history_summary_changes"
-    # A Session was recorded.
-    SESSIONS = "agentplane_history_sessions"

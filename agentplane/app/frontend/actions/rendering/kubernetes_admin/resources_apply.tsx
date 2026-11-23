@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import type { ActionPresentation } from "../presentation";
 import { definePreview, type ArgumentsPreview } from "../entry";
-import { KubernetesManifestText, kubernetesResourcesResult } from "./resources";
+import { KubernetesManifestText, kubernetesResourcesResult, kubernetesResourcesSchema } from "./resources";
 import {
   type KubernetesResource,
   kubernetesResourceTarget,
@@ -112,6 +112,8 @@ export const resourcesApplyLabel: ArgumentsPreview = definePreview(appliedResour
 export const resourcesApplyPresentation: ActionPresentation = {
   fallbackLabel: "Apply Kubernetes resource",
   label: resourcesApplyLabel,
+  outcome: (value) =>
+    kubernetesResourcesSchema.safeParse(value).success ? { label: "Resources applied", failed: false } : undefined,
   pane: { collapsed: resourcesApplyCollapsed, opened: resourcesApplyManifest },
   details: { arguments: resourcesApplyManifest, result: kubernetesResourcesResult },
 };

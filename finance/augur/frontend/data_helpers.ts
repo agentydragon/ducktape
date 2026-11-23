@@ -262,7 +262,7 @@ export function eventMonthIndex(event: RolloutEvent | null | undefined) {
   return Number.isFinite(monthIndex) ? monthIndex : null;
 }
 
-export function eventStateMonthIndex(event: RolloutEvent | null | undefined) {
+function eventStateMonthIndex(event: RolloutEvent | null | undefined) {
   const monthIndex = eventMonthIndex(event);
   return monthIndex == null ? null : monthIndex + 1;
 }
@@ -293,28 +293,24 @@ export function eventAmount(event: RolloutEvent | null | undefined) {
   return event?.amount_quanta ?? null;
 }
 
-export function jurisdictionLabel(jurisdictionId: EventOfKind<"tax_accrual">["jurisdiction_id"] | null | undefined) {
+function jurisdictionLabel(jurisdictionId: EventOfKind<"tax_accrual">["jurisdiction_id"] | null | undefined) {
   if (jurisdictionId === "federal_us") return "federal";
   if (jurisdictionId === "california") return "California";
   return (jurisdictionId ?? "").replace(/_/g, " ");
 }
 
-export function formatDueWithShortfall(
-  amountDueQuanta: unknown,
-  shortfallQuanta: unknown,
-  currencyMeta: CurrencyMetadata
-) {
+function formatDueWithShortfall(amountDueQuanta: unknown, shortfallQuanta: unknown, currencyMeta: CurrencyMetadata) {
   const base = `due ${fmtQuanta(amountDueQuanta, currencyMeta)}`;
   return currencyQuantaIsPositive(shortfallQuanta)
     ? `${base}; shortfall ${fmtQuanta(shortfallQuanta, currencyMeta)}`
     : base;
 }
 
-export function shortfallLabel(event: DueWithShortfallEvent, { ok, shortfall }: { ok: string; shortfall: string }) {
+function shortfallLabel(event: DueWithShortfallEvent, { ok, shortfall }: { ok: string; shortfall: string }) {
   return currencyQuantaIsPositive(event.shortfall_quanta) ? shortfall : ok;
 }
 
-export function taxPaymentLabel(event: EventOfKind<"tax_payment">) {
+function taxPaymentLabel(event: EventOfKind<"tax_payment">) {
   const isShortfall = currencyQuantaIsPositive(event.shortfall_quanta);
   if (event.obligation_type === "estimated_tax")
     return isShortfall ? "Estimated tax shortfall" : "Paid estimated taxes";
@@ -322,7 +318,7 @@ export function taxPaymentLabel(event: EventOfKind<"tax_payment">) {
   return isShortfall ? "Tax payment shortfall" : "Paid taxes";
 }
 
-export function taxAccrualDetail(event: EventOfKind<"tax_accrual">) {
+function taxAccrualDetail(event: EventOfKind<"tax_accrual">) {
   const gain = currencyQuantaAdd(event.ltcg_quanta, event.stcg_quanta);
   const parts = [
     `ordinary tax ${fmtQuanta(event.ordinary_tax_quanta, event._currency)}`,
@@ -341,7 +337,7 @@ export function taxAccrualDetail(event: EventOfKind<"tax_accrual">) {
   return parts.join("; ");
 }
 
-export function propertyPurchaseDetail(event: EventOfKind<"property_purchase">) {
+function propertyPurchaseDetail(event: EventOfKind<"property_purchase">) {
   const parts = [`down ${fmtQuanta(event.down_payment_quanta, event._currency)}`];
   if (currencyQuantaIsPositive(event.mortgage_principal_quanta)) {
     parts.push(`mortgage ${fmtQuanta(event.mortgage_principal_quanta, event._currency)}`);
@@ -380,7 +376,7 @@ const tlhOperationLabel: Record<EventOfKind<"tlh_financial_effect">["operation"]
   distribution: "distribution",
 };
 
-export const EVENT_FORMATTERS: EventFormatterMap = {
+const EVENT_FORMATTERS: EventFormatterMap = {
   holding_sale: {
     label: (event) => `Sold ${event.asset_label ?? assetDisplayName(event.asset) ?? "asset"}`,
     detail: (event) => `${fmtNumber(event.units)} units; basis ${fmtQuanta(event.cost_basis_quanta, event._currency)}`,
@@ -526,100 +522,25 @@ export const EVENT_FORMATTERS: EventFormatterMap = {
   },
 };
 
+type EventFormatter = {
+  label: (event: RolloutEventWithCurrency) => string;
+  detail: (event: RolloutEventWithCurrency) => string;
+};
+
+// `EventFormatterMap` types each entry for its own kind, so an event always meets its own formatter.
+// An unknown kind (a newer backend) has none.
+function formatterFor(event: RolloutEventWithCurrency) {
+  return EVENT_FORMATTERS[event.kind] as EventFormatter | undefined;
+}
+
 export function eventLabel(event: RolloutEventWithCurrency | null | undefined) {
   if (!event) return "Event";
-  switch (event.kind) {
-    case "holding_sale":
-      return EVENT_FORMATTERS.holding_sale.label(event);
-    case "tlh_financial_effect":
-      return EVENT_FORMATTERS.tlh_financial_effect.label(event);
-    case "monthly_expense":
-      return EVENT_FORMATTERS.monthly_expense.label(event);
-    case "outside_rent":
-      return EVENT_FORMATTERS.outside_rent.label(event);
-    case "tax_accrual":
-      return EVENT_FORMATTERS.tax_accrual.label(event);
-    case "tax_payment":
-      return EVENT_FORMATTERS.tax_payment.label(event);
-    case "property_purchase":
-      return EVENT_FORMATTERS.property_purchase.label(event);
-    case "closing_cost_payment":
-      return EVENT_FORMATTERS.closing_cost_payment.label(event);
-    case "mortgage_payment":
-      return EVENT_FORMATTERS.mortgage_payment.label(event);
-    case "property_tax_payment":
-      return EVENT_FORMATTERS.property_tax_payment.label(event);
-    case "hoa_dues_payment":
-      return EVENT_FORMATTERS.hoa_dues_payment.label(event);
-    case "homeowners_insurance_payment":
-      return EVENT_FORMATTERS.homeowners_insurance_payment.label(event);
-    case "property_maintenance_payment":
-      return EVENT_FORMATTERS.property_maintenance_payment.label(event);
-    case "failure":
-      return EVENT_FORMATTERS.failure.label(event);
-    case "set_rented_fraction":
-      return EVENT_FORMATTERS.set_rented_fraction.label(event);
-    case "set_primary_residence":
-      return EVENT_FORMATTERS.set_primary_residence.label(event);
-    case "capital_improvement":
-      return EVENT_FORMATTERS.capital_improvement.label(event);
-    case "property_sale":
-      return EVENT_FORMATTERS.property_sale.label(event);
-    case "private_equity_event":
-      return EVENT_FORMATTERS.private_equity_event.label(event);
-    case "private_equity_opportunity":
-      return EVENT_FORMATTERS.private_equity_opportunity.label(event);
-    default:
-      return "Event";
-  }
+  return formatterFor(event)?.label(event) ?? "Event";
 }
 
 export function eventDetailText(event: RolloutEventWithCurrency | null | undefined) {
   if (!event) return "";
-  switch (event.kind) {
-    case "holding_sale":
-      return EVENT_FORMATTERS.holding_sale.detail(event);
-    case "tlh_financial_effect":
-      return EVENT_FORMATTERS.tlh_financial_effect.detail(event);
-    case "monthly_expense":
-      return EVENT_FORMATTERS.monthly_expense.detail(event);
-    case "outside_rent":
-      return EVENT_FORMATTERS.outside_rent.detail(event);
-    case "tax_accrual":
-      return EVENT_FORMATTERS.tax_accrual.detail(event);
-    case "tax_payment":
-      return EVENT_FORMATTERS.tax_payment.detail(event);
-    case "property_purchase":
-      return EVENT_FORMATTERS.property_purchase.detail(event);
-    case "closing_cost_payment":
-      return EVENT_FORMATTERS.closing_cost_payment.detail(event);
-    case "mortgage_payment":
-      return EVENT_FORMATTERS.mortgage_payment.detail(event);
-    case "property_tax_payment":
-      return EVENT_FORMATTERS.property_tax_payment.detail(event);
-    case "hoa_dues_payment":
-      return EVENT_FORMATTERS.hoa_dues_payment.detail(event);
-    case "homeowners_insurance_payment":
-      return EVENT_FORMATTERS.homeowners_insurance_payment.detail(event);
-    case "property_maintenance_payment":
-      return EVENT_FORMATTERS.property_maintenance_payment.detail(event);
-    case "failure":
-      return EVENT_FORMATTERS.failure.detail(event);
-    case "set_rented_fraction":
-      return EVENT_FORMATTERS.set_rented_fraction.detail(event);
-    case "set_primary_residence":
-      return EVENT_FORMATTERS.set_primary_residence.detail(event);
-    case "capital_improvement":
-      return EVENT_FORMATTERS.capital_improvement.detail(event);
-    case "property_sale":
-      return EVENT_FORMATTERS.property_sale.detail(event);
-    case "private_equity_event":
-      return EVENT_FORMATTERS.private_equity_event.detail(event);
-    case "private_equity_opportunity":
-      return EVENT_FORMATTERS.private_equity_opportunity.detail(event);
-    default:
-      return "";
-  }
+  return formatterFor(event)?.detail(event) ?? "";
 }
 
 export function eventTitle(event: RolloutEventWithCurrency) {

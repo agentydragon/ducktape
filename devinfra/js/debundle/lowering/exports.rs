@@ -5,7 +5,7 @@
 use crate::naturalize::NaturalizedModuleBody;
 use crate::rename_ledger::{RenameIntent, RenameLedger, RenameOrigin, RenameScope};
 use analysis::{BindingKind, top_level_id};
-use binding_targets::{ExportReferences, ReferenceCollector};
+use binding_targets::{ExportReferences, ReferenceCollector, public_export_name};
 use frontend_elaboration::chunk_ast::{ExportedNameOrigin, SourceExportIdentity, TopLevelDecl};
 use js_ast::{named_export_module_item, named_export_specifier};
 use rustc_hash::FxHashSet;
@@ -198,12 +198,7 @@ pub(super) fn omit_existing_local_exports(
                 let ModuleExportName::Ident(local) = &named.orig else {
                     return None;
                 };
-                let public = named
-                    .exported
-                    .as_ref()
-                    .map(binding_targets::module_export_name)
-                    .unwrap_or_else(|| local.sym.to_string());
-                Some((local.sym.to_string(), public))
+                Some((local.sym.to_string(), public_export_name(named)))
             }
             _ => None,
         })
@@ -236,6 +231,22 @@ pub(super) fn entry_exports_for_moved_bindings(
     }
 }
 
+pub(super) const AUTO_GROWN_EXPORT_CONTRIBUTOR: &str = "auto-grown residual export";
+
+/// The entry-side facts `auto_grown_residual_exports` consults; see
+/// `LowerChunkSpecFacts` and `prepare_candidate_emission_plan` for the field provenance.
+pub(super) struct ExportGrowthFacts<'a> {
+    pub(super) declaration_by_name: &'a HashMap<Id, Vec<StatementId>>,
+    pub(super) binding_assignment: &'a HashMap<Id, usize>,
+    pub(super) pre_existing_entry_exports: &'a HashSet<Id>,
+    /// ORIGINAL (pre-rename) names declared at the top level of the
+    /// post-split entry body. Collection runs before the entry rename
+    /// executor, so candidates are checked under their original names;
+    /// the seal's injectivity guarantees on the Chunk-scope map make
+    /// this equivalent to checking the post-rename declared set.
+    pub(super) entry_declared_names: &'a HashSet<String>,
+}
+
 /// Compute the residual entry bindings every moved module body
 /// references but entry doesn't yet export. The per-module emit
 /// path needs every such reference to import from entry, so the
@@ -253,9 +264,8 @@ pub(super) fn entry_exports_for_moved_bindings(
 /// `export_named_for_bindings`.
 ///
 /// Skips:
-/// - bindings already in `existing_exports` (the upstream source
-///   exports plus the moved-binding re-exports already emitted by
-///   `entry_exports_for_moved_bindings`),
+/// - bindings already in `facts.pre_existing_entry_exports` (the
+///   source chunk entry's own exports),
 /// - names not declared anywhere in the chunk
 ///   (`declaration_by_name` covers every top-level decl, so this is
 ///   the "globals / runtime imports / unknown ident" case the
@@ -264,22 +274,6 @@ pub(super) fn entry_exports_for_moved_bindings(
 /// - bindings owned by a logical module (`binding_assignment`), which
 ///   are imported directly module→module rather than mediated by
 ///   entry.
-pub(super) const AUTO_GROWN_EXPORT_CONTRIBUTOR: &str = "auto-grown residual export";
-
-/// The entry-side facts `auto_grown_residual_exports` consults; see
-/// `LowerChunkSpecFacts` and `prepare_candidate_emission_plan` for the field provenance.
-pub(super) struct ExportGrowthFacts<'a> {
-    pub(super) declaration_by_name: &'a HashMap<Id, Vec<StatementId>>,
-    pub(super) binding_assignment: &'a HashMap<Id, usize>,
-    pub(super) pre_existing_entry_exports: &'a HashSet<Id>,
-    /// ORIGINAL (pre-rename) names declared at the top level of the
-    /// post-split entry body. Collection runs before the entry rename
-    /// executor, so candidates are checked under their original names;
-    /// the seal's injectivity guarantees on the Chunk-scope map make
-    /// this equivalent to checking the post-rename declared set.
-    pub(super) entry_declared_names: &'a HashSet<String>,
-}
-
 pub(super) fn auto_grown_residual_exports<'a>(
     modules: impl IntoIterator<Item = &'a NaturalizedModuleBody>,
     facts: &ExportGrowthFacts<'_>,

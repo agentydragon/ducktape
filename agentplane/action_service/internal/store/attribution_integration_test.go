@@ -55,7 +55,7 @@ func TestDelegationAttributionRoundTripsBesideEffectiveCaller(t *testing.T) {
 		})
 	}
 
-	first, err := f.List(t.Context(), owner, ListFilter{IdempotencyKey: stringPointer("session-service-actor")})
+	first, err := f.List(t.Context(), owner, ListFilter{IdempotencyKey: new("session-service-actor")})
 	if err != nil || len(first) != 1 {
 		t.Fatalf("read by effective Identity and idempotency key = %+v, %v", first, err)
 	}
@@ -66,7 +66,7 @@ func TestDelegationAttributionRoundTripsBesideEffectiveCaller(t *testing.T) {
 	if _, err := f.Submit(t.Context(), owner, input("session-service-actor"), Admission{RequestID: uuid.New(), Attribution: connectionAttribution}); conflictReason(err) != ConflictIdempotencyKeyUsed {
 		t.Fatalf("attribution changed idempotency behavior: %v", err)
 	}
-	first, err = f.List(t.Context(), owner, ListFilter{IdempotencyKey: stringPointer("session-service-actor")})
+	first, err = f.List(t.Context(), owner, ListFilter{IdempotencyKey: new("session-service-actor")})
 	if err != nil || len(first) != 1 || !sameAttribution(first[0].Attribution, &DelegationAttribution{
 		Actor:      action_servicepb.DelegatingActor{Actor: &action_servicepb.DelegatingActor_ServiceSpiffeId{ServiceSpiffeId: "spiffe://test.example/delegator"}},
 		Provenance: SessionProvenance{SessionID: sessionID},
@@ -126,5 +126,3 @@ func sameAttribution(got, want *DelegationAttribution) bool {
 	}
 	return proto.Equal(&got.Actor, &want.Actor) && reflect.DeepEqual(got.Provenance, want.Provenance)
 }
-
-func stringPointer(value string) *string { return &value }

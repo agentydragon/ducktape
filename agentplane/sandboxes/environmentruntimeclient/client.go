@@ -14,28 +14,27 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-// Config describes one call through the Runner Gateway proxy. Every call owns a fresh connection so
-// the stable Service can select a ready Gateway replica after a rollout.
+// Config describes one call through the Environment Runtime proxy. Every call owns a fresh connection so
+// the stable Service can select a ready proxy replica after a rollout.
 type Config struct {
-	TLS                     *peertls.ClientTLS
-	Target                  string
-	TokenFile               string
-	Timeout                 time.Duration
-	SandboxName             string
-	SandboxUID              string
-	SandboxNamespace        string
-	ExpectedIncarnationUID  string
-	ReplaceOutgoingMetadata bool
+	TLS                    *peertls.ClientTLS
+	Target                 string
+	TokenFile              string
+	Timeout                time.Duration
+	SandboxName            string
+	SandboxUID             string
+	SandboxNamespace       string
+	ExpectedIncarnationUID string
 }
 
-// ExpandTarget fills the Sandbox name and namespace placeholders in a Runner Gateway target.
+// ExpandTarget fills the Sandbox name and namespace placeholders in an Environment Runtime proxy target.
 func ExpandTarget(template, sandbox, namespace string) string {
 	return strings.NewReplacer("{sandbox}", sandbox, "{namespace}", namespace).Replace(template)
 }
 
 // WithClient supplies call with a per-call bearer.Dial connection, which never retries and reads the
-// projected token again for each RPC, under a deadline of config.Timeout. ReplaceOutgoingMetadata
-// preserves the dispatcher's existing behavior; callers that append metadata leave it false.
+// projected token again for each RPC, under a deadline of config.Timeout. The Sandbox routing metadata
+// is appended to the outgoing metadata already on ctx.
 func WithClient(ctx context.Context, config Config, call func(context.Context, environmentruntimepb.EnvironmentRuntimeClient) error) error {
 	if config.SandboxName == "" || config.SandboxUID == "" || config.SandboxNamespace == "" {
 		return errors.New("Environment Runtime proxy Sandbox identity is required")
@@ -60,10 +59,6 @@ func WithClient(ctx context.Context, config Config, call func(context.Context, e
 	if config.ExpectedIncarnationUID != "" {
 		metadataPairs = append(metadataPairs, sandboxapi.RuntimeProxyIncarnationUIDMetadataKey, config.ExpectedIncarnationUID)
 	}
-	if config.ReplaceOutgoingMetadata {
-		ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs(metadataPairs...))
-	} else {
-		ctx = metadata.AppendToOutgoingContext(ctx, metadataPairs...)
-	}
+	ctx = metadata.AppendToOutgoingContext(ctx, metadataPairs...)
 	return call(ctx, environmentruntimepb.NewEnvironmentRuntimeClient(conn))
 }

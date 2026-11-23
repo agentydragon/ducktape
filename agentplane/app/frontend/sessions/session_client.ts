@@ -25,7 +25,8 @@ export async function createSession(
     name: target.name,
     sessionId,
     sandboxUid: target.uid,
-    spec: toJson(SessionSpecSchema, spec) as JsonObject,
+    // The app overlays omitted fields from the Sandbox preset; the form owns every field.
+    spec: toJson(SessionSpecSchema, spec, { alwaysEmitImplicit: true }) as JsonObject,
     setupScript: setupScript === undefined ? undefined : fromJson(ValueSchema, setupScript),
   });
   const session = fromJson(

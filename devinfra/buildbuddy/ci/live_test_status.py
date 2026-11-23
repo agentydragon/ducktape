@@ -16,7 +16,7 @@ from pathlib import Path
 from threading import Event
 from typing import Any, cast
 
-from devinfra.buildbuddy.cli import CLIError, run as bbapi
+from devinfra.buildbuddy import cli
 
 DEFAULT_BUILDBUDDY_URL = "https://app.buildbuddy.io"
 DEFAULT_GITHUB_API_URL = "https://api.github.com"
@@ -42,9 +42,9 @@ def _json_request(url: str, *, headers: dict[str, str], body: dict[str, Any] | N
 def _invocation(api_key: str, invocation_id: str, base_url: str) -> dict[str, Any] | None:
     try:
         response = json.loads(
-            bbapi("invocation", "status", invocation_id, api_key=api_key, base_url=base_url, timeout=10)
+            cli.run("invocation", "status", invocation_id, api_key=api_key, base_url=base_url, timeout=10)
         )
-    except (CLIError, ValueError) as error:
+    except (cli.CLIError, ValueError) as error:
         raise APIError(str(error)) from error
     invocations = response.get("invocation") or []
     return invocations[0] if invocations else None
@@ -53,9 +53,9 @@ def _invocation(api_key: str, invocation_id: str, base_url: str) -> dict[str, An
 def _first_failed_test(api_key: str, invocation_id: str, base_url: str) -> str | None:
     try:
         response = json.loads(
-            bbapi("invocation", "first-failure", invocation_id, api_key=api_key, base_url=base_url, timeout=10)
+            cli.run("invocation", "first-failure", invocation_id, api_key=api_key, base_url=base_url, timeout=10)
         )
-    except (CLIError, ValueError) as error:
+    except (cli.CLIError, ValueError) as error:
         raise APIError(str(error)) from error
     return response.get("label") or None
 

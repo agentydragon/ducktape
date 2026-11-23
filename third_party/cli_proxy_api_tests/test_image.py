@@ -7,8 +7,8 @@ import httpx
 import pytest
 
 from devinfra.oci.oci import load_oci_image
+from testing.container_logs import LoggedContainer
 from third_party.cli_proxy_api_tests import cli_proxy_api_image
-from util.testing.container_logs import LoggedContainer
 
 CLIENT_KEY = "synthetic-model-client-key"
 MANAGEMENT_KEY = "synthetic-management-key"

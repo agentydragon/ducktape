@@ -6,8 +6,6 @@ metadata:
   labels:
     app.kubernetes.io/name: wayback-cache
     app.kubernetes.io/component: input
-  annotations:
-    reloader.stakater.com/auto: "true"
 spec:
   replicas: 2
   selector:

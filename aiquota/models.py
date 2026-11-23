@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -220,6 +220,10 @@ class SuccessfulProviderFetch(BaseModel):
 
 class ProviderQuota(BaseModel):
     provider: str
+    account_id: str | None = None
+    account_label: str | None = None
+    plan_type: str | None = None
+    account_tier: str | None = None
     last_output: ProviderFetch
     last_success: SuccessfulProviderFetch | None = None
 
@@ -273,18 +277,23 @@ class HistoryObservation(BaseModel):
     """
 
     provider: str
+    account_id: str | None = None
     observed_at: datetime
     payload: _HistoryPayload
 
 
-def history_capture_key(provider: str, kind: HistoryKind) -> str:
+def account_capture_key(key: str, account_id: str | None) -> str:
+    return f"{key}:{account_id}" if account_id is not None else key
+
+
+def history_capture_key(provider: str, kind: HistoryKind, account_id: str | None = None) -> str:
     """Name under which one history endpoint's raw response is captured.
 
     Raw capture is keyed per endpoint, not per provider: a provider polling
     several endpoints in one cycle would otherwise overwrite its own bodies.
     """
 
-    return f"{provider}_{kind}"
+    return account_capture_key(f"{provider}_{kind}", account_id)
 
 
 class RawUpstreamResponse(BaseModel):
@@ -314,3 +323,4 @@ class HistorySnapshot:
     observations: list[HistoryObservation]
     fetched_at: datetime
     raw_responses: dict[str, RawUpstreamResponse]
+    errors: list[str] = field(default_factory=list)

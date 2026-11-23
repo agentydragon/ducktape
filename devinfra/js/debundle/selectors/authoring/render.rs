@@ -17,7 +17,8 @@ use std::collections::BTreeSet;
 use anyhow::Result;
 use source_match_holes::{
     ANYTHING_HOLE_KEYWORD, ARGS_HOLE_KEYWORD, ARRAY_ELEMENTS_HOLE_KEYWORD, CASE_REST_HOLE_KEYWORD,
-    SEQ_EXPRS_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD, hole_keyword, hole_name_for,
+    DECLARATORS_HOLE_KEYWORD, SEQ_EXPRS_HOLE_KEYWORD, STMT_LIST_HOLE_KEYWORD, hole_keyword,
+    hole_name_for,
 };
 use swc_common::{DUMMY_SP, Span, Spanned, SyntaxContext};
 use swc_ecma_ast::*;
@@ -385,16 +386,6 @@ fn hole_callee_expr(expr: &Expr, kept: &BTreeSet<AnchorSpan>) -> Expr {
     }
 }
 
-/// Hole a call/`new` argument list for selector form: a run of dropped
-/// (no-anchor) arguments collapses to a single `ARGS` run hole, while each
-/// argument carrying an anchor is kept and recursively holed.
-///
-/// The `ARGS` hole matches as an ordered subsequence with gaps
-/// (`match_expr_or_spread_slice`), so the selector survives a rebuild that adds
-/// or removes a non-anchor argument — unlike a per-argument `ANYTHING`, which is
-/// an arity-exact single-node hole. Mirrors [`hole_object`]'s property-run
-/// collapsing. An anchored spread is kept verbatim (its expr left intact);
-/// a non-anchor spread is absorbed into the run like any other dropped argument.
 /// Replace each nonempty run of omitted elements with one list hole.
 /// Callers own retention/rendering and any hole required for an empty list.
 pub(crate) fn collapse_omitted_runs<T>(
@@ -420,6 +411,17 @@ pub(crate) fn collapse_omitted_runs<T>(
     out
 }
 
+/// Hole a call/`new` argument list for selector form: a run of dropped
+/// (no-anchor) arguments collapses to a single `ARGS` run hole, while each
+/// argument carrying an anchor is kept and recursively holed.
+///
+/// The `ARGS` hole matches as an ordered subsequence with gaps
+/// (`selector_match::match_list_with_holes`), so the selector survives a
+/// rebuild that adds or removes a non-anchor argument — unlike a per-argument
+/// `ANYTHING`, which is an arity-exact single-node hole. Mirrors
+/// [`hole_object`]'s property-run collapsing. An anchored spread is kept
+/// verbatim (its expr left intact); a non-anchor spread is absorbed into the
+/// run like any other dropped argument.
 fn hole_args(args: &[ExprOrSpread], kept: &BTreeSet<AnchorSpan>) -> Vec<ExprOrSpread> {
     collapse_omitted_runs(
         args.iter().map(|arg| {
@@ -669,10 +671,10 @@ fn hole_switch_case(case: &SwitchCase, kept: &BTreeSet<AnchorSpan>) -> SwitchCas
 /// A declarator hole absorbing a run of non-target declarators. Synthesis uses
 /// the plain `DECLARATORS` keyword: positional suffixes accepted by the matcher
 /// affect hint text only, not equality binding.
-pub(crate) fn declarator_hole(name: &str) -> VarDeclarator {
+pub(crate) fn declarator_hole() -> VarDeclarator {
     VarDeclarator {
         span: DUMMY_SP,
-        name: named_pat(name),
+        name: named_pat(DECLARATORS_HOLE_KEYWORD),
         init: Some(Box::new(Expr::Lit(Lit::Null(Null { span: DUMMY_SP })))),
         definite: false,
     }

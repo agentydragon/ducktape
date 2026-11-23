@@ -4,10 +4,7 @@ filegroup(
     name = "manifests",
     srcs = glob(
         ["**"],
-        exclude = [
-            "BUILD.bazel",
-            "test_*.py",
-        ],
+        exclude = ["BUILD.bazel"],
     ),
     visibility = [
         "//cluster/cdk8s:__pkg__",

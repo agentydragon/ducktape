@@ -24,7 +24,7 @@ def main():
         print(
             dedent(
                 """\
-            Usage: python beautifier.py <command>
+            Usage: bb run //inventree_utils/beautifier:beautifier_bin -- <command>
 
             Commands:
               fix-lcsc-links      - Interactively rewrite old-format LCSC links

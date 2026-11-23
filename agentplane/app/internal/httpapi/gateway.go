@@ -2,9 +2,9 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 
+	"github.com/agentydragon/ducktape/agentplane/app/internal/httpresponse"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -20,7 +20,5 @@ func AppServiceGatewayError(_ context.Context, _ *runtime.ServeMux, _ runtime.Ma
 	case codes.FailedPrecondition, codes.AlreadyExists, codes.Aborted:
 		httpStatus = http.StatusConflict
 	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(httpStatus)
-	_ = json.NewEncoder(w).Encode(map[string]any{"code": int32(st.Code()), "message": st.Message(), "detail": st.Message()})
+	httpresponse.WriteJSON(w, httpStatus, map[string]any{"code": int32(st.Code()), "message": st.Message(), "detail": st.Message()})
 }

@@ -18,8 +18,8 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/outputbuffer"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/toolcontract"
-	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	execfake "github.com/agentydragon/ducktape/agentplane/testing/executor"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -102,10 +102,7 @@ func TestOpenSessionEnvironmentFailureIsCatchableAndNotDispatched(t *testing.T) 
 	if opens != 1 || starts != 0 {
 		t.Fatalf("OpenSession attempts=%d StartProcess attempts=%d, want one open and no start", opens, starts)
 	}
-	var processes int
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT count(*) FROM sampler_process WHERE conversation_id=$1`, owner.ConversationID).Scan(&processes); err != nil {
-		t.Fatal(err)
-	}
+	processes := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_process WHERE conversation_id=$1`, owner.ConversationID)
 	if processes != 0 {
 		t.Fatalf("environment refusal before workspace setup registered %d processes, want none", processes)
 	}
@@ -543,7 +540,7 @@ func assertRejectedSettlementFailedOperationally(t *testing.T, err error) {
 func rejectedExecutionStatus(message string) *executorpb.ExecutionStatus {
 	return &executorpb.ExecutionStatus{
 		Outcome:      executorpb.ExecutionStatus_OUTCOME_REJECTED,
-		UpstreamCode: ptrInt32(-32602),
+		UpstreamCode: new(int32(-32602)),
 		Message:      message,
 	}
 }
@@ -869,7 +866,7 @@ func TestExecutorDrainsOutputThatArrivesAfterExit(t *testing.T) {
 				if reads == 0 && request.AfterSeq != nil || reads > 0 && (request.AfterSeq == nil || *request.AfterSeq != uint64(reads)) {
 					t.Fatalf("read %d cursor=%v", reads, request.AfterSeq)
 				}
-				page := &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}, Exited: true, ExitCode: ptrInt32(23), NextSeq: uint64(reads + 2)}
+				page := &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}, Exited: true, ExitCode: new(int32(23)), NextSeq: uint64(reads + 2)}
 				switch reads {
 				case 0: // Exit arrived before stdout readers published their final bytes.
 					if operation != reconcileOperation {
@@ -946,7 +943,7 @@ func TestExitedOpenProcessYieldsAndRetainsLateOutput(t *testing.T) {
 	}}
 	client.OnReadProcess = func(_ context.Context, request *executorpb.ReadProcessRequest) (*executorpb.ReadProcessResponse, error) {
 		reads.Add(1)
-		page := &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Exited: true, ExitCode: ptrInt32(0), NextSeq: 2}
+		page := &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Exited: true, ExitCode: new(int32(0)), NextSeq: 2}
 		if late.Load() {
 			page.Closed = true
 			page.NextSeq = 4
@@ -966,7 +963,7 @@ func TestExitedOpenProcessYieldsAndRetainsLateOutput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result := observed.unifiedExecResult(ptrInt(modelID), nil, "chunk")
+	result := observed.unifiedExecResult(new(modelID), nil, "chunk")
 	if result.ExitCode == nil || *result.ExitCode != 0 || result.SessionID == nil || *result.SessionID != modelID {
 		t.Fatalf("exited but open result=%+v, want exit code and an output handle", result)
 	}
@@ -1024,10 +1021,7 @@ func TestCompletedReadIsJournaledAfterCallerCancellation(t *testing.T) {
 		t.Fatalf("completed read lost to caller cancellation: %v", err)
 	}
 	assertNoUnresolvedNestedIntents(t, store, owner)
-	var completed int
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT count(*) FROM sampler_intent WHERE conversation_id=$1 AND request->>'method'='process/read' AND result->>'outcome'='completed'`, owner.ConversationID).Scan(&completed); err != nil {
-		t.Fatal(err)
-	}
+	completed := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_intent WHERE conversation_id=$1 AND request->>'method'='process/read' AND result->>'outcome'='completed'`, owner.ConversationID)
 	if completed != 1 {
 		t.Fatalf("completed read intents=%d, want one", completed)
 	}
@@ -1082,7 +1076,7 @@ func TestExecutorReplacesDefinitivelyLostSessionWithoutReplayingCurrentOperation
 		resumes = append(resumes, proto.Clone(request).(*executorpb.OpenSessionRequest))
 		if len(resumes) == 1 {
 			return &execfake.Stream{Ctx: ctx, Initial: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{
-				Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, UpstreamCode: ptrInt32(-32600), Message: "unknown session id retained-executor",
+				Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, UpstreamCode: new(int32(-32600)), Message: "unknown session id retained-executor",
 			}}}, nil
 		}
 		if request.ResumeSessionId != nil {
@@ -1104,7 +1098,7 @@ func TestExecutorReplacesDefinitivelyLostSessionWithoutReplayingCurrentOperation
 		if request.ProcessId == "old-process" || request.ProcessId == "drained-process" {
 			t.Fatalf("retired process %q reached the fresh executor", request.ProcessId)
 		}
-		return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}, Exited: true, Closed: true, ExitCode: ptrInt32(0)}, nil
+		return &executorpb.ReadProcessResponse{Status: execfake.CompletedStatus(), Chunks: []*executorpb.ExecutionOutputChunk{}, Exited: true, Closed: true, ExitCode: new(int32(0))}, nil
 	}
 	e := newFakeExecutor(t, store, owner, client)
 	e.environment = map[string]string{}
@@ -1160,10 +1154,7 @@ func TestExecutorReplacesDefinitivelyLostSessionWithoutReplayingCurrentOperation
 }
 
 func TestReconcileProcessWaitsForSameSessionAcrossGatewayOutage(t *testing.T) {
-	store, owner, request := resumedExecutorStore(t, protocol.APIStyleResponses)
-	if err := store.SetExecutorSession(t.Context(), owner, "retained-executor", nil); err != nil {
-		t.Fatal(err)
-	}
+	store, owner, request := resumedStoreWithRetainedSession(t)
 	if err := store.RegisterProcess(t.Context(), owner, "running-process", false); err != nil {
 		t.Fatal(err)
 	}
@@ -1338,7 +1329,7 @@ func TestReadReportsDefinitiveSessionLossAfterGatewayReturns(t *testing.T) {
 				t.Fatalf("second resume changed native ID: %+v", r)
 			}
 			return &execfake.Stream{Ctx: ctx, Initial: &executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{
-				Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, UpstreamCode: ptrInt32(-32600), Message: "unknown session id retained-executor",
+				Outcome: executorpb.ExecutionStatus_OUTCOME_REJECTED, UpstreamCode: new(int32(-32600)), Message: "unknown session id retained-executor",
 			}}}, nil
 		default:
 			if r.ResumeSessionId != nil {
@@ -1542,34 +1533,9 @@ func establishFakeExecutorSession(t *testing.T, e *Executor, client *execfake.Cl
 	}
 }
 
-func intentResultForDB(t *testing.T, store *sessionstore.Store, id string) (map[string]any, error) {
-	t.Helper()
-	var raw []byte
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT result FROM sampler_intent WHERE id=$1`, id).Scan(&raw); err != nil {
-		return nil, err
-	}
-	var result map[string]any
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
-func ptrInt32(value int32) *int32 { return &value }
-func ptrInt(value int) *int       { return &value }
-func boolInt(value bool) int {
-	if value {
-		return 1
-	}
-	return 0
-}
-
 func assertNoUnresolvedNestedIntents(t *testing.T, store *sessionstore.Store, owner sessionstore.Owner) {
 	t.Helper()
-	var count int
-	if err := store.DB().QueryRowContext(t.Context(), "SELECT count(*) FROM sampler_intent WHERE conversation_id=$1 AND result IS NULL", owner.ConversationID).Scan(&count); err != nil {
-		t.Fatal(err)
-	}
+	count := postgres.Count(t, store.DB(), "SELECT count(*) FROM sampler_intent WHERE conversation_id=$1 AND result IS NULL", owner.ConversationID)
 	if count != 0 {
 		t.Fatalf("unresolved nested intents=%d", count)
 	}
@@ -1585,7 +1551,7 @@ func TestRetainedTerminalOutputCanBeConsumedAfterTakeover(t *testing.T) {
 	if err := store.RegisterModelProcess(t.Context(), owner, "retained", 4242, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.RetainProcessOutput(t.Context(), owner, "retained", 7, []byte("retained-output"), true, ptrInt(0)); err != nil {
+	if err := store.RetainProcessOutput(t.Context(), owner, "retained", 7, []byte("retained-output"), true, new(0)); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.Release(t.Context(), owner); err != nil {

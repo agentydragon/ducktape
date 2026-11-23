@@ -72,9 +72,8 @@ py_library(
     data = ["//haku/console/migrations:files"],
     deps = [
         ":database_schema",
-        "//agentplane/indexing:vector_type",
+        "//util:alembic_upgrade",
         "//util:db_url",
-        "@pypi//alembic",
         "@pypi//psycopg",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
@@ -100,21 +99,20 @@ py_test(
     srcs = ["test_agent_authority_schema.py"],
     requires_docker = True,
     deps = [
-        # The shared conftest selects pgvector: the 0135 baseline creates a `halfvec` column, so
-        # stock Postgres cannot run the console's migrations.
         ":conftest",
         ":database_migrate",
         ":database_schema",
         "//:conftest",
         "//devinfra/testing:undeclared_outputs",
-        "//util/testing:postgres",
+        "//haku/console/identity:agent",
+        "//haku/console/identity:operator_identity",
+        "//testing:postgres",
+        "//testing:postgres_fixtures",
+        "@ducktape_haku//haku/console:tool_calls",
         "@pypi//alembic",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",
-        "//haku/console/identity:agent",
-        "//haku/console/identity:operator_identity",
-        "@ducktape_haku//haku/console:tool_calls",
     ],
 )
 
@@ -205,10 +203,8 @@ py_library(
         ":database_migrate",
         "//haku/console/identity:operator_auth",
         "//haku/console/identity:operator_identity",
-        "//haku/console/identity:operator_identity_store",
-        "//third_party/containers:pgvector_pg18",
-        "//util/testing:postgres",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres",
+        "//testing:postgres_fixtures",
         "@pypi//fastapi",
         # SessionMiddleware (starlette) signs the operator session cookie with itsdangerous;
         # operator_session_cookie mints one for tests.
@@ -221,7 +217,7 @@ py_library(
         "@pypi//psycopg",
         "@pypi//httpx",
         ":settings",
-        "//util/testing:sqlalchemy_engines",
+        "//testing:sqlalchemy_engines",
     ],
 )
 
@@ -257,7 +253,6 @@ py_test(
     ],
 )
 
-# ── OCI image (the haku-console service) ──────────────────────────────────────
 aspect_py_binary(
     name = "server_bin",
     main = "app.py",

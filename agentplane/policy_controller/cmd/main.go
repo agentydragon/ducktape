@@ -141,12 +141,9 @@ func run(c config) error {
 		server.Stop()
 		return err
 	}
-	listeners := []grpcListener{{server: server, listener: listener}}
-	if err := mgr.Add(policyListener{listeners: listeners}); err != nil {
-		for _, endpoint := range listeners {
-			endpoint.server.Stop()
-			_ = endpoint.listener.Close()
-		}
+	if err := mgr.Add(policyListener{server: server, listener: listener}); err != nil {
+		server.Stop()
+		_ = listener.Close()
 		return err
 	}
 	reconciler := &policycontroller.Reconciler{
@@ -176,29 +173,21 @@ func run(c config) error {
 
 // Read watches run on every replica; only the reconciler participates in leader election.
 type policyListener struct {
-	listeners []grpcListener
-}
-
-type grpcListener struct {
 	server   *grpc.Server
 	listener net.Listener
 }
 
 func (policyListener) NeedLeaderElection() bool { return false }
 func (p policyListener) Start(ctx context.Context) error {
-	serveErrors := make(chan error, len(p.listeners))
-	for _, endpoint := range p.listeners {
-		go func(endpoint grpcListener) {
-			if err := endpoint.server.Serve(endpoint.listener); err != nil && ctx.Err() == nil {
-				serveErrors <- err
-			}
-		}(endpoint)
-	}
-	defer func() {
-		for _, endpoint := range p.listeners {
-			endpoint.server.Stop()
-			_ = endpoint.listener.Close()
+	serveErrors := make(chan error, 1)
+	go func() {
+		if err := p.server.Serve(p.listener); err != nil && ctx.Err() == nil {
+			serveErrors <- err
 		}
+	}()
+	defer func() {
+		p.server.Stop()
+		_ = p.listener.Close()
 	}()
 	select {
 	case <-ctx.Done():

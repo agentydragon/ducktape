@@ -38,13 +38,8 @@ pub struct AssignmentInputs {
     planned_modules: Vec<PlannedModule>,
     dependency_graph: DependencyGraph,
     source_unit_ids_by_binding: HashMap<Id, Vec<SourceUnitId>>,
-    binding_lookup_by_id: HashMap<Id, BindingLookupInfo>,
-}
-
-#[derive(Debug, Clone, Default)]
-struct BindingLookupInfo {
-    /// Exported name when it differs from the local binding name.
-    export_name: Option<Atom>,
+    /// Exported name of each binding whose exported name differs from its local name.
+    export_names_by_id: HashMap<Id, Atom>,
 }
 
 impl AssignmentInputs {
@@ -65,15 +60,15 @@ impl AssignmentInputs {
     ) -> Result<Self, BindingScopeError> {
         let local_bindings = binding_catalogue.local_view(chunk_identity)?;
         let source_unit_ids_by_binding = build_source_unit_ids_by_binding(&dependency_graph);
-        let binding_lookup_by_id =
-            build_binding_lookup_by_id(local_bindings.as_map(), chunk_renames, &planned_modules);
+        let export_names_by_id =
+            build_export_names_by_id(local_bindings.as_map(), chunk_renames, &planned_modules);
         Ok(Self {
             chunk_id,
             binding_catalogue,
             planned_modules,
             dependency_graph,
             source_unit_ids_by_binding,
-            binding_lookup_by_id,
+            export_names_by_id,
         })
     }
 
@@ -109,14 +104,13 @@ impl AssignmentInputs {
     }
 
     /// Pre-computed export name for a chunk binding, falling back
-    /// to the binding's own name. Hot-path replacement for the
-    /// previous `bindings` / `chunk_renames` / `rename_map` walk.
+    /// to the binding's own name.
     pub fn export_name_for(&self, binding: &BindingId) -> Result<Atom, BindingScopeError> {
         self.binding_catalogue.check_binding_id(binding)?;
         Ok(self
-            .binding_lookup_by_id
+            .export_names_by_id
             .get(binding.swc_id())
-            .and_then(|info| info.export_name.clone())
+            .cloned()
             .unwrap_or_else(|| binding.swc_id().0.clone()))
     }
 
@@ -224,20 +218,20 @@ fn build_source_unit_ids_by_binding(
         .collect()
 }
 
-/// Pre-compute per-binding lookup data so reporting and reference
-/// planning avoid repeated walks over `bindings`, `chunk_renames`, and
-/// planned-output rename maps.
+/// Pre-compute export names so reporting and reference planning avoid
+/// repeated walks over `bindings`, `chunk_renames`, and planned-output rename
+/// maps. Bindings exported under their own name are omitted.
 ///
 /// Export-name resolution rule:
 /// - `Owned { module: ModuleId(idx) }` -> `planned_modules[idx].rename_map[id]`
 ///   if present, else the binding's own name.
 /// - Everything else -> `chunk_renames[id]` if present, else the
 ///   binding's own name.
-fn build_binding_lookup_by_id(
+fn build_export_names_by_id(
     bindings: &HashMap<Id, BindingKind>,
     chunk_renames: &HashMap<Id, Atom>,
     planned_modules: &[PlannedModule],
-) -> HashMap<Id, BindingLookupInfo> {
+) -> HashMap<Id, Atom> {
     let mut out = HashMap::with_capacity(bindings.len() + chunk_renames.len());
     for (id, kind) in bindings {
         let export_name = match kind {
@@ -253,9 +247,8 @@ fn build_binding_lookup_by_id(
                 .cloned()
                 .unwrap_or_else(|| id.0.clone()),
         };
-        let export_name = (export_name != id.0).then_some(export_name);
-        if export_name.is_some() {
-            out.insert(id.clone(), BindingLookupInfo { export_name });
+        if export_name != id.0 {
+            out.insert(id.clone(), export_name);
         }
     }
     // Cover bindings that only show up in `chunk_renames` (no
@@ -264,7 +257,7 @@ fn build_binding_lookup_by_id(
     // analysis).
     for (id, export) in chunk_renames {
         if !bindings.contains_key(id) && export != &id.0 {
-            out.entry(id.clone()).or_default().export_name = Some(export.clone());
+            out.insert(id.clone(), export.clone());
         }
     }
     out

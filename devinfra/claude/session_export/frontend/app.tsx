@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type JSX } from "react";
 import { Alert, Button, Container, Group, Stack, Text, Title } from "@mantine/core";
 
 import type { SyncStatus } from "./schema";
-import { ApiError, getStatus, syncNow } from "./api";
+import { getStatus, syncNow } from "./api";
 import { Overview } from "./overview";
 import { Pairing } from "./pairing";
 import { SessionViewer } from "./viewer";
@@ -71,7 +71,7 @@ export function App({ pathname = window.location.pathname }: AppProps = {}): JSX
     } catch (reason) {
       setError({
         title: "Sync status unavailable",
-        message: reason instanceof ApiError || reason instanceof Error ? reason.message : "Could not load the status.",
+        message: reason instanceof Error ? reason.message : "Could not load the status.",
       });
     }
   }, []);

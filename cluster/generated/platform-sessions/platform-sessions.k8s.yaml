@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Namespace
 metadata:
   labels:
-    goldilocks.fairwinds.com/enabled: "false"
+    goldilocks.fairwinds.com/vpa-update-mode: "off"
   name: platform-sessions
 spec: {}
 ---

@@ -1092,8 +1092,7 @@ fn homo(
     // (`Shorthand`/`KeyValue`, `PatAssign`/`PatKeyValue`), so this is matched
     // before the structural kind comparison would reject the cross-pair. The key
     // name is invariant (exact); the value identifier alpha-binds — as a reference
-    // for object literals, as a binding for patterns. (Mirrors the deleted
-    // matcher's `match_{shorthand,key_value}_against_*` cross-forms.)
+    // for object literals, as a binding for patterns.
     if let (Some(n_prop), Some(s_prop)) = (
         shorthand_property_view(needle, nid),
         shorthand_property_view(subject, sid),

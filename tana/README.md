@@ -5,14 +5,18 @@ helpers plus a library under `tana.export`.
 
 ```bash
 bb run //tana/export:convert_bin -- --help
+bb run //tana/export:export_node_subset_bin -- "$PWD/export.json" NODE_ID
 ```
+
+The subset command writes TanaPaste and the JSON nodes used to render it.
 
 - `domain/` — data models, constants, types.
 - `graph/` — `TanaGraph` workspace representation, structural helpers, JSON loader
   (`load_workspace`).
 - `query/` — filters, search parser/evaluator/materializer.
 - `render/` — Markdown/TanaPaste formatting.
-- `export/` — CLI entry points and workflows.
+- `export/` — CLI entry points and workflows; saved-search re-execution: <export/SEARCH_README.md>,
+  search-node export format: <export/search_node_analysis.md>.
 - `mcp_server/` — container packaging for the internal desktop-backed Tana MCP server (its public
   OAuth facade is the shared `mcp-oauth-facade` image, <../x/mcp_oauth_facade/>).
 - `firebase_resigner/` — sidecar re-signing the in-pod Tana Desktop's stale Firebase session.

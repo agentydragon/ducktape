@@ -322,7 +322,10 @@ how much they move an allocation answer.
    different centuries and should not be read as a fitted quantity.
 7. **The rate means are barely identified.** OLS on a near-unit-root series biases mean
    reversion upward and pins the long-run mean weakly: the same fit gives a 4.93% short-rate
-   mean over 1954–2026 and 1.71% over 1990–2026. Read the sigmas; sweep the means.
+   mean over 1954–2026 and 1.71% over 1990–2026. The reversion bias is roughly (1 + 3b)/n per
+   month (Kendall): about 0.005 against a fitted 0.010 at b ≈ 0.99 over 865 months, the same
+   order as the estimate, so read a half-life as years, not months. Read the sigmas; sweep the
+   means.
 8. **The curve is clamped flat past 10 years** (#5834, which also owns the design sketched
    below — it belongs in a design doc rather than in this contract). Fund-yield construction is
    `curve_ratio * (short_rate + min(maturity/10, 1) * term_spread) + spread`, so it interpolates the front and

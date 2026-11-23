@@ -37,11 +37,7 @@ fn full_gzip_graphs_support_queries_and_snapshots() {
         let mut args = args;
         args.extend(["--graph", fixture.graph.to_str().unwrap()]);
         let result = fixture.command(&args);
-        assert!(
-            result.status.success(),
-            "{}",
-            String::from_utf8_lossy(&result.stderr)
-        );
+        process::assert_success(&result);
         let _: Value = serde_json::from_slice(&result.stdout).unwrap();
     }
     let snapshots = tempfile::tempdir().unwrap();
@@ -54,11 +50,7 @@ fn full_gzip_graphs_support_queries_and_snapshots() {
         "--destination",
         destination.to_str().unwrap(),
     ]);
-    assert!(
-        result.status.success(),
-        "{}",
-        String::from_utf8_lossy(&result.stderr)
-    );
+    process::assert_success(&result);
     let snapshot: Value = serde_json::from_slice(&result.stdout).unwrap();
     let copied_graph = std::path::Path::new(snapshot["graph"].as_str().unwrap());
     assert_eq!(copied_graph.file_name(), fixture.graph.file_name());
@@ -72,11 +64,7 @@ fn full_gzip_graphs_support_queries_and_snapshots() {
         fs::read(program_graph_path(&fixture.graph)).unwrap()
     );
     let verified = fixture.command(&["snapshot", "verify", destination.to_str().unwrap()]);
-    assert!(
-        verified.status.success(),
-        "{}",
-        String::from_utf8_lossy(&verified.stderr)
-    );
+    process::assert_success(&verified);
 }
 
 #[test]

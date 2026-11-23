@@ -15,13 +15,12 @@ from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispa
 from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess, run_gateway
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
-from util.testing.postgres import DatabaseNames, create_temporary_database
+from testing.postgres import DatabaseNames, create_temporary_database
 
 DISPATCHER_AUDIENCE = "test-dispatcher"
 GATEWAY_AUDIENCE = "test-gateway"
-# The app calls the Dispatcher and the Runner proxy; the Gateway's own Dispatcher calls the proxy too.
+# The app calls the Dispatcher and the Runner proxy.
 APP = ServiceAccountRef(namespace="test-app-namespace", name="test-app")
-GATEWAY = ServiceAccountRef(namespace="test-gateway-namespace", name="test-runner-gateway")
 
 
 @pytest.fixture
@@ -44,14 +43,10 @@ def dispatcher_database_url(postgres_admin_url: str, database_names: DatabaseNam
 
 @pytest.fixture
 async def gateway_service(
-    api_server: KubernetesApiServer, sandbox: SandboxCluster, dispatcher_database_url: str, tmp_path: Path
+    api_server: KubernetesApiServer, sandbox: SandboxCluster, dispatcher_database_url: str
 ) -> AsyncIterator[GatewayProcess]:
     async with run_gateway(
-        api_server.kubeconfig,
-        database_url=dispatcher_database_url,
-        namespace=sandbox.namespace,
-        dispatcher_audience=DISPATCHER_AUDIENCE,
-        gateway_audience=GATEWAY_AUDIENCE,
+        api_server.kubeconfig, database_url=dispatcher_database_url, namespace=sandbox.namespace
     ) as service:
         yield service
 
@@ -77,7 +72,7 @@ async def session_dispatcher_client(gateway: GatewayProcess) -> AsyncIterator[Se
     async with dial(
         gateway.target, channel_credentials=gateway.service_credentials("spiffe://agentplane/app")
     ) as channel:
-        yield SessionDispatcherClient(channel, token_file=None, request_timeout_s=10)
+        yield SessionDispatcherClient(channel, request_timeout_s=10)
 
 
 @pytest.fixture

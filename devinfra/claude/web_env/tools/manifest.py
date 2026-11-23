@@ -38,9 +38,6 @@ class Exclusions(BaseModel):
     # Volatile tool installations: any difference is expected (content, presence,
     # permissions). Covers non-deterministic builds like uv tools, rbenv, nvm.
     volatile_paths: list[str] = []
-    # Session start hook artifacts: created by devinfra/claude at runtime,
-    # not part of the base container image. Treated as only_in_live.
-    session_hook_artifacts: list[str] = []
 
     def matching_skip(self, path: str) -> str | None:
         for p in self.skip_paths:
@@ -60,14 +57,10 @@ class Exclusions(BaseModel):
                 return pat
         return None
 
-    def matching_only_in_live(self, path: str) -> tuple[str, str] | None:
-        """Return (category, pattern) for matching only_in_live or session_hook_artifacts."""
+    def matching_only_in_live(self, path: str) -> str | None:
         for pat in self.only_in_live:
             if fnmatch.fnmatch(path, pat):
-                return ("only_in_live", pat)
-        for pat in self.session_hook_artifacts:
-            if fnmatch.fnmatch(path, pat):
-                return ("session_hook_artifacts", pat)
+                return pat
         return None
 
     def matching_only_in_built(self, path: str) -> str | None:
@@ -82,7 +75,6 @@ class Exclusions(BaseModel):
         result.extend(("volatile_paths", p) for p in self.volatile_paths)
         result.extend(("hash_may_differ", p) for p in self.hash_may_differ)
         result.extend(("only_in_live", p) for p in self.only_in_live)
-        result.extend(("session_hook_artifacts", p) for p in self.session_hook_artifacts)
         result.extend(("only_in_built", p) for p in self.only_in_built)
         return result
 

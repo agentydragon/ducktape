@@ -2,9 +2,7 @@
 # and the full CLI diagnostic/debug toolkit. Imported by real workstation
 # hosts (wyrm2/iguana/rugged). Kept out of `bootstrap` to shrink that image.
 {
-  config,
   pkgs,
-  lib,
   username,
   ...
 }:

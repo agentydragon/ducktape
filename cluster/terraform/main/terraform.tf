@@ -6,15 +6,14 @@ terraform {
   }
 
   required_providers {
-    # From persistent-auth (SOPS-encrypted secrets)
     sops = { source = "carlpett/sops", version = "~> 1.4.0" }
-    # From persistent-auth + nixos-dev-env
+    # bpg/proxmox 0.91.0 (not rechecked on 0.113): adding `pool_id` to a VM already in the pool fails; use `proxmox_virtual_environment_pool_membership`.
     proxmox = { source = "bpg/proxmox", version = "~> 0.113.0" }
-    # From infrastructure
+
     talos      = { source = "siderolabs/talos", version = "~> 0.11.0" }
     kubernetes = { source = "hashicorp/kubernetes", version = "~> 3.2.0" }
     helm       = { source = "hashicorp/helm", version = "~> 3.3.0" }
-    # Utility (from multiple)
+
     local = { source = "hashicorp/local", version = "~> 2.9.0" }
     null  = { source = "hashicorp/null", version = "~> 3.3.0" }
     ovh   = { source = "ovh/ovh", version = "~> 2.0" }

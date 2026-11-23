@@ -9,7 +9,7 @@ import type { ToolCallRecord } from "../../tool_call_record";
 import { ToolCallCard } from "../../tool_call_card";
 import type { PreviewVariant } from "../vocabulary";
 
-export type StoredToolResult = NonNullable<ToolCallRecord["result"]>;
+type StoredToolResult = NonNullable<ToolCallRecord["result"]>;
 
 export type PreviewFixture = {
   title: string;
@@ -22,11 +22,11 @@ export type PreviewFixture = {
   result?: unknown;
 };
 
-// The stored wire shape of an executed call's result (mcp/approval.py's `_mcp_result_to_json`):
-// FastMCP dumps the return into a JSON text block + structuredContent, wrapping a non-dict
-// return (a list, a scalar) as `{"result": …}` with the wrap flagged in `_meta`. Shared so each
-// server's preview fixtures build finished-call results the same way.
-export function callToolResult(value: unknown): StoredToolResult {
+// The stored wire shape of an executed call's result: FastMCP dumps the return into a JSON text
+// block + structuredContent, wrapping a non-dict return (a list, a scalar) as `{"result": …}`
+// with the wrap flagged in `_meta`. Shared so each server's preview fixtures build finished-call
+// results the same way.
+function callToolResult(value: unknown): StoredToolResult {
   const wrap = typeof value !== "object" || value === null || Array.isArray(value);
   return {
     content: [{ type: "text", text: JSON.stringify(value) }],
@@ -42,8 +42,8 @@ export function PreviewCard({ fixture, variant }: { fixture: PreviewFixture; var
   const { title, serverId, toolName, args, result } = fixture;
   const argumentsRecord = args as Record<string, unknown>;
   // A sample with a result renders as a finished OK call (so the result body shows); one without
-  // stays pending, like the approvals panel's cards. The fixture carries the tool's raw return;
-  // wrap it into the stored CallToolResult envelope the card renders.
+  // stays pending. The fixture carries the tool's raw return; wrap it into the stored
+  // CallToolResult envelope the card renders.
   const finished = result != null;
   const storedResult = finished ? callToolResult(result) : null;
   const fields = approvalDisplayFields({
@@ -68,7 +68,7 @@ export function PreviewCard({ fixture, variant }: { fixture: PreviewFixture; var
   });
   return (
     // `.haku-page` (position overridden to static) mirrors the real surface so the card's
-    // page-scoped CSS applies, and `.haku-shell-panels` is the real approvals-panel column class,
+    // page-scoped CSS applies, and `.haku-shell-panels` is the real shell drawer column class,
     // so the card renders at its production width and tracks that CSS if it changes — never a
     // magic-number viewport width. `.haku-preview-card` is the sweep's screenshot target: an
     // opaque background keeps the standalone PNG self-contained, and forcing no height gives a

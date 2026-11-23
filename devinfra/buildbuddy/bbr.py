@@ -119,7 +119,7 @@ def check_base_branch_freshness(repo: pygit2.Repository) -> str | None:
     if current_tracking_ref is not None:
         # bb only uses HEAD directly when it's an ancestor of (or equal to) the
         # tracked commit — unpushed commits still fall through to the
-        # default-branch fallback below (see bb_remote_internals.md Phase 2).
+        # default-branch fallback below (see devinfra/buildbuddy/docs/remote.md Phase 2).
         ahead_of_own_branch, _ = repo.ahead_behind(repo.head.target, current_tracking_ref.target)
         if ahead_of_own_branch == 0:
             return None
@@ -195,41 +195,23 @@ def build_command(user_args: list[str]) -> tuple[list[str], str | None]:
     bbr mints the invocation ID and passes it into the remote Bazel command, so
     the ID it reports is this run's by construction. Reading it back from bb's
     --invocation_id_file is unsound: concurrent bbr runs sharing that path
-    cross-attribute each other's runs (bb_remote_internals.md § Invocation IDs).
+    cross-attribute each other's runs (devinfra/buildbuddy/docs/remote.md § Invocation IDs).
     """
-    bb = _find_bb()
-
-    # Split user_args at the bazel verb into startup options (before verb)
-    # and command options (after verb).
+    # A bare boolean can slip through bb's remote flag parser into Bazel's startup options.
+    cmd = [_find_bb(), "remote", "--disable_retry=true"]
     verb_idx = find_verb_index(user_args)
-    if verb_idx is not None:
-        startup_options = user_args[:verb_idx]
-        verb = user_args[verb_idx]
-        command_options = user_args[verb_idx + 1 :]
-        explicit_id = _explicit_invocation_id(command_options)
-        invocation_id = explicit_id or str(uuid.uuid4())
-        invocation_id_flag = [] if explicit_id else [f"--invocation_id={invocation_id}"]
-    else:
-        # No bazel verb (e.g. --script): no Bazel command
-        # line to attach --invocation_id to, so no ID is minted or reported.
-        startup_options = user_args
-        verb = None
-        command_options = []
-        invocation_id = None
-        invocation_id_flag = []
+    if verb_idx is None:
+        # Script mode has no Bazel invocation to identify.
+        return [*cmd, *user_args, *_bazelrc_args()], None
 
-    cmd = [
-        bb,
-        "remote",
-        # The explicit value is required: bare boolean flags can leak through
-        # bb's remote-flag stripping into Bazel startup options.
-        "--disable_retry=true",
-        *startup_options,
-        *([verb] if verb else []),
-        *invocation_id_flag,
-        *_bazelrc_args(),
-        *command_options,
-    ]
+    cmd.extend(user_args[: verb_idx + 1])
+    command_options = user_args[verb_idx + 1 :]
+    invocation_id = _explicit_invocation_id(command_options)
+    if not invocation_id:
+        invocation_id = str(uuid.uuid4())
+        cmd.append(f"--invocation_id={invocation_id}")
+    cmd.extend(_bazelrc_args())
+    cmd.extend(command_options)
     return cmd, invocation_id
 
 
@@ -280,7 +262,7 @@ Environment variables:
                     Lines are parsed as "<command> <flag>" (prefix stripped).
   BBR_BUILDBUDDY_API_KEY_FILE  Optional mounted key file, passed to bb for real runs only.
   BBR_ALLOW_STALE_BASE  Run even when the likely diff base looks stale (bbr
-                    normally refuses — see bb_remote_internals.md).
+                    normally refuses — see devinfra/buildbuddy/docs/remote.md § Gotchas).
 
 Examples:
   bbr test //foo:bar                          # basic test

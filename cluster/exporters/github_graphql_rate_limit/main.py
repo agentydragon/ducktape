@@ -35,11 +35,7 @@ class Settings:
         token = Path(os.environ["GITHUB_TOKEN_FILE"]).read_text().strip()
         if not token:
             raise ValueError("GitHub token file is empty")
-        return cls(
-            account=account,
-            token=token,
-            github_url=os.environ.get("GITHUB_GRAPHQL_URL", "https://api.github.com/graphql"),
-        )
+        return cls(account=account, token=token)
 
 
 @dataclass(frozen=True)

@@ -14,16 +14,17 @@ const (
 )
 
 // EvidenceSink must persist the native event and its observations atomically before returning.
+// When semanticProgress is true, the same transaction renews the attempt lease.
 // A failure stops stream processing and leaves dispatch acknowledgement unresolved.
 type EvidenceSink interface {
-	Record(context.Context, ProviderEvidence, ...*eventpb.Event) error
+	Record(ctx context.Context, payload ProviderEvidence, semanticProgress bool, observations ...*eventpb.Event) error
 }
 
-func RecordProviderEvidence(ctx context.Context, sink EvidenceSink, evidence ProviderEvidence, observations ...*eventpb.Event) error {
+func RecordProviderEvidence(ctx context.Context, sink EvidenceSink, evidence ProviderEvidence, semanticProgress bool, observations ...*eventpb.Event) error {
 	if sink == nil {
 		return nil
 	}
-	if err := sink.Record(ctx, evidence, observations...); err != nil {
+	if err := sink.Record(ctx, evidence, semanticProgress, observations...); err != nil {
 		return &ProviderEvidencePersistenceError{Cause: err}
 	}
 	return nil
@@ -65,7 +66,7 @@ type CaptureReader struct {
 func (r CaptureReader) Read(buffer []byte) (int, error) {
 	n, err := r.Reader.Read(buffer)
 	if n > 0 {
-		if e := RecordProviderEvidence(r.Context, r.Evidence, WireBytes{Bytes: buffer[:n]}); e != nil {
+		if e := RecordProviderEvidence(r.Context, r.Evidence, WireBytes{Bytes: buffer[:n]}, false); e != nil {
 			return 0, e
 		}
 	}

@@ -387,6 +387,34 @@ impl GraphFixture {
         );
     }
 
+    /// `plan` passes `modules check`; its `--dry-run` apply leaves the module tree and tree
+    /// config unchanged; after the real apply the edited spec runs to `expected`. `modules` is
+    /// the `--modules` root of both applies, or `None` for the fixture's `DEBUNDLE_MODULES`.
+    pub fn assert_plan_checks_previews_applies_and_runs(
+        &self,
+        plan: &str,
+        modules: Option<&Path>,
+        expected: &str,
+    ) {
+        let config_path = self.tree_config();
+        let config = config_path.to_str().unwrap();
+        let tree_before = read_tree(&self.modules);
+        let config_before = fs::read(config).unwrap();
+        self.assert_success(&["modules", "check", "--plan", plan, "--tree-config", config]);
+        let mut apply = vec!["modules", "apply", "--plan", plan];
+        if let Some(modules) = modules {
+            apply.extend(["--modules", modules.to_str().unwrap()]);
+        }
+        apply.extend(["--tree-config", config]);
+        let mut preview = apply.clone();
+        preview.push("--dry-run");
+        self.assert_success(&preview);
+        assert_eq!(read_tree(&self.modules), tree_before);
+        assert_eq!(fs::read(config).unwrap(), config_before);
+        self.assert_success(&apply);
+        self.assert_runs(expected);
+    }
+
     /// Both edit modes must refuse for the intended reason, without changing
     /// any spec bytes or creating/deleting files (including nested modules).
     pub fn assert_rejected_unchanged(&self, args: &[&str], diagnostics: &[&str]) {
@@ -488,11 +516,7 @@ impl GraphFixture {
     pub fn rerun(&self) -> CaseWorkspace {
         let rerun = self.run.workspace().child();
         let out = self.run_current_spec(rerun.path());
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
+        process::assert_success(&out);
         rerun
     }
 

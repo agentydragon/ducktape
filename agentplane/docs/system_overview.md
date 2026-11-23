@@ -65,7 +65,8 @@ flowchart LR
         runtime -->|lifecycle and execution RPC| execution
         execution -->|companion ownership: gRPC over Unix socket| podexec
         agent[Managed agent process and CLI]
-        podexec[Codex executor container]
+        podexec[Executor companion container]
+        execution -->|loopback gRPC or Codex WebSocket| podexec
         sidecar[Egress sidecar]
       end
       subgraph vm_guest[VM guest]
@@ -78,11 +79,12 @@ flowchart LR
         vmruntime -->|lifecycle and execution RPC| vmexecution
         guest_agent[Managed agent process and CLI]
         manager[systemd manager]
-        vmexec[Codex executor service]
+        vmexec[Execution backend service]
         vmruntime -->|process lifetime| manager
         guest -->|native supervision| manager
         vmexecution -->|executor supervision| manager
         manager -->|service lifetime and cgroup| vmexec
+        vmexecution -->|loopback gRPC or Codex WebSocket| vmexec
       end
       subgraph vm_sandbox[VM launcher Pod]
         relay[Egress relay]
@@ -356,7 +358,7 @@ platform gRPC listener at `http://<local gateway>:3130`. Its History method rout
 `history-service.<namespace>.svc.cluster.local:8080` with TLS. The sidecar presents the Sandbox
 Workload SVID and verifies `HISTORY_SERVICE_URI`; the central proxy carries that TLS connection
 opaquely. History authorizes the read against the exact Identity name and UID in the SVID. This path
-uses no History bearer credential or projected audience token and adds no `reader_accounts` grant.
+uses no History bearer credential or projected audience token and adds no `reader_service_callers` grant.
 
 ### Sessions and Environments admission
 
@@ -403,7 +405,7 @@ flowchart LR
     proxy[Environments Executor :8082]
     runtime[Environment Runtime]
     execution[Execution Service]
-    executor[Loopback Codex exec-server]
+    executor[Execution backend]
     history[History ingress and Thread fold]
     llm[LLM ingress]
     responses[Responses API providers]
@@ -415,7 +417,7 @@ flowchart LR
     sampler -->|Executor RPCs: mTLS, sampler SVID| proxy
     proxy -->|mTLS Executor gRPC| runtime
     runtime -->|direct Executor calls| execution
-    execution -->|local Codex JSON-RPC over WebSocket| executor
+    execution -->|loopback gRPC or Codex WebSocket| executor
     sampler -->|mTLS sampler SVID + typed Session delegation: acknowledged journal outbox| history
     sampler -->|Responses HTTPS: sampler SVID mTLS + typed Identity/Session delegation| llm -->|model API| responses
     sampler -->|Anthropic Messages API| anthropic
@@ -446,10 +448,9 @@ Session or Pod routing, and startup scans, listener reconnect catch-up and perio
 cover missed signals.
 The Pod has aggregate CPU/memory limits, with no per-Session or per-cell kernel boundary today.
 Environments proxies the sandbox-owned [Executor service](../env/runtime/execution/executor.proto) through Environment Runtime to Execution Service,
-whose execution adapter owns the local
-Codex JSON-RPC connection and native session handshake. A held `OpenSession` stream owns that
-connection; process and file operations use unary RPCs. Native frames return as evidence for the
-sampler's existing journal. No new persistence or operation receipts are introduced, and a lost
+whose adapter uses typed gRPC with the native backend or JSON-RPC over WebSocket with Codex
+`exec-server`. A held `OpenSession` stream owns the backend session. Process and file operations use
+unary RPCs. The Codex adapter also returns native frames for the sampler's journal. No new persistence or operation receipts are introduced, and a lost
 reply can still leave an operation outcome unknown. Dispatcher is absent from that tool path. Sandbox UID and incarnation fence the executor binding; v1 does
 not replace an executor. An unavailable executor does not remove the sampler's persisted history
 or prevent its control RPCs. Existing Dispatcher routing still requires the bound Sandbox object.
@@ -537,10 +538,11 @@ flowchart LR
           host[Session and harness components]
           execution[Execution API]
         end
-        exec[Companion container and exec-server]
+        exec[Companion container and execution backend]
         runtime -->|construct and own| host
         runtime -->|component lifecycle| execution
         execution -->|ownership gRPC over Unix socket| exec
+        execution -->|loopback gRPC or Codex WebSocket| exec
         host -->|shared app-server WebSocket tools| exec
     end
     subgraph vm[VM guest]
@@ -551,11 +553,12 @@ flowchart LR
         end
         manager[systemd manager]
         harness[Codex app-server: workload slice]
-        vmexec[exec-server: executor slice]
+        vmexec[Execution backend: executor slice]
         vmruntime -->|service lifetime| manager
         vmhost -->|native launch / fence| manager
         vmexecution -->|executor launch / fence| manager
         manager -->|service lifetime and cgroup| vmexec
+        vmexecution -->|loopback gRPC or Codex WebSocket| vmexec
         manager -->|service lifetime and cgroup| harness
         harness -->|loopback WebSocket tools| vmexec
     end
@@ -761,6 +764,8 @@ own method authorization. LLM ingress authenticates
 workload and service SVIDs on its primary TLS listener, with no bearer admission. With `service_callers` configured, the central sampler's TLS listener
 presents its service SVID and admits exact service peers. Its History exporter presents the
 sampler SVID with typed Session delegation for the effective Identity. Only LLM ingress holds the LiteLLM key.
+The Qwen Chat Completions canary posts to `/v1/chat/completions` over this hop. LiteLLM forwards it
+to TabbyAPI using the same Qwen model as the existing Responses route.
 Kubernetes retains its destination-scoped projected token until the later impersonation cutover.
 Rules, Notification, ModelConfig and telemetry share the local gRPC listener on port 3130; exact
 service prefixes select independent upstream connections and authentication.
@@ -806,8 +811,8 @@ flowchart LR
 ## Service definitions
 
 - gRPC: [Actions](../action_service/api/contracts/action_service.proto), [operator Actions](../action_service/api/contracts/operator_action_service.proto), [Connections](../mcp_edge/api/connection/connection_service.proto), [Web Push](../action_service/api/web_push/web_push_service.proto), [Environment Service](../environments/v1/environment_service.proto), [Environment Runtime](../env/runtime/control/environment_runtime.proto), [HarnessHost](../harness_host/harness_host.proto), [Executor](../env/runtime/execution/executor.proto), [SessionJournalIngress](../history_service/api/ingress/session_ingress.proto), [Session Dispatcher](../session_dispatcher/dispatcher/api/session/session_dispatcher.proto), [History Service](../history_service/api/history/history_service.proto), and the [Notification Service](../notification_service/api/notifications/notifications.proto) API (whose HTTP annotations generate the App browser facade; the service itself serves workload calls over gRPC). Sessions serves Dispatcher and standard gRPC health, and Environments proxies the Environment Runtime, HarnessHost and Executor services over direct mTLS connections.
-- HTTP and streaming APIs: [Integration app](../app/) (Bazel target: `//agentplane/app/cmd:agentplane-app`), [Electric proxy](../app/internal/proxy/electric.go), [Action Service generated facade](../action_service/api/contracts/action_service.proto), [LLM ingress](../llm_ingress/server.go), and [Git index](../x/indexing/app.py).
-- Controllers and egress: [Sandbox Controller](../environments/internal/controller/controller.go), [Policy Controller](../policy_controller/internal/controller/controller.go), [central egress proxy](../egress/internal/proxy/proxy.go), [Go sidecar](../egress/sidecar/main.go), and [sidecar route configuration](../egress/platform_routes.py).
+- HTTP and streaming APIs: [Integration app](../app/) (Bazel target: `//agentplane/app/cmd:agentplane-app`), [Electric proxy](../app/internal/electricproxy/electric.go), [Action Service generated facade](../action_service/api/contracts/action_service.proto), [LLM ingress](../llm_ingress/internal/server/server.go), and [Git index](../x/indexing/app.py).
+- Controllers and egress: [Sandbox Controller](../environments/internal/controller/controller.go), [Policy Controller](../policy_controller/internal/controller/controller.go), [central egress proxy](../egress/internal/proxy/proxy.go), [Go sidecar](../egress/sidecar/cmd/main.go), and [sidecar route configuration](../egress/platform_routes.py).
 
 ## Runtime proxy caller identity
 

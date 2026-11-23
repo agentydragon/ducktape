@@ -19,7 +19,7 @@ use artifact::{
     prune_artifact_to_chunk_ids,
 };
 use gate::{
-    AssignmentReport, CandidatePreflight, CandidateRelocationAssessmentReport, ChunkGateRejection,
+    CandidatePreflight, CandidateRelocationAssessmentReport, ChunkGateRejection,
     StructuralPlacementAssessment, StructuralPlacementStatus, UnmatchedSpecClaim,
 };
 
@@ -79,13 +79,10 @@ pub struct MaterializeLogicalModulesResult {
     pub selected_lowerings: Vec<SelectedModuleLowering>,
     pub module_count: usize,
     /// Spec claims that named a binding for which no top-level
-    /// declaration exists in the source chunk. Previously dropped
-    /// silently — the binding would fall through to the residual and
-    /// the named module's export list would be one entry short. Now
-    /// collected across every chunk so reconstruction can diagnose
-    /// all claims (the chunk lowers as if the missing claim were absent).
-    /// Final validation rejects the full list before writing the output. See
-    /// [`UnmatchedSpecClaim`].
+    /// declaration exists in the source chunk, collected across every chunk
+    /// so reconstruction can diagnose all claims (the chunk lowers as if the
+    /// missing claim were absent). Final validation rejects the full list
+    /// before writing the output. See [`UnmatchedSpecClaim`].
     pub unmatched_spec_claims: Vec<UnmatchedSpecClaim>,
     /// Chunks the realizability gate rejected but lowered anyway under
     /// [`GateRejectionPolicy::LowerUnrunnable`]; empty under
@@ -303,7 +300,6 @@ pub struct SelectedOwnershipPreflight {
     pub source_unit_modules: BTreeMap<String, Option<spec::ModulePath>>,
     pub emitted_owner_paths: BTreeSet<spec::ModulePath>,
     pub source_unit_binding_exports: BTreeMap<String, Vec<SelectedBindingExport>>,
-    pub gate_report: AssignmentReport,
     pub gate_accepts: bool,
     pub structural_placement: StructuralPlacementAssessment,
     pub structural_accepts: bool,
@@ -450,7 +446,6 @@ impl<'a> SelectedOwnershipPreflightSession<'a> {
             });
         let candidate = CandidatePreflight::prepare(assignment_analysis, &placement_projection);
         let gate_accepts = !candidate.is_rejected();
-        let gate_report = candidate.report().clone();
         let structural_placement = candidate.placement_assessment().clone();
         let structural_accepts = structural_placement.status
             == StructuralPlacementStatus::NoKnownBlocker
@@ -502,7 +497,6 @@ impl<'a> SelectedOwnershipPreflightSession<'a> {
             source_unit_modules,
             emitted_owner_paths,
             source_unit_binding_exports,
-            gate_report,
             gate_accepts,
             structural_placement,
             structural_accepts,

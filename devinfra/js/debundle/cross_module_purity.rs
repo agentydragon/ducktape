@@ -2140,12 +2140,24 @@ mod tests {
     fn imported_purities(
         modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
         asserted: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
-        callables: &mut ResolvedCallableSummaries,
+    ) -> Result<BTreeMap<SourceModuleKey, BTreeMap<String, Arc<Purity>>>> {
+        imported_purities_observed(modules, asserted, &Diagnostics::default())
+    }
+
+    fn imported_purities_observed(
+        modules: &BTreeMap<SourceModuleKey, ModulePurityFacts<'_>>,
+        asserted: &BTreeMap<SourceModuleKey, BTreeSet<String>>,
         diagnostics: &Diagnostics,
     ) -> Result<BTreeMap<SourceModuleKey, BTreeMap<String, Arc<Purity>>>> {
         let bindings = binding_graph(modules);
         let stable = resolve_stable_imports(&bindings, modules, asserted);
-        resolve_imported_purities(&stable, modules, asserted, callables, diagnostics)
+        resolve_imported_purities(
+            &stable,
+            modules,
+            asserted,
+            &mut ResolvedCallableSummaries::default(),
+            diagnostics,
+        )
     }
 
     fn binding_graph(
@@ -2368,12 +2380,7 @@ mod tests {
         let diagnostics = Diagnostics::with_progress(&observer);
         std::thread::scope(|scope| {
             let operation = scope.spawn(|| {
-                let result = imported_purities(
-                    &modules,
-                    &BTreeMap::new(),
-                    &mut ResolvedCallableSummaries::default(),
-                    &diagnostics,
-                );
+                let result = imported_purities_observed(&modules, &BTreeMap::new(), &diagnostics);
                 complete.store(true, Ordering::SeqCst);
                 result
             });
@@ -2409,13 +2416,7 @@ mod tests {
             ),
             ("c".to_string(), facts(&c, &[], &[("base", "base")])),
         ]);
-        let resolved = imported_purities(
-            &modules,
-            &BTreeMap::new(),
-            &mut ResolvedCallableSummaries::default(),
-            &Diagnostics::default(),
-        )
-        .unwrap();
+        let resolved = imported_purities(&modules, &BTreeMap::new()).unwrap();
         assert!(!resolved["a"]["wrap"].is_pure());
     }
 
@@ -2434,13 +2435,7 @@ mod tests {
             ),
         ]);
 
-        let resolved = imported_purities(
-            &modules,
-            &BTreeMap::new(),
-            &mut ResolvedCallableSummaries::default(),
-            &Diagnostics::default(),
-        )
-        .unwrap();
+        let resolved = imported_purities(&modules, &BTreeMap::new()).unwrap();
 
         assert!(resolved["a"]["right"].is_pure());
         assert!(resolved["b"]["left"].is_pure());
@@ -2462,13 +2457,7 @@ mod tests {
             ),
         ]);
 
-        let resolved = imported_purities(
-            &modules,
-            &BTreeMap::new(),
-            &mut ResolvedCallableSummaries::default(),
-            &Diagnostics::default(),
-        )
-        .unwrap();
+        let resolved = imported_purities(&modules, &BTreeMap::new()).unwrap();
 
         let right = &resolved["a"]["right"];
         let left = &resolved["b"]["left"];
@@ -2514,13 +2503,7 @@ mod tests {
             "app".to_string(),
             facts(&app, &[("ext", "vendor", "ext")], &[]),
         )]);
-        let resolved = imported_purities(
-            &modules,
-            &BTreeMap::new(),
-            &mut ResolvedCallableSummaries::default(),
-            &Diagnostics::default(),
-        )
-        .unwrap();
+        let resolved = imported_purities(&modules, &BTreeMap::new()).unwrap();
         assert!(!resolved["app"].contains_key("ext"));
     }
 
@@ -2536,13 +2519,7 @@ mod tests {
             ),
             ("lib".to_string(), facts(&lib, &[], &[("table", "table")])),
         ]);
-        let resolved = imported_purities(
-            &modules,
-            &BTreeMap::new(),
-            &mut ResolvedCallableSummaries::default(),
-            &Diagnostics::default(),
-        )
-        .unwrap();
+        let resolved = imported_purities(&modules, &BTreeMap::new()).unwrap();
         assert!(!resolved["app"].contains_key("table"));
     }
 
@@ -2598,25 +2575,12 @@ mod tests {
         ]);
         // Without the assertion: impure.
         assert!(
-            !imported_purities(
-                &modules,
-                &BTreeMap::new(),
-                &mut ResolvedCallableSummaries::default(),
-                &Diagnostics::default()
-            )
-            .unwrap()["app"]["observer"]
-                .is_pure()
+            !imported_purities(&modules, &BTreeMap::new()).unwrap()["app"]["observer"].is_pure()
         );
         // With the assertion on the defining chunk: pure, at every importer.
         let asserted =
             BTreeMap::from([("lib".to_string(), BTreeSet::from(["observer".to_string()]))]);
-        let resolved = imported_purities(
-            &modules,
-            &asserted,
-            &mut ResolvedCallableSummaries::default(),
-            &Diagnostics::default(),
-        )
-        .unwrap();
+        let resolved = imported_purities(&modules, &asserted).unwrap();
         assert!(resolved["app"]["observer"].is_pure());
         assert_eq!(
             resolved["app"]["observer"].dependencies(),
@@ -2658,29 +2622,14 @@ mod tests {
             ),
         ]);
         assert!(
-            !imported_purities(
-                &modules,
-                &BTreeMap::new(),
-                &mut ResolvedCallableSummaries::default(),
-                &Diagnostics::default()
-            )
-            .unwrap()["app"]
+            !imported_purities(&modules, &BTreeMap::new()).unwrap()["app"]
                 .contains_key("forwardRef")
         );
         let asserted = BTreeMap::from([(
             "lib".to_string(),
             BTreeSet::from(["forwardRef".to_string()]),
         )]);
-        assert!(
-            imported_purities(
-                &modules,
-                &asserted,
-                &mut ResolvedCallableSummaries::default(),
-                &Diagnostics::default()
-            )
-            .unwrap()["app"]["forwardRef"]
-                .is_pure()
-        );
+        assert!(imported_purities(&modules, &asserted).unwrap()["app"]["forwardRef"].is_pure());
     }
 
     #[test]

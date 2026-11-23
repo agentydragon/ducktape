@@ -1,6 +1,8 @@
 apiVersion: v1
 kind: Namespace
 metadata:
+  annotations:
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]}'
   labels:
     goldilocks.fairwinds.com/vpa-update-mode: auto
     rbac.ducktape.io/agent-readable-logs: "true"
@@ -49,6 +51,8 @@ spec:
           api-keys:
             - "{{ .client_key }}"
           debug: false
+          routing:
+            session-affinity: true
           # Recheck restored provider quota instead of honoring stale local cooldown windows.
           disable-cooling: true
           streaming:

@@ -3,7 +3,7 @@
 //! cuts. Source-flow precision and work bounds are checked in the facts tests.
 
 use debundle_e2e_support::saved_analysis::{
-    StagedInvocation, assert_same_invocation_trees, path, staged,
+    StagedInvocation, assert_same_invocation_trees, graph_node_for_binding, path, staged,
 };
 use debundle_e2e_support::*;
 use serde_json::Value;
@@ -171,20 +171,7 @@ fn assert_fresh_and_saved_cli(
                     .output_root()
                     .join("reports/tree/static/app/dependency_graph.json.gz"),
             );
-            let observed = graph["nodes"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .find(|node| {
-                    node["declared_bindings"]
-                        .as_array()
-                        .is_some_and(|bindings| {
-                            bindings
-                                .iter()
-                                .any(|binding| binding["binding"] == "observed")
-                        })
-                })
-                .unwrap();
+            let observed = graph_node_for_binding(&graph, "observed");
             assert!(
                 observed["synchronous_execution"]["precision_losses"]
                     .as_array()

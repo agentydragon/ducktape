@@ -9,6 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 )
@@ -206,10 +207,7 @@ func TestCompactionOnlyPacksEnabledAppendIntervals(t *testing.T) {
 		appendEntries(t, store, id, batch...)
 		all = append(all, batch...)
 	}
-	var ordinary int
-	if err := store.db.QueryRowContext(t.Context(), "SELECT count(*) FROM session_event WHERE session_id=$1", id).Scan(&ordinary); err != nil {
-		t.Fatal(err)
-	}
+	ordinary := postgres.Count(t, store.db, "SELECT count(*) FROM session_event WHERE session_id=$1", id)
 	if ordinary != 160 {
 		t.Fatalf("expected the two disabled intervals to retain 160 ordinary entries, got %d", ordinary)
 	}

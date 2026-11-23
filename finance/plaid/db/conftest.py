@@ -9,7 +9,7 @@ import pytest
 from finance.plaid.db.link_store import PlaidLinkStorage
 from finance.plaid.db.models import async_session_factory
 from finance.plaid.db.testing import db_url, plaid_database_template
-from util.testing.postgres_fixtures import (
+from testing.postgres_fixtures import (
     database_clones,
     database_names,
     engine,

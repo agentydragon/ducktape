@@ -9,10 +9,6 @@
       <default>['status', 'balance']</default>
       <summary>Visible panel items</summary>
     </key>
-    <key name="panel-pace-window-migrated" type="b">
-      <default>false</default>
-      <summary>Whether the separate pace window panel item has been migrated</summary>
-    </key>
     <key name="pace-window" type="s">
       <choices>
         <choice value="7d"/>

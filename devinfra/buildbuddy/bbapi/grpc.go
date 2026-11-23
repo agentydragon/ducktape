@@ -51,8 +51,9 @@ func newRPCConnection(base, key string, timeout time.Duration, retries int) (*gr
 	return grpc.NewClient(
 		"dns:///"+address,
 		grpc.WithTransportCredentials(transport),
-		// Invocation responses can exceed grpc-go's 4 MiB default. Match the
-		// previous HTTP transport, which did not impose a smaller message cap.
+		// GetTargetHistory responses can exceed grpc-go's 4 MiB default (7.3 MB
+		// measured on 2026-10-30). Match the previous HTTP transport, which did
+		// not impose a smaller message cap.
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(math.MaxInt32)),
 		grpc.WithUnaryInterceptor(readRPCInterceptor(key, timeout, retries)),
 	)

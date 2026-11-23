@@ -897,8 +897,8 @@ selector or claim is the useful debugging target (its outcome line is the
 error).
 
 Every chunk's selectors resolve as one program. In a tree spec, several
-module trees may scope to one chunk (`module_roots`, <../README.md>); their
-entities never claim the same place.
+module trees may scope to one chunk. Their entities never claim the same place.
+See [tree spec configuration](spec_editing.md#tree-spec-configuration).
 
 `debundle spec validate` is `debundle run` in dry-run keep-going mode
 reporting every selector problem: it takes the **same inputs** (`--spec` /

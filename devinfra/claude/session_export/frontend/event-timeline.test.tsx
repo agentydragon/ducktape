@@ -1,10 +1,9 @@
 // @vitest-environment happy-dom
 
-import { MantineProvider } from "@mantine/core";
 import { act, type JSX } from "react";
-import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { cleanupMounted, mountWithMantine, renderWithMantine } from "../../../../util/frontend/testing/react";
 import type { Event } from "./schema";
 import { buildEventTimeline, EventTimelineStrip, type EventStrip, type EventTimelineItem } from "./event-timeline";
 
@@ -97,28 +96,15 @@ describe("buildEventTimeline", () => {
   });
 });
 
-let root: ReturnType<typeof createRoot> | null = null;
 let container: HTMLDivElement | null = null;
 
 afterEach(async () => {
-  if (root) await act(async () => root?.unmount());
-  container?.remove();
-  root = null;
-  container = null;
+  await cleanupMounted();
   vi.restoreAllMocks();
 });
 
 async function render(events: Event[]): Promise<void> {
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root?.render(
-      <MantineProvider env="test">
-        <EventTimelineStrip events={events} />
-      </MantineProvider>
-    )
-  );
+  container = await renderWithMantine(<EventTimelineStrip events={events} />);
 }
 
 it("caps dots, opens the selected event batch below the strip, closes it on repeat, and opens all events", async () => {
@@ -198,16 +184,8 @@ it("keeps the selected inspector batch and filter state when strip growth rebuck
   const raw = Array.from({ length: 17 }, (_, index) =>
     event(index + 1, "system", index === 12 ? "distinctive fixture text" : `fixture marker ${index + 1}`)
   );
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root?.render(
-      <MantineProvider env="test">
-        <TimelineHarness events={raw} />
-      </MantineProvider>
-    )
-  );
+  const mounted = await mountWithMantine(<TimelineHarness events={raw} />);
+  container = mounted.container;
   const selectedDot = [...(container?.querySelectorAll<HTMLButtonElement>("[data-event-dot]") ?? [])].find((dot) =>
     dot.dataset.eventDotSequences?.split(" ").includes("13")
   );
@@ -223,13 +201,7 @@ it("keeps the selected inspector batch and filter state when strip growth rebuck
   }
   expect(container?.querySelector("[data-event-strip-details]")?.textContent).toContain("1 of 2 loaded events");
 
-  await act(async () =>
-    root?.render(
-      <MantineProvider env="test">
-        <TimelineHarness events={[...raw, event(18), event(19)]} />
-      </MantineProvider>
-    )
-  );
+  await mounted.rerender(<TimelineHarness events={[...raw, event(18), event(19)]} />);
   const retainedSearch = container?.querySelector<HTMLInputElement>('input[aria-label="Search event data"]');
   expect(retainedSearch?.value).toBe("distinctive fixture text");
   expect(container?.querySelector("[data-event-strip-details]")?.textContent).toContain("1 of 2 loaded events");

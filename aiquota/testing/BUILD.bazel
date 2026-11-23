@@ -1,5 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_binary")
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 
 py_library(
     name = "quota_fixtures",
@@ -37,7 +36,6 @@ py_binary(
     testonly = True,
     # keep: the scenario YAML the exporter reads from its own runfiles.
     data = [":fixtures"],
-    imports = ["../.."],
     main_module = "aiquota.testing.export_web_fixtures",
     visibility = ["//aiquota/frontend:__pkg__"],
     deps = [":export_web_fixtures"],

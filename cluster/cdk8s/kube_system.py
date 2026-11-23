@@ -1,9 +1,9 @@
-"""The kube-system unit: the Namespace's labels (Goldilocks recommendations, applied on pod creation),
-and the Hubble UI's ingress NetworkPolicy (`hubble_ui.py`)."""
+"""The kube-system Namespace and disruption budgets for bootstrap controllers."""
 
 from __future__ import annotations
 
 from cdk8s import App, Chart
+from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
@@ -26,6 +26,21 @@ def chart(app: App) -> Chart:
         # agent and public-coder opt-ins absent until we intentionally add an
         # explicit binding or a narrowly scoped resource-filter exception.
     )
+    # Talos, bootstrap Helm and the upstream snapshot-controller kustomize own the Deployments.
+    # Flux applies their eviction budgets without a Deployment change or a Cilium Helm upgrade.
+    for name, labels in (
+        ("coredns", {"k8s-app": "kube-dns"}),
+        ("cilium-operator", {"io.cilium/app": "operator", "name": "cilium-operator"}),
+        ("snapshot-controller", {"app.kubernetes.io/name": "snapshot-controller"}),
+    ):
+        k8s.KubePodDisruptionBudget(
+            chart,
+            f"{name}-disruption-budget",
+            metadata=k8s.ObjectMeta(name=name, namespace=NAME),
+            spec=k8s.PodDisruptionBudgetSpec(
+                min_available=k8s.IntOrString.from_number(1), selector=k8s.LabelSelector(match_labels=labels)
+            ),
+        )
     return chart
 
 

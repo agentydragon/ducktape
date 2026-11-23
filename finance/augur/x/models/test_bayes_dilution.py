@@ -12,6 +12,7 @@ import math
 
 import pytest
 
+from finance.augur.dates import DAYS_PER_MONTH
 from finance.augur.model.series import IssuerId
 from finance.augur.x.models.bayes_dilution import BayesianDilutionPriors, fit_bayesian_dilution_prior
 from finance.augur.x.models.private_equity_fit import PriceObservation, ValuationObservation
@@ -53,7 +54,7 @@ def _synthetic(*, r_true: float, monthly_drift: float, n: int = 8, months_step: 
     v0, shares0 = 2.8e10, 4.0e8
     prices, valuations = [], []
     for k in range(n):
-        observed_at = _BASE + dt.timedelta(days=round(k * months_step * 365.2425 / 12.0))
+        observed_at = _BASE + dt.timedelta(days=round(k * months_step * DAYS_PER_MONTH))
         t = k * months_step
         v = v0 * math.exp(monthly_drift * t)
         shares = shares0 * (1.0 + r_true) ** (t / 12.0)

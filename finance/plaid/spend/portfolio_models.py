@@ -133,3 +133,14 @@ class PortfolioView(BaseModel):
     liabilities_minor_units: int | None
     excluded_minor_units: int | None
     sources: list[SourceValuation]
+
+    @classmethod
+    def unavailable(cls, sources: list[SourceValuation]) -> PortfolioView:
+        return cls(
+            status="unavailable",
+            net_minor_units=None,
+            assets_minor_units=None,
+            liabilities_minor_units=None,
+            excluded_minor_units=None,
+            sources=sources,
+        )

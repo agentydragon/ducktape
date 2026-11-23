@@ -65,12 +65,14 @@ func (conversation *Conversation) projectHistory(ctx context.Context, tx *sql.Tx
 	return source.Head, head, err
 }
 
-func previousRequest(ctx context.Context, tx *sql.Tx, conversationID string) (ProviderRequest, error) {
+func previousRequest(ctx context.Context, tx *sql.Tx, conversationID string, kind PendingIntentKind) (ProviderRequest, error) {
 	var request ProviderRequest
 	var context sql.NullString
 	var prefix pq.StringArray
-	err := tx.QueryRowContext(ctx, `SELECT profile_id,context_id,prefix_ids FROM sampler_model_request
-        WHERE conversation_id=$1 ORDER BY position DESC LIMIT 1`, conversationID).Scan(&request.ProfileID, &context, &prefix)
+	err := tx.QueryRowContext(ctx, `SELECT mr.profile_id,mr.context_id,mr.prefix_ids FROM sampler_model_request mr
+        JOIN sampler_intent i ON i.id=mr.id
+        WHERE mr.conversation_id=$1 AND ($2='' OR i.request->>'kind'=$2)
+        ORDER BY mr.position DESC LIMIT 1`, conversationID, string(kind)).Scan(&request.ProfileID, &context, &prefix)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ProviderRequest{}, nil
 	}
@@ -79,4 +81,28 @@ func previousRequest(ctx context.Context, tx *sql.Tx, conversationID string) (Pr
 	}
 	request.ContextID = context.String
 	return request, err
+}
+
+// providerRoutes returns the distinct contracts of persisted sampling and compaction attempts.
+// It does not load request bodies or result evidence.
+func providerRoutes(ctx context.Context, tx *sql.Tx, conversationID string) ([]ProviderRequest, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT
+		COALESCE(i.request->>'api',''), COALESCE(i.request->>'connection',''),
+		COALESCE(i.request->>'provider_model',''), COALESCE(i.request->>'url',''), mr.projection_key
+		FROM sampler_model_request mr
+		JOIN sampler_intent i ON i.id=mr.id
+		WHERE mr.conversation_id=$1`, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var routes []ProviderRequest
+	for rows.Next() {
+		var route ProviderRequest
+		if err := rows.Scan(&route.API, &route.Connection, &route.ProviderModel, &route.URL, &route.ProjectionKey); err != nil {
+			return nil, err
+		}
+		routes = append(routes, route)
+	}
+	return routes, rows.Err()
 }

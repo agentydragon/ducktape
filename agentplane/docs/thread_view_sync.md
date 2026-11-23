@@ -111,20 +111,20 @@ completion facts. Reasoning and tool outputs can remain omitted until requested.
 These logical operations map to sync-engine queries or existing app HTTP calls. They do
 not mandate a second wire protocol beside the engine.
 
-| Operation                   | Meaning                                                                                                                   |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| List segments, no direction | Latest N segments; return in conversation order.                                                                          |
-| List before cursor          | Closest N earlier segments, excluding the cursor.                                                                         |
-| List after cursor           | Closest N later segments, excluding the cursor.                                                                           |
-| Get segments by cursor      | Exact identities, even outside loaded windows.                                                                            |
-| Read payload                | Whole immutable selected content, or typed unavailability.                                                                |
-| List pending commands       | Keyset page by admission cursor.                                                                                          |
-| Get commands by ID          | Reconcile admitted and settled commands after a lost response.                                                            |
-| Follow selected commands    | Live authoritative rows for a bounded set of command IDs, including settled outcomes.                                     |
-| Submit                      | Session Dispatcher records the sender's durable result before runner admission; the app has no server-side command queue. |
+| Operation                   | Meaning                                                                                                                                                   |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| List segments, no direction | Latest N segments; return in conversation order.                                                                                                          |
+| List before cursor          | Closest N earlier segments, excluding the cursor.                                                                                                         |
+| List after cursor           | Closest N later segments, excluding the cursor.                                                                                                           |
+| Get segments by cursor      | Exact identities, even outside loaded windows.                                                                                                            |
+| Read payload                | Whole immutable selected content, or typed unavailability.                                                                                                |
+| List pending commands       | Electric returns up to 200 pending projection rows, newest first. See the [paging follow-up](../plans/thread_sync/README.md#open-on-the-electric-design). |
+| Get commands by ID          | Reconcile admitted and settled commands after a lost response.                                                                                            |
+| Follow selected commands    | Live authoritative rows for a bounded set of command IDs, including settled outcomes.                                                                     |
+| Submit                      | Session Dispatcher records the sender's durable result before runner admission; the app has no server-side command queue.                                 |
 
 There is no `around` operation, offset pagination, query byte budget or truncated body.
-Counts have server maxima. `ContentSelection` explicitly chooses text, reasoning, tool
+Counts have server maxima. Content selection explicitly chooses text, reasoning, tool
 arguments and output; selecting nothing still returns metadata and references. Selecting
 text includes confirmed user input as well as assistant text. The `ConfirmedInput` record separates that selectable body from its metadata; the
 exact confirmation Event remains evidence at the Segment cursor.
@@ -266,7 +266,7 @@ The app proxy authenticates callers and fixes the permitted conversation predica
 tables and columns. Client-supplied sync parameters must not widen those permissions,
 including subset query bodies. Proxy replicas share authorization state and the same
 Electric endpoint; browser sessions must not require replica affinity. Commands continue
-through the app's command API to the Runner Gateway. The proxy does not own another conversation
+through the app's command API to the Session Dispatcher. The proxy does not own another conversation
 cache or implement snapshot/live reconciliation.
 
 ### Server memory ownership

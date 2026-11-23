@@ -61,8 +61,8 @@ previous wait-for-the-API behavior.
 
 **Mechanism.** The gateway model slug is not in Claude Code's built-in model table, so it assumes a
 200k window and runs auto-compaction against it. The real serving-path window for the gpt-5.6 Codex
-models is **372k** (measured, not published — `cluster/cdk8s/model_rosters.py`
-`CODEX_CONTEXT_WINDOW`; `openai_utils/probe_context_window.py` binary-searched it: 370,629 accepted
+models is **372k** (measured, not published — `model_catalog/client_budgets.md` keeps the probe
+result; `openai_utils/probe_context_window.py` binary-searched it: 370,629 accepted
 / 372,194 rejected on 2026-07-29). So Claude Code compacts at ~166k (83% of 200k) — clipping more
 than half the usable window and paying for a compaction summarization it did not need. This is
 purely client-side: it does **not** depend on the CLIProxyAPI translation lane, and it hits every

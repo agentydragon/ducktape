@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
-from agentplane.identity.auth.listener import Listener, SPIFFEAuth
+from agentplane.identity.auth.listener import Listener
 from agentplane.net.peertls.config import ServiceSPIFFEID
 
 
@@ -88,9 +88,3 @@ class Settings(BaseModel):
     @field_serializer("reader_service_callers")
     def sorted_reader_service_callers(self, value: frozenset[ServiceSPIFFEID]) -> list[ServiceSPIFFEID]:
         return sorted(value)
-
-    @model_validator(mode="after")
-    def workload_svid_trust(self) -> Settings:
-        if not any(isinstance(method, SPIFFEAuth) for method in self.rpc.auth):
-            raise ValueError("rpc.auth must enable spiffe client trust")
-        return self

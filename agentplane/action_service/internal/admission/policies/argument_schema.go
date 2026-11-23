@@ -21,7 +21,7 @@ import (
 type ArgumentSchema struct {
 	// Schema is the JSON Schema as the rule writes it.
 	Schema   *structpb.Struct
-	compiled *jsonschema.Schema
+	compiled *catalog.CompiledSchema
 }
 
 func (ArgumentSchema) Type() store.PolicyKind { return store.PolicyArgumentSchema }
@@ -50,6 +50,9 @@ func (k ArgumentSchema) evaluate(_ context.Context, action store.ActionIdentity,
 	err := k.compiled.Validate(arguments)
 	if err == nil {
 		return Matched{Explanation: fmt.Sprintf("arguments of %s/%s satisfy the schema", action.Group, action.Name)}
+	}
+	if errors.Is(err, catalog.ErrPatternEvaluation) {
+		return Indeterminate{Reason: err.Error()}
 	}
 	reason := err.Error()
 	if failed := (*jsonschema.ValidationError)(nil); errors.As(err, &failed) {

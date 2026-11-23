@@ -7,18 +7,16 @@ fetch and its streams, rendering, and page reload are not replaced by the visual
 import asyncio
 import json
 import re
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import replace
 from pathlib import Path
-from typing import cast, override
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
 
 import grpc
 import pytest
 from google.protobuf import json_format
-from google.protobuf.empty_pb2 import Empty
 from kubernetes_asyncio import client as k8s_client
 from playwright.async_api import (
     APIResponse,
@@ -35,7 +33,7 @@ from agentplane.app.frontend.testing.history_interactions import frames, holding
 from agentplane.app.testing import thread_view_marks
 from agentplane.app.testing.browser_certificate import BrowserCertificate
 from agentplane.app.testing.history import SessionHistory
-from agentplane.app.testing.http2_proxy import http2_proxy
+from agentplane.app.testing.http2_proxy import Ingress, http2_proxy
 from agentplane.app.testing.replication_process import GatewayAccess, SandboxesAccess, app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, ReplicationSource
 from agentplane.app.testing.thread_browser import (
@@ -63,34 +61,23 @@ from agentplane.history_service.testing.electric_service import ElectricService
 from agentplane.history_service.testing.go_service import GoHistoryService
 from agentplane.history_service.testing.history import History
 from agentplane.history_service.testing.protojson import thread_entity_from_record, thread_entity_state_json
-from agentplane.net.peertls.config import APP_URI, POLICY_CONTROLLER_URI, ClientTLS
-from agentplane.policy.v1 import policy_service_pb2, policy_service_pb2_grpc
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2
-from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
+from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.session_dispatcher.client import SandboxControlClient
 from agentplane.session_dispatcher.dispatcher.api.session import session_dispatcher_pb2
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient, accepted_session
 from agentplane.session_dispatcher.testing.gateway_process import GatewayProcess
-from agentplane.testing.kubernetes_apiserver import KubernetesApiServer
-from agentplane.testing.tls import issue_workload_leaf, make_ca
-from devinfra.testing.output_writer import BoundTestOutputs
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
-from util.testing.frontend_visual.capture import VisualPage
-from util.testing.frontend_visual.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
-
-
-@asynccontextmanager
-async def serving_tls(server: grpc.aio.Server, address: str, credentials: grpc.ServerCredentials) -> AsyncIterator[int]:
-    port = server.add_secure_port(address, credentials)
-    await server.start()
-    try:
-        yield port
-    finally:
-        await server.stop(grace=0)
-
+from testing.frontend_visual.capture import VisualPage
+from testing.frontend_visual.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
 
 # gazelle:include_dep //agentplane/app:integration_fixtures
-pytest_plugins = ("agentplane.app.testing.thread_browser", "agentplane.app.integration_fixtures")
+# gazelle:include_dep //agentplane/app/testing:thread_browser_backends
+pytest_plugins = (
+    "agentplane.app.testing.thread_browser",
+    "agentplane.app.integration_fixtures",
+    "agentplane.app.testing.thread_browser_backends",
+)
 
 
 async def route_once(page: Page, url: str, handler: Callable[[Route], Awaitable[None]]) -> None:
@@ -120,30 +107,12 @@ def dispatched_command_id(body: str) -> str:
 
 
 @pytest.fixture
-def review_view(page: Page, test_outputs: BoundTestOutputs) -> Iterator[VisualPage]:
-    with VisualPage(page, outputs=test_outputs, title="Agentplane Thread browser") as view:
-        yield view
-
-
-@pytest.fixture
 async def review_thread_browser(
     review_view: VisualPage, thread_browser_session: Callable[[Page], AbstractAsyncContextManager[ThreadBrowser]]
 ) -> AsyncIterator[ThreadBrowser]:
     # The wrapper exists before the shared session logs in or navigates.
     async with thread_browser_session(review_view.page) as browser:
         yield browser
-
-
-@pytest.fixture
-async def service_history_db_url(electric: ElectricService) -> str:
-    return electric.database_url
-
-
-@pytest.fixture
-async def sandbox(api_server: KubernetesApiServer) -> AsyncIterator[SandboxCluster]:
-    """The `ReplicationSource`'s."""
-    async with sandbox_cluster(api_server, name=SANDBOX) as started:
-        yield started
 
 
 async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
@@ -226,145 +195,6 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
         assert await event_logs.events(thread_id, limit=100) == thread_source.entries
 
 
-async def test_environment_identity_change_obeys_real_gateway_and_kubernetes_admission(
-    review_view: VisualPage,
-    db_url: str,
-    event_logs: SessionHistory,
-    electric: ElectricService,
-    certificate: BrowserCertificate,
-    sandbox: SandboxCluster,
-    gateway_access: GatewayAccess,
-    tmp_path: Path,
-) -> None:
-    """The browser uses real BFF, Gateway, PostgreSQL and Kubernetes mutation paths."""
-    identity = await sandbox.custom_objects.create_namespaced_custom_object(
-        "agentplane.allegedly.works",
-        "v1alpha1",
-        sandbox.namespace,
-        "identities",
-        {
-            "apiVersion": "agentplane.allegedly.works/v1alpha1",
-            "kind": "Identity",
-            "metadata": {"name": "browser-identity"},
-            "spec": {"description": "Browser identity change"},
-        },
-    )
-    assert identity["metadata"]["uid"]
-
-    # Policy watches supply the identity picker and the page's unrelated empty policy tables.
-    # The change request continues through the real app, Gateway, database, and API server.
-    class IdentityWatch(policy_service_pb2_grpc.PolicyServiceServicer):
-        @override
-        async def WatchIdentities(
-            self, request: policy_service_pb2.WatchIdentitiesRequest, context: grpc.aio.ServicerContext
-        ) -> AsyncIterator[policy_service_pb2.WatchIdentitiesResponse]:
-            yield policy_service_pb2.WatchIdentitiesResponse(
-                snapshot=policy_service_pb2.IdentityChunk(
-                    identities=[
-                        policy_service_pb2.Identity(
-                            identity=policy_service_pb2.PolicyResourceIdentity(
-                                namespace=sandbox.namespace, name="browser-identity", uid=identity["metadata"]["uid"]
-                            )
-                        )
-                    ]
-                )
-            )
-            yield policy_service_pb2.WatchIdentitiesResponse(snapshot_complete=Empty())
-            await asyncio.Event().wait()
-
-        @override
-        async def WatchPolicyBindings(
-            self, request: policy_service_pb2.WatchPolicyBindingsRequest, context: grpc.aio.ServicerContext
-        ) -> AsyncIterator[policy_service_pb2.WatchPolicyBindingsResponse]:
-            yield policy_service_pb2.WatchPolicyBindingsResponse(snapshot=policy_service_pb2.PolicyBindingChunk())
-            yield policy_service_pb2.WatchPolicyBindingsResponse(snapshot_complete=Empty())
-            await asyncio.Event().wait()
-
-        @override
-        async def WatchPolicySets(
-            self, request: policy_service_pb2.WatchPolicySetsRequest, context: grpc.aio.ServicerContext
-        ) -> AsyncIterator[policy_service_pb2.WatchPolicySetsResponse]:
-            yield policy_service_pb2.WatchPolicySetsResponse(snapshot=policy_service_pb2.PolicySetChunk())
-            yield policy_service_pb2.WatchPolicySetsResponse(snapshot_complete=Empty())
-            await asyncio.Event().wait()
-
-    policy = grpc.aio.server()
-    policy_service_pb2_grpc.add_PolicyServiceServicer_to_server(IdentityWatch(), policy)
-    policy_ca = make_ca("Policy Service browser test")
-    policy_ca_file = tmp_path / "policy-service-ca.pem"
-    policy_ca_file.write_bytes(policy_ca.cert_pem)
-    policy_certificate, policy_key = issue_workload_leaf(policy_ca, POLICY_CONTROLLER_URI, tmp_path)
-    policy_server_credentials = grpc.ssl_server_credentials(
-        [(policy_key.read_bytes(), policy_certificate.read_bytes())],
-        root_certificates=policy_ca.cert_pem,
-        require_client_auth=True,
-    )
-    app_certificate_dir = tmp_path / "policy-app-svid"
-    app_certificate_dir.mkdir()
-    app_certificate, app_key = issue_workload_leaf(policy_ca, APP_URI, app_certificate_dir)
-    async with (
-        serving_tls(policy, "127.0.0.1:0", policy_server_credentials) as policy_port,
-        app_process(
-            db_url,
-            history=event_logs.history.service,
-            sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
-            gateway=gateway_access,
-            browser_login=True,
-            certificate=certificate,
-            electric_url=electric.url,
-            config={
-                "policy_service_target": f"127.0.0.1:{policy_port}",
-                "policy_service_tls": ClientTLS(
-                    ca_file=policy_ca_file,
-                    server_uri=POLICY_CONTROLLER_URI,
-                    cert_file=app_certificate,
-                    key_file=app_key,
-                    client_uri=APP_URI,
-                ).model_dump(mode="json"),
-            },
-        ) as app,
-        http2_proxy(app.url, certificate) as ingress,
-    ):
-        page = review_view.page
-        await app.login(page)
-        await page.goto(f"{ingress.url}/#/sandboxes/{sandbox.name}?tab=status")
-        panel = page.get_by_role("region", name="Environment identity")
-        initial_identity = f"{sandbox.name}-identity"
-        await expect(panel.get_by_role("link", name=initial_identity)).to_be_visible()
-        await expect(panel.get_by_text(f"Credential at last check: {initial_identity}", exact=True)).to_be_visible()
-        await expect(panel.get_by_role("button", name="Change identity")).to_have_count(0)
-
-        async def change() -> dict[str, object]:
-            return cast(
-                dict[str, object],
-                await page.evaluate(
-                    """async ({namespace, name, uid}) => {
-                  const response = await fetch(`/upstream/environments/v1/environments/${namespace}/${name}:identity`, {
-                    method: 'PATCH', headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({target: {namespace, name, uid}, identityName: 'browser-identity'})
-                  });
-                  return {status: response.status, body: await response.json()};
-                }""",
-                    {"namespace": sandbox.namespace, "name": sandbox.name, "uid": sandbox.uid},
-                ),
-            )
-
-        refused = await change()
-        assert refused["status"] == 400
-        assert "nothing runs" in str(refused["body"])
-        assert (await sandbox.sandbox())["spec"]["identity"] == {"name": initial_identity}
-
-        await sandbox.patch_sandbox_status({"status": {"stopStage": "Stopped"}})
-        selector = panel.get_by_role("combobox", name="Identity for next start")
-        await expect(selector).to_be_visible()
-        await selector.click()
-        await page.get_by_role("option", name="browser-identity").click()
-        await expect(panel.get_by_text("The next identity can read anything earlier agents left")).to_be_visible()
-        await panel.get_by_role("button", name="Change identity").click()
-        await expect(panel.get_by_text("Current: browser-identity")).to_be_visible()
-        assert (await sandbox.sandbox())["spec"]["identity"] == {"name": "browser-identity"}
-
-
 async def _seed_navigation_threads(
     event_logs: SessionHistory,
     history: History,
@@ -413,7 +243,11 @@ async def _seed_navigation_threads(
     return threads, sources
 
 
-async def test_switching_threads_starts_at_each_threads_tail(
+type Navigation = tuple[list[UUID], list[ReplicationSource], Ingress]
+
+
+@pytest.fixture
+async def navigation(
     page: Page,
     db_url: str,
     store: ThreadHTTP,
@@ -424,8 +258,9 @@ async def test_switching_threads_starts_at_each_threads_tail(
     sandbox: SandboxCluster,
     gateway_access: GatewayAccess,
     session_dispatcher: SessionDispatcherClient,
-) -> None:
-    threads, _ = await _seed_navigation_threads(event_logs, history, store, session_dispatcher, sandbox)
+) -> AsyncIterator[Navigation]:
+    """The seeded navigation threads and their sources, with `page` logged in to the app's ingress."""
+    threads, sources = await _seed_navigation_threads(event_logs, history, store, session_dispatcher, sandbox)
     async with (
         app_process(
             db_url,
@@ -439,65 +274,46 @@ async def test_switching_threads_starts_at_each_threads_tail(
         http2_proxy(app.url, certificate) as ingress,
     ):
         await app.login(page)
-        await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
-        await page.get_by_text("Thread 0 message 129", exact=True).wait_for(state="visible")
-        await page.get_by_role("region", name="Thread history", exact=True).hover()
-        # The eager initial load holds message 40 (well up from the tail) but not the thread's start;
-        # scrolling all the way up lands at the top of what's already loaded -- mounting message 40 --
-        # and, being within a screen of that top, triggers the fetch for the page before it.
-        async with page.expect_request(
-            lambda request: request.method == "POST" and "entity_index < $1" in (request.post_data or "")
-        ):
-            await page.mouse.wheel(0, -10_000)
-        await expect(page.get_by_text("Thread 0 message 40", exact=True)).to_be_visible()
-        for number in (1, 0):
-            async with page.expect_request(f"**/upstream/history/v1/sessions/{threads[number]}/entities"):
-                await page.locator(
-                    ".agentplane-thread-list-row-name", has_text=f"Test navigation thread {number}"
-                ).click()
-            await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value(
-                f"Test navigation thread {number}"
-            )
-            await page.get_by_text(f"Thread {number} message 129", exact=True).wait_for(state="visible")
-        await page.screenshot(path=undeclared_outputs_dir() / "thread-navigation.png")
+        yield threads, sources, ingress
+
+
+async def test_switching_threads_starts_at_each_threads_tail(page: Page, navigation: Navigation) -> None:
+    threads, _, ingress = navigation
+    await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
+    await page.get_by_text("Thread 0 message 129", exact=True).wait_for(state="visible")
+    await page.get_by_role("region", name="Thread history", exact=True).hover()
+    # The eager initial load holds message 40 (well up from the tail) but not the thread's start;
+    # scrolling all the way up lands at the top of what's already loaded -- mounting message 40 --
+    # and, being within a screen of that top, triggers the fetch for the page before it.
+    async with page.expect_request(
+        lambda request: request.method == "POST" and "entity_index < $1" in (request.post_data or "")
+    ):
+        await page.mouse.wheel(0, -10_000)
+    await expect(page.get_by_text("Thread 0 message 40", exact=True)).to_be_visible()
+    for number in (1, 0):
+        async with page.expect_request(f"**/upstream/history/v1/sessions/{threads[number]}/entities"):
+            await page.locator(".agentplane-thread-list-row-name", has_text=f"Test navigation thread {number}").click()
+        await expect(page.get_by_role("textbox", name="Thread name", exact=True)).to_have_value(
+            f"Test navigation thread {number}"
+        )
+        await page.get_by_text(f"Thread {number} message 129", exact=True).wait_for(state="visible")
+    await page.screenshot(path=undeclared_outputs_dir() / "thread-navigation.png")
 
 
 async def test_returning_to_a_thread_lays_its_rows_out_at_the_heights_they_had(
-    page: Page,
-    db_url: str,
-    store: ThreadHTTP,
-    event_logs: SessionHistory,
-    history: History,
-    electric: ElectricService,
-    certificate: BrowserCertificate,
-    sandbox: SandboxCluster,
-    gateway_access: GatewayAccess,
-    session_dispatcher: SessionDispatcherClient,
+    page: Page, navigation: Navigation
 ) -> None:
     """The history lays an unmeasured row out at a flat guess; one it has read before, at the height
     it read. Rows read on a thread's first visit are laid out at those heights on the return."""
-    threads, _ = await _seed_navigation_threads(event_logs, history, store, session_dispatcher, sandbox)
-    async with (
-        app_process(
-            db_url,
-            history=event_logs.history.service,
-            sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
-            gateway=gateway_access,
-            browser_login=True,
-            certificate=certificate,
-            electric_url=electric.url,
-        ) as app,
-        http2_proxy(app.url, certificate) as ingress,
-    ):
-        await app.login(page)
-        await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
-        await expect(page.get_by_text("Thread 0 message 129", exact=True)).to_be_visible(timeout=30_000)
-        for number in (1, 0):
-            await page.locator(".agentplane-thread-list-row-name", has_text=f"Test navigation thread {number}").click()
-            await expect(page.get_by_text(f"Thread {number} message 129", exact=True)).to_be_visible(timeout=30_000)
-        remembered = [entry.error for entry in await thread_view_marks.estimate_errors(page) if entry.remembered]
-        assert remembered, "no row on the return was laid out from what the first visit read"
-        assert max(abs(error) for error in remembered) <= 2, remembered
+    threads, _, ingress = navigation
+    await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
+    await expect(page.get_by_text("Thread 0 message 129", exact=True)).to_be_visible(timeout=30_000)
+    for number in (1, 0):
+        await page.locator(".agentplane-thread-list-row-name", has_text=f"Test navigation thread {number}").click()
+        await expect(page.get_by_text(f"Thread {number} message 129", exact=True)).to_be_visible(timeout=30_000)
+    remembered = [entry.error for entry in await thread_view_marks.estimate_errors(page) if entry.remembered]
+    assert remembered, "no row on the return was laid out from what the first visit read"
+    assert max(abs(error) for error in remembered) <= 2, remembered
 
 
 def _older_page_bound(request: Request) -> int | None:
@@ -527,120 +343,96 @@ def _bodies_read(requests: list[Request]) -> int:
 
 
 async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_was_away(
-    page: Page,
-    db_url: str,
-    store: ThreadHTTP,
-    event_logs: SessionHistory,
-    history: History,
-    electric: ElectricService,
-    certificate: BrowserCertificate,
-    sandbox: SandboxCluster,
-    gateway_access: GatewayAccess,
-    session_dispatcher: SessionDispatcherClient,
+    page: Page, navigation: Navigation, history: History
 ) -> None:
-    threads, sources = await _seed_navigation_threads(event_logs, history, store, session_dispatcher, sandbox)
-    async with (
-        app_process(
-            db_url,
-            history=event_logs.history.service,
-            sandboxes=SandboxesAccess(kubeconfig=sandbox.server.kubeconfig, namespace=sandbox.namespace),
-            gateway=gateway_access,
-            browser_login=True,
-            certificate=certificate,
-            electric_url=electric.url,
-        ) as app,
-        http2_proxy(app.url, certificate) as ingress,
-    ):
-        await app.login(page)
-        requests: list[Request] = []
-        chunks_read = asyncio.Event()
+    threads, sources, ingress = navigation
+    requests: list[Request] = []
+    chunks_read = asyncio.Event()
 
-        def of(thread: UUID, since: int = 0) -> list[Request]:
-            return [request for request in requests[since:] if f"/threads/{thread}/sync/" in request.url]
+    def of(thread: UUID, since: int = 0) -> list[Request]:
+        return [request for request in requests[since:] if f"/threads/{thread}/sync/" in request.url]
 
-        # Playwright cannot register a builtin method such as `list.append` as a handler.
-        def record(request: Request) -> None:
-            requests.append(request)
-            if "/sync/chunks/" in request.url:
-                chunks_read.set()
+    # Playwright cannot register a builtin method such as `list.append` as a handler.
+    def record(request: Request) -> None:
+        requests.append(request)
+        if "/sync/chunks/" in request.url:
+            chunks_read.set()
 
-        page.on("request", record)
+    page.on("request", record)
 
-        async def open_thread(number: int) -> None:
-            async with page.expect_request(f"**/upstream/history/v1/sessions/{threads[number]}/entities"):
-                await page.locator(
-                    ".agentplane-thread-list-row-name", has_text=f"Test navigation thread {number}"
-                ).click()
+    async def open_thread(number: int) -> None:
+        async with page.expect_request(f"**/upstream/history/v1/sessions/{threads[number]}/entities"):
+            await page.locator(".agentplane-thread-list-row-name", has_text=f"Test navigation thread {number}").click()
 
-        region = page.get_by_role("region", name="Thread history", exact=True)
-        # A short viewport mounts few of the window's rows, whose bodies a reader's view reads on mounting.
-        await page.set_viewport_size({**DESKTOP.size, "height": 300})
-        await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
-        await expect_projected_cursor(page, sources[0].entries[-1].cursor)
-        await expect(page.get_by_text("Thread 0 message 129", exact=True)).to_be_visible()
-        # Before the reader scrolls: the window reads the bodies of every row it holds (its 90 rows are messages),
-        # not only those the view mounted.
-        async with asyncio.timeout(30):
-            while _bodies_read(of(threads[0])) < 60:
-                await chunks_read.wait()
-                chunks_read.clear()
-        await page.set_viewport_size(DESKTOP.size)
-        await region.hover()
-        async with page.expect_request(lambda request: _older_page_bound(request) is not None):
-            await page.mouse.wheel(0, -10_000)
-        await expect(page.get_by_text("Thread 0 message 40", exact=True)).to_be_visible()
-        # The older page's rows are read ahead like the first window's: leave once the reader holds every body
-        # of the window, the first window's 90 and the page's 30.
-        while True:
+    region = page.get_by_role("region", name="Thread history", exact=True)
+    # A short viewport mounts few of the window's rows, whose bodies a reader's view reads on mounting.
+    await page.set_viewport_size({**DESKTOP.size, "height": 300})
+    await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
+    await expect_projected_cursor(page, sources[0].entries[-1].cursor)
+    await expect(page.get_by_text("Thread 0 message 129", exact=True)).to_be_visible()
+    # Before the reader scrolls: the window reads the bodies of every row it holds (its 90 rows are messages),
+    # not only those the view mounted.
+    async with asyncio.timeout(30):
+        while _bodies_read(of(threads[0])) < 60:
+            await chunks_read.wait()
             chunks_read.clear()
-            if _bodies_read(of(threads[0])) >= 120:
-                break
-            async with asyncio.timeout(30):
-                await chunks_read.wait()
-        first_visit = of(threads[0])
-        held_down_to = min(bound for request in first_visit if (bound := _older_page_bound(request)) is not None)
-        (handle,) = _entity_handles(first_visit)
+    await page.set_viewport_size(DESKTOP.size)
+    await region.hover()
+    async with page.expect_request(lambda request: _older_page_bound(request) is not None):
+        await page.mouse.wheel(0, -10_000)
+    await expect(page.get_by_text("Thread 0 message 40", exact=True)).to_be_visible()
+    # The older page's rows are read ahead like the first window's: leave once the reader holds every body
+    # of the window, the first window's 90 and the page's 30.
+    while True:
+        chunks_read.clear()
+        if _bodies_read(of(threads[0])) >= 120:
+            break
+        async with asyncio.timeout(30):
+            await chunks_read.wait()
+    first_visit = of(threads[0])
+    held_down_to = min(bound for request in first_visit if (bound := _older_page_bound(request)) is not None)
+    (handle,) = _entity_handles(first_visit)
 
-        await open_thread(1)
-        await expect(page.get_by_text("Thread 1 message 129", exact=True)).to_be_visible()
-        # A message lands in the thread while the reader is elsewhere.
-        source = sources[0]
-        source.append(
-            event_pb2.Event(
-                item_started=event_pb2.ItemStarted(
-                    item_id="test-navigation-item-away", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT
-                )
+    await open_thread(1)
+    await expect(page.get_by_text("Thread 1 message 129", exact=True)).to_be_visible()
+    # A message lands in the thread while the reader is elsewhere.
+    source = sources[0]
+    source.append(
+        event_pb2.Event(
+            item_started=event_pb2.ItemStarted(
+                item_id="test-navigation-item-away", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT
             )
         )
-        source.append(
-            event_pb2.Event(
-                item_completed=event_pb2.ItemCompleted(
-                    item_id="test-navigation-item-away", text="Thread 0 message while away"
-                )
+    )
+    source.append(
+        event_pb2.Event(
+            item_completed=event_pb2.ItemCompleted(
+                item_id="test-navigation-item-away", text="Thread 0 message while away"
             )
         )
-        await history.record(threads[0], source.entries[-2:])
+    )
+    await history.record(threads[0], source.entries[-2:])
 
-        mark = len(requests)
-        await open_thread(0)
-        await expect(page.get_by_text("Thread 0 message while away", exact=True)).to_be_visible(timeout=30_000)
-        await page.screenshot(path=undeclared_outputs_dir() / "thread-returned-to.png")
-        returned = of(threads[0], mark)
-        # No row is read again: the thread's log is followed on from where the reader left it.
-        assert not [request for request in returned if request.method == "POST" and "/sync/entities?" in request.url]
-        (read, *_) = [request for request in returned if "/sync/entities?" in request.url]
-        query = parse_qs(urlsplit(read.url).query)
-        assert (query["handle"], query["offset"][0] not in {"now", "-1"}) == ([handle], True)
-        # Nor is a body already held: the one read is the message that arrived.
-        assert _bodies_read(returned) <= 1
+    mark = len(requests)
+    await open_thread(0)
+    await expect(page.get_by_text("Thread 0 message while away", exact=True)).to_be_visible(timeout=30_000)
+    await page.screenshot(path=undeclared_outputs_dir() / "thread-returned-to.png")
+    returned = of(threads[0], mark)
+    # No row is read again: the thread's log is followed on from where the reader left it.
+    assert not [request for request in returned if request.method == "POST" and "/sync/entities?" in request.url]
+    (read, *_) = [request for request in returned if "/sync/entities?" in request.url]
+    query = parse_qs(urlsplit(read.url).query)
+    assert (query["handle"], query["offset"][0] not in {"now", "-1"}) == ([handle], True)
+    # Nor is a body already held: the one read is the message that arrived.
+    assert _bodies_read(returned) <= 1
 
-        # The pages loaded before the reader left are still held: the next one is the page before them.
-        await region.hover()
-        async with page.expect_request(lambda request: _older_page_bound(request) is not None) as older:
-            await page.mouse.wheel(0, -10_000)
-        next_page = _older_page_bound(await older.value)
-        assert next_page is not None
-        assert next_page < held_down_to
+    # The pages loaded before the reader left are still held: the next one is the page before them.
+    await region.hover()
+    async with page.expect_request(lambda request: _older_page_bound(request) is not None) as older:
+        await page.mouse.wheel(0, -10_000)
+    next_page = _older_page_bound(await older.value)
+    assert next_page is not None
+    assert next_page < held_down_to
 
 
 async def test_projection_epoch_replacement_retires_old_requests_and_preserves_draft(
@@ -759,7 +551,6 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
     db_url: str,
     store: ThreadHTTP,
     event_logs: SessionHistory,
-    content: SessionHistory,
     history: History,
     history_service: GoHistoryService,
     electric: ElectricService,
@@ -936,12 +727,7 @@ async def test_projected_browser_streams_runner_events_and_loads_evidence_lazily
         await page.context.set_offline(True)
         await ingress.drop_connections()
         source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" after reconnect")))
-        async with asyncio.timeout(10):
-            while True:
-                scope = await content.session_summary(thread)
-                if scope is not None and scope.folded_through >= source.entries[-1].cursor:
-                    break
-                await asyncio.sleep(0.01)
+        await history_service.folded(thread, source.entries[-1].cursor)
         # Whether or not the delta beat the drop, nothing shown is withdrawn.
         await expect(page.get_by_text("Projected browser prefix and streamed suffix", exact=False)).to_have_count(1)
         await page.context.set_offline(False)
@@ -1111,6 +897,27 @@ async def test_browser_replays_streams_and_reloads_one_exact_thread(thread_brows
     await expect(page.get_by_role("button", name="Interrupt", exact=True)).to_be_disabled()
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
     assert await thread_browser.event_logs.events(thread.id, limit=100) == source.entries
+
+
+async def test_history_updates_do_not_reload_thread_metadata(thread_browser: ThreadBrowser) -> None:
+    page, source = thread_browser.page, thread_browser.source
+    await thread_browser.start_replay()
+    await expect(page.locator("nav.agentplane-sidebar").get_by_text("Browser thread", exact=True)).to_be_visible()
+    reads: list[str] = []
+
+    def observe(request: Request) -> None:
+        path = urlsplit(request.url).path
+        if path in ("/upstream/app/v1/threads", "/upstream/history/v1/sessions:batchGetSummaries"):
+            reads.append(path)
+
+    page.on("request", observe)
+    text = "Test retained prefix"
+    for suffix in (" first", " second", " third"):
+        source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=suffix)))
+        text += suffix
+        await expect(page.get_by_text(text, exact=True)).to_be_visible()
+    assert reads == []
+    page.remove_listener("request", observe)
 
 
 async def test_sidebar_receives_rename_and_archive_from_another_app_replica(thread_browser: ThreadBrowser) -> None:
@@ -1790,16 +1597,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     await composer.press("Enter")
     async with asyncio.timeout(15):
         command = await source.runner.commands.get()
-    source.append(
-        event_pb2.Event(
-            harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                harness_message_id="test-error-input",
-                origin_command_ids=[command.command_id],
-                text=command.submit_input.text,
-                turn_id="test-browser-turn",
-            )
-        )
-    )
+    source.confirm_input(command, message_id="test-error-input")
     partial = "".join(f"\n\nTest partial paragraph {number}" for number in range(30))
     source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=partial)))
     await expect(page.get_by_text("Test partial paragraph 29", exact=True)).to_have_count(1)
@@ -1866,16 +1664,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
     assert following.command_id != command.command_id
     assert following.submit_input.text == "Test distinct input after the failed turn"
     source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="test-following-turn")))
-    source.append(
-        event_pb2.Event(
-            harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                harness_message_id="test-following-input",
-                origin_command_ids=[following.command_id],
-                text=following.submit_input.text,
-                turn_id="test-following-turn",
-            )
-        )
-    )
+    source.confirm_input(following, message_id="test-following-input", turn_id="test-following-turn")
     source.append(
         event_pb2.Event(
             item_started=event_pb2.ItemStarted(item_id="test-following-reply", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
@@ -1942,20 +1731,35 @@ async def test_settled_command_reason_survives_leaving_the_tail_and_reload(
             event_pb2.Event(item_completed=event_pb2.ItemCompleted(item_id=item_id, text=f"After command {index}"))
         )
     await expect_projected_cursor(page, source.entries[-1].cursor)
-    await expect(page.get_by_text(reason, exact=False)).to_have_count(1)
-    await expect(page.get_by_text(submitted, exact=True)).to_have_count(1)
-    await expect(page.locator(f'.transcript-user-bubble[data-message-phase="{outcome}"]')).to_have_count(1)
+    row = page.locator(f'[data-command-id="{command.command_id}"]')
+    label = "Execution failed" if outcome == "failed" else "No-op"
+    details_button = row.get_by_role("button", name=f"{label} · delivery details")
+    details = page.get_by_role("dialog", name="Delivery details")
+
+    async def open_retained_reason() -> None:
+        await expect(row).to_have_count(1)
+        await expect(row.get_by_text(submitted, exact=True)).to_be_visible()
+        await expect(row.locator(".transcript-user-bubble")).to_have_attribute("data-message-phase", outcome)
+        await details_button.press("Enter")
+        await expect(details.get_by_text(reason, exact=True)).to_be_visible()
+
+    await open_retained_reason()
+    await page.keyboard.press("Escape")
+    await expect(details).to_have_count(0)
+    await expect(details_button).to_be_focused()
     await page.reload()
-    await expect(page.get_by_text(reason, exact=False)).to_have_count(1)
-    await expect(page.get_by_text(submitted, exact=True)).to_have_count(1)
-    await expect(page.locator(f'.transcript-user-bubble[data-message-phase="{outcome}"]')).to_have_count(1)
+    await open_retained_reason()
     await page.screenshot(path=undeclared_outputs_dir() / f"command-{outcome}-retained.png")
     assert source.runner.commands.empty()
 
 
+@pytest.mark.parametrize(
+    ("viewport", "viewport_name"), [(DESKTOP, "desktop"), (MOBILE, "phone")], ids=["desktop", "phone"]
+)
 async def test_browser_sends_a_command_and_transitions_its_message_to_confirmed_input(
-    thread_browser: ThreadBrowser,
+    review_thread_browser: ThreadBrowser, review_view: VisualPage, viewport_name: str
 ) -> None:
+    thread_browser = review_thread_browser
     page, source = thread_browser.page, thread_browser.source
     await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
@@ -1968,19 +1772,88 @@ async def test_browser_sends_a_command_and_transitions_its_message_to_confirmed_
     assert command.HasField("submit_input")
     assert command.submit_input.text == "Test input from the real browser"
     await expect_pending_message_bubble(page, command.submit_input.text)
-    source.append(
-        event_pb2.Event(
-            harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                harness_message_id="test-confirmed-message",
-                origin_command_ids=[command.command_id],
-                text=command.submit_input.text,
-                turn_id="test-browser-turn",
-            )
-        )
-    )
+    source.confirm_input(command, message_id="test-confirmed-message")
     await expect(page.locator(".transcript-user-bubble .transcript-verbatim")).to_have_text(command.submit_input.text)
     await expect(page.locator('.transcript-user-bubble[data-message-phase="pending"]')).to_have_count(0)
     await expect(composer).to_have_value("")
+    await page.reload()
+    await page.get_by_role("button", name="More", exact=True).click()
+    await page.get_by_role("menuitem", name="Delivery history", exact=True).click()
+    history = page.get_by_role("dialog", name="Delivery history")
+    await expect(history.get_by_text(command.command_id, exact=True)).to_be_visible()
+    async with page.expect_response(f"**/upstream/dispatcher/v1/dispatches/{command.command_id}") as read:
+        await history.get_by_role("button", name="Show original command").click()
+    assert (await read.value).ok
+    await expect(history.get_by_text(command.submit_input.text, exact=True)).to_be_visible()
+    await review_view.capture(label=f"Retained command after reload on {viewport_name}")
+    assert source.runner.commands.empty()
+
+
+@pytest.mark.parametrize(
+    ("viewport", "viewport_name"), [(DESKTOP, "desktop"), (MOBILE, "phone")], ids=["desktop", "phone"]
+)
+async def test_transferred_commands_show_unknown_and_failed_delivery_after_reload(
+    review_thread_browser: ThreadBrowser,
+    review_view: VisualPage,
+    viewport_name: str,
+    sandbox: SandboxCluster,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    thread_browser = review_thread_browser
+    page, source = thread_browser.page, thread_browser.source
+    await thread_browser.start_replay()
+    (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
+    attempted: asyncio.Queue[str] = asyncio.Queue()
+    release = asyncio.Event()
+    admit = source.runner.admit
+
+    async def hold(command: command_pb2.Command, context: grpc.aio.ServicerContext) -> event_log_pb2.EventEntry:
+        attempted.put_nowait(command.command_id)
+        await release.wait()
+        return await admit(command, context)
+
+    monkeypatch.setattr(source.runner, "admit", hold)
+    try:
+        ids = []
+        originals = ("Admission in flight during deletion", "Still queued during deletion")
+        for text in originals:
+            composer = message_composer(page)
+            await composer.fill(text)
+            async with page.expect_response("**/upstream/dispatcher/v1/sessions/*:submitInput") as sent:
+                await composer.press("Enter")
+            receipt = await sent.value
+            assert receipt.ok
+            ids.append(dispatched_command_id(await receipt.text()))
+        async with asyncio.timeout(15):
+            assert await attempted.get() == ids[0]
+        # No History event or admission has confirmed either command. Only protected Dispatcher originals can own them.
+        await page.wait_for_function(
+            """([thread, ids]) => ids.every(id => ['agentplane.pending:', 'agentplane.input-echo:'].every(prefix =>
+                localStorage.getItem(prefix + encodeURIComponent(thread) + ':' + encodeURIComponent(id)) === null))""",
+            arg=[str(thread.id), ids],
+        )
+        await sandbox.custom_objects.delete_namespaced_custom_object(
+            "agentplane.allegedly.works",
+            "v1alpha1",
+            sandbox.namespace,
+            "sandboxes",
+            sandbox.name,
+            body=k8s_client.V1DeleteOptions(preconditions=k8s_client.V1Preconditions(uid=sandbox.uid)),
+        )
+        await page.reload()
+        for command_id, original, state in zip(ids, originals, ("Outcome unknown", "Delivery failed"), strict=True):
+            row = page.locator(f'[data-command-id="{command_id}"]')
+            await expect(row).to_have_count(1)
+            await expect(row.get_by_text(original, exact=True)).to_be_visible()
+            await expect(row.get_by_role("button", name=f"{state} · delivery details")).to_be_visible()
+            await expect(
+                row.get_by_role("button", name=f"Dismiss delivery issue for command {command_id}")
+            ).to_be_visible()
+        await review_view.capture(label=f"Transferred command delivery after reload on {viewport_name}")
+        assert attempted.empty()
+        assert source.runner.commands.empty()
+    finally:
+        release.set()
 
 
 def _posted_input(request: Request) -> command_pb2.Command:
@@ -2231,13 +2104,15 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         await expect(pending.locator('[data-stage="unconfirmed"]')).to_be_visible()
         await expect(page.locator('.transcript-user-bubble[data-message-phase="local"]')).to_have_count(1)
 
-        # Reload abandons the held Electric response. The new document delivers the same local
-        # Command again, and Dispatcher answers its durable row while replay is still held.
-        async with page.expect_response(response.url) as redelivered:
+        # Reload reads the durable Dispatch while History replay is still held.
+        async with page.expect_response(f"**/upstream/dispatcher/v1/dispatches/{command.command_id}") as checked:
             await page.reload()
-        redelivery = await redelivered.value
-        assert redelivery.status == 200
-        assert dispatched_command_id(await redelivery.text()) == command.command_id
+        receipt = await checked.value
+        assert receipt.status == 200
+        assert (
+            json_format.ParseDict((await receipt.json())["dispatch"], session_dispatcher_pb2.Dispatch()).command
+            == command
+        )
         async with asyncio.timeout(15):
             assert (await app.replay_held()).cursor >= 5
         await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
@@ -2251,16 +2126,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         await expect(pending).to_have_count(0)
         await expect(pending.locator('[data-stage="local"]')).to_have_count(0)
         await expect(page.get_by_role("button", name="Retry", exact=True)).to_have_count(0)
-        source.append(
-            event_pb2.Event(
-                harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                    harness_message_id="test-input-recovered-from-unobserved-admission",
-                    origin_command_ids=[command.command_id],
-                    text=command.submit_input.text,
-                    turn_id="test-browser-turn",
-                )
-            )
-        )
+        source.confirm_input(command, message_id="test-input-recovered-from-unobserved-admission")
         await expect(page.locator(".transcript-user-bubble .transcript-verbatim")).to_have_text(
             command.submit_input.text
         )
@@ -2306,16 +2172,7 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
         page.get_by_text("Test retained prefix and preceding delta A and preceding delta B", exact=True)
     ).to_have_count(1)
     await expect_pending_message_bubble(page, command.submit_input.text)
-    source.append(
-        event_pb2.Event(
-            harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                harness_message_id="test-input-after-replay-catch-up",
-                origin_command_ids=[command.command_id],
-                text=command.submit_input.text,
-                turn_id="test-browser-turn",
-            )
-        )
-    )
+    source.confirm_input(command, message_id="test-input-after-replay-catch-up")
     await expect(page.locator(".transcript-user-bubble .transcript-verbatim")).to_have_text(command.submit_input.text)
     await expect(pending).to_have_count(0)
     assert source.runner.commands.empty()
@@ -2383,16 +2240,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
             page.get_by_text("Test retained prefix and disconnected delta A and disconnected delta B", exact=True)
         ).to_have_count(1)
         await expect_pending_message_bubble(page, command.submit_input.text)
-        source.append(
-            event_pb2.Event(
-                harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                    harness_message_id="test-input-after-electric-reconnect",
-                    origin_command_ids=[command.command_id],
-                    text=command.submit_input.text,
-                    turn_id="test-browser-turn",
-                )
-            )
-        )
+        source.confirm_input(command, message_id="test-input-after-electric-reconnect")
         await expect(page.locator(".transcript-user-bubble .transcript-verbatim")).to_have_text(
             command.submit_input.text
         )
@@ -2449,16 +2297,7 @@ async def test_terminal_shape_error_keeps_rows_and_follows_on_from_where_it_stop
         await expect(page.get_by_text("Thread synchronization stopped:", exact=False)).to_have_count(0)
         await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(1)
         await expect_pending_message_bubble(page, command.submit_input.text)
-        source.append(
-            event_pb2.Event(
-                harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
-                    harness_message_id="test-command-after-terminal-shape-refresh",
-                    origin_command_ids=[command.command_id],
-                    text=command.submit_input.text,
-                    turn_id="test-browser-turn",
-                )
-            )
-        )
+        source.confirm_input(command, message_id="test-command-after-terminal-shape-refresh")
         await expect(page.locator(".transcript-user-bubble .transcript-verbatim")).to_have_text(
             command.submit_input.text
         )

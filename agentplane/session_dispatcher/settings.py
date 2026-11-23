@@ -1,4 +1,4 @@
-"""Authoring schema for the Go Runner Gateway deployment settings.
+"""Authoring schema for the Go Sessions (Session Dispatcher) deployment settings.
 
 The black-box tests serialize this model into the Go binary's strict settings loader.
 """
@@ -68,7 +68,7 @@ class Settings(BaseModel):
         min_length=1, description="Namespace holding the Identities a workload SVID may name."
     )
     runner_token_file: Path | None = Field(
-        default=None, description="Projected Gateway-audience token; omit when gateway_tls uses the Sessions role SVID."
+        default=None, description="Projected caller token; omit when gateway_tls uses the Sessions role SVID."
     )
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
     kubernetes_client_qps: float = Field(
@@ -107,11 +107,6 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def validate_service_caller_scopes(self) -> Settings:
-        service_callers_present = any((self.dispatcher_service_callers, self.wake_service_callers))
-        service_delegation_present = self.dispatcher_service_delegation is not None
-        spiffe_listener = any(method.mode == "spiffe" for method in self.rpc.auth)
-        if (service_callers_present or service_delegation_present) and not spiffe_listener:
-            raise ValueError("service caller settings require rpc.auth to include spiffe")
         if not self.wake_service_callers <= self.dispatcher_service_callers:
             raise ValueError("wake_service_callers must be a subset of dispatcher_service_callers")
         if self.dispatcher_service_delegation is not None:
@@ -127,6 +122,7 @@ class Settings(BaseModel):
                 "/agentplane.runner_gateway.dispatcher.SessionDispatcher/GetDispatch",
                 "/agentplane.runner_gateway.dispatcher.SessionDispatcher/WatchDispatches",
                 "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListDispatches",
+                "/agentplane.runner_gateway.dispatcher.SessionDispatcher/ListSessionDispatches",
                 "/agentplane.runner_gateway.dispatcher.SessionDispatcher/CancelDispatch",
             }
             if not set(self.dispatcher_service_delegation.methods) <= dispatcher_methods:
@@ -135,9 +131,6 @@ class Settings(BaseModel):
 
     @model_validator(mode="after")
     def validate_receiver_and_control_tls(self) -> Settings:
-        # Legacy bearer modes remain decodable during rollout; receivers only authenticate SVIDs.
-        if not any(method.mode == "spiffe" for method in self.rpc.auth):
-            raise ValueError("rpc.auth must include spiffe")
         if self.gateway_tls.server_uri not in {SESSION_DISPATCHER_URI, SANDBOX_CONTROLLER_URI}:
             raise ValueError("gateway_tls.server_uri must identify the Gateway or Environments Runtime proxy")
         self.gateway_tls.validate_caller(self.runner_token_file, GATEWAY_SESSIONS_URI)

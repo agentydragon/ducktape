@@ -25,7 +25,7 @@ wrapper for its interpreter + `site-packages`). That worked, but left the "which
 1. **Two independent egress fences, not one.**
    - **(a) Claude Code web-environment domain allowlist** (Anthropic-side, set at environment
      creation; the documented list is in [`../runtime/claude_web_env/README.md`](../runtime/claude_web_env/README.md)
-     → _Allowed domains_ — `*.anthropic.com`, `*.allegedly.works`, `*.googleapis.com`,
+     → _Allowed domains_ — `*.anthropic.com`, `*.allegedly.works`,
      `*.buildbuddy.io`, `nixos.org`, `cache.nixos.org`). Fences the **web-home container** (Runtime
      A). It was loosened to "any domain" during the investigation; verify the current
      environment before relying on that setting. Mechanism at the time:

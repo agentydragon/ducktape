@@ -27,7 +27,6 @@ class HarnessRoot:
 @dataclass(frozen=True)
 class SourceLocation:
     harness: Harness
-    root: HarnessRoot
     relative_path: PurePosixPath
     source_path: str
     native_session_id: str
@@ -68,7 +67,6 @@ def classify_source_path(path: str, roots: Iterable[HarnessRoot]) -> SourceLocat
                 parent_source_path = str(PurePosixPath(*archive_root_parts) / parent_relative)
         return SourceLocation(
             harness=root.harness,
-            root=root,
             relative_path=relative,
             source_path=path,
             native_session_id=relative.stem,

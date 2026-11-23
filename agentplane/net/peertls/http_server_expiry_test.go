@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 )
@@ -36,10 +35,7 @@ func TestHTTPServerTLSExpiryConnStateUsesEarlierLeafExpiry(t *testing.T) {
 func TestHTTPServerTLSExpiryConnStateUsesHandshakeSelectedLeafAfterRotation(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
 	localURI := peertls.EgressProxyURI
-	runtimeURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
+	runtimeURI := workloadURI(t, "credential-id")
 	now := time.Now().UTC().Truncate(time.Second)
 	selectedExpiry := now.Add(3 * time.Second)
 	peerExpiry := now.Add(8 * time.Second)
@@ -72,10 +68,7 @@ func TestHTTPServerTLSExpiryConnStateUsesHandshakeSelectedLeafAfterRotation(t *t
 func TestConfigureHTTPServerTLSExpiryDisablesSessionResumption(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
 	localURI := peertls.EgressProxyURI
-	runtimeURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
+	runtimeURI := workloadURI(t, "credential-id")
 	local := ca.IssueWithUsage(t, localURI, x509.ExtKeyUsageServerAuth)
 	runtime := ca.IssueWithUsage(t, runtimeURI, x509.ExtKeyUsageClientAuth)
 	serverTLS, err := local.WorkloadServerTLSConfig(localURI)
@@ -157,10 +150,7 @@ func establishHTTPExpiryConnection(
 			t.Fatal(err)
 		}
 	} else {
-		runtimeURI, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
-		if err != nil {
-			t.Fatal(err)
-		}
+		runtimeURI := workloadURI(t, "credential-id")
 		peerExpiry = now.Add(peerLifetime)
 		runtime := ca.IssueWithValidity(t, runtimeURI, now.Add(-time.Minute), peerExpiry, x509.ExtKeyUsageClientAuth)
 		clientTLS, err = runtime.ClientTLSConfig(localURI)
@@ -208,20 +198,7 @@ func assertClosesAtExpiry(t *testing.T, client *tls.Conn, expiresAt time.Time) {
 
 func handshakeTLSConnections(t *testing.T, clientConfig, serverConfig *tls.Config) (*tls.Conn, *tls.Conn) {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = listener.Close() })
-	clientRaw, err := net.Dial("tcp", listener.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	serverRaw, err := listener.Accept()
-	if err != nil {
-		_ = clientRaw.Close()
-		t.Fatal(err)
-	}
+	clientRaw, serverRaw := loopbackPair(t)
 	client := tls.Client(clientRaw, clientConfig)
 	server := tls.Server(serverRaw, serverConfig)
 	serverHandshake := make(chan error, 1)
@@ -229,8 +206,6 @@ func handshakeTLSConnections(t *testing.T, clientConfig, serverConfig *tls.Confi
 	clientErr := client.Handshake()
 	serverErr := <-serverHandshake
 	if clientErr != nil || serverErr != nil {
-		_ = client.Close()
-		_ = server.Close()
 		t.Fatalf("TLS handshake: client %v; server %v", clientErr, serverErr)
 	}
 	t.Cleanup(func() {

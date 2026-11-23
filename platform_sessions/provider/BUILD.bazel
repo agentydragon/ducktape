@@ -77,6 +77,7 @@ py_test(
     deps = [
         ":control_server",
         "//:conftest",
+        "//util:net",
         "@pypi//cryptography",
         "@pypi//grpcio",
         "@pypi//pytest",
@@ -240,7 +241,7 @@ py_test(
         ":cdp_browser",
         ":interactive_browser",
         "//:conftest",
-        "//util/testing/browser:launcher",
+        "//testing/browser:launcher",
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//websockets",

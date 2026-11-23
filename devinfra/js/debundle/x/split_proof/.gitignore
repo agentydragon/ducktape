@@ -1,0 +1,15 @@
+# Local build and experiment artifacts.
+/lean/.lake/
+/example/output/
+/lowering/bundles/
+/lowering/example.json
+/lowering/torture.json
+# Generated from `package.json.in` by run.sh. The repository's CI treats any committed `package.json` as a change to the whole build graph.
+/extract/package.json
+/lowering/package.json
+/debundle_cases/package.json
+/translation/package.json
+/model/package.json
+# Scratch directories used by the scripts.
+/.tmp*/
+__pycache__/

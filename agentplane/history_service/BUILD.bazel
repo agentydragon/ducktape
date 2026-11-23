@@ -37,7 +37,6 @@ py_library(
     srcs = ["settings.py"],
     visibility = [
         "//agentplane/history_service:__subpackages__",
-        "//agentplane/system_tests:__subpackages__",
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = [

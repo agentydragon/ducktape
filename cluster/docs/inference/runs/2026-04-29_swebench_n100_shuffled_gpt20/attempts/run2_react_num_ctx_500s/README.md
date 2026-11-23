@@ -1,16 +1,15 @@
 # Aborted run: react agent vs Ollama `num_ctx=262144` rejection
 
 Started 2026-04-30 00:31:53 PDT, killed at +1h05m. **0/100 samples
-completed** — every chat-completion request to Ollama returned 500.
+completed** — Ollama returned 500 to every eval request after 07:46 UTC.
 
 ## What we observed
 
-- 148 `POST /v1/chat/completions` requests in 2 h, 103 of them 500
-  (the rest were the GET healthchecks; only 1 unrelated 200 was my
-  ad-hoc smoke-test from outside the eval).
+- 148 `POST /v1/chat/completions` requests in 2 h: 103 returned 500 and
+  45 returned 200. 44 of the 200s are 07:34–07:46 UTC, mixed with 500s;
+  the other is my ad-hoc smoke test from outside the eval (08:44 UTC).
 - Both running samples got stuck in inspect-ai's exponential-backoff
-  retry loop (retry 10 → retry 11, backoffs of 1500–1800 s). Neither
-  produced a single assistant turn.
+  retry loop (retry 10 → retry 11, backoffs of 1500–1800 s).
 - Containers were up, eval was registered (`status=started`), no
   `.eval` samples were written.
 

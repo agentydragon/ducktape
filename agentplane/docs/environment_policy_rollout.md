@@ -10,24 +10,11 @@ These source changes introduce no standing grant.
 
 ## Reader compatibility
 
-The staging pins inspected on 2026-11-14 were Action Service, egress, MCP edge, Notification Service
-and Policy Controller at `b4885e5317f0e46d8d2a596f055642b6dc20bb79`, and Runner Gateway at
-`55e7df4226dd4d761a72b96ea055a362c953e3ec`. The corresponding live Deployments were Ready.
-
-| Reader               | Unknown `Rule.Type` behavior at those pins                           |
-| -------------------- | -------------------------------------------------------------------- |
-| Action Service       | Shared typed index filters to `action_auto_approve` before parsing.  |
-| Egress               | Shared typed index filters to `egress` before parsing.               |
-| Notification Service | Shared typed index filters to `session_inbox_access` before parsing. |
-| Policy Controller    | Kubernetes role resolution ignores non-Kubernetes rule types.        |
-| MCP edge             | Watches Identities; does not decode PolicySets.                      |
-| Runner Gateway       | Does not watch PolicySets yet; cannot enforce the new grant.         |
-
 The typed Kubernetes decoder is non-strict: `Rule.Type` is a string, and unknown selector fields
-are ignored. Thus these existing readers ignore an `environment` rule without rejecting the other
-rules in its PolicySet. The shared filter is in `policy/reader/index.go` (`parseSet`); each consumer
-supplies its own rule type. The old CRD's enum rejects `environment` at admission. Expanding that
-schema alone supplies no enforcing consumer.
+are ignored. Thus readers of other rule types ignore an `environment` rule without rejecting the
+other rules in its PolicySet. The shared filter is in `policy/reader/index.go` (`parseSet`); each
+consumer supplies its own rule type. The old CRD's enum rejects `environment` at admission.
+Expanding that schema alone supplies no enforcing consumer.
 
 ## Rollback
 

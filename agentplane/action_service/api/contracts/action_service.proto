@@ -14,23 +14,21 @@ import "agentplane/proto/delegation.proto";
 import "agentplane/proto/environment_lifecycle.proto";
 import "agentplane/proto/identity.proto";
 
-// Callers are workloads and operators, and the bearer says which. A workload's bearer is a Kubernetes token of a
-// ServiceAccount that carries the `agentplane.allegedly.works/use-action-service` label; a Pod binding is optional.
-// TokenReview must accept the configured audience; the resolver requires an allowed namespace and ServiceAccount UID.
-// A workload may instead present its workload SVID, whose WorkloadCredential names a labeled ServiceAccount as above
-// or an Identity of the policy namespace. An Identity caller is admitted while a live PolicyBinding names that
-// Identity incarnation, and acts as that incarnation: it owns the requests it submits, and a later Identity of the
-// same name owns none of them. A workload acts for its own
-// ServiceAccount or Identity and sees only the requests that account or Identity submitted, whichever Pod or external
-// Connection submitted them. The exception is a service reader (the Notification Service's ServiceAccount): it may list, get, watch and
-// read the events of every account's requests. An operator's bearer is the OIDC token the integration app forwards
-// for the operator, verified as for `OperatorActionService`. An operator reads every account's requests and also sees
-// what a workload is not shown, `McpHealth.detail` and the binding diagnostics of `CallerActionPolicy`, but submits
-// and cancels nothing. A request reads the same for every reader. A workload reaches the service through the egress
-// proxy; `agentplane actions` uses this generated gRPC API, while other callers may use its HTTP facade.
+// Callers are workloads and operators, and the credentials say which. A workload presents its workload SVID, whose
+// WorkloadCredential names an Identity of the policy namespace; a Kubernetes ServiceAccount token admits no caller.
+// An Identity caller is admitted while a live PolicyBinding names that Identity incarnation, and acts as that
+// incarnation: it owns the requests it submits, and a later Identity of the same name owns none of them. A workload
+// acts for its own Identity and sees only the requests that Identity submitted, whichever Pod or external
+// Connection submitted them. The exception is a service reader (the Notification Service's service SVID): it may
+// list, get, watch and read the events of every caller's requests. An operator's bearer is the OIDC token the
+// integration app forwards for the operator, verified as for `OperatorActionService`. An operator reads every
+// caller's requests and also sees what a workload is not shown, `McpHealth.detail` and the binding diagnostics of
+// `CallerActionPolicy`, but submits and cancels nothing. A request reads the same for every reader. A workload
+// reaches the service through the egress proxy; `agentplane actions` uses this generated gRPC API, while other
+// callers may use its HTTP facade.
 //
 // An error carries the gRPC status code that names it. `UNAUTHENTICATED` is a bearer that is missing, invalid or
-// expired, or a workload's whose ServiceAccount is not labeled or whose Identity no binding names; the answer does not say which. `INVALID_ARGUMENT` is
+// expired, or a workload's whose Identity no binding names; the answer does not say which. `INVALID_ARGUMENT` is
 // a malformed request, an invalid history cursor, arguments that do not satisfy the Action's schema, or a group and
 // Action this service cannot run. `NOT_FOUND` is a request that does not exist or that the caller may not read, or an
 // unknown Action in `GetAction`. `ALREADY_EXISTS` is an idempotency key the account already used. `PERMISSION_DENIED`
@@ -153,9 +151,9 @@ service ActionService {
   }
 
   // What an account's bindings auto-decide, resolved as admission would resolve them now: the caller's own (an
-  // Identity caller's are its Identity incarnation's), or those of the `subject` it names. Any caller may name any ServiceAccount, in any namespace and labeled or not; an
-  // account no binding names reads as having none. A service reader's exception does not reach this RPC: it reads
-  // policy as a workload, so only while its ServiceAccount is labeled. An operator has no account of its own and must
+  // Identity caller's are its Identity incarnation's), or those of the `subject` it names. Any caller may name any
+  // ServiceAccount, in any namespace; an account no binding names reads as having none. A service reader's exception
+  // does not reach this RPC: it is refused `PERMISSION_DENIED`. An operator has no account of its own and must
   // name one, else `INVALID_ARGUMENT`. Read it instead of submitting to find out whether a request would wait for an
   // operator. While `synced` is false nothing auto-decides: every request takes the human path, whatever the policy
   // objects say.
@@ -175,7 +173,7 @@ message SubmitActionRequestRequest {
   // Chosen by the caller, unique per ServiceAccount: 1 to 200 characters.
   string idempotency_key = 1;
   ActionIdentity action = 2;
-  // Must satisfy the Action's input schema (`GetAction`); `{}` for an Action without arguments.
+  // Must satisfy the Action's input schema (`GetAction`) when Agentplane can enforce it; `{}` for no arguments.
   google.protobuf.Struct arguments = 3;
   // One plain-language line saying what the request does, for the operator deciding it: 1 to 60 characters, of
   // commit-subject length ("delete crashlooping backend pod"). Not the Action's group and name, which are shown
@@ -759,21 +757,41 @@ enum McpUnavailableReason {
   MCP_UNAVAILABLE_REASON_SUPERVISOR_STOPPED = 6;
 }
 
-// One Action: its description and the argument schema a submission is validated against.
+// One Action: its description and the backend's argument schema.
 message Action {
   // The ActionGroup's key.
   string group = 1;
   // The Action's name within the group.
   string name = 2;
   string description = 3;
-  // A JSON Schema of `arguments`. Execution checks the backend's schema again, so a schema that changed after
-  // discovery can still fail the request.
+  // The backend's input schema. When supported, admission and execution check it; a later schema change can still
+  // fail the request. See input_schema_validation for whether Agentplane can enforce it.
   google.protobuf.Struct input_schema = 4;
   // A display name; absent when the backend gives none.
   optional string title = 5;
   // The backend's MCP behavior hints; absent when it gives none. Advisory: they shape how a client presents the
   // Action, never what the service allows.
   ToolAnnotations annotations = 6;
+  // Status of Agentplane's tool-schema check. Missing or UNKNOWN never implies enforcement.
+  InputSchemaValidation input_schema_validation = 7;
+}
+
+// Whether Agentplane can enforce the tool's input schema; this does not describe policy validation.
+message InputSchemaValidation {
+  InputSchemaValidationStatus status = 1;
+  InputSchemaValidationReason reason = 2;
+  optional string detail = 3;
+}
+
+enum InputSchemaValidationStatus {
+  INPUT_SCHEMA_VALIDATION_STATUS_UNKNOWN = 0;
+  INPUT_SCHEMA_VALIDATION_STATUS_ENFORCED = 1;
+  INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED = 2;
+}
+
+enum InputSchemaValidationReason {
+  INPUT_SCHEMA_VALIDATION_REASON_UNSPECIFIED = 0;
+  INPUT_SCHEMA_VALIDATION_REASON_SCHEMA_COMPILE_FAILED = 1;
 }
 
 // MCP tool behavior hints as the backend gave them; each is absent when the backend left it out.

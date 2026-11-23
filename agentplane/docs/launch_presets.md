@@ -1,8 +1,7 @@
 # Sandbox and Thread presets
 
 Status: **implemented by PR [#5648](https://github.com/agentydragon/ducktape/pull/5648)**.
-The focused tests and build landed; the configured manual staging acceptance remains useful deployment
-evidence. This is an integration-app feature, not a new Agentplane runtime authority.
+This is an integration-app feature, not a new Agentplane runtime authority.
 
 ## Outcome
 
@@ -23,7 +22,7 @@ A `SandboxPreset` owns what is established by or needed to initialize a Sandbox:
 - action policy set selections, editable at launch like the egress selections and written as one
   `PolicyBinding` per launched Sandbox;
 - persistent workspace/runtime settings; and
-- bootstrap source sent to the runner.
+- bootstrap source the Sandbox's Runtime runs once.
 
 A `ThreadPreset` owns what is selected when a native Thread is opened:
 
@@ -77,23 +76,24 @@ for each Session creation.
 - New Thread defaults update automatically.
 - Existing Threads do not change.
 - Mutable egress/runtime settings update only through existing supported runtime operations.
-- A binding naming a SandboxPreset or ThreadPreset that is no longer configured makes
-  `POST /sandboxes/{name}/sessions` answer 422 (`UnknownPresetError`); the Sandbox is neither
+- A Sandbox naming a SandboxPreset that is no longer configured makes
+  `POST /sandboxes/{name}/sessions` answer 409 (`FailedPrecondition`); the Sandbox is neither
   deleted nor mutated. The browser selects creation presets from the app's configured catalog;
   EnvironmentService stores the submitted preset label, which is resolved at Session creation.
 - A changed bootstrap script is refused on a live Sandbox (below).
 
 ## Bootstrap
 
-Bootstrap belongs to the SandboxPreset as inline script content. Before every Session creation on a
-bound Sandbox, the app sends that content to the runner (`bridge.initialize`); the app never
-executes shell. The runner pins the SHA-256 of the first script it is given under its state
-directory, runs it once with `/bin/sh -eu`, and keeps a replayable log of output and result: the
-same script re-sent replays that one attempt, failed or interrupted included, while a different
-script is refused (`FAILED_PRECONDITION`), so bootstrap never reruns on a live Sandbox and a fresh
-one needs a new Sandbox. A refused, interrupted or non-zero-exit bootstrap prevents logical Session
-creation with 409. Arbitrary user-provided shell,
-automatic reruns after source changes, and a script registry are out of scope.
+Bootstrap belongs to the SandboxPreset as inline script content. The app resolves it into the
+Sandbox creation request (`CreateEnvironmentRequest.bootstrap`). EnvironmentService stores it on the
+Sandbox, and the Sandbox Controller hands it to Environment Runtime in the launch file; Runtime takes
+bootstrap from no other source. The app never executes shell.
+
+Runtime runs the script once per Sandbox with `/bin/sh -eu`, before any Session setup or harness
+start, and refuses a changed script
+([Runtime initialization](../env/runtime/docs/control.md#initialization)). A failed or interrupted
+run is terminal: the Sandbox never becomes Ready, and the operator creates a fresh one. Automatic
+reruns after source changes and a script registry are out of scope.
 
 Thread setup is separate from Sandbox bootstrap. The app includes the selected Thread setup source
 in logical `CreateSession`; the Dispatcher returns the Session resource and its current materialization
@@ -117,32 +117,7 @@ current effective Thread defaults, while per-Thread edits remain local to that T
 
 An existing Sandbox page shows the bound preset and whether its Thread default is inherited or
 overridden, for example `Public coder · inherited`. A failed bootstrap fails the Thread launch; the
-operator retries it or creates a fresh Sandbox.
-
-## Implemented first slice
-
-**Observed P0 behavior**
-
-1. Define app-owned `SandboxPreset` and `ThreadPreset` configuration for `public-coder`.
-2. Resolve a preset plus explicit overrides without changing the existing no-preset launch path.
-3. Remember the Sandbox binding and use it for later Thread defaults.
-4. Send the configured bootstrap source to the runner before opening the first Thread.
-5. Add the preset selector and inherited-default presentation to the existing UI.
-6. Add the one-action Sandbox-plus-Thread launch path.
-
-**Live acceptance target**
-
-After the landed images are deployed, launch `public-coder` through the integration app, override at least the model and standing
-instructions, and verify that:
-
-- the Sandbox receives the selected effective egress policy and runner configuration;
-- the runner executes the configured bootstrap and creates the persistent workspace marker;
-- the first Thread uses the edited Thread defaults;
-- a later Thread starts from the Sandbox's live defaults while a per-Thread model override stays
-  local;
-- an updated preset changes future defaults but not an existing Thread;
-- an unavailable egress policy or bootstrap configuration is rejected before launch; and
-- a bootstrap failure is visible and does not produce a usable Thread.
+operator creates a fresh Sandbox.
 
 ## Deferred
 

@@ -9,7 +9,6 @@
     - role: gui
     - role: legacy_gui
     - role: laptop
-      tags: [wireguard, tailscale]
 
   tasks:
     # TODO: add Ubuntu startup programs, like Flameshot etc.

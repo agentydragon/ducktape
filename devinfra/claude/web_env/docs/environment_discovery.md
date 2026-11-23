@@ -52,7 +52,7 @@ session it supervises, not a stale reference or a tooling gap. The existing
 
 The container uses a custom init process instead of systemd:
 
-```
+```text
 PID 1: /process_api --firecracker-init \
          --addr 0.0.0.0:2024 \
          --max-ws-buffer-size 32768 \
@@ -69,7 +69,7 @@ in the current container invocation.
 
 **Help output**:
 
-```
+```text
 Usage: process_api [OPTIONS] --addr <ADDR>
 
 Options:
@@ -96,7 +96,7 @@ Options:
 
 ### Startup Sequence
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────┐
 │ Container Runtime (external)                                            │
 │   - Injects proxy env vars with JWT                                     │
@@ -209,7 +209,7 @@ binary's encrypted literals, not from documentation.
 
 ### Connection Setup
 
-```
+```text
 ┌─────────────────────┐                    ┌──────────────────────────────────┐
 │   claude CLI        │◄──── WebSocket ───►│  api.anthropic.com               │
 │   (in container)    │                    │  /v1/session_ingress/ws/{id}     │
@@ -248,7 +248,7 @@ claude \
 
 **Data Flow:**
 
-```
+```text
 User types in browser
         │
         ▼
@@ -329,7 +329,7 @@ Three distinct token types are used in the Claude Code web environment:
 
 Tokens flow from the container runtime to the Claude process:
 
-```
+```text
 Container Runtime
     │
     ▼
@@ -367,7 +367,7 @@ strings /tmp/env-mgr-heap.bin | grep -E '^sk-ant-' | sort -u
 
 **Expected output** (three token types):
 
-```
+```text
 sk-ant-ccsr-eyJ0eXAi...  (Code Signing Request Token)
 sk-ant-oat01-...         (OAuth Access Token)
 sk-ant-si-eyJ0eXAi...    (Session Ingress Token)
@@ -439,7 +439,7 @@ All HTTP/HTTPS traffic is routed through an authenticated proxy.
 
 **Authentication**: JWT token embedded in the URL as username:
 
-```
+```text
 http://container_{container_id}:jwt_{JWT_TOKEN}@21.0.0.127:15004
 ```
 
@@ -514,7 +514,7 @@ each tool invocation is safe and reliable - there's no race condition.
 
 **Bypass List** (`NO_PROXY`, `no_proxy`, `GLOBAL_AGENT_NO_PROXY`):
 
-```
+```text
 localhost,127.0.0.1,169.254.169.254,metadata.google.internal,
 *.svc.cluster.local,*.local,*.googleapis.com,*.google.com
 ```
@@ -691,7 +691,7 @@ The git proxy is implemented in `environment-manager`:
 
 **Source Location** (from binary strings):
 
-```
+```text
 github.com/anthropics/anthropic/api-go/environment-manager/internal/gitproxy/
 ├── handler.go
 ├── manager.go
@@ -741,7 +741,7 @@ Tested whether the git proxy could be used for arbitrary egress (bypassing the J
 
 Based on strings in the binary, the proxy appears to use regex validation:
 
-```
+```text
 ^([\w./]+)/((?:\w+)|[*])(.+)?$
 ```
 
@@ -812,7 +812,7 @@ Git commits are signed using a bridge between git's GPG interface and the MCP co
 
 **Purpose**: Bridges git's SSH signing protocol to the MCP codesign server:
 
-```
+```text
 ┌─────────────────┐     ┌──────────────┐     ┌─────────────────────┐
 │  git commit     │────▶│ /tmp/code-sign│────▶│ MCP codesign server │
 │  (gpg.ssh.prog) │     │ (Go binary)   │     │ (localhost:64293)   │
@@ -847,7 +847,7 @@ can be verified against known public keys.
 
 #### Auth Isolation
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │  environment-manager (PID 25)                               │
 │    └─> claude (PID 43) ◄── WebSocket auth via FD 3,4       │
@@ -871,7 +871,7 @@ The `Task` tool is the **only path** to spawn subagents. It routes through the o
 
 ## Architecture Summary
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         Claude Code Web Session                              │
 ├─────────────────────────────────────────────────────────────────────────────┤

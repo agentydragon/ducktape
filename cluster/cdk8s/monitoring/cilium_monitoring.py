@@ -11,11 +11,11 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecSelector,
 )
 
+from cluster.cdk8s.monitoring.namespace import NAMESPACE
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 from cluster.cdk8s.service_ref import HostNetworkServiceRef, Pods, Port
 
 NAME = "cilium-monitoring"
-NAMESPACE = "monitoring"
 # The agent DaemonSet's Pods, on the host network. The Cilium chart
 # (cluster/terraform/main/cilium-values.yaml) renders both metrics Services in front of them.
 _AGENT = Pods(namespace="kube-system", labels=(("app.kubernetes.io/name", "cilium-agent"),))

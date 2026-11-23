@@ -2,7 +2,8 @@
 
 use debundle_e2e_graph_support::GraphFixture;
 use debundle_e2e_support::{
-    TreeFixture, debundle_fixture_output, parse_stdout_json, read_tree, run_tree_graph_fixture,
+    TreeFixture, debundle_fixture_output, parse_stdout_json, process, read_tree,
+    run_tree_graph_fixture,
 };
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -35,7 +36,6 @@ fn run_check(
     fixture: &GraphFixture,
     batch: &Path,
     order: &Path,
-    tree_config: Option<&Path>,
     graph_only: bool,
     source_root: bool,
     print_invocation: bool,
@@ -49,10 +49,9 @@ fn run_check(
         order.display().to_string(),
         "--format".to_owned(),
         "json".to_owned(),
+        "--tree-config".to_owned(),
+        fixture.tree_config().display().to_string(),
     ];
-    if let Some(config) = tree_config {
-        args.extend(["--tree-config".to_owned(), config.display().to_string()]);
-    }
     if graph_only {
         args.push("--graph-only".to_owned());
     }
@@ -121,10 +120,9 @@ fn assert_owner(fixture: &GraphFixture, binding: &str, expected: &str) {
 fn graph_only_keeps_graph_acceptance_separate_from_selector_realization() {
     let (fixture, changes) = duplicate_initializer_case();
     let (batch, order) = write_batch(&fixture, "ambiguous", &changes);
-    let config = fixture.root().join("spec_config.yaml");
     let before = input_snapshot(&fixture, &batch, &order);
 
-    let default = run_check(&fixture, &batch, &order, Some(&config), false, true, false);
+    let default = run_check(&fixture, &batch, &order, false, true, false);
     assert!(
         !default.status.success(),
         "a graph-valid batch with ambiguous selectors received an executable plan: {}",
@@ -145,26 +143,21 @@ fn graph_only_keeps_graph_acceptance_separate_from_selector_realization() {
     );
     assert_eq!(input_snapshot(&fixture, &batch, &order), before);
 
-    let default_invocation = run_check(&fixture, &batch, &order, Some(&config), false, true, true);
+    let default_invocation = run_check(&fixture, &batch, &order, false, true, true);
     assert!(default_invocation.status.success());
     assert_eq!(
         parse_stdout_json(&default_invocation)["requested_proof"],
         "executable_plan_check_requested"
     );
-    let graph_only_invocation =
-        run_check(&fixture, &batch, &order, Some(&config), true, true, true);
+    let graph_only_invocation = run_check(&fixture, &batch, &order, true, true, true);
     assert!(graph_only_invocation.status.success());
     assert_eq!(
         parse_stdout_json(&graph_only_invocation)["requested_proof"],
         "graph_snapshot_input"
     );
 
-    let graph_only = run_check(&fixture, &batch, &order, Some(&config), true, true, false);
-    assert!(
-        graph_only.status.success(),
-        "{}",
-        String::from_utf8_lossy(&graph_only.stderr)
-    );
+    let graph_only = run_check(&fixture, &batch, &order, true, true, false);
+    process::assert_success(&graph_only);
     let graph_only = parse_stdout_json(&graph_only);
     assert_eq!(graph_only["scope"], "graph_only");
     assert_eq!(graph_only["accepted"], true, "{graph_only}");
@@ -199,12 +192,8 @@ fn executable_check_plan_previews_applies_and_runs_with_tree_paths() {
     let modules_before = read_tree(&fixture.modules);
     let config_before = fs::read(&config).unwrap();
 
-    let checked = run_check(&fixture, &batch, &order, Some(&config), false, true, false);
-    assert!(
-        checked.status.success(),
-        "{}",
-        String::from_utf8_lossy(&checked.stderr)
-    );
+    let checked = run_check(&fixture, &batch, &order, false, true, false);
+    process::assert_success(&checked);
     let checked = parse_stdout_json(&checked);
     assert_eq!(checked["scope"], "executable_plan");
     assert_eq!(checked["accepted"], true, "{checked}");
@@ -235,11 +224,7 @@ fn executable_check_plan_previews_applies_and_runs_with_tree_paths() {
     let plan_path = fixture.root().join("checked-plan.json");
     fs::write(&plan_path, serde_json::to_vec_pretty(&plan).unwrap()).unwrap();
     let rechecked = check_plan(&fixture, &plan_path, &config);
-    assert!(
-        rechecked.status.success(),
-        "{}",
-        String::from_utf8_lossy(&rechecked.stderr)
-    );
+    process::assert_success(&rechecked);
     let rechecked = parse_stdout_json(&rechecked);
     assert_eq!(rechecked["scope"], "executable_plan");
     assert_eq!(rechecked["accepted"], true, "{rechecked}");
@@ -265,11 +250,7 @@ fn executable_check_plan_previews_applies_and_runs_with_tree_paths() {
         "--format",
         "json",
     ]);
-    assert!(
-        preview.status.success(),
-        "{}",
-        String::from_utf8_lossy(&preview.stderr)
-    );
+    process::assert_success(&preview);
     assert_eq!(read_tree(&fixture.modules), modules_before);
     assert_eq!(fs::read(&config).unwrap(), config_before);
 
@@ -285,11 +266,7 @@ fn executable_check_plan_previews_applies_and_runs_with_tree_paths() {
         "--format",
         "json",
     ]);
-    assert!(
-        applied.status.success(),
-        "{}",
-        String::from_utf8_lossy(&applied.stderr)
-    );
+    process::assert_success(&applied);
     fixture.assert_runs("1 3\n");
     fixture.refresh_graph();
     assert_owner(&fixture, "anchor", "home");
@@ -301,10 +278,9 @@ fn executable_check_plan_previews_applies_and_runs_with_tree_paths() {
 fn default_check_requires_source_root_while_graph_only_omits_the_option() {
     let (fixture, changes) = duplicate_initializer_case();
     let (batch, order) = write_batch(&fixture, "no-source", &changes);
-    let config = fixture.root().join("spec_config.yaml");
     let before = input_snapshot(&fixture, &batch, &order);
 
-    let default = run_check(&fixture, &batch, &order, Some(&config), false, false, false);
+    let default = run_check(&fixture, &batch, &order, false, false, false);
     assert!(
         !default.status.success(),
         "default check succeeded without a source root: {}",
@@ -321,12 +297,8 @@ fn default_check_requires_source_root_while_graph_only_omits_the_option() {
     );
     assert_eq!(input_snapshot(&fixture, &batch, &order), before);
 
-    let graph_only = run_check(&fixture, &batch, &order, Some(&config), true, false, false);
-    assert!(
-        graph_only.status.success(),
-        "{}",
-        String::from_utf8_lossy(&graph_only.stderr)
-    );
+    let graph_only = run_check(&fixture, &batch, &order, true, false, false);
+    process::assert_success(&graph_only);
     let graph_only = parse_stdout_json(&graph_only);
     assert_eq!(graph_only["scope"], "graph_only");
     assert_eq!(graph_only["accepted"], true, "{graph_only}");
@@ -370,10 +342,9 @@ fn graph_invalid_batch_reports_graph_rejection_without_a_plan() {
         "module": "chain",
     }]);
     let (batch, order) = write_batch(&fixture, "graph-invalid", &changes);
-    let config = fixture.root().join("spec_config.yaml");
     let before = input_snapshot(&fixture, &batch, &order);
 
-    let output = run_check(&fixture, &batch, &order, Some(&config), false, true, false);
+    let output = run_check(&fixture, &batch, &order, false, true, false);
     assert!(!output.status.success());
     let report = parse_stdout_json(&output);
     assert_eq!(report["scope"], "executable_plan");

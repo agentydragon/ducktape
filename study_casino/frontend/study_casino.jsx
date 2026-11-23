@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 
 import { SyncIcon } from "./SyncIcon.jsx";
 import { ChangelogModal } from "./ChangelogModal.jsx";
@@ -67,9 +67,6 @@ export function CasinoStyles() {
       border: 1px solid rgba(212,165,72,0.25);
       border-radius: 3px;
     }
-
-    .gold-border { border: 1px solid ${COLORS.gold}; }
-    .gold-border-dim { border: 1px solid rgba(212,165,72,0.3); }
 
     .nav-link {
       font-family: 'Playfair Display', serif;
@@ -488,14 +485,11 @@ export default function StudyCasino() {
         {view === "prizes" && (
           <PrizesView
             offline={offline}
-            isAdmin={isAdmin}
             credits={credits}
             tokens={tokens}
             prizes={prizes}
             prizeLog={prizeLog}
             redeem={redeemPrize}
-            addPrize={addPrize}
-            deletePrize={deletePrize}
             convertToTokens={convertToTokens}
           />
         )}
@@ -601,7 +595,7 @@ function CasinoView({
   return (
     <div>
       <div style={{ display: "flex", gap: 8, justifyContent: "center", marginBottom: 28, flexWrap: "wrap" }}>
-        {["roulette", "blackjack", "slots"].map((g) => (
+        {GAMES.map((g) => (
           <button
             key={g}
             onClick={() => setGame(g)}

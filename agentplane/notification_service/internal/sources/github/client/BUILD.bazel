@@ -19,7 +19,6 @@ go_library(
     deps = [
         "//agentplane/notification_service/internal/sources/github/model",
         "//agentplane/notification_service/internal/sources/github/settings",
-        "//agentplane/notification_service/model",
         "//agentplane/observability",
         "@com_github_bradleyfalzon_ghinstallation_v2//:ghinstallation",
         "@com_github_google_go_github_v88//github",
@@ -33,7 +32,7 @@ go_test(
         "client_fixture_test.go",
         "client_test.go",
         "commit_statuses_test.go",
-        "page_test_helpers_test.go",
+        "pagination_test.go",
         "ratelimit_test.go",
         "reviews_test.go",
     ],
@@ -42,8 +41,6 @@ go_test(
         "//agentplane/notification_service/internal/sources/github/model",
         "//agentplane/notification_service/internal/sources/github/settings",
         "//agentplane/notification_service/internal/sources/github/testing",
-        "//agentplane/notification_service/model",
         "@com_github_google_go_github_v88//github",
-        "@com_github_google_uuid//:uuid",
     ],
 )

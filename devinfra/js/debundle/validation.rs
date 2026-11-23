@@ -41,7 +41,8 @@ pub struct AssignmentReport {
     /// `atomic_group_conflicts` entry first — on the accept path
     /// (`cycles` and `atomic_group_conflicts` both empty) this list
     /// must be empty too, and the materializer bails if that
-    /// invariant ever breaks (`validate_and_emit_reports`).
+    /// invariant ever breaks (`emit_reports_and_resolve_gate` in
+    /// `lowering/materialize/mod.rs`).
     pub cross_rebinds: Vec<String>,
 }
 
@@ -402,6 +403,8 @@ impl CycleEdge {
     }
 }
 
+const CYCLE_WITNESS_PREVIEW_STEPS: usize = 8;
+
 /// Render the per-cycle summary used in the materializer's bail
 /// message. Each cycle is a spec-induced module-quotient SCC carrying
 /// realizability-constraining (R/S) edges; the renderer blames
@@ -423,8 +426,6 @@ impl CycleEdge {
 /// For ESM-evaluation-simulator (Pass-2 / TDZ) rejections, the cut
 /// rows are followed by the lazy back-edges that close the I-cycle
 /// (`CycleReport::lazy_closure`), in the same binding-pair format.
-const CYCLE_WITNESS_PREVIEW_STEPS: usize = 8;
-
 pub fn render_cycle_summary(cycles: &[CycleReport]) -> String {
     let mut out = String::new();
     const TOP_K: usize = 10;
@@ -750,35 +751,6 @@ pub fn validate_assignment_with_priority(
         assignment,
         nodes,
         &ids,
-    )?;
-    Ok((
-        validation_from_verdict(
-            dependency_graph,
-            assignment,
-            module_path,
-            verdict,
-            &schedule,
-        ),
-        schedule,
-    ))
-}
-
-/// Test oracle for comparing a supplied-priority validation with the historic
-/// schedule-existence reference. It is compiled only in tests.
-#[cfg(test)]
-pub fn validate_assignment_retaining_schedule(
-    dependency_graph: &DependencyGraph,
-    assignment: &ModuleAssignment,
-    module_path: &dyn Fn(ModuleId) -> ModulePath,
-    nodes: &BTreeSet<ModuleId>,
-) -> Result<
-    (AssignmentValidation, crate::esm_schedule::EsmImportSchedule),
-    crate::esm_schedule::ImportScheduleError,
-> {
-    let (verdict, schedule) = crate::realizability::check_realizability_retaining_schedule(
-        dependency_graph,
-        assignment,
-        nodes,
     )?;
     Ok((
         validation_from_verdict(

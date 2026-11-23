@@ -1,7 +1,8 @@
 """Cluster pod policy: `harden` and `place`, each called once on a finished workload of any
 dialect -- a cdk8s-plus workload, a raw `k8s.Kube*` object, or a CRD that embeds a pod
-template. Both reach the pod spec through `POD_SPEC_PATHS`, keyed by API group and kind
-since two groups define a `SandboxTemplate`, which the fleet rules also read, and patch in only what it leaves unset, so a value stated at construction wins.
+template. Both patch in only what the workload leaves unset, so a value stated at construction
+wins. They reach the pod spec through `POD_SPEC_PATHS`, keyed by API group and kind since two
+groups define a `SandboxTemplate`, which the fleet rules also read.
 """
 
 from __future__ import annotations

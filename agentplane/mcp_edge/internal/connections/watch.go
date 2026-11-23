@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"cmp"
 	"context"
-	"errors"
 	"slices"
 	"time"
 
@@ -12,8 +11,6 @@ import (
 	pb "github.com/agentydragon/ducktape/agentplane/mcp_edge/api/connection/connection_servicepb"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -99,17 +96,7 @@ func (w *watch) sendReconnect(frame *pb.WatchConnectionsResponse) error {
 }
 
 func (w *watch) sendWithin(ctx context.Context, frame *pb.WatchConnectionsResponse) error {
-	err := streaming.SendWithin(ctx, watchWriteTimeout, w.stream.Send, frame)
-	switch {
-	case errors.Is(err, streaming.ErrSendTimeout):
-		return status.Error(codes.DeadlineExceeded, "Connection watch write deadline expired")
-	case errors.Is(err, context.Canceled):
-		return status.FromContextError(context.Canceled).Err()
-	case errors.Is(err, context.DeadlineExceeded):
-		return status.FromContextError(context.DeadlineExceeded).Err()
-	default:
-		return err
-	}
+	return streaming.SendWithinStatus(ctx, watchWriteTimeout, w.stream.Send, frame, "Connection watch write deadline expired")
 }
 
 // snapshot sends every Connection as snapshot frames of at most snapshotChunk, oldest first, then snapshot_complete.

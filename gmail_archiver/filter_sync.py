@@ -5,15 +5,10 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Self
 
+from gmail_api.filters import SizeComparison
 from gmail_api.labels import GmailLabel, SystemLabel, resolve_label_id
 from gmail_archiver.filter_planner import criteria_to_gmail_query
-from gmail_archiver.gmail_api_models import (
-    CreateFilterRequest,
-    FilterAction,
-    FilterCriteria,
-    GmailFilter,
-    SizeComparison,
-)
+from gmail_archiver.gmail_api_models import CreateFilterRequest, FilterAction, FilterCriteria, GmailFilter
 from gmail_archiver.gmail_yaml_filters_models import CompoundCondition, FilterRule
 
 
@@ -61,7 +56,6 @@ def normalize_gmail_filter(gmail_filter: GmailFilter, labels_by_id: dict[str, st
     criteria = gmail_filter.criteria
     action = gmail_filter.action
 
-    # Convert label IDs to names
     add_labels = frozenset(labels_by_id.get(lid, lid) for lid in action.add_label_ids)
     remove_labels = frozenset(labels_by_id.get(lid, lid) for lid in action.remove_label_ids)
 
@@ -146,7 +140,6 @@ def normalize_yaml_rule(rule: FilterRule) -> NormalizedFilter:
         if condition and label is not None
     )
 
-    # Build remove_labels
     remove_labels = frozenset(
         label
         for label, condition in [
@@ -166,7 +159,6 @@ def normalize_yaml_rule(rule: FilterRule) -> NormalizedFilter:
         elif isinstance(rule.has, str):
             query = rule.has
 
-    # Build negated_query from 'does_not_have' field
     negated_query = None
     if rule.does_not_have:
         if isinstance(rule.does_not_have, list):
@@ -224,7 +216,6 @@ def diff_filters(yaml_filters: list[NormalizedFilter], gmail_filters: list[Norma
 
 def normalized_to_create_request(normalized: NormalizedFilter, label_name_to_id: dict[str, str]) -> CreateFilterRequest:
     """Convert normalized filter to CreateFilterRequest for API."""
-    # Build criteria
     criteria = FilterCriteria(
         from_=normalized.from_,
         to=normalized.to,
@@ -266,7 +257,6 @@ class LabelMaps:
         try:
             return resolve_label_id(name, self.by_name)
         except ValueError:
-            # Label doesn't exist, create it
             label_id = get_or_create_fn(name)
             self.by_name[name] = label_id
             self.by_id[label_id] = name
@@ -288,7 +278,6 @@ def format_filter_for_display(f: NormalizedFilter) -> str:
             criteria_parts.append(f"{name}={value}")
     criteria_str = " ".join(part for part in criteria_parts if part) or "(no criteria)"
 
-    # Actions
     actions = []
     if f.add_labels:
         for label in sorted(f.add_labels):

@@ -26,9 +26,44 @@ spec:
     remediation:
       retries: 3
   interval: 30m
+  postRenderers:
+    - kustomize:
+        patches:
+          - patch: |
+              apiVersion: apps/v1
+              kind: Deployment
+              metadata:
+                name: vpa-admission-controller
+                namespace: kube-system
+              spec:
+                template:
+                  spec:
+                    containers:
+                      - name: vpa
+                        startupProbe:
+                          tcpSocket:
+                            port: http
+                          periodSeconds: 5
+                          failureThreshold: 60
+            target:
+              kind: Deployment
+              name: vpa-admission-controller
+              namespace: kube-system
   values:
     admissionController:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: admission-controller
+                  app.kubernetes.io/instance: vpa
+                  app.kubernetes.io/name: vpa
+              topologyKey: kubernetes.io/hostname
       enabled: true
+      podDisruptionBudget:
+        minAvailable: 2
+      replicaCount: 3
       resources:
         limits:
           cpu: 200m

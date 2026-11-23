@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from typing import override
 
 import grpc
-from google.protobuf.empty_pb2 import Empty
 from google.protobuf.message import Message
 
 from agentplane.action_service.api.contracts import action_service_pb2, action_service_pb2_grpc
@@ -33,38 +32,19 @@ class FakeActionService(action_service_pb2_grpc.ActionServiceServicer):
     def __init__(self) -> None:
         self.calls: list[ActionCall] = []
         self.policy = action_service_pb2.GetActionPolicyResponse()
-        self.policy_by_subject: dict[tuple[str, str], action_service_pb2.GetActionPolicyResponse] = {}
         self.policy_watch_frames: asyncio.Queue[action_service_pb2.GetActionPolicyResponse] = asyncio.Queue()
         self.policy_watch_cancelled = asyncio.Event()
         self.requests = action_service_pb2.ListActionRequestsResponse()
-        self.groups = action_service_pb2.ListActionGroupsResponse()
-        self.unary_gate: asyncio.Event | None = None
-        self.unary_started = asyncio.Event()
-        self.watch_gate: asyncio.Event | None = None
-        self.watch_started = asyncio.Event()
-        self.watch_cancelled = asyncio.Event()
-        self.watch_error_before_first: grpc.StatusCode | None = None
-        self.watch_first = action_service_pb2.WatchActionRequestsResponse(snapshot_complete=Empty())
-        self.watch_frames: asyncio.Queue[action_service_pb2.WatchActionRequestsResponse | grpc.StatusCode | None] = (
-            asyncio.Queue()
-        )
 
     def _record(self, method: str, request: Message, context: grpc.aio.ServicerContext) -> None:
         self.calls.append(ActionCall(method, request, _bearer(context)))
-
-    async def _hold_unary(self) -> None:
-        if self.unary_gate is not None:
-            self.unary_started.set()
-            await self.unary_gate.wait()
 
     @override
     async def GetActionPolicy(
         self, request: action_service_pb2.GetActionPolicyRequest, context: grpc.aio.ServicerContext
     ) -> action_service_pb2.GetActionPolicyResponse:
         self._record("GetActionPolicy", request, context)
-        await self._hold_unary()
-        subject = request.subject
-        return self.policy_by_subject.get((subject.namespace, subject.name), self.policy)
+        return self.policy
 
     @override
     async def WatchActionPolicy(
@@ -72,7 +52,7 @@ class FakeActionService(action_service_pb2_grpc.ActionServiceServicer):
     ) -> AsyncIterator[action_service_pb2.GetActionPolicyResponse]:
         self._record("WatchActionPolicy", request, context)
         initial = action_service_pb2.GetActionPolicyResponse()
-        initial.CopyFrom(self.policy_by_subject.get((request.subject.namespace, request.subject.name), self.policy))
+        initial.CopyFrom(self.policy)
         initial.action_policy.subject.CopyFrom(request.subject)
         try:
             yield initial
@@ -87,39 +67,7 @@ class FakeActionService(action_service_pb2_grpc.ActionServiceServicer):
         self, request: action_service_pb2.ListActionRequestsRequest, context: grpc.aio.ServicerContext
     ) -> action_service_pb2.ListActionRequestsResponse:
         self._record("ListActionRequests", request, context)
-        await self._hold_unary()
         return self.requests
-
-    @override
-    async def ListActionGroups(
-        self, request: action_service_pb2.ListActionGroupsRequest, context: grpc.aio.ServicerContext
-    ) -> action_service_pb2.ListActionGroupsResponse:
-        self._record("ListActionGroups", request, context)
-        await self._hold_unary()
-        return self.groups
-
-    @override
-    async def WatchActionRequests(
-        self, request: action_service_pb2.WatchActionRequestsRequest, context: grpc.aio.ServicerContext
-    ) -> AsyncIterator[action_service_pb2.WatchActionRequestsResponse]:
-        self._record("WatchActionRequests", request, context)
-        self.watch_started.set()
-        try:
-            if self.watch_gate is not None:
-                await self.watch_gate.wait()
-            if self.watch_error_before_first is not None:
-                await context.abort(self.watch_error_before_first, "scripted Action Service failure")
-            yield self.watch_first
-            while True:
-                step = await self.watch_frames.get()
-                if step is None:
-                    return
-                if isinstance(step, grpc.StatusCode):
-                    await context.abort(step, "scripted Action Service failure")
-                yield step
-        except asyncio.CancelledError:
-            self.watch_cancelled.set()
-            raise
 
 
 @asynccontextmanager

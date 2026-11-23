@@ -1,6 +1,4 @@
 load("//devinfra/js:ts_library.bzl", "ts_library")
-load("//devinfra/js:vitest.bzl", "check_vitest_specs")
-load("//haku/console/frontend:vitest.bzl", "haku_vitest_test")
 load("//haku/console/frontend/tool_rendering/screenshot:screenshot_test.bzl", "preview_screenshots")
 
 package(default_visibility = ["//visibility:public"])
@@ -21,19 +19,6 @@ filegroup(
 
 TSCONFIG = "//haku/console/frontend:tsconfig"
 
-# The `haku_routine` server's tool-call rendering widgets (request-only; see ../BUILD.bazel
-# for the tree's shape).
-
-ts_library(
-    name = "actions",
-    srcs = ["actions.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        "//haku/console/frontend/tool_rendering:action_entry",
-    ],
-)
-
 ts_library(
     name = "requests",
     srcs = ["requests.tsx"],
@@ -42,14 +27,12 @@ ts_library(
     deps = [
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
+        "//:node_modules/ajv",
         "//:node_modules/react",
-        "//:node_modules/zod",
         "//haku/console/frontend:code_block",
         "//haku/console/frontend:field",
-        "//haku/console/frontend:mcp_tool_schema",
-        "//haku/console/frontend/tool_rendering:entry",
-        "//haku/console/frontend/tool_rendering:server_ids",
         "//haku/console/frontend/tool_rendering:vocabulary",
+        "//haku/console/mcp:launch_routine_arguments",
     ],
 )
 
@@ -57,17 +40,6 @@ ts_library(
 filegroup(
     name = "tailwind_srcs",
     srcs = glob(["*.tsx"]),
-)
-
-haku_vitest_test(
-    name = "requests_test",
-    srcs = ["requests.test.ts"],
-    isolated_typecheck = True,
-    deps = [
-        ":requests",
-        "//:node_modules/vitest",
-        "//haku/console/frontend/tool_rendering:entry",
-    ],
 )
 
 ts_library(
@@ -95,5 +67,3 @@ preview_screenshots(
     fixtures = "preview_fixtures.js",
     deps = [":preview_harness"],
 )
-
-check_vitest_specs()

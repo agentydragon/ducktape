@@ -17,9 +17,10 @@ this boot's dmesg.
 Disabled by default` on both GPUs. The platform lacks ACPI `_PR3` power
   resources (missing `power_resources_D3hot` sysfs directory). The full D3cold
   runtime PM path is not active.
-- **External trigger**: No Xid errors, no RC watchdog timeout, no host-side
-  events, nothing unusual in guest journal in the minutes before the lockup.
-  Normal k8s pod churn (flux tf-runners, ollama bearer token runner).
+- **External trigger**: none visible in the guest: no Xid errors, no RC watchdog
+  timeout, nothing unusual in the guest journal in the minutes before the lockup.
+  Later analysis found the cause on the host: atlas had suspended and resumed
+  (Apr 15 12:02-20:49); see `../wyrm_gpu_lockup.md`.
 
 ## What We Haven't Ruled Out
 
@@ -64,10 +65,10 @@ Disabled by default` on both GPUs. The platform lacks ACPI `_PR3` power
 
 ## nvidia-bug-report.sh
 
-Ran but hung (expected with locked GPUs — tries to query them and blocks).
-Partial output captured in `nvidia-bug-report.log.gz` (2932 lines). Contains
-system info, module parameters, power state info, but no GPU register dumps
-or GSP-RM logs (those would have been captured after the point where it hung).
+Ran but hung (expected with locked GPUs — tries to query them and blocks), so
+the capture held system info, module parameters and power state info but no GPU
+register dumps or GSP-RM logs. The raw captures were retired once the host
+suspend explained this lockup (they remain in git history).
 
 ## Next Steps
 
@@ -84,25 +85,6 @@ or GSP-RM logs (those would have been captured after the point where it hung).
    Runtime D3.
 4. **Try `nvidia-bug-report.sh --safe-mode`** next time — the script suggests
    this flag when it hangs, may skip the queries that block on dead GPUs.
-
-## Files
-
-- `nvidia-bug-report.log.gz` — partial nvidia-bug-report (hung on GPU queries)
-- `nvidia-bug-report.log` — decompressed version
-- `nvidia-smi.txt` — nvidia-smi output (shows ERR)
-- `nvidia-smi-q.txt` — detailed nvidia-smi query
-- `nvidia-smi-query.txt` — CSV query (all N/A due to lockup)
-- `nvidia-gpu-info.txt` — /proc/driver/nvidia/gpus/ info
-- `nvidia-params.txt` — nvidia module parameters
-- `nvidia-version.txt` — driver version (580.142 Open)
-- `pci-gpu-info.txt` — PCI device state (link speed, power, d3cold)
-- `dmesg-nvidia.txt` — all NVRM/nvidia lines from dmesg
-- `dmesg-lockup-window.txt` — dmesg around t=91025
-- `dmesg-full.txt` — complete dmesg for the boot
-- `journal-lockup-window.txt` — systemd journal 12:55-13:15
-- `journal-gnome-renderer.txt` — gnome-shell EGL/renderer messages
-- `kernel-cmdline.txt` — kernel cmdline (shows modeset conflict)
-- `drm-info.txt` — DRM card info
 
 ## Related
 

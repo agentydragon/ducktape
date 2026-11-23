@@ -160,9 +160,6 @@ class FactorBreakdown:
     crps_per_month: dict[str, float]
 
 
-# ──────────────────────── Held-out single-split ────────────────────────
-
-
 @dataclass(frozen=True)
 class ScoredHeldOutResult:
     """Held-out predictive score, model scored cleanly. `factor_breakdown is
@@ -264,9 +261,6 @@ def held_out_predictive_score(
         factor_breakdown=factor_breakdown,
         calendar_coverage=coverage,
     )
-
-
-# ──────────────────────── Rolling-origin ────────────────────────
 
 
 @dataclass(frozen=True)
@@ -398,9 +392,6 @@ def rolling_origin_predictive_score(
         factor_breakdown=factor_breakdown,
         calendar_coverage=coverage,
     )
-
-
-# ──────────────────────── Multi-step ────────────────────────
 
 
 @dataclass(frozen=True)

@@ -10,6 +10,7 @@ go_library(
         "//agentplane/app/internal/auth",
         "//agentplane/app/internal/federation",
         "//agentplane/app/internal/httpapi",
+        "//agentplane/app/internal/httpresponse",
         "//agentplane/app/internal/sandboxes",
         "//agentplane/app/internal/upstream",
         "//agentplane/environments/v1:environment_service_go_proto",

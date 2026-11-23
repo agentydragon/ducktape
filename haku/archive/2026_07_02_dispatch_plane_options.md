@@ -1,11 +1,9 @@
 # Dispatch plane — options survey (2026-07-02, settled)
 
-Archived decision history for the Haku multi-agent dispatch plane. These evaluations
-picked the design that is now built (dispatcher + k8s Jobs + two-layer LiteLLM + Claude
-Code CLI harness); they are kept for the reasoning, not as current plans. The built
-system is documented in <../x/dispatch/README.md> and
-<../x/dispatch/deploy/README.md>; still-forward options (ChatGPT access for the
-oai zone, sensors) live in <2026_08_multi_agent.md>.
+Archived decision history for the Haku multi-agent dispatch plane, since retired
+(<2026_08_multi_agent.md>, which also holds the oai zone's ChatGPT-access and sensor options).
+These evaluations picked the design that was built (dispatcher + k8s Jobs + two-layer LiteLLM +
+Claude Code CLI harness); they are kept for the reasoning, not as current plans.
 
 ## Dispatch plane
 

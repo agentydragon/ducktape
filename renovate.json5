@@ -39,13 +39,9 @@
   ],
   // The generated Bazel lockfiles are ignored below. Extend Renovate's pip
   // requirements matcher to the canonical .in inputs so those environments
-  // remain visible; retain the default .txt/.pip matcher as well because
-  // homeassistant/requirements.override.txt is a real source input.
+  // remain visible.
   pip_requirements: {
-    managerFilePatterns: [
-      "/(^|\\/)[\\w-]*requirements([-._]\\w+)?\\.(txt|pip)$/",
-      "/(^|\\/)requirements\\.in$/",
-    ],
+    managerFilePatterns: ["/(^|\\/)requirements\\.in$/"],
   },
   ignorePaths: [
     "props/specimens/**",
@@ -63,7 +59,6 @@
     "third_party/activitywatch/Cargo.Bazel.lock",
     // Bazel owns these locks; Renovate should watch their package.json inputs.
     "pnpm-lock.yaml",
-    "third_party/manifold_mcp_server/pnpm-lock.yaml",
     // Generated from pixi.toml; keep the manifest as Renovate's input.
     "skills/freecad/conda/pixi.lock",
     // The Prettier npm inputs are coupled to Nix package metadata and must move
@@ -147,6 +142,15 @@
       automerge: false,
     },
     {
+      // Kyverno 1.20 (chart 3.10) stops enforcing kyverno.io/v1 ClusterPolicy and CleanupPolicy,
+      // and its chart refuses to upgrade while any exist. Lift once cluster/cdk8s/kyverno is on
+      // policies.kyverno.io/v1 (cluster/cdk8s/TODO.md "Kyverno CEL policy migration").
+      description: "Hold Kyverno chart below 1.20 until policies are migrated to CEL kinds",
+      matchManagers: ["flux"],
+      matchPackageNames: ["kyverno"],
+      allowedVersions: "<3.10.0",
+    },
+    {
       description: "Keep deployed dependency patches isolated",
       matchManagers: ["flux", "kubernetes", "helm-values"],
       matchUpdateTypes: ["patch"],
@@ -162,8 +166,6 @@
         "airlock/frontend/package.json",
         "props/frontend/package.json",
         "study_casino/frontend/package.json",
-        "util/testing/frontend_visual/package.json",
-        "third_party/manifold_mcp_server/package.json",
       ],
       skipArtifactsUpdate: true,
     },
@@ -172,12 +174,6 @@
       matchManagers: ["pixi"],
       matchFileNames: ["skills/freecad/conda/pixi.toml"],
       skipArtifactsUpdate: true,
-    },
-    {
-      description: "Review the community Claude Managed Agents provider manually",
-      matchDatasources: ["terraform-provider"],
-      matchPackageNames: ["modus-agendi/anthropic-claude-managed-agents"],
-      automerge: false,
     },
   ],
 }

@@ -2,10 +2,6 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-// ---------------------------------------------------------------------------
-// Hook request / response envelope (daemon's /hook HTTP endpoint)
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Deserialize, Serialize)]
 pub struct HookRequest {
     pub hook: AnyHookInput,
@@ -19,14 +15,9 @@ pub struct HookResponse {
     pub output: Option<HookOutput>,
 }
 
-// ---------------------------------------------------------------------------
-// Hook inputs — discriminated union on `hook_event_name` (PascalCase values)
-// ---------------------------------------------------------------------------
-
 /// Hook types where Claude Code delivers `systemMessage` only to the UI
-/// notification callback, not into the model conversation. Matches Python's
-/// `_NON_REPL_HOOK_TYPES` in `server.py`. Used as a fallback for hooks that
-/// aren't explicitly modeled (fall through to `Unknown`).
+/// notification callback, not into the model conversation. Used as a fallback
+/// for hooks that aren't explicitly modeled (fall through to `Unknown`).
 ///
 /// WorktreeCreate / WorktreeRemove are intentionally excluded: the daemon
 /// does not implement worktree management (Claude Code expects the hook to
@@ -224,7 +215,6 @@ impl AnyHookInput {
     /// Returns true if Claude Code injects `systemMessage` into the model
     /// conversation for this hook. Non-REPL hooks deliver it only to the UI
     /// notification callback; flushing the mailbox there has no effect.
-    /// Matches `_NON_REPL_HOOK_TYPES` in `server.py`.
     pub fn is_repl(&self) -> bool {
         match self {
             AnyHookInput::SessionStart(_)
@@ -242,10 +232,6 @@ impl AnyHookInput {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Shared base — present in every hook input
-// ---------------------------------------------------------------------------
-
 #[derive(Debug, Deserialize, Serialize)]
 pub struct HookInputBase {
     pub session_id: String,
@@ -253,10 +239,6 @@ pub struct HookInputBase {
     pub cwd: PathBuf,
     pub permission_mode: Option<String>,
 }
-
-// ---------------------------------------------------------------------------
-// Non-REPL hook input structs
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct SessionStartInput {
@@ -316,10 +298,6 @@ pub struct ConfigChangeInput {
     pub source: String,
     pub file_path: Option<PathBuf>,
 }
-
-// ---------------------------------------------------------------------------
-// REPL hook input structs
-// ---------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct PreToolUseInput {
@@ -462,23 +440,11 @@ pub struct TaskCompletedInput {
     pub team_name: Option<String>,
 }
 
-// ---------------------------------------------------------------------------
-// Hook output (camelCase, skip None fields)
-// ---------------------------------------------------------------------------
-
+/// Only the output fields the daemon sets. Claude Code's full output contract is modeled in
+/// `devinfra/claude/claude_api/hooks/output.py`.
 #[derive(Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct HookOutput {
-    #[serde(rename = "continue", skip_serializing_if = "Option::is_none")]
-    pub continue_: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub suppress_output: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub stop_reason: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub decision: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub system_message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -489,42 +455,14 @@ pub struct HookOutput {
 #[serde(tag = "hookEventName")]
 pub enum AnyHookSpecificOutput {
     SessionStart(SessionStartSpecificOutput),
-    PreToolUse(PreToolUseSpecificOutput),
-    PostToolUse(PostToolUseSpecificOutput),
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionStartSpecificOutput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub additional_context: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub initial_user_message: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub watch_paths: Option<Vec<String>>,
 }
-
-#[derive(Debug, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct PreToolUseSpecificOutput {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub permission_decision: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub permission_decision_reason: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub additional_context: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct PostToolUseSpecificOutput {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub additional_context: Option<String>,
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
@@ -641,7 +579,6 @@ mod tests {
             hook_specific_output: Some(AnyHookSpecificOutput::SessionStart(
                 SessionStartSpecificOutput {
                     additional_context: Some("hello".into()),
-                    ..Default::default()
                 },
             )),
             ..Default::default()
@@ -650,9 +587,6 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert_eq!(v["hookSpecificOutput"]["hookEventName"], "SessionStart");
         assert_eq!(v["hookSpecificOutput"]["additionalContext"], "hello");
-        // None fields must not appear
-        assert!(v.get("continue").is_none());
-        assert!(v.get("decision").is_none());
     }
 
     #[test]

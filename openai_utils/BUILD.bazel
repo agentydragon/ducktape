@@ -12,13 +12,6 @@ py_library(
 )
 
 py_library(
-    name = "types",
-    srcs = ["types.py"],
-    visibility = ["//:__subpackages__"],
-    deps = ["@pypi//typing_extensions"],
-)
-
-py_library(
     name = "errors",
     srcs = ["errors.py"],
     visibility = ["//:__subpackages__"],
@@ -51,22 +44,9 @@ py_library(
     srcs = ["model.py"],
     visibility = ["//:__subpackages__"],
     deps = [
-        ":api_shape",
         ":errors",
-        ":types",
         "@pypi//openai",
         "@pypi//pydantic",
-    ],
-)
-
-py_library(
-    name = "builders",
-    srcs = ["builders.py"],
-    visibility = ["//:__subpackages__"],
-    deps = [
-        ":model",
-        "@pypi//pydantic",
-        "@pypi//pydantic_core",
     ],
 )
 
@@ -94,7 +74,6 @@ py_library(
     deps = [
         ":http_logging",
         ":model",
-        ":types",
         "@pypi//openai",
     ],
 )
@@ -119,7 +98,6 @@ py_test(
         "//openai_utils/testing:fixtures",
         "@pypi//openai",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep
     ],
 )
 
@@ -132,7 +110,6 @@ py_test(
         "//:conftest",
         "@pypi//httpx2",
         "@pypi//openai",
-        "@pypi//pydantic",
         "@pypi//pytest",
     ],
 )
@@ -149,7 +126,6 @@ py_test(
         "@pypi//httpx2",
         "@pypi//openai",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep: enables auto mode for async tests
     ],
 )
 
@@ -196,7 +172,6 @@ live_openai_py_test(
         "//:conftest",  # keep: macro rule — gazelle does not manage the conftest chain here
         "//openai_utils/testing:fixtures",
         "@pypi//pytest",
-        "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
     ],
 )

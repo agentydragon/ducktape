@@ -29,16 +29,9 @@ import typer
 import yaml
 from pydantic import BaseModel, Field, StrictStr, ValidationError
 
-from cluster.rotators.attic_jwt_rotation.config import (
-    Config,
-    KubernetesDestination,
-    MirroredDestination,
-    SopsDestination,
-    Token,
-)
-from cluster.rotators.sops import encrypt_sops_file
+from cluster.rotators.attic_jwt_rotation.config import Config, KubernetesDestination, SopsDestination, Token
+from cluster.rotators.sops import write_sops_yaml
 from cluster.rotators.sops_stamps import remaining_hours, unencrypted_stamps
-from devinfra.prettier_cli import prettier_format_yaml_in_place
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +40,6 @@ app = typer.Typer(no_args_is_help=True, add_completion=False, pretty_exceptions_
 _SECRET_EXPIRY_ANNOTATION = "ducktape.allegedly.works/attic-token-expires"
 _SECRET_PULL_ANNOTATION = "ducktape.allegedly.works/attic-token-pull"
 _SECRET_PUSH_ANNOTATION = "ducktape.allegedly.works/attic-token-push"
-_SOPS_SECRET_UID_STAMP = "kubernetes_secret_uid_unencrypted"
-_SOPS_SECRET_RESOURCE_VERSION_STAMP = "kubernetes_secret_resource_version_unencrypted"
 
 
 @dataclass(frozen=True)
@@ -86,22 +77,19 @@ def _decode_jwt_payload(token: str) -> dict[str, Any] | None:
     return payload if isinstance(payload, dict) else None
 
 
-def jwt_payload(token: str) -> dict[str, Any]:
-    """Decode a JWT's base64url payload (no signature verification)."""
-    payload = _decode_jwt_payload(token)
+def _token_expiry(jwt: str, token: Token) -> datetime:
+    payload = _decode_jwt_payload(jwt)
     if payload is None:
-        raise RuntimeError("atticadm returned a JWT with an invalid payload")
-    return payload
-
-
-def _jwt_expiry(payload: dict[str, Any], token_name: str) -> datetime:
+        raise RuntimeError(f"{token.name}: invalid JWT payload")
+    if payload.get("sub") != token.sub:
+        raise RuntimeError(f"{token.name}: JWT subject differs from configuration")
     exp = payload.get("exp")
     if not isinstance(exp, int) or isinstance(exp, bool):
-        raise RuntimeError(f"{token_name}: JWT payload is missing a valid exp claim")
+        raise RuntimeError(f"{token.name}: JWT payload is missing a valid exp claim")
     try:
         return datetime.fromtimestamp(exp, UTC)
     except OverflowError, OSError, ValueError:
-        raise RuntimeError(f"{token_name}: JWT exp claim is outside the supported range") from None
+        raise RuntimeError(f"{token.name}: JWT exp claim is outside the supported range") from None
 
 
 def _iso_expiry(expires: datetime) -> str:
@@ -116,7 +104,7 @@ def _run_kubectl(description: str, args: list[str], *, input_text: str | None = 
     return result.stdout
 
 
-def _read_kubernetes_secret(destination: KubernetesDestination | MirroredDestination) -> KubernetesSecret | None:
+def _read_kubernetes_secret(destination: KubernetesDestination) -> KubernetesSecret | None:
     """Read the configured Secret; missing means it was not provisioned by the owner."""
     secret_destination = destination.secret
     output = _run_kubectl(
@@ -163,34 +151,14 @@ def _valid_scope_annotation(secret: KubernetesSecret, annotation: str, configure
     return isinstance(scope, list) and all(isinstance(cache, str) for cache in scope) and set(scope) == set(configured)
 
 
-def _secret_expiry(secret: KubernetesSecret) -> datetime | None:
-    if secret.jwt is None:
-        return None
-    payload = _decode_jwt_payload(secret.jwt)
-    if payload is None:
-        return None
-    exp = payload.get("exp")
-    if not isinstance(exp, int) or isinstance(exp, bool):
-        return None
-    try:
-        expires = datetime.fromtimestamp(exp, UTC)
-    except OverflowError, OSError, ValueError:
-        return None
-    if secret.annotations.get(_SECRET_EXPIRY_ANNOTATION) != _iso_expiry(expires):
-        return None
-    return expires
-
-
 def _secret_rotation_reason(token: Token, secret: KubernetesSecret, rotate_below_hours: int) -> str | None:
     if secret.jwt is None:
         return "Secret has no usable token"
-    payload = _decode_jwt_payload(secret.jwt)
-    if payload is None:
-        return "Secret token payload is invalid"
-    if payload.get("sub") != token.sub:
-        return "Secret token subject differs from configuration"
-    expires = _secret_expiry(secret)
-    if expires is None:
+    try:
+        expires = _token_expiry(secret.jwt, token)
+    except RuntimeError as error:
+        return str(error)
+    if secret.annotations.get(_SECRET_EXPIRY_ANNOTATION) != _iso_expiry(expires):
         return "Secret expiry metadata is missing or inconsistent"
     if not _valid_scope_annotation(secret, _SECRET_PULL_ANNOTATION, token.pull):
         return "Secret pull scope differs from configuration"
@@ -202,9 +170,7 @@ def _secret_rotation_reason(token: Token, secret: KubernetesSecret, rotate_below
     return None
 
 
-def _secret_patch(
-    token: Token, destination: KubernetesDestination | MirroredDestination, jwt: str, expires: datetime
-) -> KubernetesSecret:
+def _secret_patch(token: Token, destination: KubernetesDestination, jwt: str, expires: datetime) -> KubernetesSecret:
     secret_destination = destination.secret
     patch = {
         "data": {secret_destination.key: base64.b64encode(jwt.encode("utf-8")).decode("ascii")},
@@ -235,7 +201,7 @@ def _secret_patch(
     return updated
 
 
-def _notify_workspace(destination: KubernetesDestination | MirroredDestination, secret: KubernetesSecret) -> None:
+def _notify_workspace(destination: KubernetesDestination, secret: KubernetesSecret) -> None:
     notification = destination.notification
     patch = {"metadata": {"annotations": {notification.annotation_key: f"{secret.uid}/{secret.resource_version}"}}}
     _run_kubectl(
@@ -261,47 +227,49 @@ def scope_drift(token: Token, stamps: dict[str, Any]) -> str | None:
     return None
 
 
-def mint_attic_token(token: Token, config: Config) -> str:
-    """Mint a JWT via `kubectl exec deploy/attic-next -- atticadm make-token …`.
-
-    The HS256 signing secret stays in the attic pod; the rotator only needs
-    `pods/exec` on the attic deployment.
-    """
-    args = [
-        "kubectl",
-        "-n",
-        config.attic_namespace,
-        "exec",
-        config.attic_deployment,
-        "--",
-        "atticadm",
-        "-f",
-        config.server_config,
-        "make-token",
-        "--sub",
-        token.sub,
-        "--validity",
-        token.validity,
-    ]
-    args += [arg for cache in token.pull for arg in ("--pull", cache)]
-    args += [arg for cache in token.push for arg in ("--push", cache)]
-    result = subprocess.run(args, capture_output=True, text=True, check=False)
-    if result.returncode:
-        raise RuntimeError(f"{token.name}: atticadm make-token failed (exit status {result.returncode})")
-    jwt = result.stdout.strip()
-    if not jwt:
-        raise RuntimeError(f"{token.name}: atticadm make-token returned empty output")
+def _mint_jwt(
+    namespace: str, deployment: str, server_config: str, *, subject: str, validity: str, grants: list[str]
+) -> str:
+    """Run atticadm inside the Attic Pod so the signing key stays there."""
+    output = _run_kubectl(
+        f"atticadm make-token for {subject}",
+        [
+            "-n",
+            namespace,
+            "exec",
+            deployment,
+            "--",
+            "atticadm",
+            "-f",
+            server_config,
+            "make-token",
+            "--sub",
+            subject,
+            "--validity",
+            validity,
+            *grants,
+        ],
+    )
+    if not (jwt := output.strip()):
+        raise RuntimeError(f"{subject}: atticadm make-token returned empty output")
     return jwt
 
 
-def _write_sops_token(
-    token: Token,
-    destination: SopsDestination | MirroredDestination,
-    config: Config,
-    jwt: str,
-    expires: datetime,
-    secret: KubernetesSecret | None = None,
-) -> None:
+def mint_attic_token(token: Token, config: Config) -> tuple[str, datetime]:
+    grants = [arg for cache in token.pull for arg in ("--pull", cache)]
+    grants.extend(arg for cache in token.push for arg in ("--push", cache))
+    jwt = _mint_jwt(
+        config.attic_namespace,
+        config.attic_deployment,
+        config.server_config,
+        subject=token.sub,
+        validity=token.validity,
+        grants=grants,
+    )
+    return jwt, _token_expiry(jwt, token)
+
+
+def _write_sops_token(token: Token, destination: SopsDestination, config: Config, jwt: str, expires: datetime) -> None:
     # `*_unencrypted` keys match SOPS's default unencrypted_suffix, so they stay
     # plaintext after encryption and can be checked without the in-cluster age key.
     stamps: dict[str, Any] = {
@@ -310,32 +278,15 @@ def _write_sops_token(
         "push_unencrypted": sorted(token.push),
         config.token_field: jwt,
     }
-    if secret is not None:
-        stamps[_SOPS_SECRET_UID_STAMP] = secret.uid
-        stamps[_SOPS_SECRET_RESOURCE_VERSION_STAMP] = secret.resource_version
-    destination.sops_file.parent.mkdir(parents=True, exist_ok=True)
-    destination.sops_file.write_text(yaml.safe_dump(stamps, sort_keys=False, width=2**31))
     try:
-        encrypt_sops_file(destination.sops_file)
-        prettier_format_yaml_in_place(destination.sops_file)
+        write_sops_yaml(path=destination.sops_file, document=stamps)
     except subprocess.CalledProcessError, OSError:
         destination.sops_file.unlink(missing_ok=True)
-        raise RuntimeError(f"{token.name}: failed to encrypt or format SOPS token output") from None
+        raise RuntimeError(f"{token.name}: failed to write, encrypt or format SOPS token output") from None
     logger.info("%s: wrote token expiring %s", token.name, _iso_expiry(expires))
 
 
-def _sops_matches_secret(token: Token, stamps: dict[str, Any], secret: KubernetesSecret, expires: datetime) -> bool:
-    return (
-        stamps.get("expires_unencrypted") == _iso_expiry(expires)
-        and scope_drift(token, stamps) is None
-        and stamps.get(_SOPS_SECRET_UID_STAMP) == secret.uid
-        and stamps.get(_SOPS_SECRET_RESOURCE_VERSION_STAMP) == secret.resource_version
-    )
-
-
-def _rotate_kubernetes_token(
-    token: Token, destination: KubernetesDestination | MirroredDestination, config: Config
-) -> bool:
+def _rotate_kubernetes_token(token: Token, destination: KubernetesDestination, config: Config) -> None:
     secret = _read_kubernetes_secret(destination)
     if secret is None:
         raise RuntimeError(
@@ -343,50 +294,28 @@ def _rotate_kubernetes_token(
             "is missing; provision it before rotating"
         )
 
-    expires: datetime | None
     reason = _secret_rotation_reason(token, secret, config.rotate_below_hours)
     if reason is not None:
         logger.info("%s: rotating (%s)", token.name, reason)
-        jwt = mint_attic_token(token, config)
-        payload = jwt_payload(jwt)
-        if payload.get("sub") != token.sub:
-            raise RuntimeError(f"{token.name}: minted JWT subject differs from configuration")
-        expires = _jwt_expiry(payload, token.name)
+        jwt, expires = mint_attic_token(token, config)
         secret = _secret_patch(token, destination, jwt, expires)
         if _secret_rotation_reason(token, secret, config.rotate_below_hours) is not None:
             raise RuntimeError(f"{token.name}: Kubernetes Secret does not match the minted token and configured scope")
-    else:
-        expires = _secret_expiry(secret)
-        if expires is None or secret.jwt is None:
-            raise RuntimeError(f"{token.name}: Kubernetes Secret changed while it was being validated")
-        jwt = secret.jwt
 
     # This is intentionally retried on every run. The Workspace's annotation
     # watch is the trigger for the existing Crossplane GitOps sync.
     _notify_workspace(destination, secret)
 
-    if not isinstance(destination, MirroredDestination):
-        return False
-    if reason is not None:
-        sops_updated = True
-    else:
-        stamps = unencrypted_stamps(destination.sops_file)
-        sops_updated = not _sops_matches_secret(token, stamps, secret, expires)
-    if sops_updated:
-        if reason is None:
-            logger.info("%s: syncing SOPS output from the current Kubernetes Secret", token.name)
-        _write_sops_token(token, destination, config, jwt, expires, secret)
-    return sops_updated
-
 
 def rotate_one(token: Token, config: Config) -> bool:
     """Rotate one token; return whether the SOPS file needs the combined commit."""
     destination = token.destination
-    if isinstance(destination, (KubernetesDestination, MirroredDestination)):
-        return _rotate_kubernetes_token(token, destination, config)
+    if isinstance(destination, KubernetesDestination):
+        _rotate_kubernetes_token(token, destination, config)
+        return False
 
     stamps = unencrypted_stamps(destination.sops_file)
-    remaining = remaining_hours(destination.sops_file)
+    remaining = remaining_hours(stamps)
     drift = scope_drift(token, stamps)
     if remaining is not None and remaining > config.rotate_below_hours and drift is None:
         logger.info("%s: %.0fh remaining > %dh threshold; skipping", token.name, remaining, config.rotate_below_hours)
@@ -394,9 +323,7 @@ def rotate_one(token: Token, config: Config) -> bool:
     reason = drift or ("no existing token" if remaining is None else f"{remaining:.0f}h remaining")
     logger.info("%s: rotating (%s)", token.name, reason)
 
-    jwt = mint_attic_token(token, config)
-    payload = jwt_payload(jwt)
-    expires = _jwt_expiry(payload, token.name)
+    jwt, expires = mint_attic_token(token, config)
     _write_sops_token(token, destination, config, jwt, expires)
     return True
 
@@ -430,7 +357,7 @@ def commit_and_push(repo: pygit2.Repository, config: Config, rotated: list[str],
     # Stage exactly the SOPS files for tokens that rotated this cycle (no full-tree add).
     for token_entry in config.tokens:
         destination = token_entry.destination
-        if token_entry.name in rotated and isinstance(destination, (SopsDestination, MirroredDestination)):
+        if token_entry.name in rotated and isinstance(destination, SopsDestination):
             index.add(str(destination.sops_file))
     index.write()
     tree_id = index.write_tree()
@@ -497,42 +424,14 @@ def _create_body(is_public: bool, keypair: str | None = None) -> dict[str, Any]:
 
 
 def mint_admin_jwt(namespace: str, deployment: str, server_config: str) -> str:
-    """Mint a short-lived admin JWT via `kubectl exec deploy/attic-next -- atticadm make-token`.
-
-    The HS256 signing secret never leaves the attic pod; this process only needs
-    `pods/exec` on the attic deployment.
-    """
-    result = subprocess.run(
-        [
-            "kubectl",
-            "-n",
-            namespace,
-            "exec",
-            deployment,
-            "--",
-            "atticadm",
-            "-f",
-            server_config,
-            "make-token",
-            "--sub",
-            "bootstrap-admin",
-            "--validity",
-            "5 minutes",
-            "--pull",
-            "*",
-            "--push",
-            "*",
-            "--create-cache",
-            "*",
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
+    return _mint_jwt(
+        namespace,
+        deployment,
+        server_config,
+        subject="bootstrap-admin",
+        validity="5 minutes",
+        grants=["--pull", "*", "--push", "*", "--create-cache", "*"],
     )
-    jwt = result.stdout.strip()
-    if not jwt:
-        raise RuntimeError(f"atticadm make-token returned empty output\n{result.stderr}")
-    return jwt
 
 
 def ensure_cache(client: httpx.Client, cache: str, is_public: bool = False, keypair: str | None = None) -> str:

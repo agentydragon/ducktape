@@ -189,17 +189,7 @@ func TestSecretLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	impl := &testServer{t: t, public: public, private: private}
-	listener := bufconn.Listen(1 << 20)
-	server := grpc.NewServer()
-	servicepb.RegisterBuildBuddyServiceServer(server, impl)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
-	conn, err := grpc.NewClient("passthrough:///bufnet", grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return listener.DialContext(ctx) }), grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		t.Fatal(err)
-	}
-	c := &Client{rpc: servicepb.NewBuildBuddyServiceClient(conn), conn: conn, apiKey: "fake-admin"}
-	t.Cleanup(func() { _ = c.Close() })
+	c := newTestClient(t, impl)
 	ctx := context.Background()
 	key, err := c.PublicKey(ctx)
 	if err != nil {

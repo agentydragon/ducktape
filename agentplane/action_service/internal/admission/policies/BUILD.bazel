@@ -33,6 +33,7 @@ go_library(
 go_test(
     name = "policies_test",
     srcs = [
+        "argument_schema_test.go",
         "golden_test.go",
         "visibility_test.go",
     ],

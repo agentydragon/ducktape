@@ -477,8 +477,8 @@ are owner-time sums from the counter build.
 proxy (60–92 s against a 20 s target). Reaching the target needs fewer
 opaque events: what a bounded pool pass unsettles, and the sticky
 possible-setter path. Narrowing either turns refusals into acceptances, so it
-takes the output-changing review. Design: <../plans/analysis_performance.md>
-§ Fewer opaque events.
+takes the output-changing review. Plan:
+<../plans/analysis_performance.md#callback-analysis-cost-and-budgets>.
 
 With `program_premises.intrinsics_never_written: {families: [object]}` added
 to the original and v2 configs (`all` is refuted by census writes on `Error`

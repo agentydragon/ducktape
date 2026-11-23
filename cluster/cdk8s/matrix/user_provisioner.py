@@ -11,6 +11,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
@@ -49,13 +50,7 @@ def chart(app: App) -> Chart:
                         k8s.Container(
                             name="provision",
                             image=_IMAGE,
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("256Mi")},
-                            ),
+                            resources=container_resources(cpu="50m", memory="64Mi", memory_limit="256Mi"),
                             image_pull_policy="Always",
                             env=[
                                 SecretRef(namespace=NAMESPACE, name="synapse-registration-secret")
@@ -80,10 +75,9 @@ def chart(app: App) -> Chart:
 def matrix_user_provisioner(
     chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization, matrix: Kustomization
 ) -> Kustomization:
-    name = "matrix-user-provisioner"
     return flux_kustomization(
         chart,
-        name,
+        "matrix-user-provisioner",
         directory,
         wait=None,
         timeout="5m",

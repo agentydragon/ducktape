@@ -19,20 +19,18 @@ from agentplane.app.frontend.testing.visual_assertions import (
     _select_reconnect,
 )
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE, MOBILE_ONLY
-from util.testing.frontend_visual.capture import VisualPage
-from util.testing.frontend_visual.page_capture import wait_for_stable
-from util.testing.frontend_visual.viewports import DESKTOP, MOBILE, Viewport
+from testing.frontend_visual.capture import VisualPage
+from testing.frontend_visual.page_capture import wait_for_stable
+from testing.frontend_visual.viewports import DESKTOP, MOBILE, Viewport
 
-pytest_plugins = ("util.testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 # Actions whose closed compact card already shows every argument of the calls below, so it has no expanded version.
 CLOSED_CARD_SHOWS_EVERYTHING = frozenset(
     {
-        ("kubernetes_admin", "pods_list_in_namespace"),
         ("kubernetes_admin", "pods_get"),
-        ("kubernetes_admin", "pods_log"),
-        ("kubernetes_admin", "events_list"),
+        ("grocy_sf", "products_list"),
+        ("grocy_sf", "quantity_units_list"),
         ("sandbox", "create"),
         ("sandbox", "get"),
         ("sandbox", "dispose"),
@@ -177,11 +175,9 @@ async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFix
     )
     await expect(section.get_by_role("link", name="View details for inspect running demo pods")).to_be_visible()
     await expect(section.get_by_text("kubernetes_admin / pods_list_in_namespace", exact=True)).to_have_count(0)
-    await expect(section.get_by_role("button", name="Expand inspect running demo pods")).to_have_count(0)
     summary = section.locator(".agentplane-actions-sidebar-collapsed-preview")
-    await expect(summary.get_by_text("Matching pods where")).to_be_visible()
-    await expect(summary.get_by_text("app=demo")).to_be_visible()
-    await expect(summary.get_by_text("status.phase=Running")).to_be_visible()
+    await expect(summary.get_by_text("app=demo")).to_have_count(0)
+    await expect(summary.get_by_text("status.phase=Running")).to_have_count(0)
     await expect(summary.get_by_text("test-apps")).to_have_count(0)
     await expect(section.get_by_text("test-apps", exact=True)).to_have_count(1)
     await expect(section.get_by_text("Requested by", exact=False)).to_have_count(0)
@@ -189,6 +185,9 @@ async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFix
     await expect(section.get_by_role("button", name="Approve inspect running demo pods")).to_be_visible()
     await expect(section.get_by_role("button", name="Deny inspect running demo pods")).to_be_visible()
     await view.capture(target=section)
+    await section.get_by_role("button", name="Expand inspect running demo pods").click()
+    await expect(section.get_by_text("app=demo")).to_be_visible()
+    await expect(section.get_by_text("status.phase=Running")).to_be_visible()
 
 
 ARGUMENT_LAYOUTS = [
@@ -201,14 +200,14 @@ ARGUMENT_LAYOUTS = [
             "fieldSelector": "status.phase=Running," + "x" * 48,
         },
         ["test-namespace-", "label selector", "status.phase=Running"],
-        "Matching pods where",
+        "List pods in namespace",
         id="long-target-and-selectors",
     ),
     pytest.param(
         "gmail",
         "threads_list",
         {"q": "from:deployments@example.com " + "query-" * 12, "maxResults": 23},
-        ['"maxResults": 23', "from:deployments@example.com"],
+        ["Up to 23 threads", "from:deployments@example.com"],
         "from:deployments@example.com",
         id="gmail-query-limit",
     ),
@@ -222,7 +221,7 @@ ARGUMENT_LAYOUTS = [
             "previous": True,
             "tail": -1,
         },
-        ["container sidecar-", "previous run", "tail -1"],
+        ["container sidecar-", "previous run", "last 100 lines (default)"],
         "previous run",
         id="previous-pod-logs",
     ),
@@ -237,7 +236,7 @@ ARGUMENT_LAYOUTS = [
             "labelSelector": "app=" + "demo-" + "d" * 56,
         },
         ["field selector status.phase=Running", "label selector app=demo-"],
-        "Matching resources where",
+        "List Pod resources in namespace apps",
         id="resource-list-selectors",
     ),
     pytest.param(
@@ -245,8 +244,21 @@ ARGUMENT_LAYOUTS = [
         "events_list",
         {"namespace": "apps", "fieldSelector": "type=Warning," + "reason-" * 8},
         ["Show events matching", "type=Warning"],
-        "Show events matching",
+        "List events in namespace apps",
         id="event-field-selector",
+    ),
+    pytest.param(
+        "github",
+        "update_pull_request_branch",
+        {
+            "owner": "example",
+            "repo": "service",
+            "pullNumber": 42,
+            "expectedHeadSha": "0123456789abcdef" * 2 + "01234567",
+        },
+        ["Only if the PR head is", "0123456789abcdef" * 2 + "01234567"],
+        "If unchanged",
+        id="conditional-pull-request-branch",
     ),
     pytest.param(
         "kubernetes_admin",
@@ -260,8 +272,8 @@ ARGUMENT_LAYOUTS = [
         "tana",
         "get_or_create_calendar_node",
         {"workspaceId": "workspace-123", "granularity": "week", "date": "2026-10-12"},
-        ["week calendar node", "2026-10-12", "workspace-123"],
-        "week calendar node",
+        ["For week containing 2026-10-12", "2026-10-12", "workspace-123"],
+        "For week containing 2026-10-12",
         id="calendar-context",
     ),
 ]
@@ -301,13 +313,14 @@ async def test_action_argument_layouts(
         await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
     else:
         await expect(section.get_by_text(overview, exact=False)).to_be_visible()
+        if name == "update_pull_request_branch":
+            await expect(section).not_to_contain_text(str(arguments["expectedHeadSha"]))
         if (group, name) in CLOSED_CARD_SHOWS_EVERYTHING:
             await expect(disclosure).to_have_count(0)
             for value in visible:
                 await expect(section.get_by_text(value, exact=False)).to_be_visible()
-        if (group, name) != ("tana", "get_or_create_calendar_node"):
-            await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
-            await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
+        await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
+        await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
     await view.capture(target=section)
 
 
@@ -397,7 +410,7 @@ async def test_sandbox_action_results(
             "kubernetes_admin",
             "pods_log",
             {"name": "web-0", "previous": True, "tail": -1},
-            "previous run, tail -1",
+            "Read last 100 lines (default)",
             id="pod-log",
         ),
         pytest.param(
@@ -452,6 +465,18 @@ async def test_sandbox_action_results(
         ),
         pytest.param(
             "gmail",
+            "drafts_create",
+            {
+                "to": ["reviewer@example.com"],
+                "cc": ["team@example.com"],
+                "subject": "Deployment review",
+                "body": "Please review.\nConfirm the rollout.\nCheck the deployment notes.\nReply with any blockers.",
+            },
+            "reviewer@example.com",
+            id="gmail-draft-new",
+        ),
+        pytest.param(
+            "gmail",
             "threads_list",
             {"q": "from:deployments@example.com", "maxResults": 5},
             "from:deployments@example.com",
@@ -478,13 +503,13 @@ async def test_sandbox_action_results(
             "sandbox", "dispose", {"name": "disposed-sandbox"}, "Dispose sandbox disposed-sandbox", id="sandbox-dispose"
         ),
         pytest.param("sandbox", "list", {}, "List sandboxes", id="sandbox-list"),
-        pytest.param("grocy_sf", "products_list", {"detail": "full"}, "Full Product records", id="grocy-products"),
-        pytest.param("grocy_sf", "quantity_units_list", {}, "Quantity unit names", id="grocy-units"),
+        pytest.param("grocy_sf", "products_list", {"detail": "full"}, "List Grocy products", id="grocy-products"),
+        pytest.param("grocy_sf", "quantity_units_list", {}, "List quantity units", id="grocy-units"),
         pytest.param(
             "tana",
             "get_or_create_calendar_node",
             {"workspaceId": "workspace-123", "granularity": "week", "date": "2026-10-12"},
-            "week calendar node",
+            "For week containing 2026-10-12",
             id="tana-calendar-node",
         ),
     ],
@@ -492,7 +517,14 @@ async def test_sandbox_action_results(
 async def test_compact_action_summaries(
     view: VisualPage, app: AgentplaneFixture, group: str, name: str, arguments: dict[str, object], visible: str
 ) -> None:
-    await app.show_action_preview(group, name, arguments)
+    draft = group == "gmail" and name == "drafts_create"
+    reply_draft = draft and "thread_id" in arguments
+    summaries: dict[str, object] | None = (
+        {"gmail-thread-summaries": {"threads": [{"threadId": "existing-thread-123", "subject": "Rollout planning"}]}}
+        if reply_draft
+        else None
+    )
+    await app.show_action_preview(group, name, arguments, summaries)
     await app.mount_thread(IDLE_THREAD)
     await _open_phone_navigation(view.page)
     section = view.page.locator(".agentplane-actions-sidebar")
@@ -502,12 +534,17 @@ async def test_compact_action_summaries(
         title = f"review {name.replace('_', ' ')}"
     disclosure = section.get_by_role("button", name=f"Expand {title}")
     collapsed_summary = section.locator(".agentplane-actions-sidebar-collapsed-preview")
-    if group == "gmail" and name == "drafts_create":
+    if draft:
+        await expect(section.locator(".agentplane-actions-sidebar-name")).to_contain_text("Create unsent draft")
         await expect(collapsed_summary.get_by_text("Deployment review", exact=True)).to_be_visible()
+        if reply_draft:
+            thread_link = collapsed_summary.get_by_role("link", name="Rollout planning", exact=True)
+            await expect(thread_link).to_have_attribute(
+                "href", "https://mail.google.com/mail/u/0/#all/existing-thread-123"
+            )
         await expect(collapsed_summary.get_by_text("Cc team@example.com", exact=True)).to_be_visible()
-        await expect(
-            collapsed_summary.get_by_text("Replying to thread existing-thread-123", exact=True)
-        ).to_be_visible()
+        await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
+        await expect(section.get_by_role("button", name=f"Deny {title}")).to_be_visible()
         await view.capture("collapsed", target=section)
     if group == "github" and name == "create_pull_request":
         for chip in ("draft", "maintainers cannot edit", "review from reviewer1, reviewer2"):
@@ -520,12 +557,18 @@ async def test_compact_action_summaries(
         assert bounds is not None
         await disclosure.click(position={"x": bounds["width"] - 4, "y": bounds["height"] - 3})
     await expect(section.get_by_text(visible)).to_be_visible()
+    if draft:
+        preview = section.locator(".agentplane-actions-sidebar-preview")
+        await expect(preview.get_by_text("Reply with any blockers.", exact=False)).to_be_visible()
+        await expect(preview.get_by_role("button", name=f"Approve {title}")).to_be_visible()
+        await expect(preview.get_by_role("button", name=f"Deny {title}")).to_be_visible()
     if group == "kubernetes_admin" and name == "pods_list_in_namespace":
         await expect(section.locator(".agentplane-actions-sidebar-name")).to_contain_text("List pods in namespace")
     if group == "gmail" and name == "threads_list":
         await expect(section.locator(".agentplane-actions-sidebar-name")).to_contain_text("Gmail: Search threads")
+        await expect(collapsed_summary.get_by_text("Up to 5 threads", exact=True)).to_have_count(0)
         await expect(
-            section.locator(".agentplane-actions-sidebar-preview").get_by_text('"maxResults": 5', exact=False)
+            section.locator(".agentplane-actions-sidebar-preview").get_by_text("Up to 5 threads")
         ).to_be_visible()
     if group == "grocy_sf":
         expected_label = {
@@ -720,8 +763,12 @@ async def test_compact_pull_request_search_offers_card_decisions(view: VisualPag
     await expect(collapsed_summary).not_to_contain_text("Fields:")
     await expect(section.get_by_role("button", name="Approve review search pull requests")).to_be_visible()
     await expect(section.get_by_role("button", name="Deny review search pull requests")).to_be_visible()
-    await expect(section.get_by_role("button", name="Expand review search pull requests")).to_have_count(0)
     await view.capture("collapsed", target=section)
+    await section.get_by_role("button", name="Expand review search pull requests").click()
+    opened = section.locator(".agentplane-actions-sidebar-preview")
+    await expect(opened.get_by_text("Page 2", exact=True)).to_be_visible()
+    await expect(opened.get_by_text("Page size 10", exact=True)).to_be_visible()
+    await view.capture("expanded", target=section)
 
 
 @DESKTOP_AND_MOBILE
@@ -748,11 +795,15 @@ async def test_action_detail_ssh_raw_view(view: VisualPage, app: AgentplaneFixtu
     await expect(
         page.locator(".agentplane-shell-main-content").get_by_text("restart the test backup service")
     ).to_be_visible()
+    await expect(page.get_by_text("Its last run stopped on a stale lock, which a restart clears.")).to_be_visible()
+    await expect(page.get_by_role("button", name=re.compile(r"ready-sandbox ·"))).to_be_visible()
     await expect(page.get_by_role("button", name="Approve")).to_be_visible()
     await expect(page.get_by_role("button", name="Deny")).to_be_visible()
+    await expect(page.get_by_text("Exact arguments", exact=True)).to_have_count(0)
     await view.capture(target=page.locator("#app"), name=f"action_detail_ssh_pretty_{viewport.width}")
     await _open_raw_switches(page)
     await expect(page.get_by_role("switch", name="Raw")).to_be_checked()
+    await expect(page.get_by_text("Exact arguments", exact=True).filter(visible=True)).to_be_visible()
     await expect(page.get_by_text('"command": "systemctl --user restart test-backup.service')).to_be_visible()
     await view.capture(target=page.locator("#app"), name=f"action_detail_ssh_raw_{viewport.width}")
 
@@ -1014,7 +1065,7 @@ async def test_gmail_draft_history_keeps_request_and_result_together(view: Visua
     await expect(page.get_by_text("prepare the release email", exact=True)).to_be_visible()
     await expect(page.get_by_role("link", name="Release notes", exact=True)).to_be_visible()
     await expect(page.get_by_text("Please review it before sending.", exact=True)).to_be_visible()
-    await expect(page.get_by_role("link", name="Reply in Gmail thread")).to_be_visible()
+    await expect(card.locator('a[href="https://mail.google.com/mail/u/0/#all/release-thread-123"]')).to_be_visible()
     await expect(page.get_by_text("Result", exact=True)).to_have_count(0)
     await view.check(context="Gmail draft request and result rendered")
     await view.capture(target=page.locator("#app"))
@@ -1079,6 +1130,15 @@ async def test_mcp_servers_linked_and_expired(view: VisualPage, app: AgentplaneF
     await _in_viewport(page.locator('[data-mcp-server="linkage:example_docs"]').get_by_text("linked", exact=True))
     await _in_viewport(page.locator('[data-mcp-server="linkage:example_cluster"]').get_by_text("expired", exact=True))
     await view.capture(target=view.page.locator("#app"))
+
+
+@DESKTOP_AND_MOBILE
+async def test_mcp_servers_schema_warning(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.mount_app("/mcp-servers")
+    row = view.page.locator('[data-mcp-server="group:example_notes"]')
+    await expect(row.get_by_text("Some tool arguments are not validated")).to_be_visible()
+    await row.scroll_into_view_if_needed()
+    await view.capture(target=row)
 
 
 async def test_mcp_servers_unknown_linkage_status(view: VisualPage, app: AgentplaneFixture) -> None:
@@ -1231,7 +1291,7 @@ async def test_action_history_filter(view: VisualPage, app: AgentplaneFixture) -
     page = view.page
     filtered = page.get_by_role("radio", name="Not auto-allowed", exact=True)
     all_actions = page.get_by_role("radio", name="All actions", exact=True)
-    auto_allowed = page.get_by_text("search ducktape for auto_allow", exact=True)
+    auto_allowed = page.get_by_text("search test-repository for auto_allow", exact=True)
     await expect(filtered).to_be_checked()
     await expect(page.get_by_text("list the test backup archive", exact=True)).to_be_visible()
     await expect(auto_allowed).to_have_count(0)
@@ -1301,7 +1361,7 @@ async def test_long_action_text(view: VisualPage, app: AgentplaneFixture, kind: 
     await expect(block).to_have_attribute("data-expanded", "false")
     if kind == "email":
         await _open_raw_switches(page)
-        await expect(page.get_by_text("Exact arguments", exact=True)).to_be_visible()
+        await expect(page.get_by_text("Exact arguments", exact=True).filter(visible=True)).to_be_visible()
         await expect(page.locator('[data-clamped="true"]').first).to_be_visible()
         await view.capture("raw")
 
@@ -1329,11 +1389,11 @@ async def test_kubernetes_applied_manifest_receipt(view: VisualPage, app: Agentp
     page = view.page
     await expect(page.get_by_text("Apply ConfigMap apps/settings", exact=True)).to_be_visible()
     await expect(page.locator('[data-operation-heading="Manifest · ConfigMap apps/settings"]:visible')).to_be_visible()
-    await expect(
-        page.locator('[data-operation-heading="Resource 1 · ConfigMap apps/settings"]:visible')
-    ).to_be_visible()
-    await expect(page.locator('[data-operation-heading="Resource 2 · Secret apps/token"]:visible')).to_be_visible()
-    await expect(page.locator(".cm-editor").first).to_be_visible()
+    receipt = page.get_by_role("region", name="Receipt details")
+    await expect(receipt.get_by_text("ConfigMap apps/settings", exact=True)).to_be_visible()
+    await expect(receipt.get_by_text("Secret apps/token", exact=True)).to_be_visible()
+    await receipt.get_by_role("button", name="Resource YAML").click()
+    await expect(receipt.locator(".cm-editor").last).to_be_visible()
     await view.check(context="Kubernetes apply summary with formatted manifest and returned resources")
     await view.capture(target=page.locator("#app"))
 
@@ -1364,7 +1424,10 @@ async def test_kubernetes_yaml_result_receipt(view: VisualPage, app: AgentplaneF
     await app.mount_app("/actions")
     await _open_history_receipts(view.page)
     page = view.page
-    await expect(page.locator('[data-operation-heading="Resource · ConfigMap apps/settings"]:visible')).to_be_visible()
+    receipt = page.get_by_role("region", name="Receipt details")
+    await expect(receipt.get_by_text("ConfigMap apps/settings", exact=True)).to_have_count(1)
+    await receipt.get_by_role("button", name="Resource YAML").click()
+    await expect(receipt.locator(".cm-editor")).to_be_visible()
     await expect(page.get_by_text("Structured content", exact=True)).to_have_count(0)
     await view.check(context="Kubernetes YAML and its equivalent structured result shown once")
     await view.capture(target=page.locator("#app"))
@@ -1405,11 +1468,12 @@ async def test_kubernetes_pods_delete_success_receipt(
     await expect(page.get_by_text("Deletion accepted", exact=True)).to_be_visible()
     await expect(page.get_by_text("Result", exact=True)).to_have_count(0)
     await expect(page.get_by_text("Exact arguments", exact=True)).to_have_count(0)
+    await expect(page.get_by_text("matching Services and OpenShift Routes", exact=False)).to_be_visible()
     await view.check(context="successful pod deletion shown as an accepted request")
     await view.capture(target=page.locator("#app"), name=f"pods_delete_pretty_{viewport.width}")
 
     await _open_raw_switches(page)
-    await expect(page.get_by_text("Exact arguments", exact=True)).to_be_visible()
+    await expect(page.get_by_text("Exact arguments", exact=True).filter(visible=True)).to_be_visible()
     await expect(page.get_by_text('"name": "web-0"', exact=False)).to_be_visible()
     await expect(page.get_by_text('"Pod deleted successfully"', exact=False)).to_be_visible()
     await view.capture(target=page.locator("#app"), name=f"pods_delete_raw_{viewport.width}")

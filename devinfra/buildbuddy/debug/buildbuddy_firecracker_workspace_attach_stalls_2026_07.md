@@ -2,8 +2,8 @@
 
 ## Status
 
-Open infrastructure anomaly, seen again on 2026-10-20 (see below). The immediate Calendar
-test exposure was removed by making its router tests independent of the full console/Postgres
+Open infrastructure anomaly, seen again on 2026-10-20 and 2026-10-27 (see below). The immediate
+Calendar test exposure was removed by making its router tests independent of the full console/Postgres
 fixture; do not raise the test timeout as a mitigation, and a re-run only hides it.
 
 ## Symptom and scope
@@ -76,6 +76,37 @@ shorter than the stall.
 Nothing here is fixable from the repository: the test is already minimal and the data it declares
 is not what stalls. The remaining step is the one under Next diagnostic.
 
+## October 27 recurrence
+
+`//props/orchestration:test_grader_supervisor` timed out in both attempts of GitHub run `40573772348` on PR #12262,
+which did not change the test. Neither failure implicates grader reconciliation.
+
+- Attempt 1, invocation `5ee65889-282f-598e-b84a-8d4e5c11e16a`, late attachment: executions
+  `fa502e18-a1fa-4164-93df-335fd2545d34` and `35aa68cf-89c9-4ec8-b2ec-06731fad31f5` got `PATCH /drives/workspacefs`
+  17.485 s and 18.450 s after resume. The first ran `20:07:31.001Z` to `20:08:34.647Z` and returned
+  `deadline exceeded`: resume `20:07:31.637Z`, attach `20:07:49.122Z`, pytest start `20:08:01.413Z`, all 19 cases passed
+  in 25.917 s (none over 0.255 s), last test ended `20:08:27.329Z`. Its nominal 60 s budget ended about
+  `20:08:31.001Z`, and the executor finalization after it cannot all be attributed to Python shutdown. It used
+  42.67 CPU s and about 710 MB peak. Whether the second reached pytest is unknown. Before them, execution
+  `2ca84397-b2cf-46c5-9134-7c2b0c7a2d3b` failed to start: Firecracker did not create its API socket before its
+  deadline.
+- Attempt 2, invocation `00aab7f1-5818-5789-beb6-2b0538e6bf1b`, no attachment: execution
+  `7dca444c-1c0c-4964-b0f0-8e1e7ab86ffb` resumed at `20:19:04.351Z` and got no `PATCH /drives/workspacefs` through its
+  deadline at `20:20:03.213Z`. Its `test.log` is empty, the last guest kernel lines report `vdb` capacity changing to
+  zero, and BuildBuddy omitted CPU, memory and PSI data, so no application stack exists. Executor
+  `sjc-prod-r2204m05vm4kwn`, runner `04649b79-0f3d-4242-a1ae-1368b4dd4847`, VM `708c78df-dc09-4207-b1d8-9058876ed6c0`,
+  snapshot `b649d525-ce52-4d3d-8501-6fcc85876e32`.
+
+In BuildBuddy's public source at commit
+[`a04caa7`](https://github.com/buildbuddy-io/buildbuddy/commit/a04caa741548187c77dc991c8d8384c6788e24a9) (the deployed
+version is unknown), `createAndAttachWorkspace` builds the workspace image, waits for guest exec readiness, then calls
+`UpdateGuestDrive`. `TaskFinished` calls `TreeFetcher.Wait()` at task end, so `TransferDuration` can include the
+action's lifetime; the 60 to 69 s `fileDownloadDurationUsec` of these executions, like the figures in the other
+sections, therefore cannot by itself establish blocked file downloads.
+
+Keeping the root `props/conftest.py` to configuration and tracing (<props/testing/AGENTS.md>) trims this test's startup
+but cannot repair a failure before the workspace attaches.
+
 ## Runner-queue hypothesis
 
 The data does not support ordinary waiting in BuildBuddy's runner queue as the
@@ -119,7 +150,7 @@ the Firecracker resume and `PATCH /drives/workspacefs` timestamps.
 If this recurs, preserve the action execution ID and `vm_log_tail.txt`, then ask
 BuildBuddy to correlate the gap with executor-side workspacefs/CAS metrics for
 the recorded executor host and runner ID. In particular, compare a stalled and
-successful execution of the same action around workspace image creation/fetch
-and the drive-attach call. Those server/executor details are beyond the
+successful execution of the same action around workspace image creation/fetch,
+guest exec readiness and the drive-attach call. Those server/executor details are beyond the
 visibility exposed by the execution record, so more client-side test logging
 would not answer the remaining question.

@@ -1,7 +1,7 @@
 # Runner control
 
-The runner serves native gRPC on one private listener: `Runner`, `Executor` and standard gRPC
-health. The Environments proxy derives its address from the current workload's Pod IP and the runner port;
+The runner serves native gRPC on one private listener: `EnvironmentRuntime`, `HarnessHost`,
+`Executor` and standard gRPC health. The Environments proxy derives its address from the current workload's Pod IP and the runner port;
 KubeVirt forwards that port into the guest. Environments proxy and Controller binding-observer peers reach it with separate method authority. History Event
 ingress remains a separate outbound platform route.
 
@@ -12,8 +12,8 @@ requires a `tls` block with absolute `cert_file`, `key_file` and `ca_file` paths
 verifies the client certificates this side serves; `ca_file` keeps verifying its own chain and the
 servers it dials. Firecracker Runtime selects the Workload API; the proxy uses
 projected files. Source forms cannot be mixed. `insecure` rejects a TLS block. Missing/unknown modes and partial or contradictory configuration fail startup.
-The service definitions are `env/runtime/control/environment_runtime.proto` and `env/runtime/execution/executor.proto`;
-`proto/environment_runtime_state.proto` defines the facts published by `Runner.WatchState`.
+The service definitions are `env/runtime/control/environment_runtime.proto`, `harness_host/harness_host.proto` and `env/runtime/execution/executor.proto`;
+`proto/environment_runtime_state.proto` defines the facts published by `EnvironmentRuntime.WatchState`.
 
 ## State observation and fencing
 

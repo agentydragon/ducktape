@@ -20,11 +20,8 @@ let
   # system won't honor a lambda-arg default for a declared formal.
   nixGLEnabled = args.nixGLEnabled or (!isNixOS);
 
-  lightScheme = solarizedLight;
-  darkScheme = solarizedDark;
   fontFamily = terminalFont.family;
-  fontSizeValue = terminalFont.size;
-  fontSizeStr = builtins.toString fontSizeValue;
+  fontSizeStr = builtins.toString terminalFont.size;
 
   wrapPkg = pkg: if nixGLEnabled then config.lib.nixGL.wrap pkg else pkg;
   kittyPkg = wrapPkg pkgs.kitty;
@@ -35,45 +32,24 @@ let
     scheme: isLight:
     let
       p = scheme.palette;
-      colors =
-        if isLight then
-          [
-            p.base01
-            p.base08
-            p.base0B
-            p.base0A
-            p.base0D
-            p.base0E
-            p.base0C
-            p.base07
-            p.base00
-            p.base09
-            p.base02
-            p.base03
-            p.base04
-            p.base0F
-            p.base05
-            p.base06
-          ]
-        else
-          [
-            p.base01
-            p.base08
-            p.base0B
-            p.base0A
-            p.base0D
-            p.base0E
-            p.base0C
-            p.base06
-            p.base00
-            p.base09
-            p.base02
-            p.base03
-            p.base04
-            p.base0F
-            p.base05
-            p.base07
-          ];
+      colors = [
+        p.base01
+        p.base08
+        p.base0B
+        p.base0A
+        p.base0D
+        p.base0E
+        p.base0C
+        (if isLight then p.base07 else p.base06)
+        p.base00
+        p.base09
+        p.base02
+        p.base03
+        p.base04
+        p.base0F
+        p.base05
+        (if isLight then p.base06 else p.base07)
+      ];
       colorLines = lib.concatStringsSep "
 " (lib.imap0 (idx: hex: "color${toString idx} #${hex}") colors);
       selectionFg = if isLight then p.base07 else p.base06;
@@ -136,8 +112,8 @@ let
   kittyWatcherScript = ./scripts/kitty-theme-watcher.sh;
   weztermConfig =
     let
-      darkSchemeLua = mkWeztermScheme darkScheme false;
-      lightSchemeLua = mkWeztermScheme lightScheme true;
+      darkSchemeLua = mkWeztermScheme solarizedDark false;
+      lightSchemeLua = mkWeztermScheme solarizedLight true;
     in
     ''
       local wezterm = require 'wezterm'
@@ -168,8 +144,6 @@ let
             { key = "w", mods = "CTRL|SHIFT", action = act.CloseCurrentTab { confirm = false } },
             { key = "PageUp", mods = "CTRL", action = act.ActivateTabRelative(-1) },
             { key = "PageDown", mods = "CTRL", action = act.ActivateTabRelative(1) },
-            { key = "PageUp", mods = "CTRL|SHIFT", action = act.MoveTabRelative(-1) },
-            { key = "PageDown", mods = "CTRL|SHIFT", action = act.MoveTabRelative(1) },
             { key = "PageUp", mods = "CTRL|SHIFT", action = act.MoveTabRelative(-1) },
             { key = "PageDown", mods = "CTRL|SHIFT", action = act.MoveTabRelative(1) },
             { key = "c", mods = "CTRL|SHIFT", action = act.CopyTo "ClipboardAndPrimarySelection" },
@@ -252,8 +226,8 @@ in
       };
     };
 
-    xdg.configFile."kitty/themes/solarized-dark.conf".text = mkKittyTheme darkScheme false;
-    xdg.configFile."kitty/themes/solarized-light.conf".text = mkKittyTheme lightScheme true;
+    xdg.configFile."kitty/themes/solarized-dark.conf".text = mkKittyTheme solarizedDark false;
+    xdg.configFile."kitty/themes/solarized-light.conf".text = mkKittyTheme solarizedLight true;
 
     xdg.configFile."ghostty/config".text = ghosttyConfigText;
 

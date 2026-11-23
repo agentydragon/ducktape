@@ -21,6 +21,7 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -195,7 +196,7 @@ func TestProjectBatchFoldsAPageAtATimeUntilCaughtUp(t *testing.T) {
 	if _, through := checkpointOf(t, f.db, folded); through != total {
 		t.Fatalf("checkpoint through %d, want %d", through, total)
 	}
-	if count(t, f.db, "SELECT count(*) FROM thread_checkpoint WHERE thread_id = $1", empty) != 0 {
+	if postgres.Count(t, f.db, "SELECT count(*) FROM thread_checkpoint WHERE thread_id = $1", empty) != 0 {
 		t.Fatal("a Session with no Events got a checkpoint")
 	}
 	summary := f.summary(t, folded)
@@ -446,7 +447,7 @@ func TestAnAdmittedSessionWithoutEventsGetsAnEmptyViewFromItsAttachment(t *testi
 	lease := f.acquire(t, sessionID)
 
 	f.fold(t, sessionID, lease)
-	if count(t, f.db, "SELECT count(*) FROM thread_checkpoint WHERE thread_id = $1", sessionID) != 0 {
+	if postgres.Count(t, f.db, "SELECT count(*) FROM thread_checkpoint WHERE thread_id = $1", sessionID) != 0 {
 		t.Fatal("a catalog row alone gave the Session a view")
 	}
 
@@ -696,7 +697,7 @@ func TestAProjectionWithoutItsLeaseFoldsNothing(t *testing.T) {
 	if _, err := f.projector.ProjectBatch(t.Context(), sessionID, held); !errors.Is(err, lease.ErrLost) {
 		t.Fatalf("projecting without the lease = %v, want lease.ErrLost", err)
 	}
-	if count(t, f.db, "SELECT count(*) FROM thread_checkpoint WHERE thread_id = $1", sessionID) != 0 {
+	if postgres.Count(t, f.db, "SELECT count(*) FROM thread_checkpoint WHERE thread_id = $1", sessionID) != 0 {
 		t.Fatal("a projection without its lease advanced the fold")
 	}
 }

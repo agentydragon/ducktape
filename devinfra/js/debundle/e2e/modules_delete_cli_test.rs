@@ -2,7 +2,7 @@
 
 use std::fs;
 
-use debundle_e2e_support::{run_debundle, write_text_file};
+use debundle_e2e_support::{process, run_debundle, write_text_file};
 use tempfile::TempDir;
 
 #[test]
@@ -23,11 +23,7 @@ fn delete_empty_module_succeeds() {
         "--format",
         "text",
     ]);
-    assert!(
-        out.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+    process::assert_success(&out);
     assert!(!root.join("ui/empty.yaml").exists());
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
@@ -81,11 +77,7 @@ fn delete_non_empty_module_with_force_succeeds() {
         // --force filesystem path, not the gate verdict.
         "--no-verify",
     ]);
-    assert!(
-        out.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+    process::assert_success(&out);
     assert!(!root.join("ui/full.yaml").exists());
 }
 
@@ -109,11 +101,7 @@ fn delete_multiple_atomic_all_succeed() {
         "--format",
         "text",
     ]);
-    assert!(
-        out.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+    process::assert_success(&out);
     assert!(!root.join("a.yaml").exists());
     assert!(!root.join("b.yaml").exists());
     assert!(!root.join("c.yaml").exists());
@@ -142,11 +130,7 @@ fn dry_run_prints_verdict_without_deleting() {
         "--format",
         "text",
     ]);
-    assert!(
-        out.status.success(),
-        "stderr: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+    process::assert_success(&out);
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         stdout.contains("dry-run: would delete 1 file(s)"),

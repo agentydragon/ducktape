@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from io import BytesIO
 from pathlib import Path
 from typing import Literal
 
@@ -27,9 +28,9 @@ class PngComparison:
     diff_overlay: Image.Image | None = None
 
 
-def compare_pngs(actual: Path, baseline: Path) -> PngComparison:
+def compare_pngs(actual: Path, baseline: bytes) -> PngComparison:
     """Compare the RGB channels exactly and mark a size change as modified."""
-    with Image.open(actual) as candidate, Image.open(baseline) as before:
+    with Image.open(actual) as candidate, Image.open(BytesIO(baseline)) as before:
         actual_img = candidate.convert("RGBA")
         baseline_img = before.convert("RGBA")
     actual_size, baseline_size = actual_img.size, baseline_img.size

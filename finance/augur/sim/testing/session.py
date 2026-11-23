@@ -12,13 +12,11 @@ type Respond = Callable[[list[Decision]], list[DecisionActions]]
 
 def finish(session: ActionSession, respond: Respond) -> Finished:
     """Answer every batch with `respond` until each path finishes; the session is closed however this ends."""
-    try:
+    with session:
         batch = session.start()
         while not isinstance(batch, Finished):
             batch = session.advance(respond(batch))
         return batch
-    finally:
-        session.close()
 
 
 def each(decide: Callable[[Observation], list[Action]]) -> Respond:

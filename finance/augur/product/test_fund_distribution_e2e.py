@@ -32,17 +32,17 @@ from finance.augur.api.wire import CatalogResponse
 from finance.augur.model.deterministic import Constant
 from finance.augur.model.level_series_groups import SecurityDistributionGroups
 from finance.augur.model.series import SecurityKey, SecuritySymbol
-from finance.augur.product.conftest import MakeProductService
+from finance.augur.product.conftest import MakeProductService, make_managed_product_service, with_fixture_macro
 from finance.augur.product.holdings import Distribution, opening_holdings
-from finance.augur.product.scenarios import PRIMARY_ACCOUNT_ID, locations_by_id, resolve_primary_agent_id
+from finance.augur.product.scenarios import PRIMARY_ACCOUNT_ID, resolve_primary_agent_id
 from finance.augur.product.service import ProductService
 from finance.augur.product.wire import RolloutRequest, ScenarioKey, SpendIndex
 from finance.augur.sim.fixed_point import rate_to_ppb
 from finance.augur.sim.ids import AccountId, AgentId, LotId, PortfolioId
 from finance.augur.sim.income import InterestIncome, Taxable, Treasury
-from finance.augur.sim.tlh import TlhAssumptions
+from finance.augur.sim.testing.tlh import NO_HARVEST
 from finance.augur.x.models.independent import IndependentProviderConfig
-from finance.augur.x.models.provider_config import CompositeProviderConfig, MirroringProviderConfig, ProviderConfig
+from finance.augur.x.models.provider_config import ProviderConfig
 
 _SYMBOL = SecuritySymbol("bnd")
 _UNITS = 2_000.0
@@ -62,33 +62,19 @@ def _with_bond_fund_series(model: ProviderConfig, *, distributes: bool) -> Provi
     a stand-in that emitted only the fund would fail the request before reaching the engine.
     """
 
-    # The fixture's preset is composite(mirroring(independent)); asserted rather than matched
-    # so a fixture reshaped underneath this test fails here instead of silently patching nothing.
-    assert isinstance(model, CompositeProviderConfig)
-    macro = model.macro
-    assert isinstance(macro, MirroringProviderConfig)
-    inner = macro.model
-    assert isinstance(inner, IndependentProviderConfig)
-    return model.model_copy(
-        update={
-            "macro": macro.model_copy(
-                update={
-                    "model": inner.model_copy(
-                        update={
-                            "asset_prices": inner.asset_prices.model_copy(
-                                update={
-                                    "security": {**inner.asset_prices.security, _SYMBOL: Constant(value=_MODEL_PRICE)}
-                                }
-                            ),
-                            "security_distributions": SecurityDistributionGroups(
-                                security_distribution=({_SYMBOL: Constant(value=_PER_UNIT_USD)} if distributes else {})
-                            ),
-                        }
-                    )
-                }
-            )
-        }
-    )
+    def with_fund(inner: IndependentProviderConfig) -> IndependentProviderConfig:
+        return inner.model_copy(
+            update={
+                "asset_prices": inner.asset_prices.model_copy(
+                    update={"security": {**inner.asset_prices.security, _SYMBOL: Constant(value=_MODEL_PRICE)}}
+                ),
+                "security_distributions": SecurityDistributionGroups(
+                    security_distribution=({_SYMBOL: Constant(value=_PER_UNIT_USD)} if distributes else {})
+                ),
+            }
+        )
+
+    return with_fixture_macro(model, with_fund)
 
 
 def _with_bond_fund(config: Config, tax_character: tuple[DistributionTaxShareConfig, ...] | None) -> Config:
@@ -189,37 +175,19 @@ def test_a_tlh_portfolio_of_a_declared_fund_is_paid_on_its_value(
 
     def product(tax_character: tuple[DistributionTaxShareConfig, ...] | None) -> ProductService:
         config = _with_bond_fund(augur_config, tax_character)
-        owner = resolve_primary_agent_id(config)
-        return ProductService(
-            portfolio=config.portfolio_sources.fixed.portfolio,
-            initial_cash=250_000,
-            primary_agent_id=owner,
-            security_distributions=config.security_distributions,
-            tlh_portfolios=(
-                TlhPortfolioSpec(
-                    portfolio_id=PortfolioId("test-managed-bonds"),
-                    owner_agent_id=owner,
-                    account_id=AccountId("test_managed_brokerage"),
-                    asset=SecurityKey(symbol=_SYMBOL),
-                    initial_cohorts=[
-                        TlhCohort(value=Decimal(36_500), cost_basis=Decimal(36_500), purchase_month_index=-24)
-                    ],
-                    assumptions=TlhAssumptions(
-                        peak_annual_yield=0,
-                        floor_annual_yield=0,
-                        maturity_decay_exponent=1,
-                        drawdown_sensitivity=0,
-                        short_term_fraction=1,
-                    ),
-                ),
+        return make_managed_product_service(
+            config,
+            catalog,
+            TlhPortfolioSpec(
+                portfolio_id=PortfolioId("test-managed-bonds"),
+                owner_agent_id=resolve_primary_agent_id(config),
+                account_id=AccountId("test_managed_brokerage"),
+                asset=SecurityKey(symbol=_SYMBOL),
+                initial_cohorts=[
+                    TlhCohort(value=Decimal(36_500), cost_basis=Decimal(36_500), purchase_month_index=-24)
+                ],
+                assumptions=NO_HARVEST,
             ),
-            known_location_ids=catalog.location_ids,
-            locations=locations_by_id(config.locations),
-            properties_by_id=catalog.properties_by_id,
-            models={"current_model": config.models[config.default_model_id].realize_model()},
-            max_rollout_samples=config.max_rollout_samples,
-            max_horizon_months=config.max_horizon_months,
-            result_cache_entries=0,
         )
 
     declared = _cash_path(product(_ALL_TREASURY))

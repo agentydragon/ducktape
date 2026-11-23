@@ -14,17 +14,17 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.secret_ref import SecretRef
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/authentik/db"
-_NAMESPACE = "authentik"
+NAMESPACE = "authentik"
 # Existing replicas have node-local claims and cannot move; Authentik's server selects the
 # same OVH zone to stay beside all database members.
 PLACEMENT = node_scheduling.HIL_OVH
 DATABASE = "authentik"
 POSTGRES = cluster.PostgresRef(
     name="authentik-db-ovh",
-    namespace=_NAMESPACE,
+    namespace=NAMESPACE,
     # The credentials CNPG generated for the retired `authentik-db`, which this cluster was
     # cloned from; the role's password came with the clone.
-    app_secret=SecretRef(namespace=_NAMESPACE, name="authentik-db-app"),
+    app_secret=SecretRef(namespace=NAMESPACE, name="authentik-db-app"),
 )
 
 

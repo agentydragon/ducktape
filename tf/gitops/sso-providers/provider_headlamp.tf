@@ -31,7 +31,7 @@ resource "kubernetes_secret" "headlamp_oidc" {
   data = {
     OIDC_CLIENT_ID     = authentik_provider_oauth2.providers["headlamp"].client_id
     OIDC_CLIENT_SECRET = authentik_provider_oauth2.providers["headlamp"].client_secret
-    OIDC_ISSUER_URL    = "https://auth.allegedly.works/application/o/headlamp/"
+    OIDC_ISSUER_URL    = "https://auth.allegedly.works/application/o/${authentik_application.headlamp.slug}/"
     OIDC_SCOPES        = "profile,email,offline_access"
   }
 }

@@ -34,6 +34,5 @@ go_test(
     deps = [
         "//agentplane/identity/operator/testissuer",
         "@com_github_go_jose_go_jose_v4//:go-jose",
-        "@com_github_go_jose_go_jose_v4//jwt",
     ],
 )

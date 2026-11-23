@@ -12,6 +12,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/identity/credentials/requester"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/testing/testscheme"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,13 +30,9 @@ import (
 
 const runtimeCredentialTestSecret = "svid-test-0123456789abcdef0123456789abcdef"
 
-// addCredentialKinds registers WorkloadCredentials and cert-manager's Certificates, which these
-// tests issue with the real issuer.
-func addCredentialKinds(t *testing.T, scheme *runtime.Scheme) {
-	t.Helper()
-	if err := workloadapi.AddToScheme(scheme); err != nil {
-		t.Fatal(err)
-	}
+// addCertificateKind registers cert-manager's Certificates, which these tests issue with the real
+// issuer.
+func addCertificateKind(scheme *runtime.Scheme) {
 	certificate := issuer.NewCertificate().GroupVersionKind()
 	scheme.AddKnownTypeWithName(certificate, &unstructured.Unstructured{})
 	scheme.AddKnownTypeWithName(certificate.GroupVersion().WithKind("CertificateList"), &unstructured.UnstructuredList{})
@@ -113,13 +110,8 @@ func requestIssued(t *testing.T, r *Reconciler, sandbox *sandboxapi.Sandbox, bin
 
 func newCredentialReconciler(t *testing.T, objects ...client.Object) (*Reconciler, client.Client) {
 	t.Helper()
-	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{corev1.AddToScheme, sandboxapi.AddToScheme, kubevirtv1.AddToScheme, policyapi.AddToScheme} {
-		if err := add(scheme); err != nil {
-			t.Fatal(err)
-		}
-	}
-	addCredentialKinds(t, scheme)
+	scheme := testscheme.New(t)
+	addCertificateKind(scheme)
 	// A tracker without managed fields: the fake client's default one cannot convert KubeVirt's
 	// uint64 fields.
 	tracker := clienttesting.NewObjectTracker(scheme, serializer.NewCodecFactory(scheme).UniversalDecoder())
@@ -280,7 +272,10 @@ func TestAcceptedVMRunnerCredentialPublishesIncarnation(t *testing.T) {
 	issued := acceptVMI(t, r, sandbox, "vmi-current")
 	vm := credentialTestVM(sandbox, issued.ID, "vmi-current", kubevirtv1.RunStrategyAlways)
 	vmi := credentialTestVMI(sandbox, "vmi-current", issued.ID)
-	launcher := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: sandbox.Namespace, Name: "virt-launcher-test", UID: "launcher-current"}}
+	launcher := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Namespace: sandbox.Namespace, Name: "virt-launcher-test", UID: "launcher-current"},
+		Spec:       corev1.PodSpec{NodeName: "test-node"},
+	}
 	for _, object := range []client.Object{vm, vmi} {
 		if err := c.Create(ctx, object); err != nil {
 			t.Fatal(err)
@@ -295,7 +290,7 @@ func TestAcceptedVMRunnerCredentialPublishesIncarnation(t *testing.T) {
 	if err != nil || pending != nil {
 		t.Fatalf("accepted VMI: pending=%v err=%v", pending, err)
 	}
-	if !w.runtimeCredentialAccepted || !w.runtimeIncarnationPublished || w.credential.ID != issued.ID {
+	if !w.runtimeIncarnationPublished || w.credential.ID != issued.ID {
 		t.Fatalf("matching, issued VMI was not published: workload=%#v", w)
 	}
 	if pod := readRecord(t, c, sandbox).Spec.Pod; pod == nil || pod.UID != launcher.UID || pod.Name != launcher.Name {
@@ -345,7 +340,7 @@ func TestUnexpectedVMReplacementRotatesCredentialAndHaltsVM(t *testing.T) {
 	if pending == nil || pending.reason != "RunnerCredentialMismatch" {
 		t.Fatalf("unexpected VMI replacement must be fenced: %v", pending)
 	}
-	if w.runtimeCredentialAccepted || w.runtimeIncarnationPublished {
+	if w.runtimeIncarnationPublished {
 		t.Fatal("unexpected replacement VMI must not be accepted or published")
 	}
 	var gotVM kubevirtv1.VirtualMachine
@@ -408,7 +403,7 @@ func TestFinalizerRotatesStoppedVMRunnerCredentialBeforeRestart(t *testing.T) {
 	if gotVM.Annotations[runtimecredentials.VMIUIDAnnotation] != "" || gotVM.Annotations[runtimecredentials.LastVMIUIDAnnotation] != "vmi-old" {
 		t.Fatalf("stopped VM lost the prior VMI fence: %#v", gotVM.Annotations)
 	}
-	if w.runtimeCredentialAccepted || w.runtimeIncarnationPublished {
+	if w.runtimeIncarnationPublished {
 		t.Fatalf("new VM identity was accepted before a VMI bound it: %#v", w)
 	}
 }
@@ -478,7 +473,7 @@ func TestPodWithARotatedCredentialIsReplaced(t *testing.T) {
 		issueCredential(t, c, client.ObjectKeyFromObject(sandbox))
 		w, pending, err = r.ensureRuntimeCredential(ctx, getSandboxObject(t, c, sandbox), workload{pod: first}, true)
 	}
-	if err != nil || pending != nil || !w.runtimeCredentialAccepted || w.credential.ID != started.ID {
+	if err != nil || pending != nil || !w.runtimeIncarnationPublished || w.credential.ID != started.ID {
 		t.Fatalf("the first Pod was not accepted with the ID it started with: %+v, pending=%v err=%v", w, pending, err)
 	}
 	if _, err := r.updateStatus(ctx, getSandboxObject(t, c, sandbox), w, nil, nil); err != nil {
@@ -551,7 +546,7 @@ func TestStatusBindingIgnoresRunnerCredentialAnnotations(t *testing.T) {
 		t.Fatal(err)
 	}
 	w, pending, err := r.ensureRuntimeCredential(ctx, current, workload{pod: pod}, true)
-	if err != nil || pending != nil || !w.runtimeCredentialAccepted {
+	if err != nil || pending != nil || !w.runtimeIncarnationPublished {
 		t.Fatalf("annotations unbound the Environment Runtime credential: pending=%v err=%v", pending, err)
 	}
 	if got := getRuntimeCredential(t, c, sandbox); got != *current.Status.RunnerCredential {

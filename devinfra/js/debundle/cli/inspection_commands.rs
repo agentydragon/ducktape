@@ -3,6 +3,7 @@ use crate::emit_report;
 use analysis_model::DepKind;
 use anyhow::{Context, Result, bail};
 use clap::{Args as ClapArgs, ValueEnum};
+use command_output::infallible;
 use graph_provenance::VerifiedGraphSourceContext;
 use peel::plan::ExplainSession;
 use peel::{
@@ -405,10 +406,7 @@ pub(super) fn run_describe(
             output,
             args.format,
             &results[0],
-            |result, out| {
-                render_explain_text(result, out);
-                Ok(())
-            },
+            infallible(render_explain_text),
             "writing describe output",
         );
     }
@@ -597,10 +595,7 @@ pub(super) fn run_inspect_source(
         output,
         Some(format),
         &report,
-        |report, out| {
-            render_inspect_source_text(report, out);
-            Ok(())
-        },
+        infallible(render_inspect_source_text),
         "writing inspect-source output",
     )
 }
@@ -999,10 +994,7 @@ pub(super) fn run_atoms(args: AtomicGroupsArgs, output: &mut dyn std::io::Write)
         output,
         args.format,
         &report,
-        |report, out| {
-            render_atomic_groups_text(report, out);
-            Ok(())
-        },
+        infallible(render_atomic_groups_text),
         "writing atoms output",
     )
 }
@@ -1020,10 +1012,7 @@ pub(super) fn run_coverage(
         output,
         args.format,
         &report,
-        |report, out| {
-            render_patch_plan_text(report, out);
-            Ok(())
-        },
+        infallible(render_patch_plan_text),
         "writing coverage output",
     )
 }
@@ -1037,10 +1026,7 @@ pub(super) fn run_graph_summary(
         output,
         args.format,
         &report,
-        |report, out| {
-            render_graph_summary_text(report, out);
-            Ok(())
-        },
+        infallible(render_graph_summary_text),
         "writing graph-summary output",
     )
 }

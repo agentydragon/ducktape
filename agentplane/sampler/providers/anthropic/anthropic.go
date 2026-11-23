@@ -210,7 +210,7 @@ func Sample(ctx context.Context, client *http.Client, baseURL, credential string
 	reader := protocol.CaptureReader{Reader: response.Body, Context: ctx, Evidence: evidence}
 	head := protocol.HTTPResponseHead{HTTPStatus: response.StatusCode, ProviderRequestID: response.Header.Get("request-id"), ContentType: response.Header.Get("content-type")}
 	if evidence != nil {
-		if err := protocol.RecordProviderEvidence(ctx, evidence, head); err != nil {
+		if err := protocol.RecordProviderEvidence(ctx, evidence, head, false); err != nil {
 			return nil, err
 		}
 		if hooks.ResponseHeadRecorded != nil {
@@ -222,12 +222,9 @@ func Sample(ctx context.Context, client *http.Client, baseURL, credential string
 		if err != nil {
 			return nil, providerio.ProviderTransportError(ctx, err)
 		}
-		if response.StatusCode == http.StatusRequestTimeout || response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= http.StatusInternalServerError {
-			return nil, &protocol.ProviderTransientError{Cause: fmt.Errorf("Anthropic returned HTTP %d", response.StatusCode), RetryAfter: providerio.ParseProviderRetryAfter(response.Header.Get("Retry-After"))}
-		}
-		return nil, &protocol.KnownFailureError{Evidence: map[string]any{
+		return nil, providerio.ProviderStatusError(response, "Anthropic", map[string]any{
 			"http_status": head.HTTPStatus, "provider_request_id": head.ProviderRequestID, "content_type": head.ContentType, "body": string(body),
-		}}
+		})
 	}
 	result, err := ReadStream(ctx, io.LimitReader(reader, protocol.MaxProviderStreamBytes), evidence, compaction, hooks)
 	if err != nil {
@@ -314,13 +311,16 @@ func ReadStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 		}
 		// Even malformed/unsupported events are durable before the parser returns to the runtime.
 		defer func() {
-			if evidence != nil {
-				if err := protocol.RecordProviderEvidence(ctx, evidence, streamEvent{WireEvent: data}, observations...); err != nil {
-					eventErr = err
-				}
+			if evidence == nil {
+				return
 			}
-			if evidence != nil && semanticProgress && hooks.Progress != nil && (eventErr == nil || errors.Is(eventErr, errProviderComplete)) {
-				if err := hooks.Progress(ctx); err != nil {
+			semanticProgress = semanticProgress && (eventErr == nil || errors.Is(eventErr, errProviderComplete))
+			if err := protocol.RecordProviderEvidence(ctx, evidence, streamEvent{WireEvent: data}, semanticProgress, observations...); err != nil {
+				eventErr = err
+				return
+			}
+			if semanticProgress && hooks.Progress != nil {
+				if err := hooks.Progress(); err != nil {
 					eventErr = err
 				}
 			}

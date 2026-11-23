@@ -14,8 +14,8 @@ from python.runfiles import Runfiles
 from agentplane.app.frontend.serving.testing.image import LAYOUT_RLOCATION
 from agentplane.app.testing.browser_certificate import BrowserCertificate
 from devinfra.oci.oci import load_oci_image
+from testing.container_logs import LoggedContainer
 from third_party.containers import nginx_unprivileged
-from util.testing.container_logs import LoggedContainer
 
 # HTTPX loads its optional HTTP/2 transport lazily.
 # gazelle:include_dep @pypi//h2

@@ -65,7 +65,7 @@ func TestCreateExt4LeavesExistingDestinationAlone(t *testing.T) {
 	if err := os.WriteFile(destination, want, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := createExt4(context.Background(), destination, bytesPerMiB, "APSTATE", ""); err != nil {
+	if err := createExt4(context.Background(), destination, bytesPerMiB, "APSTATE"); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(destination)
@@ -91,7 +91,7 @@ func TestCreateExt4CreatesImageAtRequestedSize(t *testing.T) {
 
 	destination := filepath.Join(root, "state.img")
 	wantSize := int64(2*bytesPerMiB + 17)
-	if err := createExt4(context.Background(), destination, wantSize, "APSTATE", ""); err != nil {
+	if err := createExt4(context.Background(), destination, wantSize, "APSTATE"); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(destination)
@@ -100,6 +100,32 @@ func TestCreateExt4CreatesImageAtRequestedSize(t *testing.T) {
 	}
 	if info.Size() != wantSize {
 		t.Fatalf("image size = %d bytes, want %d", info.Size(), wantSize)
+	}
+}
+
+func TestInstallStagedLeavesDestinationAloneWhenBuildFails(t *testing.T) {
+	directory := t.TempDir()
+	destination := filepath.Join(directory, "disk.img")
+	if err := os.WriteFile(destination, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	failure := errors.New("build failed")
+	err := installStaged(destination, func(staging string) error {
+		if err := os.WriteFile(staging, []byte("partial"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return failure
+	})
+	if !errors.Is(err, failure) {
+		t.Fatalf("failed build returned %v, want %v", err, failure)
+	}
+	entries, err := os.ReadDir(directory)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("directory entries = %v, %v; want only the destination", entries, err)
+	}
+	got, err := os.ReadFile(destination)
+	if err != nil || string(got) != "old" {
+		t.Fatalf("destination = %q, %v; want it unchanged", got, err)
 	}
 }
 

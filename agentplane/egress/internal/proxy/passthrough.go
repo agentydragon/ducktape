@@ -28,7 +28,7 @@ func (p *Proxy) connectPassthrough(w http.ResponseWriter, request *http.Request,
 	}
 	caller, err := p.authenticate(request.Context(), client, supplied)
 	if err != nil {
-		refuse(decision.TokenRejected, nil)
+		refuse(authenticationFailure(request, host, port, err), nil)
 		return
 	}
 	if !p.options.Policy.Health.Available() {
@@ -57,9 +57,8 @@ func (p *Proxy) connectPassthrough(w http.ResponseWriter, request *http.Request,
 		refuse(decision.Unavailable, caller)
 		return
 	}
-	securedCaller, err := p.authenticate(request.Context(), client, false)
-	if err != nil || securedCaller.subject != caller.subject {
-		refuse(decision.TokenRejected, caller)
+	if _, err := p.authenticate(request.Context(), client, false); err != nil {
+		refuse(authenticationFailure(request, host, port, err), nil)
 		return
 	}
 	incoming, buffered, err := http.NewResponseController(w).Hijack()

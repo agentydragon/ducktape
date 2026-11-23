@@ -9,6 +9,7 @@ resources:
   - aws-route53-dns-automation.sops.yaml
   - aws-route53-external-dns.sops.yaml
   - brave-search-api-key.sops.yaml
+  - ovh-billing-credentials.sops.yaml
   - coinbase-api-credentials.sops.yaml
   - buildbuddy-api-key.sops.yaml
   - gaffer-repo-fetch-pat.sops.yaml

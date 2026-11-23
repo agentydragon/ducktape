@@ -145,29 +145,6 @@ func executionFailureMessage(f executionFailureRecord) (string, error) {
 	return string(encoded), err
 }
 
-// findTransportFailure retains error-tree matching across wrapped and joined failures.
-// Settlement searches for admission failures before the remote failure that caused them.
-func findTransportFailure(err error, kinds ...transport.FailureKind) *transport.Failure {
-	if failure, ok := err.(*transport.Failure); ok {
-		for _, kind := range kinds {
-			if failure.Kind == kind {
-				return failure
-			}
-		}
-	}
-	switch wrapped := err.(type) {
-	case interface{ Unwrap() []error }:
-		for _, cause := range wrapped.Unwrap() {
-			if failure := findTransportFailure(cause, kinds...); failure != nil {
-				return failure
-			}
-		}
-	case interface{ Unwrap() error }:
-		return findTransportFailure(wrapped.Unwrap(), kinds...)
-	}
-	return nil
-}
-
 // executionFailureProjection belongs to the model-tool boundary. Raw intent evidence
 // stays in transport; this projection also carries the process settlement facts.
 func executionFailureProjection(failure *transport.Failure) executionFailureRecord {

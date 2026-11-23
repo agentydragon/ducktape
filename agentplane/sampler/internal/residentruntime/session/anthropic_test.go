@@ -33,12 +33,7 @@ import (
 )
 
 func TestAnthropicStreamPersistsNativeHistoryObservationsWithSourceLinks(t *testing.T) {
-	store := runtimetesting.NewStore(t, integrationDatabase)
-	session := runtimetesting.OpenSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := runtimetesting.ClaimedSession(t, integrationDatabase)
 	intentID, _, err := store.Begin(t.Context(), owner, sessionstore.IntentPayload{Kind: sessionstore.PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
@@ -51,7 +46,7 @@ func TestAnthropicStreamPersistsNativeHistoryObservationsWithSourceLinks(t *test
 		`{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":1}}`,
 		`{"type":"message_stop"}`,
 	)
-	response, err := anthropic.ReadStream(t.Context(), strings.NewReader(stream), &sessionstore.ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}, false, protocol.ProviderHooks{})
+	response, err := anthropic.ReadStream(t.Context(), strings.NewReader(stream), &sessionstore.ResponseEvidence{Store: store, Owner: owner, IntentID: intentID, ProgressLease: providerAttemptTestPolicy().Lease}, false, protocol.ProviderHooks{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,12 +179,7 @@ func TestAnthropicRequestLoggingFailurePreventsDispatch(t *testing.T) {
 }
 
 func TestAnthropicEvidenceFailureAfterPrefixLeavesIntentUnresolved(t *testing.T) {
-	store := runtimetesting.NewStore(t, integrationDatabase)
-	session := runtimetesting.OpenSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := runtimetesting.ClaimedSession(t, integrationDatabase)
 	intent, _, err := store.Begin(t.Context(), owner, sessionstore.IntentPayload{Kind: sessionstore.PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
@@ -212,7 +202,7 @@ func TestAnthropicEvidenceFailureAfterPrefixLeavesIntentUnresolved(t *testing.T)
 	defer release.Do(func() { close(resume) })
 	finished := make(chan error, 1)
 	go func() {
-		response, err := anthropic.Sample(t.Context(), server.Client(), server.URL, "fixture-key", *testsupport.AnthropicTestConfig().AnthropicMessages, []byte(`{}`), &sessionstore.ResponseEvidence{Store: store, Owner: owner, IntentID: intent}, false, protocol.ProviderHooks{})
+		response, err := anthropic.Sample(t.Context(), server.Client(), server.URL, "fixture-key", *testsupport.AnthropicTestConfig().AnthropicMessages, []byte(`{}`), &sessionstore.ResponseEvidence{Store: store, Owner: owner, IntentID: intent, ProgressLease: providerAttemptTestPolicy().Lease}, false, protocol.ProviderHooks{})
 		if response != nil {
 			finished <- errors.New("response completed after evidence failure")
 			return
@@ -284,12 +274,7 @@ func TestAnthropicEvidenceFailureAfterPrefixLeavesIntentUnresolved(t *testing.T)
 }
 
 func TestAnthropicInvalidBlockStartIsPersistedWithoutHistoryObservation(t *testing.T) {
-	store := runtimetesting.NewStore(t, integrationDatabase)
-	session := runtimetesting.OpenSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, session, owner := runtimetesting.ClaimedSession(t, integrationDatabase)
 	intentID, _, err := store.Begin(t.Context(), owner, sessionstore.IntentPayload{Kind: sessionstore.PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
 	if err != nil {
 		t.Fatal(err)
@@ -299,7 +284,7 @@ func TestAnthropicInvalidBlockStartIsPersistedWithoutHistoryObservation(t *testi
 		`{"type":"message_start","message":{"id":"msg_invalid","role":"assistant","content":[],"usage":{"input_tokens":1}}}`,
 		invalidStart,
 	)
-	response, err := anthropic.ReadStream(t.Context(), strings.NewReader(stream), &sessionstore.ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}, false, protocol.ProviderHooks{})
+	response, err := anthropic.ReadStream(t.Context(), strings.NewReader(stream), &sessionstore.ResponseEvidence{Store: store, Owner: owner, IntentID: intentID, ProgressLease: providerAttemptTestPolicy().Lease}, false, protocol.ProviderHooks{})
 	var known *protocol.KnownFailureError
 	if response != nil || !errors.As(err, &known) {
 		t.Fatalf("invalid block start outcome=%+v err=%v; want known rejection", response, err)

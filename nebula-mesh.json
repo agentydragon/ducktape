@@ -6,7 +6,6 @@
       "endpoint": "147.135.39.162:4242",
       "role": "worker",
       "lighthouse": true,
-      "relay": true,
       "managed_by": "tofu-ovh",
       "cert_groups": ["lighthouse"]
     },
@@ -15,7 +14,6 @@
       "endpoint": "147.135.39.176:4242",
       "role": "worker",
       "lighthouse": true,
-      "relay": true,
       "managed_by": "tofu-ovh",
       "cert_groups": ["lighthouse"]
     },
@@ -24,7 +22,6 @@
       "endpoint": "147.135.104.5:4242",
       "role": "control-plane",
       "lighthouse": true,
-      "relay": true,
       "managed_by": "tofu-ovh",
       "cert_groups": ["lighthouse"]
     },
@@ -33,7 +30,6 @@
       "endpoint": "147.135.104.16:4242",
       "role": "control-plane",
       "lighthouse": true,
-      "relay": true,
       "managed_by": "tofu-ovh",
       "cert_groups": ["lighthouse"]
     },
@@ -42,7 +38,6 @@
       "endpoint": "51.81.245.180:4242",
       "role": "control-plane",
       "lighthouse": true,
-      "relay": true,
       "managed_by": "tofu-ovh",
       "cert_groups": ["lighthouse"]
     },
@@ -51,7 +46,6 @@
       "endpoint": "147.135.37.175:4242",
       "role": "worker",
       "lighthouse": true,
-      "relay": true,
       "managed_by": "tofu-ovh",
       "cert_groups": ["lighthouse"]
     },

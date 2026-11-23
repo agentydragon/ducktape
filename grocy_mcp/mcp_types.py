@@ -14,15 +14,13 @@ from typing import Any, ClassVar, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic_settings import SettingsConfigDict
 
-from grocy_mcp.grocy_types import ReadableEntityType, WriteableEntityType
+from grocy_mcp.grocy_types import GettableEntityType, WriteableEntityType
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.persistence import FilePersistence, PersistenceConfig
 from util.yaml_file_settings import YamlFileSettings
 
 MAX_BATCH_SIZE = 100
 CONFIG_FILE_ENV = "GROCY_MCP_CONFIG_FILE"
-
-# ── Server settings ─────────────────────────────────────────────────────────
 
 
 class ServerSettings(YamlFileSettings):
@@ -58,8 +56,6 @@ class ServerSettings(YamlFileSettings):
     retry_base_delay: float = Field(default=0.5, description="Initial retry delay in seconds; doubles each attempt.")
     persistence: PersistenceConfig = Field(default=FilePersistence(), description="OAuth state storage backend.")
 
-
-# ── Shared field descriptions ───────────────────────────────────────────────
 
 # Reused field descriptions for stock-mutation item fields. Stating the QU
 # constraint in one place keeps `stock_add` / `stock_consume` /
@@ -109,9 +105,6 @@ PARENT_PRODUCT_DESC = (
 )
 
 
-# ── Shared input/output types ──────────────────────────────────────────────
-
-
 class CreateItem(BaseModel):
     entity_type: WriteableEntityType
     body: dict[str, Any] = Field(
@@ -140,21 +133,25 @@ class CreateError(BaseModel):
 
 
 class GetResultBase(BaseModel):
-    entity_type: ReadableEntityType
+    entity_type: GettableEntityType
     object_id: int
+
+
+class ShoppingItemNames(BaseModel):
+    product_name: str | None = None
+    list_name: str | None = None
+    unit_name: str | None = None
 
 
 class GetOk(GetResultBase):
     kind: Literal["ok"] = "ok"
     data: dict[str, Any]
+    shopping_item_names: ShoppingItemNames | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class GetError(GetResultBase):
     kind: Literal["error"] = "error"
     error: str
-
-
-# ── Stock overview response ────────────────────────────────────────────────
 
 
 class StockEntry(BaseModel):
@@ -167,9 +164,6 @@ class StockEntry(BaseModel):
     qu_name: str
     location_name: str
     best_before_date: date | None = None
-
-
-# ── Stock mutation input/output ────────────────────────────────────────────
 
 
 class AddItem(BaseModel):
@@ -280,9 +274,6 @@ class StockOpError(BaseModel):
     error: str
 
 
-# ── Stock entry input/output ──────────────────────────────────────────────
-
-
 class StockEntryDetail(BaseModel):
     """Detailed stock entry with names."""
 
@@ -356,9 +347,6 @@ class EditStockEntryItem(BaseModel):
             "Grocy's schema; everything else is NOT NULL and must be assigned a value if changed."
         ),
     )
-
-
-# ── Reference data create types ────────────────────────────────────────────
 
 
 class CreateProductItem(BaseModel):
@@ -441,9 +429,6 @@ class CreateProductGroupItem(BaseModel):
     description: str | None = Field(default=None, description="Free-text description.")
 
 
-# ── Product edit types ─────────────────────────────────────────────────────
-
-
 class EditProductField(StrEnum):
     """Nullable product fields that ``products_edit.clear_fields`` can null out.
 
@@ -483,9 +468,6 @@ class EditProductItem(BaseModel):
             "Grocy's schema; everything else is NOT NULL."
         ),
     )
-
-
-# ── Shopping list types ────────────────────────────────────────────────────
 
 
 class ShoppingItem(BaseModel):
@@ -536,9 +518,6 @@ class EditShoppingListField(StrEnum):
     """
 
     NOTE = "note"
-
-
-# ── Reference-data list result shapes ──────────────────────────────────────
 
 
 class BriefListItem(BaseModel):

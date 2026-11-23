@@ -86,9 +86,10 @@ def snapshot(value: pb.SessionSnapshot) -> None:
             _timestamp(value.storage_error.state_changed_at)
     else:
         raise ProviderProtocolError("Provider returned an invalid session snapshot")
-    for field in ("last_verified_at", "imported_at"):
-        if value.HasField(field):
-            _timestamp(getattr(value, field))
+    if value.HasField("last_verified_at"):
+        _timestamp(value.last_verified_at)
+    if value.HasField("imported_at"):
+        _timestamp(value.imported_at)
     if value.HasField("last_probe"):
         probe_result(value.last_probe)
 

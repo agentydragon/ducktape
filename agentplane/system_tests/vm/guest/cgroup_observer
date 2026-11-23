@@ -4,6 +4,7 @@
 set -eu
 umask 0022
 executors=/sys/fs/cgroup/agentplane.slice/agentplane-executors.slice
+commands=/sys/fs/cgroup/agentplane.slice/agentplane-commands.slice
 destination=/run/agentplane-test/cgroups
 mkdir -p "$destination"
 sample=0
@@ -11,21 +12,18 @@ while :; do
 	sample=$((sample + 1))
 	for group in "$executors"/agentplane-native-*.service; do
 		[ -d "$group" ] || continue
-		# A leaf may disappear while the runner tears it down. Never publish a partial snapshot.
-		read -r limit <"$group/memory.max" || continue
-		read -r swap <"$group/memory.swap.max" || continue
-		read -r oom_group <"$group/memory.oom.group" || continue
+		# A cgroup or process may disappear during teardown.
+		read -r pid <"$group/cgroup.procs" || continue
+		start_ticks=$(awk '{sub(/^.*\) /, ""); print $20}' "/proc/$pid/stat") || continue
+		read -r limit <"$commands/memory.max" || continue
+		read -r swap <"$commands/memory.swap.max" || continue
 		case "$limit:$swap" in *max*) continue ;; esac
-		executor_oom=$(awk '$1 == "oom" {print $2}' "$executors/memory.events") || continue
-		events=$(awk '
-			$1 == "oom" {oom = $2}
-			$1 == "oom_kill" {kill = $2}
-			$1 == "oom_group_kill" {group_kill = $2}
-			END {printf "\"oom\":%d,\"oom_kill\":%d,\"oom_group_kill\":%d", oom, kill, group_kill}
-		' "$group/memory.events") || continue
-		printf '{"cgroup":"%s","sample":%s,"max":%s,"swap_max":%s,"oom_group":%s,"executor_oom":%s,%s}\n' \
-			"${group#/sys/fs/cgroup}" "$sample" "$limit" "$swap" "$oom_group" "$executor_oom" "$events" >"$destination/snapshot.tmp"
-		mv "$destination/snapshot.tmp" "$destination/${group##*/}.json"
+		executor_oom_kill=$(awk '$1 == "oom_kill" {print $2}' "$executors/memory.events") || continue
+		oom=$(awk '$1 == "oom" {print $2}' "$commands/memory.events.local") || continue
+		oom_kill=$(awk '$1 == "oom_kill" {print $2}' "$commands/memory.events") || continue
+		printf '{"sample":%s,"executor_cgroup":"%s","executor_pid":%s,"executor_start_ticks":%s,"executor_oom_kill":%s,"max":%s,"swap_max":%s,"oom":%s,"oom_kill":%s}\n' \
+			"$sample" "${group#/sys/fs/cgroup}" "$pid" "$start_ticks" "$executor_oom_kill" "$limit" "$swap" "$oom" "$oom_kill" >"$destination/snapshot.tmp"
+		mv "$destination/snapshot.tmp" "$destination/commands.json"
 	done
 	sleep 0.25
 done

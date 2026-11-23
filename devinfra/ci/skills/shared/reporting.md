@@ -1,6 +1,23 @@
 # Shared CI report publishing contract
 
-Read this reference when authoring or publishing either CI report.
+## PR dashboard scope
+
+Refresh the broad PR sample even when the newest work concerns one incident or
+rollout. Open with the headline metric and its daily trend, normally for the
+last seven complete UTC days. Show daily denominators, flag partial days and
+policy changes, and leave unobserved periods as gaps. If collection is incomplete,
+show the gap and date any retained baseline. Quantify the impact of a driver or
+proposed fix in PR terms, such as minutes per affected head or reruns per week.
+Check recommendations against current source, routing and landed fixes.
+
+A landed change can still be an open measurement question. Keep a compact view
+after the PR overview while the reader needs to judge its benefit, recurrence
+or rollout safety. Show the affected PRs or tests, the baseline, and comparable
+post-change observations so far. For a flake fix, for example, report failures
+per fresh execution on both sides. Include the exposure or observation window
+needed for a decision and what result would warrant action. Update that view
+in place. Once the question is answered or ceases to affect a decision, fold
+the result into the current findings and move supporting history into disclosure.
 
 ## Presentation
 
@@ -17,14 +34,10 @@ visualizations during refreshes and inspect the rendered screenshots: a passing
 test can still show empty bars, clipped labels or lost distinctions. Keep original
 chart windows, units and denominators when retaining historical measurements.
 Author standalone HTML; do not wrap Markdown in a preformatted block.
-Verify actual CDN loading, desktop and mobile layouts, both
+Use semantic headings, accessible controls and chart labels that work without color.
+Review the full page on desktop and mobile with disclosures closed. Verify actual CDN loading, both
 initial color schemes and a live OS or browser preference change. Keep
 styling-only work distinct from measurement or source updates.
-
-Let the findings determine the report structure; keep conclusions and decisions
-easy to find, with semantic headings, accessible controls and useful tables or
-visualizations. Label units, populations and sample sizes, and place important
-limitations by the claims they qualify.
 
 ## Evidence and privacy
 

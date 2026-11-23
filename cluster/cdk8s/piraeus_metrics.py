@@ -15,8 +15,10 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRule, PrometheusRuleSpec
 from python.runfiles import Runfiles
 
-from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
+from cluster.cdk8s import node_scheduling
+from cluster.cdk8s.container_resources import container_resources
+from cluster.cdk8s.monitoring import alloy_endpoints
+from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import Rule, group
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint
 
@@ -118,15 +120,8 @@ def add_thin_pool_monitoring(
                                 run_as_group=0,
                                 seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
                             ),
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("32Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("100m"),
-                                    "memory": k8s.Quantity.from_string("128Mi"),
-                                },
+                            resources=container_resources(
+                                cpu="10m", memory="32Mi", cpu_limit="100m", memory_limit="128Mi"
                             ),
                             volume_mounts=[
                                 k8s.VolumeMount(name="host-dev", mount_path="/dev", read_only=True),
@@ -156,15 +151,8 @@ def add_thin_pool_monitoring(
                                 run_as_group=65534,
                                 seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
                             ),
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("32Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("100m"),
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                },
+                            resources=container_resources(
+                                cpu="10m", memory="32Mi", cpu_limit="100m", memory_limit="64Mi"
                             ),
                             volume_mounts=[k8s.VolumeMount(name="textfiles", mount_path="/textfiles", read_only=True)],
                         ),
@@ -201,7 +189,7 @@ def add_thin_pool_monitoring(
             annotations={"description": "Allow only node-local Alloy to scrape the LVM textfile exporter."},
         ),
         endpoint_selector=pod_labels,
-        ingress=[IngressRule.from_endpoints(cilium.endpoint_labels("monitoring", "alloy-node"), ports=[_METRICS_PORT])],
+        ingress=[alloy_endpoints.NODE.admit(_METRICS_PORT)],
     )
 
     ServiceMonitor(
@@ -217,8 +205,8 @@ def add_thin_pool_monitoring(
     labels = f'namespace="{namespace}",service="{name}",vg="{volume_group}",pool="{thin_pool}"'
     target = f'namespace="{namespace}",service="{name}"'
     expected = f'kube_daemonset_status_desired_number_scheduled{{namespace="{namespace}",daemonset="{name}"}} > 0'
-    # A laptop can be away for an arbitrary time. Alert for a missing collector
-    # while it is online, not for the intentional absence of its samples offline.
+    # The missing-metrics alert can fire before the roaming controller's
+    # out-of-service taint lands. Gate the collector on Node readiness.
     if only_when_node_ready:
         expected = (
             f"({expected}) and on() "

@@ -5,8 +5,10 @@ use std::collections::{BTreeSet, VecDeque};
 use transform_command::TransformArgs;
 
 use anyhow::{Context, Result};
-use artifact::reports::{InteropUseKind, StaticModuleRequestMode};
-use artifact::{ChunkBundle, ImportReferenceKind};
+use artifact::reports::{InteropUse, InteropUseKind, StaticModuleRequestMode};
+use artifact::{
+    ArtifactIndexes, ChunkArtifact, ChunkBundle, ImportReferenceKind, ResolvedImportReference,
+};
 use clap::Args;
 use peel::OutputFormat;
 use pipeline::load_transform_spec_source;
@@ -144,18 +146,37 @@ struct InteropSite {
     #[serde(skip_serializing_if = "Option::is_none")]
     resolved_target: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    resolution: Option<CandidateResolution>,
+    resolution: Option<Landing>,
 }
 
+/// Where an import specifier lands relative to the original chunk entry files.
 #[derive(Clone, Copy, Serialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
-enum CandidateResolution {
+enum Landing {
     ArtifactPath,
     SourcePath,
     Unresolved,
     MissingTargetChunk,
     NonentryTarget,
+}
+
+impl Landing {
+    fn of(artifact: &ChunkBundle, resolved: Option<&ResolvedImportReference>) -> Self {
+        let Some(reference) = resolved else {
+            return Self::Unresolved;
+        };
+        match artifact.find_chunk(reference.target_chunk_id) {
+            None => Self::MissingTargetChunk,
+            Some(chunk) if chunk.analysis.entry_file != reference.target_file => {
+                Self::NonentryTarget
+            }
+            Some(_) => match reference.kind {
+                ImportReferenceKind::ArtifactPath => Self::ArtifactPath,
+                ImportReferenceKind::SourcePath => Self::SourcePath,
+            },
+        }
+    }
 }
 
 struct RequestGraph {
@@ -197,7 +218,7 @@ pub(super) fn run(args: StaticImportsArgs, output: &mut dyn Write) -> Result<()>
         })
         .collect::<Result<Vec<_>>>()?;
     let RequestGraph { edges, issues } =
-        collect_requests(artifact, source.indexes(), include_host_loader_candidates)?;
+        collect_requests(artifact, source.indexes(), include_host_loader_candidates);
     let mut relevant = reachable(from, &edges);
     let reports = targets
         .into_iter()
@@ -226,8 +247,7 @@ pub(super) fn run(args: StaticImportsArgs, output: &mut dyn Write) -> Result<()>
         request_issue_count: issue_count,
         request_issues_truncated: issue_count > max_issues,
         interop_census: interop_census
-            .then(|| collect_interop_census(artifact, source.indexes(), max_interop_sites))
-            .transpose()?,
+            .then(|| collect_interop_census(artifact, source.indexes(), max_interop_sites)),
     };
     emit_report(
         output,
@@ -337,9 +357,9 @@ pub(super) fn run(args: StaticImportsArgs, output: &mut dyn Write) -> Result<()>
 
 fn collect_requests(
     artifact: &ChunkBundle,
-    indexes: &artifact::ArtifactIndexes,
+    indexes: &ArtifactIndexes,
     include_host_loader_candidates: bool,
-) -> Result<RequestGraph> {
+) -> RequestGraph {
     let mut edges = vec![Vec::new(); artifact.chunk_table.len()];
     let mut issues = (0..artifact.chunk_table.len())
         .map(|_| Vec::new())
@@ -347,68 +367,61 @@ fn collect_requests(
     for chunk in &artifact.chunks {
         let from = chunk.chunk_id;
         let from_name = artifact.chunk_table.name(from);
-        for request in &chunk.analysis.runtime_facts.static_requests {
-            let resolved = indexes.resolve_runtime_import_reference(
-                &request.specifier,
-                from,
-                &chunk.analysis.entry_file,
-                &artifact.chunk_table,
-            );
-            let issue = if request.mode != StaticModuleRequestMode::OrdinaryEsm {
-                Some(RequestIssueReason::NonordinaryStaticRequest)
-            } else if resolved.is_none() {
-                Some(RequestIssueReason::UnresolvedStaticRequest)
-            } else if let Some(reference) = &resolved {
-                if !artifact.has_chunk(reference.target_chunk_id) {
-                    Some(RequestIssueReason::MissingTargetChunk)
-                } else if artifact
-                    .chunk(reference.target_chunk_id)?
-                    .analysis
-                    .entry_file
-                    != reference.target_file
-                {
-                    Some(RequestIssueReason::NonentryStaticRequest)
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
-            if let Some(reason) = issue {
-                issues[from.0].push(RequestIssue {
-                    from: from_name.to_string(),
-                    specifier: request.specifier.clone(),
-                    reason,
-                    resolved_target: resolved.as_ref().map(|reference| {
-                        format!(
-                            "{}/{}",
-                            artifact.chunk_table.name(reference.target_chunk_id),
-                            reference.target_file
-                        )
-                    }),
-                });
-                continue;
-            }
-            let reference = resolved.expect("ordinary resolved entry request");
-            edges[from.0].push((
-                reference.target_chunk_id,
-                RequestEdge {
-                    from: from_name.to_string(),
-                    specifier: request.specifier.clone(),
-                    edge_kind: EdgeKind::OrdinaryStaticEsm,
-                    resolution: match reference.kind {
-                        ImportReferenceKind::ArtifactPath => ResolutionKind::ArtifactPath,
-                        ImportReferenceKind::SourcePath => ResolutionKind::SourcePath,
+        // Records an edge for an `Ok` verdict and an issue for an `Err`. `site` is
+        // the `import.meta.require` call of a host-loader candidate.
+        let mut record = |specifier: &str,
+                          resolved: Option<ResolvedImportReference>,
+                          verdict: Result<ResolutionKind, RequestIssueReason>,
+                          edge_kind: EdgeKind,
+                          site: Option<&InteropUse>| match verdict {
+            Err(reason) => issues[from.0].push(RequestIssue {
+                from: from_name.to_string(),
+                specifier: specifier.to_string(),
+                reason,
+                resolved_target: resolved
+                    .as_ref()
+                    .map(|reference| target_label(artifact, reference)),
+            }),
+            Ok(resolution) => {
+                let reference = resolved.expect("an entry landing is resolved");
+                edges[from.0].push((
+                    reference.target_chunk_id,
+                    RequestEdge {
+                        from: from_name.to_string(),
+                        specifier: specifier.to_string(),
+                        edge_kind,
+                        resolution,
+                        target_file: reference.target_file,
+                        to: artifact
+                            .chunk_table
+                            .name(reference.target_chunk_id)
+                            .to_string(),
+                        source_item: site.map(|site| site.item_index),
+                        source_line: site.and_then(|site| site.line),
                     },
-                    target_file: reference.target_file,
-                    to: artifact
-                        .chunk_table
-                        .name(reference.target_chunk_id)
-                        .to_string(),
-                    source_item: None,
-                    source_line: None,
-                },
-            ));
+                ));
+            }
+        };
+        for request in &chunk.analysis.runtime_facts.static_requests {
+            let resolved = resolve_import(artifact, indexes, chunk, &request.specifier);
+            let verdict = if request.mode != StaticModuleRequestMode::OrdinaryEsm {
+                Err(RequestIssueReason::NonordinaryStaticRequest)
+            } else {
+                match Landing::of(artifact, resolved.as_ref()) {
+                    Landing::Unresolved => Err(RequestIssueReason::UnresolvedStaticRequest),
+                    Landing::MissingTargetChunk => Err(RequestIssueReason::MissingTargetChunk),
+                    Landing::NonentryTarget => Err(RequestIssueReason::NonentryStaticRequest),
+                    Landing::ArtifactPath => Ok(ResolutionKind::ArtifactPath),
+                    Landing::SourcePath => Ok(ResolutionKind::SourcePath),
+                }
+            };
+            record(
+                &request.specifier,
+                resolved,
+                verdict,
+                EdgeKind::OrdinaryStaticEsm,
+                None,
+            );
         }
         if include_host_loader_candidates {
             for site in &chunk.analysis.runtime_facts.interop_uses {
@@ -419,74 +432,54 @@ fn collect_requests(
                     .specifier
                     .as_deref()
                     .expect("literal call has specifier");
-                let resolved = indexes.resolve_runtime_import_reference(
-                    specifier,
-                    from,
-                    &chunk.analysis.entry_file,
-                    &artifact.chunk_table,
-                );
-                let issue = if let Some(reference) = &resolved {
-                    if !artifact.has_chunk(reference.target_chunk_id) {
-                        Some(RequestIssueReason::MissingHostLoaderTarget)
-                    } else if artifact
-                        .chunk(reference.target_chunk_id)?
-                        .analysis
-                        .entry_file
-                        != reference.target_file
-                    {
-                        Some(RequestIssueReason::NonentryHostLoaderCandidate)
-                    } else {
-                        None
-                    }
-                } else {
-                    Some(RequestIssueReason::UnresolvedHostLoaderCandidate)
+                let resolved = resolve_import(artifact, indexes, chunk, specifier);
+                let verdict = match Landing::of(artifact, resolved.as_ref()) {
+                    Landing::Unresolved => Err(RequestIssueReason::UnresolvedHostLoaderCandidate),
+                    Landing::MissingTargetChunk => Err(RequestIssueReason::MissingHostLoaderTarget),
+                    Landing::NonentryTarget => Err(RequestIssueReason::NonentryHostLoaderCandidate),
+                    Landing::ArtifactPath => Ok(ResolutionKind::ArtifactPath),
+                    Landing::SourcePath => Ok(ResolutionKind::SourcePath),
                 };
-                if let Some(reason) = issue {
-                    issues[from.0].push(RequestIssue {
-                        from: from_name.to_string(),
-                        specifier: specifier.to_string(),
-                        reason,
-                        resolved_target: resolved.as_ref().map(|reference| {
-                            format!(
-                                "{}/{}",
-                                artifact.chunk_table.name(reference.target_chunk_id),
-                                reference.target_file
-                            )
-                        }),
-                    });
-                    continue;
-                }
-                let reference = resolved.expect("resolved entry loader candidate");
-                edges[from.0].push((
-                    reference.target_chunk_id,
-                    RequestEdge {
-                        from: from_name.to_string(),
-                        specifier: specifier.to_string(),
-                        edge_kind: EdgeKind::ConditionalImportMetaRequire,
-                        resolution: match reference.kind {
-                            ImportReferenceKind::ArtifactPath => ResolutionKind::ArtifactPath,
-                            ImportReferenceKind::SourcePath => ResolutionKind::SourcePath,
-                        },
-                        target_file: reference.target_file,
-                        to: artifact
-                            .chunk_table
-                            .name(reference.target_chunk_id)
-                            .to_string(),
-                        source_item: Some(site.item_index),
-                        source_line: site.line,
-                    },
-                ));
+                record(
+                    specifier,
+                    resolved,
+                    verdict,
+                    EdgeKind::ConditionalImportMetaRequire,
+                    Some(site),
+                );
             }
         }
     }
-    Ok(RequestGraph { edges, issues })
+    RequestGraph { edges, issues }
+}
+
+fn resolve_import(
+    artifact: &ChunkBundle,
+    indexes: &ArtifactIndexes,
+    chunk: &ChunkArtifact,
+    specifier: &str,
+) -> Option<ResolvedImportReference> {
+    indexes.resolve_runtime_import_reference(
+        specifier,
+        chunk.chunk_id,
+        &chunk.analysis.entry_file,
+        &artifact.chunk_table,
+    )
+}
+
+fn target_label(artifact: &ChunkBundle, reference: &ResolvedImportReference) -> String {
+    format!(
+        "{}/{}",
+        artifact.chunk_table.name(reference.target_chunk_id),
+        reference.target_file
+    )
 }
 
 fn collect_interop_census(
     artifact: &ChunkBundle,
-    indexes: &artifact::ArtifactIndexes,
+    indexes: &ArtifactIndexes,
     max_sites: usize,
-) -> Result<InteropCensus> {
+) -> InteropCensus {
     let mut chunks = Vec::new();
     let mut sites = Vec::new();
     let mut site_count = 0;
@@ -503,51 +496,23 @@ fn collect_interop_census(
             if sites.len() >= max_sites {
                 continue;
             }
-            let resolved = site.specifier.as_deref().and_then(|specifier| {
-                indexes.resolve_runtime_import_reference(
-                    specifier,
-                    chunk.chunk_id,
-                    &chunk.analysis.entry_file,
-                    &artifact.chunk_table,
-                )
-            });
-            let resolution = if site.specifier.is_some() {
-                Some(if let Some(reference) = &resolved {
-                    if !artifact.has_chunk(reference.target_chunk_id) {
-                        CandidateResolution::MissingTargetChunk
-                    } else if artifact
-                        .chunk(reference.target_chunk_id)?
-                        .analysis
-                        .entry_file
-                        != reference.target_file
-                    {
-                        CandidateResolution::NonentryTarget
-                    } else {
-                        match reference.kind {
-                            ImportReferenceKind::ArtifactPath => CandidateResolution::ArtifactPath,
-                            ImportReferenceKind::SourcePath => CandidateResolution::SourcePath,
-                        }
-                    }
-                } else {
-                    CandidateResolution::Unresolved
-                })
-            } else {
-                None
-            };
+            let resolved = site
+                .specifier
+                .as_deref()
+                .and_then(|specifier| resolve_import(artifact, indexes, chunk, specifier));
             sites.push(InteropSite {
                 chunk: name.clone(),
                 item: site.item_index,
                 line: site.line,
                 kind: site.kind,
                 specifier: site.specifier.clone(),
-                resolved_target: resolved.as_ref().map(|reference| {
-                    format!(
-                        "{}/{}",
-                        artifact.chunk_table.name(reference.target_chunk_id),
-                        reference.target_file
-                    )
-                }),
-                resolution,
+                resolved_target: resolved
+                    .as_ref()
+                    .map(|reference| target_label(artifact, reference)),
+                resolution: site
+                    .specifier
+                    .is_some()
+                    .then(|| Landing::of(artifact, resolved.as_ref())),
             });
         }
         chunks.push(InteropChunk {
@@ -558,12 +523,12 @@ fn collect_interop_census(
             kinds,
         });
     }
-    Ok(InteropCensus {
+    InteropCensus {
         chunks,
         sites,
         site_count,
         sites_truncated: site_count > max_sites,
-    })
+    }
 }
 
 fn reachable(start: ChunkId, edges: &[Vec<(ChunkId, RequestEdge)>]) -> BTreeSet<ChunkId> {

@@ -55,6 +55,13 @@ misled along the way.
   published its whole frame, including the called factory, even when the call
   was the body's final return; the later direct call then lost its factory
   proof.
+- **Rejected: counting a direct load only where the window can enter its
+  function (#13233, closed).** Sound, but 0.05% fewer edges and 20% more wall
+  time on Claude CLI 2.1.292, because one incomplete initializer statement may
+  call any function value an earlier chunk published, and that pool reaches
+  nearly every lazy `import.meta.require` helper. A source model that ignored
+  the namespaces earlier requests published had predicted large gains. The
+  lever is heap reasoning about which published values an opaque call reaches.
 
 ## Owner coverage
 

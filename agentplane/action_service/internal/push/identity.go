@@ -18,7 +18,7 @@ import (
 	"strings"
 )
 
-// Settings are the Python service's `web_push` keys (push_settings.py). A deployment supplies the private key, a
+// Settings are the `web_push` keys the manifests set (push_settings.py). A deployment supplies the private key, a
 // Secret, as AGENTPLANE_ACTIONS_WEB_PUSH__PRIVATE_KEY_PEM.
 type Settings struct {
 	// PrivateKeyPEM is the VAPID key: a P-256 private key, PKCS #8 or SEC 1.
@@ -88,7 +88,7 @@ func NewIdentity(settings Settings) (*Identity, error) {
 	}, nil
 }
 
-// parsePrivateKey reads a PEM P-256 private key in either form Python's `Vapid02.from_pem` reads.
+// parsePrivateKey reads a PEM P-256 private key, PKCS #8 or SEC 1.
 func parsePrivateKey(document string) (*ecdsa.PrivateKey, error) {
 	block, _ := pem.Decode([]byte(document))
 	if block == nil {

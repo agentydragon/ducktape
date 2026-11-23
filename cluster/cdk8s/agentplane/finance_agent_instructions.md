@@ -100,3 +100,15 @@ GET `/v2/prices/<asset>-USD/spot` quotes are separate from personal holdings. Ne
 the key, signed JWT, account identifiers, or raw response, and never trade or transfer. Consult
 `cluster/cdk8s/agentplane/actions_staging_policies.py` and `cluster/docs/agent_rbac.md` in ducktape
 for current grant details, and `finance-agent/runbooks/data-access.md` for the private working recipe.
+
+OVH US billing: the finance preset grants `get` on the named read-only Secret
+`agentplane-staging/ovh-billing-credentials` and GET egress to the billing,
+service and signing-clock endpoints on `api.us.ovhcloud.com`. Read the three
+credential fields only in memory. For each GET, read `/1.0/auth/time` to correct
+the clock, then set `X-Ovh-Application`, `X-Ovh-Consumer`, `X-Ovh-Timestamp`,
+and `X-Ovh-Signature`. The signature is `$1$` followed by the hex SHA-1 of
+`application_secret + "+" + consumer_key + "+GET+" + full_url + "++" + timestamp`.
+Invoice reads start with `/1.0/me/bill` and its `/{billId}/details` children.
+Never log or persist the credential, signatures or raw invoice exports. The key
+permits invoice and service reads, not orders, renewals or other writes. Check
+current Agentplane rules and effective Secret access before use.

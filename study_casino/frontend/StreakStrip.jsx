@@ -1,5 +1,3 @@
-import React from "react";
-
 import { COLORS, projectDailyBonus } from "./shared.jsx";
 
 function fmtCountdown(seconds) {

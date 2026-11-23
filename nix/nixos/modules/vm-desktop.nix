@@ -5,8 +5,9 @@
 # user unit waiting on a graphical-session.target that never arrives.
 { pkgs, ... }:
 {
-  # Clipboard sharing + display resize. Display is QXL-driven (NVIDIA GPUs are headless compute
-  # via VFIO). Resize works via QXL DRM hotplug -> mutter (GNOME handles it natively).
+  # Clipboard sharing + display resize. Display is virtio-gl (see cluster/terraform/main/proxmox-vms.tf;
+  # NVIDIA GPUs are headless compute via VFIO). Resize works via DRM hotplug -> mutter (GNOME handles
+  # it natively).
   # spice-autorandr is X11-only and not needed with GNOME/Wayland.
   services.spice-vdagentd.enable = true;
 

@@ -3,7 +3,6 @@ package runtimeproxy
 import (
 	"context"
 	"fmt"
-	"net"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -13,7 +12,9 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	tlstest "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
+	"github.com/agentydragon/ducktape/agentplane/testing/grpcserver"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
+	"github.com/agentydragon/ducktape/agentplane/testing/testscheme"
 	"github.com/agentydragon/ducktape/agentplane/watchhealth"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -22,8 +23,6 @@ import (
 	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -75,14 +74,8 @@ func newSandboxFixture(t *testing.T) *sandboxFixture {
 	t.Helper()
 	ctx := t.Context()
 	f := &sandboxFixture{namespace: fmt.Sprintf("test-sandboxes-%d", namespaces.Add(1))}
-	scheme := runtime.NewScheme()
-	for _, add := range []func(*runtime.Scheme) error{clientgoscheme.AddToScheme, sandboxapi.AddToScheme} {
-		if err := add(scheme); err != nil {
-			t.Fatal(err)
-		}
-	}
 	var err error
-	if f.objects, err = client.New(api.Config, client.Options{Scheme: scheme}); err != nil {
+	if f.objects, err = client.New(api.Config, client.Options{Scheme: testscheme.New(t)}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := api.ServiceAccount(ctx, auth.Account{Namespace: f.namespace, Name: "default"}); err != nil {
@@ -239,15 +232,10 @@ func serveServer(t *testing.T, g *Server, register func(*grpc.Server)) *serviceC
 	if err != nil {
 		t.Fatal(err)
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
 	server := grpc.NewServer(append(serverMethods(t, g).ServerOptions(0), grpc.Creds(credentials.NewTLS(tlsConfig)))...)
 	register(server)
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(server.Stop)
-	result := &serviceConnections{connections: make(map[string]*grpc.ClientConn), target: listener.Addr().String(), ca: ca}
+	address := grpcserver.Serve(t, server)
+	result := &serviceConnections{connections: make(map[string]*grpc.ClientConn), target: address, ca: ca}
 	for _, service := range []string{"", peertls.AppURI, peertls.NotificationsURI, peertls.SessionsURI, peertls.SandboxControllerURI, peertls.CentralSamplerURI} {
 		certificateService := service
 		if certificateService == "" {
@@ -269,4 +257,49 @@ func serveServer(t *testing.T, g *Server, register func(*grpc.Server)) *serviceC
 		result.connections[service] = conn
 	}
 	return result
+}
+
+func runObserver(t *testing.T, g *Server, destination runtimeDestination) (context.CancelFunc, <-chan struct{}, <-chan error) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	result := make(chan error, 1)
+	go func() {
+		result <- g.observeRuntime(ctx, destination)
+		close(done)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		waitObserver(t, done)
+	})
+	return cancel, done, result
+}
+
+func waitObserver(t *testing.T, done <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Runtime observer did not stop")
+	}
+}
+
+func awaitConnection(t *testing.T, g *Server, sandboxUID, bootID string, done <-chan struct{}) *runtimeConnection {
+	t.Helper()
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	poll := time.NewTicker(time.Millisecond)
+	defer poll.Stop()
+	for {
+		if connection, err := g.connections.holder(sandboxUID); err == nil && connection.bootID == bootID {
+			return connection
+		}
+		select {
+		case <-done:
+			t.Fatalf("Runtime observer stopped before becoming callable at boot %q", bootID)
+		case <-deadline.C:
+			t.Fatalf("Runtime observer did not become callable at boot %q", bootID)
+		case <-poll.C:
+		}
+	}
 }

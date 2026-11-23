@@ -1,4 +1,4 @@
-// Mirrors the backend's SandboxName (agentplane/app/sandbox_models.py): a DNS label of at most 57 characters.
+// Mirrors `IsValidSandboxName` (agentplane/sandboxes/api/sandbox_name.go): a DNS label of at most 57 characters.
 const SANDBOX_NAME_PATTERN = /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/;
 const SANDBOX_NAME_MAX_LENGTH = 57;
 

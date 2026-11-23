@@ -1,7 +1,6 @@
 """Gmail filters subcommands."""
 
 import io
-import itertools
 from pathlib import Path
 from typing import Annotated
 
@@ -11,8 +10,7 @@ from rich.console import Console
 from rich.table import Table
 
 from gmail_api.labels import SystemLabel, is_system_label
-from gmail_archiver.cli.common import DryRunOption, TokenFileOption, get_client
-from gmail_archiver.dirs import get_cache_dir
+from gmail_archiver.cli.options import DryRunOption, TokenFileOption, get_client
 from gmail_archiver.filter_planner import GmailFilterPlanner
 from gmail_archiver.filter_sync import (
     FilterDiff,
@@ -56,6 +54,21 @@ def load_gmail_filters(client: GmailClient) -> tuple[list[NormalizedFilter], Lab
     api_filters = client.list_filters()
     normalized = [normalize_gmail_filter(f, label_maps.by_id) for f in api_filters]
     return normalized, label_maps
+
+
+def _prepare_diff(
+    filters_file: Path, token_file: Path | None, console: Console
+) -> tuple[FilterDiff, GmailClient, LabelMaps]:
+    console.print("Loading filters...")
+    yaml_filters = load_yaml_filters(filters_file, console)
+    console.print(f"  YAML: {len(yaml_filters)} filters")
+
+    client = get_client(token_file)
+    gmail_filters, label_maps = load_gmail_filters(client)
+    console.print(f"  Gmail: {len(gmail_filters)} filters")
+    console.print()
+
+    return diff_filters(yaml_filters, gmail_filters), client, label_maps
 
 
 def display_diff(diff: FilterDiff, console: Console) -> None:
@@ -175,40 +188,27 @@ def _gmail_filter_to_rule(gmail_filter: GmailFilter, labels_by_id: dict[str, str
 def diff(filters_file: FiltersFileArg, token_file: TokenFileOption = None):
     """Show diff between YAML and Gmail filters (read-only)."""
     console = Console()
-    console.print("Loading filters...")
+    filter_diff, _, _ = _prepare_diff(filters_file, token_file, console)
+    display_diff(filter_diff, console)
 
-    yaml_filters = load_yaml_filters(filters_file, console)
-    console.print(f"  YAML: {len(yaml_filters)} filters")
 
-    client = get_client(token_file)
-    gmail_filters, _ = load_gmail_filters(client)
-    console.print(f"  Gmail: {len(gmail_filters)} filters")
-    console.print()
+def _create_filter(client: GmailClient, rule: NormalizedFilter, label_maps: LabelMaps) -> None:
+    for label_name in rule.add_labels:
+        label_maps.ensure_label(label_name, client.get_or_create_label)
 
-    display_diff(diff_filters(yaml_filters, gmail_filters), console)
+    client.create_filter(normalized_to_create_request(rule, label_maps.by_name))
 
 
 @filters_app.command("upload")
 def upload(filters_file: FiltersFileArg, dry_run: DryRunOption = None, token_file: TokenFileOption = None):
     """Upload filters from YAML to Gmail (creates only, skips existing)."""
     console = Console()
-    console.print("Loading filters...")
-
-    yaml_filters = load_yaml_filters(filters_file, console)
-    console.print(f"  YAML: {len(yaml_filters)} filters")
-
-    client = get_client(token_file)
-    gmail_filters, label_maps = load_gmail_filters(client)
-    console.print(f"  Gmail: {len(gmail_filters)} filters")
-    console.print()
-
-    filter_diff = diff_filters(yaml_filters, gmail_filters)
+    filter_diff, client, label_maps = _prepare_diff(filters_file, token_file, console)
 
     if not filter_diff.to_create:
         console.print("[green]✓[/green] All filters already exist. Nothing to upload.")
         return
 
-    # Show what will be created
     console.print(f"[bold]Filters to create ({len(filter_diff.to_create)}):[/bold]")
     for f in filter_diff.to_create:
         console.print(f"  [green]+[/green] {format_filter_for_display(f)}")
@@ -218,10 +218,7 @@ def upload(filters_file: FiltersFileArg, dry_run: DryRunOption = None, token_fil
         created = 0
         for f in filter_diff.to_create:
             try:
-                for label_name in f.add_labels:
-                    label_maps.ensure_label(label_name, client.get_or_create_label)
-
-                client.create_filter(normalized_to_create_request(f, label_maps.by_name))
+                _create_filter(client, f, label_maps)
                 created += 1
                 console.print(f"  [green]✓[/green] Created: {format_filter_for_display(f)}")
             except Exception as e:
@@ -238,17 +235,7 @@ def upload(filters_file: FiltersFileArg, dry_run: DryRunOption = None, token_fil
 def sync(filters_file: FiltersFileArg, dry_run: DryRunOption = None, token_file: TokenFileOption = None):
     """Sync Gmail filters with YAML (create missing, delete extras)."""
     console = Console()
-    console.print("Loading filters...")
-
-    yaml_filters = load_yaml_filters(filters_file, console)
-    console.print(f"  YAML: {len(yaml_filters)} filters")
-
-    client = get_client(token_file)
-    gmail_filters, label_maps = load_gmail_filters(client)
-    console.print(f"  Gmail: {len(gmail_filters)} filters")
-    console.print()
-
-    filter_diff = diff_filters(yaml_filters, gmail_filters)
+    filter_diff, client, label_maps = _prepare_diff(filters_file, token_file, console)
     display_diff(filter_diff, console)
 
     if not filter_diff.to_create and not filter_diff.to_delete:
@@ -271,10 +258,7 @@ def sync(filters_file: FiltersFileArg, dry_run: DryRunOption = None, token_file:
             console.print(f"\n[bold]Creating {len(filter_diff.to_create)} filter(s)...[/bold]")
             for f in filter_diff.to_create:
                 try:
-                    for label_name in f.add_labels:
-                        label_maps.ensure_label(label_name, client.get_or_create_label)
-
-                    client.create_filter(normalized_to_create_request(f, label_maps.by_name))
+                    _create_filter(client, f, label_maps)
                     console.print(f"  [green]+[/green] Created: {format_filter_for_display(f)}")
                 except Exception as e:
                     console.print(f"  [red]✗[/red] Failed to create: {e}")
@@ -344,10 +328,10 @@ def apply(
     labels = client.list_labels_full()
     label_maps = LabelMaps.from_labels(labels)
 
-    planner = GmailFilterPlanner(target_filter, label_maps.by_id, additional_query=query)
+    planner = GmailFilterPlanner(target_filter, additional_query=query)
     console.print(f"Filter: {planner.name}")
 
-    inbox = GmailInbox(client, console, cache_dir=get_cache_dir())
+    inbox = GmailInbox(client, console)
     plan = planner.plan(inbox)
 
     for msg in plan.messages:
@@ -366,16 +350,8 @@ def apply(
     def do_apply():
         total_processed = 0
         for sig, msg_ids in plan.group_by_signature().items():
-            batch_size = 1000
-            for batch in itertools.batched(msg_ids, batch_size, strict=False):
-                body: dict = {"ids": list(batch)}
-                if sig.labels_to_add:
-                    body["addLabelIds"] = list(sig.labels_to_add)
-                if sig.labels_to_remove:
-                    body["removeLabelIds"] = list(sig.labels_to_remove)
-
-                client.service.users().messages().batchModify(userId="me", body=body).execute()
-                total_processed += len(batch)
+            client.modify_labels_batch(msg_ids, add_label_ids=sig.labels_to_add, remove_label_ids=sig.labels_to_remove)
+            total_processed += len(msg_ids)
 
         console.print(f"[green]✓[/green] Applied filter to {total_processed} email(s)")
 

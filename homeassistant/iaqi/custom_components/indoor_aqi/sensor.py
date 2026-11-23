@@ -111,19 +111,8 @@ def parse_timedelta(value) -> timedelta:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities):
     yaml_cfg = entry.data
 
-    # The user might define "monitors" as a list:
-    # indoor_aqi:
-    #   monitors:
-    #     - name: "Rai's room AQI"
-    #       unique_id: "rai_s_room_aqi"
-    #       sensors:
-    #         co2: sensor.xxxx
-    #         pm25: sensor.yyyy
-    #   stale_time: "3600"
-
-    # Look for "monitors" or fallback to a single "sensors" block.
+    # A top-level sensors block describes a single monitor.
     monitors = yaml_cfg.get("monitors", [])
-    # Single block fallback for sensors config
     if not monitors and "sensors" in yaml_cfg:
         monitors = [yaml_cfg]
 

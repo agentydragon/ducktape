@@ -29,40 +29,14 @@ import (
 
 const lifecycleTestTimeout = 10 * time.Second
 
-func mustRuntimeCloseStatus(t *testing.T, r *Runtime) RuntimeCloseStatus {
+func waitClosingSessionStage(t *testing.T, r *Runtime, stage lifecycle.Stage) {
 	t.Helper()
-	status, _, err := readRuntimeCloseStatus(t.Context(), r.lifecycleState)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return status
-}
-
-func waitRuntimeCloseStatus(t *testing.T, r *Runtime, want func(RuntimeCloseStatus) bool, description string) RuntimeCloseStatus {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
-	defer cancel()
-	events := make(chan state.Event, 1)
-	if err := r.lifecycleState.Watch(ctx, runtimeCloseStatusResource(RuntimeCloseStatus{}).Metadata(), events); err != nil {
-		t.Fatal(err)
-	}
-	for {
-		status, found, err := readRuntimeCloseStatus(ctx, r.lifecycleState)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if found && want(status) {
-			return status
-		}
-		select {
-		case event, ok := <-events:
-			if !ok || event.Type == state.Errored {
-				t.Fatalf("watch %s: closed or failed: %+v", description, event)
-			}
-		case <-ctx.Done():
-			t.Fatalf("wait for %s: %v", description, ctx.Err())
-		}
-	}
+	waitRuntime(t, r, func() bool {
+		desired := environmentDesired(r)
+		progress, found, err := lifecycle.ReadStatus(t.Context(), r.lifecycleState)
+		return err == nil && found && desired.Mode == lifecycle.Closing &&
+			progress.Generation == desired.Generation && progress.Stage >= stage
+	}, fmt.Sprintf("Closing Session aggregate stage %v", stage))
 }
 
 func TestMain(m *testing.M) {
@@ -86,7 +60,7 @@ func lifecycleConfig(t *testing.T, endpoint, workspace string, bootstrap *string
 	t.Helper()
 	root := t.TempDir()
 	launch := configuration.SandboxLaunch{Sandbox: configuration.SandboxIdentity{Namespace: "test", Name: "sandbox", UID: "sandbox-uid"}, Bootstrap: bootstrap}
-	config := Config{StateDir: root, Launch: launch, Supervision: "pid1", PodPID1: true, InitializationCwd: workspace, Control: insecureControl(), WorkspaceRoot: workspace, Claude: &harness.LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test"}, ModelConfigClient: fixtureModelConfig{endpoint: endpoint}}
+	config := Config{StateDir: root, Launch: launch, Supervision: "pid1", InitializationCwd: workspace, Control: insecureControl(), WorkspaceRoot: workspace, Claude: &harness.LaunchConfig{Binary: binary, BaseURL: endpoint, Token: "test"}, ModelConfigClient: fixtureModelConfig{endpoint: endpoint}}
 	return runtimeTestConfig{Config: config}
 }
 
@@ -221,6 +195,15 @@ func waitForFile(t *testing.T, path string) {
 	eventually.PathExists(t, path, time.Millisecond, lifecycleTestTimeout)
 }
 
+func waitSignal[T any](t *testing.T, ch <-chan T, failure string) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(lifecycleTestTimeout):
+		t.Fatal(failure)
+	}
+}
+
 func waitClose(t *testing.T, done <-chan error) error {
 	t.Helper()
 	select {
@@ -259,6 +242,27 @@ func newTestRuntime(t *testing.T, config Config, injected state.State, deps runt
 func openTestRuntimeStore(dir string) (interface{ Close() error }, error) {
 	_, backing, err := cosistate.Open(dir, lifecycle.Namespace)
 	return backing, err
+}
+
+// requireOwnerRetained fails with failure when the environment owner in dir can be taken, so Runtime released it.
+func requireOwnerRetained(t *testing.T, dir, failure string) {
+	t.Helper()
+	if owner, err := openTestRuntimeStore(dir); err == nil {
+		_ = owner.Close()
+		t.Fatal(failure)
+	}
+}
+
+// requireOwnerReleased fails with failure when the environment owner in dir cannot be taken, so Runtime still holds it.
+func requireOwnerReleased(t *testing.T, dir, failure string) {
+	t.Helper()
+	owner, err := openTestRuntimeStore(dir)
+	if err != nil {
+		t.Fatalf("%s: %v", failure, err)
+	}
+	if err := owner.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func closeTestRuntimeStore(r *Runtime) error {

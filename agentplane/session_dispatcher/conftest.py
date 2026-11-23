@@ -1,7 +1,5 @@
 """Native Runner fixtures used by the Runner client acceptance tests."""
 
-import pytest
-
 from agentplane.app.testing.gateway_fixtures import (
     app_token_file,
     dispatcher_database_url,
@@ -22,24 +20,16 @@ from agentplane.app.testing.runtime_fixtures import (
     spec,
     workspace,
 )
-from agentplane.env.e2e.testing.process import RunningRunner
 from agentplane.history_service.testing.fixtures import (
     history_service,
     service_database_template,
     service_history_db_url,
 )
-from agentplane.session_dispatcher.client import SandboxControlClient
 from agentplane.testing.kubernetes_apiserver_fixtures import api_server, kubeconfig
-from util.testing.postgres_fixtures import (
+from testing.postgres_fixtures import (
     database_clones,
     database_names,
     postgres_admin_url,
     postgres_container,
     postgres_image,
 )
-
-
-@pytest.fixture
-def remote(sandbox_control: SandboxControlClient, runner: RunningRunner) -> SandboxControlClient:
-    """The app-authenticated client routed through the real Environments Runtime proxy."""
-    return sandbox_control

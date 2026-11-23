@@ -5,10 +5,10 @@ from __future__ import annotations
 from cdk8s import Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
-from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
+from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on
 
 
-def gaffer_private_bridge(chart: Chart, kyverno: Kustomization, tofu_controller: Kustomization) -> Kustomization:
+def gaffer_private_bridge(chart: Chart, kyverno: Kustomization) -> Kustomization:
     """The cross-repo bridge: reconciles ``gaffer-private/k8s/`` from the private companion
     monorepo's ``gaffer-private`` GitRepository (built by ``source.chart``), the
     entry point for every private app's ``flux-kustomization.yaml``. Its child resources live
@@ -23,12 +23,8 @@ def gaffer_private_bridge(chart: Chart, kyverno: Kustomization, tofu_controller:
         path="./k8s",
         timeout="5m",
         wait=None,
-        depends_on=flux_kustomization_depends_on_many(
-            # Kyverno's failurePolicy: Fail webhook admits the child Flux Kustomizations.
-            kyverno,
-            # The Terraform CRD: the private repo's k8s/ applies Terraform CRs.
-            tofu_controller,
-        ),
+        # Kyverno's failurePolicy: Fail webhook admits the child Flux Kustomizations.
+        depends_on=[flux_kustomization_depends_on(kyverno)],
         description=(
             "Cross-repo bridge. Reconciles gaffer-private/k8s/ from the gaffer-private "
             "GitRepository -- entry point for every private app's flux-kustomization.yaml."

@@ -31,16 +31,6 @@ class OperationUnknownReason(Enum):
     UNSPECIFIED = "unspecified"
 
 
-class KnownSessionState(Enum):
-    NO_SESSION = "no_session"
-    UNVERIFIED = "unverified"
-    VERIFIED = "verified"
-    REAUTHENTICATION_REQUIRED = "reauthentication_required"
-    CHALLENGE_REQUIRED = "challenge_required"
-    OUTCOME_UNKNOWN = "outcome_unknown"
-    STORAGE_ERROR = "storage_error"
-
-
 @dataclass(frozen=True)
 class SessionInstallResult:
     kind: SessionInstallKind

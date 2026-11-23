@@ -6,9 +6,8 @@ from playwright.async_api import expect
 
 from agentplane.app.frontend.testing.app import AgentplaneFixture
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE
-from util.testing.frontend_visual.capture import VisualPage
+from testing.frontend_visual.capture import VisualPage
 
-pytest_plugins = ("util.testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 

@@ -10,6 +10,7 @@ from urllib.parse import quote, urljoin
 
 from jinja2 import Environment, FileSystemLoader
 
+from devinfra.pr_visuals.check_run import CHECK_CONCLUSIONS
 from devinfra.pr_visuals.metadata import ReviewAsset, ReviewTest
 from devinfra.pr_visuals.render_common import (
     asset_page_data,
@@ -42,20 +43,9 @@ class CommentState:
 
 
 COMMENT_BUDGET = 55_000
-_COMMENT_CI_CONCLUSIONS = (
-    "success",
-    "failure",
-    "neutral",
-    "cancelled",
-    "timed_out",
-    "action_required",
-    "stale",
-    "skipped",
-    "startup_failure",
-)
 COMMENT_METADATA_RESERVE = max(
     len(CommentState(commit_sha="0" * 40, kind="published", ci_conclusion=conclusion).metadata()) + 1
-    for conclusion in _COMMENT_CI_CONCLUSIONS
+    for conclusion in CHECK_CONCLUSIONS
 )
 COMMENT_BODY_BUDGET = COMMENT_BUDGET - COMMENT_METADATA_RESERVE
 COMMENT_OPEN_TARGETS = 2

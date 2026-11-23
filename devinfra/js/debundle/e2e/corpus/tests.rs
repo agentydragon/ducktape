@@ -2,8 +2,9 @@ use super::case::{Expectation, Rejected};
 use super::{Case, InputFile, cases};
 use debundle_e2e_support::{
     CaseWorkspace, FixtureOpts, assert_module_exports, assert_node_output,
-    assert_preserved_entry_output, failed_fixture_dirs_for_current_test, recorded_commands,
-    replay_command, run_fixture, unassigned_mode_inline, write_text_file, write_yaml_file,
+    assert_preserved_entry_output, failed_fixture_dirs_for_current_test, process,
+    recorded_commands, replay_command, run_fixture, unassigned_mode_inline, write_text_file,
+    write_yaml_file,
 };
 use std::panic::catch_unwind;
 
@@ -166,11 +167,7 @@ fn post_run_assertion_failure_retains_replayable_inputs() {
     let destination = workspace.path().join("replayed");
     let replayed =
         replay_command(retained, &command.id, &destination, &command.program, false).unwrap();
-    assert!(
-        replayed.status.success(),
-        "{}",
-        String::from_utf8_lossy(&replayed.stderr)
-    );
+    process::assert_success(&replayed);
     let entry = destination
         .join(command.cwd.file_name().unwrap())
         .join("out/app/main/entry.js");

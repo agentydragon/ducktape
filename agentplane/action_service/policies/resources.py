@@ -1,8 +1,7 @@
 """Action Service constants and validation for `action_auto_approve` PolicySet rules.
 
 `parse_action_rule` validates one rule during cdk8s synthesis. The Go runtime reads the PolicySets and
-reports `ActionsReady` on bindings. A caller ServiceAccount is an ordinary ServiceAccount carrying
-`CALLER_LABEL`, which admits it here -- a Pod running as it and a Connection acting as it alike.
+reports `ActionsReady` on bindings.
 """
 
 from __future__ import annotations
@@ -14,11 +13,7 @@ from pydantic import JsonValue
 
 from agentplane.action_service.policies.kind import Spec
 from agentplane.action_service.policies.registry import Policy
-from agentplane.crd_group import GROUP
 
-# Keep CALLER_LABEL in sync with ServiceAccountLabelKey and ServiceAccountLabelValue in
-# agentplane/action_service/callers/labels.go.
-CALLER_LABEL = f"{GROUP}/use-action-service"
 # On a PolicyBinding, beside the other readers' conditions.
 ACTIONS_READY_CONDITION = "ActionsReady"
 ACTION_RULE_TYPE = "action_auto_approve"

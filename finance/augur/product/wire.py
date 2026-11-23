@@ -347,18 +347,6 @@ class ScenarioKey(ApiModel):
         return self
 
 
-class ProjectionSamplingRequest(ApiModel):
-    scenario: ScenarioKey
-    first_seed: NonNegativeInt
-    rollout_count: PositiveInt
-    metric: MetricName
-    percentiles: tuple[Percentage, ...] = Field(min_length=1)
-
-    @property
-    def rollout_seeds(self) -> tuple[int, ...]:
-        return tuple(range(int(self.first_seed), int(self.first_seed) + int(self.rollout_count)))
-
-
 class RolloutRequest(ApiModel):
     scenario: ScenarioKey
     seed: NonNegativeInt

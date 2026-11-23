@@ -1,10 +1,5 @@
 # Archived InvenTree token provisioner
 
-This is the historical source for the InvenTree API-token Job and CronJob. The
-active InvenTree deployment has been decommissioned, so this package is no longer
-included in the CI image-publishing inventory.
-
-The parked Kubernetes declarations remain under
-`cluster/parked/inventree/token-provisioner/` as revival inputs. Reviving InvenTree
-requires restoring the image target and Flux ImageRepository/ImagePolicy before
-unsuspending the token-provisioner Kustomization.
+The parked [Job and weekly CronJob](../../parked/inventree/token-provisioner/)
+issue the `sandbox-agent` token and renew it when fewer than 30 days remain. The Bazel image target is still
+available. [InvenTree revival checklist](../../parked/inventree/TODO.md)

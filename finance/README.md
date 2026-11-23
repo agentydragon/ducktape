@@ -15,3 +15,9 @@ Finance tools and portfolio tracking utilities.
   for a future revival lives in the [retained market roster](scraper/market-roster.yaml).
 - **`budget/`**: Plaid transaction classifier (bucket taxonomy, rule DSL, SQL read
   model) behind augur's Budget tab and the Beancount exporter
+
+## Plans
+
+- [FIRE dashboard](plans/fire_dashboard.md): a household page that shows spending read
+  fresh from the accounts beside the distribution of financial-independence outcomes
+  under named economy models.

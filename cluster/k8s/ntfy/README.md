@@ -27,9 +27,8 @@ Alertmanager and Flux notifications.
 When rotating a password or token:
 
 1. Edit credentials.sops.yaml with sops.
-2. Bump `ntfy.ducktape.io/auth-generation` in
-   `cluster/cdk8s/ntfy.py` and
-   `cluster/cdk8s/flux_webhook.py`.
+2. Bump `ntfy.ducktape.io/auth-generation` in `AUTH_GENERATION_ANNOTATION`
+   (`cluster/cdk8s/ntfy.py`). It annotates all three ExternalSecrets.
 3. Regenerate manifests with `bb run //cluster/cdk8s:generate_manifests`.
 4. Verify the three ExternalSecrets are Ready, ntfy restarted after its
    derived Secret changed, and Alertmanager/Flux delivered a test notification.

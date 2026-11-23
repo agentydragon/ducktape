@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 )
@@ -33,17 +32,10 @@ func TestEnvironmentContextPrecedesTurnInputAndFollowsChanges(t *testing.T) {
 	today := time.Date(2026, 1, 2, 12, 0, 0, 0, time.Local)
 	store.now = func() time.Time { return today }
 	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	owner := claim(t, store, session)
 	submit := func(id, text string) []responses.Item {
 		t.Helper()
-		if _, err := store.Admit(t.Context(), session.ID, &commandpb.Command{
-			CommandId: id, Operation: &commandpb.Command_SubmitInput{SubmitInput: &commandpb.SubmitInput{Text: text}},
-		}, "fixture-account", nil); err != nil {
-			t.Fatal(err)
-		}
+		admitInput(t, store, session.ID, id, text)
 		if _, err := store.NextCommand(t.Context(), owner, session.ID); err != nil {
 			t.Fatal(err)
 		}
@@ -106,10 +98,7 @@ func TestCompactionReinjectsFullEnvironmentContextBeforeCompactionItem(t *testin
 	store := newTestStore(t)
 	store.now = func() time.Time { return time.Date(2026, 1, 2, 12, 0, 0, 0, time.Local) }
 	session := openSessionForStore(t, store, "")
-	owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-	if err != nil {
-		t.Fatal(err)
-	}
+	owner := claim(t, store, session)
 	bash := "bash"
 	if err := store.SetExecutorSession(t.Context(), owner, "fixture-executor-session", &bash); err != nil {
 		t.Fatal(err)

@@ -5,12 +5,13 @@ a fresh PostgreSQL container, and each test gets its own isolated database.
 """
 
 import os
-from collections.abc import AsyncGenerator, Generator
+from collections.abc import Generator
+from contextlib import ExitStack
 
 import pytest
-import pytest_asyncio
 from python.runfiles import Runfiles
 from sqlalchemy import Engine
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 from testcontainers.postgres import PostgresContainer
 
@@ -20,12 +21,7 @@ from props.db.config import DatabaseConfig
 from props.db.database import Database
 from props.db.sync.model_metadata import sync_model_metadata_with_session
 from props.db.sync.sync import SpecimenBundle, refresh_examples_matview, sync_specimen
-from util.testing.postgres import (
-    DatabaseNames,
-    PostgresDatabaseTemplate,
-    create_database_sync,
-    force_drop_database_sync,
-)
+from testing.postgres import DatabaseNames, PostgresDatabaseTemplate
 
 
 def _test_model_config() -> PropsConfig:
@@ -58,22 +54,11 @@ def postgres_base_config(postgres_container: PostgresContainer) -> DatabaseConfi
 def postgres_template(postgres_base_config: DatabaseConfig) -> Generator[PostgresDatabaseTemplate]:
     """Migrate once; ordinary test databases copy this untouched schema."""
     with PostgresDatabaseTemplate(postgres_base_config.url, "props_test_template") as template:
-        database = Database(postgres_base_config.with_database("props_test_template"))
-        try:
+        with ExitStack() as cleanup:
+            database = Database(postgres_base_config.with_database(template.template_name))
+            cleanup.callback(database.dispose)
             database.recreate()
-        finally:
-            database.dispose()
         yield template
-
-
-def _setup_test_database(
-    postgres_base_config: DatabaseConfig, db_name: str, postgres_template: PostgresDatabaseTemplate
-) -> Database:
-    """Create a writable clone, retaining the caller's explicit teardown policy."""
-    admin_url = postgres_base_config.with_database("postgres").url
-    force_drop_database_sync(admin_url, db_name)
-    create_database_sync(admin_url, db_name, template=postgres_template.template_name)
-    return Database(postgres_base_config.with_database(db_name))
 
 
 @pytest.fixture
@@ -83,28 +68,22 @@ def db(
     postgres_template: PostgresDatabaseTemplate,
     database_names: DatabaseNames,
 ) -> Generator[Database]:
-    """Create isolated Database for each test.
-
-    Clones the migrated schema into a unique database per test and drops it after.
-    Safe for parallel pytest-xdist execution - each test gets its own database.
-    """
-    db_name = database_names()
-
-    database = _setup_test_database(postgres_base_config, db_name, postgres_template)
-
-    try:
-        yield database
-    finally:
-        database.dispose()
-        keep_db = request.config.getoption("--keep-db") or os.environ.get("KEEP_TEST_DB") == "1"
-        if keep_db:
-            test_config = postgres_base_config.with_database(db_name)
+    """Clone the migrated schema into a fresh writable database for this test."""
+    with ExitStack() as cleanup:
+        url = postgres_template.create_clone(database_names, cleanup=cleanup)
+        db_name = make_url(url).database
+        assert db_name is not None
+        test_config = postgres_base_config.with_database(db_name)
+        database = Database(test_config)
+        try:
+            yield database
+        finally:
+            database.dispose()
+        if request.config.getoption("--keep-db") or os.environ.get("KEEP_TEST_DB") == "1":
             print(f"\n\n=== KEEPING TEST DATABASE: {db_name} ===")
             print(f"Database config: {test_config}")
             print(f"Connect with: psql {test_config.url}")
-        else:
-            admin_url = postgres_base_config.with_database("postgres").url
-            force_drop_database_sync(admin_url, db_name)
+            cleanup.pop_all()
 
 
 @pytest.fixture
@@ -113,7 +92,7 @@ def engine(db: Database) -> Engine:
     return db.engine
 
 
-def _sync_test_fixtures(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
+def _sync_test_fixtures(db: Database) -> None:
     """Sync test fixtures to the current database using bundle workflow."""
     fixture_slugs = ["test-fixtures/test1", "test-fixtures/train1", "test-fixtures/valid1", "test-fixtures/valid2"]
 
@@ -130,52 +109,10 @@ def _sync_test_fixtures(db: Database, monkeypatch: pytest.MonkeyPatch) -> None:
         refresh_examples_matview(session)
 
 
-@pytest.fixture(scope="session")
-def session_monkeypatch() -> Generator[pytest.MonkeyPatch]:
-    """Session-scoped monkeypatch for environment variable overrides."""
-    mp = pytest.MonkeyPatch()
-    yield mp
-    mp.undo()
-
-
-@pytest_asyncio.fixture(scope="session", loop_scope="session")
-async def _session_synced_db(
-    postgres_base_config: DatabaseConfig,
-    session_monkeypatch: pytest.MonkeyPatch,
-    postgres_template: PostgresDatabaseTemplate,
-) -> AsyncGenerator[Database]:
-    """Internal: Session-scoped synced database.
-
-    Use synced_readonly_session instead of this directly.
-    Uses the session-scoped postgres container.
-    """
-    db_name = "props_test_session_shared"
-
-    database = _setup_test_database(postgres_base_config, db_name, postgres_template)
-    _sync_test_fixtures(database, session_monkeypatch)
-
-    try:
-        yield database
-    finally:
-        database.dispose()
-        admin_url = postgres_base_config.with_database("postgres").url
-        force_drop_database_sync(admin_url, db_name)
-
-
-@pytest.fixture(scope="session")
-def synced_readonly_session(_session_synced_db: Database) -> Generator[Session]:
-    """Session-scoped SQLAlchemy Session for READ-ONLY tests.
-
-    WARNING: Do not commit/write via this session - use synced_db for write tests.
-    """
-    with _session_synced_db.session() as session:
-        yield session
-
-
 @pytest.fixture
-def synced_db(db: Database, monkeypatch: pytest.MonkeyPatch) -> Database:
+def synced_db(db: Database) -> Database:
     """Test database with test fixture specimens synced."""
-    _sync_test_fixtures(db, monkeypatch)
+    _sync_test_fixtures(db)
     return db
 
 

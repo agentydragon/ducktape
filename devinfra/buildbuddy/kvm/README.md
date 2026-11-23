@@ -40,11 +40,11 @@ bbr test //devinfra/buildbuddy/kvm:kvm_test --nocache_test_results
 
 ## Agentplane VM system-test lane
 
-Adoption for ordinary CI is deferred. The manual lane has executed all three
-VM scenarios with actual KVM acceleration, but the full target timed out during
-final cleanup after over ten minutes of execution. See the
+Ordinary CI runs `//agentplane/system_tests/suites:test_vm` on pool `kvm-vm`
+([where Bazel CI runs tests](../../ci/README.md#where-bazel-ci-runs-tests)). The
+manual targets below are the cold comparison lane. The
 [validation and latency record](../debug/kvm_pool_rollout/2026_11_03_wyrm2_kvm_worker.md)
-for the measured phases and remaining adoption requirements.
+has the measured phases from the first manual runs.
 
 The manual `kvm_vm_test` target runs the same `/dev/kvm` smoke check on pool
 `kvm-vm`, using Docker workload isolation. After that pool is deployed,

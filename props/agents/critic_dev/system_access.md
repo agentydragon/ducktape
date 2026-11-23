@@ -8,7 +8,7 @@ Critic developer agents can fetch snapshots on demand using the `fetch_snapshot`
 
 ```bash
 # Use the fetch_snapshot tool, or via Python:
-python3 -c "from props.db.snapshot_io import fetch_snapshot_to_path; from props.db.database import Database; fetch_snapshot_to_path('ducktape/2025-11-26-00', Path('/workspace'), Database.from_env())"
+python3 -c "from pathlib import Path; from props.db.snapshot_io import fetch_snapshot_to_path; from props.db.database import Database; fetch_snapshot_to_path('ducktape/2025-11-26-00', Path('/workspace'), Database.from_env())"
 ```
 
 ### Database Access

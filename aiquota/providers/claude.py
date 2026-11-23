@@ -8,14 +8,19 @@ an external credential owner must use a non-file credential source instead.
 """
 
 import logging
+from collections.abc import Awaitable, Callable
+from dataclasses import replace
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
+from typing import Self
 from uuid import UUID
 
 import httpx
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, SecretStr, ValidationError
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
 from pydantic.alias_generators import to_camel
 
+from aiquota.config import ClaudeSettings
 from aiquota.models import (
     ClaudeResetGrant,
     ExtraSpend,
@@ -46,16 +51,6 @@ LONG_WINDOW_SECS = 7 * 86400
 _OAUTH_HEADERS = {"Authorization": "Bearer $TOKEN$", "anthropic-beta": "oauth-2025-04-20"}
 # Anthropic gates reset inventory on both this option and the Claude Code surface.
 _USAGE_HEADERS = {**_OAUTH_HEADERS, "User-Agent": "claude-cli/2.1.292 (external, cli) aiquota/1.0"}
-
-
-class ClaudeSettings(BaseModel):
-    enabled: bool = True
-    credentials_path: Path = Path.home() / ".claude" / ".credentials.json"
-    # An explicit token selects an externally owned, static credential source.
-    # A trusted credential-substitution proxy can replace a non-secret sentinel
-    # on the exact upstream Authorization header. This source is never
-    # refreshed or written by aiquota.
-    access_token: SecretStr | None = None
 
 
 # Preserve unknown fields (e.g. mcpOAuth) on the round-trip so that
@@ -94,6 +89,7 @@ class _ClaudeOrganization(BaseModel):
 
 class _ClaudeProfileResponse(BaseModel):
     organization: _ClaudeOrganization
+    account: _ClaudeOrganization | None = None
 
     model_config = ConfigDict(hide_input_in_errors=True)
 
@@ -270,6 +266,22 @@ def _prepaid_balance_from_body(body: str) -> PrepaidBalanceAvailable:
     )
 
 
+async def _fetch_usage(get_body: Callable[[str, dict[str, str]], Awaitable[str | bytes]]) -> UsageResponse:
+    try:
+        body = await get_body(USAGE_URL, _USAGE_HEADERS)
+    except httpx.HTTPStatusError as error:
+        if error.response.status_code not in (400, 404):
+            raise
+        logger.warning("Claude reset inventory option rejected; retrying ordinary usage")
+        body = await get_body(PLAIN_USAGE_URL, _OAUTH_HEADERS)
+    return UsageResponse.model_validate_json(body)
+
+
+async def _get_usage_body(client: httpx.AsyncClient, token: str, url: str, headers: dict[str, str]) -> bytes:
+    response = await client.get(url, headers={**headers, "Authorization": f"Bearer {token}"})
+    return response.raise_for_status().content
+
+
 class ClaudeProvider(Provider):
     name = "claude"
 
@@ -282,51 +294,50 @@ class ClaudeProvider(Provider):
         self.settings = settings
         self.client_factory = client_factory
         self.management_client = management_client
+        self._organization_id: UUID | None = None
+
+    @classmethod
+    async def for_managed_account(cls, settings: ClaudeSettings, management: CLIProxyAPIManagementClient) -> Self:
+        profile = await cls._fetch_managed_profile(management)
+        if profile.account is None:
+            raise ValueError("Claude account identity is unavailable")
+        account_id = f"{profile.account.uuid}:{profile.organization.uuid}"
+        provider = cls(settings, management.client_factory, replace(management, account_id=account_id))
+        provider.account_id = account_id
+        provider._organization_id = profile.organization.uuid
+        return provider
+
+    @classmethod
+    async def _fetch_managed_profile(cls, management: CLIProxyAPIManagementClient) -> _ClaudeProfileResponse:
+        body = await management.fetch_usage(
+            cls.name, PROFILE_URL, _OAUTH_HEADERS, capture_key="claude_profile", capture_response=False
+        )
+        return _ClaudeProfileResponse.model_validate_json(body)
 
     async def fetch(self) -> ProviderFetch:
         now = datetime.now(UTC)
         if self.management_client:
             try:
-                try:
-                    body = await self.management_client.fetch_usage(
-                        self.name, USAGE_URL, _USAGE_HEADERS, capture_key=self.name
-                    )
-                except httpx.HTTPStatusError as e:
-                    if e.response.status_code not in (400, 404):
-                        raise
-                    logger.warning("Claude reset inventory option rejected; retrying ordinary usage")
-                    body = await self.management_client.fetch_usage(
-                        self.name, PLAIN_USAGE_URL, _OAUTH_HEADERS, capture_key=self.name
-                    )
-                usage = UsageResponse.model_validate_json(body)
+                usage = await _fetch_usage(
+                    partial(self.management_client.fetch_usage, self.name, capture_key=self.name)
+                )
             except Exception as e:
                 return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "CLIProxyAPI integration"))
             prepaid_balance = await self._best_effort_prepaid_balance()
             return ProviderFetch(fetched_at=now, result=_to_success(usage, prepaid_balance))
 
         path = self.settings.credentials_path
-        creds, stored_token = _read_credentials(path)
-        configured_token = self.settings.access_token.get_secret_value() if self.settings.access_token else None
-        token = configured_token or stored_token
+        creds, token = _read_credentials(path)
         if not token:
             return ProviderFetch(fetched_at=now, result=FetchError(error="no credentials found"))
 
         try:
             async with self.client_factory(self.name, {USAGE_URL, PLAIN_USAGE_URL}, API_TIMEOUT_SECS) as client:
-                # An explicitly supplied token belongs to a proxy or another
-                # credential owner; never refresh or write it from this process.
-                if configured_token is None and _token_expired(creds):
+                if _token_expired(creds):
                     token = await _refresh_token(path, creds, client)
                     if not token:
                         return ProviderFetch(fetched_at=now, result=FetchError(error="token refresh failed"))
-                resp = await client.get(USAGE_URL, headers={**_USAGE_HEADERS, "Authorization": f"Bearer {token}"})
-                if resp.status_code in (400, 404):
-                    logger.warning("Claude reset inventory option rejected; retrying ordinary usage")
-                    resp = await client.get(
-                        PLAIN_USAGE_URL, headers={**_OAUTH_HEADERS, "Authorization": f"Bearer {token}"}
-                    )
-            resp.raise_for_status()
-            usage = UsageResponse.model_validate_json(resp.content)
+                usage = await _fetch_usage(partial(_get_usage_body, client, token))
         except Exception as e:
             return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "claude quota fetch"))
 
@@ -341,10 +352,10 @@ class ClaudeProvider(Provider):
             return PrepaidBalanceUnavailable()
 
     async def _fetch_prepaid_balance(self, token: str | None) -> PrepaidBalanceAvailable:
+        organization_id = self._organization_id
         if self.management_client:
-            profile_body = await self.management_client.fetch_usage(
-                self.name, PROFILE_URL, _OAUTH_HEADERS, capture_key="claude_profile", capture_response=False
-            )
+            if organization_id is None:
+                organization_id = (await self._fetch_managed_profile(self.management_client)).organization.uuid
         else:
             if token is None:
                 raise ValueError("Claude access token is unavailable")
@@ -353,10 +364,9 @@ class ClaudeProvider(Provider):
                     PROFILE_URL, headers={**_OAUTH_HEADERS, "Authorization": f"Bearer {token}"}
                 )
             profile_response.raise_for_status()
-            profile_body = profile_response.text
+            organization_id = _ClaudeProfileResponse.model_validate_json(profile_response.text).organization.uuid
 
-        profile = _ClaudeProfileResponse.model_validate_json(profile_body)
-        balance_url = f"https://api.anthropic.com/api/oauth/organizations/{profile.organization.uuid}/prepaid/credits"
+        balance_url = f"https://api.anthropic.com/api/oauth/organizations/{organization_id}/prepaid/credits"
         if self.management_client:
             balance_body = await self.management_client.fetch_usage(
                 self.name, balance_url, _OAUTH_HEADERS, capture_key=PREPAID_BALANCE_CAPTURE_KEY

@@ -4,74 +4,53 @@ load("@bazel_skylib//lib:shell.bzl", "shell")
 load("@io_bazel_rules_go//go:def.bzl", "GoPath")
 load(":gopath_codegen.bzl", "GO_TOOLCHAIN", "run_gopath_codegen")
 
-def _controller_deepcopy_impl(ctx):
-    gopath = ctx.attr.gopath[GoPath]
-    output = ctx.actions.declare_file("zz_generated.deepcopy.go")
+def _generate(ctx, output, output_dir, generator, mnemonic, progress_message):
     run_gopath_codegen(
         ctx = ctx,
-        gopath = gopath,
+        gopath = ctx.attr.gopath[GoPath],
         outputs = [output],
         tools = [ctx.attr._controller_gen[DefaultInfo].files_to_run],
         command = """
 TOOL="$PWD"/{tool}
 OUTDIR="$PWD"/{outdir}
-"$TOOL" object {paths} "output:dir=$OUTDIR"
+"$TOOL" {generator} {paths} "output:dir=$OUTDIR"
 """.format(
             tool = shell.quote(ctx.executable._controller_gen.path),
-            outdir = shell.quote(output.dirname),
+            outdir = shell.quote(output_dir),
+            generator = generator,
             paths = shell.quote("paths=" + ctx.attr.importpath),
         ),
-        mnemonic = "ControllerGenDeepCopy",
-        progress_message = "Generating deep-copy methods for %{label}",
+        mnemonic = mnemonic,
+        progress_message = progress_message,
     )
     return [DefaultInfo(files = depset([output]))]
+
+def _controller_deepcopy_impl(ctx):
+    output = ctx.actions.declare_file("zz_generated.deepcopy.go")
+    return _generate(ctx, output, output.dirname, "object", "ControllerGenDeepCopy", "Generating deep-copy methods for %{label}")
+
+def _controller_crds_impl(ctx):
+    output = ctx.actions.declare_directory(ctx.label.name)
+    return _generate(ctx, output, output.path, "crd", "ControllerGenCRD", "Generating CRDs for %{label}")
+
+_CONTROLLER_GEN_ATTRS = {
+    "gopath": attr.label(mandatory = True, providers = [GoPath]),
+    "importpath": attr.string(mandatory = True),
+    "_controller_gen": attr.label(
+        default = Label("@io_k8s_sigs_controller_tools//cmd/controller-gen"),
+        cfg = "exec",
+        executable = True,
+    ),
+}
 
 controller_deepcopy = rule(
     implementation = _controller_deepcopy_impl,
-    attrs = {
-        "gopath": attr.label(mandatory = True, providers = [GoPath]),
-        "importpath": attr.string(mandatory = True),
-        "_controller_gen": attr.label(
-            default = Label("@io_k8s_sigs_controller_tools//cmd/controller-gen"),
-            cfg = "exec",
-            executable = True,
-        ),
-    },
+    attrs = _CONTROLLER_GEN_ATTRS,
     toolchains = [GO_TOOLCHAIN],
 )
 
-def _controller_crds_impl(ctx):
-    gopath = ctx.attr.gopath[GoPath]
-    output = ctx.actions.declare_directory(ctx.label.name)
-    run_gopath_codegen(
-        ctx = ctx,
-        gopath = gopath,
-        outputs = [output],
-        tools = [ctx.attr._controller_gen[DefaultInfo].files_to_run],
-        command = """
-TOOL="$PWD"/{tool}
-OUTDIR="$PWD"/{outdir}
-"$TOOL" crd {paths} "output:dir=$OUTDIR"
-""".format(
-            tool = shell.quote(ctx.executable._controller_gen.path),
-            outdir = shell.quote(output.path),
-            paths = shell.quote("paths=" + ctx.attr.importpath),
-        ),
-        mnemonic = "ControllerGenCRD",
-        progress_message = "Generating CRDs for %{label}",
-    )
-    return [DefaultInfo(files = depset([output]))]
-
 controller_crds = rule(
     implementation = _controller_crds_impl,
-    attrs = {
-        "gopath": attr.label(mandatory = True, providers = [GoPath]),
-        "importpath": attr.string(mandatory = True),
-        "_controller_gen": attr.label(
-            default = Label("@io_k8s_sigs_controller_tools//cmd/controller-gen"),
-            cfg = "exec",
-            executable = True,
-        ),
-    },
+    attrs = _CONTROLLER_GEN_ATTRS,
     toolchains = [GO_TOOLCHAIN],
 )

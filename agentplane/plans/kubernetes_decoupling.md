@@ -1,6 +1,7 @@
 # Decoupling Agentplane from Kubernetes
 
-Status: **no direction chosen, 2026-11-14.** The operator asked for this plan (UTC): Agentplane "might
+**No direction chosen.** On Nov 22 the operator named the Kubernetes-backed Identity as a candidate
+if the decoupling track is selected. The operator asked for this plan (UTC): Agentplane "might
 be more decoupleable from kubernetes that way which could mean e.g. lighter integration tests. flux
 could still configure with reconciliation via eg crossplane or such. with uncertainty of course, not
 sure if that's a good idea" (01:10); "i'm pretty sure we could even make it possible to execute
@@ -11,20 +12,20 @@ The [architecture overview](architecture_overview.md) prices where records live 
 Sandbox workloads run on Kubernetes in every direction, as does the
 [principles](../docs/principles.md) baseline ("Kubernetes is a shared baseline"). This plan adds two
 motives that overview does not weigh, test weight and environments off Kubernetes, and the second one
-would reopen that baseline. It does not repeat the overview's record-machinery analysis.
+would reopen that baseline. A third motive is giving Agentplane ownership of Identity lifetimes. It does not repeat the overview's record-machinery analysis.
 
 ## What ties Agentplane to Kubernetes today
 
 Checked on `devel` `a2c0b74e3`.
 
-| Coupling                           | Where                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Caller authentication              | First-party services use role service SVIDs over mTLS; workload SVID checks read the live `WorkloadCredential` and `Identity` ([how a verifier resolves a peer](../docs/workload_authentication.md#how-a-verifier-resolves-a-peer)). cert-manager issues SVIDs from the `agentplane-workload` ClusterIssuer; the Policy Controller writes `WorkloadCredential` status.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Agentplane records as CRDs         | CRDs in [`crds/manifests`](../crds/manifests): `Identity`, `PolicySet`, `PolicyBinding`, `WorkloadCredential`, `EgressCredential`, `SandboxTemplate`, `Sandbox`. The Action Service, egress and the MCP edge read them with their own informers ([`policy/reader`](../policy/reader)); only the app and browser use `PolicyService`'s watch RPCs. orchestration_v1 writes `Identity`, `PolicySet` and `PolicyBinding` through a kube client. CEL admission: `crds/test_*_admission.py`.                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| Records whose output is Kubernetes | `KubernetesRoleSet`, `ServiceAccountGrant`, `ManagedServiceAccount` and `PolicySet` `kubernetes_*` rules become RoleBindings for agents that run `kubectl`. Product behavior; stays on Kubernetes under every option.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| Environments                       | The Sandbox Controller creates the Pod or KubeVirt VM (Firecracker runs inside a Pod), state and workspace PVCs, launch ConfigMap and ServiceAccount. Its leader directly observes each accepted Runtime with `WatchState(observe_only=true)`; lifecycle facts stay in memory, fenced by Sandbox UID, accepted workload Pod UID and boot ID. Gateway replicas dial the Runtime directly at its Pod IP ([runner control](../docs/runner_control.md)); proxy callers use the stable `runner-gateway` Service. Runtime calls carry Sandbox UID, workload Pod UID and boot ID. The code creates no per-Sandbox control Service or EndpointSlice and publishes no connection Lease; retained objects require manual deletion unless Sandbox-owner garbage collection applies. `WorkloadCredential` `spec.pod` and Pod-bound tokens tie identity to the Pod. Egress is a sidecar or relay plus Cilium policy. |
-| Placement and ownership            | The Dispatcher's ownership Lease ([`ownership.go`](../session_dispatcher/dispatcher/ownership.go)); History, Notifications and the sampler already use [`postgres/lease`](../postgres/lease).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| API addresses                      | `EnvironmentTarget` is namespace, name and UID; `SubmitInput` and `InterruptTurn` carry `expected_sandbox_uid`; `Dispatch` names a Sandbox; Runtime proxy callers use the stable `runner-gateway` Service and send the `x-agentplane-sandbox*` identity headers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Coupling                           | Where                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Caller authentication              | First-party services use role service SVIDs over mTLS; workload SVID checks read the live `WorkloadCredential` and `Identity` ([how a verifier resolves a peer](../docs/workload_authentication.md#how-a-verifier-resolves-a-peer)). cert-manager issues SVIDs from the `agentplane-workload` ClusterIssuer; the Policy Controller writes `WorkloadCredential` status.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Agentplane records as CRDs         | CRDs in [`crds/manifests`](../crds/manifests): `Identity`, `PolicySet`, `PolicyBinding`, `WorkloadCredential`, `EgressCredential`, `SandboxTemplate`, `Sandbox`. The Action Service, egress and the MCP edge read them with their own informers ([`policy/reader`](../policy/reader)); only the app and browser use `PolicyService`'s watch RPCs. orchestration_v1 writes `Identity`, `PolicySet` and `PolicyBinding` through a kube client. CEL admission: `crds/test_*_admission.py`.                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Records whose output is Kubernetes | `KubernetesRoleSet`, `ServiceAccountGrant`, `ManagedServiceAccount` and `PolicySet` `kubernetes_*` rules become RoleBindings for agents that run `kubectl`. Product behavior; stays on Kubernetes under every option.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Environments                       | The Sandbox Controller creates the Pod or KubeVirt VM (Firecracker runs inside a Pod), state and workspace PVCs, launch ConfigMap and ServiceAccount. Its leader directly observes each accepted Runtime with `WatchState(observe_only=true)`; lifecycle facts stay in memory, fenced by Sandbox UID, accepted workload Pod UID and boot ID. Environments replicas dial the Runtime directly at its Pod IP ([runner control](../docs/runner_control.md)); proxy callers use the `environments:8082` Service. Runtime calls carry Sandbox UID, workload Pod UID and boot ID. The code creates no per-Sandbox control Service or EndpointSlice and publishes no connection Lease; retained objects require manual deletion unless Sandbox-owner garbage collection applies. `WorkloadCredential` `spec.pod` and Pod-bound tokens tie identity to the Pod. Egress is a sidecar or relay plus Cilium policy. |
+| Placement and ownership            | The Dispatcher's ownership Lease ([`session_lease.go`](../session_dispatcher/internal/store/session_lease.go)); History, Notifications and the sampler already use [`postgres/lease`](../postgres/lease).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| API addresses                      | `EnvironmentTarget` is namespace, name and UID; `SubmitInput` and `InterruptTurn` address a Session and accept an optional `expected_sandbox_uid`; `Dispatch` names a Sandbox; Runtime proxy callers use the `environments:8082` Service and send the `x-agentplane-sandbox*` identity headers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 
 ## What tests need today
 
@@ -61,27 +62,19 @@ tests the services' drain and recovery but not readiness or endpoint switching.
 
 ### O2. Seam first
 
-Production changes that remove incidental coupling without moving a store; each also stands on its
-own:
+Consider one direct reader as a pilot. PolicyService already serves `CreateIdentity`,
+`DeleteIdentity` and `WatchIdentities`. Delegated-subject authentication still does a live
+[Identity UID lookup](../identity/auth/delegation.go), and the legacy launcher directly
+[creates an Identity and its grants](../action_service/orchestration_v1/launch.go). Trace who
+reads and writes an Identity, what callers observe on deletion and replacement, and where
+Kubernetes owner references handle cleanup. Compare a PolicyService lookup with the current live
+read for immediate revocation, stale watches and an unavailable authority. Measure the test or
+ownership benefit. A pilot can leave the CR as the single writable authority.
 
-1. Every policy, identity and credential read goes through `PolicyService`; the per-service informers
-   go.
-2. Service-SVID mTLS authentication is complete
-   ([contract](../docs/workload_authentication.md#service-authorization-and-attribution)). Workload
-   credential resolution still needs the live record reader; routing those reads through one
-   owning service remains separate work.
-3. Dispatcher, EnvironmentService and CLI addresses become opaque environment IDs.
-4. Gateway code supports independent Runtime watches and direct calls from every replica, fenced
-   by the Controller-bound Sandbox UID, workload Pod UID and Runtime boot ID. Each replica
-   dials the Runtime at its Pod IP; proxy callers use the stable `runner-gateway` Service. The
-   Controller's authenticated watch binds the Runtime to the current workload UID before facts
-   are published. Observation loss does not revoke another Gateway replica's calls or Runtime-owned
-   work. Existing per-Sandbox route objects are unused. Only deleting their Sandbox owner triggers
-   garbage collection; unowned objects require manual deletion. The Dispatcher delivery Lease is a separate scheduling protocol and remains
-   unchanged ([replica ownership](../session_dispatcher/README.md#replica-ownership-decision)).
-
-Service tests could then run against one fake `PolicyService` instead of envtest. The store stays
-an API server.
+Opaque Environment IDs on Dispatcher, EnvironmentService and CLI calls are a separate proposal
+for O3. Role SVID authentication and independent per-replica Runtime calls already exist
+([authentication](../docs/workload_authentication.md#service-authorization-and-attribution),
+[replica ownership](../session_dispatcher/README.md#replica-ownership-decision)).
 
 ### O3. Environments without Kubernetes
 
@@ -137,17 +130,17 @@ than tofu-controller or an importer.
 - **Where it starts:** `PolicyService` in the Policy Controller already serves `CreateIdentity`,
   `DeleteIdentity` and `WatchIdentities`, over the CRs and with no database. The Action Service,
   egress, Environments, the MCP edge, Notifications and the Dispatcher read the CRs through
-  [`policy/reader`](../policy/reader) informers. O2 step 1 moves them onto `PolicyService`, after
-  which changing its store reaches no reader.
+  [`policy/reader`](../policy/reader) informers. A pilot in O2 would identify which readers can use
+  the service and which authorization requirements a store change would have to preserve.
 
 ## Recommendation (proposal, not a decision)
 
-O2 first: each step is justified without decoupling. O1 as test work on the existing fixtures,
-starting with the central-sampler suites. O3 as a design after O2, if environments off Kubernetes
-are wanted as a product capability. O4 only if the API server left after O1–O3 still costs measured
-test time; its startup cost was not measured here.
+If the operator selects Identity ownership, start with the O2 reader/writer trace. Then compare
+the CR-backed API with an Agentplane-owned record and a reconciler for Flux-authored Identities.
+Specify one writable authority, UID continuity for existing Sessions and grants, deletion and
+recreation, and who cleans up credentials and grants after failures. The service API can be useful
+with either store. A database migration needs its own benefit and rollout decision.
 
-## Question for review
-
-Which payoff is wanted: lighter tests, which O1 and O2 reach, or environments off Kubernetes as a
-product capability (O3), which changes the principles' Kubernetes baseline?
+For lighter tests, measure O1 with the existing process fixtures. For environments outside
+Kubernetes, price O3 against a concrete host and workload. Neither the zero-Environment Session
+design nor the staging Firecracker canary requires moving Identity storage.

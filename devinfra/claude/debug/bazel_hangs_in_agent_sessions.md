@@ -100,9 +100,9 @@ done
 ls -la /proc/$BC/fd/{1,2}
 lsof -p $BC | grep -E "PIPE|sock"
 
-# Did the bazel command_log file get any output recently?
-ls -la ~/.cache/bazel/_bazel_*/<output_base>/command.log
-tail -20 ~/.cache/bazel/_bazel_*/<output_base>/command.log
+# Did the bazel command_log file get any output recently? (per-session output base)
+ls -la ~/.claude/session-env/<session_id>/bazel-output-base/command.log
+tail -20 ~/.claude/session-env/<session_id>/bazel-output-base/command.log
 
 # Are there active gRPC connections from the server?
 ss -tnp | grep $BS
@@ -132,12 +132,21 @@ collected yet.
 
 - `devinfra/claude/claude_hook/main.rs:write_session_bazelrc` — where the
   mitigations live.
-- The old Python-era Bazelrc template was removed; it was not consulted at
-  runtime anymore.
-- Earlier related note, now resolved and archived:
-  <../archive/2026_05_18_stuck_shim.md> — a different but adjacent "agent
-  process didn't terminate cleanly" case, from when the PATH shims still
-  called the hook daemon over UDS.
+
+## Adjacent failure mode: stuck `claude-hook shim` (2026-05-18)
+
+Seen several times in one web session, before the Firecracker migration. Cause never
+found. `claude-hook shim bbr test …` ran 11–16+ minutes at 99–110 % CPU with no output,
+never reaching `exec`. Killing its PID unblocked the parent shell; running with the shim
+dir (`~/.claude/session-env/<session_id>/bin`) removed from `PATH` avoided the shim.
+
+`strace -p <pid> -e write,read` (3 s) showed no writes and a few reads of
+`/proc/self/cgroup`-like content. Without `-f` it traced only the main thread, and `-e`
+hid every other syscall, so it did not show where the CPU went. The shim no longer calls
+the daemon; that removes one suspect but is not known to have fixed this. `main` still
+starts a `#[tokio::main]` runtime first (untested suspect: runtime startup probing
+cgroup limits). If it recurs, capture `strace -f -p <pid>` without `-e` and
+`gdb -p <pid> -batch -ex 'thread apply all bt'` before killing it.
 
 ## Adjacent failure mode: local Bazel fetches blocked (2026-08-16)
 

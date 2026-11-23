@@ -49,11 +49,6 @@ def load_evidence_segments(*, fred_only: bool = False) -> tuple[DatedHistoricalS
     return _dated_history_from_evidence(evidence), evidence
 
 
-# ---------------------------------------------------------------------------
-# Internals.
-# ---------------------------------------------------------------------------
-
-
 def _historical_from_evidence(evidence: ExogenousEvidence) -> HistoricalSeries:
     history = _dated_history_from_evidence(evidence)
     if len(history.segments) != 1:

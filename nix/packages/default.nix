@@ -201,7 +201,7 @@ let
   # Check modules backing each console script with `importsCheck`, or run the
   # installed command with `entrypointChecks`. Both load the CLI at build time,
   # so a missing propagatedBuildInputs surfaces as a build failure
-  # instead of a runtime crash. See debug/aiquota-missing-atomicwrites.md.
+  # instead of a runtime crash.
   mkWheel =
     {
       pname,
@@ -259,8 +259,6 @@ let
       // lib.optionalAttrs (mainProgram != null) { inherit mainProgram; };
     };
 
-  # Python packages not in nixpkgs (used as propagatedBuildInputs)
-  pyrage = pkgs.callPackage ./pyrage.nix { };
   ducktape-util = mkWheel {
     pname = "ducktape-util";
     description = "Shared utility library (devinfra.bazel, util.otel, etc.)";
@@ -276,7 +274,7 @@ let
     pname = "ducktape-network-monitor";
     description = "Shared NetworkManager D-Bus monitor";
     importsCheck = [ "util.network_monitor" ];
-    propagatedBuildInputs = with python314Packages; [ dbus-next ];
+    propagatedBuildInputs = with python314Packages; [ dbus-fast ];
   };
 
   ducktape-git-hooks = mkWheel {
@@ -333,24 +331,22 @@ let
     {
       pname,
       src,
-      binaryName ? pname,
       description,
-      extraBuildInputs ? [ ],
     }:
     pkgs.stdenvNoCC.mkDerivation {
       inherit pname src;
       version = "latest";
       nativeBuildInputs = [ pkgs.autoPatchelfHook ];
-      buildInputs = [ pkgs.stdenv.cc.cc.lib ] ++ extraBuildInputs;
+      buildInputs = [ pkgs.stdenv.cc.cc.lib ];
       dontUnpack = true;
       installPhase = ''
-        install -Dm755 $src $out/bin/${binaryName}
+        install -Dm755 $src $out/bin/${pname}
       '';
       meta = {
         inherit description;
         homepage = "https://github.com/agentydragon/ducktape";
         license = lib.licenses.agpl3Only;
-        mainProgram = binaryName;
+        mainProgram = pname;
         platforms = [ "x86_64-linux" ];
       };
     };

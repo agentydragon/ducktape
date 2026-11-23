@@ -1,14 +1,10 @@
-use std::path::PathBuf;
+use clap::Parser;
 use std::str::FromStr;
-use structopt::StructOpt;
 
-#[derive(Debug, StructOpt, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Command {
-    // TODO: implement
     Snapshot,
-    // TODO: implement
     Csv,
-    // TODO: implement
     ModelLastSnapshot,
     // TODO: implement
     Server,
@@ -27,16 +23,9 @@ impl FromStr for Command {
     }
 }
 
-#[derive(Debug, StructOpt, PartialEq)]
+#[derive(Debug, Parser, PartialEq)]
 pub struct Opt {
-    // TODO: implement
-    #[structopt(
-        long = "json_output_path",
-        help = "path where JSON snapshot will be written"
-    )]
-    pub json_output_path: Option<PathBuf>,
-
-    #[structopt(
+    #[arg(
         long,
         help = "command; one of snapshot, csv, modellastsnapshot, server",
         default_value = "snapshot"

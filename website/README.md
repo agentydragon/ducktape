@@ -17,7 +17,6 @@ Hakyll (`site.hs`) renders it into an OCI image served by `static-web-server`
 From the repo root:
 
 ```bash
-sass website/css/default.scss > website/css/default.css  # after editing the SCSS
 nix build .#website-image
 docker load < result && docker run --rm -p 8080:8080 website:latest
 ```

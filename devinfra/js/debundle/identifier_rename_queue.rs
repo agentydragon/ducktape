@@ -273,10 +273,6 @@ fn input_bundle_names_by_chunk(
     names_by_chunk
 }
 
-// ---------------------------------------------------------------------------
-// AST walking
-// ---------------------------------------------------------------------------
-
 /// Top-level declaration site we tally references for. The fields here
 /// mirror [`RenameQueueEntry`]'s identity portion; ref/fanout counts are
 /// kept separately in the queue computation since this struct is used as

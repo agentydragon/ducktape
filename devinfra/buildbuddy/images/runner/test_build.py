@@ -6,8 +6,8 @@ import pytest
 
 from devinfra.buildbuddy.images.runner import build
 
-BASE_IMAGE = "ghcr.io/agentydragon/rbe"
-RUNNER_IMAGE = "ghcr.io/agentydragon/buildbuddy-remote-runner"
+BASE_IMAGE = "registry.example/test-base"
+RUNNER_IMAGE = "registry.example/test-runner"
 
 
 def write_pins(
@@ -35,7 +35,7 @@ def write_pins(
     [
         (RUNNER_IMAGE, "sha256:built", False),
         (RUNNER_IMAGE, "sha256:old-runner", True),
-        ("ghcr.io/agentydragon/other-runner", "sha256:built", True),
+        ("registry.example/test-other-runner", "sha256:built", True),
     ],
 )
 def test_publish_decision_uses_both_repository_and_digest(

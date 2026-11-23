@@ -1,7 +1,10 @@
-import { create, toJson, type JsonValue } from "@bufbuild/protobuf";
+import { create, fromJson, toJson, type JsonObject, type JsonValue } from "@bufbuild/protobuf";
+import { TimestampSchema } from "@bufbuild/protobuf/wkt";
 
 import {
-  type ActionState,
+  ActionIdentitySchema,
+  ActionRequestSchema,
+  ActionState,
   GetActionRequestResponseSchema,
   ListActionGroupsResponseSchema,
   ListActionRequestHistoryResponseSchema,
@@ -20,6 +23,26 @@ import {
   WatchMcpServersResponseSchema,
   type McpServerLinkage,
 } from "../../../../action_service/api/contracts/operator_action_service_pb";
+
+export function actionRequest(fields: {
+  action: { group: string; name: string };
+  arguments: JsonObject;
+  title: string;
+  description?: string | null;
+}): ActionRequest {
+  return create(ActionRequestSchema, {
+    id: "00000000-0000-4000-8000-000000000001",
+    action: create(ActionIdentitySchema, fields.action),
+    arguments: fields.arguments,
+    title: fields.title,
+    description: fields.description ?? undefined,
+    caller: { namespace: "test-namespace", name: "test-account" },
+    state: ActionState.DECISION_PENDING,
+    version: 1n,
+    createdAt: fromJson(TimestampSchema, "2026-10-09T12:00:00Z"),
+    updatedAt: fromJson(TimestampSchema, "2026-10-09T12:00:00Z"),
+  });
+}
 
 export function actionStateProtoJson(value: ActionState): string {
   const json = toJson(ListActionRequestsRequestSchema, create(ListActionRequestsRequestSchema, { state: [value] }));

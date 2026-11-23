@@ -2,13 +2,6 @@
 # gazelle:resolve py third_party.containers.alloy_config //third_party/containers:alloy_config
 # gazelle:resolve py grafana_grafanaserviceaccount_crds //cluster/cdk8s/providers/grafana_operator:grafanaserviceaccount
 # gazelle:resolve py cert_manager_crds //cluster/cdk8s/providers/cert_manager:certificate
-# gazelle:resolve py grafana_grafana_crds //cluster/cdk8s/providers/grafana_operator:grafana
-# gazelle:resolve py grafana_grafanadashboard_crds //cluster/cdk8s/providers/grafana_operator:grafanadashboard
-# gazelle:resolve py grafana_grafanadatasource_crds //cluster/cdk8s/providers/grafana_operator:grafanadatasource
-# gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/providers/prometheus_operator:servicemonitor
-# gazelle:resolve py prometheus_operator_podmonitor_crds //cluster/cdk8s/providers/prometheus_operator:podmonitor
-# gazelle:resolve py prometheus_operator_prometheusrule_crds //cluster/cdk8s/providers/prometheus_operator:prometheusrule
-# gazelle:resolve py tofu_controller //cluster/cdk8s/providers/tofu_controller:terraform
 load("@image_pins//:pins.bzl", "BLACKBOX_EXPORTER_DIGEST", "BLACKBOX_EXPORTER_IMAGE")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
@@ -27,14 +20,10 @@ py_library(
     name = "alloy_otlp_bearer_token",
     srcs = ["alloy_otlp_bearer_token.py"],
     data = ["//tf/gitops/alloy-otlp-bearer-token:inline_source"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/authentik:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:opentofu",
-        "//cluster/cdk8s:terraform",
         "@pypi//cdk8s",
     ],
 )
@@ -66,6 +55,7 @@ py_library(
     srcs = ["grafana_operator.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":namespace",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
@@ -80,6 +70,7 @@ py_library(
     srcs = ["cilium_monitoring.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":namespace",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
@@ -92,10 +83,13 @@ py_library(
     srcs = ["stack.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":namespace",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:ntfy",
+        "//cluster/cdk8s:piraeus_storage",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
         "@pypi//cdk8s",
@@ -117,9 +111,11 @@ py_library(
         "//cluster/cdk8s/att_gateway_exporter:__pkg__",
     ],
     deps = [
+        ":alloy_endpoints",
         ":grafana_helmrepository",
-        ":loki",
+        ":loki_endpoints",
         ":mimir",
+        ":namespace",
         ":tempo",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
@@ -135,22 +131,31 @@ py_library(
 )
 
 py_library(
+    name = "loki_endpoints",
+    srcs = ["loki_endpoints.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = ["//cluster/cdk8s:service_ref"],
+)
+
+py_library(
     name = "loki",
     srcs = ["loki.py"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/gatus:__pkg__",
-    ],
+    visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":alloy_endpoints",
         ":grafana_helmrepository",
+        ":loki_endpoints",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:piraeus_storage",
+        "//cluster/cdk8s:vpa_policy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/seaweedfs:endpoints",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
     ],
@@ -162,13 +167,16 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":grafana_helmrepository",
+        ":namespace",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:piraeus_storage",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/providers/flux:kustomization",
         "//cluster/cdk8s/providers/seaweedfs:seaweedfs_bucket",
+        "//cluster/cdk8s/seaweedfs:endpoints",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
     ],
@@ -181,10 +189,12 @@ py_library(
     deps = [
         ":grafana_helmrepository",
         ":mimir",
+        ":namespace",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:helm",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/seaweedfs:endpoints",
         "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
     ],
@@ -211,11 +221,14 @@ py_library(
         "//cluster/cdk8s/monitoring/dashboards:rugged-power.json",
         "//cluster/cdk8s/monitoring/dashboards:s3-operations.json",
         "//cluster/cdk8s/monitoring/dashboards:storage-service-details.json",
+        "//cluster/cdk8s/monitoring/dashboards:tabbyapi.json",
         "//cluster/cdk8s/monitoring/dashboards:zot-cache-image-pulls.json",
     ],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
+        ":loki_endpoints",
         ":mimir",
+        ":namespace",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:manifest_roots",
@@ -254,9 +267,9 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":grafana_instance",
+        ":namespace",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s/clickhouse:client",
-        "//cluster/cdk8s/providers/grafana_operator:grafanadashboard",
         "//cluster/cdk8s/providers/grafana_operator:grafanadatasource",
         "@pypi//cdk8s",
         "@rules_python//python/runfiles",
@@ -283,6 +296,7 @@ py_library(
     name = "rules",
     srcs = ["rules.py"],
     data = [
+        "apiserver-client-certificate-quantile.promql",
         "clickhouse-disk-usage.promql",
         "container-page-cache-thrash-warning.promql",
         "control-plane-lease-put-latency-critical.promql",
@@ -296,9 +310,6 @@ py_library(
         "disk-usage-pvc-path-info.promql",
         "disk-usage-unattributed-bytes.promql",
         "external-secrets-controller-backlogged-warning.promql",
-        "flux-git-repository-not-ready-warning.promql",
-        "flux-helm-release-not-ready-warning.promql",
-        "flux-kustomization-not-ready-warning.promql",
         "github-graphql-quota-observations-missing-warning.promql",
         "node-io-pressure-warning.promql",
         "piraeus-diskful-volume-info.promql",
@@ -315,6 +326,8 @@ py_library(
     ],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":alloy_endpoints",
+        ":namespace",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
         "@pypi//cdk8s",
@@ -327,10 +340,12 @@ py_test(
     srcs = ["test_rules.py"],
     data = [
         "testdata/alloy_roaming_rules.yaml",
+        "testdata/client_certificate_rules.yaml",
         "testdata/disk_usage_rules.yaml",
         "testdata/github_quota_rules.yaml",
         "testdata/io_pressure_rules.yaml",
         "testdata/roaming_node_rules.yaml",
+        "//cluster:generated/platform-monitoring/platform-monitoring.k8s.yaml",
         "@multitool//tools/promtool",
         "@nodejs_linux_amd64//:bin/node",
     ],
@@ -339,10 +354,9 @@ py_test(
         "PROMTOOL_RLOCATION": "$(rlocationpath @multitool//tools/promtool)",
     },
     deps = [
-        ":rules",
         "//:conftest",
         "//cluster/cdk8s:conftest",
-        "@pypi//cdk8s",
+        "//cluster/cdk8s/testing:promtool",
         "@pypi//pytest",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
@@ -365,11 +379,10 @@ py_test(
         ":gateway_probe",
         "//:conftest",
         "//cluster/cdk8s:conftest",
+        "//cluster/cdk8s/testing:promtool",
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
-        "@pypi//pyyaml",
-        "@rules_python//python/runfiles",
     ],
 )
 
@@ -379,8 +392,10 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":alloy",
+        ":namespace",
         "//cluster/cdk8s:home_lan",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:terraform",
         "//cluster/cdk8s/cert_manager:cluster_ca",
@@ -401,9 +416,12 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":blackbox_exporter",
+        ":namespace",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
+        "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s/providers/prometheus_operator:podmonitor",
         "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "//cluster/cdk8s/providers/prometheus_operator:prometheusrule",
@@ -417,7 +435,6 @@ py_library(
 py_library(
     name = "blackbox_exporter",
     srcs = ["blackbox_exporter.py"],
-    visibility = ["//cluster/cdk8s:__pkg__"],
 )
 
 py_library(
@@ -426,6 +443,8 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":blackbox_exporter",
+        ":namespace",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
@@ -453,9 +472,10 @@ py_test(
         "//cluster/cdk8s:conftest",
         "//devinfra/oci",
         "//devinfra/testing:undeclared_outputs",
+        "//testing:container_logs",
         "//third_party/containers:blackbox_exporter",
-        "//util/testing:container_logs",
         "@pypi//pyyaml",
+        "@pypi//testcontainers",
     ],
 )
 
@@ -469,6 +489,8 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         ":home_switch",
+        ":namespace",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:home_lan",
         "//cluster/cdk8s:manifest_roots",
@@ -491,6 +513,8 @@ py_library(
     srcs = ["smokeping.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":namespace",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:home_lan",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:node_scheduling",
@@ -521,7 +545,7 @@ py_test(
     deps = [
         "//:conftest",
         "//cluster/cdk8s:conftest",
-        "@pypi//pyyaml",
+        "//cluster/cdk8s/testing:promtool",
         "@rules_python//python/runfiles",
     ],
 )
@@ -554,7 +578,8 @@ py_library(
     data = ["talos.alloy"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
-        ":loki",
+        ":loki_endpoints",
+        "//cluster/cdk8s:container_resources",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
@@ -580,10 +605,20 @@ py_test(
         "//cluster/cdk8s:conftest",
         "//devinfra/oci",
         "//devinfra/testing:undeclared_outputs",
+        "//testing:container_logs",
         "//third_party/containers:alloy_config",
         "//third_party/containers:loki_test",
-        "//util/testing:container_logs",
         "@pypi//testcontainers",
         "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
+    name = "alloy_endpoints",
+    srcs = ["alloy_endpoints.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":namespace",
+        "//cluster/cdk8s:service_ref",
     ],
 )

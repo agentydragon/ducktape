@@ -6,7 +6,7 @@ import json
 import time
 from collections.abc import Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, closing, contextmanager
 from pathlib import Path
 
 import docker
@@ -17,8 +17,8 @@ from testcontainers.core.network import Network
 from devinfra.oci.oci import load_oci_image
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from grafana.visual_tests.recorded import prepare_recorded_dashboard_fixture
+from testing.container_logs import LoggedContainer
 from third_party.containers import grafana_visual, prometheus_visual, ryuk
-from util.testing.container_logs import LoggedContainer
 
 TEST_PASSWORD = "isolated-synthetic-grafana"
 
@@ -93,11 +93,9 @@ def grafana_server(network: Network, datasources: Sequence[dict]) -> Iterator[st
 
 @contextmanager
 def grafana_dashboard(
-    tmp_path: Path,
-    dashboard_path: Path,
-    samples: str,
+    dashboard: dict,
     *,
-    render_fixture: bool = False,
+    prometheus_samples: tuple[Path, str] | None = None,
     variables: dict[str, list[str]] | None = None,
 ) -> Iterator[str]:
     record_stage("loading isolated service images")
@@ -105,74 +103,68 @@ def grafana_dashboard(
         grafana_image = executor.submit(load_oci_image, grafana_visual.LAYOUT_RLOCATION)
         ryuk_image = executor.submit(load_oci_image, ryuk.LAYOUT_RLOCATION, image_ref=testcontainers_config.ryuk_image)
         prometheus_image = (
-            None if render_fixture else executor.submit(load_oci_image, prometheus_visual.LAYOUT_RLOCATION)
+            None if prometheus_samples is None else executor.submit(load_oci_image, prometheus_visual.LAYOUT_RLOCATION)
         )
         grafana_ref = grafana_image.result()
         ryuk_image.result()
         prometheus_ref = prometheus_image.result() if prometheus_image is not None else None
-    client = docker.from_env()
-    data = tmp_path / "data"
-    if prometheus_ref is not None:
-        record_stage("creating synthetic TSDB")
-        data.mkdir()
-        (data / "fixture.om").write_text(samples)
-        mount = {str(data): {"bind": "/fixture", "mode": "rw"}}
-        client.containers.run(
-            prometheus_ref,
-            ["tsdb", "create-blocks-from", "openmetrics", "/fixture/fixture.om", "/fixture/tsdb"],
-            entrypoint="/bin/promtool",
-            volumes=mount,
-            user="0",
-            remove=True,
-        )
-    record_stage("starting Grafana" if render_fixture else "starting Prometheus and Grafana")
-    try:
-        with Network(docker_network_kw={"internal": True}) as network, ExitStack() as services:
-            if prometheus_ref is not None:
-                prometheus = (
-                    LoggedContainer(prometheus_ref, test_name="synthetic-prometheus", user="0")
-                    .with_network(network)
-                    .with_network_aliases("prometheus")
-                    .with_volume_mapping(data, "/fixture", "rw")
-                    .with_command(
-                        [
-                            "--config.file=/etc/prometheus/prometheus.yml",
-                            "--storage.tsdb.path=/fixture/tsdb",
-                            "--storage.tsdb.retention.time=87600h",
-                        ]
-                    )
+    with Network(docker_network_kw={"internal": True}) as network, ExitStack() as services:
+        if prometheus_samples is not None:
+            assert prometheus_ref is not None
+            tmp_path, samples = prometheus_samples
+            record_stage("creating synthetic TSDB")
+            data = tmp_path / "data"
+            data.mkdir()
+            (data / "fixture.om").write_text(samples)
+            with closing(docker.from_env()) as client:
+                client.containers.run(
+                    prometheus_ref,
+                    ["tsdb", "create-blocks-from", "openmetrics", "/fixture/fixture.om", "/fixture/tsdb"],
+                    entrypoint="/bin/promtool",
+                    volumes={str(data): {"bind": "/fixture", "mode": "rw"}},
+                    user="0",
+                    remove=True,
                 )
-                services.enter_context(prometheus)
-            with _grafana_server(
-                network,
-                grafana_ref,
-                [
-                    {
-                        "name": "Mimir",
-                        "uid": "mimir",
-                        "type": "prometheus",
-                        "access": "proxy",
-                        "url": "http://prometheus:9090",
-                    }
-                ],
-            ) as url:
-                with httpx.Client(base_url=url, timeout=15, auth=("admin", TEST_PASSWORD), trust_env=False) as http:
-                    record_stage("provisioning dashboard")
-                    dashboard = json.loads(dashboard_path.read_text())
-                    dashboard["id"] = None
-                    dashboard["version"] = 0
-                    dashboard = json.loads(
-                        json.dumps(dashboard)
-                        .replace("${DS_MIMIR}", "Mimir")
-                        .replace("${DS_PROMETHEUS}", "Mimir")
-                        .replace("${DS_LOKI}", "Mimir" if render_fixture else "Loki")
-                    )
-                    if render_fixture:
-                        prepare_recorded_dashboard_fixture(dashboard, variables or {})
-                    response = http.post("/api/dashboards/db", json={"dashboard": dashboard, "overwrite": False})
-                    response.raise_for_status()
-                record_stage("dashboard ready")
-                yield url
-    finally:
-        record_stage("stopping Grafana and Prometheus")
-        client.close()
+            prometheus = (
+                LoggedContainer(prometheus_ref, test_name="synthetic-prometheus", user="0")
+                .with_network(network)
+                .with_network_aliases("prometheus")
+                .with_volume_mapping(data, "/fixture", "rw")
+                .with_command(
+                    [
+                        "--config.file=/etc/prometheus/prometheus.yml",
+                        "--storage.tsdb.path=/fixture/tsdb",
+                        "--storage.tsdb.retention.time=87600h",
+                    ]
+                )
+            )
+            services.enter_context(prometheus)
+        with _grafana_server(
+            network,
+            grafana_ref,
+            [
+                {
+                    "name": "Mimir",
+                    "uid": "mimir",
+                    "type": "prometheus",
+                    "access": "proxy",
+                    "url": "http://prometheus:9090",
+                }
+            ],
+        ) as url:
+            with httpx.Client(base_url=url, timeout=15, auth=("admin", TEST_PASSWORD), trust_env=False) as http:
+                record_stage("provisioning dashboard")
+                dashboard = json.loads(
+                    json.dumps(dashboard)
+                    .replace("${DS_MIMIR}", "Mimir")
+                    .replace("${DS_PROMETHEUS}", "Mimir")
+                    .replace("${DS_LOKI}", "Mimir" if prometheus_samples is None else "Loki")
+                )
+                dashboard["id"] = None
+                dashboard["version"] = 0
+                if prometheus_samples is None:
+                    prepare_recorded_dashboard_fixture(dashboard, variables or {})
+                response = http.post("/api/dashboards/db", json={"dashboard": dashboard, "overwrite": False})
+                response.raise_for_status()
+            record_stage("dashboard ready")
+            yield url

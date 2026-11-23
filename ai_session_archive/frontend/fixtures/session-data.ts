@@ -74,7 +74,7 @@ const importProgress: MachineImportProgress[] = [
 type SessionSummaryFixture = Pick<SessionSummary, "id" | "machine_id" | "harness" | "session_kind" | "title"> &
   Partial<Omit<SessionSummary, "id" | "machine_id" | "harness" | "session_kind" | "title">>;
 
-function createSessionSummary(overrides: SessionSummaryFixture): SessionSummary {
+export function createSessionSummary(overrides: SessionSummaryFixture): SessionSummary {
   return {
     cwd: null,
     started_at: null,

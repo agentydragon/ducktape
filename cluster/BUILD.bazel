@@ -1,6 +1,6 @@
 # gazelle:ignore
 
-load("//devinfra/python:defs.bzl", "py_binary", "py_library")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 exports_files([".tflint.hcl"])
 
@@ -21,14 +21,9 @@ filegroup(
     visibility = ["//cluster:__subpackages__"],
 )
 
-# Generator output kept beside hand-written files in the parked tree, for the parity test.
 filegroup(
-    name = "parked_generated_manifests",
-    srcs = glob([
-        "parked/**/*.k8s.yaml",
-        "parked/haku-openclaw-spike/backup/**",
-        "parked/public-coder-agent/backup/kustomization.yaml",
-    ]),
+    name = "parked_yaml_manifests",
+    srcs = glob(["parked/**/*.yaml"]),
     visibility = ["//cluster/cdk8s:__pkg__"],
 )
 
@@ -47,6 +42,16 @@ py_library(
     deps = [
         "@pypi//kubernetes",
         "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_network_readiness",
+    srcs = ["test_network_readiness.py"],
+    deps = [
+        ":network_readiness",
+        "@pypi//kubernetes",
+        "@pypi//pytest",
     ],
 )
 

@@ -39,3 +39,10 @@ but the flag is global where the requirement is not.
 Uncosted: a second `bazel test` pass over the visual targets carrying the
 download flags, with the main `//...` sweep left on plain minimal; or giving
 those targets a different execution path entirely.
+
+## Evaluate full ansible-lint under Bazel/RBE
+
+Decide whether Bazel can supply the Galaxy roles and collections needed by the
+[full ansible-lint check](../docs/linting.md#ci-boundaries) and whether moving the
+check is worth maintaining their Bazel inputs. Record the decision in the linting
+guide.

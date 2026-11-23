@@ -18,18 +18,6 @@ from kubernetes_asyncio import client as k8s_client
 class CustomObjectsClient(Protocol):
     """Typed subset of the generated dynamic custom-object API."""
 
-    async def list_namespaced_custom_object(
-        self,
-        group: str,
-        version: str,
-        namespace: str,
-        plural: str,
-        *,
-        label_selector: str = ...,
-        limit: int = ...,
-        _continue: str = ...,
-    ) -> dict[str, Any]: ...
-
     async def create_namespaced_custom_object(
         self, group: str, version: str, namespace: str, plural: str, body: dict[str, Any]
     ) -> dict[str, Any]: ...

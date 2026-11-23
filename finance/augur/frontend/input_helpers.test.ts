@@ -1,5 +1,5 @@
 // Unit tests for the scenario-set URL codec (Base + per-variant overrides) and for the target
-// allocation the funding policy carries. Runs under vitest; see //augur/frontend:input_helpers_test.
+// allocation the funding policy carries. Runs under vitest; see //finance/augur/frontend:input_helpers_test.
 
 import { test, expect } from "vitest";
 
@@ -123,17 +123,13 @@ test("decoding caps variants at MAX_VARIANTS (untrusted hand-edited link)", () =
   expect(decoded.variants).toHaveLength(MAX_VARIANTS);
 });
 
-test("a malformed ?scenarios= blob falls back to a base with no variants", () => {
-  const decoded = scenarioSetFromSearch("scenarios=not-json", bootstrap);
-  expect(decoded.variants).toHaveLength(0);
-  expect(decoded.base.input.monthlySpend).toBe(productInputDefaults(bootstrap).monthlySpend);
-});
+const scenariosQuery = (blob: unknown): string => new URLSearchParams({ scenarios: JSON.stringify(blob) }).toString();
 
-test("a malformed nested lifecycle value rejects the scenario set", () => {
-  const params = new URLSearchParams();
-  params.set(
-    "scenarios",
-    JSON.stringify({
+test.each([
+  ["a malformed ?scenarios= blob", "scenarios=not-json"],
+  [
+    "a malformed nested lifecycle value",
+    scenariosQuery({
       v: 3,
       base: {
         label: "Edited",
@@ -143,40 +139,19 @@ test("a malformed nested lifecycle value rejects the scenario set", () => {
         },
       },
       variants: [],
-    })
-  );
-
-  const decoded = scenarioSetFromSearch(params.toString(), bootstrap);
+    }),
+  ],
+  [
+    "an obsolete scenario field",
+    scenariosQuery({ v: 3, base: { label: "Edited", input: { horizonMonths: 24 } }, variants: [] }),
+  ],
+  ["an unrecognized ?scenarios= version", scenariosQuery({ v: 999, base: { label: "x", input: {} }, variants: [] })],
+])("%s rejects the scenario set and falls back to the default base with no variants", (_case, query) => {
+  const decoded = scenarioSetFromSearch(query, bootstrap);
   expect(decoded.base.label).toBe("Base");
   expect(decoded.base.input.monthlySpend).toBe(productInputDefaults(bootstrap).monthlySpend);
   expect(decoded.variants).toHaveLength(0);
 });
-
-test("an obsolete scenario field rejects the scenario set", () => {
-  const params = new URLSearchParams();
-  params.set(
-    "scenarios",
-    JSON.stringify({
-      v: 3,
-      base: { label: "Edited", input: { horizonMonths: 24 } },
-      variants: [],
-    })
-  );
-
-  const decoded = scenarioSetFromSearch(params.toString(), bootstrap);
-  expect(decoded.base.label).toBe("Base");
-  expect(decoded.base.input.monthlySpend).toBe(productInputDefaults(bootstrap).monthlySpend);
-  expect(decoded.variants).toHaveLength(0);
-});
-
-test("an unrecognized ?scenarios= version falls back to a base with no variants", () => {
-  const params = new URLSearchParams();
-  params.set("scenarios", JSON.stringify({ v: 999, base: { label: "x", input: {} }, variants: [] }));
-  const decoded = scenarioSetFromSearch(params.toString(), bootstrap);
-  expect(decoded.variants).toHaveLength(0);
-});
-
-// -- Target allocation: seeding, and what reaches the wire ---------------------
 
 const SELLABLE = [
   { key: "security:spy", sleeve: { kind: "security", symbol: "spy" }, label: "S&P 500", valueQuanta: "900000" },

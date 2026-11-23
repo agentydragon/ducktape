@@ -5,36 +5,43 @@ import pytest
 
 from devinfra.buildbuddy import cli
 from devinfra.buildbuddy.ci.bes import Invocation, Output
-from devinfra.ci import nix_artifact_overrides
+from devinfra.ci import nix_artifact_overrides, release_assets
 
 BIN = "bazel-out/k8-fastbuild/bin"
 
 
 def output(label: str, path: str, uri: str, *, group: str = "default", aspect: str = "") -> Output:
-    return Output(label=label, path=path, uri=uri, digest="digest", size=1, output_group=group, aspect=aspect)
+    return Output(label=label, path=path, uri=uri, digest="digest", output_group=group, aspect=aspect)
 
 
-def write_registry(path: Path) -> None:
+@pytest.fixture
+def registry(tmp_path: Path) -> Path:
+    path = tmp_path / "artifact_targets.json"
     path.write_text(
         json.dumps(
             {
                 "pins": {
                     "first": {"target": "//:first", "filename": "first.whl", "release": "gate"},
                     "second": {"target": "//:second", "filename": "second.zip", "release": "gate"},
-                    "ungated": {"target": "//:ignored", "filename": "ignored.whl", "release": "binary"},
+                    "binary": {"target": "//:ignored", "filename": "ignored.whl", "release": "binary"},
+                    "ungated": {"target": "//:ungated", "filename": "ungated.whl", "release": "ungated"},
                 },
-                "releases": {"gate": {"nixPackage": True}, "binary": {"nixPackage": False}},
+                "releases": {"gate": {"nixPackage": True}, "binary": {"nixPackage": False}, "ungated": {}},
             }
         )
     )
+    return path
 
 
-def test_fetches_each_invocation_once_in_one_batch_and_emits_absolute_pin_paths(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_nix_gate_builds_and_fetches_each_selected_pin(
+    tmp_path: Path, registry: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    release_assets.main(["nix-wheel-inputs", "--artifact-targets", str(registry)])
+    assert capsys.readouterr().out.splitlines() == [
+        "bazel_targets=//:first //:second",
+        "nix_checks=.#checks.x86_64-linux.artifact-gate",
+    ]
     monkeypatch.chdir(tmp_path)
-    registry = tmp_path / "artifact_targets.json"
-    write_registry(registry)
     first_path = f"{BIN}/first.whl"
     second_path = f"{BIN}/second.zip"
     invocations = {
@@ -42,16 +49,14 @@ def test_fetches_each_invocation_once_in_one_batch_and_emits_absolute_pin_paths(
             outputs=[
                 output("//:first", first_path, "bytestream://fake/first"),
                 output("//:first", f"{BIN}/lint.txt", "bytestream://fake/lint", group="mypy"),
-            ],
-            test_status={},
+            ]
         ),
         "two": Invocation(
             outputs=[
                 output("//:second", second_path, "bytestream://fake/second"),
                 output("//:ignored", f"{BIN}/ignored.whl", "bytestream://fake/ignored"),
                 output("//:first", f"{BIN}/aspect.whl", "bytestream://fake/aspect", aspect="lint%mypy"),
-            ],
-            test_status={},
+            ]
         ),
     }
     exports = []
@@ -90,15 +95,13 @@ def test_fetches_each_invocation_once_in_one_batch_and_emits_absolute_pin_paths(
 
 
 def test_rejects_registry_filename_that_differs_from_the_default_output(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    registry: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    registry = tmp_path / "artifact_targets.json"
-    write_registry(registry)
     monkeypatch.setattr(
         nix_artifact_overrides,
         "read",
         lambda _invocation_id: Invocation(
-            outputs=[output("//:first", f"{BIN}/renamed.whl", "bytestream://fake/renamed")], test_status={}
+            outputs=[output("//:first", f"{BIN}/renamed.whl", "bytestream://fake/renamed")]
         ),
     )
 
@@ -106,23 +109,22 @@ def test_rejects_registry_filename_that_differs_from_the_default_output(
         nix_artifact_overrides.main(["--invocations", "one", "--artifact-targets", str(registry)])
 
 
-def test_surfaces_a_failed_bulk_download_without_emitting_overrides(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    registry = tmp_path / "artifact_targets.json"
-    write_registry(registry)
-    monkeypatch.setattr(
-        nix_artifact_overrides,
-        "read",
-        lambda _invocation_id: Invocation(
-            outputs=[
-                output("//:first", f"{BIN}/first.whl", "bytestream://fake/first"),
-                output("//:second", f"{BIN}/second.zip", "bytestream://fake/second"),
-            ],
-            test_status={},
-        ),
+@pytest.fixture
+def invocation_with_gated_assets(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    build = Invocation(
+        outputs=[
+            output("//:first", f"{BIN}/first.whl", "bytestream://fake/first"),
+            output("//:second", f"{BIN}/second.zip", "bytestream://fake/second"),
+        ]
     )
+    monkeypatch.setattr(nix_artifact_overrides, "read", lambda _invocation_id: build)
 
+
+@pytest.mark.usefixtures("invocation_with_gated_assets")
+def test_surfaces_a_failed_bulk_download_without_emitting_overrides(
+    registry: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     def fail_download(*_args: str, **_kwargs) -> bytes:
         raise cli.CLIError("HTTP 503: unavailable")
 
@@ -132,23 +134,10 @@ def test_surfaces_a_failed_bulk_download_without_emitting_overrides(
         nix_artifact_overrides.fetch_overrides(["one"], registry)
 
 
+@pytest.mark.usefixtures("invocation_with_gated_assets")
 def test_rejects_a_download_that_does_not_materialize_the_resolved_asset(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    registry: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.chdir(tmp_path)
-    registry = tmp_path / "artifact_targets.json"
-    write_registry(registry)
-    monkeypatch.setattr(
-        nix_artifact_overrides,
-        "read",
-        lambda _invocation_id: Invocation(
-            outputs=[
-                output("//:first", f"{BIN}/first.whl", "bytestream://fake/first"),
-                output("//:second", f"{BIN}/second.zip", "bytestream://fake/second"),
-            ],
-            test_status={},
-        ),
-    )
     monkeypatch.setattr(cli, "run", lambda *_args, **_kwargs: b"")
 
     with pytest.raises(SystemExit, match=r"completed without creating bb-out/.*/first.whl"):

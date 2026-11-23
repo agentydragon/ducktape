@@ -1,4 +1,3 @@
-import { forwardRef, useImperativeHandle, useMemo } from "react";
 import { Paper, Table, Text } from "@mantine/core";
 
 export interface OccurrenceStatsRow {
@@ -16,22 +15,12 @@ interface Props {
   occurrences: OccurrenceStatsRow[];
 }
 
-export interface OccurrenceStatsHandle {
-  getStats(tpId: string, occurrenceId: string): OccurrenceStatsRow | undefined;
-}
-
 function pctParts(value: number): { integer: string; fraction: string } {
   const [integer, fraction] = (value * 100).toFixed(1).split(".");
   return { integer, fraction: `.${fraction}%` };
 }
 
-const OccurrenceStats = forwardRef<OccurrenceStatsHandle, Props>(function OccurrenceStats({ occurrences }, ref) {
-  const byKey = useMemo(
-    () => new Map(occurrences.map((occurrence) => [`${occurrence.tp_id}:${occurrence.occurrence_id}`, occurrence])),
-    [occurrences]
-  );
-  useImperativeHandle(ref, () => ({ getStats: (tpId, occurrenceId) => byKey.get(`${tpId}:${occurrenceId}`) }), [byKey]);
-
+export default function OccurrenceStats({ occurrences }: Props) {
   return (
     <Paper withBorder radius="md" className="bg-white dark:bg-gray-900 dark:border-gray-700">
       <div className="px-4 py-3 border-b dark:border-gray-700">
@@ -97,6 +86,4 @@ const OccurrenceStats = forwardRef<OccurrenceStatsHandle, Props>(function Occurr
       )}
     </Paper>
   );
-});
-
-export default OccurrenceStats;
+}

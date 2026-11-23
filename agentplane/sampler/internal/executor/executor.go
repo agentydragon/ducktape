@@ -173,7 +173,7 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 		defer cancel()
 	}
 	// Resume failure wraps a transport error, but settlement belongs to this operation and its process.
-	if notDispatched := findTransportFailure(err, transport.FailureNotDispatched); notDispatched != nil {
+	if notDispatched := transport.FindFailure(err, transport.FailureNotDispatched); notDispatched != nil {
 		// ensureSessionLocked rejected this operation before recording or sending its
 		// request. Without an associated process there is no prior process effect to
 		// reconcile; an existing process keeps its prior unknown/running status.
@@ -214,7 +214,7 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 		evidence.phase = ""
 		return &ToolOutcomeError{rejection: &toolcontract.Rejection{Message: message}, evidence: evidence.intentEvidence()}
 	}
-	if source := findTransportFailure(err, transport.FailureEnvironment, transport.FailureIncarnationFence); source != nil {
+	if source := transport.FindFailure(err, transport.FailureEnvironment, transport.FailureIncarnationFence); source != nil {
 		failure := executionFailureProjection(source)
 		if settleErr := e.settleExecutionFailure(ctx, failure); settleErr != nil {
 			return settleErr
@@ -225,7 +225,7 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 		}
 		return &ToolOutcomeError{rejection: &toolcontract.Rejection{Message: message}, evidence: failure.toolEvidence()}
 	}
-	if transportFailure := findTransportFailure(err, transport.FailureTransport); transportFailure != nil {
+	if transportFailure := transport.FindFailure(err, transport.FailureTransport); transportFailure != nil {
 		if transportFailure.ProcessID != "" {
 			if abandonErr := e.store.AbandonProcess(ctx, e.owner, transportFailure.ProcessID, transportFailure.AfterSequence, transportFailure.Output, sessionstore.NestedUnknown, transportFailure.ExecutionSessionID); abandonErr != nil {
 				return fmt.Errorf("record unknown process %s outcome after %s transport failure: %w", transportFailure.ProcessID, transportFailure.Method, abandonErr)
@@ -237,7 +237,7 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 		}
 		return &ToolOutcomeError{rejection: &toolcontract.Rejection{Message: message}, evidence: executionFailureProjection(transportFailure).intentEvidence()}
 	}
-	if rejected := findTransportFailure(err, transport.FailureRejected); rejected != nil {
+	if rejected := transport.FindFailure(err, transport.FailureRejected); rejected != nil {
 		if rejected.Method == transport.MethodProcessRead {
 			if rejected.ProcessID == "" {
 				return errors.New("settle rejected process/read without a process ID")
@@ -270,7 +270,7 @@ func (e *Executor) outcomeToolError(ctx context.Context, err error) error {
 		}
 		return &toolcontract.Rejection{Message: rejected.Error()}
 	}
-	if unavailable := findTransportFailure(err, transport.FailureScopeUnavailable); unavailable != nil {
+	if unavailable := transport.FindFailure(err, transport.FailureScopeUnavailable); unavailable != nil {
 		return &toolcontract.Rejection{Message: unavailable.Error()}
 	}
 	return err
@@ -300,7 +300,7 @@ func (e *Executor) settleExecutionFailure(ctx context.Context, failure execution
 }
 
 func executionEnvironmentStateFromError(err error) string {
-	if environment := findTransportFailure(err, transport.FailureEnvironment); environment != nil {
+	if environment := transport.FindFailure(err, transport.FailureEnvironment); environment != nil {
 		return environment.EnvironmentState
 	}
 	return ""

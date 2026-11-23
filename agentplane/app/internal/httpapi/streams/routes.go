@@ -20,6 +20,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/app/internal/auth"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/federation"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/httpapi"
+	"github.com/agentydragon/ducktape/agentplane/app/internal/httpresponse"
 	"github.com/agentydragon/ducktape/agentplane/app/internal/sandboxes"
 	upstreamproxy "github.com/agentydragon/ducktape/agentplane/app/internal/upstream"
 	environmentpb "github.com/agentydragon/ducktape/agentplane/environments/v1"
@@ -134,11 +135,11 @@ func (r *streamingRoutes) operatorLifetime(request *http.Request) (context.Conte
 func (r *streamingRoutes) environmentFacade(w http.ResponseWriter, request *http.Request) {
 	path := request.PathValue("path")
 	if !upstreamproxy.GeneratedFacadeRouteAllowed(request.Method, path) {
-		httpapi.WriteDetailError(w, http.StatusNotFound, "unknown Environment Service facade route")
+		httpresponse.WriteDetailError(w, http.StatusNotFound, "unknown Environment Service facade route")
 		return
 	}
 	if r.deps.EnvironmentHTTP == nil {
-		httpapi.WriteDetailError(w, http.StatusServiceUnavailable, "Environment Service is not configured")
+		httpresponse.WriteDetailError(w, http.StatusServiceUnavailable, "Environment Service is not configured")
 		return
 	}
 	var ctx context.Context
@@ -147,7 +148,7 @@ func (r *streamingRoutes) environmentFacade(w http.ResponseWriter, request *http
 		var err error
 		ctx, cancel, err = r.operatorLifetime(request)
 		if err != nil {
-			httpapi.WriteDetailError(w, http.StatusForbidden, "operator login required")
+			httpresponse.WriteDetailError(w, http.StatusForbidden, "operator login required")
 			return
 		}
 	} else {
@@ -160,12 +161,12 @@ func (r *streamingRoutes) environmentFacade(w http.ResponseWriter, request *http
 func (r *streamingRoutes) dispatcher(w http.ResponseWriter, request *http.Request) {
 	ctx, cancel, err := r.operatorLifetime(request)
 	if err != nil {
-		httpapi.WriteDetailError(w, http.StatusForbidden, "operator login required")
+		httpresponse.WriteDetailError(w, http.StatusForbidden, "operator login required")
 		return
 	}
 	defer cancel()
 	if r.deps.DispatcherHTTP == nil {
-		httpapi.WriteDetailError(w, http.StatusServiceUnavailable, "Dispatcher is not configured")
+		httpresponse.WriteDetailError(w, http.StatusServiceUnavailable, "Dispatcher is not configured")
 		return
 	}
 	r.forwardDispatcher(w, request, ctx)
@@ -173,7 +174,7 @@ func (r *streamingRoutes) dispatcher(w http.ResponseWriter, request *http.Reques
 
 func (r *streamingRoutes) forwardDispatcher(w http.ResponseWriter, request *http.Request, ctx context.Context) {
 	if err := r.deps.DispatcherHTTP.ForwardHTTP(w, request, ctx, request.PathValue("path"), ""); err != nil {
-		writeUpstreamOpenError(w, request.Method, request, err)
+		writeUpstreamOpenError(w, request, err)
 	}
 }
 
@@ -181,28 +182,28 @@ func (r *streamingRoutes) actionFacade(w http.ResponseWriter, request *http.Requ
 	r.operatorFacade(w, request, r.deps.ActionHTTP, "Action facade")
 }
 
-// These backends admit the app's service account; the browser session bounds each stream.
+// These backends admit the app's service SVID; the browser session bounds each stream.
 func (r *streamingRoutes) policyFacade(w http.ResponseWriter, request *http.Request) {
-	r.serviceAccountFacade(w, request, r.deps.PolicyHTTP, "Policy Service")
+	r.appSVIDFacade(w, request, r.deps.PolicyHTTP, "Policy Service")
 }
 
 func (r *streamingRoutes) egressFacade(w http.ResponseWriter, request *http.Request) {
-	r.serviceAccountFacade(w, request, r.deps.EgressHTTP, "Egress Service")
+	r.appSVIDFacade(w, request, r.deps.EgressHTTP, "Egress Service")
 }
 
-func (r *streamingRoutes) serviceAccountFacade(w http.ResponseWriter, request *http.Request, upstream Upstream, label string) {
+func (r *streamingRoutes) appSVIDFacade(w http.ResponseWriter, request *http.Request, upstream Upstream, label string) {
 	path := request.PathValue("path")
 	if !upstreamproxy.GeneratedFacadeRouteAllowed(request.Method, path) {
-		httpapi.WriteDetailError(w, http.StatusNotFound, "unknown "+label+" facade route")
+		httpresponse.WriteDetailError(w, http.StatusNotFound, "unknown "+label+" facade route")
 		return
 	}
 	if upstream == nil {
-		httpapi.WriteDetailError(w, http.StatusServiceUnavailable, label+" is not configured")
+		httpresponse.WriteDetailError(w, http.StatusServiceUnavailable, label+" is not configured")
 		return
 	}
 	ctx, cancel, err := r.operatorLifetime(request)
 	if err != nil {
-		httpapi.WriteDetailError(w, http.StatusForbidden, "operator login required")
+		httpresponse.WriteDetailError(w, http.StatusForbidden, "operator login required")
 		return
 	}
 	defer cancel()
@@ -216,11 +217,11 @@ func (r *streamingRoutes) connectionFacade(w http.ResponseWriter, request *http.
 func (r *streamingRoutes) historyFacade(w http.ResponseWriter, request *http.Request) {
 	path := request.PathValue("path")
 	if !upstreamproxy.GeneratedFacadeRouteAllowed(request.Method, path) {
-		httpapi.WriteDetailError(w, http.StatusNotFound, "unknown History facade route")
+		httpresponse.WriteDetailError(w, http.StatusNotFound, "unknown History facade route")
 		return
 	}
 	if r.deps.HistoryHTTP == nil {
-		httpapi.WriteDetailError(w, http.StatusServiceUnavailable, "History facade is not configured")
+		httpresponse.WriteDetailError(w, http.StatusServiceUnavailable, "History facade is not configured")
 		return
 	}
 	r.forwardFacade(w, request, request.Context(), r.deps.HistoryHTTP, path, "")
@@ -229,27 +230,27 @@ func (r *streamingRoutes) historyFacade(w http.ResponseWriter, request *http.Req
 func (r *streamingRoutes) operatorFacade(w http.ResponseWriter, request *http.Request, upstream Upstream, label string) {
 	path := request.PathValue("path")
 	if !upstreamproxy.GeneratedFacadeRouteAllowed(request.Method, path) {
-		httpapi.WriteDetailError(w, http.StatusNotFound, "unknown "+label+" route")
+		httpresponse.WriteDetailError(w, http.StatusNotFound, "unknown "+label+" route")
 		return
 	}
 	if upstream == nil {
-		httpapi.WriteDetailError(w, http.StatusServiceUnavailable, label+" is not configured")
+		httpresponse.WriteDetailError(w, http.StatusServiceUnavailable, label+" is not configured")
 		return
 	}
 	ctx, cancel, err := r.operatorLifetime(request)
 	if err != nil {
-		httpapi.WriteDetailError(w, http.StatusForbidden, "operator login required")
+		httpresponse.WriteDetailError(w, http.StatusForbidden, "operator login required")
 		return
 	}
 	defer cancel()
 	caller, _ := auth.CallerFromContext(request.Context())
 	session, _ := auth.SessionFromContext(request.Context())
 	if caller.Kind != auth.CallerOperator || session == nil || session.Row == nil {
-		httpapi.WriteDetailError(w, http.StatusForbidden, "operator login required")
+		httpresponse.WriteDetailError(w, http.StatusForbidden, "operator login required")
 		return
 	}
 	if r.deps.Federator == nil {
-		httpapi.WriteDetailError(w, http.StatusServiceUnavailable, `{"code":"operator_federation_not_configured"}`)
+		httpresponse.WriteDetailError(w, http.StatusServiceUnavailable, `{"code":"operator_federation_not_configured"}`)
 		return
 	}
 	bearer, err := r.deps.Federator.Exchange(ctx, session.Row)
@@ -262,68 +263,60 @@ func (r *streamingRoutes) operatorFacade(w http.ResponseWriter, request *http.Re
 
 func (r *streamingRoutes) forwardFacade(w http.ResponseWriter, request *http.Request, ctx context.Context, upstream Upstream, path, bearer string) {
 	if err := upstream.ForwardHTTP(w, request, ctx, path, bearer); err != nil {
-		writeUpstreamOpenError(w, request.Method, request, err)
+		writeUpstreamOpenError(w, request, err)
 	}
 }
 
 func writeFederationError(w http.ResponseWriter, err error) {
 	var federationError *federation.FederationError
 	if errors.As(err, &federationError) {
-		writeJSONResponse(w, federationError.Status, map[string]any{"detail": map[string]string{"code": federationError.Code}})
+		httpresponse.WriteJSON(w, federationError.Status, map[string]any{"detail": map[string]string{"code": federationError.Code}})
 		return
 	}
-	writeJSONResponse(w, http.StatusBadGateway, map[string]any{"detail": map[string]any{"method": http.MethodPost, "url": "", "upstream_status": nil, "error_type": fmt.Sprintf("%T", err)}})
+	httpresponse.WriteJSON(w, http.StatusBadGateway, map[string]any{"detail": map[string]any{"method": http.MethodPost, "url": "", "upstream_status": nil, "error_type": fmt.Sprintf("%T", err)}})
 }
 
-func writeUpstreamOpenError(w http.ResponseWriter, method string, request *http.Request, err error) {
+func writeUpstreamOpenError(w http.ResponseWriter, request *http.Request, err error) {
 	code := http.StatusServiceUnavailable
 	if errors.Is(err, context.DeadlineExceeded) {
 		code = http.StatusGatewayTimeout
 	}
 	path := request.URL.Path
-	detail := map[string]any{"method": method, "url": path, "upstream_status": nil, "error_type": fmt.Sprintf("%T", err)}
-	writeJSONResponse(w, code, map[string]any{"detail": detail})
-}
-
-func writeJSONResponse(w http.ResponseWriter, statusCode int, value any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	_ = json.NewEncoder(w).Encode(value)
+	detail := map[string]any{"method": request.Method, "url": path, "upstream_status": nil, "error_type": fmt.Sprintf("%T", err)}
+	httpresponse.WriteJSON(w, code, map[string]any{"detail": detail})
 }
 
 func (r *streamingRoutes) notificationFacade(w http.ResponseWriter, request *http.Request) {
-	r.serviceAccountFacade(w, request, r.deps.NotificationHTTP, "Notification Service")
+	r.appSVIDFacade(w, request, r.deps.NotificationHTTP, "Notification Service")
 }
 
 func (r *streamingRoutes) console(w http.ResponseWriter, request *http.Request) {
 	if r.deps.Sandboxes == nil || r.deps.Console == nil {
-		httpapi.WriteDetailError(w, http.StatusServiceUnavailable, "Sandbox console is unavailable")
+		httpresponse.WriteDetailError(w, http.StatusServiceUnavailable, "Sandbox console is unavailable")
 		return
 	}
 	uid := request.URL.Query().Get("sandbox_uid")
 	if uid == "" {
-		httpapi.WriteDetailError(w, http.StatusBadRequest, "sandbox_uid is required")
+		httpresponse.WriteDetailError(w, http.StatusBadRequest, "sandbox_uid is required")
 		return
 	}
 	ctx, cancel, err := r.operatorLifetime(request)
 	if err != nil {
-		httpapi.WriteDetailError(w, http.StatusForbidden, "operator login required")
+		httpresponse.WriteDetailError(w, http.StatusForbidden, "operator login required")
 		return
 	}
 	defer cancel()
 	target := &identitypb.EnvironmentTarget{Namespace: r.deps.SandboxNamespace, Name: request.PathValue("name"), Uid: uid}
 	sandbox, err := r.deps.Sandboxes.GetEnvironment(ctx, &environmentpb.GetEnvironmentRequest{Target: target})
 	if err != nil {
-		_ = sandboxHTTPErrorToRaw(w, err)
+		sandboxHTTPErrorToRaw(w, err)
 		return
 	}
 	if sandbox == nil || !proto.Equal(sandbox.GetTarget(), target) {
-		httpapi.WriteDetailError(w, http.StatusServiceUnavailable, "Environment identity is incomplete or mismatched")
+		httpresponse.WriteDetailError(w, http.StatusServiceUnavailable, "Environment identity is incomplete or mismatched")
 		return
 	}
-	if err := startSSE(w); err != nil {
-		return
-	}
+	startSSE(w)
 	console, err := r.deps.Console.Open(ctx, target.GetNamespace(), target.GetName())
 	if err != nil {
 		var unavailable *sandboxes.ConsoleUnavailableError
@@ -374,17 +367,16 @@ func (r *streamingRoutes) relayConsole(w http.ResponseWriter, ctx context.Contex
 	}
 }
 
-func sandboxHTTPErrorToRaw(w http.ResponseWriter, err error) error {
+func sandboxHTTPErrorToRaw(w http.ResponseWriter, err error) {
 	switch {
 	case status.Code(err) == codes.NotFound:
-		httpapi.WriteDetailError(w, http.StatusNotFound, err.Error())
+		httpresponse.WriteDetailError(w, http.StatusNotFound, err.Error())
 	default:
-		httpapi.WriteDetailError(w, http.StatusServiceUnavailable, "Sandbox inventory is unavailable")
+		httpresponse.WriteDetailError(w, http.StatusServiceUnavailable, "Sandbox inventory is unavailable")
 	}
-	return err
 }
 
-func startSSE(w http.ResponseWriter) error {
+func startSSE(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Accel-Buffering", "no")
@@ -392,7 +384,6 @@ func startSSE(w http.ResponseWriter) error {
 	if flusher, ok := w.(http.Flusher); ok {
 		flusher.Flush()
 	}
-	return nil
 }
 
 func writeSSE(w http.ResponseWriter, event string, value any) error {

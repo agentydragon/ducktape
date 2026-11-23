@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib.resources import files
 from typing import get_args
 
 from pydantic import TypeAdapter
@@ -15,65 +16,27 @@ from study_casino.rng import AuditedRandom
 RNG_VERSION = "server-hmac-sha256-v1"
 RULES_VERSION = "server-rules-v1"
 
-WHEEL = [
-    0,
-    32,
-    15,
-    19,
-    4,
-    21,
-    2,
-    25,
-    17,
-    34,
-    6,
-    27,
-    13,
-    36,
-    11,
-    30,
-    8,
-    23,
-    10,
-    5,
-    24,
-    16,
-    33,
-    1,
-    20,
-    14,
-    31,
-    9,
-    22,
-    18,
-    29,
-    7,
-    28,
-    12,
-    35,
-    3,
-    26,
-]
-RED = {1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36}
-
 
 @dataclass(frozen=True)
 class SlotSymbol:
     id: str
     glyph: str
-    color: str
     weight: int
     payout: int
 
 
-SLOT_SYMBOLS = [
-    SlotSymbol(id="seven", glyph="7", color="#e8b84a", weight=1, payout=50),
-    SlotSymbol(id="star", glyph="★", color="#e8b84a", weight=3, payout=20),
-    SlotSymbol(id="diamond", glyph="◆", color="#6fc4e8", weight=5, payout=10),
-    SlotSymbol(id="spade", glyph="♠", color="#f5e8c7", weight=9, payout=5),
-    SlotSymbol(id="club", glyph="♣", color="#f5e8c7", weight=14, payout=3),
-]
-SLOT_WEIGHTS = [symbol.weight for symbol in SLOT_SYMBOLS]
+@dataclass(frozen=True)
+class GameRules:
+    # European roulette pockets clockwise from zero. Stored outcomes include the index.
+    wheel: list[int]
+    red: frozenset[int]
+    roulette_multipliers: dict[RouletteBetType, int]
+    slot_symbols: list[SlotSymbol]
+    slot_pair_multiplier: float
+
+
+RULES = TypeAdapter(GameRules).validate_json((files("study_casino") / "game_rules.json").read_bytes())
+SLOT_WEIGHTS = [symbol.weight for symbol in RULES.slot_symbols]
 
 CARD_SUITS = ["♠", "♥", "♦", "♣"]
 CARD_RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
@@ -100,12 +63,12 @@ class GameSettlement[OutcomeT]:
 def num_color(n: int) -> str:
     if n == 0:
         return "green"
-    return "red" if n in RED else "black"
+    return "red" if n in RULES.red else "black"
 
 
 def spin_slots(wager: int, rng: AuditedRandom) -> GameSettlement[SlotsOutcome]:
     picks = [
-        rng.weighted_choice(SLOT_SYMBOLS, weights=SLOT_WEIGHTS, purpose=f"slots.reel.{i}", item_id=lambda s: s.id)
+        rng.weighted_choice(RULES.slot_symbols, weights=SLOT_WEIGHTS, purpose=f"slots.reel.{i}", item_id=lambda s: s.id)
         for i in range(3)
     ]
     a, b, c = picks
@@ -115,8 +78,8 @@ def spin_slots(wager: int, rng: AuditedRandom) -> GameSettlement[SlotsOutcome]:
         label = f"Triple {a.glyph} · {a.payout}x"
         payout_kind = "triple"
     elif len({a.id, b.id, c.id}) == 2:
-        payout = int(wager * 1.5)
-        label = "Pair · 1.5x"
+        payout = int(wager * RULES.slot_pair_multiplier)
+        label = f"Pair · {RULES.slot_pair_multiplier:g}x"
         payout_kind = "pair"
     else:
         payout = 0
@@ -135,9 +98,12 @@ def spin_roulette(
 ) -> GameSettlement[RouletteOutcome]:
     if bet_type == "number" and bet_number is None:
         raise ValueError("number bets require bet_number")
-    picked_idx = rng.randbelow(len(WHEEL), purpose="roulette.wheel_index", parameters={"wheel_size": len(WHEEL)})
-    picked = WHEEL[picked_idx]
-    won, mult = _roulette_win(picked, bet_type, bet_number)
+    picked_idx = rng.randbelow(
+        len(RULES.wheel), purpose="roulette.wheel_index", parameters={"wheel_size": len(RULES.wheel)}
+    )
+    picked = RULES.wheel[picked_idx]
+    won = _roulette_wins(picked, bet_type, bet_number)
+    mult = 0 if picked == 0 and bet_type != "number" else RULES.roulette_multipliers[bet_type]
     return GameSettlement(
         payout_tokens=wager * mult if won else 0,
         outcome=RouletteOutcome(
@@ -273,52 +239,35 @@ def public_blackjack_state(
 def theoretical_bucket_rtp() -> dict[tuple[str, str], tuple[float, float]]:
     """Closed-form (win_probability, rtp) per (game, bucket_key).
 
-    Derived from the same constants the live RNG uses (`WHEEL`, `RED`,
-    `SLOT_SYMBOLS` weights and the slot triple/pair payout structure), so
+    Derived from the same constants the live RNG uses (`RULES.wheel`, `RULES.red`,
+    `RULES.slot_symbols` weights and the slot triple/pair payout structure), so
     the casino stats page can show theoretical-vs-empirical side by side.
     Blackjack is omitted — no clean closed form, only the simulator knows.
     """
     out: dict[tuple[str, str], tuple[float, float]] = {}
 
     # Roulette: bet against the 37-pocket wheel.
-    n_pockets = len(WHEEL)
+    n_pockets = len(RULES.wheel)
     for bet_type in get_args(RouletteBetType):
         bet_number = 0 if bet_type == "number" else None
-        wins = sum(1 for num in WHEEL if _roulette_win(num, bet_type, bet_number)[0])
-        # All winning multipliers are constant per bet_type — pull mult from any winning pocket.
-        mult = next(
-            (
-                _roulette_win(num, bet_type, bet_number)[1]
-                for num in WHEEL
-                if _roulette_win(num, bet_type, bet_number)[0]
-            ),
-            0,
-        )
+        wins = sum(_roulette_wins(num, bet_type, bet_number) for num in RULES.wheel)
         p_win = wins / n_pockets
-        rtp = p_win * mult
+        rtp = p_win * RULES.roulette_multipliers[bet_type]
         out[("roulette", bet_type)] = (p_win, rtp)
 
-    # Slots: enumerate the joint distribution of three independent weighted picks.
-    total_weight = sum(sym.weight for sym in SLOT_SYMBOLS)
+    total_weight = sum(sym.weight for sym in RULES.slot_symbols)
     p_triple = 0.0
     rtp_triple = 0.0
     p_pair = 0.0
-    for i, sym in enumerate(SLOT_SYMBOLS):
-        p_i = sym.weight / total_weight
-        # P(triple of this symbol) = p_i^3, payout = wager * symbol.payout, so RTP contribution = p_i^3 * payout
-        p_triple += p_i**3
-        rtp_triple += (p_i**3) * sym.payout
-        # P(exactly two of this symbol over the three picks): choose 2 of 3 positions = 3 * p_i^2 * (1 - p_i),
-        # then the third pick must be any *different* symbol — already captured by (1 - p_i).
-        # Payout = floor(wager * 1.5) ≈ 1.5x.
-        for j, sym_j in enumerate(SLOT_SYMBOLS):
-            if i == j:
-                continue
-            p_j = sym_j.weight / total_weight
-            # Three ordered patterns where exactly two slots are i and the third is j:
-            # (i,i,j), (i,j,i), (j,i,i).
-            p_pair += 3 * (p_i**2) * p_j
-    rtp_pair = p_pair * 1.5
+    for symbol in RULES.slot_symbols:
+        p = symbol.weight / total_weight
+        triple = p**3
+        p_triple += triple
+        rtp_triple += triple * symbol.payout
+        # The other symbol can occupy any one of the three reels.
+        p_pair += 3 * p**2 * (1 - p)
+    # Report the nominal multiplier before whole-token rounding.
+    rtp_pair = p_pair * RULES.slot_pair_multiplier
     out[("slots", "triple")] = (p_triple, rtp_triple)
     out[("slots", "pair")] = (p_pair, rtp_pair)
     out[("slots", "none")] = (max(0.0, 1.0 - p_triple - p_pair), 0.0)
@@ -326,27 +275,27 @@ def theoretical_bucket_rtp() -> dict[tuple[str, str], tuple[float, float]]:
     return out
 
 
-def _roulette_win(num: int, bet_type: RouletteBetType, bet_number: int | None) -> tuple[bool, int]:
+def _roulette_wins(num: int, bet_type: RouletteBetType, bet_number: int | None) -> bool:
     if num == 0 and bet_type != "number":
-        return False, 0
+        return False
     match bet_type:
         case "red":
-            return num in RED, 2
+            return num in RULES.red
         case "black":
-            return num != 0 and num not in RED, 2
+            return num not in RULES.red
         case "odd":
-            return num % 2 == 1, 2
+            return num % 2 == 1
         case "even":
-            return num != 0 and num % 2 == 0, 2
+            return num % 2 == 0
         case "low":
-            return 1 <= num <= 18, 2
+            return 1 <= num <= 18
         case "high":
-            return 19 <= num <= 36, 2
+            return 19 <= num <= 36
         case "dozen1":
-            return 1 <= num <= 12, 3
+            return 1 <= num <= 12
         case "dozen2":
-            return 13 <= num <= 24, 3
+            return 13 <= num <= 24
         case "dozen3":
-            return 25 <= num <= 36, 3
+            return 25 <= num <= 36
         case "number":
-            return num == bet_number, 36
+            return num == bet_number

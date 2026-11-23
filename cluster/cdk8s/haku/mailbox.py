@@ -11,23 +11,17 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from cert_manager_crds.io.cert_manager import Certificate, CertificateSpec, CertificateSpecIssuerRef
-from cilium_crds.io.cilium import (
-    CiliumNetworkPolicySpecIngress,
-    CiliumNetworkPolicySpecIngressFromEntities,
-    CiliumNetworkPolicySpecIngressToPorts,
-    CiliumNetworkPolicySpecIngressToPortsPorts,
-    CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
-)
 
 from cluster.cdk8s import cilium, gateway, namespaces, node_scheduling
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.cnpg import backup, cluster
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions
 from cluster.cdk8s.forgejo_registry import pull_credentials
-from cluster.cdk8s.haku import namespace
+from cluster.cdk8s.haku import mailbox_endpoint, namespace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import (
     ClusterExternalSecret,
     ClusterSecretStoreRef,
@@ -46,7 +40,6 @@ _INGRESS_OBJECT_NAME = "smtp-ingress"  # the DaemonSet and its CiliumNetworkPoli
 _TLS_SECRET = "mx-allegedly-works-tls"
 DATABASE = cluster.PostgresRef.generated(name="haku-mailbox-db", namespace=NAMESPACE)
 _DB_PASSWORD = DATABASE.app_secret.key("password")
-_PUBLIC_URL = "https://haku-mailbox.allegedly.works"
 # In-repo repack of stalwartlabs/stalwart with stalwart-cli layered in
 # (//cluster/k8s/haku/mailbox/image) -- upstream ships the CLI only as a distroless image,
 # unusable from the pod. Published by the push-images workflow; image-pins/ sets the tag Flux
@@ -61,7 +54,7 @@ HTTP = ServiceRef(
     pods=Pods(namespace=NAMESPACE, labels=(("app.kubernetes.io/name", NAME),)),
 )
 _IMAP = ServiceRef(name=HTTP.name, port=Port(name="imap", number=1143), pods=HTTP.pods)
-_SMTP = ServiceRef(name="smtp", port=Port(name="smtp", number=_SMTP_PORT), pods=HTTP.pods)
+SMTP = ServiceRef(name="smtp", port=Port(name="smtp", number=_SMTP_PORT), pods=HTTP.pods)
 _CONFIG_DIR = "/etc/stalwart"  # where CONFIG_MAP is mounted
 _INITIALIZE = "initialize.sh"
 _SERVER_CONFIG = "config.json"
@@ -79,14 +72,8 @@ INGRESS_CONFIG_MAP = ConfigMapArgs(name=_INGRESS_NAME, namespace=NAMESPACE, file
 SOPS_FILES = ("haku-mailbox-admin.sops.yaml", "haku-mail-token.sops.yaml")
 
 
-def _quantities(values: dict[str, str]) -> dict[str, k8s.Quantity]:
-    return {key: k8s.Quantity.from_string(value) for key, value in values.items()}
-
-
 def _stalwart_resources() -> k8s.ResourceRequirements:
-    return k8s.ResourceRequirements(
-        requests=_quantities({"cpu": "100m", "memory": "256Mi"}), limits=_quantities({"cpu": "1", "memory": "1Gi"})
-    )
+    return container_resources(cpu="100m", memory="256Mi", cpu_limit="1", memory_limit="1Gi")
 
 
 def _stalwart_mounts() -> list[k8s.VolumeMount]:
@@ -128,7 +115,7 @@ def _add_deployment(chart: Chart) -> None:
     An init container applies it with a temporary fallback admin before production starts.
     Authentication is exclusively Authentik OIDC bearer tokens (the stalwart-haku provider); no
     mailbox password exists."""
-    public_url = k8s.EnvVar(name="STALWART_PUBLIC_URL", value=_PUBLIC_URL)
+    public_url = k8s.EnvVar(name="STALWART_PUBLIC_URL", value=mailbox_endpoint.PUBLIC_URL)
     # Reloader's `autoReloadAll` restarts this on rotation of the mounted STARTTLS certificate and
     # DB credentials so the normal server re-reads them.
     k8s.KubeDeployment(
@@ -146,7 +133,7 @@ def _add_deployment(chart: Chart) -> None:
                     automount_service_account_token=False,
                     # OVH-only resilience: inbound mail must not depend on Proxmox, and the CNPG
                     # store is pinned to hil-ovh -- co-locate with it (same pin as other
-                    # OVH-pinned apps, e.g. paperless).
+                    # OVH-pinned apps).
                     node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     security_context=k8s.PodSecurityContext(
                         run_as_non_root=True,
@@ -186,11 +173,7 @@ def _add_deployment(chart: Chart) -> None:
                             # status is diagnostics-readable -- without this, an initialization
                             # failure is a black box to agent sessions.
                             termination_message_policy="FallbackToLogsOnError",
-                            ports=[
-                                _SMTP.port.k8s_container_port(),
-                                HTTP.port.k8s_container_port(),
-                                _IMAP.port.k8s_container_port(),
-                            ],
+                            ports=[SMTP.k8s_container_port(), HTTP.k8s_container_port(), _IMAP.k8s_container_port()],
                             env=[_DB_PASSWORD.env_var("STALWART_DB_PASSWORD"), public_url],
                             volume_mounts=_stalwart_mounts(),
                             resources=_stalwart_resources(),
@@ -227,7 +210,7 @@ def _add_services(chart: Chart) -> None:
         chart,
         "smtp-service",
         metadata=k8s.ObjectMeta(
-            name=_SMTP.name,
+            name=SMTP.name,
             namespace=NAMESPACE,
             annotations={
                 "description": (
@@ -237,7 +220,7 @@ def _add_services(chart: Chart) -> None:
                 )
             },
         ),
-        spec=k8s.ServiceSpec(selector=_SMTP.pods.selector, ports=[_SMTP.port.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=SMTP.pods.selector, ports=[SMTP.k8s_service_port()]),
     )
     k8s.KubeService(
         chart,
@@ -248,15 +231,13 @@ def _add_services(chart: Chart) -> None:
             annotations={
                 "description": (
                     "Stalwart's cluster-internal listeners: HTTP (JMAP + management API, exposed "
-                    "publicly only via the cluster-gateway HTTPRoute haku-mailbox.allegedly.works) and "
+                    f"publicly only via the cluster-gateway HTTPRoute {mailbox_endpoint.PUBLIC_HOSTNAME}) and "
                     "plaintext IMAP for haku-sandbox clients (himalaya) — no route, no externalIPs, "
                     "OAUTHBEARER-only auth."
                 )
             },
         ),
-        spec=k8s.ServiceSpec(
-            selector=HTTP.pods.selector, ports=[HTTP.port.k8s_service_port(), _IMAP.port.k8s_service_port()]
-        ),
+        spec=k8s.ServiceSpec(selector=HTTP.pods.selector, ports=[HTTP.k8s_service_port(), _IMAP.k8s_service_port()]),
     )
 
 
@@ -316,10 +297,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
                                 k8s.VolumeMount(name="tmp", mount_path="/tmp"),
                                 k8s.VolumeMount(name="cache", mount_path="/var/cache/nginx"),
                             ],
-                            resources=k8s.ResourceRequirements(
-                                requests=_quantities({"cpu": "10m", "memory": "16Mi"}),
-                                limits=_quantities({"memory": "64Mi"}),
-                            ),
+                            resources=container_resources(cpu="10m", memory="16Mi", memory_limit="64Mi"),
                             security_context=k8s.SecurityContext(
                                 allow_privilege_escalation=False,
                                 capabilities=k8s.Capabilities(drop=["ALL"]),
@@ -357,24 +335,14 @@ def _add_smtp_ingress(chart: Chart) -> None:
         metadata=ApiObjectMetadata(name=_INGRESS_OBJECT_NAME, namespace=NAMESPACE),
         endpoint_selector=_INGRESS_LABELS,
         ingress=[
-            CiliumNetworkPolicySpecIngress(
-                from_entities=[
-                    CiliumNetworkPolicySpecIngressFromEntities.WORLD,
-                    # Kubelet TCP readiness/liveness probes originate from the node.
-                    CiliumNetworkPolicySpecIngressFromEntities.HOST,
-                ],
-                to_ports=[
-                    CiliumNetworkPolicySpecIngressToPorts(
-                        ports=[
-                            CiliumNetworkPolicySpecIngressToPortsPorts(
-                                port=str(_SMTP_PORT), protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP
-                            )
-                        ]
-                    )
-                ],
+            IngressRule.from_entities(
+                Entity.WORLD,
+                # Kubelet TCP readiness/liveness probes originate from the node.
+                Entity.HOST,
+                ports=[_SMTP_PORT],
             )
         ],
-        egress=[cilium.dns_egress(), EgressRule.to_endpoints(_SMTP.pods.selector, _SMTP.pod_port)],
+        egress=[cilium.dns_egress(), EgressRule.to_endpoints(SMTP.pods.selector, SMTP.pod_port)],
     )
     NetworkPolicy(
         chart,
@@ -382,7 +350,7 @@ def _add_smtp_ingress(chart: Chart) -> None:
         metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
         endpoint_selector=HTTP.pods.selector,
         ingress=[
-            IngressRule.from_endpoints(_INGRESS_LABELS, ports=[_SMTP.pod_port]),
+            IngressRule.from_endpoints(_INGRESS_LABELS, ports=[SMTP.pod_port]),
             IngressRule.from_gateway(HTTP.pod_port),
             IngressRule.from_endpoints(
                 {"k8s:io.kubernetes.pod.namespace": namespace.NAMESPACE}, ports=[_IMAP.pod_port]
@@ -453,17 +421,16 @@ def chart(app: App) -> Chart:
                 )
             },
         ),
-        hostnames=["haku-mailbox.allegedly.works"],
+        hostnames=[mailbox_endpoint.PUBLIC_HOSTNAME],
         backend=HTTP,
         timeout="60s",
         hsts=False,
         listener=None,
     )
     # Mirror the rotator-published mailbox JWT into haku-sandbox, where Haku reads it to
-    # authenticate to its mailbox over JMAP (haku-state/sources/mailbox.md). Same ESO pattern as the
-    # grocy-sf token (haku/managed-agent/grocy-token-eso.yaml): it sources the flux-system Secret
-    # the rotator writes (k8s_secret output) and refreshes continuously, so the rotated token
-    # propagates without any rotator-side distribution config.
+    # authenticate to its mailbox over JMAP (haku-state/sources/mailbox.md). It sources the
+    # flux-system Secret the rotator writes (k8s_secret output) and refreshes continuously, so
+    # the rotated token propagates without any rotator-side distribution config.
     ClusterExternalSecret(
         chart,
         "mail-token",

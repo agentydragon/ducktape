@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/jsonwire"
+	samplersettings "github.com/agentydragon/ducktape/agentplane/sampler/internal/settings"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/sampler/api/samplerpb"
@@ -17,25 +18,20 @@ import (
 	"github.com/google/uuid"
 )
 
-const maxProviderAttemptBudget = 16
-
-// MaxProviderBackoff bounds retry delays accepted for durable provider-attempt failures.
-const MaxProviderBackoff = 30 * time.Second
-
 func (policy ProviderAttemptPolicy) validate() error {
-	if policy.Budget <= 0 || policy.Budget > maxProviderAttemptBudget || policy.Lease <= 0 {
+	if policy.Budget <= 0 || policy.Budget > samplersettings.MaxProviderAttemptBudget || policy.Lease <= 0 {
 		return protocol.ErrInvalid
 	}
 	return nil
 }
 
-func validateProviderFailure(failure ProviderAttemptFailure) error {
+func (s *Store) validateProviderFailure(failure ProviderAttemptFailure) error {
 	if failure.Reason == "" || len(failure.Reason) > 4096 {
 		return protocol.ErrInvalid
 	}
 	switch failure.Class {
 	case ProviderAttemptTransient:
-		if failure.RetryAfter <= 0 || failure.RetryAfter > MaxProviderBackoff {
+		if failure.RetryAfter <= 0 || failure.RetryAfter > s.providerRetryMaxBackoff {
 			return protocol.ErrInvalid
 		}
 	case ProviderAttemptPermanent, ProviderAttemptInterrupted, ProviderAttemptDraining:
@@ -51,7 +47,7 @@ func validateProviderFailure(failure ProviderAttemptFailure) error {
 func insertProviderAttempt(ctx context.Context, tx *sql.Tx, id string, owner Owner, requestWire string, session *Session,
 	policy ProviderAttemptPolicy, stepID string, previousID *string, number, budget int,
 ) error {
-	if err := policy.validate(); err != nil || number <= 0 || budget < number || budget > maxProviderAttemptBudget {
+	if err := policy.validate(); err != nil || number <= 0 || budget < number || budget > samplersettings.MaxProviderAttemptBudget {
 		return protocol.ErrInvalid
 	}
 	_, err := tx.ExecContext(ctx, `INSERT INTO sampler_intent(
@@ -99,8 +95,7 @@ func settleIntentResult(ctx context.Context, tx *sql.Tx, intentID string, result
 
 const providerAttemptColumns = `id::text,provider_step_id::text,COALESCE(previous_provider_intent_id::text,''),
 	COALESCE(provider_command_id,''),request->>'kind',provider_attempt_no,provider_attempt_budget,generation,
-	provider_attempt_lease_until,provider_attempt_lease_until<=clock_timestamp(),provider_retry_not_before,
-	COALESCE(result->>'failure_class',''),COALESCE(result->>'failure_reason',''),COALESCE(result->>'status',''),
+	provider_attempt_lease_until<=clock_timestamp(),COALESCE(result->>'failure_class',''),COALESCE(result->>'failure_reason',''),
 	COALESCE(result->>'provider_retry_suppressed',''),
 	(COALESCE(result->>'failure_class','')='transient' AND provider_retry_not_before IS NOT NULL AND provider_attempt_no<provider_attempt_budget),
 	COALESCE(COALESCE(result->>'failure_class','')='transient' AND provider_retry_not_before<=clock_timestamp() AND provider_attempt_no<provider_attempt_budget,FALSE),
@@ -110,11 +105,10 @@ func scanProviderAttempt(row rowScanner) (*ProviderAttempt, error) {
 	var attempt ProviderAttempt
 	var kind, failureClass, retrySuppressed string
 	var number, budget int
-	var retryAt sql.NullTime
 	var retryInSeconds float64
 	var requestWire []byte
 	if err := row.Scan(&attempt.IntentID, &attempt.StepID, &attempt.PreviousID, &attempt.CommandID, &kind, &number, &budget,
-		&attempt.Generation, &attempt.LeaseUntil, &attempt.Expired, &retryAt, &failureClass, &attempt.FailureReason, &attempt.ResultStatus, &retrySuppressed,
+		&attempt.Generation, &attempt.Expired, &failureClass, &attempt.FailureReason, &retrySuppressed,
 		&attempt.Retryable, &attempt.Ready, &retryInSeconds, &requestWire); err != nil {
 		return nil, err
 	}
@@ -126,9 +120,6 @@ func scanProviderAttempt(row rowScanner) (*ProviderAttempt, error) {
 		return nil, err
 	}
 	attempt.ProviderRequest = request.ProviderRequest
-	if retryAt.Valid {
-		attempt.RetryAt = &retryAt.Time
-	}
 	return &attempt, nil
 }
 
@@ -231,49 +222,11 @@ func (s *Store) ProviderRecoveryFrontier(ctx context.Context, owner Owner, sessi
 	return attempt, err
 }
 
-// RenewProviderAttempt extends only a still-live unresolved attempt under its original owner
-// generation. The conversation fence is acquired before touching the attempt row.
-func (s *Store) RenewProviderAttempt(ctx context.Context, owner Owner, intentID string, lease time.Duration) error {
-	if lease <= 0 {
-		return protocol.ErrInvalid
-	}
-	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
-		conversation, err := lockOwner(ctx, tx, owner)
-		if err != nil {
-			return err
-		}
-		if conversation.Pending == nil || conversation.Pending.ID != intentID ||
-			(conversation.Pending.Kind != PendingIntentSampling && conversation.Pending.Kind != PendingIntentCompaction) {
-			return protocol.ErrPrecondition
-		}
-		intent, err := intentFor(ctx, tx, intentID)
-		if err != nil {
-			return err
-		}
-		if intent.ConversationID != owner.ConversationID || intent.Generation != owner.Generation {
-			return &LostOwnershipError{Reason: "intent belongs to another owner generation"}
-		}
-		tag, err := tx.ExecContext(ctx, `UPDATE sampler_intent SET provider_attempt_lease_until=clock_timestamp()+make_interval(secs=>$2)
-			WHERE id=$1 AND result IS NULL AND provider_attempt_lease_until>clock_timestamp() AND request->>'kind' IN ('sampling','compaction')`, intentID, lease.Seconds())
-		if err != nil {
-			return err
-		}
-		count, err := tag.RowsAffected()
-		if err != nil {
-			return err
-		}
-		if count != 1 {
-			return protocol.ErrPrecondition
-		}
-		return nil
-	})
-}
-
 // AbandonProviderAttempt settles only the exact pending provider request. Its raw provider
 // observations remain untouched; sampling partial items are reconciled as ABSENT. Retry time is
 // written on this predecessor, so a crash before creating its successor loses no retry work.
 func (s *Store) AbandonProviderAttempt(ctx context.Context, owner Owner, intentID string, failure ProviderAttemptFailure) error {
-	if err := validateProviderFailure(failure); err != nil {
+	if err := s.validateProviderFailure(failure); err != nil {
 		return err
 	}
 	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
@@ -330,7 +283,7 @@ func (s *Store) AbandonProviderAttempt(ctx context.Context, owner Owner, intentI
 				return err
 			}
 		}
-		abandonedSources, err := s.recordEvidenceWithSources(ctx, tx, owner, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_ABANDONED, abandoned)
+		abandonedSources, err := s.recordEvidenceWithSources(ctx, tx, conversation, session, intentID, intent.Kind.progressKind(), eventpb.ExecutionProgress_PHASE_ABANDONED, abandoned)
 		if err != nil {
 			return err
 		}
@@ -440,7 +393,7 @@ func (s *Store) beginProviderRetry(ctx context.Context, owner Owner, previousInt
 		if err := insertProviderAttempt(ctx, tx, id, owner, retryRequestWire, session, policy, predecessor.StepID, &previousIntentID, attemptNo, predecessor.Budget); err != nil {
 			return err
 		}
-		return s.publishIntent(ctx, tx, owner, conversation, session, id, request)
+		return s.publishIntent(ctx, tx, conversation, session, id, request)
 	})
 	if err != nil {
 		return "", nil, err

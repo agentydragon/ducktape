@@ -450,7 +450,7 @@ fn remap_string_term(
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SelectorProjectedValue {
     SourceUnit(SourceUnitId),
     String(String),

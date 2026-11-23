@@ -35,57 +35,13 @@ class RngActionAudit:
 class AuditedRandom:
     """Deterministic HMAC-SHA256 random source that records every draw."""
 
-    def __init__(
-        self,
-        *,
-        secret: bytes,
-        rng_version: str,
-        rng_key_id: str,
-        seed_material: dict[str, Any] | None = None,
-        seed_material_json: str | None = None,
-    ) -> None:
-        if (seed_material is None) == (seed_material_json is None):
-            raise ValueError("provide exactly one of seed_material or seed_material_json")
+    def __init__(self, *, secret: bytes, rng_version: str, rng_key_id: str, seed_material_json: str) -> None:
         self.rng_version = rng_version
         self.rng_key_id = rng_key_id
-        self.seed_material_json = (
-            seed_material_json if seed_material_json is not None else canonical_json(seed_material)
-        )
-        self.seed_digest_hex = hmac.new(secret, self.seed_material_json.encode(), hashlib.sha256).hexdigest()
+        self.seed_material_json = seed_material_json
+        self.seed_digest_hex = hmac.new(secret, seed_material_json.encode(), hashlib.sha256).hexdigest()
         self._action_key = bytes.fromhex(self.seed_digest_hex)
         self._calls: list[RngCallAudit] = []
-
-    @classmethod
-    def for_action(
-        cls,
-        *,
-        secret: bytes,
-        rng_version: str,
-        rng_key_id: str,
-        user_id: str,
-        client_action_id: str,
-        action_type: str,
-        request_body: dict[str, Any],
-    ) -> AuditedRandom:
-        return cls(
-            secret=secret,
-            rng_version=rng_version,
-            rng_key_id=rng_key_id,
-            seed_material={
-                "rng_version": rng_version,
-                "rng_key_id": rng_key_id,
-                "user_id": user_id,
-                "client_action_id": client_action_id,
-                "action_type": action_type,
-                "request_body": request_body,
-            },
-        )
-
-    @classmethod
-    def from_seed_material_json(
-        cls, *, secret: bytes, rng_version: str, rng_key_id: str, seed_material_json: str
-    ) -> AuditedRandom:
-        return cls(secret=secret, rng_version=rng_version, rng_key_id=rng_key_id, seed_material_json=seed_material_json)
 
     def audit(self) -> RngActionAudit:
         return RngActionAudit(
@@ -206,12 +162,18 @@ class ActionRngFactory:
     def for_action(
         self, *, user_id: str, client_action_id: str, action_type: str, request_body: dict[str, Any]
     ) -> AuditedRandom:
-        return AuditedRandom.for_action(
+        return AuditedRandom(
             secret=self.secret,
             rng_version=self.rng_version,
             rng_key_id=self.rng_key_id,
-            user_id=user_id,
-            client_action_id=client_action_id,
-            action_type=action_type,
-            request_body=request_body,
+            seed_material_json=canonical_json(
+                {
+                    "rng_version": self.rng_version,
+                    "rng_key_id": self.rng_key_id,
+                    "user_id": user_id,
+                    "client_action_id": client_action_id,
+                    "action_type": action_type,
+                    "request_body": request_body,
+                }
+            ),
         )

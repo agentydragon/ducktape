@@ -11,25 +11,20 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
-from cilium_crds.io.cilium import (
-    CiliumNetworkPolicySpecIngress,
-    CiliumNetworkPolicySpecIngressFromEntities,
-    CiliumNetworkPolicySpecIngressToPorts,
-    CiliumNetworkPolicySpecIngressToPortsPorts,
-    CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
-)
 from constructs import Construct
 
-from cluster.cdk8s import cilium, namespaces
+from cluster.cdk8s import cilium, namespaces, piraeus_storage
 from cluster.cdk8s.authentik import app as authentik
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
+from cluster.cdk8s.namespaces import PRIVILEGED_POD_SECURITY, Vpa
+from cluster.cdk8s.providers.cilium.network_policy import Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.volume_claim import volume_claim
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/activitywatch"
 _NAME = "activitywatch"
@@ -37,6 +32,7 @@ _NAMESPACE = "activitywatch"
 _IMAGE = "git.allegedly.works/ducktape-ci/aw-server:unset"
 _DATA_CLAIM = "data"
 _SERVER_PORT = 5600
+READ_HOSTNAME = "activitywatch-read.allegedly.works"
 _READONLY_CONFIG = ConfigMapArgs(
     name="activitywatch-readonly-proxy", namespace=_NAMESPACE, files=["default.conf=readonly-proxy.conf"]
 )
@@ -58,19 +54,7 @@ _READ_TOKEN = SecretRef(namespace=_NAMESPACE, name="activitywatch-read-token").k
 
 
 def _namespace(scope: Construct) -> None:
-    namespaces.namespace(
-        scope,
-        "namespace",
-        name=_NAMESPACE,
-        vpa=Vpa.AUTO,
-        # Lets the approved agent identities read workload metadata and pod logs here,
-        # so a crashlooping sidecar can be diagnosed without an operator grant.
-        labels={
-            "pod-security.kubernetes.io/enforce": "privileged",
-            "pod-security.kubernetes.io/audit": "privileged",
-            "pod-security.kubernetes.io/warn": "privileged",
-        },
-    )
+    namespaces.namespace(scope, "namespace", name=_NAMESPACE, vpa=Vpa.AUTO, labels=PRIVILEGED_POD_SECURITY)
 
 
 def _http_probe(path: str, port: int, *, initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
@@ -98,11 +82,8 @@ def _aw_server_container() -> k8s.Container:
         ],
         ports=[k8s.ContainerPort(container_port=_SERVER_PORT, name="http")],
         volume_mounts=[k8s.VolumeMount(name="data", mount_path="/data")],
-        resources=k8s.ResourceRequirements(
-            requests={"cpu": k8s.Quantity.from_string("50m"), "memory": k8s.Quantity.from_string("64Mi")},
-            # VPA target 121Mi (upper bound 127Mi) on 2026-10-12; grows with imported events.
-            limits={"cpu": k8s.Quantity.from_string("500m"), "memory": k8s.Quantity.from_string("512Mi")},
-        ),
+        # VPA target 121Mi (upper bound 127Mi) on 2026-10-12; grows with imported events.
+        resources=container_resources(cpu="50m", memory="64Mi", cpu_limit="500m", memory_limit="512Mi"),
         liveness_probe=_http_probe("/api/0/info", _SERVER_PORT, initial_delay_seconds=10, period_seconds=30),
         readiness_probe=_http_probe("/api/0/info", _SERVER_PORT, initial_delay_seconds=5, period_seconds=10),
     )
@@ -114,15 +95,9 @@ def _readonly_proxy_container() -> k8s.Container:
         image="nginx:alpine",
         ports=[k8s.ContainerPort(container_port=_READONLY.pod_port, name="readonly")],
         volume_mounts=[k8s.VolumeMount(name="readonly-proxy-config", mount_path="/etc/nginx/conf.d", read_only=True)],
-        resources=k8s.ResourceRequirements(
-            requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")},
-            limits={
-                "cpu": k8s.Quantity.from_string("100m"),
-                # TODO(vpa-memory-audit): 64Mi -> 128Mi. VPA observed a 50Mi
-                # request / 60Mi upper bound, leaving no headroom at 64Mi.
-                "memory": k8s.Quantity.from_string("128Mi"),
-            },
-        ),
+        # TODO(vpa-memory-audit): 64Mi -> 128Mi. VPA observed a 50Mi
+        # request / 60Mi upper bound, leaving no headroom at 64Mi.
+        resources=container_resources(cpu="10m", memory="32Mi", cpu_limit="100m", memory_limit="128Mi"),
         liveness_probe=_http_probe("/healthz", _READONLY.pod_port, initial_delay_seconds=5, period_seconds=30),
         readiness_probe=_http_probe("/healthz", _READONLY.pod_port, initial_delay_seconds=2, period_seconds=10),
     )
@@ -148,10 +123,7 @@ def _bearer_proxy_container() -> k8s.Container:
             k8s.ContainerPort(container_port=READ.pod_port, name="read"),
         ],
         volume_mounts=[k8s.VolumeMount(name="bearer-proxy-config", mount_path="/etc/nginx/templates", read_only=True)],
-        resources=k8s.ResourceRequirements(
-            requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")},
-            limits={"memory": k8s.Quantity.from_string("64Mi")},
-        ),
+        resources=container_resources(cpu="10m", memory="32Mi", memory_limit="64Mi"),
         liveness_probe=_http_probe("/healthz", _WRITE.pod_port, initial_delay_seconds=5, period_seconds=30),
         readiness_probe=_http_probe("/healthz", _WRITE.pod_port, initial_delay_seconds=2, period_seconds=10),
     )
@@ -197,15 +169,13 @@ def _deployment(scope: Construct) -> None:
 
 
 def _data_claim(scope: Construct) -> None:
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         scope,
         "piraeus-data",
-        metadata=k8s.ObjectMeta(name=_DATA_CLAIM, namespace=_NAMESPACE),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-hdd-local",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("10Gi")}),
-        ),
+        name=_DATA_CLAIM,
+        namespace=_NAMESPACE,
+        storage_class=piraeus_storage.HDD_LOCAL,
+        size="10Gi",
     )
 
 
@@ -218,17 +188,7 @@ def _service(scope: Construct, id: str, *, service: ServiceRef, description: str
             namespace=service.pods.namespace,
             annotations={"description": description} if description else None,
         ),
-        spec=k8s.ServiceSpec(
-            selector=service.pods.selector,
-            ports=[
-                k8s.ServicePort(
-                    name=service.port.name,
-                    port=service.port.number,
-                    target_port=k8s.IntOrString.from_number(service.pod_port),
-                    protocol="TCP",
-                )
-            ],
-        ),
+        spec=k8s.ServiceSpec(selector=service.pods.selector, ports=[service.k8s_service_port()]),
     )
 
 
@@ -256,18 +216,7 @@ def _network_policy(scope: Construct) -> None:
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
         endpoint_selector=_PODS.selector,
         ingress=[
-            CiliumNetworkPolicySpecIngress(
-                from_entities=[CiliumNetworkPolicySpecIngressFromEntities.KUBE_HYPHEN_APISERVER],
-                to_ports=[
-                    CiliumNetworkPolicySpecIngressToPorts(
-                        ports=[
-                            CiliumNetworkPolicySpecIngressToPortsPorts(
-                                port=str(_SERVER_PORT), protocol=CiliumNetworkPolicySpecIngressToPortsPortsProtocol.TCP
-                            )
-                        ]
-                    )
-                ],
-            ),
+            IngressRule.from_entities(Entity.KUBE_APISERVER, ports=[_SERVER_PORT]),
             # Read-only proxy through Authentik embedded outpost (nginx on 5601).
             authentik.SERVER.pods.admit(_READONLY.pod_port),
             # Public write + read routes: the Gateway (Envoy, hostNetwork) reaches the
@@ -311,6 +260,6 @@ def chart(app: App) -> Chart:
     _route(chart, "write-route", backend=_WRITE, hostname="activitywatch-write.allegedly.works")
     # Public read route for the Haku agent. Reaches the bearer-gated read Service, which
     # allows read methods only, so even a leaked read token can't write.
-    _route(chart, "read-route", backend=READ, hostname="activitywatch-read.allegedly.works")
+    _route(chart, "read-route", backend=READ, hostname=READ_HOSTNAME)
     _network_policy(chart)
     return chart

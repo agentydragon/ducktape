@@ -11,16 +11,15 @@ from __future__ import annotations
 
 import time
 import uuid
-from collections import defaultdict
-from collections.abc import Callable, Sequence
+from collections import Counter, defaultdict
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
+from itertools import repeat
 from pathlib import Path
 from typing import Any, get_args
 
-from alembic import command as alembic_command
-from alembic.config import Config as AlembicConfig
 from pydantic import TypeAdapter
 from sqlalchemy import create_engine, delete, select
 from sqlalchemy.engine import Engine, make_url
@@ -43,11 +42,9 @@ from study_casino.events import (
     GameEventMutation,
     GameEventRead,
     GameOutcome,
-    LedgerEventRead,
     RouletteOutcome,
     SlotsOutcome,
     game_event_from_row,
-    ledger_event_from_row,
 )
 from study_casino.games import RULES_VERSION, theoretical_bucket_rtp
 from study_casino.models import (
@@ -79,6 +76,7 @@ from study_casino.stats import (
     TimeBucketStats,
     WagerBucketStats,
 )
+from util.alembic_upgrade import upgrade
 
 _MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
@@ -89,11 +87,8 @@ _ACTION_RESULT_ADAPTER: TypeAdapter[ActionResult] = TypeAdapter(ActionResult)
 
 
 def _run_alembic_migrations(engine: Engine) -> None:
-    cfg = AlembicConfig()
-    cfg.set_main_option("script_location", str(_MIGRATIONS_DIR))
     with engine.begin() as conn:
-        cfg.attributes["connection"] = conn
-        alembic_command.upgrade(cfg, "head")
+        upgrade(conn, _MIGRATIONS_DIR)
 
 
 @dataclass(frozen=True)
@@ -111,7 +106,7 @@ class ActionMutation:
     `result` is the typed payload that surfaces as `ActionResponse.result`
     on the wire. `game_event` is the typed payload that gets persisted to
     `game_events.outcome_json` and re-read as `GameEventRead` by the
-    casino-stats and audit-log endpoints. `rng_audit` is the deterministic
+    casino-stats endpoints. `rng_audit` is the deterministic
     RNG trace, committed atomically with the ledger/game rows. `details`
     stays loosely typed — it's audit metadata persisted to
     `ledger_events.details_json` and not part of the frontend's read surface.
@@ -122,16 +117,6 @@ class ActionMutation:
     game_event: GameEventMutation | None = None
     rng_audit: RngActionAudit | None = None
     rng_version: str | None = None
-    rules_version: str = RULES_VERSION
-
-
-@dataclass(frozen=True)
-class ServerActionResult:
-    """Committed server action."""
-
-    event: LedgerEventRead
-    result: ActionResult
-    game_event: GameEventRead | None = None
 
 
 # Mutators take an open Session + the server's `now_ms` and return an
@@ -178,8 +163,6 @@ class SqlStore:
         _run_alembic_migrations(self._engine)
         self._Session = sessionmaker(bind=self._engine, expire_on_commit=False)
 
-    # ── Read-side ───────────────────────────────────────────────────────────
-
     def state_dump(self, username: str) -> StateDump:
         """Return the full canonical state for `username` — same shape as
         `state_snapshots.decoded_json`. The frontend's `GET /state`
@@ -197,30 +180,6 @@ class SqlStore:
         """Whether `username` already has a balance row (i.e. has been seeded)."""
         with self._Session() as s:
             return s.get(BalanceRow, username) is not None
-
-    def list_game_events(self, username: str, limit: int = 100) -> list[GameEventRead]:
-        with self._Session() as s:
-            rows = list(
-                s.scalars(
-                    select(GameEventRow)
-                    .where(GameEventRow.user_id == username)
-                    .order_by(GameEventRow.id.desc())
-                    .limit(limit)
-                ).all()
-            )
-            return [game_event_from_row(row) for row in rows]
-
-    def list_ledger_events(self, username: str, limit: int = 100) -> list[LedgerEventRead]:
-        with self._Session() as s:
-            rows = list(
-                s.scalars(
-                    select(LedgerEventRow)
-                    .where(LedgerEventRow.user_id == username)
-                    .order_by(LedgerEventRow.id.desc())
-                    .limit(limit)
-                ).all()
-            )
-            return [ledger_event_from_row(row) for row in rows]
 
     def casino_stats(self, username: str) -> CasinoStats:
         """Aggregate server-resolved `game_events` into per-game / per-wager-type
@@ -248,8 +207,6 @@ class SqlStore:
             username=username, since_date=SERVER_RESOLVED_SINCE_DATE, event_count=len(events), games=games
         )
 
-    # ── Write-side ──────────────────────────────────────────────────────────
-
     def run_server_action(
         self,
         *,
@@ -259,7 +216,7 @@ class SqlStore:
         mutator: ServerActionMutator,
         snapshot_reason: str | None = None,
         snapshot_note: str | None = None,
-    ) -> ServerActionResult:
+    ) -> ActionResult:
         """Run one idempotent, server-authoritative mutation for `username`.
 
         Idempotency: if a `ledger_events` row with this `(user_id,
@@ -276,20 +233,7 @@ class SqlStore:
                 )
             )
             if existing is not None:
-                game_event: GameEventRead | None = None
-                if existing.action_type.startswith("casino.") or existing.action_type.startswith("blackjack."):
-                    game_row = s.scalar(
-                        select(GameEventRow).where(
-                            GameEventRow.user_id == username, GameEventRow.client_event_id == client_action_id
-                        )
-                    )
-                    if game_row is not None:
-                        game_event = game_event_from_row(game_row)
-                return ServerActionResult(
-                    event=ledger_event_from_row(existing),
-                    result=_ACTION_RESULT_ADAPTER.validate_json(existing.result_json),
-                    game_event=game_event,
-                )
+                return _ACTION_RESULT_ADAPTER.validate_json(existing.result_json)
 
             now_ms = int(time.time() * 1000)
             balance = locked_balance(s, username)
@@ -315,7 +259,7 @@ class SqlStore:
                 server_at_ms=now_ms,
                 action_type=action_type,
                 source="server_action",
-                rules_version=mutation.rules_version,
+                rules_version=RULES_VERSION,
                 rng_version=mutation.rng_version,
                 credits_before=before_credits,
                 credits_after=after_credits,
@@ -337,20 +281,11 @@ class SqlStore:
                     credits_after=after_credits,
                     tokens_before=before_tokens,
                     tokens_after=after_tokens,
-                    server_credits=after_credits,
-                    server_tokens=after_tokens,
-                    rules_version=mutation.rules_version,
                     rng_version=mutation.rng_version,
                 )
                 s.add(game_event_row)
 
             s.flush()
-            s.refresh(event_row)
-            if game_event_row is not None:
-                s.refresh(game_event_row)
-                game_event_out = game_event_from_row(game_event_row)
-            else:
-                game_event_out = None
             if mutation.rng_audit is not None:
                 self._persist_rng_audit(
                     s=s,
@@ -362,11 +297,7 @@ class SqlStore:
                     audit=mutation.rng_audit,
                 )
 
-        return ServerActionResult(
-            event=ledger_event_from_row(event_row), result=mutation.result, game_event=game_event_out
-        )
-
-    # ── Helpers used by import/reset mutators ───────────────────────────────
+        return mutation.result
 
     def replace_state_for_import(self, s: Session, username: str, data: ImportData) -> None:
         """Wipe sessions/prizes/prize_log + reset balance for `username`, then
@@ -413,8 +344,7 @@ class SqlStore:
 
     def replace_state_for_reset(self, s: Session, username: str) -> None:
         """Wipe sessions/prize_log for `username`, zero their balance and
-        streak state, keep their prize catalog. Equivalent to the legacy
-        `build_reset_casino` behaviour."""
+        streak state, keep their prize catalog."""
         s.execute(delete(SessionRow).where(SessionRow.user_id == username))
         s.execute(delete(PrizeLogRow).where(PrizeLogRow.user_id == username))
         balance = locked_balance(s, username)
@@ -425,8 +355,6 @@ class SqlStore:
         credit_state.last_qualifying_date = None
         credit_state.rest_days_used = 0
         credit_state.last_first_bonus_date = None
-
-    # ── Internal ────────────────────────────────────────────────────────────
 
     def _ensure_user(self, s: Session, username: str) -> None:
         """Idempotently seed a balance row and the default prize catalog for `username`.
@@ -498,9 +426,6 @@ class SqlStore:
         credits_after: int,
         tokens_before: int,
         tokens_after: int,
-        server_credits: int,
-        server_tokens: int,
-        rules_version: str,
         rng_version: str | None,
     ) -> GameEventRow:
         return GameEventRow(
@@ -517,10 +442,10 @@ class SqlStore:
             credits_after=credits_after,
             tokens_before=tokens_before,
             tokens_after=tokens_after,
-            server_credits=server_credits,
-            server_tokens=server_tokens,
+            server_credits=credits_after,
+            server_tokens=tokens_after,
             outcome_json=event.outcome.model_dump_json(),
-            rules_version=rules_version,
+            rules_version=RULES_VERSION,
             rng_version=rng_version,
         )
 
@@ -631,20 +556,10 @@ def _aggregate_game(
         by_key[key].append(e)
 
     buckets = [
-        _bucket_stats(
-            key,
-            label,
-            by_key[key],
-            _theoretical_bucket(
-                theoretical.get((game, key)),
-                _fair_win_lower_tail_probability(by_key[key], bucket_key, theoretical) if game == "roulette" else None,
-            ),
-        )
+        _bucket_stats(key, label, by_key[key], _theoretical_bucket(game, by_key[key], theoretical.get((game, key))))
         for key, label in bucket_defs
     ]
-    total_theoretical = (
-        _weighted_theoretical_for_actual_wagers(game_events, bucket_key, theoretical) if game == "roulette" else None
-    )
+    total_theoretical = _roulette_total_theory(game_events, theoretical) if game == "roulette" else None
     total = _bucket_stats("__total__", "All actual wagers", game_events, total_theoretical)
 
     # Timeline never crosses below the data-collection cutoff — defensive
@@ -691,7 +606,6 @@ def _bucket_stats(
         wagered=wagered,
         returned=returned,
         net=net,
-        expected_returned=expected_returned,
         expected_net=expected_net,
         payout_rate=payout_rate,
         rtp=rtp,
@@ -706,75 +620,61 @@ def _bucket_stats(
 
 
 def _theoretical_bucket(
-    value: tuple[float, float] | None, fair_win_lower_tail_probability: float | None = None
+    game: Game, events: list[GameEventRead], value: tuple[float, float] | None
 ) -> _TheoreticalStats | None:
     if value is None:
         return None
     payout_rate, rtp = value
     return _TheoreticalStats(
-        payout_rate=payout_rate, rtp=rtp, fair_win_lower_tail_probability=fair_win_lower_tail_probability
+        payout_rate=payout_rate,
+        rtp=rtp,
+        fair_win_lower_tail_probability=_fair_win_lower_tail_probability(events, repeat(payout_rate, len(events)))
+        if game == "roulette"
+        else None,
     )
 
 
-def _weighted_theoretical_for_actual_wagers(
-    events: list[GameEventRead],
-    bucket_key: Callable[[GameOutcome], str | None],
-    theoretical: dict[tuple[str, str], tuple[float, float]],
+def _roulette_total_theory(
+    events: list[GameEventRead], theoretical: dict[tuple[str, str], tuple[float, float]]
 ) -> _TheoreticalStats | None:
     if not events:
         return None
 
-    expected_wins = 0.0
+    rates = []
     expected_returned = 0.0
     wagered = 0
     for event in events:
-        key = bucket_key(event.outcome)
-        if key is None:
+        if not isinstance(event.outcome, RouletteOutcome):
             return None
-        theor = theoretical.get((event.game, key))
-        if theor is None:
+        theory = theoretical.get(("roulette", event.outcome.bet_type))
+        if theory is None:
             return None
-        payout_rate, rtp = theor
-        expected_wins += payout_rate
+        payout_rate, rtp = theory
+        rates.append(payout_rate)
         expected_returned += event.wager_credits * rtp
         wagered += event.wager_credits
 
     return _TheoreticalStats(
-        payout_rate=expected_wins / len(events),
+        payout_rate=sum(rates) / len(events),
         rtp=(expected_returned / wagered) if wagered > 0 else None,
         expected_returned=expected_returned,
-        fair_win_lower_tail_probability=_fair_win_lower_tail_probability(events, bucket_key, theoretical),
+        fair_win_lower_tail_probability=_fair_win_lower_tail_probability(events, rates),
     )
 
 
-def _fair_win_lower_tail_probability(
-    events: list[GameEventRead],
-    bucket_key: Callable[[GameOutcome], str | None],
-    theoretical: dict[tuple[str, str], tuple[float, float]],
-) -> float | None:
+def _fair_win_lower_tail_probability(events: list[GameEventRead], payout_rates: Iterable[float]) -> float | None:
     """P(fair game has <= observed wins), conditioned on actual wager types."""
     if not events:
         return None
-
-    distribution = {0: 1.0}
-    for event in events:
-        if event.game != "roulette" or not isinstance(event.outcome, RouletteOutcome):
-            return None
-        key = bucket_key(event.outcome)
-        if key is None:
-            return None
-        theor = theoretical.get((event.game, key))
-        if theor is None:
-            return None
-        payout_rate, _rtp = theor
-        next_distribution: dict[int, float] = {}
-        for wins, probability in distribution.items():
-            next_distribution[wins] = next_distribution.get(wins, 0.0) + probability * (1.0 - payout_rate)
-            next_distribution[wins + 1] = next_distribution.get(wins + 1, 0.0) + probability * payout_rate
-        distribution = next_distribution
-
-    observed_wins = sum(1 for event in events if event.payout_tokens > 0)
-    return sum(probability for wins, probability in distribution.items() if wins <= observed_wins)
+    observed_wins = sum(event.payout_tokens > 0 for event in events)
+    # Counts above the observed number of wins cannot contribute to this tail on later spins.
+    probabilities = [1.0] + [0.0] * observed_wins
+    for spins, rate in enumerate(payout_rates, start=1):
+        # Descend so both terms still describe the distribution before this spin.
+        for wins in range(min(spins, observed_wins), 0, -1):
+            probabilities[wins] = probabilities[wins] * (1 - rate) + probabilities[wins - 1] * rate
+        probabilities[0] *= 1 - rate
+    return sum(probabilities)
 
 
 def _time_bucket_stats(date: str, events: list[GameEventRead]) -> TimeBucketStats:
@@ -833,21 +733,23 @@ def _bj_upcard_key(outcome: BlackjackOutcome) -> str | None:
     return None
 
 
-def _blackjack_slice(key: str, label: str, events: list[GameEventRead]) -> BlackjackSlice:
-    wins = losses = pushes = 0
-    wagered = 0
-    returned = 0
+def _blackjack_counts(events: list[GameEventRead]) -> tuple[int, int, int, int]:
+    counts: Counter[BlackjackOutcomeKind] = Counter()
     for e in events:
-        wagered += e.wager_credits
-        returned += e.payout_tokens
         assert isinstance(e.outcome, BlackjackOutcome)
-        outcome = e.outcome.outcome
-        if outcome in _BJ_WIN_OUTCOMES:
-            wins += 1
-        elif outcome in _BJ_LOSS_OUTCOMES:
-            losses += 1
-        elif outcome == "push":
-            pushes += 1
+        counts[e.outcome.outcome] += 1
+    return (
+        sum(counts[outcome] for outcome in _BJ_WIN_OUTCOMES),
+        sum(counts[outcome] for outcome in _BJ_LOSS_OUTCOMES),
+        counts["push"],
+        counts["blackjack"],
+    )
+
+
+def _blackjack_slice(key: str, label: str, events: list[GameEventRead]) -> BlackjackSlice:
+    wins, losses, pushes, _ = _blackjack_counts(events)
+    wagered = sum(e.wager_credits for e in events)
+    returned = sum(e.payout_tokens for e in events)
     net = returned - wagered
     return BlackjackSlice(
         key=key,
@@ -865,20 +767,7 @@ def _blackjack_slice(key: str, label: str, events: list[GameEventRead]) -> Black
 
 
 def _blackjack_summary(events: list[GameEventRead]) -> BlackjackSummary:
-    wins = losses = pushes = blackjacks = busts = 0
-    for e in events:
-        assert isinstance(e.outcome, BlackjackOutcome)
-        outcome = e.outcome.outcome
-        if outcome == "blackjack":
-            blackjacks += 1
-        elif outcome == "bust":
-            busts += 1
-        if outcome in _BJ_WIN_OUTCOMES:
-            wins += 1
-        elif outcome in _BJ_LOSS_OUTCOMES:
-            losses += 1
-        elif outcome == "push":
-            pushes += 1
+    wins, losses, pushes, blackjacks = _blackjack_counts(events)
     count = len(events)
     decided = wins + losses
     return BlackjackSummary(
@@ -886,8 +775,6 @@ def _blackjack_summary(events: list[GameEventRead]) -> BlackjackSummary:
         wins=wins,
         losses=losses,
         pushes=pushes,
-        blackjacks=blackjacks,
-        busts=busts,
         win_rate_excl_push=(wins / decided) if decided > 0 else None,
         blackjack_rate=(blackjacks / count) if count > 0 else None,
     )

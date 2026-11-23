@@ -83,13 +83,3 @@ resource "restapi_object" "package_webhook" {
 
   depends_on = [forgejo_user.images]
 }
-
-# The retired agent-workspaces ExternalSecret previously owned this Secret.
-# CLEANUP(added 2026-09-11): Remove only after every forgejo_images state has
-# forgotten kubernetes_secret.agent_workspaces_pull; this block does not destroy it.
-removed {
-  from = kubernetes_secret.agent_workspaces_pull
-  lifecycle {
-    destroy = false
-  }
-}

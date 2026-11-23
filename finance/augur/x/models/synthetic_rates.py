@@ -1,6 +1,6 @@
 """Synthetic monthly rate paths for fit tests: a generated Ornstein-Uhlenbeck process with known
-parameters, which is the only way to test a rate estimator (see `ornstein_uhlenbeck.py`'s module
-docstring) — real FRED data could only assert that today's numbers equal today's numbers.
+parameters, which is the only way to test a rate estimator — real FRED data could only assert
+that today's numbers equal today's numbers.
 """
 
 from __future__ import annotations

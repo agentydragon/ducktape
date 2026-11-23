@@ -6,10 +6,9 @@ import { toast } from "../lib/toast";
 interface Props {
   text: string;
   label?: string;
-  successMessage?: string;
 }
 
-export default function CopyButton({ text, label = "Copy", successMessage = "Copied to clipboard" }: Props) {
+export default function CopyButton({ text, label = "Copy" }: Props) {
   const [copied, setCopied] = useState(false);
   const copyTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -24,7 +23,7 @@ export default function CopyButton({ text, label = "Copy", successMessage = "Cop
     try {
       await navigator.clipboard.writeText(text);
       setCopied(true);
-      toast.success(successMessage);
+      toast.success("Copied to clipboard");
       if (copyTimeout.current) clearTimeout(copyTimeout.current);
       copyTimeout.current = setTimeout(() => setCopied(false), 2000);
     } catch (err) {

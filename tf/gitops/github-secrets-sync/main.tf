@@ -17,8 +17,6 @@ provider "github" {
   token = data.kubernetes_secret.github_secrets_sync_pat.data["token"]
 }
 
-# --- Data Sources ---
-
 data "kubernetes_secret" "github_secrets_sync_pat" {
   metadata {
     name      = "github-secrets-sync-pat"
@@ -100,8 +98,6 @@ data "kubernetes_secret" "drivefs_artifacts_s3_credentials" {
 data "github_user" "agentydragon" {
   username = "agentydragon"
 }
-
-# --- GitHub Actions Secrets ---
 
 resource "github_actions_secret" "automation_app_private_key" {
   repository      = "ducktape"
@@ -234,8 +230,6 @@ resource "github_actions_secret" "pr_visuals_secret_key" {
   secret_name     = "PR_VISUALS_SECRET_KEY"
   plaintext_value = data.kubernetes_secret.pr_visuals_s3_credentials.data["secretKey"]
 }
-
-# --- GitHub Actions Variables ---
 
 # The variable predates Terraform ownership. Import it so the OpenTofu provider adopts
 # the existing GitHub Actions variable instead of trying to create a duplicate.

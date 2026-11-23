@@ -3,6 +3,7 @@ kind: Namespace
 metadata:
   annotations:
     description: Second OpenClaw agent, egress-confined to Agentplane's CONNECT relay and reachable only through the Authentik proxy outpost. Opens pull requests against public repositories as agentydragon-agent.
+    goldilocks.fairwinds.com/vpa-resource-policy: '{"containerPolicies": [{"containerName": "*", "controlledValues": "RequestsOnly"}]}'
   labels:
     goldilocks.fairwinds.com/vpa-update-mode: auto
     name: public-coder-agent

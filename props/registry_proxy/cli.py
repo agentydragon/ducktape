@@ -1,29 +1,9 @@
 """Registry proxy entrypoint: ``serve`` starts the uvicorn server."""
 
-from __future__ import annotations
-
-from typing import Annotated
-
-import typer
-import uvicorn
-
+from props.data_plane import create_serve_cli
 from props.registry_proxy.app import create_app
 
-cli = typer.Typer(help="props registry proxy")
-
-
-@cli.callback()
-def _root() -> None:
-    """props registry proxy — the OCI image data plane."""
-
-
-@cli.command()
-def serve(
-    host: Annotated[str, typer.Option(help="Host to bind to")] = "127.0.0.1",
-    port: Annotated[int, typer.Option(help="Port to bind to")] = 8000,
-) -> None:
-    """Start the registry proxy server."""
-    uvicorn.run(create_app(), host=host, port=port)
+cli = create_serve_cli(name="registry proxy", create_app=create_app)
 
 
 def main() -> None:

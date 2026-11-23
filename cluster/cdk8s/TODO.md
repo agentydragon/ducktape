@@ -5,37 +5,42 @@ overlays and application payloads: [remainder backlog](../docs/cdk8s_remainder.m
 Remove entries when their acceptance conditions land; this is not a history of the
 conversion.
 
+## CI render diffs if manifests move to a separate branch
+
+Generated manifests are committed alongside cdk8s changes today, so review their PR diff.
+If cdk8s source and Flux manifests move to separate branches, consider rendering both
+revisions in PR CI and publishing a reviewable resource diff. Prefer the real Flux tools
+and controller behavior over a separate approximation; state what the comparison can and
+cannot establish about substitutions, secrets, external sources and live readiness.
+
 ## ESO store/consumer agreement
 
-`cluster/validation/checks.py` sees generated and hand-written resources together.
-Resolve each ExternalSecret's store, including ClusterExternalSecret target namespaces;
-check store namespace conditions and the ServiceAccount required by Kubernetes-provider
-referent authentication. Existing checks cover external credential ownership and the
-Forgejo image distribution convention, not this general relationship.
+The [rendered-tree check](../docs/cdk8s.md#sops-secrets-in-a-converted-directory) includes
+local Flux `targetNamespace` overrides. Report consumers it cannot resolve because their
+namespace or selector labels come from outside the render. Keep access grants explicit.
 
-The missing agreement has already caused denied Airlock/Forgejo-image consumers and a
-missing `external-creds-reader` ServiceAccount. Handle namespace selectors as well as
-literal lists where used. Derive paired fields from an explicitly approved grant when
-they have one owner; never grant access just because an ExternalSecret requests it.
-
-Done: synthetic cases catch denied namespaces and absent referent identities, while
-valid generated and hand-written consumers pass. No duplicate consumer/provider roster.
+Done: all resolvable consumers are checked and any unresolved cases are described without
+claiming the render proves live readiness or maintaining a duplicate provider roster.
 
 ## Fleet rule waivers
 
-Proxy policies that already broke a rule when the rules started covering every App carry
-`unpinned_https_egress` waivers at their write call, each under a `CLEANUP(added 2026-10-12)`
-comment. For each unpinned proxy, either pin `serverNames` or keep the waiver with a comment
-saying why it is exempt by design, as Agentplane's egress proxy does.
+The active Agentplane egress proxy (`agentplane/generation.py`) is exempt by design:
+the interception proxy terminates TLS, so its allowlist is the egress PolicySets.
+
+The parked `github-api-proxy` (`x/github_api_proxy/proxy.py`) also carries a waiver and a
+`CLEANUP(added 2026-10-12)` comment. Before revival, pin its `serverNames` or document a
+by-design exemption.
+
 Synth fails on a waiver whose object passes, so a fix includes deleting it.
 
-Done: no `CLEANUP(added 2026-10-12)` waiver remains except the documented by-design exemptions.
+Done: no `CLEANUP(added 2026-10-12)` waiver remains except documented by-design exemptions.
 
 ## Fleet rule references
 
-`resolved_references` is a same-App kind-mismatch check, not missing-reference
-validation; it currently ignores namespace. Narrow its name/claims or strengthen its
-implementation. Whole-tree resolution must distinguish:
+`reference_kind_mismatches` is a same-App kind-mismatch check, not missing-reference
+validation. It skips unknown namespaces and suppresses a mismatch when the expected kind
+exists anywhere in the App, since external producers may also exist. Whole-tree resolution
+must distinguish:
 
 - Namespaced Secret/ConfigMap objects and controller-created targets (ESO, Certificate,
   CNPG, trust-manager), with their actual output semantics.
@@ -70,22 +75,27 @@ that policy permits traffic.
 Done per neighborhood: producer and consumers share labels without import cycles or a
 new peer registry.
 
-## Kyverno preconditions typed schema (v2beta1)
+## Kyverno CEL policy migration
 
-`providers/kyverno/cluster_policy.py`'s `Validate.deny(conditions=...)` takes
-`preconditions`/`deny.conditions` as a raw dict because `ClusterPolicy`'s `v1` schema --
-the version `cdk8s_import` names plainly, and what this repo's `ClusterPolicySpecRules`
-types come from -- declares `preconditions` as `x-kubernetes-preserve-unknown-fields:
-true`, with no structure at all.
+Kyverno 1.20 stops enforcing `kyverno.io` `ClusterPolicy`/`Policy`/`CleanupPolicy`/
+`ClusterCleanupPolicy`; its chart refuses to upgrade while any exist (override
+`upgrade.acknowledgeLegacyPoliciesNotEnforced` = they silently stop enforcing). Legacy CRDs
+go away in 1.21. The chart is held at 3.9.x (Kyverno 1.19) in `renovate.json5` until done.
 
-The CRD's `v2beta1` schema (served, not storage; generated as suffixed
-`ClusterPolicyV2Beta1Spec*` types) has a real typed shape instead: `any`/`all` arrays of
-`{key, operator, value, message}`, with `operator` a genuine 14-value enum. Migrating
-the wrapper to `v2beta1` would let `Validate.deny()` grow a typed `preconditions`
-factory instead of a raw-dict escape hatch -- worth doing sometime, not urgent.
+Move to `policies.kyverno.io/v1` kinds (CEL; `preconditions` -> `matchConditions`,
+`context` -> `spec.variables`, `patchStrategicMerge` -> `ApplyConfiguration`/`JSONPatch`).
+Moved: `require-gitops`, `default-disable-service-links`, `require-secret-store-conditions`,
+the janitor, and `agentplane-staging-launcher-relay` (`ValidatingPolicy` plus a `MutatingPolicy`, both
+with `resource.Get` variables), and the props finished-pod reaper (`NamespacedDeletingPolicy`). Left:
+gaffer-private's thrive-scraper Job reaper (agentydragon/gaffer-private#1467), then the chart bump below.
 
-Done: `providers/kyverno` targets `v2beta1` (or offers it alongside `v1`), and
-`preconditions` has a typed factory built from the real `any`/`all` shape.
+Offline `kyverno apply` evaluates `resource.Get` only for kinds it can map (core kinds with
+`--context-file`); for KubeVirt and Agentplane kinds the tests substitute `json.unmarshal`
+variables, so the live lookups run only in the cluster.
+
+Done when: no `kyverno.io` policy kinds remain; `providers/kyverno` wrapper targets the new CRDs;
+CRD pins in `devinfra/bazel/artifacts.MODULE.bazel` and the `kyverno` CLI pin match 1.20; the
+Renovate hold is removed.
 
 ## Watch GitHub secret inputs declaratively (deferred)
 

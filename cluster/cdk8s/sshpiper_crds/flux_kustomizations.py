@@ -14,10 +14,9 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization
 
 
 def sshpiper_crds(chart: Chart) -> Kustomization:
-    name = "sshpiper-crds"
     return flux_kustomization(
         chart,
-        name,
+        "sshpiper-crds",
         KustomizationSpecSourceRef(
             kind=KustomizationSpecSourceRefKind.GIT_REPOSITORY, name="sshpiper-source", namespace="ducktape-flux"
         ),

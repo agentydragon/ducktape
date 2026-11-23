@@ -2,9 +2,8 @@
 receipts are read from the History Service."""
 
 from collections.abc import Mapping
-from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, Duration, Size
+from cdk8s import ApiObjectMetadata, Size
 from cdk8s_plus_34 import (
     ContainerResources,
     Cpu,
@@ -19,30 +18,27 @@ from constructs import Construct
 from pydantic import AnyHttpUrl
 
 from agentplane.crd_group import GROUP
-from agentplane.identity.auth import listener
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
     HISTORY_SERVICE_URI,
     NOTIFICATIONS_URI,
-    SANDBOX_CONTROLLER_URI,
     SESSION_DISPATCHER_URI,
 )
 from agentplane.notification_service.settings import (
     ActionsSettings,
     GitHubSettings,
     HistoryServiceSettings,
-    RunnerGatewaySettings,
     SessionDispatcherSettings,
     Settings,
 )
 from cluster.cdk8s import cilium, node_scheduling
-from cluster.cdk8s.agentplane import database, environment_service, workload_tls
+from cluster.cdk8s.agentplane import database, workload_tls
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.probes import tls_grpc_probe
+from cluster.cdk8s.probes import TlsGrpcHealth
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
@@ -52,7 +48,7 @@ NAME = "notifications"
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-notification-service"
 _LABELS = {"app.kubernetes.io/name": NAME}
 # The health service whose verdict is "the process answers"; the empty name is readiness. Keep equal to
-# `livenessService` in agentplane/notification_service/main.go.
+# `LivenessService` in agentplane/postgres/probes/probes.go.
 _LIVENESS_HEALTH_SERVICE = "livez"
 
 
@@ -83,7 +79,6 @@ class Notifications(Construct):
         *,
         database_url: EnvValue,
         actions: ServiceRef,
-        gateway_control_target: str,
         history: ServiceRef,
         dispatcher: ServiceRef,
         callers: list[Pods],
@@ -93,7 +88,7 @@ class Notifications(Construct):
         memory_request: Size = _DEFAULT_MEMORY_REQUEST,
         memory_limit: Size | None = _DEFAULT_MEMORY_LIMIT,
     ) -> None:
-        """Bearer-authenticated and Sandbox-SVID RPCs share the TLS gRPC listener."""
+        """Service SVIDs and Sandbox workload SVIDs share one TLS gRPC listener."""
         super().__init__(scope, id)
         self.env = env
         self.callers = callers
@@ -104,29 +99,11 @@ class Notifications(Construct):
         http = webhook_service(env.namespace)
         variables = {"AGENTPLANE_NOTIFICATIONS_DATABASE_URL": database_url, **(container_env or {})}
         github = env.notifications_github
-        readiness = tls_grpc_probe(
+        health = TlsGrpcHealth(
             port=endpoint.pod_port,
             ca_file=workload_tls.TRUST_BUNDLE_FILE,
             server_uri=NOTIFICATIONS_URI,
-            initial_delay_seconds=3,
-            period_seconds=10,
-        )
-        liveness = tls_grpc_probe(
-            port=endpoint.pod_port,
-            ca_file=workload_tls.TRUST_BUNDLE_FILE,
-            server_uri=NOTIFICATIONS_URI,
-            service=_LIVENESS_HEALTH_SERVICE,
-            initial_delay_seconds=20,
-            period_seconds=30,
-        )
-        startup = tls_grpc_probe(
-            port=endpoint.pod_port,
-            ca_file=workload_tls.TRUST_BUNDLE_FILE,
-            server_uri=NOTIFICATIONS_URI,
-            initial_delay_seconds=0,
-            period_seconds=5,
-            service=_LIVENESS_HEALTH_SERVICE,
-            failure_threshold=60,
+            liveness_service=_LIVENESS_HEALTH_SERVICE,
         )
         workload = add_service_workload(
             self,
@@ -135,15 +112,13 @@ class Notifications(Construct):
             container="notifications",
             image=f"{_IMAGE}:unset",
             env_variables=variables,
-            readiness=readiness,
-            liveness=liveness,
-            startup=startup,
+            readiness=health.readiness(),
+            liveness=health.liveness(),
+            startup=health.startup(),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(50)),
                 memory=MemoryResources(request=memory_request, limit=memory_limit),
             ),
-            termination_grace=Duration.seconds(30),
-            replica_profile=env.replicas,
             placement=placement,
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
@@ -151,49 +126,37 @@ class Notifications(Construct):
         serving_tls = workload_tls.service_certificate(
             self, env, container=workload.container, name=NAME, uri=NOTIFICATIONS_URI
         )
-        assert serving_tls.cert_file is not None
-        assert serving_tls.key_file is not None
-        assert serving_tls.ca_file is not None
         settings_model = Settings(
             namespace=env.namespace,
             operator_reader_services=[APP_URI],
             notice_debounce=env.notifications_debounce,
             actions=ActionsSettings(
-                url=AnyHttpUrl(f"https://{actions.fqdn}:{actions.port.number}"),
+                url=AnyHttpUrl(f"https://{actions.authority}"),
                 tls=workload_tls.service_client_tls(ACTIONS_URI, client_uri=NOTIFICATIONS_URI),
             ),
-            runner_gateway=RunnerGatewaySettings(
-                control_target=gateway_control_target,
-                tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=NOTIFICATIONS_URI),
-            ),
             history_service=HistoryServiceSettings(
-                target=f"{history.fqdn}:{history.pod_port}",
+                target=history.authority,
                 tls=workload_tls.service_client_tls(HISTORY_SERVICE_URI, client_uri=NOTIFICATIONS_URI),
             ),
             session_dispatcher=SessionDispatcherSettings(
-                target=f"{dispatcher.fqdn}:{dispatcher.port.number}",
+                target=dispatcher.authority,
                 tls=workload_tls.service_client_tls(SESSION_DISPATCHER_URI, client_uri=NOTIFICATIONS_URI),
             ),
             github=GitHubSettings(app_id=github.app_id) if github is not None else None,
             http_port=http.pod_port,
-            rpc=listener.Listener(
-                listen_address=f"0.0.0.0:{endpoint.pod_port}",
-                tls=listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
-                auth=[listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file))],
-            ),
+            rpc=serving_tls.spiffe_listener(endpoint.pod_port),
         )
         settings_file = SettingsFile(
             self,
             "settings",
             metadata=ApiObjectMetadata(name=f"{NAME}-settings", namespace=env.namespace),
             path="/etc/agentplane-notifications/settings.yaml",
-            content=yaml_config(settings_model.model_dump(mode="json", exclude_none=True)),
+            content=yaml_config(settings_model, exclude_none=True),
         )
-        role_name = NAME.removeprefix("agentplane-")
-        Role(
+        role = Role(
             self,
             "role",
-            metadata=ApiObjectMetadata(name=role_name, namespace=env.namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
             rules=[
                 # Resolving a destination reads its Sandbox, not the Pod.
                 RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list"]),
@@ -212,10 +175,7 @@ class Notifications(Construct):
             ],
         )
         RoleBinding(
-            self,
-            "rolebinding",
-            metadata=ApiObjectMetadata(name=role_name, namespace=env.namespace),
-            role=Role.from_role_name(self, "role-ref", role_name),
+            self, "rolebinding", metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace), role=role
         ).add_subjects(workload.account)
         if github is not None:
             secret = SecretRef(namespace=env.namespace, name=github.secret_name)
@@ -233,7 +193,7 @@ class Notifications(Construct):
         NetworkPolicy(
             self,
             "network-policy",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=env.namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
             endpoint_selector=_LABELS,
             ingress=[
                 *(pods.admit(endpoint.pod_port) for pods in self.callers),
@@ -244,7 +204,6 @@ class Notifications(Construct):
                 EgressRule.to_fqdns("api.github.com"),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 self.actions.egress(),
-                environment_service.environments_service(env.namespace).egress(),
                 self.history.egress(),
                 self.dispatcher.egress(),
                 database.egress(env.namespace),

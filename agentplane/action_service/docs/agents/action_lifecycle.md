@@ -5,8 +5,9 @@ For MCP clients, use tool discovery and `get_action` to read the live argument s
 
 ## Discover and check access
 
-1. Find the operation with `agentplane actions list`. Fetch its current argument schema with
-   `agentplane actions show GROUP/ACTION`; do not guess arguments.
+1. Find the operation with `agentplane actions list`. Fetch its current argument schema and validation status with
+   `agentplane actions show GROUP/ACTION`; do not guess arguments. `agentplane actions groups --json` includes
+   group health and tool validation status.
 2. Inspect `agentplane actions policy`: if `synced` is true, match the exact Action group/name and
    intended arguments against `auto_approve_if`. Check argument-schema constraints,
    owner/repository constraints, and any server-side repository visibility requirement.
@@ -21,7 +22,8 @@ For MCP clients, use tool discovery and `get_action` to read the live argument s
 ## Submit once
 
 `agentplane actions submit GROUP/ACTION --title TEXT --arguments JSON` takes `arguments` matching
-the discovered schema (`@FILE` or `-` read them from a file or stdin; the service validates them). The
+the discovered schema (`@FILE` or `-` read them from a file or stdin). Agentplane validates it when the
+input-schema validation status is `enforced`; the backend may validate it otherwise. The
 operator sees the title and optional `--description`; explain the operation and necessary scope
 without putting credentials in either. It generates an idempotency key and writes it to stderr before
 sending (`--key` supplies your own), then prints the receipt; `--wait` follows with the wait below.

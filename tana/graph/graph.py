@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import ItemsView, Iterable, Iterator, Mapping, ValuesView
-from typing import Any, cast, overload
+from typing import Any, Self, cast
 
-from tana.domain.constants import LANGUAGE_KEY_ID, MIN_TUPLE_CHILDREN, SUPERTAG_KEY_ID
-from tana.domain.nodes import DOC_CLASS, BaseNode, CodeBlockNode, TupleNode, UnknownNode
+from tana.domain.nodes import DOC_CLASS, MIN_TUPLE_CHILDREN, BaseNode, CodeBlockNode, TupleNode, UnknownNode
+from tana.domain.system_nodes import LANGUAGE_KEY_ID, SUPERTAG_KEY_ID
 from tana.domain.types import NodeId
 from tana.graph.wrappers import is_wrapper
 
@@ -18,7 +18,6 @@ class TanaGraph(Mapping[NodeId, BaseNode]):
         self._supertag_index: dict[NodeId, list[str]] = {}
         self._build_supertag_index()
 
-    # Mapping interface -----------------------------------------------------
     def __getitem__(self, node_id: NodeId) -> BaseNode:
         return self._nodes[node_id]
 
@@ -28,19 +27,6 @@ class TanaGraph(Mapping[NodeId, BaseNode]):
     def __len__(self) -> int:
         return len(self._nodes)
 
-    # Convenience helpers ---------------------------------------------------
-    @overload
-    def get(self, node_id: NodeId, /) -> BaseNode | None: ...
-
-    @overload
-    def get(self, node_id: NodeId, /, default: BaseNode) -> BaseNode: ...
-
-    @overload
-    def get[T](self, node_id: NodeId, /, default: T) -> BaseNode | T: ...
-
-    def get[T](self, node_id: NodeId, /, default: BaseNode | T | None = None) -> BaseNode | T | None:
-        return self._nodes.get(node_id, default)
-
     def values(self) -> ValuesView[BaseNode]:
         return self._nodes.values()
 
@@ -49,7 +35,7 @@ class TanaGraph(Mapping[NodeId, BaseNode]):
 
     def child_nodes(self, node: BaseNode) -> list[BaseNode]:
         """Return child nodes for a given node."""
-        return [self._nodes[cid] for cid in node.children if cid in self._nodes]
+        return [child for child_id in node.children if (child := self.get(child_id)) is not None]
 
     def get_supertags(self, node_id: NodeId) -> list[str]:
         return self._supertag_index.get(node_id, [])
@@ -69,9 +55,8 @@ class TanaGraph(Mapping[NodeId, BaseNode]):
                     return ""
         return ""
 
-    # Construction ----------------------------------------------------------
     @classmethod
-    def from_documents(cls, documents: Iterable[dict[str, Any]]) -> TanaGraph:
+    def from_documents(cls, documents: Iterable[dict[str, Any]]) -> Self:
         """Build a graph from raw JSON documents."""
 
         def _make_node(raw: dict[str, Any]) -> BaseNode:
@@ -83,7 +68,6 @@ class TanaGraph(Mapping[NodeId, BaseNode]):
         mapping = {NodeId(str(doc["id"])): _make_node(doc) for doc in documents}
         return cls(mapping)
 
-    # Internal --------------------------------------------------------------
     def _build_supertag_index(self) -> None:
         idx: defaultdict[NodeId, list[str]] = defaultdict(list)
 

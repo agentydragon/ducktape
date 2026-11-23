@@ -1,11 +1,12 @@
-"""CNPG `Cluster`s: the shape every generated Postgres shares, its placement, and the reference
-its clients address it by."""
+"""CNPG Cluster and Database declarations, placement, and client references."""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
-from cdk8s import ApiObjectMetadata
+from cdk8s import ApiObjectMetadata, Size
+from cdk8s_plus_34 import Cpu
 from cnpg_cluster_crds.io.cnpg.postgresql import (
     Cluster,
     ClusterSpec,
@@ -14,20 +15,28 @@ from cnpg_cluster_crds.io.cnpg.postgresql import (
     ClusterSpecBootstrap,
     ClusterSpecBootstrapInitdb,
     ClusterSpecBootstrapInitdbSecret,
-    ClusterSpecEnv,
     ClusterSpecManaged,
     ClusterSpecMonitoring,
     ClusterSpecPlugins,
     ClusterSpecPostgresql,
+    ClusterSpecPrimaryUpdateMethod,
     ClusterSpecProbes,
     ClusterSpecProbesLiveness,
     ClusterSpecProbesLivenessIsolationCheck,
     ClusterSpecResources,
+    ClusterSpecResourcesRequests,
     ClusterSpecStorage,
+)
+from cnpg_database_crds.io.cnpg.postgresql import (
+    Database as _Database,
+    DatabaseSpec,
+    DatabaseSpecCluster,
+    DatabaseSpecDatabaseReclaimPolicy,
+    DatabaseSpecExtensions,
 )
 from constructs import Construct
 
-from cluster.cdk8s import node_scheduling
+from cluster.cdk8s import node_scheduling, piraeus_storage
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
@@ -56,11 +65,11 @@ class ClusterPlacement:
 
 
 # OVH Piraeus SSD pools are on control-plane nodes, so this profile carries their toleration.
-OVH_PIRAEUS_SSD = ClusterPlacement(storage_class="piraeus-ssd-local", affinity=_OVH_CONTROL_PLANE_AFFINITY)
-OVH_PIRAEUS_HDD = ClusterPlacement(storage_class="piraeus-hdd-local", affinity=_OVH_CONTROL_PLANE_AFFINITY)
+OVH_PIRAEUS_SSD = ClusterPlacement(storage_class=piraeus_storage.SSD_LOCAL, affinity=_OVH_CONTROL_PLANE_AFFINITY)
+OVH_PIRAEUS_HDD = ClusterPlacement(storage_class=piraeus_storage.HDD_LOCAL, affinity=_OVH_CONTROL_PLANE_AFFINITY)
 # Single-instance only: one node, so no anti-affinity to satisfy.
 OPTIPLEX_PIRAEUS_SSD = ClusterPlacement(
-    storage_class="piraeus-ssd-local",
+    storage_class=piraeus_storage.SSD_LOCAL,
     affinity=ClusterSpecAffinity(node_selector=node_scheduling.OPTIPLEX.node_selector),
 )
 
@@ -105,6 +114,16 @@ def same_owner_initdb(
     )
 
 
+def resource_requests(*, cpu_millis: int, memory_mib: int) -> ClusterSpecResources:
+    """Scheduling requests for the postgres and bootstrap-controller containers."""
+    return ClusterSpecResources(
+        requests={
+            "cpu": ClusterSpecResourcesRequests.from_string(Cpu.millis(cpu_millis).amount),
+            "memory": ClusterSpecResourcesRequests.from_string(Size.mebibytes(memory_mib).as_string()),
+        }
+    )
+
+
 def cluster(
     scope: Construct,
     id: str,
@@ -121,8 +140,7 @@ def cluster(
     managed: ClusterSpecManaged | None = None,
     postgresql: ClusterSpecPostgresql | None = None,
     resources: ClusterSpecResources | None = None,
-    env: list[ClusterSpecEnv] | None = None,
-    enable_pod_monitor: bool = True,
+    primary_update_method: ClusterSpecPrimaryUpdateMethod | None = None,
 ) -> Cluster:
     """`ref`'s CNPG `Cluster`. Keywords are `ClusterSpec` fields under the same names and types,
     except `initdb` (`bootstrap.initdb`; `None` leaves CNPG's default, an `app` database and
@@ -148,7 +166,6 @@ def cluster(
             image_name=image_name,
             bootstrap=None if initdb is None else ClusterSpecBootstrap(initdb=initdb),
             affinity=profile.affinity,
-            env=env,
             managed=managed,
             postgresql=postgresql,
             plugins=(
@@ -161,12 +178,44 @@ def cluster(
                 else None
             ),
             resources=resources,
+            primary_update_method=primary_update_method,
             probes=ClusterSpecProbes(
                 liveness=ClusterSpecProbesLiveness(
                     isolation_check=ClusterSpecProbesLivenessIsolationCheck(enabled=False)
                 )
             ),
             # TODO: Migrate to manually managed PodMonitors (enablePodMonitor is deprecated).
-            monitoring=ClusterSpecMonitoring(enable_pod_monitor=enable_pod_monitor),
+            monitoring=ClusterSpecMonitoring(enable_pod_monitor=True),
         ),
     )
+
+
+class Database(_Database):
+    """Our policy: keep the PostgreSQL database when its Kubernetes object is pruned."""
+
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        *,
+        metadata: ApiObjectMetadata,
+        cluster: Cluster,
+        name: str,
+        owner: str,
+        database_reclaim_policy: DatabaseSpecDatabaseReclaimPolicy | None = DatabaseSpecDatabaseReclaimPolicy.RETAIN,
+        extensions: Sequence[DatabaseSpecExtensions] | None = None,
+    ) -> None:
+        if metadata.namespace != cluster.metadata.namespace:
+            raise ValueError("A CNPG Database and its Cluster must be in the same namespace")
+        super().__init__(
+            scope,
+            id,
+            metadata=metadata,
+            spec=DatabaseSpec(
+                cluster=DatabaseSpecCluster(name=cluster.name),
+                name=name,
+                owner=owner,
+                database_reclaim_policy=database_reclaim_policy,
+                extensions=extensions,
+            ),
+        )

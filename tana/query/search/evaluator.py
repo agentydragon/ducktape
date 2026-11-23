@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from functools import singledispatch
 
 from more_itertools import one, unique_everseen
 
-from tana.domain.constants import EVENT_TYPE_ID, MEETING_TYPE_ID
 from tana.domain.nodes import BaseNode
 from tana.domain.search import (
     BooleanOperator,
@@ -16,6 +14,7 @@ from tana.domain.search import (
     TextSearch,
     TypeSearch,
 )
+from tana.domain.system_nodes import EVENT_TYPE_ID, MEETING_TYPE_ID
 from tana.domain.types import NodeId
 from tana.graph.graph import TanaGraph
 from tana.query.filters import filter_by_field_value, filter_by_tag, filter_nodes
@@ -40,13 +39,27 @@ class SearchEvaluator:
 
     def evaluate(self, expression: SearchExpression, context: BaseNode | None = None) -> Iterator[BaseNode]:
         """Evaluate a search expression, optionally limited to descendants of context."""
-        results = _evaluate_dispatch(expression, self)
+        results = self._evaluate(expression)
 
         if context:
-            context_descendants = set(self._get_descendants(context))
+            context_descendants = self._get_descendants(context)
             results = (node for node in results if node.id in context_descendants)
 
         yield from results
+
+    def _evaluate(self, expression: SearchExpression) -> Iterator[BaseNode]:
+        match expression:
+            case TagSearch(tag_id=tag_id):
+                return self._evaluate_tag(tag_id)
+            case TypeSearch(type_id=type_id):
+                return self._evaluate_type(type_id)
+            case TextSearch(text=text):
+                return self._evaluate_text(text)
+            case FieldSearch(field_name=field_name, values=values):
+                return self._evaluate_field(field_name, values)
+            case BooleanSearch(operator=operator, operands=operands):
+                return self._evaluate_boolean(operator, operands)
+        raise ValueError(f"Unknown expression type: {type(expression)}")
 
     def _evaluate_tag(self, tag_node_id: NodeId) -> Iterator[BaseNode]:
         tag_node = self.store.get(tag_node_id)
@@ -101,23 +114,23 @@ class SearchEvaluator:
             return
 
         if operator == BooleanOperator.OR:
-            all_nodes = (node for operand in operands for node in _evaluate_dispatch(operand, self))
+            all_nodes = (node for operand in operands for node in self._evaluate(operand))
             yield from unique_everseen(all_nodes, key=lambda node: node.id)
 
         elif operator == BooleanOperator.AND:
-            result_sets = [{node.id for node in _evaluate_dispatch(operands[0], self)}]
+            matching_ids = {node.id for node in self._evaluate(operands[0])}
 
             for operand in operands[1:]:
-                operand_ids = {node.id for node in _evaluate_dispatch(operand, self)}
-                result_sets[0] &= operand_ids
+                operand_ids = {node.id for node in self._evaluate(operand)}
+                matching_ids &= operand_ids
 
-            for node_id in result_sets[0]:
+            for node_id in matching_ids:
                 result_node: BaseNode | None = self.store.get(node_id)
                 if result_node is not None:
                     yield result_node
 
         elif operator == BooleanOperator.NOT:
-            excluded_ids = {node.id for node in _evaluate_dispatch(one(operands), self)}
+            excluded_ids = {node.id for node in self._evaluate(one(operands))}
 
             def not_excluded(node: BaseNode) -> bool:
                 return node.id not in excluded_ids
@@ -139,33 +152,3 @@ class SearchEvaluator:
                     to_process.append(child)
 
         return descendants
-
-
-@singledispatch
-def _evaluate_dispatch(expression: SearchExpression, evaluator: SearchEvaluator) -> Iterator[BaseNode]:
-    raise ValueError(f"Unknown expression type: {type(expression)}")
-
-
-@_evaluate_dispatch.register(TagSearch)
-def _(expression: TagSearch, evaluator: SearchEvaluator) -> Iterator[BaseNode]:
-    yield from evaluator._evaluate_tag(expression.tag_id)
-
-
-@_evaluate_dispatch.register(TypeSearch)
-def _(expression: TypeSearch, evaluator: SearchEvaluator) -> Iterator[BaseNode]:
-    yield from evaluator._evaluate_type(expression.type_id)
-
-
-@_evaluate_dispatch.register(TextSearch)
-def _(expression: TextSearch, evaluator: SearchEvaluator) -> Iterator[BaseNode]:
-    yield from evaluator._evaluate_text(expression.text)
-
-
-@_evaluate_dispatch.register(FieldSearch)
-def _(expression: FieldSearch, evaluator: SearchEvaluator) -> Iterator[BaseNode]:
-    yield from evaluator._evaluate_field(expression.field_name, expression.values)
-
-
-@_evaluate_dispatch.register(BooleanSearch)
-def _(expression: BooleanSearch, evaluator: SearchEvaluator) -> Iterator[BaseNode]:
-    yield from evaluator._evaluate_boolean(expression.operator, expression.operands)

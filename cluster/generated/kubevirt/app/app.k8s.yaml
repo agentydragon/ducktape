@@ -24,7 +24,16 @@ spec:
       product: allegedly-works-kubevirt
       sku: allegedly-works
       version: v0.1.0
-  customizeComponents: {}
+  customizeComponents:
+    patches:
+      - patch: '[{"op": "add", "path": "/spec/template/spec/topologySpreadConstraints", "value": [{"maxSkew": 1, "topologyKey": "kubernetes.io/hostname", "whenUnsatisfiable": "DoNotSchedule", "labelSelector": {"matchLabels": {"kubevirt.io": "virt-api"}}, "matchLabelKeys": ["pod-template-hash"], "minDomains": 2, "nodeTaintsPolicy": "Honor"}]}]'
+        resourceName: virt-api
+        resourceType: Deployment
+        type: json
+      - patch: '[{"op": "add", "path": "/spec/template/spec/topologySpreadConstraints", "value": [{"maxSkew": 1, "topologyKey": "kubernetes.io/hostname", "whenUnsatisfiable": "DoNotSchedule", "labelSelector": {"matchLabels": {"kubevirt.io": "virt-controller"}}, "matchLabelKeys": ["pod-template-hash"], "minDomains": 2, "nodeTaintsPolicy": "Honor"}]}]'
+        resourceName: virt-controller
+        resourceType: Deployment
+        type: json
   imagePullPolicy: IfNotPresent
   infra:
     nodePlacement:

@@ -21,11 +21,7 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	os.Exit(postgres.RunIntegrationTests(
-		migrations.Up,
-		func(database *postgres.Database) int {
-			integrationDatabase = database
-			return kubeapiserver.Run(m, useAPIServer, certificates)
-		},
-	))
+	os.Exit(postgres.RunIntegrationTests(func() int {
+		return kubeapiserver.Run(m, useAPIServer, certificates)
+	}, migrations.Up, &integrationDatabase))
 }

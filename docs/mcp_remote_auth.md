@@ -32,7 +32,7 @@ When adding a remote MCP server in Claude.ai, three fields are presented:
 
 ## Token Exchange Flow
 
-```
+```text
 MCP Client                MCP Server              Auth Server           User
     |                         |                        |                  |
     |--- unauthenticated ---->|                        |                  |

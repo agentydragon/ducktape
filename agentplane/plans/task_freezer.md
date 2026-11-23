@@ -40,17 +40,6 @@ and [service naming design](task_dag.md#platform_service_names_design--stable-si
 This records a later design and consolidation TODO; it selects no new service or transport and does
 not block the current documentation or delegation work.
 
-## Legacy leftovers
-
-Deferred by the operator on 2026-10-10. Revisit when the operator asks.
-
-### `WORKLOAD_AUDIENCE_RENAME` — rename the `agentplane-egress` audience
-
-Backend tokens for LLM ingress and Action Service retain the `agentplane-egress` audience
-(`identity/auth/audience.py`). Sandbox callers now authenticate with SVIDs, and the egress proxy no
-longer verifies this audience. The service SVID decision (operator, 2026-11-14) retires these tokens; do not rename an audience
-being removed. Revisit only if a surviving external consumer needs this audience after the cutover.
-
 ## Sandboxes and Action boxes
 
 ### `SANDBOX_BOX_CONVERGENCE` — Sandboxes and Action boxes as one object type
@@ -68,8 +57,8 @@ egress, exec, a lifetime, and access grants. Today they diverge:
 - Harnesses: only Sandboxes run them.
 
 Guideline: new identity and access decisions on either side move toward the shared shape where it
-is cheap. Boxes and Sandboxes converge on the plan's
-[acting-as rules](identity_and_kubernetes_accounts.md#identity-lifetime): acting in the workload is
+is cheap. Boxes and Sandboxes converge on the
+[acting-as rules](../docs/adr_environment_rules.md): acting in the workload is
 implied for its bound Identity, so box access keyed on the box's acting Identity is correct;
 lifecycle (create, dispose, rebind) needs an explicit grant. A box's acting Identity is its
 requester today, so this changes no behaviour. The unused-box cleanup trigger is tracked by
@@ -607,9 +596,8 @@ background work ([child evidence](../native/docs/child_sessions.md),
 
 **Frozen; operator, 2026-10-30: think about it later.** About eight fetch-in-`useEffect` blocks with
 manual cancellation guards, a `setInterval` poll and a hand-built Action request cache could become
-TanStack Query (with `openapi-react-query` over the existing `openapi-fetch` client). Action request
-details and thread evidence readers already use it; the System page's `setInterval` poll and other
-effect fetches remain.
+TanStack Query. Action request details and thread evidence readers already use it; the System page's
+`setInterval` poll and other effect fetches remain.
 
 ### `FRONTEND_CONNECT_ES` — typed streaming clients
 

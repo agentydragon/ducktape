@@ -8,7 +8,7 @@ the limit (164 vs 30), and the addition of `--sandbox docker` (HumanEval
 scores by executing model-generated Python in a sandbox; binary pass /
 fail per problem; no regrade pass needed).
 
-This is the P0#1 item from <../../TODO.md#1-standard-coding-benchmark-on-gpt-oss20b>.
+This is the P0#1 item from <../../TODO.md>.
 
 ## Goals
 
@@ -28,7 +28,7 @@ Two questions to answer:
 
 ## What ran
 
-- **Driver**: <run_humaneval.py> (`DEFAULT_LIMIT=164`, `--sandbox docker`).
+- **Driver**: <../run_inspect_sweep.py> (`humaneval --limit 164`, `--sandbox docker`).
 - **Inspect logs**: <eval_logs/{low,medium,high}/\*.eval> (all
   transcripts + per-sample timings/usage; read with `inspect log dump`).
 - **Stdout transcript**: <raw_output.txt>.
@@ -121,8 +121,8 @@ low-priority.
 
 ```bash
 cd cluster/docs/inference/runs/2026-04-29_humaneval_gpt20
-./run_humaneval.py                            # full sweep, ~2h wall
-./run_humaneval.py --efforts medium --limit 5 # quick partial repro
+../run_inspect_sweep.py humaneval                            # full sweep, ~2h wall
+../run_inspect_sweep.py humaneval --efforts medium --limit 5 # quick partial repro
 ```
 
 Requires: `kubectl` (for fetching the `ollama-direct-token` Secret),

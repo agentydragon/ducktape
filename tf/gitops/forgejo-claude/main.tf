@@ -68,21 +68,3 @@ resource "kubernetes_secret" "claude_forgejo_token_mint_source" {
     internal_url = var.forgejo_url
   }
 }
-
-# The claude-sandbox and agents-infra ExternalSecrets adopt the Secrets these
-# addresses created there.
-# CLEANUP(added 2026-09-28): Remove once the forgejo_claude state has forgotten
-# both addresses. Never destroy the ESO-owned Secrets.
-removed {
-  from = kubernetes_secret.claude_forgejo_credentials
-  lifecycle {
-    destroy = false
-  }
-}
-
-removed {
-  from = kubernetes_secret.claude_forgejo_token_mint
-  lifecycle {
-    destroy = false
-  }
-}

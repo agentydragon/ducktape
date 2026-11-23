@@ -19,6 +19,7 @@ import {
   computeTotals,
   parseMonthlyAmount,
 } from "./budget_adjustments";
+import { errorMessage, isAbortError } from "./lib/errors";
 import { fmtUsd, fmtNumber } from "./lib/format";
 import { toastFetchError } from "./lib/toast";
 import { replaceSearchParams } from "./url_state";
@@ -42,14 +43,8 @@ type AdjustedBucketSeries = BucketSeries & {
   effectiveAvg: Decimal;
 };
 type ChartTooltip = { bucketId: string; label: string; amount: Decimal; month: string; left: number; top: number };
-type BucketDisplayEntry = AdjustedBucketSeries;
 type AdjustmentHandler = (bucketId: string, adjustment: Adjustment | null) => void;
 type LumpyItem = BudgetSnapshot["lumpy"][number];
-
-function errorMessage(error: unknown): string {
-  if (error && typeof error === "object" && "message" in error && error.message) return String(error.message);
-  return String(error);
-}
 
 // Only expense buckets stack into the "monthly spend" outflow chart. Inflow / transfer /
 // income render in their own panels (or, for inflow, alongside their family's expenses).
@@ -138,15 +133,9 @@ function KindBadge({ kind }: { kind: BudgetBucket["kind"] }) {
   );
 }
 
-function Sparkline({
-  amounts,
-  width = 90,
-  height = 24,
-}: {
-  amounts: readonly Decimal[];
-  width?: number;
-  height?: number;
-}) {
+function Sparkline({ amounts }: { amounts: readonly Decimal[] }) {
+  const width = 90;
+  const height = 24;
   if (!amounts.length) return null;
   const max = Decimal.max(...amounts.map((value) => value.abs()));
   if (max.isZero()) return <svg width={width} height={height} aria-hidden="true" />;
@@ -414,7 +403,7 @@ function OverrideEditor({
   onAdjust,
   onClose,
 }: {
-  entry: BucketDisplayEntry;
+  entry: AdjustedBucketSeries;
   onAdjust: AdjustmentHandler;
   onClose: () => void;
 }) {
@@ -461,7 +450,7 @@ function BucketRow({
   selected,
   onAdjust,
 }: {
-  entry: BucketDisplayEntry;
+  entry: AdjustedBucketSeries;
   onSelect: (bucketId: string) => void;
   selected: boolean;
   onAdjust: AdjustmentHandler;
@@ -827,7 +816,7 @@ export function BudgetWorkspace() {
     fetchBudgetSnapshot({ window: windowSpec }, { signal: controller.signal })
       .then((payload) => setSnapshot(payload))
       .catch((error) => {
-        if (error?.name === "AbortError") return;
+        if (isAbortError(error)) return;
         setSnapshotError(errorMessage(error));
         toastFetchError("budget-snapshot", "Budget snapshot failed", error);
       });
@@ -842,7 +831,7 @@ export function BudgetWorkspace() {
     fetchBudgetTransactions({ bucket_id: selectedBucketId, window: windowSpec }, { signal: controller.signal })
       .then((payload) => setBucketTx(payload.transactions))
       .catch((error) => {
-        if (error?.name === "AbortError") return;
+        if (isAbortError(error)) return;
         setBucketTxError(errorMessage(error));
         toastFetchError("budget-transactions", "Transactions failed", error);
       });

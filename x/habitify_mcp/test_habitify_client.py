@@ -15,6 +15,25 @@ from x.habitify_mcp.habitify_client import HabitifyError
 from x.habitify_mcp.types import Area, Habit, HabitStatus, Status
 
 
+async def test_success_with_invalid_shape_reports_the_endpoint(client, patch_client_method):
+    response = httpx.Response(200, json={"data": None}, request=httpx.Request("GET", "https://example.invalid/habits"))
+    with (
+        patch_client_method("get", return_value=response),
+        pytest.raises(HabitifyError, match="Invalid Habitify response for /habits") as failure,
+    ):
+        await client.get_habits()
+    assert failure.value.status_code == 200
+
+
+async def test_transport_failure_has_no_provider_status(client, patch_client_method):
+    with (
+        patch_client_method("get", side_effect=httpx.ConnectError("offline")),
+        pytest.raises(HabitifyError, match="Connection error: offline") as failure,
+    ):
+        await client.get_areas()
+    assert failure.value.status_code is None
+
+
 async def test_get_habits(client, mock_async_response, patch_client_method):
     mock_resp = mock_async_response("get_habits.yaml")
 

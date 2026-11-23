@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
-	"time"
 
 	runtimetesting "github.com/agentydragon/ducktape/agentplane/sampler/internal/residentruntime/testing"
 
@@ -21,12 +20,7 @@ import (
 func TestFinishProviderResolvesAmbiguousPersistenceWithoutResampling(t *testing.T) {
 	for _, committed := range []bool{false, true} {
 		t.Run(map[bool]string{false: "retry_persistence", true: "commit_reply_lost"}[committed], func(t *testing.T) {
-			store := runtimetesting.NewStore(t, integrationDatabase)
-			session := runtimetesting.OpenSessionForStore(t, store, "")
-			owner, err := store.Claim(t.Context(), session.ConversationID, time.Minute)
-			if err != nil {
-				t.Fatal(err)
-			}
+			store, session, owner := runtimetesting.ClaimedSession(t, integrationDatabase)
 			admitProviderCommand(t, store, owner, session.ID, "ambiguous-finish", false)
 			config := samplersettings.ModelConfig{
 				Connection: "fixture-connection", ProviderModel: "fixture-provider-model", API: protocol.APIStyleResponses,
@@ -147,5 +141,28 @@ func TestFinishProviderResolvesAmbiguousPersistenceWithoutResampling(t *testing.
 				t.Fatalf("unresolved native intent treated as complete: settled=%v err=%v", settled, err)
 			}
 		})
+	}
+}
+
+func TestRemovedRouteFailsWithoutBlockingSession(t *testing.T) {
+	store, session, owner := runtimetesting.ClaimedSession(t, integrationDatabase)
+	admitProviderCommand(t, store, owner, session.ID, "input-with-removed-route", false)
+	current, err := store.GetSession(t.Context(), session.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := &Driver{store: store, settings: samplersettings.Settings{RPCTimeoutSeconds: 5}}
+	_, err = runtime.advance(t.Context(), owner, nil, nil, current)
+	var known *protocol.KnownFailureError
+	if !errors.As(err, &known) {
+		t.Fatalf("missing route error=%v", err)
+	}
+	commandID := "input-with-removed-route"
+	if err := store.FailExecution(t.Context(), owner, session.ID, &commandID, err); err != nil {
+		t.Fatal(err)
+	}
+	current, err = store.GetSession(t.Context(), session.ID, "")
+	if err != nil || current.Blocked || current.ActiveTurn != nil {
+		t.Fatalf("session=%+v err=%v", current, err)
 	}
 }

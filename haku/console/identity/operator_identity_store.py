@@ -93,40 +93,6 @@ class PostgresOperatorIdentityStore:
                 return None
             return ResolvedOperatorIdentity(operator_id=row.operator_id, identity_id=row.identity_id)
 
-    async def is_active(self, operator_id: UUID) -> bool:
-        async with self._session_factory() as session:
-            status = await session.scalar(
-                select(Operator.status)
-                .join(IdentityAnchor, IdentityAnchor.operator_id == Operator.operator_id)
-                .where(Operator.operator_id == operator_id)
-                .where(IdentityAnchor.trust_domain == self.trust.trust_domain)
-                .limit(1)
-            )
-            return status is OperatorStatus.ACTIVE
-
-    async def require_active_in_transaction(self, session: AsyncSession, operator_id: UUID) -> None:
-        """Lock and validate an Operator inside a caller-owned database transaction.
-
-        Code that persists or returns an operator-owned capability after external I/O must make
-        its final status check in the same transaction as the protected read/write. The row lock
-        gives that operation a single linearization point with a concurrent disable: a disable
-        committed while the I/O was in flight is observed here, while a later disable waits until
-        the capability operation has committed.
-        """
-        operator = await session.get(Operator, operator_id, with_for_update=True)
-        if operator is None:
-            raise InactiveOperatorError("operator is missing")
-        self._require_active(operator)
-        anchor_id = await session.scalar(
-            select(IdentityAnchor.anchor_id)
-            .where(IdentityAnchor.operator_id == operator_id)
-            .where(IdentityAnchor.trust_domain == self.trust.trust_domain)
-            .with_for_update()
-            .limit(1)
-        )
-        if anchor_id is None:
-            raise InactiveOperatorError("operator is outside the current identity trust domain")
-
     @staticmethod
     async def _lock_anchor(session: AsyncSession, key: IdentityAnchorKey) -> None:
         serialized = json.dumps(

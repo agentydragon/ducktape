@@ -1,10 +1,8 @@
-load("@rules_python//python:defs.bzl", "py_library")
-load("//devinfra/python:defs.bzl", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "format_lib",
     srcs = ["format.py"],
-    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
         "//aiquota:models",
@@ -16,7 +14,6 @@ py_library(
 py_library(
     name = "view_model_lib",
     srcs = ["view_model.py"],
-    imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
         ":format_lib",
@@ -30,7 +27,6 @@ py_library(
 py_library(
     name = "human_lib",
     srcs = ["human.py"],
-    imports = ["../.."],
     visibility = ["//aiquota:__pkg__"],
     deps = [
         ":format_lib",
@@ -43,12 +39,8 @@ py_library(
 py_library(
     name = "tmux_lib",
     srcs = ["tmux.py"],
-    imports = ["../.."],
     visibility = ["//aiquota:__pkg__"],
-    deps = [
-        ":view_model_lib",
-        "//aiquota:models",
-    ],
+    deps = [":view_model_lib"],
 )
 
 py_test(

@@ -16,15 +16,15 @@ container reads).
 from __future__ import annotations
 
 import os
-from collections import Counter
 from pathlib import Path
 
 import yaml
 from pydantic import Field, HttpUrl, NonNegativeInt, PositiveInt, model_validator
 
 from finance.augur.api.portfolio_source_config import PortfolioSourcesConfig
-from finance.augur.api.schemas import ApiModel
+from finance.augur.api.schemas import ID_PATTERN, ApiModel, duplicates
 from finance.augur.api.wire import ActorRole, ProductInputDefaults
+from finance.augur.config_paths import config_relative_path
 from finance.augur.model.series import LocationId, SecuritySymbol
 from finance.augur.product.wire import MAX_HORIZON_MONTHS
 from finance.augur.sim.ids import AgentId, JurisdictionId, PropertyId
@@ -39,18 +39,13 @@ AUGUR_CONFIG_PATH_ENV_VAR = "AUGUR_CONFIG_PATH"
 DEFAULT_AUGUR_CONFIG_PATH = Path("/etc/augur/config.yaml")
 
 
-def _duplicates(values) -> list[str]:
-    counts = Counter(values)
-    return sorted(value for value, count in counts.items() if count > 1)
-
-
 class AgentDefinition(ApiModel):
     """An economic actor the simulator can attribute state to.
 
     Actor IDs are user-provided identity strings (e.g. "primary", "buyer").
     The role is a typed concept the policy / scenario engine consumes."""
 
-    actor_id: AgentId = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
+    actor_id: AgentId = Field(pattern=ID_PATTERN)
     label: str
     role: ActorRole
 
@@ -76,7 +71,7 @@ class PropertySourceConfig(ApiModel):
 
     @model_validator(mode="after")
     def _validate_property_assets(self) -> PropertySourceConfig:
-        duplicate_property_ids = _duplicates(asset.property_id for asset in self.property_assets)
+        duplicate_property_ids = duplicates(asset.property_id for asset in self.property_assets)
         if duplicate_property_ids:
             raise ValueError(f"duplicate property asset property_ids: {duplicate_property_ids}")
         return self
@@ -137,6 +132,18 @@ class SecurityDistributionConfig(ApiModel):
     symbol: SecuritySymbol
     tax_character: tuple[DistributionTaxShareConfig, ...] = Field(min_length=1)
 
+    @model_validator(mode="after")
+    def _allocate_the_whole_payout(self) -> SecurityDistributionConfig:
+        total = sum(share.fraction for share in self.tax_character)
+        # Exactly 1, not "at most 1": a short split pays out less than the fund distributes,
+        # which reads as a lower yield rather than as the misconfiguration it is.
+        if abs(total - 1.0) > 1e-9:
+            raise ValueError(
+                f"security distribution on {self.symbol!r} allocates {total} of its payout; "
+                "the tax-character fractions must sum to 1"
+            )
+        return self
+
 
 class LocationConfig(ApiModel):
     """A deployment-owned location identity and where its properties are taxed.
@@ -146,7 +153,7 @@ class LocationConfig(ApiModel):
     core enums.
     """
 
-    location_id: LocationId = Field(pattern=r"^[a-z0-9][a-z0-9_\-]*$")
+    location_id: LocationId = Field(pattern=ID_PATTERN)
     label: str
     city: str
     state: str
@@ -234,18 +241,9 @@ class Config(ApiModel):
 
     @model_validator(mode="after")
     def _validate_security_distributions(self) -> Config:
-        duplicate_symbols = _duplicates(str(entry.symbol) for entry in self.security_distributions)
+        duplicate_symbols = duplicates(str(entry.symbol) for entry in self.security_distributions)
         if duplicate_symbols:
             raise ValueError(f"security_distributions must name each symbol once: {duplicate_symbols}")
-        for entry in self.security_distributions:
-            total = sum(share.fraction for share in entry.tax_character)
-            # Exactly 1, not "at most 1": a short split pays out less than the fund distributes,
-            # which reads as a lower yield rather than as the misconfiguration it is.
-            if abs(total - 1.0) > 1e-9:
-                raise ValueError(
-                    f"security_distributions[{entry.symbol}] allocates {total} of its payout; "
-                    "the tax-character fractions must sum to 1"
-                )
         return self
 
     @model_validator(mode="after")
@@ -266,60 +264,42 @@ def load_augur_config(path: Path) -> Config:
     config = Config.model_validate(yaml.load(path.read_text(encoding="utf-8"), Loader=DecimalSafeLoader))
     # Anchor deployment paths to the resolved config file, including when it is a Bazel runfile.
     base_dir = Path(str(path)).parent
-    config = _anchor_property_source_paths(config, base_dir=base_dir)
-    config = _anchor_model_paths(config, base_dir=base_dir)
-    return _anchor_calibration_catalog_paths(config, base_dir=base_dir)
-
-
-def _anchor_calibration_catalog_paths(config: Config, *, base_dir: Path) -> Config:
-    catalog = config.calibration_catalog
-    updates: dict[str, Path] = {}
-    if not catalog.catalog_path.is_absolute():
-        updates["catalog_path"] = (base_dir / catalog.catalog_path).resolve()
-    if catalog.sample_sanity_path is not None and not catalog.sample_sanity_path.is_absolute():
-        updates["sample_sanity_path"] = (base_dir / catalog.sample_sanity_path).resolve()
-    if not updates:
-        return config
-    return config.model_copy(update={"calibration_catalog": catalog.model_copy(update=updates)})
-
-
-def _anchor_property_source_paths(config: Config, *, base_dir: Path) -> Config:
     source = config.property_source
-    properties_path = source.properties_path
-    if not properties_path.is_absolute():
-        properties_path = (base_dir / properties_path).resolve()
-    asset_dir = source.asset_dir
-    if asset_dir is not None and not asset_dir.is_absolute():
-        asset_dir = (base_dir / asset_dir).resolve()
-    if properties_path == source.properties_path and asset_dir == source.asset_dir:
-        return config
+    catalog = config.calibration_catalog
     return config.model_copy(
         update={
-            "property_source": source.model_copy(update={"properties_path": properties_path, "asset_dir": asset_dir})
+            "property_source": source.model_copy(
+                update={
+                    "properties_path": config_relative_path(source.properties_path, base_dir),
+                    "asset_dir": config_relative_path(source.asset_dir, base_dir)
+                    if source.asset_dir is not None
+                    else None,
+                }
+            ),
+            "calibration_catalog": catalog.model_copy(
+                update={
+                    "catalog_path": config_relative_path(catalog.catalog_path, base_dir),
+                    "sample_sanity_path": config_relative_path(catalog.sample_sanity_path, base_dir)
+                    if catalog.sample_sanity_path is not None
+                    else None,
+                }
+            ),
+            "models": {
+                key: _anchor_provider_paths(provider, base_dir=base_dir) for key, provider in config.models.items()
+            },
         }
     )
 
 
-def _anchor_model_paths(config: Config, *, base_dir: Path) -> Config:
-    anchored = {
-        preset_id: _anchor_provider_paths(provider, base_dir=base_dir) for preset_id, provider in config.models.items()
-    }
-    if anchored == dict(config.models):
-        return config
-    return config.model_copy(update={"models": anchored})
-
-
 def _anchor_provider_paths(provider: ProviderConfig, *, base_dir: Path) -> ProviderConfig:
     if isinstance(provider, TrainedPrivateEquityProviderConfig):
-        trained_model_path = provider.trained_model_path
-        if trained_model_path.is_absolute():
-            return provider
-        return provider.model_copy(update={"trained_model_path": (base_dir / trained_model_path).resolve()})
+        return provider.model_copy(
+            update={"trained_model_path": config_relative_path(provider.trained_model_path, base_dir)}
+        )
     if isinstance(provider, StateSpaceProviderConfig):
-        trained_artifact_path = provider.trained_artifact_path
-        if trained_artifact_path.is_absolute():
-            return provider
-        return provider.model_copy(update={"trained_artifact_path": (base_dir / trained_artifact_path).resolve()})
+        return provider.model_copy(
+            update={"trained_artifact_path": config_relative_path(provider.trained_artifact_path, base_dir)}
+        )
     if isinstance(provider, MirroringProviderConfig):
         model = _anchor_provider_paths(provider.model, base_dir=base_dir)
         if model == provider.model:

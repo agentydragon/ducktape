@@ -16,17 +16,17 @@ agent and service callers use native gRPC at the owning backend.
   [task DAG](task_dag.md#app_api_grpc_facade--uniform-app-grpc-apis-with-generated-http-facades)
   covers the remaining app views, mutations and streams. Logical Session creation uses the app-owned
   generated `AppService` facade, retaining preset composition and Thread metadata creation before
-  Dispatcher `CreateSession` admission. Decide which checks each remaining wrapper needs,
-  at its owning boundary, rather than preserve them as transport requirements.
-- **Error codes in the browser.** `connections/management.tsx` still branches on HTTP status
-  (three times); move it to the body's gRPC `code`, which `HttpError` carries.
+  Dispatcher `CreateSession` admission. Inventory the remaining wrappers at their owning
+  boundaries. The App's typed Thread metadata watch uses an HTTP adapter because in-process
+  grpc-gateway registration only supports unary calls; the Sandbox console has its own stream.
 - **Typed Session overrides.** Replace `AppService.CreateSession`'s `Struct` spec and
   `Value` setup script with a typed contract, such as an override message or field mask with an
   explicit setup-clear operation. Preserve preset inheritance, explicit zero/empty/null behavior,
   strict validation and the caller-minted ID; plan the HTTP, cached-client and rollback migration.
-- **Session-create route bindings.** Adopt generated route bindings when available. Preserve
-  the request's JSON presence semantics and reconcile uncertain outcomes by Session ID without
-  replaying creation or setup.
+- **Session-create browser route binding.** The server uses the generated grpc-gateway handler.
+  The [browser client](../app/frontend/sessions/session_client.ts) uses generated codecs and
+  constructs the URL itself. Use a generated client route when available, preserving JSON presence
+  semantics and reconciliation by Session ID for uncertain responses.
 - **Attribution.** Services see the app, not the operator; the Dispatcher's per-caller wake budget is
   per app. Per-operator attribution is the separate delegated-caller question.
 - **Git index.** Its `/search` gets a facade with its Go port, if an agent needs it.

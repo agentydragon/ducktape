@@ -138,11 +138,23 @@ ts_library(
 )
 
 ts_library(
+    name = "chart_legend",
+    srcs = ["chart_legend.tsx"],
+    tsconfig = ":tsconfig",
+    deps = [
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "SpendingHistoryChart",
     srcs = ["SpendingHistoryChart.tsx"],
     tsconfig = ":tsconfig",
     deps = [
         ":chart",
+        ":chart_legend",
         ":schema",
         ":spend_display",
         ":types",
@@ -276,6 +288,7 @@ ts_library(
     tsconfig = ":tsconfig",
     deps = [
         ":chart",
+        ":chart_legend",
         ":schema",
         ":spend_display",
         "//:node_modules/@mantine/core",
@@ -340,10 +353,10 @@ py_test(
         "//finance/plaid/spend/testing:ledger",
         "//finance/plaid/spend/ui/testing:sustainability",
         "//finance/plaid/spend/ui/testing:transactions",
+        "//testing:asgi",
+        "//testing/frontend_visual:capture",
+        "//testing/frontend_visual:context",
         "//util:playwright",
-        "//util/testing:asgi",
-        "//util/testing/frontend_visual:capture",
-        "//util/testing/frontend_visual:context",
         "@pypi//fastapi",
         "@pypi//playwright",
         "@pypi//pytest",

@@ -179,7 +179,7 @@ func TestShutdownDrainTimeoutIsBoundedAndConfigurable(t *testing.T) {
 
 func TestProviderLeasesCoverConfiguredPhasesAndDatabaseSlack(t *testing.T) {
 	settings := fixtureSettings()
-	if got, want := settings.ProviderAttemptLease(), 750*time.Second; got != want {
+	if got, want := settings.ProviderAttemptLease(ModelConfig{}), 750*time.Second; got != want {
 		t.Fatalf("initial provider attempt lease=%s, want header + idle + three RPC intervals %s", got, want)
 	}
 	if got, want := settings.ProviderProgressLease(), 620*time.Second; got != want {
@@ -194,6 +194,80 @@ func TestSettingsRejectProviderPhaseLeaseOverflow(t *testing.T) {
 	settings.ProviderIdleTimeoutSeconds = &halfMax
 	if err := settings.Validate(); err == nil || !strings.Contains(err.Error(), "three RPC journal slack intervals") {
 		t.Fatalf("provider lease overflow validation error=%v", err)
+	}
+}
+
+func TestProviderTimingDefaultsAndConfiguredValues(t *testing.T) {
+	settings := fixtureSettings()
+	if settings.ProviderProgressLeaseCoalescing() != 30*time.Second ||
+		settings.ProviderRetryInitialBackoff() != time.Second ||
+		settings.ProviderRetryMaxBackoff() != 30*time.Second || settings.ProviderAttemptLimit() != 3 {
+		t.Fatal("provider timing defaults changed")
+	}
+	settings.ProviderProgressLeaseCoalescingSeconds = new(19)
+	settings.ProviderRetryInitialBackoffSeconds = new(2)
+	settings.ProviderRetryMaxBackoffSeconds = new(7)
+	settings.ProviderAttemptBudget = new(5)
+	encoded, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configured, err := DecodeSettings(strings.NewReader(string(encoded)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configured.ProviderProgressLeaseCoalescing() != 19*time.Second ||
+		configured.ProviderRetryInitialBackoff() != 2*time.Second ||
+		configured.ProviderRetryMaxBackoff() != 7*time.Second || configured.ProviderAttemptLimit() != 5 {
+		t.Fatal("configured provider timing did not round-trip")
+	}
+	for _, tc := range []struct {
+		attempt int
+		hint    time.Duration
+		want    time.Duration
+	}{
+		{1, 0, 2 * time.Second},
+		{2, 0, 4 * time.Second},
+		{2, 6 * time.Second, 6 * time.Second},
+		{1, 24 * time.Second, 7 * time.Second},
+		{3, 0, 7 * time.Second},
+	} {
+		if got := configured.ProviderRetryBackoff(tc.attempt, tc.hint); got != tc.want {
+			t.Fatalf("retry delay after attempt %d and hint %s=%s, want %s", tc.attempt, tc.hint, got, tc.want)
+		}
+	}
+}
+
+func TestProviderTimingValidationAndOverflow(t *testing.T) {
+	maxSeconds := int(maxExecutorInitializeTimeoutSeconds)
+	for _, tc := range []struct {
+		field  string
+		mutate func(*Settings)
+	}{
+		{"provider_progress_lease_coalescing_seconds", func(s *Settings) { s.ProviderProgressLeaseCoalescingSeconds = new(0) }},
+		{"provider_progress_lease_coalescing_seconds", func(s *Settings) { s.ProviderProgressLeaseCoalescingSeconds = &maxSeconds }},
+		{"provider_retry_initial_backoff_seconds", func(s *Settings) { s.ProviderRetryInitialBackoffSeconds = new(-1) }},
+		{"provider_retry_max_backoff_seconds", func(s *Settings) { s.ProviderRetryMaxBackoffSeconds = new(maxSeconds + 1) }},
+		{"provider_retry_initial_backoff_seconds", func(s *Settings) { s.ProviderRetryInitialBackoffSeconds = new(31) }},
+		{"provider_attempt_budget", func(s *Settings) { s.ProviderAttemptBudget = new(0) }},
+		{"provider_attempt_budget", func(s *Settings) { s.ProviderAttemptBudget = new(MaxProviderAttemptBudget + 1) }},
+	} {
+		settings := fixtureSettings()
+		tc.mutate(&settings)
+		var invalid *ValidationError
+		if err := settings.Validate(); !errors.As(err, &invalid) || !strings.Contains(invalid.Field(), tc.field) {
+			t.Fatalf("provider timing validation error for %s=%v", tc.field, err)
+		}
+	}
+	settings := fixtureSettings()
+	settings.ProviderRetryInitialBackoffSeconds = new(maxSeconds/2 + 1)
+	settings.ProviderRetryMaxBackoffSeconds = &maxSeconds
+	settings.ProviderAttemptBudget = new(MaxProviderAttemptBudget)
+	if err := settings.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := settings.ProviderRetryBackoff(MaxProviderAttemptBudget, 0), time.Duration(maxSeconds)*time.Second; got != want {
+		t.Fatalf("retry cap with large delay=%s, want %s", got, want)
 	}
 }
 
@@ -264,7 +338,7 @@ func TestExecutorReconnectTimeoutDefaultsIndependentlyAndCanBeConfigured(t *test
 
 func TestProviderTimeoutsDefaultIndependentlyAndValidateConfiguredValues(t *testing.T) {
 	settings := fixtureSettings()
-	if got := settings.ProviderResponseHeaderTimeout(); got != 120*time.Second {
+	if got := settings.ProviderResponseHeaderTimeout(ModelConfig{}); got != 120*time.Second {
 		t.Fatalf("default provider response-header timeout=%s, want 120s", got)
 	}
 	if got := settings.ProviderIdleTimeout(); got != 600*time.Second {
@@ -280,7 +354,7 @@ func TestProviderTimeoutsDefaultIndependentlyAndValidateConfiguredValues(t *test
 	if err := settings.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if settings.ProviderResponseHeaderTimeout() != 45*time.Second || settings.ProviderIdleTimeout() != 180*time.Second {
+	if settings.ProviderResponseHeaderTimeout(ModelConfig{}) != 45*time.Second || settings.ProviderIdleTimeout() != 180*time.Second {
 		t.Fatal("configured provider phase budgets were not applied independently")
 	}
 
@@ -298,6 +372,43 @@ func TestProviderTimeoutsDefaultIndependentlyAndValidateConfiguredValues(t *test
 				}
 			}
 		})
+	}
+}
+
+func TestModelResponseHeaderBudgetControlsAttemptLease(t *testing.T) {
+	settings := fixtureSettings()
+	global := 45
+	settings.ProviderResponseHeaderTimeoutSeconds = &global
+	extended := 360
+	selected := settings.Models["test-model"]
+	selected.ResponseHeaderTimeoutSeconds = &extended
+	settings.Models["test-model"] = selected
+	if err := settings.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if got := settings.ProviderResponseHeaderTimeout(selected); got != 360*time.Second {
+		t.Fatalf("model header budget=%s", got)
+	}
+	if got := settings.ProviderAttemptLease(selected); got != 990*time.Second {
+		t.Fatalf("model attempt lease=%s", got)
+	}
+	if got := settings.ProviderResponseHeaderTimeout(ModelConfig{}); got != 45*time.Second {
+		t.Fatalf("other route header budget=%s", got)
+	}
+	if got := settings.ProviderAttemptLease(ModelConfig{}); got != 675*time.Second {
+		t.Fatalf("other route attempt lease=%s", got)
+	}
+	zero := 0
+	selected.ResponseHeaderTimeoutSeconds = &zero
+	settings.Models["test-model"] = selected
+	if err := settings.Validate(); err == nil {
+		t.Fatal("accepted zero model header budget")
+	}
+	nearMax := int(maxExecutorInitializeTimeoutSeconds)
+	selected.ResponseHeaderTimeoutSeconds = &nearMax
+	settings.Models["test-model"] = selected
+	if err := settings.Validate(); err == nil {
+		t.Fatal("accepted model budget that overflows attempt lease")
 	}
 }
 

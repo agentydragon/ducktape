@@ -50,8 +50,8 @@ not total allocations or complete memory accounting.
 requested suffix. Ten synthetic empty-suffix reads after the 1 MiB / 1,024-chunk write averaged
 17.45 ms each. A one-event suffix after 100 MiB took 235.2 ms. This was a direct probe of the API,
 not evidence of a production watcher repeatedly polling it. At the measured revision, the
-production `Since` call found in [`bootstrapErrorForLog`](../bootstrap/host.go) reads the terminal
-event to recover the result. [`OpenLog`](../bootstrap/log.go) independently scans the history.
+production `Since` call found in [`bootstrapErrorForLog`](../internal/bootstrap/host.go) reads the terminal
+event to recover the result. [`OpenLog`](../internal/bootstrap/log.go) independently scans the history.
 
 COSI's current in-memory backing loads persisted output bytes as resources. Compare a disk-backed,
 indexed append-only log, an alternative COSI backend, or a bounded/incremental resource model using

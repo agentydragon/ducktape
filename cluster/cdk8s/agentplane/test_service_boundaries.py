@@ -2,68 +2,83 @@
 Controller owns environment management, and Notifications never calls the app."""
 
 from typing import Any
+from urllib.parse import urlsplit
 
+import pytest
 from more_itertools import one
 
+from agentplane.crd_group import GROUP
+from cluster.cdk8s.agent_rbac_test_support import Permission, Rbac, uncovered
 from cluster.cdk8s.agentplane import app, history_service, notifications, runner_gateway, sandbox_controller
-
-
-def _resource(documents: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
-    return one(doc for doc in documents if doc["kind"] == kind and doc["metadata"]["name"] == name)
+from cluster.cdk8s.testing.manifests import find_resource
 
 
 def test_history_service_uses_sandbox_database(staging_manifests: list[dict[str, Any]]) -> None:
-    history = _resource(staging_manifests, "Deployment", history_service.NAME)["spec"]["template"]["spec"]
-    history_database = {"name": "postgres-sandbox-service", "key": "uri"}
-    history_external_secret = _resource(staging_manifests, "ExternalSecret", "postgres-sandbox-service")
-    assert history_external_secret["spec"]["target"]["name"] == "postgres-sandbox-service"
-    history_database_resource = _resource(staging_manifests, "Database", "sandbox-service")
-    assert history_database_resource["spec"]["name"] == "sandbox_service"
-    assert history_database_resource["spec"]["owner"] == "sandbox_service"
-    assert any(
-        value.get("secretKeyRef") == history_database
-        for container in history["containers"]
-        for value in (item.get("valueFrom", {}) for item in container["env"])
+    deployment = find_resource(staging_manifests, "Deployment", history_service.NAME)
+    namespace = deployment["metadata"]["namespace"]
+    pod = deployment["spec"]["template"]["spec"]
+    service = one(container for container in pod["containers"] if container["name"] == history_service.NAME)
+    url = one(var for var in service["env"] if var["name"] == "AGENTPLANE_HISTORY_SERVICE_DATABASE_URL")
+    ref = url["valueFrom"]["secretKeyRef"]
+    credentials = one(
+        obj["spec"]["target"]["template"]["data"]
+        for obj in staging_manifests
+        if obj["kind"] == "ExternalSecret"
+        and obj["spec"].get("target", {}).get("name", obj["metadata"]["name"]) == ref["name"]
+        and obj["metadata"]["namespace"] == namespace
     )
+    database = find_resource(staging_manifests, "Database", "sandbox-service", namespace=namespace)
+    uri = urlsplit(credentials[ref["key"]])
+    assert uri.path == f"/{database['spec']['name']}" == "/sandbox_service"
+    assert uri.username == database["spec"]["owner"]
 
 
-def test_environment_management_and_dispatcher_wake_have_separate_authority(
+@pytest.fixture(scope="module")
+def rbac(staging_manifests: list[dict[str, Any]]) -> Rbac:
+    return Rbac(staging_manifests)
+
+
+@pytest.mark.parametrize(
+    ("service", "group", "resource", "verbs", "exclusive"),
+    [
+        (app.NAME, GROUP, "sandboxes", {"get", "list", "watch"}, True),
+        (app.NAME, GROUP, "sandboxtemplates", {"list"}, True),
+        (app.NAME, "subresources.kubevirt.io", "virtualmachineinstances/console", {"get"}, False),
+        (runner_gateway.NAME, GROUP, "sandboxes", {"get", "list", "watch", "patch"}, True),
+        (runner_gateway.NAME, GROUP, "sandboxtemplates", set(), True),
+        (sandbox_controller.NAME, GROUP, "sandboxes", {"create", "patch", "delete"}, False),
+        (sandbox_controller.NAME, GROUP, "sandboxtemplates", {"get", "list"}, False),
+    ],
+)
+def test_environment_management_authority(
     staging_manifests: list[dict[str, Any]],
+    rbac: Rbac,
+    service: str,
+    group: str,
+    resource: str,
+    verbs: set[str],
+    exclusive: bool,
 ) -> None:
-    app_rules = _resource(staging_manifests, "Role", app.NAME.removeprefix("agentplane-"))["rules"]
-    for rule in app_rules:
-        if rule["resources"] == ["sandboxes"]:
-            assert set(rule["verbs"]) == {"get", "list", "watch"}
-    permissions = {(tuple(rule["apiGroups"]), tuple(rule["resources"]), tuple(rule["verbs"])) for rule in app_rules}
-    assert (("agentplane.allegedly.works",), ("sandboxtemplates",), ("list",)) in permissions
-    assert (("subresources.kubevirt.io",), ("virtualmachineinstances/console",), ("get",)) in permissions
-
-    gateway = _resource(staging_manifests, "Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]
-    assert gateway["serviceAccountName"] == runner_gateway.NAME
-    gateway_rules = _resource(staging_manifests, "Role", runner_gateway.NAME.removeprefix("agentplane-"))["rules"]
-    assert set(one(rule for rule in gateway_rules if rule["resources"] == ["sandboxes"])["verbs"]) == {
-        "get",
-        "list",
-        "watch",
-        "patch",
-    }
-    assert not any("sandboxtemplates" in rule["resources"] for rule in gateway_rules)
-
-    controller = _resource(staging_manifests, "Deployment", sandbox_controller.NAME)["spec"]["template"]["spec"]
-    assert controller["serviceAccountName"] == sandbox_controller.NAME
-    controller_rules = _resource(staging_manifests, "Role", sandbox_controller.NAME)["rules"]
-    assert {"create", "patch", "delete"} <= set(
-        one(rule for rule in controller_rules if rule["resources"] == ["sandboxes"])["verbs"]
-    )
-    assert {"get", "list"} <= set(
-        one(rule for rule in controller_rules if rule["resources"] == ["sandboxtemplates"])["verbs"]
-    )
+    deployment = find_resource(staging_manifests, "Deployment", service)
+    namespace = deployment["metadata"]["namespace"]
+    account = deployment["spec"]["template"]["spec"]["serviceAccountName"]
+    grants = rbac.identity("ServiceAccount", account, namespace)
+    required = {Permission(namespace, group, resource, verb) for verb in verbs}
+    assert not uncovered(required, grants)
+    if exclusive:
+        # Restrict each grant to the resource under test, retaining its scope and verb.
+        matching = {
+            permission
+            for grant in grants
+            if grant.covers(permission := Permission(grant.namespace, group, resource, grant.verb, grant.name))
+        }
+        assert not uncovered(matching, required)
 
 
 def test_notifications_have_their_own_account_without_app_egress(staging_manifests: list[dict[str, Any]]) -> None:
-    pod = _resource(staging_manifests, "Deployment", notifications.NAME)["spec"]["template"]["spec"]
+    pod = find_resource(staging_manifests, "Deployment", notifications.NAME)["spec"]["template"]["spec"]
     assert pod["serviceAccountName"] == notifications.NAME
-    policy = _resource(staging_manifests, "CiliumNetworkPolicy", notifications.NAME.removeprefix("agentplane-"))["spec"]
+    policy = find_resource(staging_manifests, "CiliumNetworkPolicy", notifications.NAME)["spec"]
     assert not any(
         target["matchLabels"].get("app.kubernetes.io/name") == app.NAME
         for rule in policy["egress"]

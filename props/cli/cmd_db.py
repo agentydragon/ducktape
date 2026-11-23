@@ -112,7 +112,7 @@ BACKUP_PLAIN_OPT = typer.Option(False, "--plain", help="Output plain SQL instead
 
 
 def cmd_db_backup(output: Path | None = BACKUP_OUTPUT_OPT, plain: bool = BACKUP_PLAIN_OPT) -> None:
-    """Create a database backup. Uses PG* environment variables set by devenv."""
+    """Create a database backup. Uses PG* environment variables set by direnv."""
     console = Console()
 
     # Determine output path
@@ -167,10 +167,7 @@ def cmd_db_restore(backup_file: Path = RESTORE_BACKUP_FILE_ARG, yes: bool = REST
 
     console.print(f"Restoring from: {backup_file}")
 
-    # Determine if gzipped
-    is_gzipped = backup_file.suffix == ".gz" or str(backup_file).endswith(".sql.gz")
-
-    if is_gzipped:
+    if backup_file.suffix == ".gz":
         with gzip.open(backup_file, "rt") as f:
             sql_content = f.read()
         result = subprocess.run(cmd, input=sql_content, text=True, capture_output=True, check=False)

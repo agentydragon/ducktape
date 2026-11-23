@@ -10,8 +10,10 @@ from __future__ import annotations
 import dataclasses
 import json
 import re
+import sys
 from collections import Counter, defaultdict
 from collections.abc import Mapping
+from enum import Enum, auto
 from pathlib import Path
 
 from devinfra.buildbuddy.ci.bes import Invocation, TestSummary
@@ -21,12 +23,12 @@ _LABEL = re.compile(r"//[^:\s]+:[^:\s]+\Z")
 _RBE_PIN_ERRORS = (OSError, ValueError, KeyError, TypeError)
 
 
-def effective_rbe_image(override: str, pins_path: Path = Path("devinfra/image_pins.json")) -> str | None:
+def effective_rbe_image(override: str) -> str | None:
     """Resolve the image the publication test step will use, or fail closed."""
     if override:
         return override
     try:
-        pins = json.loads(pins_path.read_text())
+        pins = json.loads(Path("devinfra/image_pins.json").read_text())
         image = pins["rbe_container"]["image"]
         digest = pins["rbe_container"]["digest"]
     except _RBE_PIN_ERRORS:
@@ -108,6 +110,12 @@ def _push_invocation_problem(
     return None
 
 
+class TestGate(Enum):
+    KEEP = auto()
+    REUSE = auto()
+    BLOCK = auto()
+
+
 @dataclasses.dataclass(frozen=True)
 class TestEvidence:
     """Verified failures and reusable passes from one unmerged push-CI invocation."""
@@ -115,6 +123,24 @@ class TestEvidence:
     problem: str | None
     summaries: Mapping[str, list[TestSummary]] = dataclasses.field(default_factory=dict)
     failed_labels: frozenset[str] = frozenset()
+
+    def publication_gate(
+        self, artifact: str, selector: str | None, *, action: str, uses_default_config: bool = True
+    ) -> TestGate:
+        """Decide whether this job keeps its test step, reuses CI, or is blocked."""
+        if not selector:
+            return TestGate.KEEP
+        failed, reason = self.already_failed(selector)
+        if failed:
+            print(f"::warning::{artifact}: not {action}, {reason}", file=sys.stderr)
+            return TestGate.BLOCK
+        if uses_default_config:
+            covered, reason = self.is_covered(selector)
+            if covered:
+                print(f"::notice::{artifact}: reusing the verified bazel-ci test verdict", file=sys.stderr)
+                return TestGate.REUSE
+            print(f"::notice::{artifact}: retaining its test gate ({reason})", file=sys.stderr)
+        return TestGate.KEEP
 
     def already_failed(self, selector: str) -> tuple[bool, str]:
         """Whether a literal test in one publication selector already failed in push CI on this source."""

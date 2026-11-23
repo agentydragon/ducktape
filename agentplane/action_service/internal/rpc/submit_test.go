@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/action_service/api/contracts/action_servicepb"
-	"github.com/agentydragon/ducktape/agentplane/identity/auth"
+	"github.com/agentydragon/ducktape/agentplane/action_service/internal/admission/catalog"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
 	"github.com/agentydragon/ducktape/agentplane/policy/reader"
 	"google.golang.org/grpc/codes"
@@ -17,6 +17,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -50,9 +51,9 @@ func exactActions(group string, names ...string) policyapi.Rule {
 	return actionPolicy(policyapi.ActionPolicy{Type: "exact_actions", Actions: map[string]policyapi.ActionNames{group: names}})
 }
 
-// bind grants the account the rules through one PolicySet and one PolicyBinding in the served API's policy namespace,
+// bind grants the caller the rules through one PolicySet and one PolicyBinding in the served API's policy namespace,
 // and returns once the policy index resolves the binding.
-func (s *served) bind(t *testing.T, account auth.Account, rules ...policyapi.Rule) {
+func (s *served) bind(t *testing.T, rules ...policyapi.Rule) {
 	t.Helper()
 	if err := policyObjects.Create(t.Context(), &policyapi.PolicySet{
 		ObjectMeta: metav1.ObjectMeta{Namespace: s.policy, Name: "test-set"}, Spec: policyapi.PolicySetSpec{Rules: rules},
@@ -111,7 +112,7 @@ func TestASubmissionNoPolicyDecidesWaitsForAnOperator(t *testing.T) {
 
 func TestASubmissionAPolicyAllowsArrivesAllowedWithTheObjectsItWasDecidedOn(t *testing.T) {
 	s := serve(t)
-	s.bind(t, callerAccount, exactActions("test-group", "test-action"))
+	s.bind(t, exactActions("test-group", "test-action"))
 
 	got, err := s.submitAs(t, callerCertificate, envelope(t, "test-allowed", "test-group", "test-action", map[string]any{}))
 	if err != nil {
@@ -159,7 +160,7 @@ func TestASubmissionAPolicyAllowsArrivesAllowedWithTheObjectsItWasDecidedOn(t *t
 
 func TestAPublicRepositoryPolicyAllowsOnlyWhatGitHubConfirmsPublic(t *testing.T) {
 	s := serve(t)
-	s.bind(t, callerAccount, actionPolicy(policyapi.ActionPolicy{
+	s.bind(t, actionPolicy(policyapi.ActionPolicy{
 		Type: "github_public_repository", Actions: map[string]policyapi.ActionNames{"test-github": {"get_file_contents"}},
 	}))
 	submit := func(key, owner, repository string) *action_servicepb.ActionRequest {
@@ -188,7 +189,7 @@ func TestAPublicRepositoryPolicyAllowsOnlyWhatGitHubConfirmsPublic(t *testing.T)
 
 func TestADecidedOnlySubmissionNoPolicyDecidesIsRefusedAndStoresNothing(t *testing.T) {
 	s := serve(t)
-	s.bind(t, callerAccount, exactActions("test-group", "test-action"))
+	s.bind(t, exactActions("test-group", "test-action"))
 	undecided := envelope(t, "test-undecided", "test-group", "test-other-action", map[string]any{})
 	undecided.DecidedOnly = true
 	_, err := s.submitAs(t, callerCertificate, undecided)
@@ -206,6 +207,35 @@ func TestADecidedOnlySubmissionNoPolicyDecidesIsRefusedAndStoresNothing(t *testi
 	decided.DecidedOnly = true
 	if got, err := s.submitAs(t, callerCertificate, decided); err != nil || got.GetState() != allowed {
 		t.Errorf("a decided-only submission a policy decides: %v, %v", got.GetState(), err)
+	}
+}
+
+func TestUnvalidatedToolStillEnforcesArgumentPolicy(t *testing.T) {
+	groups := newCatalog(t, submissionCatalog)
+	groups.Update("test-broken", func(group *catalog.Group) {
+		definition := group.Actions["test-action"]
+		definition.InputSchemaValidation = &action_servicepb.InputSchemaValidation{Status: action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED, Reason: action_servicepb.InputSchemaValidationReason_INPUT_SCHEMA_VALIDATION_REASON_SCHEMA_COMPILE_FAILED}
+		group.Actions = map[string]catalog.ActionDefinition{"test-action": definition}
+	})
+	s := serveWith(t, groups)
+	inspected, err := s.client.GetAction(as(t, callerCertificate), &action_servicepb.GetActionRequest{GroupKey: "test-broken", ActionKey: "test-action"})
+	if err != nil || inspected.GetAction().GetInputSchemaValidation().GetStatus() != action_servicepb.InputSchemaValidationStatus_INPUT_SCHEMA_VALIDATION_STATUS_NOT_ENFORCED ||
+		inspected.GetAction().GetInputSchemaValidation().GetReason() != action_servicepb.InputSchemaValidationReason_INPUT_SCHEMA_VALIDATION_REASON_SCHEMA_COMPILE_FAILED {
+		t.Fatalf("unvalidated Action status = %v, %v", inspected, err)
+	}
+	s.bind(t, actionPolicy(policyapi.ActionPolicy{
+		Type: "argument_schema", Actions: map[string]policyapi.ActionNames{"test-broken": {"test-action"}},
+		Schema: &runtime.RawExtension{Raw: []byte(`{"type":"object","properties":{"safe":{"const":true}},"required":["safe"]}`)},
+	}))
+	denied := envelope(t, "test-unvalidated-denied", "test-broken", "test-action", map[string]any{"safe": false})
+	denied.DecidedOnly = true
+	_, err = s.submitAs(t, callerCertificate, denied)
+	wantCode(t, "an unvalidated tool that does not match its policy", err, codes.PermissionDenied)
+	allowedRequest := envelope(t, "test-unvalidated-allowed", "test-broken", "test-action", map[string]any{"safe": true})
+	allowedRequest.DecidedOnly = true
+	got, err := s.submitAs(t, callerCertificate, allowedRequest)
+	if err != nil || got.GetState() != allowed {
+		t.Errorf("unvalidated tool with matching policy: %v, %v", got, err)
 	}
 }
 
@@ -268,10 +298,9 @@ func TestOnlyAnAdmittedWorkloadIdentitySubmits(t *testing.T) {
 		token string
 		code  codes.Code
 	}{
-		"an operator":                            {s.operatorToken, codes.PermissionDenied},
-		"a service reader":                       {readerCertificate, codes.PermissionDenied},
-		"an account without the caller label":    {unlabeledToken, codes.Unauthenticated},
-		"a labeled account outside the callers'": {outsiderToken, codes.Unauthenticated},
+		"an operator":         {s.operatorToken, codes.PermissionDenied},
+		"a service reader":    {readerCertificate, codes.PermissionDenied},
+		"a Kubernetes bearer": {validKubernetesToken, codes.Unauthenticated},
 	} {
 		_, err := s.submitAs(t, tc.token, request)
 		wantCode(t, name, err, tc.code)
@@ -305,7 +334,7 @@ func TestAnIdempotencyKeyIsAcceptedOncePerAccountAndRecoversTheRequest(t *testin
 func TestASubmittedRequestIsWatchedUntilItFinishesOrTheClientsDeadline(t *testing.T) {
 	s := serve(t)
 	s.runWorker(t)
-	s.bind(t, callerAccount, exactActions("test-group", "test-action"))
+	s.bind(t, exactActions("test-group", "test-action"))
 	ran, err := s.submitAs(t, callerCertificate, envelope(t, "test-runs", "test-group", "test-action", map[string]any{}))
 	if err != nil {
 		t.Fatal(err)
@@ -349,33 +378,13 @@ func TestASubmittedRequestIsWatchedUntilItFinishesOrTheClientsDeadline(t *testin
 
 func TestTheHTTPFacadeSubmits(t *testing.T) {
 	s := serve(t)
-	post := func(token, body string) (int, []byte) {
-		t.Helper()
-		call, err := http.NewRequestWithContext(t.Context(), http.MethodPost, s.facadeURL(token)+"/v1/action-requests", strings.NewReader(body))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !strings.HasPrefix(token, certificatePrefix) {
-			call.Header.Set("Authorization", "Bearer "+token)
-		}
-		response, err := http.DefaultClient.Do(call)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer response.Body.Close()
-		answer, err := io.ReadAll(response.Body)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return response.StatusCode, answer
-	}
 	// body submits test-action under key with the target, a JSON value.
 	body := func(key, target string) string {
 		return `{"idempotency_key": "` + key + `", "action": {"group": "test-group", "name": "test-action"},
 			"arguments": {"target": ` + target + `}, "title": "test title"}`
 	}
 
-	code, answer := post(callerCertificate, body("test-http", `"test-target"`))
+	code, answer := s.post(t, "/v1/action-requests", callerCertificate, body("test-http", `"test-target"`))
 	submitted := &action_servicepb.SubmitActionRequestResponse{}
 	if code != http.StatusOK || protojson.Unmarshal(answer, submitted) != nil || submitted.GetActionRequest().GetState() != pending {
 		t.Fatalf("submission: %d %s", code, answer)
@@ -391,11 +400,46 @@ func TestTheHTTPFacadeSubmits(t *testing.T) {
 		"the key again":                   {callerCertificate, body("test-http", `"test-target"`), http.StatusConflict},
 		"arguments the schema refuses":    {callerCertificate, body("test-http-invalid", `5`), http.StatusBadRequest},
 		"an operator":                     {s.operatorToken, body("test-http-operator", `"test-target"`), http.StatusForbidden},
-		"an account without the label":    {unlabeledToken, body("test-http-unlabeled", `"test-target"`), http.StatusUnauthorized},
+		"a Kubernetes bearer":             {validKubernetesToken, body("test-http-kubernetes", `"test-target"`), http.StatusUnauthorized},
 		"a body that is not a submission": {callerCertificate, `[]`, http.StatusBadRequest},
 	} {
-		if code, answer := post(tc.token, tc.body); code != tc.code {
+		if code, answer := s.post(t, "/v1/action-requests", tc.token, tc.body); code != tc.code {
 			t.Errorf("%s: %d %s, want %d", name, code, answer, tc.code)
 		}
+	}
+}
+
+// A schema evaluation timeout is a service failure, not a claim that the caller supplied invalid input.
+func TestSubmitReportsPatternEvaluationFailureAsUnavailable(t *testing.T) {
+	const definitions = `{"test-group":{"title":"t","description":"d","executor":{"kind":"mcp","description":"e"},"actions":{"test-action":{"description":"d","input_schema":{"type":"object","properties":{"value":{"not":{"pattern":"^(?=a)(a+)+$"}}}}}}}}`
+	s := serveWith(t, newCatalog(t, definitions))
+	request := envelope(t, "test-pattern-timeout", "test-group", "test-action", map[string]any{"value": strings.Repeat("a", 96) + "!"})
+	_, err := s.submitAs(t, callerCertificate, request)
+	wantCode(t, "a schema evaluation timeout", err, codes.Unavailable)
+	if got := s.listByKey(t, callerCertificate, request.GetIdempotencyKey()); len(got) != 0 {
+		t.Errorf("stored request after validation failure: %v", got)
+	}
+}
+
+// A failed first policy must not fall through to an otherwise approving later rule.
+func TestPolicyEvaluationFailureStopsLaterAutoApproval(t *testing.T) {
+	const definitions = `{"test-group":{"title":"t","description":"d","executor":{"kind":"mcp","description":"e"},"actions":{"test-action":{"description":"d","input_schema":{"type":"object"}}}}}`
+	s := serveWith(t, newCatalog(t, definitions))
+	s.bind(t, actionPolicy(policyapi.ActionPolicy{
+		Type: "argument_schema", Actions: map[string]policyapi.ActionNames{"test-group": {"test-action"}},
+		Schema: &runtime.RawExtension{Raw: []byte(`{"properties":{"value":{"not":{"pattern":"^(?=a)(a+)+$"}}}}`)},
+	}), exactActions("test-group", "test-action"))
+	args := map[string]any{"value": strings.Repeat("a", 96) + "!"}
+	request := envelope(t, "test-policy-pattern-timeout", "test-group", "test-action", args)
+	got, err := s.submitAs(t, callerCertificate, request)
+	if err != nil || got.GetState() != pending || got.GetDecision() != nil {
+		t.Fatalf("evaluation failure did not leave request pending: %v, %v", got, err)
+	}
+	request = envelope(t, "test-policy-pattern-timeout-decided", "test-group", "test-action", args)
+	request.DecidedOnly = true
+	_, err = s.submitAs(t, callerCertificate, request)
+	wantCode(t, "a decided-only request with indeterminate policy", err, codes.PermissionDenied)
+	if got := s.listByKey(t, callerCertificate, request.GetIdempotencyKey()); len(got) != 0 {
+		t.Errorf("stored decided-only request after policy failure: %v", got)
 	}
 }

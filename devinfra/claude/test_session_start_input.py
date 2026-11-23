@@ -2,7 +2,7 @@
 
 import pytest
 
-from devinfra.claude.claude_api.hooks.common import PermissionMode
+from devinfra.claude.claude_api.hooks.hook_base import PermissionMode
 from devinfra.claude.claude_api.hooks.session_start import SessionStartHookInput
 
 

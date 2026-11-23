@@ -182,7 +182,7 @@ func TestCodexRecoveredTurnResponseUsesConfirmedModelWithinBatch(t *testing.T) {
 	if err := s.journal.RecordNativeRequest(ctx, "request", harness.CodexTurnStart, []string{"input", "model"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Emit(ctx, observation(&eventpb.Native{Direction: eventpb.Direction_DIRECTION_FROM_HARNESS, Line: `{"id":"request","result":{"turn":{"id":"turn"}}}`}), nil); err != nil {
+	if err := s.Emit(ctx, harness.Observation(&eventpb.Native{Direction: eventpb.Direction_DIRECTION_FROM_HARNESS, Line: `{"id":"request","result":{"turn":{"id":"turn"}}}`}), nil); err != nil {
 		t.Fatal(err)
 	}
 	adapter := codex.New(s)

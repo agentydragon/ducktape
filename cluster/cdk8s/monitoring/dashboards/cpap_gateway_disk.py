@@ -1,4 +1,4 @@
-"""Small Grafana Foundation SDK spike using the existing classic dashboard format."""
+"""The CPAP gateway guest filesystem dashboard (Grafana Foundation SDK, classic dashboard format)."""
 
 from grafana_foundation_sdk.builders import timeseries
 from grafana_foundation_sdk.builders.common import VizLegendOptions

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 # Operator kustomizations and the CRD kinds they manage.
-# Kustomizations with empty sets are part of the operator layer but don't define CRDs.
 # A kind two providers share is written `Kind.group`.
 OPERATOR_CRDS: dict[str, set[str]] = {
     "external-secrets-operator": {
@@ -11,18 +10,15 @@ OPERATOR_CRDS: dict[str, set[str]] = {
         "ClusterExternalSecret",
         "SecretStore",
         "ClusterSecretStore",
+        "GithubAccessToken",
         "Password",
         "Fake",
         "VaultDynamicSecret",
     },
-    "external-secrets": set(),
     # The HelmRelease in this Kustomization installs ExternalDNS's DNSEndpoint CRD.
     "external-dns": {"DNSEndpoint"},
     "cert-manager": {"Certificate", "CertificateRequest", "Issuer", "ClusterIssuer"},
-    "cert-manager-config": set(),
     "cert-manager-trust": {"Bundle"},
-    "cert-manager-environment": set(),
-    "cluster-ca": set(),
     "crossplane": {"Provider.pkg.crossplane.io", "DeploymentRuntimeConfig.pkg.crossplane.io"},
     "crossplane-provider-buildbuddy": {
         "Secret.buildbuddy.m.allegedly.works",
@@ -36,8 +32,7 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     },
     "crossplane-provider-opentofu": {"Workspace.opentofu.upbound.io", "ProviderConfig.opentofu.upbound.io"},
     "keda": {"ScaledJob", "ScaledObject", "TriggerAuthentication"},
-    "kyverno": {"ClusterPolicy", "Policy", "CleanupPolicy"},
-    "kyverno-policies": set(),
+    "kyverno": {"ClusterPolicy", "Policy", "MutatingPolicy", "NamespacedDeletingPolicy", "ValidatingPolicy"},
     "tofu-controller": {"Terraform"},
     # The CRDs, not the HelmRelease: prometheus-operator's only admission webhooks
     # are failurePolicy: Ignore and cover prometheusrules/alertmanagerconfigs, so
@@ -56,7 +51,6 @@ OPERATOR_CRDS: dict[str, set[str]] = {
         "ServiceMonitor",
         "ThanosRuler",
     },
-    "monitoring-stack": set(),
     "cnpg": {
         "Cluster",
         "Backup",
@@ -99,7 +93,6 @@ OPERATOR_CRDS: dict[str, set[str]] = {
         "VolumeSnapshotSource",
         "VolumeUploadSource",
     },
-    "openclaw-operator": {"OpenClawInstance", "OpenClawSelfConfig"},
     "agentplane-crds": {
         "EgressCredential",
         "PolicySet",
@@ -130,8 +123,8 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     "clickhouse-operator": {"ClickHouseInstallation", "ClickHouseKeeperInstallation"},
     "volsync": {"ReplicationDestination", "ReplicationSource"},
     "snapshot-controller-crds": {"VolumeSnapshotClass"},
-    # TODO: if non-GHCR image automations are added, add a separate entry here
-    # (e.g. "flux-image-automation-dockerhub": {"ImageRepository", ...}).
+    # Flux bootstrap installs these CRDs; this Kustomization owns the shared
+    # ImageUpdateAutomation, and the Forgejo image resources depend on it.
     "flux-image-automation-ghcr": {"ImageRepository", "ImagePolicy", "ImageUpdateAutomation"},
 }
 

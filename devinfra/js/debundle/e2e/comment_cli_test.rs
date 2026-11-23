@@ -106,11 +106,7 @@ fn edit_mode_replaces_or_clears_the_prepopulated_comment() {
                 .env("REPLACEMENT", replacement),
         )
         .unwrap_or_else(|err| panic!("{err}"));
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
+        process::assert_success(&out);
         assert_eq!(parse_stdout_json(&out)["action"], action);
         let read = fixture.json(&["bindings", "comment", "a"]);
         if replacement.is_empty() {

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	inboxstore "github.com/agentydragon/ducktape/agentplane/notification_service/internal/inbox"
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
 	"github.com/agentydragon/ducktape/agentplane/notification_service/model"
@@ -76,7 +77,7 @@ func TestRedeliveryIsNotDeliveredAgain(t *testing.T) {
 }
 
 func TestDeliverySelectorUsesRelationalIdentityInFinalSchema(t *testing.T) {
-	g := newGitHubFixtureWithStoreFixture(t, newIsolatedFixture(t, defaultQuotas()))
+	g := newGitHubFixtureWithStoreFixture(t, newFixture(t, defaultQuotas()))
 	sub := g.follow(t, g.source(githubmodel.PullRequestSubject{Number: 7}), "follow")
 	nilAction := g.deliver(t, "issue_comment", onPullRequest(7), labelled("nil action"))
 	emptyAction := g.deliver(t, "issue_comment", withAction(""), onPullRequest(7), labelled("empty action"))
@@ -282,7 +283,7 @@ func TestCIDeliveriesWithTheirOwnSubjectReferencesAssociateCommits(t *testing.T)
 			for _, entry := range g.read(t, g.inbox, 0).Entries {
 				for _, id := range entry.SubscriptionIDs {
 					name := map[uuid.UUID]string{byDefault.ID: "default", explicit.ID: "explicit"}[id]
-					matchedBy[name] = append(matchedBy[name], labels(t, []Entry{entry})[0])
+					matchedBy[name] = append(matchedBy[name], labels(t, []inboxstore.Entry{entry})[0])
 				}
 			}
 			wantDefault := []string{"check without a subject"}

@@ -1,6 +1,5 @@
 # gazelle:ignore
 
-# gazelle:resolve py prometheus_operator_crds //cluster/cdk8s/providers/prometheus_operator:servicemonitor
 load("//devinfra/oci:defs.bzl", "oci_layout_py")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
@@ -34,6 +33,7 @@ py_library(
     ],
     deps = [
         ":upstreams",
+        "//cluster/cdk8s/ollama:tabby_endpoint",
         "//model_catalog:catalog",
     ],
 )
@@ -41,10 +41,6 @@ py_library(
 py_library(
     name = "keys",
     srcs = ["keys.py"],
-    visibility = [
-        "//cluster/cdk8s:__pkg__",
-        "//cluster/cdk8s/agentplane:__pkg__",
-    ],
     deps = [
         "//cluster/cdk8s:manifest_roots",
     ],
@@ -54,19 +50,19 @@ py_library(
     name = "crossplane_keys",
     srcs = ["crossplane_keys.py"],
     deps = [
+        ":endpoint",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
+        "//cluster/cdk8s:reflector",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/litellm:key",
-        "//cluster/cdk8s/providers/litellm:organization",
         "//cluster/cdk8s/providers/litellm:providerconfig",
         "//cluster/cdk8s/providers/litellm:team",
         "//model_catalog:policies",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
-        "@pypi//constructs",
     ],
 )
 
@@ -91,7 +87,17 @@ py_library(
     name = "credentials",
     srcs = ["credentials.py"],
     visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
-    deps = ["//cluster/cdk8s:secret_ref"],
+    deps = [
+        ":endpoint",
+        "//cluster/cdk8s:secret_ref",
+    ],
+)
+
+py_library(
+    name = "endpoint",
+    srcs = ["endpoint.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = ["//cluster/cdk8s:service_ref"],
 )
 
 py_library(
@@ -101,8 +107,10 @@ py_library(
     deps = [
         ":config",
         ":database",
+        ":endpoint",
         ":upstreams",
         "//cluster/cdk8s:config_format",
+        "//cluster/cdk8s:disruption_budget",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:generation",
@@ -129,6 +137,7 @@ py_library(
     srcs = ["namespace.py"],
     deps = [
         ":database",
+        ":endpoint",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
@@ -140,9 +149,9 @@ py_library(
     name = "database",
     srcs = ["database.py"],
     deps = [
+        ":endpoint",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s/cnpg:backup",
         "//cluster/cdk8s/cnpg:cluster",
         "@pypi//cdk8s",
@@ -157,6 +166,7 @@ py_library(
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = [
+        ":endpoint",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
@@ -180,7 +190,10 @@ py_test(
         ":secrets",
         ":upstreams",
         "//:conftest",
+        "//cluster/cdk8s:conftest",
+        "//cluster/cdk8s/testing:manifests",
         "//model_catalog:catalog",
+        "@pypi//cdk8s",
         "@pypi//pytest",
         "@pypi_tana_litellm_proxy//litellm",
     ],
@@ -201,5 +214,8 @@ py_test(
 py_library(
     name = "upstreams",
     srcs = ["upstreams.py"],
-    deps = ["//model_catalog:catalog"],
+    deps = [
+        "//cluster/cdk8s/ollama:tabby_endpoint",
+        "//model_catalog:catalog",
+    ],
 )

@@ -13,6 +13,7 @@ import stat
 import sys
 import tempfile
 from collections.abc import Callable, Collection, Iterator, Mapping
+from contextlib import closing
 from pathlib import Path
 
 SQLITE_HEADER = b"SQLite format 3\x00"
@@ -100,15 +101,11 @@ def snapshot_databases(
                     root_identity = hashlib.sha256(os.fsencode(root)).hexdigest()
                     destination = output_dir / "images" / name / root_identity / relative
                     try:
-                        source = sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=30)
-                        try:
-                            backup = sqlite3.connect(image)
-                            try:
-                                source.backup(backup)
-                            finally:
-                                backup.close()
-                        finally:
-                            source.close()
+                        with (
+                            closing(sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=30)) as source,
+                            closing(sqlite3.connect(image)) as backup,
+                        ):
+                            source.backup(backup)
                         digest = file_digest(image)
                         publish(image, destination, digest)
                         images.append(

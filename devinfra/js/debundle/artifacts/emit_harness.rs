@@ -149,8 +149,6 @@ fn make_owner_writable(path: &Path) -> Result<()> {
 mod tests {
     use super::*;
     use std::fs;
-
-    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
     #[test]
@@ -162,7 +160,6 @@ mod tests {
         let source_html = snapshot.join("index.html");
         fs::write(&source_html, "<html></html>")?;
 
-        #[cfg(unix)]
         fs::set_permissions(&source_html, fs::Permissions::from_mode(0o555))?;
 
         let copied = copy_snapshot_assets(&snapshot, &out, &[PathBuf::from("index.html")])?;

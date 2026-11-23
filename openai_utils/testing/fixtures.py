@@ -43,23 +43,6 @@ def mock_openai_client(transport: httpx2.MockTransport) -> Model:
 
 
 @pytest.fixture
-def live_openai(request: pytest.FixtureRequest) -> openai.AsyncOpenAI:
-    """Provide a live AsyncOpenAI client for tests marked with `live_openai_api`.
-
-    For non-marked tests that include this fixture in the signature (e.g.,
-    parameterized tests with a mock branch), return a lightweight no-op
-    placeholder to avoid constructing a real client.
-    """
-    if request.node.get_closest_marker("live_openai_api") is not None:
-        return openai.AsyncOpenAI()
-
-    class _Noop:
-        pass
-
-    return _Noop()  # type: ignore[return-value]
-
-
-@pytest.fixture
 def live_openai_model() -> str:
     """Return the model to use for live tests."""
     return os.getenv("OPENAI_MODEL", "gpt-4o-mini")

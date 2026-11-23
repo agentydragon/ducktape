@@ -153,6 +153,16 @@ func (s *ingressTestServer) client(t *testing.T, uri string) *http.Client {
 	return &http.Client{Transport: transport, Timeout: 5 * time.Second}
 }
 
+// newIngressFixture serves an ingress in front of a new fake LiteLLM, with a client authenticated as a new
+// Identity workload.
+func newIngressFixture(t *testing.T) (*fakeLiteLLM, *ingressTestServer, *http.Client) {
+	t.Helper()
+	caller := identityWorkload(t)
+	backend := newFakeLiteLLM()
+	ingress := newIngressTestServer(t, newBackendServer(t, backend).URL)
+	return backend, ingress, ingress.client(t, caller.URI)
+}
+
 func newConfiguredIngressTestHandler(t *testing.T, c config) *ingressHandler {
 	t.Helper()
 	if len(c.Attribution.JSONHeaders) == 0 && len(c.Attribution.Baggage) == 0 {
@@ -381,12 +391,7 @@ func TestTwoWorkloadsShareBackendKeyAndKeepVerifiedMetadataDistinct(t *testing.T
 }
 
 func TestAnthropicStatusErrorBodyAndRequestShapePassUnchanged(t *testing.T) {
-	caller := identityWorkload(t)
-	backend := newFakeLiteLLM()
-	backendServer := newBackendServer(t, backend)
-	ingress := newIngressTestServer(t, backendServer.URL)
-	client := ingress.client(t, caller.URI)
-	defer client.CloseIdleConnections()
+	backend, ingress, client := newIngressFixture(t)
 
 	body := `{"model":"anthropic-api/ant-messages/claude-haiku-4-5-20251001","max_tokens":32,"messages":[]}`
 	response, gotBody := request(t, client, http.MethodPost, ingress.URL+"/v1/messages", body, http.Header{})
@@ -443,12 +448,7 @@ func doRequest(t *testing.T, client *http.Client, url string, headers http.Heade
 }
 
 func TestStreamIsIncrementalAndClientDisconnectCancelsBackend(t *testing.T) {
-	caller := identityWorkload(t)
-	backend := newFakeLiteLLM()
-	backendServer := newBackendServer(t, backend)
-	ingress := newIngressTestServer(t, backendServer.URL)
-	client := ingress.client(t, caller.URI)
-	defer client.CloseIdleConnections()
+	backend, ingress, client := newIngressFixture(t)
 
 	req, err := http.NewRequest(http.MethodPost, ingress.URL+"/gated-stream", nil)
 	if err != nil {
@@ -480,12 +480,7 @@ func TestStreamIsIncrementalAndClientDisconnectCancelsBackend(t *testing.T) {
 }
 
 func TestCompressedBytesDuplicateHeadersAndHopHeaderRemoval(t *testing.T) {
-	caller := identityWorkload(t)
-	backend := newFakeLiteLLM()
-	backendServer := newBackendServer(t, backend)
-	ingress := newIngressTestServer(t, backendServer.URL)
-	client := ingress.client(t, caller.URI)
-	defer client.CloseIdleConnections()
+	backend, ingress, client := newIngressFixture(t)
 
 	headers := http.Header{}
 	headers.Set("Accept-Encoding", "gzip")
@@ -681,12 +676,7 @@ func TestIdentityCallerIsAttributedByIdentityWithoutAccountClaims(t *testing.T) 
 }
 
 func TestTruncatedBackendResponseDoesNotLookLikeSuccessfulEndOfStream(t *testing.T) {
-	caller := identityWorkload(t)
-	backend := newFakeLiteLLM()
-	backendServer := newBackendServer(t, backend)
-	ingress := newIngressTestServer(t, backendServer.URL)
-	client := ingress.client(t, caller.URI)
-	defer client.CloseIdleConnections()
+	_, ingress, client := newIngressFixture(t)
 
 	req, err := http.NewRequest(http.MethodPost, ingress.URL+"/truncated", nil)
 	if err != nil {
@@ -1159,12 +1149,7 @@ func TestBodylessRequestIsForwardedWithRequestLogging(t *testing.T) {
 }
 
 func TestProtocolUpgradeIsNotForwardedToBackend(t *testing.T) {
-	caller := identityWorkload(t)
-	backend := newFakeLiteLLM()
-	backendServer := newBackendServer(t, backend)
-	ingress := newIngressTestServer(t, backendServer.URL)
-	client := ingress.client(t, caller.URI)
-	defer client.CloseIdleConnections()
+	backend, ingress, client := newIngressFixture(t)
 
 	headers := http.Header{}
 	headers.Set("Connection", "Upgrade")

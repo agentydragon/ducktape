@@ -107,7 +107,6 @@ export function useCasino() {
     at: Math.floor(row.at_ms ?? 0),
   }));
 
-  // === Local-only active-session lifecycle ===
   const startSession = (subject) => {
     if (activeSession) return;
     setLastAward(null);
@@ -141,7 +140,6 @@ export function useCasino() {
     writeActiveSession(null);
   };
 
-  // === Server actions ===
   const stopSession = async () => {
     if (!activeSession) return;
     const endedAt = Date.now();

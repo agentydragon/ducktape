@@ -3,6 +3,7 @@ package dispatcher
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
@@ -36,15 +37,15 @@ func TestFailedClaimAloneSchedulesDelivery(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			table, state := "dispatch", store.DeliveringState
+			table, state := "dispatch", int32(store.DeliveringState)
 			if opening {
-				table, state = "session", store.SessionInProgressState
+				table, state = "session", int32(store.SessionInProgressState)
 			}
 			if _, err := queueStore.DB.ExecContext(ctx, `CREATE SEQUENCE test_claim_attempt;
    CREATE FUNCTION test_claim_once() RETURNS trigger LANGUAGE plpgsql AS $$
    BEGIN IF nextval('test_claim_attempt')=1 THEN RAISE EXCEPTION 'test transient claim error' USING ERRCODE='40001'; END IF; RETURN NEW; END $$;
    CREATE TRIGGER test_claim_once BEFORE UPDATE ON `+table+` FOR EACH ROW
-   WHEN (OLD.state IS DISTINCT FROM NEW.state AND NEW.state='`+state+`') EXECUTE FUNCTION test_claim_once()`); err != nil {
+   WHEN (OLD.state_value IS DISTINCT FROM NEW.state_value AND NEW.state_value=`+strconv.FormatInt(int64(state), 10)+`) EXECUTE FUNCTION test_claim_once()`); err != nil {
 				t.Fatal(err)
 			}
 			runtime := &acceptingRuntime{calls: make(chan string, 1)}

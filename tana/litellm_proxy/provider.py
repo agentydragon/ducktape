@@ -1122,7 +1122,7 @@ class _TanaStreamParser:
     def _flush_tool_call_chunks(self) -> list[GenericStreamingChunk]:
         chunks: list[GenericStreamingChunk] = []
         for index, tool_call in enumerate(self._pending_tool_calls.values()):
-            chunk = _openai_tool_call_chunk(tool_call, index, streaming_delta=False)
+            chunk = _openai_tool_call_chunk(tool_call, index)
             if chunk is not None:
                 chunks.append(_stream_chunk(tool_use=chunk))
         self._pending_tool_calls.clear()
@@ -1167,16 +1167,12 @@ def _stream_finish_reason(finish_reason: str, has_tool_calls: bool) -> str:
     return finish_reason
 
 
-def _openai_tool_call_chunk(
-    tool_call: Mapping[str, Any], index: int, *, streaming_delta: bool = False
-) -> ChatCompletionToolCallChunk | None:
+def _openai_tool_call_chunk(tool_call: Mapping[str, Any], index: int) -> ChatCompletionToolCallChunk | None:
     normalized = _normalize_tana_tool_call(tool_call)
     if normalized is None:
         return None
     arguments = normalized["input"]
-    if streaming_delta and _is_empty_json_object(arguments):
-        arguments = ""
-    elif not isinstance(arguments, str):
+    if not isinstance(arguments, str):
         arguments = json.dumps(arguments if arguments is not None else {}, ensure_ascii=False)
     return cast(
         ChatCompletionToolCallChunk,

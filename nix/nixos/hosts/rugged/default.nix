@@ -2,7 +2,6 @@
 #
 # Manual setup steps:
 # - SSH keygen and copy to GitHub
-# - Transfer over Ansible Vault password into libwallet
 #
 # TODO: Consider moving some packages from home-manager to system level (zsh, compilers like rustc/go/gcc)
 # TODO: Improved OSK extension - waiting for GNOME 49 support (currently only 43-44)

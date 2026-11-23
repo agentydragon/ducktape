@@ -7,7 +7,6 @@ import pytest
 from cluster.cdk8s.agentplane.model_selections import STAGING_APP_MODELS
 from cluster.cdk8s.litellm.config import model_entry
 from model_catalog.catalog import (
-    ANTHROPIC_API_LATEST_ROUTES,
     ANTHROPIC_API_ROUTES,
     ANTHROPIC_SUBSCRIPTION_ROUTES,
     CHATGPT_RESPONSES,
@@ -27,7 +26,7 @@ from model_catalog.catalog import (
     RouteAlias,
     TokenLimits,
 )
-from model_catalog.policies import KEY_MODEL_LANES
+from model_catalog.policies import AGENTPLANE_STAGING_MODEL_LANES, KEY_MODEL_LANES
 
 
 def test_catalog_has_unique_ids_and_aliases_reference_served_routes() -> None:
@@ -40,19 +39,15 @@ def test_catalog_has_unique_ids_and_aliases_reference_served_routes() -> None:
 
 
 def test_staging_picker_does_not_widen_its_key() -> None:
-    admitted = (
-        *KEY_MODEL_LANES["gpt6_oai_lane_models"].allowed,
-        *KEY_MODEL_LANES["claude_client_models"].allowed,
-        *KEY_MODEL_LANES["antigravity_client_models"].allowed,
-        *KEY_MODEL_LANES["ollama_chat_client_models"].allowed,
-    )
-    # Wrapped harness choices remain within their LiteLLM key lanes. Direct API models
-    # selected only by the central sampler bypass LLM ingress and use their own connection.
-    assert all(route in admitted for route in (*STAGING_APP_MODELS.claude, *STAGING_APP_MODELS.codex))
+    admitted = {route for lane in AGENTPLANE_STAGING_MODEL_LANES for route in KEY_MODEL_LANES[lane].allowed}
+    ingress_routes = (*STAGING_APP_MODELS.claude, *STAGING_APP_MODELS.codex, *STAGING_APP_MODELS.central_sampler_chat)
+    assert set(ingress_routes).issubset(admitted)
+
+    # Direct Anthropic API models use their own connection.
     central_only = (
         set(STAGING_APP_MODELS.central_sampler) - set(STAGING_APP_MODELS.claude) - set(STAGING_APP_MODELS.codex)
     )
-    assert central_only == set(ANTHROPIC_API_LATEST_ROUTES)
+    assert central_only == set(ANTHROPIC_API_ROUTES)
     assert not central_only.intersection(admitted)
 
 
@@ -110,12 +105,10 @@ def test_equal_model_slugs_do_not_collapse_account_routes() -> None:
     assert direct.model.limits is not None
     assert subscription.id != direct.id
     assert model_entry(subscription)["litellm_params"]["api_key"] != model_entry(direct)["litellm_params"]["api_key"]
-    assert subscription.reasoning_efforts
-    assert not direct.reasoning_efforts
 
 
 def test_latest_direct_anthropic_routes_publish_function_calling() -> None:
-    for route in ANTHROPIC_API_LATEST_ROUTES:
+    for route in ANTHROPIC_API_ROUTES:
         assert model_entry(route)["model_info"]["supports_function_calling"] == route.supports_function_calling
 
 

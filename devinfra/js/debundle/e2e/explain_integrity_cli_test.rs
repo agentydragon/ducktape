@@ -2,6 +2,7 @@
 //! census witnesses that leave each required slot unknown.
 
 use debundle_e2e_graph_support::GraphFixture;
+use debundle_e2e_support::process;
 use serde_json::{Value, json};
 
 // Line 1 writes an Object static, line 2 deletes `map` through a global's
@@ -136,11 +137,7 @@ fn a_slot_query_lists_only_the_witnesses_that_can_name_it() {
         "--format",
         "text",
     ]);
-    assert!(
-        text.status.success(),
-        "{}",
-        String::from_utf8_lossy(&text.stderr)
-    );
+    process::assert_success(&text);
     assert!(
         String::from_utf8_lossy(&text.stdout)
             .contains("possible discharges (audit candidates only): intrinsics_never_written"),
@@ -228,11 +225,7 @@ fn precision_loss_limit_applies_per_unit_after_location_filtering() {
         "--format",
         "text",
     ]);
-    assert!(
-        text.status.success(),
-        "{}",
-        String::from_utf8_lossy(&text.stderr)
-    );
+    process::assert_success(&text);
     assert!(
         String::from_utf8_lossy(&text.stdout).contains(&format!(
             "showing 1 of {loss_total} precision losses; use --all for the rest"

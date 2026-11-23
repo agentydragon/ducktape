@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from pathlib import Path
 
 from util.exec.models import (
@@ -17,18 +16,7 @@ from util.exec.models import (
 )
 
 
-async def run_proc(
-    argv: list[str],
-    timeout_s: float,
-    *,
-    cwd: Path | None = None,
-    env: dict[str, str] | None = None,
-    inherit_env: bool = True,
-) -> ExecOutcome:
-    proc_env = dict(os.environ) if inherit_env else {}
-    if env:
-        proc_env.update(env)
-
+async def run_proc(argv: list[str], timeout_s: float, *, cwd: Path | None = None) -> ExecOutcome:
     async with async_timer() as get_duration_ms:
         proc = await asyncio.create_subprocess_exec(
             *argv,
@@ -36,7 +24,6 @@ async def run_proc(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
-            env=proc_env,
         )
 
         try:
@@ -76,7 +63,7 @@ class DirectExecArgs(ExecArgsBase):
     # Exposing an optional `list[EnvVar] | None` broke tool-calling for models that
     # serialize optional args as JSON strings (e.g. glm-4.6 sent env="null" / "[]"),
     # which strict list validation rejected — failing 100% of exec calls.
-    # See props/debug/glm46_exec_env_stringification.md.
+    # See docs/zai_api.md (Tool Use / Function Calling).
     # Stdin is intentionally not model-controlled for the same reason.
 
 

@@ -76,7 +76,7 @@ isolated.
 - **`process_api` cannot be recaptured from inside a live session
   (2026-09-12).** `/proc/1/exe` and `/proc/1/mem` both return `EACCES` for
   root with full capabilities, on a confirmed real Firecracker kernel (not a
-  gVisor-synthesized `/proc`); see `../process_api/README.md` §
+  gVisor-synthesized `/proc`); see `process_api/README.md` §
   "Capturing the binary" for the full evidence and a ranked, unconfirmed
   list of likely mechanisms (LSM policy on the process, `PR_SET_DUMPABLE`,
   a user-namespace boundary — LSM policy fits the observed `EACCES` best).

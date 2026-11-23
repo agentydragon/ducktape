@@ -788,8 +788,7 @@ type historyPosition struct {
 	ID uuid.UUID
 }
 
-// encodeCursor writes the position as unpadded URL-safe base64 of `["<ISO 8601 time>", "<id>"]`, byte for byte
-// what the Python service writes, so a client may page across the two.
+// encodeCursor writes the position as unpadded URL-safe base64 of `["<ISO 8601 time>", "<id>"]`.
 func encodeCursor(position historyPosition) string {
 	layout := "2006-01-02T15:04:05-07:00"
 	if position.At.Nanosecond() != 0 {

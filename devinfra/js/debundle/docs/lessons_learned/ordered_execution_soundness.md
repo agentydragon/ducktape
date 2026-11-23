@@ -45,7 +45,7 @@ kernel; this note records the failure each rule prevents, so a later
   (`synchronous_precision_report_test::incomplete_local_call_preserves_unrelated_own_data_reads`).
   `unsettled_objects` (possibly changed by skipped code) and `tainted_objects`
   (escaped to unknown code) have different consumers, and
-  `unknown_array_contents` invalidates values without implying a possible
+  `unknown_contents` invalidates values without implying a possible
   accessor. Conversely, a receiver changed by unknown code may now hold a getter,
   not only stored callbacks.
 - **A cell read runs no code; a property read may.** Copying a local

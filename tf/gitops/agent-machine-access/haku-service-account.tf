@@ -1,6 +1,3 @@
-# ============================================================================
-# haku-service-account — Haku's shared Authentik service-account identity
-# ============================================================================
 # The `haku` service account and its app-password token, which haku-mail.tf's
 # stalwart-haku provider binds for Haku's mailbox identity. The `haku_grocy`
 # resource names date from the SA's first use as Haku's read-only grocy-sf identity.

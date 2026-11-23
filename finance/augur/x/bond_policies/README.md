@@ -86,10 +86,8 @@ Terminal wealth is cash plus marked units only for completed horizons; stopped
 assets have their own `ending_mark_month` and are not horizon outcomes. Amounts
 are nominal integer USD cents. `stop: null` means completion. Detailed selected
 traces contain actual sale proceeds, basis, distributions and balanced journals;
-compact capture does not pretend to retain those event details. These outputs
-replace the former Parquet frames/`metrics.npz`; no parallel configured run is
-performed. Compare named paths directly, without probability weights or rankings
-inferred from their counts.
+compact capture does not pretend to retain those event details. Compare named
+paths directly, without probability weights or rankings inferred from their counts.
 
 ```bash
 bbr test //finance/augur/x/bond_policies:test_run

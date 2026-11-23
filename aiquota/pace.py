@@ -52,9 +52,3 @@ def tint_for(pace: PaceResult | None, used_percent: float | None, *, is_short: b
     if pace.deviation <= PACE_COOL_BELOW:
         return "cool"
     return "ok"
-
-
-def binding_tint(short_tint: str, long_tint: str) -> str:
-    if short_tint == "hot":
-        return "hot"
-    return short_tint if TINT_RANK.get(short_tint, 0) > TINT_RANK.get(long_tint, 0) else long_tint

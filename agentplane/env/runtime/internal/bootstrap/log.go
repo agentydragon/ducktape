@@ -4,11 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"sync"
 
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"github.com/cosi-project/runtime/pkg/controller"
 	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 	"google.golang.org/protobuf/proto"
@@ -25,15 +23,31 @@ type Log struct {
 }
 
 func OpenLog(ctx context.Context, store state.State) (*Log, error) {
-	events, err := readEvents(ctx, store)
+	rows, err := safe.ReaderListAll[*EventResource](ctx, store)
 	if err != nil {
 		return nil, err
 	}
-	log := &Log{state: store}
-	if len(events) > 0 {
-		log.lastSequence = events[len(events)-1].GetSequence()
-		if isTerminalEvent(events[len(events)-1]) {
-			log.terminal = events[len(events)-1]
+	// Distinct sequences in [1, count] prove density independent of list order.
+	log := &Log{state: store, lastSequence: uint64(rows.Len())}
+	seen := make([]bool, rows.Len())
+	for row := range rows.All() {
+		if err := validateEventResource(row); err != nil {
+			return nil, err
+		}
+		event := row.TypedSpec().Value.Event
+		sequence := event.GetSequence()
+		if sequence > log.lastSequence {
+			return nil, fmt.Errorf("bootstrap event sequence has a gap: sequence %d exceeds event count %d", sequence, log.lastSequence)
+		}
+		if seen[sequence-1] {
+			return nil, fmt.Errorf("duplicate bootstrap event sequence %d", sequence)
+		}
+		seen[sequence-1] = true
+		if isTerminalEvent(event) {
+			if sequence != log.lastSequence {
+				return nil, fmt.Errorf("bootstrap event sequence continues after terminal event %d", sequence)
+			}
+			log.terminal = proto.Clone(event).(*sessionpb.InitializationEvent)
 		}
 	}
 	return log, nil
@@ -64,41 +78,6 @@ func (l *Log) terminalEvent(ctx context.Context) (*sessionpb.InitializationEvent
 		return nil, err
 	}
 	return proto.Clone(l.terminal).(*sessionpb.InitializationEvent), nil
-}
-
-func readEvents(ctx context.Context, reader controller.Reader) ([]*sessionpb.InitializationEvent, error) {
-	rows, err := safe.ReaderListAll[*EventResource](ctx, reader)
-	if err != nil {
-		return nil, err
-	}
-	events := make([]*sessionpb.InitializationEvent, 0, rows.Len())
-	var validationErr error
-	rows.ForEach(func(value *EventResource) {
-		if validationErr != nil {
-			return
-		}
-		if err := validateEventResource(value); err != nil {
-			validationErr = err
-			return
-		}
-		events = append(events, proto.Clone(value.TypedSpec().Value.Event).(*sessionpb.InitializationEvent))
-	})
-	if validationErr != nil {
-		return nil, validationErr
-	}
-	sort.Slice(events, func(i, j int) bool {
-		return events[i].GetSequence() < events[j].GetSequence()
-	})
-	for i, event := range events {
-		want := uint64(i) + 1
-		if event.GetSequence() != want {
-			return nil, fmt.Errorf("bootstrap event sequence has a gap: got %d, want %d", event.GetSequence(), want)
-		}
-		if i < len(events)-1 && isTerminalEvent(event) {
-			return nil, fmt.Errorf("bootstrap event sequence continues after terminal event %d", event.GetSequence())
-		}
-	}
-	return events, nil
 }
 
 func (l *Log) AppendOutput(ctx context.Context, attempt uint32, stream sessionpb.InitializationStream, data []byte) error {

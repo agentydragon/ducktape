@@ -1,11 +1,10 @@
 // @vitest-environment happy-dom
 import { create } from "@bufbuild/protobuf";
-import { MantineProvider } from "@mantine/core";
-import { act } from "react";
-import { createRoot } from "react-dom/client";
+import type { JSX } from "react";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
+import { cleanupMounted, type Mounted, mountWithMantine } from "../../../../util/frontend/testing/react";
 import {
   IdentitySchema,
   PolicyBindingSchema,
@@ -17,13 +16,11 @@ import { EnvironmentIdentity } from "./environment_identity";
 const mocks = vi.hoisted(() => ({ identities: vi.fn(), resources: vi.fn() }));
 vi.mock("../policy/watch", () => ({ useIdentities: mocks.identities, usePolicyResources: mocks.resources }));
 vi.mock("../egress/credential_watch", () => ({ useCredentialMetadata: () => new Map() }));
-(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-let root: ReturnType<typeof createRoot>;
+let mounted: Mounted;
 let container: HTMLDivElement;
 afterEach(async () => {
-  await act(async () => root.unmount());
-  container.remove();
+  await cleanupMounted();
   vi.clearAllMocks();
 });
 
@@ -41,19 +38,17 @@ function binding(name: string, subject: string): PolicyBinding {
   });
 }
 
-async function render(identityName: string | null | undefined): Promise<void> {
-  container = document.createElement("div");
-  document.body.append(container);
-  root = createRoot(container);
-  await act(async () =>
-    root.render(
-      <MantineProvider env="test">
-        <MemoryRouter>
-          <EnvironmentIdentity identityName={identityName} />
-        </MemoryRouter>
-      </MantineProvider>
-    )
+function view(identityName: string | null | undefined): JSX.Element {
+  return (
+    <MemoryRouter>
+      <EnvironmentIdentity identityName={identityName} />
+    </MemoryRouter>
   );
+}
+
+async function render(identityName: string | null | undefined): Promise<void> {
+  mounted = await mountWithMantine(view(identityName));
+  container = mounted.container;
 }
 
 it("distinguishes an unavailable environment from one without an identity", async () => {
@@ -64,15 +59,7 @@ it("distinguishes an unavailable environment from one without an identity", asyn
   expect(mocks.identities).not.toHaveBeenCalled();
   expect(mocks.resources).not.toHaveBeenCalled();
 
-  await act(async () =>
-    root.render(
-      <MantineProvider env="test">
-        <MemoryRouter>
-          <EnvironmentIdentity identityName={null} />
-        </MemoryRouter>
-      </MantineProvider>
-    )
-  );
+  await mounted.rerender(view(null));
   expect(container.textContent).toContain("No identity is assigned to this environment.");
   expect(mocks.identities).not.toHaveBeenCalled();
 });

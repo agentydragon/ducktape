@@ -4,7 +4,9 @@ Run `bbr test //devinfra/js/debundle/e2e:corpus_test`. Each entry of an
 `e2e/cases/**/expect.yaml` is a separately named libtest trial. Filter with
 `--test_arg=initialization/nested_closure_rebind` or list with `--test_arg=--list`.
 
-A case contains `main.js`, a flat `spec.yaml`, and `expect.yaml`.
+A case contains `.js` inputs, a flat `spec.yaml`, and `expect.yaml`. The `entry`
+of an `accept` or `reject` names the entry chunk, the input's path without `.js`:
+`main` (`main.js`) by default, `static/app` in most cases.
 Multiple specs can share the same input files. The relative directory and spec
 stem form the test name. Bazel declares the files through one corpus glob.
 Group variants by the behavior under test, sharing input files across specs.
@@ -33,9 +35,9 @@ first supply the missing fields listed above.
 
 `expect.yaml` maps each spec filename to exactly one `accept` or `reject`:
 
-- `accept.stdout` checks original and emitted entry stdout; `entry` defaults to
-  chunk `main`. `original_stdout` overrides only the original entry expectation
-  when a deliberate rename changes an observable function/class name.
+- `accept.stdout` checks original and emitted entry stdout. `original_stdout`
+  overrides only the original entry expectation when a deliberate rename changes
+  an observable function/class name.
   Optional `exports` maps emitted paths to `include`/`exclude`
   lists. `check_all_js: true` runs Node syntax checks on every emitted JavaScript file.
   Optional `source` maps paths to `contains`, `excludes`, and

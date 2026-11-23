@@ -1,4 +1,4 @@
-"""Income categories keep their reporting identity without tensor-row bookkeeping."""
+"""Income categories sort for reporting and keep a stable wire id."""
 
 from finance.augur.sim.ids import JurisdictionId
 from finance.augur.sim.income import (

@@ -18,9 +18,6 @@ The hazard this leaves, named rather than hidden: inflation reaches back to 1947
 only to 1993, so the model's implied REAL equity return pairs a sample containing the 1970s
 with one that does not. It lands at ~7.3%/yr real, close to the long-run realized figure, so
 the mismatch is not currently doing damage — but it is a coincidence, not a control.
-
-See `ornstein_uhlenbeck.py` for a simpler, independent-rates alternative fit that predates this
-and is not currently wired in.
 """
 
 from __future__ import annotations

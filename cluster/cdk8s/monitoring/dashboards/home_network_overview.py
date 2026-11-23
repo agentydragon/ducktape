@@ -131,8 +131,8 @@ def _netwatch_target_names() -> list[dashboard.DashboardFieldConfigSourceOverrid
     ]
 
 
-def _probe_samples(metric: str, operation: str, window: str = "") -> str:
-    interval = f"[{window}]" if window else ""
+def _probe_samples(metric: str, operation: str, window: str | None = None) -> str:
+    interval = "" if window is None else f"[{window}]"
     current = f'{operation}({metric}{{{_SMOKEPING_SELECTOR},source_node=~"optiplex|wyrm2"}}{interval})'
     legacy = f'{operation}({metric}{{{_SMOKEPING_SELECTOR},source_node="",pod=~"smokeping-[^-]+-[^-]+"}}{interval})'
     # Old OptiPlex scrapes predate source_node; keep their history in the same series.
@@ -575,7 +575,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=16,
-                targets=gateway_error_queries("wan", "5m"),
+                targets=gateway_error_queries("wan"),
                 title="Gateway WAN errors and drops",
                 description="Errors and drops on the gateway's WAN interface, per 5 minutes.",
                 datasource=mimir(),
@@ -585,7 +585,7 @@ def build_dashboard() -> dashboard.Dashboard:
             dashboard.Panel(
                 type_val="timeseries",
                 id_val=17,
-                targets=gateway_error_queries("lan_port", "5m", legend_prefix="port {{port}} "),
+                targets=gateway_error_queries("lan_port", legend_prefix="port {{port}} "),
                 title="Gateway LAN port errors and drops",
                 description="Errors and drops on each gateway LAN port, per 5 minutes. Port 1 is the uplink to the home switch.",
                 datasource=mimir(),

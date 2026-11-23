@@ -45,15 +45,7 @@ Read-only servers (e.g. grocy read-only paths, OSM lookup, anything that only fe
 declare `readOnlyHint=True` so clients stop gating them behind per-call approvals. Mutating tools
 can use `destructiveHint=False` / `idempotentHint=True` to qualify how they change state.
 
-Currently annotated: haku-console's own read meta-tools (`list_mcp_servers`, `get_tool_call`,
-`list_tool_calls` — closed-world, so also `openWorldHint=False`) and the in-process `gmail` and
-`google_calendar` read tools (`readOnlyHint=True`; external mailbox/calendar, so `openWorldHint`
-left at its default `true`). `google_discovery.py` (`GenTool.annotations`)
-also forwards the type to its generated tools.
-
-## Propagation through haku-console
-
-haku-console re-exposes connected-server tools as `<server>_<tool>` proxies. The proxy propagates
-the upstream tool's `annotations` **unchanged** (`ToolMetadata.annotations` → `ProxyTool`), so
-annotating any upstream tool (in-process or remote) reaches the client as it would on a direct
-connection. The hint is advisory and does not affect the console's server-side approval policy.
+Currently annotated: `ssh_mcp_server`'s read tools and the Gmail and Calendar read tools in
+`x/google_mcp_server` (`readOnlyHint=True`; external mailbox/calendar, so `openWorldHint` is left
+at its default `true`). `google_discovery.py` (`GenTool.annotations`) also forwards the type to its
+generated tools.

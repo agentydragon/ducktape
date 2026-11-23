@@ -259,12 +259,31 @@
       }
     },
     {
+      "name": "unknown_import_without_status",
+      "valid": true,
+      "message": {
+        "outcomeUnknown": {
+          "credentialRotationMayHaveOccurred": true
+        }
+      }
+    },
+    {
       "name": "unknown_import_status_out_of_range",
       "valid": false,
       "message": {
         "outcomeUnknown": {
           "reason": 4,
           "upstreamHttpStatus": 99
+        }
+      }
+    },
+    {
+      "name": "unknown_import_status_above_range",
+      "valid": false,
+      "message": {
+        "outcomeUnknown": {
+          "reason": 4,
+          "upstreamHttpStatus": 999
         }
       }
     },

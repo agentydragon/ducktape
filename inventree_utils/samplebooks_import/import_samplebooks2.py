@@ -2,20 +2,16 @@ import sys
 from collections import defaultdict
 
 import pint
-from inventree.api import InvenTreeAPI
 from inventree.base import Parameter, ParameterTemplate
 from inventree.part import Part as InvPart
 from inventree.stock import StockItem
 from samplebooks_parts_data import BasePart, Resistor, parts
 from tqdm import tqdm
 
-# ---------- Setup / config ----------
+from inventree_utils.beautifier.config import api_from_config
+from inventree_utils.beautifier.inventree_util import part_url
 
-SERVER_ADDRESS = "https://inventree.agentydragon.com"
-MY_USERNAME = "root"
-MY_PASSWORD = "uYee4Nah"
-
-api = InvenTreeAPI(SERVER_ADDRESS, username=MY_USERNAME, password=MY_PASSWORD)
+api = api_from_config()
 
 RESISTOR_CATEGORY_ID = 8
 CAPACITOR_CATEGORY_ID = 12
@@ -36,14 +32,9 @@ LOC_0402 = 2
 LOC_0603 = 3
 LOC_0805 = 4
 
-# ---------- Data classes ----------
-
 ureg = pint.UnitRegistry()
 ohm = ureg.ohm
 pf = ureg.pF
-
-
-# ---------- Parameter helpers ----------
 
 
 def format_value(part: BasePart) -> str:
@@ -149,9 +140,6 @@ def get_quantity(part: BasePart) -> int:
         return 50
 
     raise ValueError(f"No capacitor rules for package {part.package}")
-
-
-# ---------- Building final data ----------
 
 
 def build_part_name(p: BasePart) -> str:
@@ -383,7 +371,7 @@ def main():
             invp = existing_map[name]
             if not part_matches_in_db(invp, p, tmpl_map, params_by_part[invp.pk]):
                 print(
-                    f"WARNING: Part '{name}' already exists but differs from the script's data! {SERVER_ADDRESS}/part/{invp.pk}/"
+                    f"WARNING: Part '{name}' already exists but differs from the script's data! {part_url(api, invp)}"
                 )
             # else it is fine => skip
         else:
@@ -409,7 +397,7 @@ def main():
     for mp in tqdm(missing_parts):
         newp = create_part_in_inventree(mp, tmpl_map)
         si = create_stock_for_part(newp, mp)
-        print(f"{newp.name} (N={int(si.quantity)}) created: {SERVER_ADDRESS}/part/{newp.pk}/")
+        print(f"{newp.name} (N={int(si.quantity)}) created: {part_url(api, newp)}")
         if add_one:
             print("Stopped after adding one part (debug mode).")
             break

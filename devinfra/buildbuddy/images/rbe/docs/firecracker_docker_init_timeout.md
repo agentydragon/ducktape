@@ -36,31 +36,9 @@ point — goinit calls `dockerd` by name via `exec.LookPath`.
 - **BuildBuddy adds env var support**: If goinit gains an exec property for
   custom dockerd env vars, the wrapper can be removed.
 
-## Docker Version Reference
-
-| Feature                                       | Introduced | moby PR                                           |
-| --------------------------------------------- | ---------- | ------------------------------------------------- |
-| `DOCKER_INSECURE_NO_IPTABLES_RAW=1` (env var) | 28.0.2     | [#49621](https://github.com/moby/moby/pull/49621) |
-| `--allow-direct-routing` (CLI + daemon.json)  | 28.2.0     | [#49832](https://github.com/moby/moby/pull/49832) |
-
-Both images (`gcr.io/flame-public/rbe-ubuntu24-04:latest` and
-`ghcr.io/agentydragon/rbe-worker:latest`) have Docker 28.1.0 as of 2026-02-02.
-
 ## Debugging Tips
 
 - goinit swallows dockerd stdout/stderr by default — invalid flags cause silent
   30s timeouts. Enable `"test.debug-enable-vm-logs": "true"` exec property for
   `vm_log_tail.txt` (last 12 KB). Only available if the action reaches execution
   phase (pre-execution failures produce empty `test.outputs`).
-
-## Fix History
-
-| Commit    | Date       | Change                                                                               |
-| --------- | ---------- | ------------------------------------------------------------------------------------ |
-| `58d7672` | 2026-02-01 | Removed `--action_env` for proxy vars leaking to remote workers                      |
-| `63a2356` | 2026-02-01 | Added `allow-direct-routing: true` to `daemon.json`                                  |
-| `fbfc65e` | 2026-02-01 | Switched to `gcr.io/flame-public/rbe-ubuntu24-04` base image                         |
-| `d81b521` | 2026-02-02 | Replaced Python wrapper with shell (still had invalid `--allow-direct-routing` flag) |
-| `74a99ab` | 2026-02-02 | Removed `--allow-direct-routing`, env var only — **verified working**                |
-
-Verification invocation: `f98c1a30` — `test_fc_docker` (5.8s), `test_docker_net_ours` (11.9s, all 5 subtests pass).

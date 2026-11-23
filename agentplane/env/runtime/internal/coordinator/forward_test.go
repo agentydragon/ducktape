@@ -2,11 +2,8 @@ package coordinator
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
-	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -17,18 +14,15 @@ import (
 
 	"github.com/agentydragon/ducktape/agentplane/env/configuration"
 
-	"github.com/agentydragon/ducktape/agentplane/env/runtime/control"
 	environmentruntimepb "github.com/agentydragon/ducktape/agentplane/env/runtime/control/environmentruntimepb"
 	executorpb "github.com/agentydragon/ducktape/agentplane/env/runtime/execution/executorpb"
 	harnesshostpb "github.com/agentydragon/ducktape/agentplane/harness_host/harnesshostpb"
 	environmentruntimetransport "github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
-	"github.com/coder/websocket"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	grpc_health_v1 "google.golang.org/grpc/health/grpc_health_v1"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 )
 
@@ -42,43 +36,8 @@ func TestForwardRuntimeServesHealthAndFencesStateAndDirectCalls(t *testing.T) {
 
 func testRuntimeHealthAndFencing(t *testing.T, mode environmentruntimetransport.SecurityMode) {
 	t.Helper()
-	runtimeSecurity := environmentruntimetransport.Security{Mode: mode}
-	gatewaySecurity := environmentruntimetransport.Security{Mode: mode}
-	controllerSecurity := environmentruntimetransport.Security{Mode: mode}
-	var runtimeURI string
-	if mode == environmentruntimetransport.MutualTLS {
-		ca := environmentruntimetransporttesting.NewCA(t)
-		var err error
-		runtimeURI, err = workloadid.ID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}.URI()
-		if err != nil {
-			t.Fatal(err)
-		}
-		runtimeTLS := ca.Issue(t, runtimeURI)
-		gatewayTLS := ca.Issue(t, environmentruntimetransport.RuntimeProxyURI)
-		controllerTLS := ca.Issue(t, environmentruntimetransport.SandboxControllerURI)
-		runtimeSecurity.TLS, gatewaySecurity.TLS, controllerSecurity.TLS = &runtimeTLS, &gatewayTLS, &controllerTLS
-	}
-	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
-	config.Control = configuration.EnvironmentRuntimeControlConfiguration{ListenAddress: "127.0.0.1:0", Security: runtimeSecurity}
-	r := newLifecycleRuntime(t, config)
-	listener, server, err := r.control.Listen(r.executorProxy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-	})
-	credentials, err := gatewaySecurity.ClientCredentials(runtimeURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(credentials))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
+	_, peers := startControl(t, lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false"), mode)
+	conn := peers.dial(t, environmentruntimetransport.RuntimeProxyURI)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -87,16 +46,7 @@ func testRuntimeHealthAndFencing(t *testing.T, mode environmentruntimetransport.
 		t.Fatalf("pre-watch health = %v, error %v; want SERVING", health, err)
 	}
 
-	controllerCredentials, err := controllerSecurity.ClientCredentials(runtimeURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	controllerConn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(controllerCredentials))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer controllerConn.Close()
-	bindTestIncarnation(t, environmentruntimepb.NewEnvironmentRuntimeClient(controllerConn), "sandbox-uid", "pod-uid-1")
+	peers.bind(t, "sandbox-uid", "pod-uid-1")
 	watch, err := environmentruntimepb.NewEnvironmentRuntimeClient(conn).WatchState(ctx, &environmentruntimepb.WatchStateRequest{
 		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid-1",
 	})
@@ -112,12 +62,7 @@ func testRuntimeHealthAndFencing(t *testing.T, mode environmentruntimetransport.
 	}
 
 	callContext := func(incarnation, bootID string) context.Context {
-		return metadata.AppendToOutgoingContext(
-			ctx,
-			control.SandboxMetadata, "sandbox-uid",
-			control.IncarnationMetadata, incarnation,
-			control.BootMetadata, bootID,
-		)
+		return fencedContext(ctx, "sandbox-uid", incarnation, bootID)
 	}
 	statusClient := environmentruntimepb.NewEnvironmentRuntimeClient(conn)
 	hostClient := harnesshostpb.NewHarnessHostClient(conn)
@@ -205,29 +150,7 @@ func TestRuntimeRejectsControlCertificateForAnotherSandbox(t *testing.T) {
 func TestForwardRuntimeRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t *testing.T) {
 	proxy := modelConfigServer(t)
 	workspace := t.TempDir()
-	ca := environmentruntimetransporttesting.NewCA(t)
-	runtimeURI, err := workloadid.ID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
-	runtimeTLS := ca.Issue(t, runtimeURI)
-	gatewayTLS := ca.Issue(t, environmentruntimetransport.RuntimeProxyURI)
-	config := lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false")
-	config.Control = configuration.EnvironmentRuntimeControlConfiguration{ListenAddress: "127.0.0.1:0", Security: environmentruntimetransport.Security{Mode: environmentruntimetransport.MutualTLS, TLS: &runtimeTLS}}
-	r := newLifecycleRuntime(t, config)
-	listener, server, err := r.control.Listen(r.executorProxy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-	})
-	credentials, err := gatewayTLS.ClientCredentials(runtimeURI)
-	if err != nil {
-		t.Fatal(err)
-	}
+	_, peers := startControl(t, lifecycleConfig(t, proxy.URL, workspace, nil, "/bin/false"), environmentruntimetransport.MutualTLS)
 	var cancelFirst context.CancelFunc
 	var firstCursor uint64
 	dropFirstReply := true
@@ -248,31 +171,13 @@ func TestForwardRuntimeRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t 
 		}
 		return err
 	}
-	conn, err := grpc.NewClient(
-		listener.Addr().String(),
-		grpc.WithTransportCredentials(credentials),
-		grpc.WithUnaryInterceptor(unaryInterceptor),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
+	conn := peers.dial(t, environmentruntimetransport.RuntimeProxyURI, grpc.WithUnaryInterceptor(unaryInterceptor))
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	client := environmentruntimepb.NewEnvironmentRuntimeClient(conn)
 	hostClient := harnesshostpb.NewHarnessHostClient(conn)
 	watchCtx, cancelWatch := context.WithCancel(ctx)
-	controllerTLS := ca.Issue(t, environmentruntimetransport.SandboxControllerURI)
-	controllerCredentials, err := controllerTLS.ClientCredentials(runtimeURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	controllerConn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(controllerCredentials))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer controllerConn.Close()
-	bindTestIncarnation(t, environmentruntimepb.NewEnvironmentRuntimeClient(controllerConn), "sandbox-uid", "pod-uid")
+	peers.bind(t, "sandbox-uid", "pod-uid")
 	watch, err := client.WatchState(watchCtx, &environmentruntimepb.WatchStateRequest{
 		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid",
 	})
@@ -284,12 +189,7 @@ func TestForwardRuntimeRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t 
 		t.Fatal(err)
 	}
 	callContext := func(parent context.Context, bootID string) context.Context {
-		return metadata.AppendToOutgoingContext(
-			parent,
-			control.SandboxMetadata, "sandbox-uid",
-			control.IncarnationMetadata, "pod-uid",
-			control.BootMetadata, bootID,
-		)
+		return fencedContext(parent, "sandbox-uid", "pod-uid", bootID)
 	}
 	if _, err := hostClient.CreateSession(callContext(ctx, first.GetEnvironmentRuntimeBootId()), openLifecycleSession("session-1", filepath.Join(workspace, "project"))); err != nil {
 		t.Fatal(err)
@@ -343,47 +243,11 @@ func TestForwardRuntimeRetriesSameAdmissionAfterLostReplyAndWatchCancellation(t 
 }
 
 func TestForwardRuntimeRejectsUnconfiguredExecutionSession(t *testing.T) {
-	ca := environmentruntimetransporttesting.NewCA(t)
-	runtimeURI, err := workloadid.ID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
-	runtimeTLS := ca.Issue(t, runtimeURI)
-	gatewayTLS := ca.Issue(t, environmentruntimetransport.RuntimeProxyURI)
-	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
-	config.Control = configuration.EnvironmentRuntimeControlConfiguration{ListenAddress: "127.0.0.1:0", Security: environmentruntimetransport.Security{Mode: environmentruntimetransport.MutualTLS, TLS: &runtimeTLS}}
-	r := newLifecycleRuntime(t, config)
-	listener, server, err := r.control.Listen(r.executorProxy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() {
-		server.Stop()
-		_ = listener.Close()
-	})
-	credentials, err := gatewayTLS.ClientCredentials(runtimeURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(credentials))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
+	_, peers := startControl(t, lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false"), environmentruntimetransport.MutualTLS)
+	conn := peers.dial(t, environmentruntimetransport.RuntimeProxyURI)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	controllerTLS := ca.Issue(t, environmentruntimetransport.SandboxControllerURI)
-	controllerCredentials, err := controllerTLS.ClientCredentials(runtimeURI)
-	if err != nil {
-		t.Fatal(err)
-	}
-	controllerConn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(controllerCredentials))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer controllerConn.Close()
-	bindTestIncarnation(t, environmentruntimepb.NewEnvironmentRuntimeClient(controllerConn), "sandbox-uid", "pod-uid")
+	peers.bind(t, "sandbox-uid", "pod-uid")
 	watch, err := environmentruntimepb.NewEnvironmentRuntimeClient(conn).WatchState(ctx, &environmentruntimepb.WatchStateRequest{
 		SandboxUid: "sandbox-uid", IncarnationUid: "pod-uid",
 	})
@@ -394,12 +258,7 @@ func TestForwardRuntimeRejectsUnconfiguredExecutionSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	callContext := metadata.AppendToOutgoingContext(
-		ctx,
-		control.SandboxMetadata, "sandbox-uid",
-		control.IncarnationMetadata, "pod-uid",
-		control.BootMetadata, first.GetEnvironmentRuntimeBootId(),
-	)
+	callContext := fencedContext(ctx, "sandbox-uid", "pod-uid", first.GetEnvironmentRuntimeBootId())
 	executorClient := executorpb.NewExecutorClient(conn)
 	refused, err := executorClient.OpenSession(callContext, &executorpb.OpenSessionRequest{
 		Scope: &executorpb.ExecutionScope{
@@ -422,72 +281,38 @@ func TestForwardRuntimeRejectsUnconfiguredExecutionSession(t *testing.T) {
 	}
 }
 
+type burstExecutor struct {
+	executorpb.UnimplementedExecutorServer
+	sent chan error
+}
+
+func (s *burstExecutor) OpenSession(_ *executorpb.OpenSessionRequest, stream executorpb.Executor_OpenSessionServer) error {
+	if err := stream.Send(&executorpb.OpenSessionResponse{Status: &executorpb.ExecutionStatus{Outcome: executorpb.ExecutionStatus_OUTCOME_COMPLETED}, ExecutionSessionId: "native-session"}); err != nil {
+		return err
+	}
+	for i := range 12 {
+		payload := []byte(fmt.Sprintf(`{"method":"codex/event","params":{"index":%d,"data":%q}}`, i, strings.Repeat("x", 600_000)))
+		if err := stream.Send(&executorpb.OpenSessionResponse{NativeFrames: []*executorpb.ExecutionNativeFrame{{Direction: "notification", Payload: payload}}}); err != nil {
+			select {
+			case s.sent <- err:
+			default:
+			}
+			return err
+		}
+	}
+	s.sent <- nil
+	<-stream.Context().Done()
+	return nil
+}
+
 func TestForwardRuntimeBackpressuresExecutorOutputBurst(t *testing.T) {
 	const burst = 12
 	const notificationData = 600_000
-	sent := make(chan error, 1)
-	execServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		connection, err := websocket.Accept(w, request, nil)
-		if err != nil {
-			select {
-			case sent <- err:
-			default:
-			}
-			return
-		}
-		defer connection.CloseNow()
-		_, payload, err := connection.Read(request.Context())
-		if err != nil {
-			select {
-			case sent <- err:
-			default:
-			}
-			return
-		}
-		var initialize struct {
-			ID string `json:"id"`
-		}
-		if err := json.Unmarshal(payload, &initialize); err != nil {
-			select {
-			case sent <- err:
-			default:
-			}
-			return
-		}
-		response := []byte(fmt.Sprintf(`{"id":%q,"result":{"sessionId":"native-session","environmentInfo":{"shell":{"name":"bash","path":"/bin/bash"}}}}`, initialize.ID))
-		if err := connection.Write(request.Context(), websocket.MessageText, response); err != nil {
-			select {
-			case sent <- err:
-			default:
-			}
-			return
-		}
-		if _, _, err := connection.Read(request.Context()); err != nil { // initialized notification
-			select {
-			case sent <- err:
-			default:
-			}
-			return
-		}
-		for i := range burst {
-			payload := []byte(fmt.Sprintf(`{"method":"codex/event","params":{"index":%d,"data":%q}}`, i, strings.Repeat("x", notificationData)))
-			if err := connection.Write(request.Context(), websocket.MessageText, payload); err != nil {
-				select {
-				case sent <- err:
-				default:
-				}
-				return
-			}
-		}
-		sent <- nil
-		<-request.Context().Done()
-	}))
-	defer execServer.Close()
-	r := newExecutionRuntime(t, "ws"+strings.TrimPrefix(execServer.URL, "http"), nil)
+	backend := &burstExecutor{sent: make(chan error, 1)}
+	address := startExecutorTestGRPC(t, backend)
+	r := newExecutionRuntime(t, address, nil)
 	client := startDirectExecutionTestClient(t, r, "pod-uid")
-	stream, err := client.executor.OpenSession(client.callCtx, &executorpb.OpenSessionRequest{
-		Scope: client.scope("session-1"), RequestId: "open-notification-session",
-	})
+	stream, err := client.executor.OpenSession(client.callCtx, &executorpb.OpenSessionRequest{Scope: client.scope("session-1"), RequestId: "open-notification-session"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -512,7 +337,7 @@ func TestForwardRuntimeBackpressuresExecutorOutputBurst(t *testing.T) {
 		transferred += len(frame.GetPayload())
 	}
 	select {
-	case err := <-sent:
+	case err := <-backend.sent:
 		if err != nil {
 			t.Fatalf("executor produced notifications: %v", err)
 		}
@@ -526,42 +351,11 @@ func TestForwardRuntimeBackpressuresExecutorOutputBurst(t *testing.T) {
 }
 
 func TestControllerBindsRuntimeForIndependentAuthenticatedProxyReplicas(t *testing.T) {
-	ca := environmentruntimetransporttesting.NewCA(t)
-	runtimeURI, err := (workloadid.ID{Namespace: "test", Name: "sandbox", CredentialID: "credential-id"}).URI()
-	if err != nil {
-		t.Fatal(err)
-	}
-	runtimeTLS := ca.Issue(t, runtimeURI)
-	config := lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false")
-	config.Control = configuration.EnvironmentRuntimeControlConfiguration{
-		ListenAddress: "127.0.0.1:0",
-		Security:      environmentruntimetransport.Security{Mode: environmentruntimetransport.MutualTLS, TLS: &runtimeTLS},
-	}
-	r := newLifecycleRuntime(t, config)
-	listener, server, err := r.control.Listen(r.executorProxy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
-	dial := func(identity string) *grpc.ClientConn {
-		t.Helper()
-		clientTLS := ca.Issue(t, identity)
-		credentials, err := clientTLS.ClientCredentials(runtimeURI)
-		if err != nil {
-			t.Fatal(err)
-		}
-		conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(credentials))
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = conn.Close() })
-		return conn
-	}
-	controllerConn := dial(environmentruntimetransport.SandboxControllerURI)
+	_, peers := startControl(t, lifecycleConfig(t, "http://127.0.0.1", t.TempDir(), nil, "/bin/false"), environmentruntimetransport.MutualTLS)
+	controllerConn := peers.dial(t, environmentruntimetransport.SandboxControllerURI)
 	controller := environmentruntimepb.NewEnvironmentRuntimeClient(controllerConn)
-	gateway := environmentruntimepb.NewEnvironmentRuntimeClient(dial(environmentruntimetransport.RuntimeProxyURI))
-	gatewayB := environmentruntimepb.NewEnvironmentRuntimeClient(dial(environmentruntimetransport.RuntimeProxyURI))
+	gateway := environmentruntimepb.NewEnvironmentRuntimeClient(peers.dial(t, environmentruntimetransport.RuntimeProxyURI))
+	gatewayB := environmentruntimepb.NewEnvironmentRuntimeClient(peers.dial(t, environmentruntimetransport.RuntimeProxyURI))
 	ctx, cancel := context.WithTimeout(t.Context(), lifecycleTestTimeout)
 	defer cancel()
 	passiveCtx, cancelPassive := context.WithCancel(ctx)
@@ -611,9 +405,7 @@ func TestControllerBindsRuntimeForIndependentAuthenticatedProxyReplicas(t *testi
 	if snapshotA.GetEnvironmentRuntimeBootId() != initial.GetEnvironmentRuntimeBootId() || snapshotB.GetEnvironmentRuntimeBootId() != initial.GetEnvironmentRuntimeBootId() {
 		t.Fatalf("independent Gateway snapshots: %v, %v", snapshotA, snapshotB)
 	}
-	call := func(uid, incarnation, boot string) context.Context {
-		return metadata.AppendToOutgoingContext(ctx, control.SandboxMetadata, uid, control.IncarnationMetadata, incarnation, control.BootMetadata, boot)
-	}
+	call := func(uid, incarnation, boot string) context.Context { return fencedContext(ctx, uid, incarnation, boot) }
 	checkReplicas := func() {
 		t.Helper()
 		for _, client := range []environmentruntimepb.EnvironmentRuntimeClient{gateway, gatewayB} {
@@ -636,11 +428,7 @@ func TestControllerBindsRuntimeForIndependentAuthenticatedProxyReplicas(t *testi
 		t.Fatalf("Gateway A watch cancellation: %v", err)
 	}
 	checkReplicas()
-	callCtx := metadata.AppendToOutgoingContext(
-		ctx,
-		control.SandboxMetadata, "sandbox-uid", control.IncarnationMetadata, "pod-uid",
-		control.BootMetadata, initial.GetEnvironmentRuntimeBootId(),
-	)
+	callCtx := call("sandbox-uid", "pod-uid", initial.GetEnvironmentRuntimeBootId())
 	for _, test := range []struct {
 		name    string
 		client  environmentruntimepb.EnvironmentRuntimeClient
@@ -665,7 +453,7 @@ func TestControllerBindsRuntimeForIndependentAuthenticatedProxyReplicas(t *testi
 			}
 		})
 	}
-	proxy := environmentruntimepb.NewEnvironmentRuntimeClient(dial(environmentruntimetransport.RuntimeProxyURI))
+	proxy := environmentruntimepb.NewEnvironmentRuntimeClient(peers.dial(t, environmentruntimetransport.RuntimeProxyURI))
 	if _, err := proxy.GetStatus(callCtx, &sessionpb.GetStatusRequest{}); err != nil {
 		t.Fatalf("role-specific Runtime proxy status: %v", err)
 	}
@@ -676,11 +464,11 @@ func TestControllerBindsRuntimeForIndependentAuthenticatedProxyReplicas(t *testi
 	if status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("Runtime proxy must not inherit Controller passive watch: %v", err)
 	}
-	legacy := environmentruntimepb.NewEnvironmentRuntimeClient(dial(environmentruntimetransport.GatewayURI))
+	legacy := environmentruntimepb.NewEnvironmentRuntimeClient(peers.dial(t, environmentruntimetransport.GatewayURI))
 	if _, err := legacy.GetStatus(callCtx, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("retired Gateway peer bypassed the Runtime TLS allowlist: %v", err)
 	}
-	unlisted := environmentruntimepb.NewEnvironmentRuntimeClient(dial(environmentruntimetransport.SessionsURI))
+	unlisted := environmentruntimepb.NewEnvironmentRuntimeClient(peers.dial(t, environmentruntimetransport.SessionsURI))
 	if _, err := unlisted.GetStatus(callCtx, &sessionpb.GetStatusRequest{}); status.Code(err) != codes.Unavailable {
 		t.Fatalf("Sessions bypassed the Runtime proxy TLS allowlist: %v", err)
 	}
@@ -745,22 +533,8 @@ func TestPassiveWatchAdoptsReplacementAfterRestoringSealedState(t *testing.T) {
 	if uid, found, err := r.state.SealedUID(); err != nil || !found || uid != "old-pod" {
 		t.Fatalf("restored seal = %q, found=%t, error=%v", uid, found, err)
 	}
-	listener, server, err := r.control.Listen(r.executorProxy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	go func() { _ = server.Serve(listener) }()
-	t.Cleanup(func() { server.Stop(); _ = listener.Close() })
 	// The fixture explicitly uses insecure transport at both endpoints.
-	credentials, err := r.security.ClientCredentials("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	conn, err := grpc.NewClient(listener.Addr().String(), grpc.WithTransportCredentials(credentials))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
+	conn := dialControl(t, serveControl(t, r), r.security, "")
 	watch, err := environmentruntimepb.NewEnvironmentRuntimeClient(conn).WatchState(ctx, &environmentruntimepb.WatchStateRequest{
 		SandboxUid: "sandbox-uid", IncarnationUid: "new-pod", ObserveOnly: true,
 	})

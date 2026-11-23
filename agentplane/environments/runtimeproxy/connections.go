@@ -90,10 +90,7 @@ func (c *connections) holder(sandboxUID string) (*runtimeConnection, error) {
 	}
 	select {
 	case <-connection.ended:
-		if err := connection.error(); err != nil {
-			return nil, err
-		}
-		return nil, status.Error(codes.Unavailable, "Environment Runtime observation ended")
+		return nil, connection.error()
 	default:
 		return connection, nil
 	}

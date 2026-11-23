@@ -19,6 +19,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	transporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 	policyapi "github.com/agentydragon/ducktape/agentplane/policy/api/v1alpha1"
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"github.com/google/uuid"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
@@ -135,7 +136,7 @@ func (s *served) configureCertificates(t *testing.T) (credentials.TransportCrede
 		if err := objects.Create(t.Context(), binding); err != nil {
 			t.Fatal(err)
 		}
-		eventually(t, "the workload Identity binding", func() bool { return s.index.AdmitsIdentity(auth.Identity{Name: name, UID: string(identity.UID)}) })
+		eventually.Eventually(t, "the workload Identity binding", func() bool { return s.index.AdmitsIdentity(auth.Identity{Name: name, UID: string(identity.UID)}) })
 	}
 	for selector, uri := range map[string]string{readerCertificate: peertls.NotificationsURI, secondReaderCertificate: peertls.AppURI, edgeCertificate: peertls.MCPEdgeURI, samplerCertificate: peertls.CentralSamplerURI} {
 		issued := ca.Issue(t, uri)
@@ -203,7 +204,7 @@ func (s *served) removeCallerBinding(t *testing.T) {
 	if err := policyObjects.Delete(t.Context(), binding); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the caller binding removal", func() bool {
+	eventually.Eventually(t, "the caller binding removal", func() bool {
 		return !s.index.AdmitsIdentity(auth.Identity{Name: s.caller.Identity.Name, UID: s.caller.Identity.UID})
 	})
 }

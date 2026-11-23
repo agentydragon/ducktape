@@ -1,7 +1,6 @@
 """Build the Claude Code web container and generate a diff report.
 
-Uses Docker (docker build --network=host). Docker data-root must be on tmpfs
-(configured at /mnt/bazel-tmpfs/docker via session hooks).
+Uses Docker (docker build --network=host).
 
 Usage:
     bazel run //devinfra/claude/web_env/tools:build_and_diff_bin
@@ -173,7 +172,7 @@ def main() -> None:
 
     logger.info("Capturing version snapshot...")
     date_str = datetime.now(UTC).strftime("%Y-%m-%d")
-    versions_file = work_dir / "reference" / f"versions_{date_str}.yaml"
+    versions_file = work_dir / "reference" / f"versions-{date_str}.yaml"
     versions_file.write_text(capture_versions_yaml())
     logger.info("Version snapshot saved to %s", versions_file.name)
 

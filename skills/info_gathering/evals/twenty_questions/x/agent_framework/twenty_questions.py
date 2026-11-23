@@ -19,8 +19,7 @@ context window.
 import argparse
 import asyncio
 import logging
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -40,25 +39,15 @@ from skills.eval_infra.empty_skill.empty_skill_skill_spec import SPEC as EMPTY_S
 from skills.eval_infra.eval_sandbox import eval_sandbox
 from skills.eval_infra.skill_staging import stage_skill
 from skills.eval_infra.termination import terminate_when
+from skills.info_gathering.evals.harness import output_dir_from_args, run_output_paths, save_summary
 from skills.info_gathering.evals.twenty_questions.prompts import (
     build_guesser_system,
     first_user_message,
     load_sim_prompt,
 )
-from skills.info_gathering.evals.twenty_questions.result_types import (
-    Correct,
-    LogEntry,
-    Player,
-    Result,
-    RunSummary,
-    Timeout,
-)
-from skills.info_gathering.evals.twenty_questions.x.shared.cli import (
-    add_common_args,
-    output_dir_from_args,
-    resolve_args,
-)
-from skills.info_gathering.evals.twenty_questions.x.shared.output import run_output_paths, save_summary
+from skills.info_gathering.evals.twenty_questions.result_types import Correct, Player, RunSummary, Timeout
+from skills.info_gathering.evals.twenty_questions.x.shared.cli import add_common_args, resolve_args
+from skills.info_gathering.evals.twenty_questions.x.shared.game_record import GameRecord, write_transcript
 from skills.info_gathering.evals.twenty_questions.x.shared.variants import VARIANTS
 from skills.info_gathering.info_gathering_skill_spec import SPEC as INFO_GATHERING_SKILL_SPEC
 from skills.skill_spec import SkillSpec
@@ -77,20 +66,8 @@ _SKILL_BY_ARM: dict[str, SkillSpec] = {"on": INFO_GATHERING_SKILL_SPEC, "off": E
 
 
 @dataclass
-class GameContext:
-    """Mutable game state. Shared via closures (single-threaded)."""
-
-    turn_limit: int
-    turn: int = 0
-    result: Result | None = None
-    invalid_input_count: int = 0
-    log_entries: list[LogEntry] = field(default_factory=list)
+class GameContext(GameRecord):
     last_sim_response: str = ""
-
-    def record(self, player: Player, content: str, tool_calls: list[dict[str, object]] | None = None) -> None:
-        self.log_entries.append(
-            LogEntry(timestamp=datetime.now(UTC), player=player, content=content, tool_calls=tool_calls or [])
-        )
 
 
 # -- Simulator tools --
@@ -102,21 +79,21 @@ def _make_sim_tools(game: GameContext) -> list[FunctionTool]:
     it after `sim_agent.run(...)` returns."""
 
     async def answer(response: Literal["yes", "no", "sort_of"]) -> str:
-        game.record(Player.SIMULATOR, response, [{"name": "answer", "args": {"response": response}}])
+        game.record(Player.SIMULATOR, response, "answer", response=response)
         game.last_sim_response = response
         logger.info("Simulator: %s", response)
         return response
 
     async def correct_answer() -> str:
         game.result = Correct(turns=game.turn)
-        game.record(Player.SIMULATOR, "", [{"name": "correct_answer", "args": {}}])
+        game.record(Player.SIMULATOR, "", "correct_answer")
         game.last_sim_response = "correct"
         logger.info("Correct answer on turn %d!", game.turn)
         return "correct"
 
     async def invalid_input(reason: str) -> str:
         game.invalid_input_count += 1
-        game.record(Player.SIMULATOR, reason, [{"name": "invalid_input", "args": {"reason": reason}}])
+        game.record(Player.SIMULATOR, reason, "invalid_input", reason=reason)
         game.last_sim_response = reason
         logger.info("Simulator: invalid_input — %s", reason)
         return reason
@@ -148,7 +125,7 @@ def _make_game_tools(*, game: GameContext, sim_agent: Agent, sim_session: AgentS
     async def ask_yes_no_question(question: str) -> str:
         """Ask a yes/no question. Uses one turn."""
         game.turn += 1
-        game.record(Player.GUESSER, question, [{"name": "ask_yes_no_question", "args": {"question": question}}])
+        game.record(Player.GUESSER, question, "ask_yes_no_question", question=question)
         logger.info("Guesser (turn %d): %s", game.turn, question[:200])
 
         await _drive_simulator(f"Question: {question}")
@@ -160,22 +137,20 @@ def _make_game_tools(*, game: GameContext, sim_agent: Agent, sim_session: AgentS
                 game.turn -= 1
                 return game.last_sim_response
 
-        if game.turn >= game.turn_limit and game.result is None:
-            game.result = Timeout(limit=game.turn_limit)
+        game.check_turn_limit()
         return game.last_sim_response
 
     async def guess_answer(answer: str) -> str:
         """Guess the secret answer. Uses one turn."""
         game.turn += 1
-        game.record(Player.GUESSER, answer, [{"name": "guess_answer", "args": {"answer": answer}}])
+        game.record(Player.GUESSER, answer, "guess_answer", answer=answer)
         logger.info("Guesser (turn %d) guesses: %s", game.turn, answer[:200])
 
         await _drive_simulator(f"My answer is: {answer}")
 
         if game.result is not None:
             return "Correct! You guessed it!"
-        if game.turn >= game.turn_limit and game.result is None:
-            game.result = Timeout(limit=game.turn_limit)
+        game.check_turn_limit()
         return game.last_sim_response
 
     return [
@@ -252,15 +227,11 @@ async def run_game(
     # AF's tool loop catches it internally so this returns normally.
     await guesser_agent.run(opening, session=guesser_session)
 
-    if game.result is None:
-        game.result = Timeout(limit=game.turn_limit)
-    result_val = game.result
+    result_val = game.finish()
     turns = result_val.limit if isinstance(result_val, Timeout) else result_val.turns
 
     calls_path, summary_path = run_output_paths(f"af_{variant_name}", output_dir)
-    with calls_path.open("w") as f:
-        for entry in game.log_entries:
-            f.write(entry.model_dump_json() + "\n")
+    write_transcript(calls_path, game.log_entries)
 
     summary = RunSummary(
         eval_name=variant_name,

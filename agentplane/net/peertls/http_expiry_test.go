@@ -9,17 +9,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agentydragon/ducktape/agentplane/identity/credentials/workloadid"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
 	environmentruntimetransporttesting "github.com/agentydragon/ducktape/agentplane/net/peertls/testing"
 )
 
 func TestProxyTLSConnectionExpiresAndReloadsTheSameRuntimeIdentity(t *testing.T) {
 	ca := environmentruntimetransporttesting.NewCA(t)
-	uri, err := workloadid.ID{Namespace: "agent-ns", Name: "sandbox-uid", CredentialID: "credential-id"}.URI()
-	if err != nil {
-		t.Fatal(err)
-	}
+	uri := workloadURI(t, "credential-id")
 	short := ca.IssueWithValidity(t, uri, time.Now().Add(-time.Minute), time.Now().Add(4*time.Second), x509.ExtKeyUsageClientAuth)
 	server := ca.IssueWithUsage(t, peertls.EgressProxyURI, x509.ExtKeyUsageServerAuth)
 	serverTLS, err := server.WorkloadServerTLSConfig(peertls.EgressProxyURI)

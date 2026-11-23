@@ -61,7 +61,6 @@ class AliExpressEmail(BaseModel):
         return ""
 
 
-# Regex patterns for subject parsing
 ORDER_ID_PATTERN = re.compile(r"Order (\d+):")
 STATUS_PATTERNS = [
     ("delivered", AliExpressStatus.DELIVERED),
@@ -90,11 +89,9 @@ def parse_aliexpress_subject(subject: str) -> AliExpressEmail:
 
     Raises AliExpressParseError if the status cannot be determined.
     """
-    # Extract order ID
     order_match = ORDER_ID_PATTERN.search(subject)
     order_id = order_match.group(1) if order_match else None
 
-    # Determine status
     subject_lower = subject.lower()
     for pattern_text, status in STATUS_PATTERNS:
         if pattern_text in subject_lower:
@@ -114,7 +111,7 @@ def extract_delivered_date(body: str) -> datetime | None:
     if match := DELIVERED_DATE_PATTERN.search(body):
         day, month, year = int(match.group(1)), int(match.group(2)), int(match.group(3))
         try:
-            return datetime(year, month, day)
+            return datetime(year, month, day, tzinfo=UTC)
         except ValueError:
             return None
     return None
@@ -130,7 +127,7 @@ def compute_deadline(message: Email) -> datetime | None:
         return delivered + timedelta(days=DISPUTE_WINDOW_DAYS)
 
     # Fallback: internal_date + 30 days
-    return message.internal_date.replace(tzinfo=None) + timedelta(days=30)
+    return message.internal_date + timedelta(days=30)
 
 
 def parse_aliexpress(message: Email, *, should_compute_deadline: bool = False) -> AliExpressEmail:
@@ -161,7 +158,6 @@ class AliExpressPlanner:
         # Fetch AliExpress transaction emails in inbox (specific sender, not all aliexpress)
         messages = inbox.fetch_messages("from:transaction@notice.aliexpress.com label:INBOX")
 
-        # Group by order ID
         by_order: dict[str | None, list[Email]] = defaultdict(list)
         parsed_cache: dict[str, AliExpressEmail] = {}
         unparseable: list[Email] = []
@@ -183,7 +179,6 @@ class AliExpressPlanner:
                 plan.add_message(f"  - {msg.subject[:60]}...")
 
         for order_emails in by_order.values():
-            # Sort by date, newest first
             sorted_emails = sorted(order_emails, key=lambda m: m.internal_date, reverse=True)
             latest = sorted_emails[0]
             latest_parsed = parsed_cache[latest.id]
@@ -204,7 +199,6 @@ class AliExpressPlanner:
                         )
                     continue
 
-            # Default: keep only latest, archive older
             plan.add_action(
                 message=latest,
                 labels_to_add=[],

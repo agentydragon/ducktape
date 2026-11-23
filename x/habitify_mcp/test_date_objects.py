@@ -1,76 +1,28 @@
-"""
-Test to ensure that the HabitifyClient returns datetime objects, not strings.
-"""
-
-from datetime import UTC, datetime
-from unittest.mock import AsyncMock, patch
+from datetime import UTC, date, datetime
 
 import httpx
+import pytest
 
 from x.habitify_mcp.types import Status
 
 
-async def test_check_habit_status_returns_datetime_object(client):
-    """Test that check_habit_status returns a datetime object for the date field."""
-    # Create a mock response
-    mock_resp = AsyncMock(spec=httpx.Response)
-    mock_resp.status_code = 200
-    mock_resp.raise_for_status.return_value = None
-    mock_resp.json.return_value = {"data": {"status": "completed"}}
-
-    # Patch the client's request method
-    with patch.object(client.client, "get", return_value=mock_resp):
-        # Call the method with a string date
-        status = await client.check_habit_status("test-habit-id", "2025-01-15")
-
-        # Verify the date is a timezone-aware datetime object
-        assert isinstance(status.date, datetime)
-        assert status.date.tzinfo is not None
-        assert status.date.year == 2025
-        assert status.date.month == 1
-        assert status.date.day == 15
-
-        # Call the method with a datetime object
-        test_datetime = datetime(2025, 5, 20, 12, 30, tzinfo=UTC)
-        status = await client.check_habit_status("test-habit-id", test_datetime)
-
-        # Verify the date is a datetime object
-        assert isinstance(status.date, datetime)
-        assert status.date.tzinfo is not None
-        assert status.date.year == 2025
-        assert status.date.month == 5
-        assert status.date.day == 20
-
-
-async def test_set_habit_status_returns_datetime_object(client):
-    """Test that set_habit_status returns a datetime object for the date field."""
-    # Create a mock response
-    mock_resp = AsyncMock(spec=httpx.Response)
-    mock_resp.status_code = 200
-    mock_resp.raise_for_status.return_value = None
-    mock_resp.json.return_value = {"status": True}
-
-    # Patch the client's request method
-    with patch.object(client.client, "put", return_value=mock_resp):
-        # Call the method with a string date
-        status = await client.set_habit_status("test-habit-id", Status.COMPLETED, "2025-02-15", "Test note")
-
-        # Verify the date is a timezone-aware datetime object
-        assert isinstance(status.date, datetime)
-        assert status.date.tzinfo is not None
-        assert status.date.year == 2025
-        assert status.date.month == 2
-        assert status.date.day == 15
-
-        # Call the method with a datetime object
-        test_datetime = datetime(2025, 6, 10, 14, 0, tzinfo=UTC)
-        status = await client.set_habit_status(
-            "test-habit-id", Status.COMPLETED, test_datetime, "Test note with datetime object"
-        )
-
-        # Verify the date is a datetime object
-        assert isinstance(status.date, datetime)
-        assert status.date.tzinfo is not None
-        assert status.date.year == 2025
-        assert status.date.month == 6
-        assert status.date.day == 10
+@pytest.mark.parametrize(
+    ("target", "expected"),
+    [
+        (date(2025, 1, 15), datetime(2025, 1, 15, tzinfo=UTC)),
+        ("2025-05-20T23:45:00-07:00", datetime.fromisoformat("2025-05-20T23:45:00-07:00")),
+        (datetime.fromisoformat("2025-05-20T23:45:00+09:00"), datetime.fromisoformat("2025-05-20T23:45:00+09:00")),
+    ],
+)
+async def test_status_date_matches_requested_instant(client, patch_client_method, target, expected):
+    response = httpx.Response(
+        200, request=httpx.Request("GET", "https://example.invalid"), json={"data": {"status": "completed"}}
+    )
+    with patch_client_method("get", return_value=response) as get:
+        status = await client.check_habit_status("test-habit", target)
+        assert get.call_args.kwargs["params"]["target_date"] == expected.isoformat()
+        assert status.date == expected
+    with patch_client_method("put", return_value=response) as put:
+        status = await client.set_habit_status("test-habit", Status.COMPLETED, target)
+        assert put.call_args.kwargs["json"]["target_date"] == expected.isoformat()
+        assert status.date == expected

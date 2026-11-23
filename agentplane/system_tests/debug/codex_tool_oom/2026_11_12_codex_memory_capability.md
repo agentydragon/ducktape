@@ -61,8 +61,8 @@ secure pre-exec boundary.
 
 The upstream [`DefaultEnvironmentProvider`](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/exec-server/src/environment_provider.rs#L60)
 reads `CODEX_EXEC_SERVER_URL` and selects a WebSocket executor. Agentplane already sets that variable
-in [the app-server launch](../../../env/runtime/codexappserver/host.go), while its typed
-[execution adapter](../../../env/runtime/execution/adapter/protocol.go) also speaks the exec-server protocol.
+in [the app-server launch](../../../env/runtime/codexappserver/host.go). At the time of this investigation,
+the typed execution adapter also spoke the exec-server protocol; the native backend has since replaced it.
 Consequently, changing only the typed adapter's command argv would miss the app-server's direct
 executor traffic.
 

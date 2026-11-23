@@ -14,17 +14,16 @@ import (
 
 func TestSubscriptionCreationConfigRoundTripsTypedSourcesAndNormalizesFilters(t *testing.T) {
 	base := sourceadapter.Subscribe{
-		DestinationRef: model.DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: "test-uid"},
-		SessionID:      "test-session", IdempotencyKey: "test-key", LifetimeDays: 7,
+		SessionID: "test-session", IdempotencyKey: "test-key", LifetimeDays: 7,
 	}
 	requestID := uuid.New()
 	creations := []sourceadapter.Subscribe{
 		{
-			DestinationRef: base.DestinationRef, SessionID: base.SessionID, IdempotencyKey: base.IdempotencyKey,
+			SessionID: base.SessionID, IdempotencyKey: base.IdempotencyKey,
 			LifetimeDays: base.LifetimeDays, Source: sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: requestID, AfterSequence: 12}),
 		},
 		{
-			DestinationRef: base.DestinationRef, SessionID: base.SessionID, IdempotencyKey: base.IdempotencyKey,
+			SessionID: base.SessionID, IdempotencyKey: base.IdempotencyKey,
 			LifetimeDays: base.LifetimeDays, Source: sourceadapter.WrapGitHubSource(githubmodel.Source{
 				Repository: "test-owner/test-repo",
 				Subject:    githubmodel.PullRequestSubject{Number: 7}, Events: []githubmodel.EventFilter{
@@ -35,21 +34,21 @@ func TestSubscriptionCreationConfigRoundTripsTypedSourcesAndNormalizesFilters(t 
 			}),
 		},
 		{
-			DestinationRef: base.DestinationRef, SessionID: base.SessionID, IdempotencyKey: base.IdempotencyKey,
+			SessionID: base.SessionID, IdempotencyKey: base.IdempotencyKey,
 			LifetimeDays: base.LifetimeDays, Source: sourceadapter.WrapGitHubSource(githubmodel.Source{
 				Repository: "test-owner/test-repo",
 				Subject:    githubmodel.IssueSubject{Number: 8},
 			}),
 		},
 		{
-			DestinationRef: base.DestinationRef, SessionID: base.SessionID, IdempotencyKey: base.IdempotencyKey,
+			SessionID: base.SessionID, IdempotencyKey: base.IdempotencyKey,
 			LifetimeDays: base.LifetimeDays, Source: sourceadapter.WrapGitHubSource(githubmodel.Source{
 				Repository: "test-owner/test-repo",
 				Subject:    githubmodel.BranchSubject{Name: "test-branch"},
 			}),
 		},
 		{
-			DestinationRef: base.DestinationRef, SessionID: base.SessionID, IdempotencyKey: base.IdempotencyKey,
+			SessionID: base.SessionID, IdempotencyKey: base.IdempotencyKey,
 			LifetimeDays: base.LifetimeDays, Source: sourceadapter.WrapGitHubSource(githubmodel.Source{
 				Repository: "test-owner/test-repo",
 				Subject:    githubmodel.CommitSubject{SHA: "0123456789abcdef0123456789abcdef01234567"},
@@ -85,8 +84,7 @@ func TestSubscriptionCreationConfigRejectsAbsentTypedFields(t *testing.T) {
 
 func TestSubscriptionCreationConfigChecksRelationalProvider(t *testing.T) {
 	creation := sourceadapter.Subscribe{
-		DestinationRef: model.DestinationRef{Namespace: "test-namespace", Name: "test-sandbox", UID: "test-uid"},
-		SessionID:      "test-session", IdempotencyKey: "test-key", LifetimeDays: 7,
+		SessionID: "test-session", IdempotencyKey: "test-key", LifetimeDays: 7,
 		Source: sourceadapter.WrapActionsSource(model.ActionsSource{RequestID: uuid.New()}),
 	}
 	encoded, _, err := sourceadapter.EncodeSubscriptionCreation(creation)

@@ -5,11 +5,10 @@
 # Does NOT export GITHUB_TOKEN or K8S_TOKEN — preserves personal tokens
 # from home-manager / NixOS.
 #
-# Age recipients: admin + all user keys (via _common.sh secrets)
+# Age recipients: per file in .sops.yaml.
 #
 # Consumed by:
 #   - Root .envrc (direnv)
-#   - Session start hook (CLI profile)
 
 # shellcheck source=_common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"

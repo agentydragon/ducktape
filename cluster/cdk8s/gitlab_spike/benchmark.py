@@ -17,6 +17,7 @@ from cilium_crds.io.cilium import (
 from python.runfiles import Runfiles
 
 from cluster.cdk8s import pod_policy
+from cluster.cdk8s.container_resources import container_resources
 from cluster.cdk8s.gitlab_spike import app
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 
@@ -94,13 +95,7 @@ def _cronjob(
                                         k8s.VolumeMount(name="scripts", mount_path="/scripts", read_only=True),
                                         k8s.VolumeMount(name="tmp", mount_path="/tmp"),
                                     ],
-                                    resources=k8s.ResourceRequirements(
-                                        requests={
-                                            "cpu": k8s.Quantity.from_string("100m"),
-                                            "memory": k8s.Quantity.from_string("128Mi"),
-                                        },
-                                        limits={"memory": k8s.Quantity.from_string("1Gi")},
-                                    ),
+                                    resources=container_resources(cpu="100m", memory="128Mi", memory_limit="1Gi"),
                                     security_context=k8s.SecurityContext(read_only_root_filesystem=True),
                                 )
                             ],

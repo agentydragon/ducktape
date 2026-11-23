@@ -8,8 +8,8 @@
         return ToolResult.text(f"Result: {args.value}")
 
 Callables accept one annotated Pydantic model or no arguments (using EmptyArgs).
-`@provider.tool(name="...")` overrides the Python name; the callable's docstring
-supplies the tool description. Register the provider with Agent().
+The callable's docstring supplies the tool description. Register the provider with
+Agent().
 
 ToolResult passes through, strings become text, and None becomes text "OK".
 BaseModel/list results become structured content via pydantic-core serialization.
@@ -20,7 +20,7 @@ from __future__ import annotations
 import inspect
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, get_type_hints, overload
+from typing import Any, get_type_hints
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 from pydantic_core import to_jsonable_python
@@ -55,47 +55,32 @@ class DirectToolProvider:
     def __init__(self) -> None:
         self._tools: dict[str, RegisteredTool] = {}
 
-    @overload
-    def tool(self, fn: ToolFn) -> ToolFn: ...
-
-    @overload
-    def tool(self, *, name: str) -> Callable[[ToolFn], ToolFn]: ...
-
-    def tool(self, fn: ToolFn | None = None, *, name: str | None = None) -> ToolFn | Callable[[ToolFn], ToolFn]:
+    def tool(self, fn: ToolFn) -> ToolFn:
         """Register a callable; its argument annotation supplies the input schema."""
+        tool_name = fn.__name__
+        description = inspect.getdoc(fn) or ""
 
-        def register(func: ToolFn) -> ToolFn:
-            tool_name = name if name is not None else func.__name__
-            description = inspect.getdoc(func) or ""
+        hints = get_type_hints(fn)
+        sig = inspect.signature(fn)
+        params = list(sig.parameters.values())
 
-            hints = get_type_hints(func)
-            sig = inspect.signature(func)
-            params = list(sig.parameters.values())
+        if not params:
+            # Zero-arg tool - use singleton empty args model
+            param_type: type[BaseModel] = EmptyArgs
+        else:
+            first_param = params[0]
+            param_type_hint = hints.get(first_param.name)
+            if param_type_hint is None:
+                raise TypeError(f"Tool {tool_name} parameter '{first_param.name}' must have a type annotation")
+            if not (isinstance(param_type_hint, type) and issubclass(param_type_hint, BaseModel)):
+                raise TypeError(
+                    f"Tool {tool_name} parameter '{first_param.name}' must be a Pydantic BaseModel, "
+                    f"got {param_type_hint}"
+                )
+            param_type = param_type_hint
 
-            if not params:
-                # Zero-arg tool - use singleton empty args model
-                param_type: type[BaseModel] = EmptyArgs
-            else:
-                first_param = params[0]
-                param_type_hint = hints.get(first_param.name)
-                if param_type_hint is None:
-                    raise TypeError(f"Tool {tool_name} parameter '{first_param.name}' must have a type annotation")
-                if not (isinstance(param_type_hint, type) and issubclass(param_type_hint, BaseModel)):
-                    raise TypeError(
-                        f"Tool {tool_name} parameter '{first_param.name}' must be a Pydantic BaseModel, "
-                        f"got {param_type_hint}"
-                    )
-                param_type = param_type_hint
-
-            self._tools[tool_name] = RegisteredTool(
-                name=tool_name, description=description, parameters=param_type, fn=func
-            )
-            return func
-
-        # Handle both @provider.tool and @provider.tool(name="...")
-        if fn is not None:
-            return register(fn)
-        return register
+        self._tools[tool_name] = RegisteredTool(name=tool_name, description=description, parameters=param_type, fn=fn)
+        return fn
 
     async def list_tools(self) -> list[ToolSchema]:
         """Return available tools."""

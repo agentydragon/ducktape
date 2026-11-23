@@ -9,7 +9,7 @@ py_library(
     name = "async_run",
     srcs = ["async_run.py"],
     deps = [
-        "//agentplane/native/codex:facade",
+        "//agentplane/native/codex:driver",
         "//agentplane/native/codex:scenarios",
         "//agentplane/native/codex:wire",
         "//agentplane/native/testing:async_process",

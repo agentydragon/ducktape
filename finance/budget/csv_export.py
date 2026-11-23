@@ -7,6 +7,7 @@ from collections.abc import Iterable
 from decimal import Decimal
 from io import StringIO
 
+from finance.budget.schema import BucketKind
 from finance.budget.wire import (
     BudgetAdjustment,
     BudgetSnapshotResponse,
@@ -25,12 +26,12 @@ def _text_field(value: str) -> str:
     return value
 
 
-def _effective_signed_avg(kind: str, window_avg: Decimal, adjustment: BudgetAdjustment | None) -> Decimal:
+def _effective_signed_avg(kind: BucketKind, window_avg: Decimal, adjustment: BudgetAdjustment | None) -> Decimal:
     if not isinstance(adjustment, OverrideBudgetAdjustment):
         return window_avg
-    if kind in {"inflow", "income"}:
+    if kind in {BucketKind.INFLOW, BucketKind.INCOME}:
         return -adjustment.monthly
-    if kind == "transfer" and window_avg < 0:
+    if kind == BucketKind.TRANSFER and window_avg < 0:
         return -adjustment.monthly
     return adjustment.monthly
 
@@ -63,9 +64,7 @@ def build_summary_csv(snapshot: BudgetSnapshotResponse, adjustments: dict[str, B
         planning_fields: list[str] = []
         if include_planning:
             hidden = isinstance(adjustment, HiddenBudgetAdjustment)
-            planned = (
-                Decimal(0) if hidden else _effective_signed_avg(bucket.kind.value, row.window_monthly_avg, adjustment)
-            )
+            planned = Decimal(0) if hidden else _effective_signed_avg(bucket.kind, row.window_monthly_avg, adjustment)
             planning_fields = [format(planned, "f"), "yes" if hidden else ""]
         rows.append(
             [

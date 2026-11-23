@@ -335,7 +335,9 @@ the 1060-byte advertised MSS. Mobile Nebula cannot install Linux-style
 per-destination MTUs, so its generated import uses 1100 as the phone's global
 TUN MTU. Run `nix/debug/rugged/network/nebula-fi-mtu-probe.sh` on the Fi-only path to compare
 repeated baseline, route-MTU, and restored phases, including a real ClusterIP
-transfer and fragmentation counters.
+transfer and fragmentation counters. `nix/debug/rugged/network/nebula-fi-mtu-verify.sh`
+checks the deployed route policy on the same path without changing routes or
+interfaces (`sudo` is used only for `tcpdump`).
 
 #### Live activation result
 

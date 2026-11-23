@@ -8,8 +8,6 @@ See `inv --list`.
 
 ## Plugin deployment
 
-- bare repo on server in `/srv/git/inventree-utils.git`
-- on server, post-receive hook in `/srv/git/inventree-utils.git/hooks/post-receive`:
-  - creates temporary worktree in `/tmp`.
-  - rsync's `rai_plugin` subdir of worktree into /srv/inventree/data/plugins/.
-- remote `deploy` pointing at the server: `root@agentydragon.com:/srv/git/inventree-utils.git`
+The [parked HelmRelease](../cluster/parked/inventree/app/helmrelease.yaml) enables
+`rai_plugin` with `INVENTREE_PLUGINS_MANDATORY: raiplugin`.
+[Image publishing and revival](../cluster/parked/inventree/TODO.md)

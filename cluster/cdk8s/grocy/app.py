@@ -34,14 +34,16 @@ from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecTrigger,
 )
 
-from cluster.cdk8s import cilium, namespaces, node_scheduling
+from cluster.cdk8s import cilium, namespaces, node_scheduling, piraeus_storage
 from cluster.cdk8s.authentik import app as authentik  # `app` is the cdk8s App parameter here
-from cluster.cdk8s.flux import kustomize_kustomization
-from cluster.cdk8s.generation import write_charts, write_yaml
+from cluster.cdk8s.container_resources import container_resources
+from cluster.cdk8s.flux import write_kustomization
+from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.volume_claim import volume_claim
 
 _NAME = "grocy"
 _LABELS = {"app.kubernetes.io/name": _NAME}
@@ -130,15 +132,8 @@ def _server(chart: Chart, namespace: str) -> None:
                                     )
                                 )
                             ),
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("50m"),
-                                    "memory": k8s.Quantity.from_string("128Mi"),
-                                },
-                                limits={
-                                    "cpu": k8s.Quantity.from_string("500m"),
-                                    "memory": k8s.Quantity.from_string("512Mi"),
-                                },
+                            resources=container_resources(
+                                cpu="50m", memory="128Mi", cpu_limit="500m", memory_limit="512Mi"
                             ),
                             liveness_probe=k8s.Probe(http_get=login_probe, initial_delay_seconds=30, period_seconds=10),
                             readiness_probe=k8s.Probe(http_get=login_probe, initial_delay_seconds=10, period_seconds=5),
@@ -245,15 +240,13 @@ def household_chart(app: App, *, household: str) -> Chart:
     chart = Chart(app, namespace, disable_resource_name_hashes=True)
     namespaces.namespace(chart, "namespace", name=namespace, vpa=Vpa.AUTO)
     _server(chart, namespace)
-    k8s.KubePersistentVolumeClaim(
+    volume_claim(
         chart,
         "config-claim",
-        metadata=k8s.ObjectMeta(name=_CONFIG_CLAIM, namespace=namespace),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-hdd-local",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("1Gi")}),
-        ),
+        name=_CONFIG_CLAIM,
+        namespace=namespace,
+        storage_class=piraeus_storage.HDD_LOCAL,
+        size="1Gi",
     )
     k8s.KubeJob(
         chart,
@@ -282,13 +275,7 @@ def household_chart(app: App, *, household: str) -> Chart:
                                 ' $db->query("PRAGMA integrity_check")->fetchColumn(), "\\n";\' | grep -Fx ok\n'
                             ],
                             # php-cli opening one small SQLite database.
-                            resources=k8s.ResourceRequirements(
-                                requests={
-                                    "cpu": k8s.Quantity.from_string("10m"),
-                                    "memory": k8s.Quantity.from_string("64Mi"),
-                                },
-                                limits={"memory": k8s.Quantity.from_string("256Mi")},
-                            ),
+                            resources=container_resources(cpu="10m", memory="64Mi", memory_limit="256Mi"),
                             volume_mounts=[k8s.VolumeMount(name="config", mount_path="/config")],
                         )
                     ],
@@ -309,15 +296,8 @@ def household_chart(app: App, *, household: str) -> Chart:
 def _backup(chart: Chart, namespace: str) -> None:
     name = _BACKUP
     # A direct copy of a live SQLite database can capture inconsistent writes.
-    k8s.KubePersistentVolumeClaim(
-        chart,
-        f"{name}-claim",
-        metadata=k8s.ObjectMeta(name=name, namespace=namespace),
-        spec=k8s.PersistentVolumeClaimSpec(
-            access_modes=["ReadWriteOnce"],
-            storage_class_name="piraeus-ssd-2-autodiskful",
-            resources=k8s.VolumeResourceRequirements(requests={"storage": k8s.Quantity.from_string("2Gi")}),
-        ),
+    volume_claim(
+        chart, f"{name}-claim", name=name, namespace=namespace, storage_class=piraeus_storage.SSD_REPLICATED, size="2Gi"
     )
     ReplicationDestination(
         chart,
@@ -352,12 +332,10 @@ def _backup(chart: Chart, namespace: str) -> None:
 def write_manifests(root: Path, household: str, *, mcp_dir: str) -> None:
     """The household's chart, and a `kustomization.yaml` that also includes its MCP server's `mcp_dir`."""
     directory = output_dir(household)
-    write_yaml(
-        root / directory / "kustomization.yaml",
-        kustomize_kustomization(
-            resources=[
-                posixpath.relpath(mcp_dir, directory),
-                write_charts(root, directory, partial(household_chart, household=household)),
-            ]
-        ),
+    write_kustomization(
+        root / directory,
+        resources=[
+            posixpath.relpath(mcp_dir, directory),
+            write_charts(root, directory, partial(household_chart, household=household)),
+        ],
     )

@@ -626,8 +626,6 @@ func addJitter(base time.Duration) time.Duration {
 	return base + time.Duration(rand.Int64N(int64(half)))
 }
 
-// --- httpResponseSender methods ---
-
 // SendHeaders wraps a TunnelResponse with HttpHeaders payload and sends it.
 //
 // Binary address: 0xb656a0
@@ -648,8 +646,6 @@ func (s *httpResponseSender) SendChunk(resp *tunnelpb.TunnelResponse) error {
 func (s *httpResponseSender) SendError(resp *tunnelpb.TunnelResponse) error {
 	return s.client.sendResponse(resp)
 }
-
-// --- wsResponseSender methods ---
 
 // SendOpened wraps a TunnelResponse with WsOpened payload and sends it.
 //

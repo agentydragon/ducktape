@@ -22,10 +22,7 @@ import (
 var database *testpostgres.Database
 
 func TestMain(m *testing.M) {
-	os.Exit(testpostgres.RunIntegrationTests(historytesting.SetupIntegrationDatabase, func(db *testpostgres.Database) int {
-		database = db
-		return m.Run()
-	}))
+	os.Exit(testpostgres.RunIntegrationTests(m.Run, historytesting.SetupIntegrationDatabase, &database))
 }
 
 type fixture struct {

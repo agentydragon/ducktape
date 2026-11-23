@@ -1,6 +1,6 @@
 //! Client-side daemon lifecycle management.
 //!
-//! Ported from the retired Python daemon client's `ensure_daemon` path. Provides:
+//! Provides:
 //!
 //!   - **Pidfile flock probe** — non-blocking `flock(LOCK_EX|LOCK_NB)` to
 //!     detect whether a daemon process holds the pidfile lock (PID-reuse safe).
@@ -10,14 +10,6 @@
 //!   - **Circuit breaker** — file-based exponential backoff on repeated startup
 //!     failures, cleared on success.
 //!   - **`ensure_daemon`** — the full lifecycle orchestration.
-//!
-//! The circuit breaker shares the file path (`startup_failure.json` in the
-//! daemon dir), the algorithm (`2^N` backoff), and the tunables (base 2s, max
-//! 120s) with the Python impl. The JSON schema **diverges**: Python writes
-//! `last_failure` as an ISO-8601 string, this impl writes `last_failure_epoch`
-//! as a Unix-epoch integer. A session that swaps wheel for binary mid-flight
-//! sees the other impl's file as malformed, removes it, and starts a fresh
-//! failure count from zero — no crash, but the accumulated counter is lost.
 
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
@@ -31,10 +23,6 @@ use serde::{Deserialize, Serialize};
 const STARTUP_FAILURE_FILE: &str = "startup_failure.json";
 const CIRCUIT_BREAKER_BASE_SECS: u64 = 2;
 const CIRCUIT_BREAKER_MAX_SECS: u64 = 120;
-
-// ---------------------------------------------------------------------------
-// Pidfile flock probe
-// ---------------------------------------------------------------------------
 
 /// Non-blocking flock probe on the pidfile. Returns `true` if a daemon holds
 /// the lock (i.e., a live daemon is running).
@@ -52,10 +40,6 @@ pub fn is_pidfile_locked(pidfile: &Path) -> bool {
         true
     }
 }
-
-// ---------------------------------------------------------------------------
-// Cross-process startup lock (daemon.lock)
-// ---------------------------------------------------------------------------
 
 /// RAII guard that holds an exclusive flock on `daemon.lock`. Released on drop.
 pub struct DaemonLockGuard {
@@ -85,10 +69,6 @@ pub fn acquire_daemon_lock(daemon_dir: &Path) -> DaemonLockGuard {
     );
     DaemonLockGuard { _fd: fd }
 }
-
-// ---------------------------------------------------------------------------
-// Kill stale daemon
-// ---------------------------------------------------------------------------
 
 fn read_pidfile(pidfile: &Path) -> Option<i32> {
     std::fs::read_to_string(pidfile).ok()?.trim().parse().ok()
@@ -121,14 +101,6 @@ pub fn kill_daemon_by_pidfile(pidfile: &Path) {
     eprintln!("lifecycle: pid={pid} still alive after SIGTERM+SIGKILL");
 }
 
-// ---------------------------------------------------------------------------
-// Circuit breaker
-// ---------------------------------------------------------------------------
-
-/// Schema diverges from the retired Python impl's `StartupFailure`: Python
-/// wrote `last_failure` as an ISO-8601 string.
-/// `read_startup_failure` tolerates the mismatch by removing the file,
-/// so cross-impl reads degrade to "no breaker state" rather than crashing.
 #[derive(Serialize, Deserialize)]
 struct StartupFailure {
     consecutive_failures: u32,
@@ -211,10 +183,6 @@ pub fn clear_startup_failure(daemon_dir: &Path) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Health check
-// ---------------------------------------------------------------------------
-
 async fn health_check(sock_path: &Path) -> bool {
     let Ok(stream) = tokio::net::UnixStream::connect(sock_path).await else {
         return false;
@@ -238,10 +206,6 @@ async fn health_check(sock_path: &Path) -> bool {
     };
     resp.is_ok()
 }
-
-// ---------------------------------------------------------------------------
-// ensure_daemon orchestration
-// ---------------------------------------------------------------------------
 
 /// Full lifecycle: lock → health → circuit breaker → flock probe → kill
 /// stale → clean state → fork → wait (with crash detection) → circuit

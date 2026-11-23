@@ -1,0 +1,22 @@
+"""Shared test support for agent container E2E tests."""
+
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//props:__subpackages__"],
+)
+
+py_library(
+    name = "e2e_pytest_plugins",
+    srcs = ["e2e_pytest_plugins.py"],
+    deps = [
+        "//mcp_infra/testing:fixtures",
+        "//props/testing/fixtures:db",
+        "//props/testing/fixtures:e2e_container",
+        "//props/testing/fixtures:e2e_infra",
+        "//props/testing/fixtures:runs",
+        "//props/testing/fixtures:scopes",
+        "//testing:postgres_fixtures",
+    ],
+)

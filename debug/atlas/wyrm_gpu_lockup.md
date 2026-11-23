@@ -51,49 +51,15 @@ needed:
 - Group 14: `01:00.0` (VGA) + `01:00.1` (Audio)
 - Group 16: `03:00.0` (VGA) + `03:00.1` (Audio)
 
-## Root Cause Analysis
+## Kernel cmdline fix
 
-Most likely cause: **missing `iommu=pt` and `pcie_aspm=off`**. Without IOMMU
-passthrough mode, DMA translations go through the full IOMMU path for all
-devices (not just VMs), adding latency and potential for faults. Combined with
-PCIe ASPM allowing the GPU link to enter low-power states that VFIO can't
-recover from.
+`ansible/atlas.yaml` (tags `gpu_passthrough`, `iommu`) writes `/etc/kernel/cmdline` and refreshes
+systemd-boot, so `amd_iommu=on iommu=pt pcie_aspm=off` is applied. Applying that alone did not stop
+the lockups: see Current Status for the cause that did.
 
-Contributing factors:
+## Untried levers
 
-- **Blackwell is new** — driver 580.x VFIO support may have bugs
-- **Open kernel module** — `nvidia-open` is less mature for passthrough than
-  the proprietary module
-- **2 GPUs** — doubles the surface area for PCIe link issues
-
-## Applied Fix
-
-Updated `ansible/atlas.yaml` to write `/etc/kernel/cmdline` (systemd-boot)
-instead of `/etc/default/grub`:
-
-```text
-root=ZFS=rpool/ROOT/pve-1 boot=zfs amd_iommu=on iommu=pt pcie_aspm=off
-```
-
-After changing, run the playbook and reboot the host:
-
-```bash
-cd ansible
-ansible-playbook atlas.yaml --tags gpu_passthrough,iommu
-# Then reboot atlas
-```
-
-Or apply manually on atlas:
-
-```bash
-echo "root=ZFS=rpool/ROOT/pve-1 boot=zfs amd_iommu=on iommu=pt pcie_aspm=off" > /etc/kernel/cmdline
-proxmox-boot-tool refresh
-reboot
-```
-
-## If ASPM Fix Doesn't Help
-
-Try these in order:
+If a lockup occurs without a host suspend (the open question in Current Status), try these in order:
 
 ### 1. Disable PCIe AER (Advanced Error Reporting)
 
@@ -114,12 +80,7 @@ options vfio-pci ids=10de:2b85,10de:22e8
 
 ### 3. Try the Proprietary NVIDIA Kernel Module
 
-The open kernel module (`nvidia-open`) is less battle-tested for VFIO
-passthrough. In the VM, switch to the proprietary module:
-
-```bash
-sudo apt install nvidia-driver-580  # proprietary, not -open
-```
+Not an option: the proprietary module does not support the RTX 5090 (see Current Status).
 
 ### 4. Disable Resizable BAR in Host BIOS
 
@@ -134,30 +95,6 @@ Prevents the host from touching the GPU framebuffer at all during boot:
 ```text
 video=efifb:off
 ```
-
-## Diagnostics
-
-After reboot, verify the fix:
-
-```bash
-# On atlas host — verify cmdline applied
-cat /proc/cmdline
-# Should show: ... amd_iommu=on iommu=pt pcie_aspm=off
-
-# On atlas host — verify IOMMU enabled
-dmesg | grep -i -E 'AMD-Vi|IOMMU'
-
-# On wyrm VM
-nvidia-smi                                    # Should show both GPUs
-nvidia-smi --query-gpu=pcie.link.gen.current,pcie.link.width.current --format=csv
-
-# On atlas host — check for errors
-dmesg | grep -i -E 'AER|vfio|iommu|error.*gpu|aspm'
-journalctl -k | grep -i nvidia
-```
-
-Monitor `dmesg -w` on both host and guest during GPU load to catch early
-warnings.
 
 ## Current Status (Apr 2026)
 

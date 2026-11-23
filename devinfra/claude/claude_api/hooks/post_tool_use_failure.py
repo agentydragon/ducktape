@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from devinfra.claude.claude_api.hooks.common import CamelModel, HookInputBase
+from devinfra.claude.claude_api.hooks.hook_base import CamelModel, HookInputBase
 
 
 class PostToolUseFailureInput(HookInputBase):

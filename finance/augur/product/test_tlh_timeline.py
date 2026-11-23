@@ -77,8 +77,7 @@ def compose(price: int) -> World:
 
 @pytest.mark.parametrize("capture", ["dense", "forensic"])
 def test_tlh_cash_and_separate_realizations_reach_product_timeline(capture: Literal["dense", "forensic"]) -> None:
-    session = ActionSession({0: compose(price=1)}, OWNER, capture=capture)
-    try:
+    with ActionSession({0: compose(price=1)}, OWNER, capture=capture) as session:
         assert not isinstance(session.start(), Finished)
         result = session.advance(
             [
@@ -104,8 +103,6 @@ def test_tlh_cash_and_separate_realizations_reach_product_timeline(capture: Lite
                 )
             ]
         )
-    finally:
-        session.close()
     assert isinstance(result, Finished)
     [rollout] = result.rollouts
     assert rollout.stop is None
@@ -151,8 +148,7 @@ def test_tlh_cash_and_separate_realizations_reach_product_timeline(capture: Lite
 
 def test_zero_cash_liquidation_is_still_a_redemption() -> None:
     # A statement at a zero mark reports every cohort at zero value, its basis intact.
-    session = ActionSession({0: compose(price=0)}, OWNER, capture="dense")
-    try:
+    with ActionSession({0: compose(price=0)}, OWNER, capture="dense") as session:
         assert not isinstance(session.start(), Finished)
         result = session.advance(
             [
@@ -170,8 +166,6 @@ def test_zero_cash_liquidation_is_still_a_redemption() -> None:
                 )
             ]
         )
-    finally:
-        session.close()
     assert isinstance(result, Finished)
     [rollout] = result.rollouts
     assert rollout.stop is None

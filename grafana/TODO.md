@@ -36,13 +36,6 @@ representative output and query coverage. Exercising dashboard queries is appeal
 that approach on a more complex dashboard and account for Loki and ClickHouse. Choose one
 default approach and document any justified exceptions.
 
-## F. Dashboard declaration and cdk8s
-
-Prototype a Bazel dashboard declaration whose JSON can feed both cdk8s manifest generation
-and its visual test. Try a monitoring dashboard and a component-owned dashboard; keep Flux
-resource ownership and datasource wiring explicit. Evaluate whether it eliminates
-duplicated declarations without making customization or deployment less clear.
-
 ## G. Dashboard and fixture layout
 
 Choose and apply a consistent naming and placement convention for dashboard JSON, fixtures

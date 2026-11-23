@@ -22,7 +22,7 @@ R0 starts from these source and deployment owners.
   `agentplane/environments/internal/controller/environment_runtime_credential.go`,
   `cluster/cdk8s/haku_ci/egress_gateway.py`. Root YAML contains ConfigMaps
   `environment-tools-egress-sidecar`, `launcher-relay-egress-sidecar`, `sandbox-egress-sidecar`,
-  SandboxTemplate `environment-tools`, ClusterPolicy `agentplane-staging-launcher-relay`,
+  SandboxTemplate `environment-tools`, MutatingPolicy and ValidatingPolicy `agentplane-staging-launcher-relay`,
   `sandbox` / `sandbox-build` PodTemplates, and Deployment `haku-ci-egress` using the old image/container.
   Credential injection looks up the container name: update it coherently with template/injector
   readers, including init-container/native-sidecar handling.

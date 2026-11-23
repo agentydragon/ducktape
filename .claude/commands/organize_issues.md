@@ -51,7 +51,7 @@ Split specimen into 5 roughly equal chunks, each agent analyzes independently:
 
 Each reports:
 
-```
+```text
 Chunk N findings:
 - Logical problems found: [list]
 - Mixed issues: [issue numbers with sub-problems]
@@ -71,7 +71,7 @@ Single coordinator agent receives all 5 reports and creates reorganization plan:
 
 Outputs:
 
-```
+```text
 Reorganization strategy:
 - Splits: [issue X → X1 (type A), X2 (type B), X3 (type C)]
 - Merges: [issues Y, Z, W → new issue for problem type D]
@@ -142,7 +142,7 @@ Each agent:
 
 ## Command Execution Flow
 
-```
+```text
 User: /organize_issues [optional task]
 ↓
 Claude: Read CLAUDE.md rules + scan specimen
@@ -169,7 +169,7 @@ User: Review changes (NOT committed by agents)
 
 ### Phase 1 Agent Template
 
-```
+```text
 Read issues {start}-{end} from specimen.
 Identify:
 1. Logical problem types (list unique problem categories)
@@ -184,7 +184,7 @@ DO NOT commit anything.
 
 ### Phase 2 Coordinator Template
 
-```
+```text
 Read all 5 analysis reports.
 Create reorganization strategy:
 1. List all unique logical problems found
@@ -205,7 +205,7 @@ DO NOT commit anything.
 
 ### Phase 3 Executor Template
 
-```
+```text
 Execute work unit {N}:
 - Read assigned old issues
 - Write assigned new issues (numbers {start}-{end})

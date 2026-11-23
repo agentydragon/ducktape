@@ -1,4 +1,11 @@
-from x.ai_sub_value.langfuse_usage_extract import normalize_row, resolve_provider
+import gzip
+import sys
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+import pytest
+
+from x.ai_sub_value.langfuse_usage_extract import main, normalize_row, resolve_provider, write_checkpoint
 
 
 def usage_row(raw_usage: dict[str, int], **overrides: object) -> dict[str, object]:
@@ -72,3 +79,36 @@ def test_transport_provider_does_not_override_model_family() -> None:
     assert resolve_provider(
         {"model": "gemini-3.5-flash-lite", "payment_lane": "unknown_route_scope", "provider_observed": "anthropic"}
     ) == ("unknown", "manufacturer_unresolved_provider_observed_not_authoritative")
+
+
+def test_completed_extraction_removes_only_used_checkpoints(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    end = start + timedelta(hours=1)
+    used = write_checkpoint(tmp_path, start, end, [])
+    later = write_checkpoint(tmp_path, end, end + timedelta(hours=1), [])
+    report = tmp_path / "other-report.json.gz"
+    report.write_bytes(gzip.compress(b"[]"))
+    output = tmp_path / "evidence"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "extract",
+            "--start",
+            start.isoformat(),
+            "--end",
+            end.isoformat(),
+            "--checkpoint-dir",
+            str(tmp_path),
+            "--output-dir",
+            str(output),
+            "--skip-identifier-audit",
+        ],
+    )
+
+    main()
+
+    assert not used.exists()
+    assert later.exists()
+    assert gzip.decompress(report.read_bytes()) == b"[]"
+    assert (output / "langfuse-usage-weekly.json").is_file()

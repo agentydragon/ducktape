@@ -5,7 +5,7 @@ import pytest
 from devinfra.ci.skills.ci_latency.scripts import collect
 
 
-class RunApi:
+class RunApi(collect.GhApi):
     def __init__(self, runs):
         self.runs = runs
 
@@ -58,7 +58,7 @@ def test_active_old_run_is_kept_and_replaces_stale_window_state():
 
 
 def test_job_collection_keeps_each_attempt_and_checks_pagination_total():
-    class JobsApi:
+    class JobsApi(collect.GhApi):
         def request(self, endpoint, params, *, paginate):
             assert params["filter"] == "all"
             return [{"total_count": 2, "jobs": [{"id": 10, "run_attempt": 1}, {"id": 11, "run_attempt": 2}]}]

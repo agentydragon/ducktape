@@ -1,10 +1,4 @@
-# gazelle:resolve py flux_imagerepository_crds //cluster/cdk8s/providers/flux:imagerepository
 # gazelle:resolve py flux_imagepolicy_crds //cluster/cdk8s/providers/flux:imagepolicy
-# gazelle:resolve py flux_gitrepository_crds //cluster/cdk8s/providers/flux:gitrepository
-# gazelle:resolve py flux_imageupdateautomation_crds //cluster/cdk8s/providers/flux:imageupdateautomation
-# gazelle:resolve py flux_receiver_crds //cluster/cdk8s/providers/flux:receiver
-# gazelle:resolve py flux_provider_crds //cluster/cdk8s/providers/flux:provider
-# gazelle:resolve py flux_alert_crds //cluster/cdk8s/providers/flux:alert
 
 load("//devinfra/js:cdk8s_import.bzl", "cdk8s_import")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")

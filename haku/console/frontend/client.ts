@@ -12,14 +12,12 @@ import type {
 import { operatorLoginRedirectStarted, redirectToOperatorLogin } from "./operator_login";
 
 // Same-origin typed client (nginx serves this bundle and proxies /api). Types are generated from
-// the backend's OpenAPI schema: //haku/console/frontend:schema. Exported so the per-integration
-// client files (gmail_client.ts, grocy_client.ts) share this one instance.
+// the backend's OpenAPI schema: //haku/console/frontend:schema.
 export const api: ReturnType<typeof createClient<paths>> = createClient<paths>({ baseUrl: "" });
 
 // App-owned operator auth: the /api/* guards answer 401 when there is no operator session, while
 // the SPA itself is served publicly — so a 401 bounces the browser to /auth/login, where Authentik's
-// application access policy decides who may complete it. With operator_oidc unset (dev/test) the
-// guards no-op and /api never 401s, so this never fires there.
+// application access policy decides who may complete it.
 api.use({
   onResponse({ response }) {
     if (response.status === 401 && typeof window !== "undefined") redirectToOperatorLogin();
@@ -28,8 +26,8 @@ api.use({
 });
 
 // FastAPI error responses are `{detail: string}`; surface that real reason, falling back when the
-// body isn't shaped that way. Shared with the per-integration client files.
-export function errorDetail(error: unknown, fallback: string): string {
+// body isn't shaped that way.
+function errorDetail(error: unknown, fallback: string): string {
   if (error && typeof error === "object" && "detail" in error) {
     const { detail } = error as { detail: unknown };
     if (typeof detail === "string") return detail;

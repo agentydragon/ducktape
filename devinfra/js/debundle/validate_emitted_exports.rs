@@ -38,7 +38,7 @@ use source_identity::ChunkId;
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Result, bail};
-use binding_targets::{declaration_name_strings, module_export_name};
+use binding_targets::{declaration_name_strings, module_export_name, public_export_name};
 use swc_common::Spanned;
 use swc_ecma_ast::*;
 
@@ -182,21 +182,12 @@ fn record_decl(
     sites: &mut BTreeMap<String, Vec<ExportSite>>,
 ) {
     match decl {
-        ModuleDecl::ExportDefaultDecl(d) => {
+        ModuleDecl::ExportDefaultDecl(_) | ModuleDecl::ExportDefaultExpr(_) => {
             sites
                 .entry("default".to_string())
                 .or_default()
                 .push(ExportSite {
-                    line: lines.line_for_span(d.span()),
-                    shape: ExportShape::Default,
-                });
-        }
-        ModuleDecl::ExportDefaultExpr(d) => {
-            sites
-                .entry("default".to_string())
-                .or_default()
-                .push(ExportSite {
-                    line: lines.line_for_span(d.span()),
+                    line: lines.line_for_span(decl.span()),
                     shape: ExportShape::Default,
                 });
         }
@@ -214,11 +205,7 @@ fn record_decl(
             for spec in &named.specifiers {
                 match spec {
                     ExportSpecifier::Named(n) => {
-                        let public = n
-                            .exported
-                            .as_ref()
-                            .map(module_export_name)
-                            .unwrap_or_else(|| module_export_name(&n.orig));
+                        let public = public_export_name(n);
                         sites.entry(public).or_default().push(ExportSite {
                             line,
                             shape: ExportShape::Named,

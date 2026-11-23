@@ -4,9 +4,8 @@ This is the cluster-wide pattern for static credentials used by services outside
 the cluster. It began with LLM provider keys and also applies to other eligible
 API credentials. The canonical SOPS Secret manifests and generated grants are
 assembled by the [`cluster/k8s/external-creds`](../k8s/external-creds)
-Kustomization. Most source Secrets live in `ducktape-flux`; a source may retain
-an existing namespace when that name and namespace are an established consumer
-contract.
+Kustomization. Every source Secret lives in `ducktape-flux`, the only namespace
+the shared `ClusterSecretStore` reads.
 
 ## Ownership and authorization flow
 
@@ -49,10 +48,9 @@ credentials.
 
 ## Moving existing resources
 
-When moving live resources between Flux Kustomizations, follow Flux's staged
-ownership-transfer procedure: disable pruning on the old owner, reconcile the
-move and verify the new inventory, then restore pruning. Do not perform the move
-in one reconciliation with pruning enabled.
+When moving live resources between Flux Kustomizations, follow
+[AGENTS.md](AGENTS.md#restructuring-which-kustomization-owns-an-object-land-it-in-two-steps)
+and [the stateful-migration procedure](../AGENTS.md#migrating-stateful-flux-kustomizations).
 
 ## Scope
 

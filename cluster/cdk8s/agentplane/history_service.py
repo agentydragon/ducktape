@@ -4,9 +4,8 @@ workload Identity and exact service SVID grants are authorized per method.
 """
 
 from collections.abc import Mapping
-from pathlib import Path
 
-from cdk8s import ApiObjectMetadata, Duration, Size
+from cdk8s import ApiObjectMetadata, Size
 from cdk8s_plus_34 import (
     ContainerResources,
     Cpu,
@@ -20,8 +19,8 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
+from agentplane.crd_group import GROUP
 from agentplane.history_service.settings import IngressSettings, ServiceDelegationSettings, ServiceDelegator, Settings
-from agentplane.identity.auth import listener
 from agentplane.net.peertls.config import (
     ACTIONS_URI,
     APP_URI,
@@ -36,7 +35,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.probes import tls_grpc_probe
+from cluster.cdk8s.probes import TlsGrpcHealth
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.settings_file import SettingsFile
@@ -90,28 +89,24 @@ class HistoryService(Construct):
         self.env = env
         self.callers = callers
         endpoint = service(env.namespace)
-        Role(
+        role = Role(
             self,
             "service-account-reader-role",
             metadata=ApiObjectMetadata(name=f"{NAME}-service-accounts", namespace=env.namespace),
             rules=[
                 RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get"]),
-                RolePolicyRule(
-                    resources=[custom_resource("agentplane.allegedly.works", "sandboxes")], verbs=["get", "list"]
-                ),
+                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list"]),
                 # A writer's SVID names its WorkloadCredential, read live on every request.
-                RolePolicyRule(
-                    resources=[custom_resource("agentplane.allegedly.works", "workloadcredentials")], verbs=["get"]
-                ),
+                RolePolicyRule(resources=[custom_resource(GROUP, "workloadcredentials")], verbs=["get"]),
                 # An Identity writer's SVID names its Identity, read live in the policy namespace.
-                RolePolicyRule(resources=[custom_resource("agentplane.allegedly.works", "identities")], verbs=["get"]),
+                RolePolicyRule(resources=[custom_resource(GROUP, "identities")], verbs=["get"]),
             ],
         )
         RoleBinding(
             self,
             "service-account-reader-rolebinding",
             metadata=ApiObjectMetadata(name=f"{NAME}-service-accounts", namespace=env.namespace),
-            role=Role.from_role_name(self, "service-account-reader-role-ref", f"{NAME}-service-accounts"),
+            role=role,
         ).add_subjects(
             ServiceAccount.from_service_account_name(
                 self, "history-service-account", NAME, namespace_name=env.namespace
@@ -131,6 +126,9 @@ class HistoryService(Construct):
         )
         # The History Service writes the `sandbox_service` database, so it connects as that
         # database's owner; its read API's sessions are read-only (main.go).
+        health = TlsGrpcHealth(
+            port=endpoint.pod_port, ca_file=workload_tls.TRUST_BUNDLE_FILE, server_uri=HISTORY_SERVICE_URI
+        )
         workload = add_service_workload(
             self,
             env,
@@ -138,33 +136,13 @@ class HistoryService(Construct):
             container="history-service",
             image=f"{_IMAGE}:unset",
             env_variables={"AGENTPLANE_HISTORY_SERVICE_DATABASE_URL": database_url, **(container_env or {})},
-            readiness=tls_grpc_probe(
-                port=endpoint.pod_port,
-                ca_file=workload_tls.TRUST_BUNDLE_FILE,
-                server_uri=HISTORY_SERVICE_URI,
-                initial_delay_seconds=3,
-                period_seconds=10,
-            ),
-            liveness=tls_grpc_probe(
-                port=endpoint.pod_port,
-                ca_file=workload_tls.TRUST_BUNDLE_FILE,
-                server_uri=HISTORY_SERVICE_URI,
-                initial_delay_seconds=20,
-                period_seconds=30,
-            ),
-            startup=tls_grpc_probe(
-                port=endpoint.pod_port,
-                ca_file=workload_tls.TRUST_BUNDLE_FILE,
-                server_uri=HISTORY_SERVICE_URI,
-                initial_delay_seconds=0,
-                period_seconds=5,
-                failure_threshold=180,
-            ),
+            readiness=health.readiness(),
+            liveness=health.liveness(),
+            startup=health.startup(failure_threshold=180),
             resources=ContainerResources(
                 cpu=CpuResources(request=Cpu.millis(20)),
                 memory=MemoryResources(request=memory_request, limit=memory_limit),
             ),
-            termination_grace=Duration.seconds(30),
             placement=placement,
             telemetry_enabled=True,
             registry_secret_name=registry_secret_name,
@@ -172,19 +150,12 @@ class HistoryService(Construct):
         serving_tls = workload_tls.service_certificate(
             self, env, container=workload.container, name=NAME, uri=HISTORY_SERVICE_URI
         )
-        assert serving_tls.cert_file is not None
-        assert serving_tls.key_file is not None
-        assert serving_tls.ca_file is not None
         settings = Settings(
             reader_service_callers=frozenset((ACTIONS_URI, APP_URI, NOTIFICATIONS_URI)),
             service_delegation=service_delegation,
             policy_namespace=env.namespace,
             ingress=ingress_settings,
-            rpc=listener.Listener(
-                listen_address=f"0.0.0.0:{endpoint.pod_port}",
-                tls=listener.TLS(cert_file=Path(serving_tls.cert_file), key_file=Path(serving_tls.key_file)),
-                auth=[listener.SPIFFEAuth(ca_file=Path(serving_tls.ca_file))],
-            ),
+            rpc=serving_tls.spiffe_listener(endpoint.pod_port),
         )
         config = SettingsFile(
             self,
@@ -203,7 +174,7 @@ class HistoryService(Construct):
         NetworkPolicy(
             self,
             "network-policy",
-            metadata=ApiObjectMetadata(name=NAME.removeprefix("agentplane-"), namespace=env.namespace),
+            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
             endpoint_selector=endpoint.pods.selector,
             ingress=[
                 *(pods.admit(endpoint.pod_port) for pods in self.callers.values()),

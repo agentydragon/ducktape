@@ -8,6 +8,7 @@ trace its `Finished` promises; the world keeps none of that history.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import Self
 
 from finance.augur.sim import capture, results
 from finance.augur.sim.actions import Action, DecisionActions
@@ -219,3 +220,9 @@ class ActionSession:
     def close(self) -> None:
         self._closed = True
         self._paths.clear()
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()

@@ -13,6 +13,7 @@ from cluster.cdk8s.monitoring.dashboards.foundation import (
     mimir_table_query,
     series_options,
     storage_tier_variable,
+    topk_variable,
 )
 
 _STORAGE_TIER = 'max by (node, label_storage_allegedly_works_tier) (kube_node_labels{node=~"$node", label_storage_allegedly_works_tier=~"$storage_tier"})'
@@ -239,18 +240,7 @@ def build_dashboard() -> dashboard.Dashboard:
                     all_value="optiplex|ovh-.*",
                     regex="/^(optiplex|ovh-.*)$/",
                 ),
-                dashboard.VariableModel(
-                    type_val=dashboard.VariableType.CUSTOM,
-                    name="topk",
-                    label="Rows",
-                    query="10,25,50",
-                    current=dashboard.VariableOption(text="10", value="10"),
-                    options=[
-                        dashboard.VariableOption(selected=True, text="10", value="10"),
-                        dashboard.VariableOption(selected=False, text="25", value="25"),
-                        dashboard.VariableOption(selected=False, text="50", value="50"),
-                    ],
-                ),
+                topk_variable("Rows"),
             ]
         ),
     )

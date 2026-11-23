@@ -1,0 +1,5 @@
+pv	phase	class	requested	storage_kind	location	node_constraints	claim	current_claim_uid_matches	pod_consumers
+pvc-0552e5a0-9519-4d3f-a707-7e05d2fd61a7	Bound	lvm-proxmox-hdd	350Gi	local.csi.openebs.io	pvc-0552e5a0-9519-4d3f-a707-7e05d2fd61a7	openebs.io/nodename=wyrm2	ollama/llm-models	true	ollama-7f45976b66-wf4ph@wyrm2:Running
+pvc-36ddc9d5-f556-4759-9863-3f8083138f6a	Bound	lvm-proxmox-hdd-block	20Gi	local.csi.openebs.io	pvc-36ddc9d5-f556-4759-9863-3f8083138f6a	openebs.io/nodename=wyrm2	public-coder-agent/public-coder-devbox-bazel-cache	true	-
+pvc-f7eab872-befa-417d-9315-aa882d0a3d64	Bound	local-path-proxmox	10Gi	hostPath	/var/local-path-provisioner/pvc-f7eab872-befa-417d-9315-aa882d0a3d64_activitywatch_activitywatch-data	kubernetes.io/hostname=wyrm2	activitywatch/activitywatch-data	true	activitywatch-6d8f64d4dc-dwwzr@wyrm2:Running
+wyrm2-qwen38-iq4-ssd	Bound	-	90Gi	local	/var/lib/llm-models-ssd/Qwen3.8-Flash-Next-GGUF/UD-IQ4_XS	kubernetes.io/hostname=wyrm2	ollama/qwen38-iq4-ssd	true	ollama-7f45976b66-wf4ph@wyrm2:Running

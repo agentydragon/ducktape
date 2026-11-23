@@ -33,11 +33,9 @@ type Quotas struct {
 	UnacknowledgedMessagesPerSender int `mapstructure:"unacknowledged_messages_per_sender"`
 }
 
-// Owner identifies the Session execution Identity. SandboxUID remains message-sender metadata during
-// the separate Sandbox-targeted send authorization rollout.
+// Owner identifies the Session execution Identity.
 type Owner struct {
-	Identity   model.Identity
-	SandboxUID string
+	Identity model.Identity
 }
 
 // ownerPredicate selects inboxes established for the exact execution Identity. A Sandbox is not part

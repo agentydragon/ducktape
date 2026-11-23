@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
-	"maps"
 	"net"
 	"net/http"
 	"strings"
@@ -72,42 +71,6 @@ func TestWorkloadListenerUsesLiveSVIDAndReplacesCallerIdentity(t *testing.T) {
 	defer refused.Body.Close()
 	if refused.StatusCode != http.StatusForbidden || len(backend.snapshotRequests()) != 1 {
 		t.Fatalf("workload Session header status=%d, want forbidden before backend", refused.StatusCode)
-	}
-}
-
-func TestWorkloadListenerAttributesAnIdentityCallerByItsIdentity(t *testing.T) {
-	workload := workloadauthtesting.NewIdentityWorkload(t, api, testNamespace, "llm-identity", testPolicyNamespace)
-	backend := newFakeLiteLLM()
-	backendServer := newBackendServer(t, backend)
-	serverURL, client := newWorkloadIngressTestServer(
-		t, workload.Workload, backendServer.URL, &resolver.Identities{PolicyNamespace: testPolicyNamespace},
-	)
-
-	response, err := client.Post(serverURL+"/v1/responses", "application/json", strings.NewReader(`{"model":"test"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(response.Body)
-		t.Fatalf("Identity SVID request status = %d, body = %s", response.StatusCode, body)
-	}
-	requests := backend.snapshotRequests()
-	if len(requests) != 1 {
-		t.Fatalf("LiteLLM requests = %d, want 1", len(requests))
-	}
-	var metadata map[string]string
-	if err := json.Unmarshal([]byte(requests[0].headers.Get("x-litellm-spend-logs-metadata")), &metadata); err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]string{
-		"agentplane.identity":     workload.Subject.Identity.Name,
-		"agentplane.identity_uid": workload.Subject.Identity.UID,
-		"agentplane.pod_name":     workload.Subject.PodName,
-		"agentplane.pod_uid":      workload.Subject.PodUID,
-	}
-	if !maps.Equal(metadata, want) {
-		t.Fatalf("forwarded metadata = %v, want the Identity subject %v alone", metadata, want)
 	}
 }
 

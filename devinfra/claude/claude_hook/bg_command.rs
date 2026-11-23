@@ -1,5 +1,4 @@
-//! Background command execution — ports
-//! the retired Python session-start handler's background-command path.
+//! Background command execution.
 //!
 //! Each bg command spawns a `bash -c` subprocess with:
 //!

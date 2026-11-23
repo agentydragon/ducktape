@@ -1,9 +1,9 @@
 # Engagement Ideas — Making Studying More Addictive (Ethically)
 
-Status: idea backlog. The retention core (streaks, daily bonus, milestones,
-break time) is designed in <credit_system_v2.md> — implement that first.
-These ideas layer on top of it, grouped by the psychological lever each
-one pulls. Delete entries as they ship or get rejected.
+Status: idea backlog. The retention core is built (streaks, daily bonus); the
+remaining milestones and break time are in <credit_system_v2.md> — implement
+those first. These ideas layer on top of it, grouped by the psychological lever
+each one pulls. Delete entries as they ship or get rejected.
 
 ## Priority order
 
@@ -74,8 +74,8 @@ Addiction is mostly about how easy the next hit is; the hardest part of
 studying is minute zero:
 
 - One-tap "resume last subject" button.
-- A "just 5 minutes" quick-start pairing with the first-5-minutes bonus
-  from credit_system_v2.
+- A "just 5 minutes" quick-start pairing with the daily first-5-minutes bonus
+  (`DAILY_FIRST_BONUS` in `credit_constants.py`).
 
 ## Guardrails (what keeps this "in a good way")
 

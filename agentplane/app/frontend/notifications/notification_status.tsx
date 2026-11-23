@@ -117,7 +117,15 @@ function entryLabel(entry: InboxEntrySummary): string {
   }
 }
 
-function InboxDetails({ sessionId, filter }: { sessionId: string; filter: SubscriptionFilter }): JSX.Element {
+function InboxDetails({
+  sessionId,
+  filter,
+  requiredEnvironmentDeleted,
+}: {
+  sessionId: string;
+  filter: SubscriptionFilter;
+  requiredEnvironmentDeleted: boolean;
+}): JSX.Element {
   const [inbox, setInbox] = useState<Inbox | null>(null);
   const [entries, setEntries] = useState<Map<bigint, InboxEntrySummary>>(new Map());
   const [subscriptions, setSubscriptions] = useState<Map<string, Subscription>>(new Map());
@@ -279,6 +287,12 @@ function InboxDetails({ sessionId, filter }: { sessionId: string; filter: Subscr
             Delivery: {inbox.deliveryError}
           </Text>
         )}
+        {!inbox.retired && inbox.deliveryError === "DispatcherNotFoundError" && requiredEnvironmentDeleted && (
+          <Text size="sm">
+            This Session&apos;s required Environment was deleted. Notifications remain in the inbox while delivery
+            retries; a same-name replacement cannot receive this Session&apos;s notice.
+          </Text>
+        )}
         {ordered.length === 0 && (inbox.delivery?.unannouncedCount ?? 0) > 0 && (
           <Text size="sm">{inbox.delivery?.unannouncedCount} awaiting notice</Text>
         )}
@@ -407,11 +421,13 @@ function InboxDetails({ sessionId, filter }: { sessionId: string; filter: Subscr
 export function NotificationStatus({
   sandbox,
   sessionIds,
+  deletedEnvironmentSessionIds = [],
   opened,
   onClose,
 }: {
   sandbox: string;
   sessionIds: readonly string[];
+  deletedEnvironmentSessionIds?: readonly string[];
   opened: boolean;
   onClose: () => void;
 }): JSX.Element {
@@ -448,7 +464,14 @@ export function NotificationStatus({
             allowDeselect={false}
           />
           {opened &&
-            sessionIds.map((sessionId) => <InboxDetails key={sessionId} sessionId={sessionId} filter={filter} />)}
+            sessionIds.map((sessionId) => (
+              <InboxDetails
+                key={sessionId}
+                sessionId={sessionId}
+                filter={filter}
+                requiredEnvironmentDeleted={deletedEnvironmentSessionIds.includes(sessionId)}
+              />
+            ))}
           {opened && sessionIds.length === 0 && <Text>No loaded Sessions.</Text>}
         </Stack>
       </ScrollArea>

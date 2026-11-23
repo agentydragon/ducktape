@@ -5,7 +5,7 @@ import re
 import pytest
 import pytest_asyncio
 import pytest_bazel
-from playwright.async_api import Page, expect
+from playwright.async_api import Locator, Page, expect
 
 from agentplane.app.frontend.testing.app import (
     IDLE_THREAD,
@@ -13,6 +13,7 @@ from agentplane.app.frontend.testing.app import (
     SUSPENDED_THREAD,
     UNNAMED_THREAD,
     AgentplaneFixture,
+    Flag,
     Scene,
 )
 from agentplane.app.frontend.testing.visual_assertions import (
@@ -28,11 +29,10 @@ from agentplane.app.frontend.testing.visual_assertions import (
     _tool_steps,
 )
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE, MOBILE_ONLY
-from util.testing.frontend_visual.capture import VisualPage
-from util.testing.frontend_visual.page_capture import wait_for_stable
-from util.testing.frontend_visual.viewports import DESKTOP, MOBILE, MOBILE_TOUCH, Viewport
+from testing.frontend_visual.capture import VisualPage
+from testing.frontend_visual.page_capture import wait_for_stable
+from testing.frontend_visual.viewports import DESKTOP, MOBILE, MOBILE_TOUCH, Viewport
 
-pytest_plugins = ("util.testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
@@ -523,7 +523,7 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
     await expect(detail).to_be_hidden()
     model_row = page.locator('[data-command-id="progress-model"]')
     await expect(model_row).to_contain_text("test-model-next")
-    await expect(model_row.locator(".agentplane-command-card-line .agentplane-command-progress")).to_be_visible()
+    await expect(model_row.locator(".transcript-user-message-aside .agentplane-command-progress")).to_be_visible()
     for command_id in ("progress-noop", "progress-noop-input"):
         no_op = page.locator(f'[data-command-id="{command_id}"]')
         await expect(no_op.get_by_text("No-op")).to_be_visible()
@@ -551,15 +551,20 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
     await expect(detail).to_be_in_viewport(ratio=1)
     await view.capture(name="detail")
     effort_row = page.locator('[data-command-id="progress-effort"]')
-    effort_indicator = effort_row.locator(".agentplane-command-progress-hit")
+    effort_failure = effort_row.get_by_role("alert")
+    await expect(effort_failure).to_have_text("Execution failed")
+    await _expect_command_lights(effort_row, ["done", "done", "done", "failed"])
+    await effort_row.scroll_into_view_if_needed()
+    await expect(effort_failure).to_be_in_viewport(ratio=1)
+    effort_details = effort_row.get_by_role("button", name="Execution failed · delivery details")
     if viewport.has_touch:
-        await effort_indicator.tap()
-        await expect(effort_row.locator('[data-touch-open="true"]')).to_be_visible()
+        await effort_details.tap()
     else:
-        await effort_indicator.hover()
-    await expect(effort_row.get_by_role("tooltip")).to_be_visible()
-    await expect(effort_row.get_by_role("tooltip")).to_be_in_viewport(ratio=1)
+        await effort_details.press("Enter")
+    await expect(page.get_by_role("dialog", name="Delivery details")).to_contain_text("Not supported by harness")
     await view.capture(name="effort_detail")
+    await effort_details.click()
+    await expect(page.get_by_role("dialog", name="Delivery details")).to_have_count(0)
     applied_input = page.locator('[data-command-id="progress-applied-input"]')
     input_hit = applied_input.locator(".agentplane-command-progress-hit")
     await expect(applied_input.locator(".agentplane-command-light")).to_have_count(0)
@@ -601,19 +606,300 @@ async def test_dispatcher_queued_while_sandbox_wakes(
     await view.capture()
 
 
-async def test_dispatcher_reports_why_a_sandbox_wake_failed(view: VisualPage, app: AgentplaneFixture) -> None:
+@DESKTOP_AND_MOBILE
+async def test_dispatch_watch_interruption_and_recovery(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.remember_dispatch()
+    await app.set_flag(Flag.DISPATCH_WATCH_UNAVAILABLE)
+    await app.mount_thread(RUNNING_THREAD)
+    page = view.page
+    alert = page.get_by_role("alert").filter(has_text="Command delivery updates disconnected")
+    queued = page.locator('[data-command-id="queued-dispatch"] [data-stage="queued"]')
+    await expect(alert).to_contain_text("Queued or delivering states may be out of date")
+    await expect(alert).to_contain_text("Dispatcher temporarily unavailable")
+    await expect(queued).to_be_visible()
+    await view.capture(name="dispatch_watch_disconnected")
+
+    await app.set_flag(Flag.DISPATCH_WATCH_UNAVAILABLE, on=False)
+    await expect(alert).to_have_count(0)
+    await expect(queued).to_be_visible()
+    await view.capture(name="dispatch_watch_recovered")
+
+
+@DESKTOP_AND_MOBILE
+async def test_dispatcher_workset(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.DISPATCH_WORKSET)
+    await app.set_flag(Flag.THREAD_SCOPE_UNAVAILABLE)
+    await app.mount_thread(RUNNING_THREAD)
+    queued = view.page.locator('[data-command-id="7988d401-0000-4000-8000-000000000002"]')
+    unknown = view.page.locator('[data-command-id="5034baaf-0000-4000-8000-000000000001"]')
+    cancelled = view.page.locator('[data-command-id="2e08b63a-0000-4000-8000-000000000003"]')
+    await expect(queued).to_contain_text("Continue when the Sandbox is ready.")
+    history = view.page.get_by_role("region", name="Thread history")
+    await expect(history).to_have_count(0)
+    await view.capture(name="pending_before_history")
+    await app.set_flag(Flag.THREAD_SCOPE_UNAVAILABLE, on=False)
+    await expect(history).to_be_visible()
+    await expect(queued).to_have_count(1)
+    await expect(unknown).to_contain_text("Outcome unknown")
+    await expect(cancelled).to_have_count(0)
+    await expect(view.page.get_by_role("button", name="Older delivery issues")).to_be_visible()
+    await expect(view.page.get_by_role("region", name="Dispatcher delivery")).to_have_count(0)
+    await unknown.scroll_into_view_if_needed()
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="workset", target=unknown)
+
+    await unknown.get_by_role("button", name="Outcome unknown · delivery details").click()
+    details = view.page.get_by_role("dialog", name="Delivery details")
+    await details.get_by_role("button", name="Show full reason").click()
+    await expect(details).to_contain_text("disconnected execution stream.")
+    await expect(details.get_by_role("button", name="Show full reason")).to_have_count(0)
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="workset_full_reason")
+
+
+@DESKTOP_AND_MOBILE
+async def test_dispatcher_notice_acknowledgement(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.VERSIONED_DISPATCH_WORKSET)
+    await app.mount_thread(RUNNING_THREAD)
+    unknown = view.page.locator('[data-command-id="5034baaf-0000-4000-8000-000000000001"]')
+    failure = view.page.locator('[data-command-id="ef4ce91a-0000-4000-8000-000000000004"]')
+    await expect(unknown).to_contain_text("Outcome unknown")
+    await expect(failure.get_by_role("button", name="Delivery failed · delivery details")).to_be_visible()
+    dismiss = unknown.get_by_role("button", name="Dismiss delivery issue", exact=False)
+    await dismiss.scroll_into_view_if_needed()
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="delivery_issues", target=unknown)
+    await dismiss.click()
+    await expect(unknown).to_have_count(0)
+    await expect(failure).to_be_visible()
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="delivery_issue_acknowledged", target=failure)
+
+    older_issues = view.page.get_by_role("button", name="Older delivery issues")
+    await older_issues.focus()
+    await older_issues.press("Enter")
+    history = view.page.get_by_role("dialog", name="Delivery history")
+    await expect(history.get_by_role("tab", name="Retained receipts")).to_have_attribute("aria-selected", "true")
+    await history.get_by_role("tab", name="Acknowledged").click()
+    await expect(history).to_contain_text("Model change · Outcome unknown")
+    await history.get_by_role("button", name="Show full reason").click()
+    await expect(history).to_contain_text("disconnected execution stream.")
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="delivery_issue_history", target=history)
+
+
+async def _expect_command_lights(row: Locator, states: list[str]) -> None:
+    lights = row.locator(".agentplane-command-light")
+    await expect(lights).to_have_count(len(states))
+    for index, state in enumerate(states):
+        await expect(lights.nth(index)).to_have_attribute("data-state", state)
+
+
+async def _expect_delivery_gutter(row: Locator) -> None:
+    bubble = row.locator(".transcript-user-bubble")
+    aside = row.locator(".transcript-user-message-aside")
+    progress = aside.locator(".agentplane-command-progress-inline")
+    bubble_box = await bubble.bounding_box()
+    aside_box = await aside.bounding_box()
+    assert bubble_box
+    assert aside_box
+    assert aside_box["y"] < bubble_box["y"] + bubble_box["height"]
+    for element in (
+        progress,
+        progress.locator(".agentplane-command-lights"),
+        aside.get_by_role("button", name="Dismiss delivery issue", exact=False),
+    ):
+        await expect(element).to_be_visible()
+        box = await element.bounding_box()
+        assert box
+        assert box["width"] > 0
+        assert box["x"] + box["width"] <= bubble_box["x"]
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE_TOUCH], ids=["desktop", "mobile"])
+async def test_outstanding_command_conversation(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
+    await app.build(Scene.OUTSTANDING_COMMAND_CONVERSATION)
+    await app.mount_thread(RUNNING_THREAD)
+    history = view.page.get_by_role("region", name="Thread history")
+    phase = view.page.locator('[data-command-id="4d396206-d814-4443-8978-000000000012"]')
+    continuation = view.page.locator('[data-command-id="4d396206-d814-4443-8978-000000000003"]')
+    model = view.page.locator('[data-command-id="4d396206-d814-4443-8978-000000000010"]')
+    queued = view.page.locator('[data-command-id="4d396206-d814-4443-8978-000000000011"]')
+
+    await expect(history.get_by_text("The previous deployment is healthy.", exact=False)).to_be_visible()
+    await expect(phase).to_have_count(1)
+    await expect(phase.get_by_role("status")).to_have_text("Outcome unknown")
+    await _expect_command_lights(phase, ["done", "done", "done", "uncertain"])
+    await expect(continuation.get_by_text("continue", exact=True)).to_be_visible()
+    model_text = model.locator(".transcript-verbatim")
+    await expect(model_text).to_have_text("Set model: chatgpt-sub/oai-responses/gpt-6.2-sol")
+    await expect(model_text).to_have_css("font-style", "italic")
+    await expect(model_text).to_have_css("text-align", "right")
+    await expect(queued).to_contain_text("Review the deployment once the Sandbox is ready.")
+    await expect(history.locator('[data-command-id^="ad710000-"]')).to_have_count(0)
+    await expect(view.page.get_by_text("More commands in Delivery history")).to_have_count(0)
+
+    await phase.scroll_into_view_if_needed()
+    await _expect_delivery_gutter(phase)
+    await _expect_delivery_gutter(continuation)
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="unknown_on_history_input")
+    collapsed = await phase.bounding_box()
+    assert collapsed
+    details_button = phase.get_by_role("button", name="Outcome unknown · delivery details")
+    details = view.page.get_by_role("dialog", name="Delivery details")
+    await expect(details).to_have_count(0)
+    if viewport.has_touch:
+        await details_button.tap()
+    else:
+        await details_button.focus()
+        await details_button.press("Enter")
+    await expect(details).to_contain_text("Dispatcher did not receive an outcome before the runner disconnected.")
+    await expect(details).to_contain_text("Runner accepted the command")
+    expanded = await phase.bounding_box()
+    assert expanded
+    assert expanded["height"] == pytest.approx(collapsed["height"], abs=1)
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="unknown_on_history_input_details")
+    if viewport.has_touch:
+        await details_button.tap()
+    else:
+        await view.page.keyboard.press("Escape")
+        await expect(details_button).to_be_focused()
+    await expect(details).to_have_count(0)
+    await phase.get_by_role("button", name="Dismiss delivery issue", exact=False).click()
+    await expect(phase).to_have_count(1)
+    await expect(phase.locator(".transcript-user-message-aside")).to_have_count(0)
+    await expect(phase.get_by_text("Save a deployment summary.", exact=True)).to_be_visible()
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="history_input_after_dismissal")
+
+    await model.scroll_into_view_if_needed()
+    await expect(model.locator(".transcript-user-bubble")).to_have_css("background-color", "rgba(0, 0, 0, 0)")
+    await _expect_delivery_gutter(model)
+    model_status = model.get_by_role("status")
+    await expect(model_status).to_have_text("Outcome unknown")
+    await expect(model_status).to_have_accessible_name("Outcome unknown · latest delivery attempt returned an error")
+    await expect(model.get_by_role("alert")).to_have_count(0)
+    await _expect_command_lights(model, ["done", "failed", "future", "future"])
+    if viewport.has_touch:
+        model_bubble = await model.locator(".transcript-user-bubble").bounding_box()
+        queued_bubble = await queued.locator(".transcript-user-bubble").bounding_box()
+        assert model_bubble
+        assert queued_bubble
+        assert queued_bubble["width"] > model_bubble["width"]
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="outstanding_controls_and_new_input")
+    model_collapsed = await model.bounding_box()
+    assert model_collapsed
+    model_details = model.get_by_role("button", name="Outcome unknown · delivery details")
+    if viewport.has_touch:
+        await model_details.tap()
+    else:
+        composer = view.page.get_by_role("textbox", name="Message")
+        await composer.focus()
+        await model_details.hover()
+        await expect(details).to_contain_text("the current model configuration is no longer available")
+        await expect(composer).to_be_focused()
+        await details.hover()
+        # Stay past the pointer-exit grace period to verify entry canceled the scheduled close.
+        await view.page.wait_for_timeout(300)
+        await expect(details).to_be_visible()
+        await view.page.mouse.move(0, 0)
+        await expect(details).to_have_count(0)
+        await model_details.click()
+    await expect(details).to_contain_text("the current model configuration is no longer available")
+    model_expanded = await model.bounding_box()
+    assert model_expanded
+    assert model_expanded["height"] == pytest.approx(model_collapsed["height"], abs=1)
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="outstanding_control_details")
+    if viewport.has_touch:
+        await model_details.tap()
+    else:
+        await view.page.keyboard.press("Escape")
+        await expect(model_details).to_be_focused()
+        await model_details.press("Space")
+        await expect(details).to_be_visible()
+        await view.page.keyboard.press("Escape")
+    await expect(details).to_have_count(0)
+    await model.get_by_role("button", name="Dismiss delivery issue", exact=False).click()
+    await expect(model).to_have_count(0)
+    await expect(queued).to_be_visible()
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="outstanding_controls_after_dismissal")
+
+    await view.page.get_by_role("button", name="More", exact=True).click()
+    await view.page.get_by_role("menuitem", name="Delivery history", exact=True).click()
+    archive = view.page.get_by_role("dialog", name="Delivery history")
+    await expect(archive.get_by_text("Review the deployment once the Sandbox is ready.", exact=False)).to_be_visible()
+    label = archive.get_by_text("Change model to chatgpt-sub/oai-responses/gpt-6-astra · Outcome unknown", exact=True)
+    await expect(label).to_be_visible()
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="delivery_history_with_original_excerpts", target=archive)
+    queued_receipt = archive.locator('[data-receipt-id="4d396206-d814-4443-8978-000000000011"]')
+    await queued_receipt.get_by_role("button", name="Show original command").click()
+    await expect(
+        archive.get_by_text("Include build status and the last deployment result in the report.", exact=False)
+    ).to_be_visible()
+
+
+@DESKTOP_AND_MOBILE
+async def test_acknowledge_saved_issue_outside_workset(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.SAVED_DELIVERY_ISSUE_OUTSIDE_WORKSET)
+    await app.mount_thread(RUNNING_THREAD)
+    local = view.page.locator('[data-command-id="73343335-0000-4000-8000-000000000001"]')
+    await expect(local).to_contain_text("Please keep the original text.")
+    acknowledge = local.get_by_role("button", name="Dismiss delivery issue", exact=False)
+    await expect(acknowledge).to_be_visible()
+    await local.scroll_into_view_if_needed()
+    await _expect_delivery_gutter(local)
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="saved_delivery_issue", target=local)
+    await acknowledge.click()
+    await expect(local).to_have_count(0)
+
+    await view.page.get_by_role("button", name="More").click()
+    await view.page.get_by_role("menuitem", name="Delivery history", exact=True).click()
+    history = view.page.get_by_role("dialog", name="Delivery history")
+    await history.get_by_role("tab", name="Acknowledged").click()
+    await expect(history).to_contain_text("Dispatcher could not deliver the saved input.")
+    await view.page.mouse.move(0, 0)
+    await view.capture(name="acknowledged_saved_issue", target=history)
+
+
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE_TOUCH], ids=["desktop", "mobile"])
+async def test_dispatcher_reports_failed_and_unknown_outcomes_inline(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.build(Scene.PENDING_COMMANDS)
-    await app.remember_failed_dispatch()
+    await app.remember_failed_and_unknown_dispatches()
     await app.mount_thread(RUNNING_THREAD)
     await view.check(context="fixture ready")
     row = view.page.locator('[data-command-id="wake-deadline-dispatch"]')
-    await expect(row.locator('[data-stage="dispatch_failed"]')).to_be_visible()
-    await row.locator(".agentplane-command-progress-hit").hover()
-    tooltip = row.get_by_role("tooltip")
-    await expect(tooltip).to_be_visible()
-    await expect(tooltip).to_contain_text("Sandbox did not become Ready within 10 minutes")
-    await expect(tooltip).to_contain_text("Unschedulable: 0/2 nodes are available: PVC is not bound")
-    await expect(tooltip).to_be_in_viewport(ratio=1)
+    failure = row.get_by_role("alert")
+    await expect(failure).to_be_visible()
+    await expect(failure).to_have_text("Delivery failed")
+    await _expect_command_lights(row, ["done", "failed", "future", "future"])
+    unknown = view.page.locator('[data-command-id="unknown-dispatch"]')
+    status = unknown.get_by_role("status")
+    await expect(status).to_have_text("Outcome unknown")
+    await _expect_command_lights(unknown, ["done", "uncertain", "future", "future"])
+    await row.scroll_into_view_if_needed()
+    await view.capture(name="delivery_failure_and_unknown")
+    await failure.get_by_role("button", name="Delivery failed · delivery details").click()
+    details = view.page.get_by_role("dialog", name="Delivery details")
+    await expect(details).to_contain_text("Sandbox did not become Ready within 10 minutes")
+    await expect(details).to_contain_text("Unschedulable: 0/2 nodes are available: PVC is not bound")
+    await row.scroll_into_view_if_needed()
+    await expect(failure).to_be_in_viewport(ratio=1)
+    await view.capture(name="failed")
+    await view.page.keyboard.press("Escape")
+    await expect(details).to_have_count(0)
+    await expect(unknown.get_by_role("alert")).to_have_count(0)
+    await status.get_by_role("button", name="Outcome unknown · delivery details").click()
+    await expect(details).to_contain_text("Connection to the runner closed before it returned a receipt")
+    await expect(status).to_be_visible()
+    await unknown.scroll_into_view_if_needed()
+    await expect(status).to_be_in_viewport(ratio=1)
     await view.capture()
 
 

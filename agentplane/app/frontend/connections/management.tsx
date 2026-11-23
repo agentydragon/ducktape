@@ -18,6 +18,7 @@ import { followWatch } from "../transport/watch_stream";
 import { CallerGrants } from "./caller_grants";
 import { InlineName } from "../ui/inline_name";
 import { GrantStatus, type Connection } from "../../../mcp_edge/api/connection/connection_service_pb";
+import { Code } from "../../../proto/google/rpc/code_pb";
 import type { Identity } from "../../../proto/identity_pb";
 
 type Grant = Connection["grants"][number];
@@ -109,12 +110,6 @@ export function Connections(): JSX.Element {
     void refresh();
   }, [refresh]);
 
-  function replaceRow(updated: Connection): void {
-    setRows((current) => current?.map((row) => (row.id === updated.id ? updated : row)) ?? null);
-  }
-
-  /** After a 409, the Connection having changed since it was read: load its latest state and say so
-   * with `advice`. The change is never retried. */
   async function reloadAfterConflict(advice: string): Promise<void> {
     try {
       await load();
@@ -126,22 +121,33 @@ export function Connections(): JSX.Element {
     }
   }
 
-  async function rename(row: Connection, name: string | null): Promise<void> {
-    // A Connection always has a name: a blank one leaves the stored name standing.
-    if (name === null) return;
+  async function mutateConnection(
+    mutate: () => Promise<Connection>,
+    conflictAdvice: string,
+    dismissConfirmation?: () => void
+  ): Promise<void> {
     setBusy(true);
     try {
-      replaceRow(await renameConnection(row, name));
+      const updated = await mutate();
+      setRows((current) => current?.map((row) => (row.id === updated.id ? updated : row)) ?? null);
+      dismissConfirmation?.();
       setError(null);
     } catch (failure) {
-      if (failure instanceof HttpError && failure.status === 409) {
-        await reloadAfterConflict("Latest state loaded; review it before renaming again.");
+      if (failure instanceof HttpError && failure.code === Code.ABORTED) {
+        dismissConfirmation?.();
+        await reloadAfterConflict(conflictAdvice);
       } else {
         setError(displayableError(failure));
       }
     } finally {
       setBusy(false);
     }
+  }
+
+  async function rename(row: Connection, name: string | null): Promise<void> {
+    // A Connection always has a name: a blank one leaves the stored name standing.
+    if (name === null) return;
+    await mutateConnection(() => renameConnection(row, name), "Latest state loaded; review it before renaming again.");
   }
 
   async function confirmRebind(): Promise<void> {
@@ -151,40 +157,20 @@ export function Connections(): JSX.Element {
       setError("Selected Identity is no longer live. Refresh before retrying.");
       return;
     }
-    setBusy(true);
-    try {
-      replaceRow(await rebindConnection(rebinding.row, target));
-      setRebinding(null);
-      setError(null);
-    } catch (failure) {
-      if (failure instanceof HttpError && failure.status === 409) {
-        setRebinding(null);
-        await reloadAfterConflict("Review its new binding before trying again.");
-      } else {
-        setError(displayableError(failure));
-      }
-    } finally {
-      setBusy(false);
-    }
+    await mutateConnection(
+      () => rebindConnection(rebinding.row, target),
+      "Review its new binding before trying again.",
+      () => setRebinding(null)
+    );
   }
 
   async function confirmUnlink(): Promise<void> {
     if (unlinking === null) return;
-    setBusy(true);
-    try {
-      replaceRow(await unbindConnection(unlinking));
-      setUnlinking(null);
-      setError(null);
-    } catch (failure) {
-      if (failure instanceof HttpError && failure.status === 409) {
-        setUnlinking(null);
-        await reloadAfterConflict("Latest state loaded; review it before trying again.");
-      } else {
-        setError(displayableError(failure));
-      }
-    } finally {
-      setBusy(false);
-    }
+    await mutateConnection(
+      () => unbindConnection(unlinking),
+      "Latest state loaded; review it before trying again.",
+      () => setUnlinking(null)
+    );
   }
 
   return (

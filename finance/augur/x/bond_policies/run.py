@@ -145,16 +145,13 @@ def execute(
     case: Situation, *, rollout_ids: Sequence[int], capture: Literal["summary", "dense", "forensic"] = "summary"
 ) -> list[Rollout]:
     """Run the monthly batch policy on selected original paths, without reinvestment."""
-    session = ActionSession({id_: compose(case, id_) for id_ in rollout_ids}, HOUSEHOLD, capture=capture)
-    try:
+    with ActionSession({id_: compose(case, id_) for id_ in rollout_ids}, HOUSEHOLD, capture=capture) as session:
         batch = session.start()
         while not isinstance(batch, Finished):
             batch = session.advance(
                 fund_claims(batch, targets={(BROKERAGE, AssetId(STRATEGY)): 1}, cash_account_id=CHECKING)
             )
         return batch.rollouts
-    finally:
-        session.close()
 
 
 class Measurements(Record):

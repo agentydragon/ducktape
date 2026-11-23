@@ -145,24 +145,31 @@ func TestWaitByUnknownKeyExitsNotFound(t *testing.T) {
 	}
 }
 
-func TestWaitRetriesAnUnavailableWatchWithinTheBudget(t *testing.T) {
-	fake, endpoint := newActionFake(t)
-	var attempts atomic.Int32
-	fake.getRequest = func(context.Context, *action_servicepb.GetActionRequestRequest) (*action_servicepb.GetActionRequestResponse, error) {
-		return &action_servicepb.GetActionRequestResponse{ActionRequest: receiptAt(waitedID, action_servicepb.ActionState_ACTION_STATE_RUNNING)}, nil
-	}
-	fake.watchRequest = func(_ *action_servicepb.WatchActionRequestRequest, stream grpc.ServerStreamingServer[action_servicepb.WatchActionRequestResponse]) error {
-		if attempts.Add(1) == 1 {
-			if err := stream.Send(&action_servicepb.WatchActionRequestResponse{ActionRequest: receiptAt(waitedID, action_servicepb.ActionState_ACTION_STATE_RUNNING)}); err != nil {
-				return err
+func TestWaitReconnectsAfterARecoverableWatchInterruption(t *testing.T) {
+	for name, interruption := range map[string]error{
+		"an unavailable watch within the budget": status.Error(codes.Unavailable, "test stream interruption"),
+		"the bearer expiring midstream":          status.Error(codes.Unauthenticated, "projected token expired"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			fake, endpoint := newActionFake(t)
+			var attempts atomic.Int32
+			fake.getRequest = func(context.Context, *action_servicepb.GetActionRequestRequest) (*action_servicepb.GetActionRequestResponse, error) {
+				return &action_servicepb.GetActionRequestResponse{ActionRequest: receiptAt(waitedID, action_servicepb.ActionState_ACTION_STATE_RUNNING)}, nil
 			}
-			return status.Error(codes.Unavailable, "test stream interruption")
-		}
-		return stream.Send(&action_servicepb.WatchActionRequestResponse{ActionRequest: receiptAt(waitedID, action_servicepb.ActionState_ACTION_STATE_SUCCEEDED)})
-	}
-	code, _, _ := invoke(actionsEnv(endpoint), "actions", "wait", waitedID, "--timeout", "5")
-	if code != 0 || attempts.Load() != 2 {
-		t.Errorf("exit %d after %d watches; want success after reconnecting once", code, attempts.Load())
+			fake.watchRequest = func(_ *action_servicepb.WatchActionRequestRequest, stream grpc.ServerStreamingServer[action_servicepb.WatchActionRequestResponse]) error {
+				if attempts.Add(1) == 1 {
+					if err := stream.Send(&action_servicepb.WatchActionRequestResponse{ActionRequest: receiptAt(waitedID, action_servicepb.ActionState_ACTION_STATE_RUNNING)}); err != nil {
+						return err
+					}
+					return interruption
+				}
+				return stream.Send(&action_servicepb.WatchActionRequestResponse{ActionRequest: receiptAt(waitedID, action_servicepb.ActionState_ACTION_STATE_SUCCEEDED)})
+			}
+			code, _, _ := invoke(actionsEnv(endpoint), "actions", "wait", waitedID, "--timeout", "5")
+			if code != 0 || attempts.Load() != 2 {
+				t.Errorf("exit %d after %d watches; want success after reconnecting once", code, attempts.Load())
+			}
+		})
 	}
 }
 
@@ -219,27 +226,6 @@ func TestWaitRefusesAStateItDoesNotKnow(t *testing.T) {
 	code, stdout, _ := invoke(actionsEnv(endpoint), "actions", "wait", waitedID, "--timeout", "5")
 	if code != invocation.ExitRefused || stdout != "" || fake.count("WatchActionRequest") != 0 {
 		t.Errorf("exit %d, stdout %q, calls %+v; want an immediate unusable response", code, stdout, fake.callLog())
-	}
-}
-
-func TestWaitReconnectsAfterTheBearerExpiresMidstream(t *testing.T) {
-	fake, endpoint := newActionFake(t)
-	var attempts atomic.Int32
-	fake.getRequest = func(context.Context, *action_servicepb.GetActionRequestRequest) (*action_servicepb.GetActionRequestResponse, error) {
-		return &action_servicepb.GetActionRequestResponse{ActionRequest: receiptAt(waitedID, action_servicepb.ActionState_ACTION_STATE_RUNNING)}, nil
-	}
-	fake.watchRequest = func(_ *action_servicepb.WatchActionRequestRequest, stream grpc.ServerStreamingServer[action_servicepb.WatchActionRequestResponse]) error {
-		if attempts.Add(1) == 1 {
-			if err := stream.Send(&action_servicepb.WatchActionRequestResponse{ActionRequest: receiptAt(waitedID, action_servicepb.ActionState_ACTION_STATE_RUNNING)}); err != nil {
-				return err
-			}
-			return status.Error(codes.Unauthenticated, "projected token expired")
-		}
-		return stream.Send(&action_servicepb.WatchActionRequestResponse{ActionRequest: receiptAt(waitedID, action_servicepb.ActionState_ACTION_STATE_SUCCEEDED)})
-	}
-	code, _, _ := invoke(actionsEnv(endpoint), "actions", "wait", waitedID, "--timeout", "5")
-	if code != 0 || attempts.Load() != 2 {
-		t.Errorf("exit %d after %d watches; want a fresh call and success", code, attempts.Load())
 	}
 }
 

@@ -7,7 +7,6 @@ go_library(
     srcs = [
         "routes.go",
         "runtime.go",
-        "schema_export.go",
         "server.go",
         "trace_relay.go",
     ],
@@ -28,7 +27,7 @@ go_library(
         "//agentplane/app/internal/httpapi/sessions",
         "//agentplane/app/internal/httpapi/streams",
         "//agentplane/app/internal/httpapi/threads",
-        "//agentplane/app/internal/httperror",
+        "//agentplane/app/internal/httpresponse",
         "//agentplane/app/internal/migrations",
         "//agentplane/app/internal/sandboxes",
         "//agentplane/app/internal/sessionclient",
@@ -50,32 +49,11 @@ go_library(
         "//agentplane/policy/v1:policy_service_go_proto",
         "//agentplane/postgres/migrate",
         "//agentplane/postgres/wakeups",
-        "//agentplane/proto:identity_go_proto",
-        "//agentplane/proto:session_go_proto",
-        "//agentplane/sandboxes/runtimeconfig",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
-        "@com_github_danielgtaylor_huma_v2//:huma",
-        "@com_github_danielgtaylor_huma_v2//adapters/humago",
         "@com_github_google_uuid//:uuid",
-        "@com_github_grpc_ecosystem_grpc_gateway_v2//runtime",
         "@com_github_lib_pq//:pq",
-        "@io_k8s_api//core/v1:core",
-        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
-        "@io_k8s_apimachinery//pkg/types",
-        "@io_k8s_utils//ptr",
-        "@org_golang_google_genproto_googleapis_rpc//errdetails",
         "@org_golang_google_grpc//:grpc",
-        "@org_golang_google_grpc//codes",
-        "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_grpc//health/grpc_health_v1",
-        "@org_golang_google_grpc//metadata",
-        "@org_golang_google_grpc//status",
-        "@org_golang_google_protobuf//encoding/protojson",
-        "@org_golang_google_protobuf//proto",
-        "@org_golang_google_protobuf//reflect/protoreflect",
-        "@org_golang_google_protobuf//types/known/durationpb",
-        "@org_golang_google_protobuf//types/known/emptypb",
-        "@org_golang_google_protobuf//types/known/timestamppb",
     ],
 )
 
@@ -84,7 +62,6 @@ go_test(
     srcs = ["server_test.go"],
     embed = [":server"],
     deps = [
-        "//agentplane/app/internal/auth",
         "//agentplane/app/internal/httpapi/sessions",
         "//agentplane/app/internal/httpapi/streams",
         "//agentplane/app/internal/settings",
@@ -157,12 +134,6 @@ go_test(
 )
 
 go_test(
-    name = "schema_export_test",
-    srcs = ["schema_export_test.go"],
-    embed = [":server"],
-)
-
-go_test(
     name = "appconfigapi_test",
     srcs = ["appconfigapi_test.go"],
     embed = [":server"],
@@ -200,7 +171,6 @@ go_test(
     srcs = ["sessionapi_test.go"],
     embed = [":server"],
     deps = [
-        "//agentplane/app:app_service_go_proto",
         "//agentplane/app/internal/auth",
         "//agentplane/app/internal/httpapi/sessions",
         "//agentplane/app/internal/server/testauth",
@@ -212,7 +182,6 @@ go_test(
         "//agentplane/proto:session_go_proto",
         "//agentplane/sandboxes/api",
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_go_proto",
-        "@com_github_danielgtaylor_huma_v2//:huma",
         "@com_github_google_uuid//:uuid",
         "@io_opentelemetry_go_otel//:otel",
         "@io_opentelemetry_go_otel_sdk//trace",
@@ -260,18 +229,5 @@ go_test(
         "@com_github_google_uuid//:uuid",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_protobuf//encoding/protojson",
-    ],
-)
-
-go_test(
-    name = "staging_config_test",
-    srcs = ["staging_config_test.go"],
-    data = ["//cluster/k8s/agentplane-staging:agentplane-staging.k8s.yaml"],
-    embed = [":server"],
-    x_defs = {"github.com/agentydragon/ducktape/agentplane/app/internal/server.stagingConfigRlocation": "$(rlocationpath //cluster/k8s/agentplane-staging:agentplane-staging.k8s.yaml)"},
-    deps = [
-        "//agentplane/app/internal/settings",
-        "@in_gopkg_yaml_v3//:yaml_v3",
-        "@io_bazel_rules_go//go/runfiles",
     ],
 )

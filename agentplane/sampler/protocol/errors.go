@@ -28,7 +28,7 @@ type KnownFailureError struct {
 	Message  string
 }
 
-// ProviderTransientError marks an upstream transport, status, or truncated-stream failure that
+// ProviderTransientError marks an upstream transport, status, or incomplete response failure that
 // is safe to resample because provider sampling has no external mutation effect.
 type ProviderTransientError struct {
 	Cause      error
@@ -70,16 +70,6 @@ func (e *ProviderPhaseTimeoutError) Error() string {
 }
 
 func (e *ProviderPhaseTimeoutError) Unwrap() error { return e.Cause }
-
-// ProviderProgressError marks a failure renewing durable provider progress. It must not be
-// classified as an upstream transport failure.
-type ProviderProgressError struct{ Cause error }
-
-func (e *ProviderProgressError) Error() string {
-	return fmt.Sprintf("record provider progress: %v", e.Cause)
-}
-
-func (e *ProviderProgressError) Unwrap() error { return e.Cause }
 
 // ProviderEvidencePersistenceError identifies failure to durably record provider evidence.
 type ProviderEvidencePersistenceError struct{ Cause error }

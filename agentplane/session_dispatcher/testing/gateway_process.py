@@ -1,4 +1,4 @@
-"""Run the Runner Gateway against a supplied Kubernetes API and PostgreSQL."""
+"""Run Sessions and its Environments peer against a supplied Kubernetes API and PostgreSQL."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ from util.net import listen_tcp
 # gazelle:include_dep @pypi//protobuf
 
 
-_GATEWAY_BINARY = "ducktape/agentplane/session_dispatcher/cmd/runner-gateway_/runner-gateway"
+_SESSIONS_BINARY = "ducktape/agentplane/session_dispatcher/cmd/sessions_/sessions"
 _SESSION_DISPATCHER_URI = "spiffe://agentplane/session-dispatcher"
 
 
@@ -50,10 +50,10 @@ def _migrate(binary: Path, database_url: str, log_path: Path) -> None:
         )
     except subprocess.TimeoutExpired as error:
         log_path.write_text(f"migration timed out\nstdout:\n{error.stdout!r}\nstderr:\n{error.stderr!r}")
-        raise RuntimeError(f"Runner Gateway migration timed out; see {log_path}") from error
+        raise RuntimeError(f"Sessions migration timed out; see {log_path}") from error
     if result.returncode != 0:
         log_path.write_text(f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}")
-        raise RuntimeError(f"Runner Gateway migration failed with {result.returncode}; see {log_path}")
+        raise RuntimeError(f"Sessions migration failed with {result.returncode}; see {log_path}")
 
 
 @dataclass
@@ -62,26 +62,20 @@ class GatewayProcess:
 
     process: asyncio.subprocess.Process
     target: str
-    log_path: Path
     environment_service: EnvironmentServiceProcess
-    dispatcher_audience: str
-    gateway_audience: str
     service_certificates: dict[str, tuple[Path, Path]]
     _restart: RestartGoProcess
     _close_listener: Callable[[], None]
 
     @property
     def client_tls(self) -> runtime_transport.ClientTLS:
-        return self.service_tls(runtime_transport.APP_URI)
-
-    def service_tls(self, service: str) -> runtime_transport.ClientTLS:
-        cert_file, key_file = self.service_certificates[service]
+        cert_file, key_file = self.service_certificates[runtime_transport.APP_URI]
         return runtime_transport.ClientTLS(
             ca_file=self.environment_service.ca_file,
             server_uri=_SESSION_DISPATCHER_URI,
             cert_file=cert_file,
             key_file=key_file,
-            client_uri=service,
+            client_uri=runtime_transport.APP_URI,
         )
 
     def service_credentials(self, service: str) -> grpc.ChannelCredentials:
@@ -105,7 +99,6 @@ class GatewayProcess:
         """Call Runtime through this explicitly separate Environments listener."""
         return SandboxControlClient(
             control_target=self.environment_service.target,
-            token_file=None,
             request_timeout_s=request_timeout_s,
             channel_credentials=self.environment_service.channel_credentials(service),
         )
@@ -127,7 +120,6 @@ class GatewayProcess:
         """Replace the process while retaining its listener, database and deployment settings."""
         started = await self._restart(while_stopped)
         self.process = started.process
-        self.log_path = started.stderr
 
 
 @asynccontextmanager
@@ -138,16 +130,14 @@ async def run_gateway(
     namespace: str,
     runtime_proxy_controller_callers: Sequence[str] = (),
     runtime_proxy_executor_callers: Sequence[str] = (),
-    dispatcher_audience: str,
-    gateway_audience: str,
     environment_runtime_ca: CertificateAuthority | None = None,
 ) -> AsyncIterator[GatewayProcess]:
     """Run the Dispatcher and an independent production Environments Runtime proxy peer."""
-    binary = Runfiles.CreateOrRaise().root() / _GATEWAY_BINARY
-    migration_log = undeclared_outputs_dir() / f"go-runner-gateway-migration-{uuid4().hex}.log"
+    binary = Runfiles.CreateOrRaise().root() / _SESSIONS_BINARY
+    migration_log = undeclared_outputs_dir() / f"go-sessions-migration-{uuid4().hex}.log"
     await asyncio.to_thread(_migrate, binary, database_url, migration_log)
 
-    log_path = undeclared_outputs_dir() / f"go-runner-gateway-{uuid4().hex}.log"
+    log_path = undeclared_outputs_dir() / f"go-sessions-{uuid4().hex}.log"
     # The database URL stays out of the file, as in deployment, where it comes from a runtime source.
     # Exact service roles exercise the authoring schema and Go loader contract.
     if environment_runtime_ca is None:
@@ -178,12 +168,7 @@ async def run_gateway(
                     auth=[workload_listener.SPIFFEAuth(ca_file=environment_runtime_ca_file)],
                 )
                 service_certificates = {}
-                for service in (
-                    runtime_transport.APP_URI,
-                    runtime_transport.GATEWAY_SESSIONS_URI,
-                    runtime_transport.SANDBOX_CONTROLLER_URI,
-                    runtime_transport.CENTRAL_SAMPLER_URI,
-                ):
+                for service in (runtime_transport.APP_URI, runtime_transport.CENTRAL_SAMPLER_URI):
                     directory = settings_directory / service.rsplit("/", 1)[-1]
                     directory.mkdir()
                     service_certificates[service] = issue_workload_leaf(environment_runtime_ca, service, directory)
@@ -200,11 +185,7 @@ async def run_gateway(
                 settings_path = settings_directory / "settings.yaml"
                 settings_path.write_text(yaml.safe_dump(settings, sort_keys=False))
                 environment = {
-                    **{
-                        key: value
-                        for key, value in os.environ.items()
-                        if not key.startswith("AGENTPLANE_RUNNER_GATEWAY_")
-                    },
+                    **os.environ,
                     "AGENTPLANE_SESSIONS_CONFIG_FILE": str(settings_path),
                     "AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL": _wire_database_url(database_url),
                 }
@@ -226,10 +207,7 @@ async def run_gateway(
                     gateway = GatewayProcess(
                         process=started.process,
                         target=f"localhost:{rpc_listener.port}",
-                        log_path=started.stderr,
                         environment_service=environment_service,
-                        dispatcher_audience=dispatcher_audience,
-                        gateway_audience=gateway_audience,
                         service_certificates=service_certificates,
                         _restart=restart_process,
                         _close_listener=rpc_listener.socket.close,

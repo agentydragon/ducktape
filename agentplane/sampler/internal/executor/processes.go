@@ -84,7 +84,7 @@ func (e *Executor) startProcess(ctx context.Context, argv []string, cwd string, 
 	}
 	_, err := operationValue(e.transport.Start(ctx, transport.StartRequest{ProcessID: processID, Argv: argv, Cwd: fileURI(cwd), EnvPolicy: e.envPolicy(), Env: environment, TTY: tty}))
 	if err != nil {
-		failure := findTransportFailure(err, transport.FailureRejected, transport.FailureIncarnationFence)
+		failure := transport.FindFailure(err, transport.FailureRejected, transport.FailureIncarnationFence)
 		if failure != nil && failure.Method == transport.MethodProcessStart &&
 			(failure.Kind == transport.FailureRejected || failure.RemoteOutcome == transport.NotDispatched) {
 			// No process exists; release its session number.
@@ -221,7 +221,7 @@ func (e *Executor) writeStdin(ctx context.Context, arguments json.RawMessage) (*
 				return nil, &toolcontract.Rejection{Message: "write_stdin failed: " + stdinClosedMessage}
 			}
 			if process.Status == executionstate.ProcessRunning && process.ExitCode == nil {
-				if err := e.dispatchInput(ctx, func() error {
+				if err := e.dispatchInput(func() error {
 					_, err := operationValue(e.transport.Signal(ctx, transport.SignalRequest{ProcessID: process.ID, Signal: "interrupt"}))
 					return err
 				}); err != nil {
@@ -230,7 +230,7 @@ func (e *Executor) writeStdin(ctx context.Context, arguments json.RawMessage) (*
 			}
 		} else if process.Status == executionstate.ProcessRunning && process.ExitCode == nil {
 			// A write to an exited terminal is moot; the poll below reports the exit.
-			if err := e.dispatchInput(ctx, func() error {
+			if err := e.dispatchInput(func() error {
 				result, err := operationValue(e.transport.Write(ctx, transport.WriteRequest{ProcessID: process.ID, Chunk: []byte(plan.chars), WriteID: uuid.NewString()}))
 				if err != nil {
 					return err
@@ -257,7 +257,7 @@ func (e *Executor) writeStdin(ctx context.Context, arguments json.RawMessage) (*
 	return observation.unifiedExecResult(process.ModelSessionID, plan.maxOutputTokens, newChunkID()), nil
 }
 
-func (e *Executor) dispatchInput(ctx context.Context, send func() error) error {
+func (e *Executor) dispatchInput(send func() error) error {
 	e.dispatchMu.Lock()
 	defer e.dispatchMu.Unlock()
 	if e.stopping {
@@ -304,19 +304,19 @@ func (e *Executor) readProcess(ctx context.Context, processID string, yieldMS in
 		}))
 		cancel()
 		if rpcErr != nil {
-			if failure := findTransportFailure(rpcErr, transport.FailureNotDispatched); failure != nil {
+			if failure := transport.FindFailure(rpcErr, transport.FailureNotDispatched); failure != nil {
 				failure.AfterSequence, failure.Output = after, output
 			}
-			if failure := findTransportFailure(rpcErr, transport.FailureTransport); failure != nil {
+			if failure := transport.FindFailure(rpcErr, transport.FailureTransport); failure != nil {
 				failure.AfterSequence, failure.Output = after, output
 			}
-			if failure := findTransportFailure(rpcErr, transport.FailureRejected); failure != nil && failure.Method == transport.MethodProcessRead {
+			if failure := transport.FindFailure(rpcErr, transport.FailureRejected); failure != nil && failure.Method == transport.MethodProcessRead {
 				failure.AfterSequence, failure.Output = after, output
 			}
-			if failure := findTransportFailure(rpcErr, transport.FailureEnvironment); failure != nil && failure.Method == transport.MethodProcessRead {
+			if failure := transport.FindFailure(rpcErr, transport.FailureEnvironment); failure != nil && failure.Method == transport.MethodProcessRead {
 				failure.AfterSequence, failure.Output = after, output
 			}
-			if failure := findTransportFailure(rpcErr, transport.FailureIncarnationFence); failure != nil && failure.Method == transport.MethodProcessRead {
+			if failure := transport.FindFailure(rpcErr, transport.FailureIncarnationFence); failure != nil && failure.Method == transport.MethodProcessRead {
 				failure.AfterSequence, failure.Output = after, output
 			}
 			return nil, rpcErr
@@ -404,7 +404,7 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 		}))
 		cancel()
 		if rpcErr != nil {
-			fence := findTransportFailure(rpcErr, transport.FailureIncarnationFence)
+			fence := transport.FindFailure(rpcErr, transport.FailureIncarnationFence)
 			if fence != nil && fence.Method == transport.MethodProcessRead {
 				handled := e.outcomeToolError(ctx, rpcErr)
 				var toolFailure *toolcontract.Rejection
@@ -416,7 +416,7 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 				lock.Unlock()
 				continue
 			}
-			rejected := findTransportFailure(rpcErr, transport.FailureRejected)
+			rejected := transport.FindFailure(rpcErr, transport.FailureRejected)
 			if rejected != nil && rejected.Method == transport.MethodProcessRead {
 				handled := e.outcomeToolError(ctx, rpcErr)
 				var toolFailure *toolcontract.Rejection
@@ -428,8 +428,8 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 				lock.Unlock()
 				continue
 			}
-			transportFailure := findTransportFailure(rpcErr, transport.FailureTransport)
-			notDispatched := findTransportFailure(rpcErr, transport.FailureNotDispatched)
+			transportFailure := transport.FindFailure(rpcErr, transport.FailureTransport)
+			notDispatched := transport.FindFailure(rpcErr, transport.FailureNotDispatched)
 			if transportFailure != nil {
 				transportFailure.AfterSequence = row.AfterSequence
 			}
@@ -443,8 +443,8 @@ func (e *Executor) ReconcileProcesses(ctx context.Context, timeout time.Duration
 				lock.Unlock()
 				return true, nil
 			}
-			environment := findTransportFailure(rpcErr, transport.FailureEnvironment)
-			fence = findTransportFailure(rpcErr, transport.FailureIncarnationFence)
+			environment := transport.FindFailure(rpcErr, transport.FailureEnvironment)
+			fence = transport.FindFailure(rpcErr, transport.FailureIncarnationFence)
 			if environment != nil || fence != nil {
 				handled := e.outcomeToolError(ctx, rpcErr)
 				var toolOutcome *ToolOutcomeError

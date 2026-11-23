@@ -1,8 +1,10 @@
 import type { JSX } from "react";
 import { Code, Stack, Text } from "@mantine/core";
 
-import { type ActionPresentation, expandsForRejectedArguments } from "../presentation";
-import { definePreview, type ArgumentsPreview } from "../entry";
+import { type ActionPresentation, expandsForDetails } from "../presentation";
+import { definePreview, type ArgumentsPreview, useCompactPane } from "../entry";
+import { Field } from "./display";
+import { pullRequestSearchResults } from "./receipts";
 import {
   type SearchPullRequestsArguments,
   zSearchPullRequestsArguments,
@@ -16,47 +18,28 @@ function SearchPullRequestsLabel(): JSX.Element {
   );
 }
 
-function SearchPullRequestsArgumentsView({
-  args,
-  showFullOptions,
-}: {
-  args: SearchPullRequestsArguments;
-  showFullOptions: boolean;
-}): JSX.Element {
+function SearchPullRequestsArgumentsView({ args }: { args: SearchPullRequestsArguments }): JSX.Element {
+  const compact = useCompactPane();
+  const repository =
+    args.owner && args.repo && !/(^|\W)repo:\S+/.test(args.query) ? `${args.owner}/${args.repo}` : undefined;
   return (
     <Stack gap={2}>
       <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-        Query: <Code style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{args.query}</Code>
+        Query <Code style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{args.query}</Code>
       </Text>
-      {args.owner !== undefined && (
+      {repository && (
         <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-          Owner filter: <Code>{args.owner}</Code>
+          Repository <Code>{repository}</Code>
         </Text>
       )}
-      {args.repo !== undefined && (
-        <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-          Repository filter: <Code>{args.repo}</Code>
-        </Text>
-      )}
-      {showFullOptions && args.page !== undefined && <Text size="sm">Page {args.page}</Text>}
-      {showFullOptions && args.perPage !== undefined && <Text size="sm">{args.perPage} results per page</Text>}
-      {showFullOptions && args.sort !== undefined && <Text size="sm">Sort by {args.sort}</Text>}
-      {showFullOptions && args.order !== undefined && <Text size="sm">Order: {args.order}</Text>}
-      {showFullOptions && args.fields !== undefined && (
-        <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-          Fields: {args.fields.length > 0 ? args.fields.join(", ") : "none"}
-        </Text>
+      {!compact && (
+        <>
+          <Field name="Page" value={args.page} />
+          <Field name="Page size" value={args.perPage} />
+        </>
       )}
     </Stack>
   );
-}
-
-function SearchPullRequestsCompactArgumentsView({ args }: { args: SearchPullRequestsArguments }): JSX.Element {
-  return <SearchPullRequestsArgumentsView args={args} showFullOptions={false} />;
-}
-
-function SearchPullRequestsDetailsArgumentsView({ args }: { args: SearchPullRequestsArguments }): JSX.Element {
-  return <SearchPullRequestsArgumentsView args={args} showFullOptions={true} />;
 }
 
 export function offersCardDecisionButtonsSearchPullRequests(args: unknown): boolean {
@@ -69,17 +52,16 @@ export const searchPullRequestsLabel: ArgumentsPreview = definePreview(
 );
 export const searchPullRequestsCompactArguments: ArgumentsPreview = definePreview(
   zSearchPullRequestsArguments,
-  SearchPullRequestsCompactArgumentsView
+  SearchPullRequestsArgumentsView
 );
-export const searchPullRequestsDetailsArguments: ArgumentsPreview = definePreview(
-  zSearchPullRequestsArguments,
-  SearchPullRequestsDetailsArgumentsView
-);
-
 export const searchPullRequestsPresentation: ActionPresentation = {
+  fallbackLabel: "Search GitHub pull requests",
   label: searchPullRequestsLabel,
   pane: { collapsed: searchPullRequestsCompactArguments, opened: searchPullRequestsCompactArguments },
-  details: { arguments: searchPullRequestsDetailsArguments },
+  details: { arguments: searchPullRequestsCompactArguments, result: pullRequestSearchResults },
   offersCardDecisionButtons: offersCardDecisionButtonsSearchPullRequests,
-  compactCardExpands: expandsForRejectedArguments(zSearchPullRequestsArguments),
+  compactCardExpands: expandsForDetails(
+    zSearchPullRequestsArguments,
+    (args) => args.page !== undefined || args.perPage !== undefined
+  ),
 };

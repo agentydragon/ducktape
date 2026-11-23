@@ -78,6 +78,7 @@ py_library(
         "//skills:__subpackages__",
     ],
     deps = [
+        ":docker_exec",
         ":skill_staging",
         "//mcp_infra/exec/docker:types",
         "@pypi//agent_framework_anthropic",  # keep: core's stub __init__ chains into it; mypy needs it present

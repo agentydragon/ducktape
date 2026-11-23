@@ -1,6 +1,6 @@
 """Convert an OpenAPI document file into TypeScript declarations."""
 
-load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
+load(":schema_declarations.bzl", "schema_declarations")
 
 def openapi_js_library(name, schema, out = None, schema_files = [], visibility = None):
     """Generate API declarations from a declared OpenAPI JSON file.
@@ -12,28 +12,12 @@ def openapi_js_library(name, schema, out = None, schema_files = [], visibility =
     target publishes the declarations through `JsInfo`; the generated file is
     also available by its `out` label, which defaults to `<name>.d.ts`.
     """
-    if out == None:
-        out = name + ".d.ts"
-
-    schema_label = str(schema)
-    output_label = ":" + out
-
-    generated_name = "_{}_generate".format(name)
-    js_run_binary(
-        name = generated_name,
-        srcs = [schema] + schema_files,
-        outs = [out],
-        args = [
-            "$(location {})".format(schema_label),
-            "$(location {})".format(output_label),
-        ],
-        chdir = "../../../",
-        tool = "//devinfra/js:openapi_typescript_codegen",
-        visibility = visibility,
-    )
-
-    js_library(
+    schema_declarations(
         name = name,
-        srcs = [":" + generated_name],
+        schema = schema,
+        schema_files = schema_files,
+        out = out,
+        tool = "//devinfra/js:openapi_typescript_codegen",
+        publish_schema = False,
         visibility = visibility,
     )

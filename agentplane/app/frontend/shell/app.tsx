@@ -1,3 +1,5 @@
+import { appActionRendering } from "../actions/rendering/index";
+import { ActionRenderingContext } from "../actions/rendering/dispatch";
 import { ActionIcon, Stack, Text, Title } from "@mantine/core";
 import { IconMenu2 } from "../ui/icons";
 import { type JSX, useCallback, useEffect, useMemo, useState } from "react";
@@ -88,8 +90,8 @@ function ActionsPage(): JSX.Element {
       <Text c="dimmed" size="sm">
         Review requests awaiting a decision, then browse their decision and execution history.
       </Text>
-      <ActionRequests embedded />
-      <ActionHistory embedded />
+      <ActionRequests />
+      <ActionHistory />
     </Stack>
   );
 }
@@ -110,8 +112,8 @@ function AppRoutes(): JSX.Element {
   const location = useLocation();
   const threadRoute = useMatch("/threads/:threadId");
   const actionsRoute = useMatch("/actions/*");
-  // Not legacy-path compatibility: api.py's MCP-linkage OAuth callback redirects the browser here
-  // on completion, and it needs to land showing the result rather than the Sandboxes list.
+  // Not legacy-path compatibility: the MCP-linkage OAuth callback (agentplane/app/internal/httpapi/operator/routes.go)
+  // redirects the browser here on completion, and it needs to land showing the result rather than the Sandboxes list.
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(() =>
     location.pathname === "/mcp-servers" ? "mcp-servers" : null
   );
@@ -203,14 +205,16 @@ function AppRoutes(): JSX.Element {
 
 export default function App(): JSX.Element {
   return (
-    <ThreadSyncContext.Provider value={electricThreadSync}>
-      <HashRouter>
-        <RoutedThreadsLiveProvider>
-          <SandboxesLiveProvider>
-            <AppRoutes />
-          </SandboxesLiveProvider>
-        </RoutedThreadsLiveProvider>
-      </HashRouter>
-    </ThreadSyncContext.Provider>
+    <ActionRenderingContext.Provider value={appActionRendering}>
+      <ThreadSyncContext.Provider value={electricThreadSync}>
+        <HashRouter>
+          <RoutedThreadsLiveProvider>
+            <SandboxesLiveProvider>
+              <AppRoutes />
+            </SandboxesLiveProvider>
+          </RoutedThreadsLiveProvider>
+        </HashRouter>
+      </ThreadSyncContext.Provider>
+    </ActionRenderingContext.Provider>
   );
 }

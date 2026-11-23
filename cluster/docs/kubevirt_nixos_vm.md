@@ -32,3 +32,22 @@ VMs that use node-local storage are tied to one node
 and are not live-migratable; node loss means availability loss. For durable
 VMs, use a CSI backend with RWX/block support and `VolumeSnapshotClass` before
 relying on KubeVirt migration, snapshots, or node-failure recovery.
+
+## What KubeVirt does and does not provide
+
+KubeVirt was chosen as the existing add-on for persistent VMs in this cluster. The alternatives:
+Harvester is a packaged but separate VMware-like platform with its own UI, Longhorn storage and
+backups; OpenShift Virtualization is practical only on OpenShift; Virtink is too immature (live
+migration is roadmap-only); Kata is a VM-backed container runtime, not a persistent VM platform; raw
+Firecracker or Cloud Hypervisor is the right primitive for sandboxes forked from warm memory
+snapshots but means a custom orchestrator (<../../devinfra/x/firecracker/vm_alternatives.md>).
+
+- **No durable suspend.** Pause stops CPU and IO but leaves the memory allocated on the node, and the
+  memory dump feature is for diagnostics only. A durable stop is a guest shutdown and a later boot.
+- **Snapshots are storage snapshots.** They need a `VolumeSnapshotClass`, and a restore needs the VM
+  target stopped.
+- **Live migration** needs a migratable RWX disk and only helps for planned evictions.
+- **Sudden node loss** is a restart from replicated storage with the RAM lost. KubeVirt can take up
+  to about five minutes to mark an unresponsive virt-handler path unhealthy.
+- **Not on SeaweedFS FUSE.** Its semantics and observed fsync latency rule it out for VM disks.
+- **Not yet validated:** snapshot, live migration and node-loss recovery on the Piraeus classes.

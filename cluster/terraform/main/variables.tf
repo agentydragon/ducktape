@@ -1,4 +1,3 @@
-# Cluster configuration (from infrastructure)
 variable "cluster_name" {
   description = "Name of the Talos cluster"
   type        = string
@@ -37,7 +36,6 @@ variable "kubernetes_version" {
   default     = "1.35.1"
 }
 
-# Proxmox (shared by persistent-auth + infrastructure + VMs)
 variable "proxmox_api_host" {
   description = "Proxmox API host — VLAN IP so CSI pods can reach it"
   type        = string
@@ -50,7 +48,6 @@ variable "proxmox_node_name" {
   default     = "atlas"
 }
 
-# VM configuration (from nixos-dev-env)
 variable "storage" {
   description = "Proxmox storage for VM disks"
   type        = string

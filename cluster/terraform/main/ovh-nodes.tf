@@ -13,8 +13,6 @@
 #   - Server purchased via OVH web UI; set the matching kimsufi_service_name var
 #   - OVH API credentials in secrets/ovh-credentials.sops.yaml
 
-# SERVER MAP
-
 locals {
   # Talos-owned system volumes on the system disk. Piraeus owns the whole data disk
   # (cluster/cdk8s/piraeus.py names each node's device). A layout change repartitions
@@ -168,8 +166,6 @@ locals {
 
 }
 
-# TALOS IMAGE FACTORY - Metal platform with Nebula extension
-
 resource "talos_image_factory_schematic" "kimsufi" {
   schematic = yamlencode({
     customization = {
@@ -201,8 +197,6 @@ data "talos_image_factory_urls" "kimsufi" {
   architecture  = "amd64"
 }
 
-# OVH SERVER DATA SOURCES
-
 data "ovh_dedicated_server" "kimsufi" {
   for_each     = local.active_kimsufi_servers
   service_name = each.value.service_name
@@ -219,16 +213,12 @@ locals {
   kimsufi_harddisk_boot_id = 1      # harddisk
 }
 
-# SSH KEY — for OVH rescue mode authentication
-
 # ED25519 keypair injected into the OVH rescue environment so remote-exec can
 # SSH in to dd the Talos image. Stored in SOPS (secrets/ovh-rescue-ssh.sops.yaml),
 # not generated in-TF, so it survives state loss without breaking access.
 data "sops_file" "ovh_rescue_ssh" {
   source_file = "${path.module}/../../../secrets/ovh-rescue-ssh.sops.yaml"
 }
-
-# OVH SERVER RESOURCES — sets rescue SSH key + EFI bootloader
 
 resource "ovh_dedicated_server" "kimsufi" {
   for_each = local.active_kimsufi_servers
@@ -248,8 +238,6 @@ resource "ovh_dedicated_server" "kimsufi" {
   # UKI-aware and chainloads it properly.
   efi_bootloader_path = "\\efi\\boot\\bootx64.efi"
 }
-
-# TALOS INSTALLATION — rescue boot, dd image, harddisk reboot
 
 # Step 1: Set rescue boot mode.
 # ignore_changes on boot_id: after initial creation this sets boot to rescue.
@@ -329,8 +317,6 @@ resource "ovh_dedicated_server_reboot_task" "kimsufi_to_talos" {
   depends_on   = [ovh_dedicated_server_update.kimsufi_harddisk]
 }
 
-# TALOS MACHINE CONFIGURATION
-
 locals {
   # Kimsufi control planes consume the common control-plane config, including
   # Talos' default NoSchedule taint. Workloads that intentionally remain there
@@ -396,7 +382,6 @@ locals {
         sysctls = {
           "user.max_user_namespaces" = "1048576"
         }
-        # Topology labels set explicitly — no CCM for OVH bare metal.
         # `storage.allegedly.works/tier` pins media-specific workloads (ClickHouse) and is
         # exported as a node metric label by kube-state-metrics.
         nodeLabels = {
@@ -555,8 +540,6 @@ resource "talos_machine_configuration_apply" "kimsufi" {
   depends_on = [ovh_dedicated_server_reboot_task.kimsufi_to_talos]
 }
 
-# KS-GAME GAME SHIELD — Nebula port 4242 passthrough
-#
 # OVH KS-GAME servers run the OVH Game Shield (anti-DDoS) which by default
 # drops UDP traffic that doesn't match a known game protocol signature.
 # Nebula's ix_psk0 handshake is not a known game protocol, so it gets dropped,

@@ -5,11 +5,6 @@
       "test": "//ai_session_archive/...",
       "registry": "forgejo"
     },
-    "ai-session-archive-migrator": {
-      "target": "//ai_session_archive:migrate_image",
-      "test": "//ai_session_archive:test_database_migrate",
-      "registry": "forgejo"
-    },
     "ai-session-archive-web": {
       "target": "//ai_session_archive:web_image",
       "test": "//ai_session_archive/...",
@@ -44,9 +39,6 @@
       "target": "//cluster/proxies/loki_read_proxy:image",
       "test": "//cluster/proxies/loki_read_proxy/...",
       "registry": "forgejo"
-    },
-    "tofu-controller": {
-      "target": "@ducktape_tofu_controller//:image"
     },
     "platform-sessions-gateway": {
       "target": "//platform_sessions/management/gateway/cmd:image",
@@ -85,10 +77,6 @@
     "mcp-oauth-facade": {
       "target": "//x/mcp_oauth_facade:image",
       "test": "//x/mcp_oauth_facade/...",
-      "registry": "forgejo"
-    },
-    "osm-mcp": {
-      "target": "//third_party/osmmcp:image",
       "registry": "forgejo"
     },
     "grocy-mcp": {
@@ -135,19 +123,6 @@
       "test": "//study_casino/...",
       "registry": "forgejo"
     },
-    "loom-gym-eval": {
-      "target": "//x/loom/gym:eval_image",
-      "test": "//x/loom/gym/..."
-    },
-    "wayback-proxy": {
-      "target": "//x/loom/wayback/proxy:image",
-      "test": "//x/loom/wayback/proxy/..."
-    },
-    "wayback-archive": {
-      "target": "//x/loom/wayback/cache:image",
-      "test": "//x/loom/wayback/cache:wayback_cache_test",
-      "registry": "forgejo"
-    },
     "authentik-jwt-rotation": {
       "target": "//cluster/rotators/authentik_jwt_rotation:image",
       "test": "//cluster/rotators/authentik_jwt_rotation/...",
@@ -185,16 +160,6 @@
     "matrix-user-provisioner": {
       "target": "//cluster/provisioners/matrix_user_provisioner:image",
       "test": "//cluster/provisioners/matrix_user_provisioner/...",
-      "registry": "forgejo"
-    },
-    "firecracker-manager": {
-      "target": "//devinfra/x/firecracker/manager:image"
-    },
-    "fc-vm-pod": {
-      "target": "//devinfra/x/firecracker/vm_pod:image"
-    },
-    "inventree": {
-      "target": "//inventree_utils/rai_plugin:image",
       "registry": "forgejo"
     },
     "stalwart": {

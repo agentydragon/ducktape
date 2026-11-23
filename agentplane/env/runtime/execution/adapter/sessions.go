@@ -38,7 +38,7 @@ func (a *Adapter) OpenSession(r *executorpb.OpenSessionRequest, stream executorp
 	err := a.authorize(stream.Context(), r.Scope, true, func(admittedCtx context.Context) error {
 		a.mu.Lock()
 		defer a.mu.Unlock()
-		if a.closed || a.draining || a.ctx.Err() != nil {
+		if a.closed || a.ctx.Err() != nil {
 			return status.Error(codes.Unavailable, "execution adapter is stopping")
 		}
 		if r.ResumeSessionId != nil {
@@ -94,7 +94,6 @@ func (a *Adapter) OpenSession(r *executorpb.OpenSessionRequest, stream executorp
 		}
 		a.mu.Unlock()
 		sessionCancel()
-		a.changed()
 	}()
 	if previousCancel != nil {
 		previousCancel()
@@ -104,7 +103,6 @@ func (a *Adapter) OpenSession(r *executorpb.OpenSessionRequest, stream executorp
 			return status.FromContextError(sessionCtx.Err()).Err()
 		}
 	}
-	a.changed()
 	response := new(executorpb.OpenSessionResponse)
 	var frames []*executorpb.ExecutionNativeFrame
 	endpoint, err := a.config.Acquire(sessionCtx)
@@ -144,7 +142,7 @@ func (a *Adapter) OpenSession(r *executorpb.OpenSessionRequest, stream executorp
 			if err == nil {
 				current.id = initialized.SessionID
 				a.mu.Lock()
-				if a.closed || a.draining || sessionCtx.Err() != nil {
+				if a.closed || sessionCtx.Err() != nil {
 					err = errors.New("execution adapter stopped during initialization")
 				} else if a.sessions[current.id] != nil {
 					err = &executorRejectedError{method: "initialize", code: -32602, message: "execution session already has an open connection"}
@@ -176,7 +174,6 @@ func (a *Adapter) OpenSession(r *executorpb.OpenSessionRequest, stream executorp
 	if !registered {
 		return nil
 	}
-	a.changed()
 	for {
 		select {
 		case payload := <-c.notifications:

@@ -18,8 +18,6 @@ exports_files([
     "*/Cargo.toml",
 ]))
 
-# ── aw-models ─────────────────────────────────────────────────────────────────
-
 rust_library(
     name = "aw_models",
     srcs = glob(["aw-models/src/**/*.rs"]),
@@ -38,8 +36,6 @@ rust_library(
     ],
 )
 
-# ── aw-transform ──────────────────────────────────────────────────────────────
-
 rust_library(
     name = "aw_transform",
     srcs = glob(["aw-transform/src/**/*.rs"]),
@@ -57,8 +53,6 @@ rust_library(
         "@aw_server_crates//:url",
     ],
 )
-
-# ── aw-datastore ──────────────────────────────────────────────────────────────
 
 rust_library(
     name = "aw_datastore",
@@ -83,8 +77,6 @@ rust_library(
     ],
 )
 
-# ── aw-query ──────────────────────────────────────────────────────────────────
-
 rust_library(
     name = "aw_query",
     srcs = glob(["aw-query/src/**/*.rs"]),
@@ -105,8 +97,6 @@ rust_library(
         "@aw_server_crates//:serde_json",
     ],
 )
-
-# ── aw-client-rust ────────────────────────────────────────────────────────────
 
 rust_library(
     name = "aw_client_rust",
@@ -174,8 +164,6 @@ rust_library(
         "@aw_server_crates//:uuid",
     ],
 )
-
-# ── aw-sync ───────────────────────────────────────────────────────────────────
 
 rust_library(
     name = "aw_sync",

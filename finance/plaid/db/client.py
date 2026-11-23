@@ -10,7 +10,6 @@ import certifi
 import plaid
 from plaid.api import plaid_api
 from plaid.exceptions import ApiException as PlaidApiException
-from plaid.model.accounts_balance_get_request import AccountsBalanceGetRequest
 from plaid.model.accounts_get_request import AccountsGetRequest
 from plaid.model.accounts_get_response import AccountsGetResponse
 from plaid.model.country_code import CountryCode
@@ -18,7 +17,6 @@ from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdReques
 from plaid.model.institutions_get_by_id_request_options import InstitutionsGetByIdRequestOptions
 from plaid.model.institutions_search_request import InstitutionsSearchRequest
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
-from plaid.model.item_public_token_exchange_response import ItemPublicTokenExchangeResponse
 from plaid.model.item_remove_request import ItemRemoveRequest
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
@@ -26,8 +24,6 @@ from plaid.model.link_token_transactions import LinkTokenTransactions
 from plaid.model.products import Products
 from plaid.model.sandbox_public_token_create_request import SandboxPublicTokenCreateRequest
 from plaid.model.sandbox_public_token_create_response import SandboxPublicTokenCreateResponse
-from plaid.model.transactions_get_request import TransactionsGetRequest
-from plaid.model.transactions_get_response import TransactionsGetResponse
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
 from plaid.model.transactions_sync_response import TransactionsSyncResponse
 from plaid.model.webhook_verification_key_get_request import WebhookVerificationKeyGetRequest
@@ -254,9 +250,6 @@ class PlaidClient:
         except PlaidApiException as exc:
             raise _plaid_api_error("/item/remove", exc) from exc
 
-    def item_public_token_exchange(self, request: ItemPublicTokenExchangeRequest, /) -> ItemPublicTokenExchangeResponse:
-        return cast(ItemPublicTokenExchangeResponse, self._api.item_public_token_exchange(request))
-
     def webhook_verification_key_get(
         self, request: WebhookVerificationKeyGetRequest, /
     ) -> WebhookVerificationKeyGetResponse:
@@ -267,12 +260,6 @@ class PlaidClient:
 
     def accounts_get(self, request: AccountsGetRequest, /) -> AccountsGetResponse:
         return cast(AccountsGetResponse, self._api.accounts_get(request))
-
-    def accounts_balance_get(self, request: AccountsBalanceGetRequest, /) -> AccountsGetResponse:
-        return cast(AccountsGetResponse, self._api.accounts_balance_get(request))
-
-    def transactions_get(self, request: TransactionsGetRequest, /) -> TransactionsGetResponse:
-        return cast(TransactionsGetResponse, self._api.transactions_get(request))
 
     def transactions_sync(self, request: TransactionsSyncRequest, /) -> TransactionsSyncResponse:
         return cast(TransactionsSyncResponse, self._api.transactions_sync(request))

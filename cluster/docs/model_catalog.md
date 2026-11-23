@@ -7,7 +7,7 @@ current work and dated deployment evidence live in [#9574](https://github.com/ag
 ## Deployment bindings
 
 [`model_catalog`](../../model_catalog/README.md) supplies source declarations, named
-routes and lane policies without importing cdk8s. `cluster/cdk8s/model_selections.py`
+routes and lane policies without importing cdk8s. `cluster/cdk8s/agentplane/model_selections.py`
 owns cluster consumer selections; `cluster/cdk8s/litellm/upstreams.py` binds catalogue
 upstreams to deployment endpoints and credential references. Ollama's deployment
 selects source declarations from `model_catalog/ollama.py` for provisioning.
@@ -45,7 +45,8 @@ routing and do not grant additional access. Empty fallbacks mean no configured
 fallback. The Crossplane projection reads this catalog directly when building each
 key's allowed models and each team's ordered fallback list. Lane names bind these
 records to Crossplane keys/teams; keys may combine several lanes. Regenerate the
-manifests with `bb run //cluster/cdk8s:generate_manifests`.
+manifests with `bb run //cluster/cdk8s:generate_manifests`. For remote execution, use the
+[remote generation and patch retrieval recipe](../../devinfra/buildbuddy/docs/remote.md#run-repository-writers-remotely-and-retrieve-a-patch).
 
 Each environment projects selected routes and explicit `RUNNER_CONTEXT_OVERRIDES`
 into `LlmIngressProps.models`. The runner consumes the shared `ModelConfig` contract
@@ -85,7 +86,7 @@ the native Claude adapter, credentials, and shared Anthropic/LiteLLM ingress rem
 Direct local clients and Claude Code Web are unaffected.
 
 To restore the offerings, repopulate `STAGING_APP_MODELS.claude` in
-`cluster/cdk8s/model_selections.py`. Restoring Haku's
+`cluster/cdk8s/agentplane/model_selections.py`. Restoring Haku's
 Claude default is optional and separate: Haku's preset is defined in `staging_config.py`,
 where its `model` takes any route, and a Thread cannot move to a model with a different
 configured context window, so existing Haku Threads stay on Codex. Resolve the tracked

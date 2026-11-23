@@ -7,6 +7,8 @@ import { answerApi, mount, send, sendUpserts } from "../testing/harness";
 import {
   ActionGroupSchema,
   ExecutorKind,
+  InputSchemaValidationStatus,
+  InputSchemaValidationReason,
   McpLifecycle,
   McpUnavailableReason,
   type ActionGroup,
@@ -133,6 +135,16 @@ it("shows a bearer-auth group with a live health badge and no link/disconnect bu
         executorKind: ExecutorKind.MCP,
         executorDescription: "Tana MCP tools",
         available: true,
+        actions: [
+          {
+            name: "search_nodes",
+            inputSchemaValidation: {
+              status: InputSchemaValidationStatus.NOT_ENFORCED,
+              reason: InputSchemaValidationReason.SCHEMA_COMPILE_FAILED,
+              detail: "Agentplane cannot validate arguments",
+            },
+          },
+        ],
         health: {
           state: McpLifecycle.AVAILABLE,
           failures: 0,
@@ -142,6 +154,7 @@ it("shows a bearer-auth group with a live health badge and no link/disconnect bu
   );
   expect(container.textContent).toContain("tana");
   expect(container.textContent).toContain("available");
+  expect(container.textContent).toContain("search_nodes: Agentplane cannot validate arguments");
   const buttons = [...container.querySelectorAll("button")].map((button) => button.textContent);
   expect(buttons).not.toContain("Link account");
   expect(buttons).not.toContain("Disconnect");

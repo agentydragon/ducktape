@@ -2,7 +2,6 @@
 
 **Date**: 2026-06-02
 **Status**: Data loss confirmed. Recovery is partial (no backups for the affected buckets).
-**Supersedes**: <2026_06_02_loki_compactor_seaweedfs_replication_race.md> (which had the wrong RCA — replication race for a single object).
 
 ## TL;DR
 
@@ -151,8 +150,8 @@ until pods rolled.
 
 ### Per-pilot procedure for any SeaweedFS-volume-hosting node
 
-Full procedure lives in <../runbooks/rolling_seaweedfs_volume_pvc.md>. Short
-version follows.
+The current procedure is <../runbooks/piraeus_node_roll.md#seaweed-volume-servers>.
+The gate that would have caught this follows.
 
 Before deleting the volume server's PVC, confirm the cluster can tolerate
 losing this server:
@@ -240,6 +239,3 @@ reader will get `unexpected EOF` again.
 - Carry a local patch / file upstream: Loki compactor's `init delete
 store` should at least skip-on-corruption for a single-file cursor
   rather than blocking the whole backend.
-- Document a "rolling SeaweedFS volume server PVC" runbook with the
-  `volume.fix.replication` gate above; reference it from any future
-  node-rename plan.

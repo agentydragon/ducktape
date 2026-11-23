@@ -2,11 +2,10 @@ import { Link } from "react-router";
 
 interface Props {
   href?: string;
-  label?: string;
   className?: string;
 }
 
-export default function BackButton({ href, label = "← Back", className }: Props) {
+export default function BackButton({ href, className }: Props) {
   return (
     <Link
       to={href ?? "/"}
@@ -15,7 +14,7 @@ export default function BackButton({ href, label = "← Back", className }: Prop
         "text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:underline"
       }
     >
-      {label}
+      ← Back
     </Link>
   );
 }

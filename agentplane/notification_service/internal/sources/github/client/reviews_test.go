@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"reflect"
 	"testing"
-	"time"
 
 	githubmodel "github.com/agentydragon/ducktape/agentplane/notification_service/internal/sources/github/model" // Distinguishes GitHub-owned types from common notification model types.
 
@@ -29,13 +28,13 @@ func TestPullRequestReviewsPaginatesAndPreservesReviewFacts(t *testing.T) {
 		}
 		switch r.URL.Query().Get("page") {
 		case "1":
-			replyReviewPage(w, r, 2, fmt.Sprintf(`[
+			replyPage(w, r, path, "per_page=100", 2, fmt.Sprintf(`[
 {"id":31,"user":{"id":101,"login":"alice"},"state":"APPROVED","commit_id":%q,"submitted_at":"2026-10-27T01:02:03-07:00","body":"approved old head","html_url":"https://github.test/reviews/31"},
 {"id":32,"user":{"id":102,"login":"bob"},"state":"CHANGES_REQUESTED","commit_id":%q,"submitted_at":"2026-10-27T01:04:05Z","body":"please revise","html_url":"https://github.test/reviews/32"},
 {"id":33,"user":{"id":103,"login":"carol"},"state":"COMMENTED","commit_id":%q,"submitted_at":"2026-10-27T01:05:06Z","body":"one thought","html_url":"https://github.test/reviews/33"},
 {"id":34,"user":{"id":104,"login":"draft-reviewer"},"state":"PENDING","commit_id":%q,"body":"not submitted"}]`, fixture.BaseSHA, fixture.OtherBaseSHA, fixture.SHA, fixture.SHA))
 		case "2":
-			replyReviewPage(w, r, 0, fmt.Sprintf(`[
+			replyPage(w, r, path, "per_page=100", 0, fmt.Sprintf(`[
 {"id":35,"user":{"id":105,"login":"dana"},"state":"DISMISSED","commit_id":%q,"submitted_at":"2026-10-27T01:06:07Z","body":"dismissed","html_url":"https://github.test/reviews/35"}]`, fixture.OtherBaseSHA))
 		default:
 			t.Errorf("unexpected review page %q", r.URL.Query().Get("page"))
@@ -49,10 +48,10 @@ func TestPullRequestReviewsPaginatesAndPreservesReviewFacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []githubmodel.ReviewObservation{
-		{ID: 31, Reviewer: githubmodel.Reviewer{ID: 101, Login: "alice"}, State: githubmodel.ReviewApproved, CommitSHA: fixture.BaseSHA, SubmittedAt: reviewUTC(2026, 10, 27, 8, 2, 3), Body: "approved old head", HTMLURL: "https://github.test/reviews/31"},
-		{ID: 32, Reviewer: githubmodel.Reviewer{ID: 102, Login: "bob"}, State: githubmodel.ReviewChangesRequested, CommitSHA: fixture.OtherBaseSHA, SubmittedAt: reviewUTC(2026, 10, 27, 1, 4, 5), Body: "please revise", HTMLURL: "https://github.test/reviews/32"},
-		{ID: 33, Reviewer: githubmodel.Reviewer{ID: 103, Login: "carol"}, State: githubmodel.ReviewCommented, CommitSHA: fixture.SHA, SubmittedAt: reviewUTC(2026, 10, 27, 1, 5, 6), Body: "one thought", HTMLURL: "https://github.test/reviews/33"},
-		{ID: 35, Reviewer: githubmodel.Reviewer{ID: 105, Login: "dana"}, State: githubmodel.ReviewDismissed, CommitSHA: fixture.OtherBaseSHA, SubmittedAt: reviewUTC(2026, 10, 27, 1, 6, 7), Body: "dismissed", HTMLURL: "https://github.test/reviews/35"},
+		{ID: 31, Reviewer: githubmodel.Reviewer{ID: 101, Login: "alice"}, State: githubmodel.ReviewApproved, CommitSHA: fixture.BaseSHA, SubmittedAt: ciUTC(2026, 10, 27, 8, 2, 3), Body: "approved old head", HTMLURL: "https://github.test/reviews/31"},
+		{ID: 32, Reviewer: githubmodel.Reviewer{ID: 102, Login: "bob"}, State: githubmodel.ReviewChangesRequested, CommitSHA: fixture.OtherBaseSHA, SubmittedAt: ciUTC(2026, 10, 27, 1, 4, 5), Body: "please revise", HTMLURL: "https://github.test/reviews/32"},
+		{ID: 33, Reviewer: githubmodel.Reviewer{ID: 103, Login: "carol"}, State: githubmodel.ReviewCommented, CommitSHA: fixture.SHA, SubmittedAt: ciUTC(2026, 10, 27, 1, 5, 6), Body: "one thought", HTMLURL: "https://github.test/reviews/33"},
+		{ID: 35, Reviewer: githubmodel.Reviewer{ID: 105, Login: "dana"}, State: githubmodel.ReviewDismissed, CommitSHA: fixture.OtherBaseSHA, SubmittedAt: ciUTC(2026, 10, 27, 1, 6, 7), Body: "dismissed", HTMLURL: "https://github.test/reviews/35"},
 	}
 	if !reflect.DeepEqual(observations, want) {
 		t.Errorf("PullRequestReviews() = %+v, want %+v", observations, want)
@@ -69,7 +68,7 @@ func TestPullRequestReviewsKeepsDismissalOnTheSameReviewIdentity(t *testing.T) {
 		if path != "/repos/owner/repo/pulls/7/reviews" {
 			return false
 		}
-		replyReviewPage(w, r, 0, fmt.Sprintf(`[{"id":91,"user":{"id":401,"login":"reviewer"},"state":%q,"commit_id":%q,"submitted_at":"2026-10-27T01:02:03Z","body":"review","html_url":"https://github.test/reviews/91"}]`, state, fixture.BaseSHA))
+		replyPage(w, r, path, "per_page=100", 0, fmt.Sprintf(`[{"id":91,"user":{"id":401,"login":"reviewer"},"state":%q,"commit_id":%q,"submitted_at":"2026-10-27T01:02:03Z","body":"review","html_url":"https://github.test/reviews/91"}]`, state, fixture.BaseSHA))
 		return true
 	}
 
@@ -164,7 +163,7 @@ func TestPullRequestReviewsReturnsNonNilEmptySuccess(t *testing.T) {
 		if path != "/repos/owner/repo/pulls/7/reviews" {
 			return false
 		}
-		replyReviewPage(w, r, 0, `[]`)
+		replyPage(w, r, path, "per_page=100", 0, `[]`)
 		return true
 	}
 
@@ -187,41 +186,4 @@ func TestPullRequestReviewsRejectsInvalidNumberWithoutRequest(t *testing.T) {
 	if fake.Total() != 0 {
 		t.Errorf("invalid numbers triggered %d GitHub requests", fake.Total())
 	}
-}
-
-func TestPullRequestReviewsPreservesTypedFailureFromLaterPage(t *testing.T) {
-	fake := fixture.NewFake(t)
-	fake.Handler = func(w http.ResponseWriter, r *http.Request, path string) bool {
-		if path != "/repos/owner/repo/pulls/7/reviews" {
-			return false
-		}
-		if r.URL.Query().Get("page") == "1" {
-			replyReviewPage(w, r, 2, `[]`)
-		} else {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprint(w, `{"message":"unavailable"}`)
-		}
-		return true
-	}
-
-	observations, err := newTestClient(t, fake).PullRequestReviews(t.Context(), "owner/repo", 7, installationID)
-	if failure := fixture.AsError[*StatusError](t, err); failure.StatusCode != http.StatusServiceUnavailable {
-		t.Errorf("failure = %+v", failure)
-	}
-	if observations != nil {
-		t.Errorf("PullRequestReviews() on error = %#v, want nil", observations)
-	}
-}
-
-func replyReviewPage(w http.ResponseWriter, r *http.Request, nextPage int, body string) {
-	if nextPage != 0 {
-		w.Header().Set("Link", fmt.Sprintf(`<http://%s%s?per_page=%d&page=%d>; rel="next"`, r.Host, r.URL.Path, reviewPageSize, nextPage))
-	}
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, body)
-}
-
-func reviewUTC(year int, month time.Month, day, hour, minute, second int) *time.Time {
-	value := time.Date(year, month, day, hour, minute, second, 0, time.UTC)
-	return &value
 }

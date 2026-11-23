@@ -1,12 +1,9 @@
 package gateway
 
 import (
-	"encoding/pem"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -29,10 +26,7 @@ func TestProxyAuthorizesRoutesAndFiltersInternalBoundary(t *testing.T) {
 		w.WriteHeader(http.StatusFound)
 	}))
 	defer provider.Close()
-	ca := filepath.Join(t.TempDir(), "ca.pem")
-	if err := os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: provider.Certificate().Raw}), 0600); err != nil {
-		t.Fatal(err)
-	}
+	ca := trustedCAFile(t, provider)
 	bearer := strings.Repeat("b", 40)
 	gateway := &proxy{providers: map[string]ProviderHTTPConfig{"personal": {ID: "personal", Origin: provider.URL, OwnerToken: strings.Repeat("o", 40), RouteToken: strings.Repeat("r", 40), CAFile: ca, OperationTimeout: time.Second}}, bearers: []Bearer{{Token: bearer, Routes: []Route{{Instance: "personal", Method: "GET", Path: "/conversations/*"}}}}}
 	request := httptest.NewRequest("GET", "https://gateway.invalid/proxy/personal/conversations/abc?limit=1", nil)
@@ -62,10 +56,7 @@ func TestProxyAuthorizesRoutesAndFiltersInternalBoundary(t *testing.T) {
 func TestProxyRejectsUnmarkedProviderResponse(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "untrusted") }))
 	defer server.Close()
-	ca := filepath.Join(t.TempDir(), "ca.pem")
-	if err := os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}), 0600); err != nil {
-		t.Fatal(err)
-	}
+	ca := trustedCAFile(t, server)
 	token := strings.Repeat("x", 40)
 	gateway := &proxy{providers: map[string]ProviderHTTPConfig{"p": {Origin: server.URL, OwnerToken: token, CAFile: ca, OperationTimeout: time.Second}}, bearers: []Bearer{{Token: token, Owner: true}}}
 	req := httptest.NewRequest("GET", "https://gateway.invalid/proxy/p/x", nil)
@@ -88,10 +79,7 @@ func TestProxyOperationDeadlineCancelsProviderRequest(t *testing.T) {
 		close(canceled)
 	}))
 	defer provider.Close()
-	ca := filepath.Join(t.TempDir(), "ca.pem")
-	if err := os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: provider.Certificate().Raw}), 0600); err != nil {
-		t.Fatal(err)
-	}
+	ca := trustedCAFile(t, provider)
 	token := strings.Repeat("x", 40)
 	// Leave enough time for the TLS handshake before testing cancellation of the handler.
 	gateway := &proxy{providers: map[string]ProviderHTTPConfig{"p": {Origin: provider.URL, OwnerToken: token, CAFile: ca, OperationTimeout: time.Second}}, bearers: []Bearer{{Token: token, Owner: true}}}

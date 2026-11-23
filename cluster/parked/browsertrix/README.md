@@ -9,7 +9,9 @@ Browsertrix had a local superuser for application administration, while
 Authentik provided the external access boundary.
 
 The upstream Browsertrix chart is vendored at `cluster/charts/browsertrix` and
-records its source plus downstream changes in `UPSTREAM.md`. In particular, the
+records its source plus downstream changes in `UPSTREAM.md`. The `ducktape-flux`
+source no longer sparse-checks it out, so a revival adds
+`cluster/charts/browsertrix/` back to `cluster/cdk8s/ducktape_flux.py`. In particular, the
 upstream chart's `system:anonymous` RoleBinding is removed. In the retained
 configuration, Browsertrix's backend and generated background jobs use the
 dedicated `browsertrix-controller` ServiceAccount, while unrelated workloads do

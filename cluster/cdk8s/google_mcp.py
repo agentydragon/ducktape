@@ -25,10 +25,8 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart, Size
 from cdk8s_plus_34 import (
-    Capability,
     ContainerResources,
     ContainerSecurityContextProps,
-    ContainerSecutiryContextCapabilities,
     Cpu,
     CpuResources,
     Deployment,
@@ -46,6 +44,8 @@ from constructs import Construct
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
 from cluster.cdk8s import cilium, namespaces, pod_policy
+from cluster.cdk8s.agentplane import actions
+from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo_registry.pull_credentials import (
     forgejo_images_creds_external_secret,
@@ -54,11 +54,14 @@ from cluster.cdk8s.forgejo_registry.pull_credentials import (
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.probes import http_probe
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
+from cluster.cdk8s.vpa_policy import ContainerPolicy
 
 NAME = "google-mcp"
+_CPU_REQUEST_MILLIS = 50
+_MEMORY_LIMIT_MIB = 512
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/google-mcp-image-pins"
 _IMAGE_NAME = "git.allegedly.works/ducktape-ci/google-mcp"
@@ -88,12 +91,7 @@ class GoogleMcpApp(Construct):
         # (cluster/cdk8s/agentplane/staging.py): this namespace also holds the write-scoped Google
         # token, which no store may reach.
         mint_bearer_secret(
-            self,
-            "bearer-external-secret",
-            name=BEARER.secret.name,
-            namespace=BEARER.secret.namespace,
-            key=BEARER.key,
-            creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+            self, "bearer-external-secret", target=BEARER, creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER
         )
         forgejo_images_creds_external_secret(self, "forgejo-images-creds", namespace=NAME)
         deployment = self._add_deployment()
@@ -104,7 +102,15 @@ class GoogleMcpApp(Construct):
         deployment = Deployment(
             self,
             "deployment",
-            metadata=ApiObjectMetadata(name=NAME, namespace=NAME, labels=SERVICE.pods.selector),
+            metadata=ApiObjectMetadata(
+                name=NAME,
+                namespace=NAME,
+                labels=SERVICE.pods.selector,
+                annotations=namespaces.initial_request_annotations(
+                    # Peak 30-day working set was 196Mi, including startup.
+                    ContainerPolicy.cpu_and_memory_requests_only("server", memory_floor="224Mi")
+                ),
+            ),
             pod_metadata=ApiObjectMetadata(labels=SERVICE.pods.selector),
             replicas=1,
             strategy=DeploymentStrategy.recreate(),
@@ -126,15 +132,14 @@ class GoogleMcpApp(Construct):
                 "GOOGLE_MCP_HOST": EnvValue.from_value("0.0.0.0"),
                 "GOOGLE_MCP_PORT": EnvValue.from_value(str(SERVICE.pod_port)),
             },
-            ports=[SERVICE.port.container_port()],
+            ports=[SERVICE.container_port()],
             resources=ContainerResources(
-                cpu=CpuResources(request=Cpu.millis(50), limit=Cpu.millis(500)),
-                memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
+                cpu=CpuResources(request=Cpu.millis(_CPU_REQUEST_MILLIS), limit=Cpu.millis(500)),
+                memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(_MEMORY_LIMIT_MIB)),
             ),
             readiness=http_probe("/healthz", port=SERVICE.pod_port, initial_delay_seconds=3),
             liveness=http_probe("/healthz", port=SERVICE.pod_port, initial_delay_seconds=15, period_seconds=20),
             security_context=ContainerSecurityContextProps(
-                capabilities=ContainerSecutiryContextCapabilities(drop=[Capability.ALL]),
                 ensure_non_root=True,
                 user=1000,
                 group=1000,
@@ -157,7 +162,7 @@ class GoogleMcpApp(Construct):
             "service",
             metadata=ApiObjectMetadata(name=SERVICE.name, namespace=NAME),
             selector=deployment,
-            ports=[SERVICE.port.service_port()],
+            ports=[SERVICE.service_port()],
         )
 
     def _add_network_policy(self) -> None:
@@ -166,11 +171,7 @@ class GoogleMcpApp(Construct):
             "network-policy",
             metadata=ApiObjectMetadata(name=NAME, namespace=NAME),
             endpoint_selector=SERVICE.pods.selector,
-            ingress=[
-                IngressRule.from_endpoints(
-                    cilium.endpoint_labels("agentplane-staging", "actions"), ports=[SERVICE.pod_port]
-                )
-            ],
+            ingress=[actions.service(STAGING_NAMESPACE).pods.admit(SERVICE.pod_port)],
             egress=[
                 cilium.dns_egress(resolves=["*"]),
                 EgressRule.to_fqdns("gmail.googleapis.com", "www.googleapis.com"),
@@ -187,7 +188,7 @@ class GoogleMcp(Construct):
             self,
             "namespace",
             name=NAME,
-            vpa=Vpa.DISABLED,
+            vpa=Vpa.RECOMMEND,
             labels={"name": NAME},
             annotations={"description": "Holds the write-scoped Google OAuth token; never mirrored elsewhere."},
         )

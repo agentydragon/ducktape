@@ -11,7 +11,7 @@ def _png(path: Path, color: tuple[int, int, int, int] = (10, 20, 30, 255), size:
 
 
 def test_compare_pngs_classifies_exact_diffs(tmp_path: Path) -> None:
-    baseline = _png(tmp_path / "baseline.png")
+    baseline = _png(tmp_path / "baseline.png").read_bytes()
     candidate = _png(tmp_path / "candidate.png", (10, 20, 30, 128))
     assert compare_pngs(candidate, baseline).classification == "unchanged"
 

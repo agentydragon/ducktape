@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from agentplane.native.claude import blocks, facade, wire
+from agentplane.native.claude import blocks, driver, wire
 from agentplane.native.claude.scenarios import HOOK_EVENTS
 from agentplane.native.testing.async_process import AsyncNativeProcess, FrameCursor, FrameResponder
 
@@ -19,13 +19,6 @@ class ClaudeEvents:
 
     async def next(self) -> wire.ClaudeFrame:
         return wire.parse_frame(await self._frames.next())
-
-    async def control_response(self, request_id: str) -> wire.ControlResponseFrame:
-        while True:
-            match await self.next():
-                case wire.ControlResponseFrame(response=wire.ControlResponseBody(request_id=received)) as frame:
-                    if received == request_id:
-                        return frame
 
     async def lifecycle(self, command_uuid: str, state: wire.CommandState) -> wire.CommandLifecycleFrame:
         while True:
@@ -95,7 +88,6 @@ class ClaudeRun:
         self._sdk_mcp_servers = sdk_mcp_servers
         self._initialize = initialize
         self._process: AsyncNativeProcess | None = None
-        self._harness: facade.ClaudeHarness | None = None
 
     async def __aenter__(self) -> ClaudeRun:
         process = AsyncNativeProcess(
@@ -106,14 +98,11 @@ class ClaudeRun:
             frame_responder=self._responder,
         )
         self._process = await process.__aenter__()
-        self._harness = facade.ClaudeHarness(process)
         try:
             if self._initialize:
-                response = await self.initialize()
-                if not isinstance(response, wire.ControlResponseFrame):
-                    raise RuntimeError(f"Claude initialization failed: {response}")
+                await self.initialize()
         except BaseException:
-            self._process, self._harness = None, None
+            self._process = None
             await process.close()
             raise
         return self
@@ -125,11 +114,6 @@ class ClaudeRun:
         if self._process is None:
             raise RuntimeError("Claude run was not started")
         return self._process
-
-    def _claude(self) -> facade.ClaudeHarness:
-        if self._harness is None:
-            raise RuntimeError("Claude run was not started")
-        return self._harness
 
     @property
     def running(self) -> bool:
@@ -144,17 +128,21 @@ class ClaudeRun:
     def frames(self) -> FrameCursor:
         return self._native().frames()
 
-    async def initialize(self) -> wire.ControlResponseFrame | wire.ResultFrame:
-        receipt = await self._claude().initialize(
+    async def initialize(self) -> wire.ControlResponseFrame:
+        request = driver.initialize(
             hooks={event: [f"capture-{event}"] for event in HOOK_EVENTS} if self._hooks else None,
             sdk_mcp_servers=self._sdk_mcp_servers,
         )
-        return receipt.response
+        # Resuming can emit task-notification results before the initialization reply. Only this
+        # request's control response completes the handshake; EOF or the request timeout handles a
+        # process that never sends it.
+        response = await self._request(request)
+        if response.response.subtype == "error":
+            raise RuntimeError(f"Claude initialization rejected: {response.response.error}")
+        return response
 
     async def send(self, text: str) -> ClaudeInput:
-        events = self.events()
-        frame = await self._claude().submit(text)
-        return ClaudeInput(frame, events)
+        return await self.send_frame(driver.user_frame(text))
 
     async def send_frame(self, frame: wire.UserInput) -> ClaudeInput:
         """Send a constructed user frame verbatim for bounded protocol probes."""
@@ -164,26 +152,38 @@ class ClaudeRun:
 
     async def send_many(self, texts: list[str]) -> list[ClaudeInput]:
         events = [self.events() for _ in texts]
-        frames = await self._claude().submit_many(texts)
+        frames = [driver.user_frame(text) for text in texts]
+        for frame in frames:
+            await self._native().send(frame)
         return [ClaudeInput(frame, observer) for frame, observer in zip(frames, events, strict=True)]
 
     async def interrupt(self, *, cancel_queued: bool) -> wire.ControlResponseFrame:
-        response = (await self._claude().interrupt(cancel_queued=cancel_queued)).response
-        if not isinstance(response, wire.ControlResponseFrame):
-            raise RuntimeError(f"Claude interrupt failed: {response}")
-        return response
+        return await self._request(driver.interrupt(cancel_queued=cancel_queued))
 
     async def set_model(self, model: str) -> wire.ControlResponseFrame:
-        response = (await self._claude().set_model(model)).response
-        if not isinstance(response, wire.ControlResponseFrame):
-            raise RuntimeError(f"Claude model switch failed: {response}")
-        return response
+        return await self._request(driver.set_model(model))
 
     async def set_effort(self, effort: str) -> wire.ControlResponseFrame:
-        response = (await self._claude().set_effort(effort)).response
-        if not isinstance(response, wire.ControlResponseFrame):
-            raise RuntimeError(f"Claude effort switch failed: {response}")
-        return response
+        return await self._request(driver.set_effort(effort))
 
     async def crash(self) -> int:
         return await self._native().crash()
+
+    async def _request(
+        self,
+        request: wire.InitializeRequest | wire.InterruptRequest | wire.SetModelRequest | wire.ApplyFlagSettingsRequest,
+    ) -> wire.ControlResponseFrame:
+        """Send one control request and return the control response that names its `request_id`."""
+        receipt = await self._native().request(
+            request, matches=lambda frame: _is_control_response(frame, request.request_id)
+        )
+        return wire.ControlResponseFrame.model_validate(receipt.frame)
+
+
+def _is_control_response(frame: dict[str, Any], request_id: str) -> bool:
+    response = frame.get("response")
+    return (
+        frame.get("type") == "control_response"
+        and isinstance(response, dict)
+        and response.get("request_id") == request_id
+    )

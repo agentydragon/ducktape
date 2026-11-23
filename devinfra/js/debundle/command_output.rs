@@ -70,6 +70,16 @@ where
     output.flush().map_err(ReportOutputError::Flush)
 }
 
+/// Adapt a renderer that cannot fail to `write_report`'s fallible signature.
+pub fn infallible<T>(
+    render: impl FnOnce(&T, &mut String),
+) -> impl FnOnce(&T, &mut String) -> Result<()> {
+    move |value, out| {
+        render(value, out);
+        Ok(())
+    }
+}
+
 /// Write one text record followed by a newline.
 pub fn write_line(
     output: &mut dyn Write,

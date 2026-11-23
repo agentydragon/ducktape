@@ -1,6 +1,6 @@
 """Exercise archive SQL against an isolated raw-only schema."""
 
-# gazelle:include_dep //util/testing:postgres_fixtures
+# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep @pypi//psycopg
 from datetime import UTC, datetime
 from hashlib import md5
@@ -9,7 +9,7 @@ from typing import Any
 from python.runfiles import Runfiles
 from sqlalchemy import create_engine, text
 
-pytest_plugins = ("util.testing.postgres_fixtures",)
+pytest_plugins = ("testing.postgres_fixtures",)
 
 _DDL = (
     """CREATE TEMP TABLE sessions (

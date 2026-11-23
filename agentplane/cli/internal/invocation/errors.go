@@ -33,15 +33,13 @@ const (
 	ExitAlreadyFinished  = 17
 )
 
-// Who refused a call. The proxy and the Pod sidecar mark their own refusals with these headers.
+// Who refused a call. The proxy and the Pod sidecar mark their own refusals with the
+// `x-agentplane-egress` and `x-agentplane-egress-sidecar` headers.
 const (
 	sourceService = "service"
 	sourceEgress  = "egress"
 	sourceSidecar = "sidecar"
 	sourceClient  = "client"
-
-	egressHeader  = "x-agentplane-egress"
-	sidecarHeader = "x-agentplane-egress-sidecar"
 )
 
 var (

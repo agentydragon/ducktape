@@ -9,9 +9,8 @@
 # nix-attic-push.yml still does the full-fleet build against pinned artifacts on
 # push to devel/main; this workflow is the fast per-PR gate.
 #
-# Source of truth for pin → Bazel target + asset filename: devinfra/ci/artifact_targets.json.
-# Keep it in sync with the artifact entries in release.yml's matrix (SYNC
-# comment there points here).
+# Source of truth for pin → Bazel target + asset filename: devinfra/ci/artifact_targets.json,
+# which release.yml also reads for its rows.
 name: Nix wheel check
 
 on:
@@ -118,32 +117,9 @@ jobs:
       - name: Install pinned BuildBuddy CLIs
         run: nix profile install .#bb .#bbapi
 
-      # Derive the Bazel target list + nix package list from the SSOT.
-      # A release is in-gate when its `nixPackage: true`; every pin in an
-      # in-gate release gets its target built and its output overridden.
-      # Non-wheel binaries (bbapi, claude-hook, debundle, skills) go
-      # through mkBinaryArtifact whose nix build is a trivial install/
-      # autoPatchelfHook — bazel-ci already rebuilds them, so the PR gate
-      # skips them to keep wall-time bounded.
       - name: Compute build inputs
         id: inputs
-        shell: bash
-        run: |
-          set -euo pipefail
-          spec=devinfra/ci/artifact_targets.json
-          bazel_targets=$(jq -r '
-            . as $doc |
-            [$doc.pins | to_entries[] |
-               select($doc.releases[.value.release].nixPackage) |
-               .value.target] | join(" ")
-          ' "$spec")
-          nix_checks=$(jq -r '
-            [.releases | to_entries[] |
-               select(.value.nixPackage) |
-               ".#checks.x86_64-linux.artifact-\(.key)"] | join(" ")
-          ' "$spec")
-          echo "bazel_targets=$bazel_targets" >> "$GITHUB_OUTPUT"
-          echo "nix_checks=$nix_checks" >> "$GITHUB_OUTPUT"
+        run: python3 -m devinfra.ci.release_assets nix-wheel-inputs >> "$GITHUB_OUTPUT"
 
       # `bb remote build`'s post-run download returns an arbitrary subset of a
       # large request, so "Fetch artifacts" below retrieves every required output

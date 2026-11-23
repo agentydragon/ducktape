@@ -27,7 +27,8 @@ All except `trinity-large-preview-free` support tool calling and reasoning.
 
 ## API Protocols
 
-The proxy speaks four API formats at the same base URL:
+The proxy speaks four API formats at the same base URL. Example: the Python `openai`
+chat-completions client with `model="big-pickle"`.
 
 | Format                  | Endpoint                               | Auth Header                    |
 | ----------------------- | -------------------------------------- | ------------------------------ |
@@ -35,12 +36,6 @@ The proxy speaks four API formats at the same base URL:
 | Anthropic Messages      | `POST /messages`                       | `x-api-key: public`            |
 | OpenAI Responses        | `POST /responses`                      | `Authorization: Bearer public` |
 | Google GenAI            | `POST /models/{model}:generateContent` | `x-goog-api-key: public`       |
-
-Base URL: `https://opencode.ai/zen/v1/`
-
-## Usage Examples
-
-Python: openai.chat.completions client, model="big-pickle".
 
 ## Rate Limiting
 
@@ -51,14 +46,10 @@ Python: openai.chat.completions client, model="big-pickle".
 ## CI Considerations
 
 Usable headlessly — no interactive auth or browser flow needed. The OpenAI Chat
-Completions endpoint is the most universal choice for integration.
-
-Risks for CI use:
+Completions endpoint is the most universal choice. Best suited for non-critical CI tasks
+(PR summary generation, commit message drafting, optional code review suggestions), never
+for anything where a failure should block merges. Risks:
 
 - **Rate limits**: shared CI runner IPs may exhaust daily quotas quickly
-- **Availability**: free tier with no SLA — not suitable for blocking CI gates
+- **Availability**: free tier with no SLA
 - **Model churn**: free model list may change without notice
-
-Best suited for non-critical CI tasks: PR summary generation, commit message
-drafting, optional code review suggestions. Not for anything where a failure
-should block merges.

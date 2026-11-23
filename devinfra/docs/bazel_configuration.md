@@ -154,6 +154,20 @@ Variants with `requires_docker = True` remain fully remote. CI builds all live
 targets so their lint/typecheck actions stay covered, while
 `--test_tag_filters=-live_openai_api` prevents credentialed test execution.
 
+## Client job limit
+
+`build:rbe --jobs=100` caps concurrent actions in the Bazel client. At 50, the Pod
+and VM test actions waited for a slot: `command.profile.gz` showed 50 overlapping
+`execute remotely` spans while the provider queue stayed near 0.06 s. On
+2026-11-12, `//agentplane/...` with fresh tests (`--nocache_test_results`) took
+602.7 s and 607.0 s at 50 and 447.4 s at 100. The Pod `TestRunner` action started
+at 58.1 s at 100, and at 100.1 s and 212.7 s in the two runs at 50. That is one
+sequence, not a general saving.
+
+One pair of full `//...` sweeps on 2026-10-31, with fresh tests and warm compiled
+actions: 100 took 30.7 s longer than 50 and hit `REMOTE_CACHE_EVICTED` and
+`RST_STREAM` failures; concurrency was not shown to cause them.
+
 ## Shell paths
 
 Shell actions use paths from their execution environment:

@@ -2,10 +2,8 @@ package gateway
 
 import (
 	"context"
-	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -13,32 +11,16 @@ import (
 	managementpb "github.com/agentydragon/ducktape/platform_sessions/management/managementpb"
 	providerpb "github.com/agentydragon/ducktape/platform_sessions/provider/providerpb"
 	"github.com/coder/websocket"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-type interactiveProvider struct {
-	providerpb.SessionProviderControlClient
-	available   bool
-	finish      *providerpb.FinishInteractiveSignInResponse
-	finishCalls int
-}
-
-func (f *interactiveProvider) FinishInteractiveSignIn(_ context.Context, _ *providerpb.FinishInteractiveSignInRequest, _ ...grpc.CallOption) (*providerpb.FinishInteractiveSignInResponse, error) {
-	f.finishCalls++
-	return f.finish, nil
-}
-
 func TestFinishInteractiveSignInRequiresVerifiedProviderResult(t *testing.T) {
-	ref := &providerpb.InstanceRef{ProviderId: "myquest", InstanceId: "personal"}
-	fake := &interactiveProvider{available: true}
-	service, err := New([]Provider{{Ref: ref, Client: fake}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	ref := &providerpb.InstanceRef{ProviderId: testProviderID, InstanceId: "personal"}
+	fake := &fakeProvider{}
+	service := newTestService(t, fake)
 	request := &managementpb.InstanceRequest{InstanceId: "personal"}
 	result := &providerpb.ProbeResult{Source: providerpb.ProbeSource_PROBE_SOURCE_VERIFY, CompletedAt: timestamppb.Now(), Outcome: &providerpb.ProbeResult_Verified{Verified: &emptypb.Empty{}}}
 	fake.finish = &providerpb.FinishInteractiveSignInResponse{Instance: ref, Result: result}
@@ -50,23 +32,13 @@ func TestFinishInteractiveSignInRequiresVerifiedProviderResult(t *testing.T) {
 		t.Fatalf("wrong source accepted: %v", err)
 	}
 	fake.finish.Result.Source = providerpb.ProbeSource_PROBE_SOURCE_VERIFY
-	fake.finish.Instance = &providerpb.InstanceRef{ProviderId: "myquest", InstanceId: "other"}
+	fake.finish.Instance = &providerpb.InstanceRef{ProviderId: testProviderID, InstanceId: "other"}
 	if _, err := service.FinishInteractiveSignIn(context.Background(), request); status.Code(err) != codes.Unknown {
 		t.Fatalf("wrong instance accepted: %v", err)
 	}
 	if fake.finishCalls != 3 {
 		t.Fatalf("finish calls = %d", fake.finishCalls)
 	}
-}
-
-func (f *interactiveProvider) GetInfo(context.Context, *providerpb.GetInfoRequest, ...grpc.CallOption) (*providerpb.GetInfoResponse, error) {
-	instance := &providerpb.ProviderInstanceInfo{InstanceId: "personal"}
-	if f.available {
-		instance.InteractiveSignIn = &providerpb.InteractiveSignIn{}
-	}
-	return &providerpb.GetInfoResponse{Provider: &providerpb.ProviderInfo{
-		ProviderId: "myquest", DisplayName: "MyQuest", Instances: []*providerpb.ProviderInstanceInfo{instance},
-	}}, nil
 }
 
 func TestInteractiveWebSocketRequiresOwnerOriginAndCapability(t *testing.T) {
@@ -98,19 +70,9 @@ func TestInteractiveWebSocketRequiresOwnerOriginAndCapability(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	certificate := upstream.Certificate()
-	if certificate == nil {
-		t.Fatal("missing upstream certificate")
-	}
-	caFile := t.TempDir() + "/provider-ca.pem"
-	if err := os.WriteFile(caFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certificate.Raw}), 0600); err != nil {
-		t.Fatal(err)
-	}
-	fake := &interactiveProvider{available: true}
-	service, err := New([]Provider{{Ref: &providerpb.InstanceRef{ProviderId: "myquest", InstanceId: "personal"}, Client: fake}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	caFile := trustedCAFile(t, upstream)
+	fake := &fakeProvider{interactive: true}
+	service := newTestService(t, fake)
 	config := HTTPConfig{
 		Owner: testOwnerConfig(),
 		Providers: map[string]ProviderHTTPConfig{"personal": {
@@ -159,12 +121,12 @@ func TestInteractiveWebSocketRequiresOwnerOriginAndCapability(t *testing.T) {
 			}
 		})
 	}
-	fake.available = false
+	fake.interactive = false
 	_, response, err := websocket.Dial(context.Background(), target, &websocket.DialOptions{HTTPHeader: validHeaders, Subprotocols: []string{"binary"}})
 	if err == nil || response == nil || response.StatusCode != http.StatusNotFound {
 		t.Fatalf("missing capability: err=%v response=%v", err, response)
 	}
-	fake.available = true
+	fake.interactive = true
 	ws, response, err := websocket.Dial(context.Background(), target, &websocket.DialOptions{HTTPHeader: validHeaders, Subprotocols: []string{"binary"}})
 	if err != nil {
 		t.Fatalf("owner dial: %v response=%v", err, response)

@@ -2618,7 +2618,7 @@ fn narrow_by_references(
 }
 
 /// What a free template identifier of a template in module `module_index`
-/// means (<../SPEC.md> § Matching).
+/// means (SPEC.md § Matching).
 enum Meaning {
     /// The spec entity exported under that name, and the module exporting it.
     Reference(usize, Referent),

@@ -25,33 +25,7 @@ fn an_unseeded_residual_finds_one_appended_owner_and_runs() {
     assert_eq!(read_tree(&fixture.modules), before);
 
     let plan = fixture.save_json("plan.json", &proposal["plan"]);
-    fixture.assert_success(&[
-        "modules",
-        "check",
-        "--plan",
-        &plan,
-        "--tree-config",
-        &config,
-    ]);
-    fixture.assert_success(&[
-        "modules",
-        "apply",
-        "--plan",
-        &plan,
-        "--tree-config",
-        &config,
-        "--dry-run",
-    ]);
-    assert_eq!(read_tree(&fixture.modules), before);
-    fixture.assert_success(&[
-        "modules",
-        "apply",
-        "--plan",
-        &plan,
-        "--tree-config",
-        &config,
-    ]);
-    fixture.assert_runs("7 38\n");
+    fixture.assert_plan_checks_previews_applies_and_runs(&plan, None, "7 38\n");
 }
 
 #[test]

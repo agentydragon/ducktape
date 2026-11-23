@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import re
 import secrets
 from urllib.parse import parse_qs, urlparse
 
 import httpx
+from authlib.oauth2.rfc7636 import create_s256_code_challenge
 from fastmcp import FastMCP
 from key_value.aio.stores.memory import MemoryStore
 from starlette.applications import Starlette
@@ -16,8 +15,8 @@ from starlette.routing import Mount
 
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig
 from mcp_infra.authentik_auth.provider import build_authentik_auth
-from util.testing.asgi import bind_http_server
-from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
+from testing.asgi import bind_http_server
+from testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair
 
 _CLIENT_CALLBACK = "http://127.0.0.1:19876/callback"
 _SCOPES = "openid email profile offline_access"
@@ -31,7 +30,7 @@ def _hidden_input(page: str, name: str) -> str:
 
 
 def _authorization_params(*, client_id: str, state: str, code_verifier: str) -> dict[str, str]:
-    code_challenge = base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest()).rstrip(b"=").decode()
+    code_challenge = create_s256_code_challenge(code_verifier)
     return {
         "response_type": "code",
         "client_id": client_id,

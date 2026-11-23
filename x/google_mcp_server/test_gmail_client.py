@@ -271,7 +271,11 @@ def test_batch_modify_creates_missing_add_label_and_modifies_threads(
     result = client.threads_modify_labels(ModifyGmailThreadLabelsArgs(thread_ids=["t1", "t2"], add=["urgent"]))
     assert result.thread_count == 2
     assert [label.name for label in result.added] == ["urgent"]
-    assert any(called == "labels.create" for called, _ in svc.calls)
+    assert _call(svc, "labels.create") == {
+        "name": "urgent",
+        "labelListVisibility": "labelShow",
+        "messageListVisibility": "show",
+    }
 
 
 def test_batch_modify_reuses_existing_label(svc: _FakeGmailService, client: GmailToolsClient) -> None:

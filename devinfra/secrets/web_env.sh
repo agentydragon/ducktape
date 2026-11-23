@@ -1,24 +1,16 @@
 #!/usr/bin/env bash
-# Web agent environment: common secrets + machine-user identity + k8s access.
+# Web agent environment: common secrets + machine-user identity.
 # Usage: source devinfra/secrets/web_env.sh
 #
-# Age recipients: claude-web (+ admin via _common.sh)
-#   github-pat-agentydragon-agent.yaml: admin, all user keys, claude-web, ci
-#   claude-web-k8s-jwt.yaml:          admin, all user keys, claude-web
-#   alloy-otlp-bearer-token.yaml:     admin, all user keys, claude-web
-#   seaweedfs/external-credentials/claude-reader-credentials.sops.yaml:
-#       admin, cluster-secrets, claude-web
-#   claude-web-attic.yaml:            admin, claude-web
-#   haku-attic.yaml:                  admin, haku, all user keys
+# Age recipients: per file in .sops.yaml.
 #
 # Consumed by:
-#   - web_setup.sh: eval'd to populate shell env, then written to
-#     .claude/settings.local.json for Claude Code (MCP servers etc.)
-#   - hook daemon startup_env_script: eval'd into daemon os.environ,
-#     vars flow into the session env file for hook subprocesses
+#   - hook daemon startup_env_script (web and Haku profiles): the vars it adds
+#     become the env overlay for the session env file and hook subprocesses
+#   - devinfra/codex_cloud/setup.sh
 #
 # Side effects: upserts the Attic reader token into /nix/var/determinate/netrc
-# (see the attic block below); otherwise only prints export lines. Kubeconfig
+# (see the attic block below); otherwise only exports variables. Kubeconfig
 # is written by the SessionStart handler.
 
 # shellcheck source=_common.sh

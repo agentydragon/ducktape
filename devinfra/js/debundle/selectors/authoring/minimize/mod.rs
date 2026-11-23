@@ -25,8 +25,7 @@
 //! the per-slot kept spans union, and the binding-group matcher proves the tuple.
 //! Slots need not resolve independently: partial slot covers feed the tuple
 //! proof, which adds ranked anchors if needed. All var paths share padded
-//! initializer holing; the legacy keep-shallow renderer and recursive expression
-//! dispatcher are gone. Unindexed literals remain proof-checked fallback pins.
+//! initializer holing. Unindexed literals remain proof-checked fallback pins.
 
 mod class;
 mod function;
@@ -886,7 +885,7 @@ fn render_var_slots(
             continue;
         }
         if skipped_run {
-            decls.push(declarator_hole(DECLARATORS_HOLE_KEYWORD));
+            decls.push(declarator_hole());
             skipped_run = false;
         }
         let name = single_ident_pat_name(&declarator.name)
@@ -906,7 +905,7 @@ fn render_var_slots(
         decls.push(holed);
     }
     if skipped_run {
-        decls.push(declarator_hole(DECLARATORS_HOLE_KEYWORD));
+        decls.push(declarator_hole());
     }
     let mut holed_var = var.clone();
     holed_var.declare = false;

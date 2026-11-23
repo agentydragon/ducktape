@@ -6,13 +6,14 @@ mortgage servicing and sale modeling.
 ## Product Surface
 
 Owned-property rental starts at purchase through `PropertyPurchase.initial_rental`.
-If it is unset, the property has no tenant rent stream; a later
-`set_rented_fraction` event with a positive fraction is rejected because the
-scenario has no rent/vacancy terms to resize.
+If it is unset, the property has no tenant rent stream until a later
+`set_rented_fraction` event with a positive fraction starts one. That stream uses the
+property's `rent_estimate` and the default `vacancy_pct` (5%). A property without a
+`rent_estimate` is rejected with a request to set `initial_rental.full_property_monthly_rent`.
 
-`RentalIncomePlan.full_property_monthly_rent_usd` is full-property market rent before
+`RentalIncomePlan.full_property_monthly_rent` is full-property market rent before
 vacancy and management fees. If it is `None`, the app's preparation uses the selected
-property's `rent_estimate_usd`. Collected tenant rent is:
+property's `rent_estimate`. Collected tenant rent is:
 
 ```text
 full_property_monthly_rent * fraction_rented * (1 - vacancy_pct)
@@ -125,18 +126,18 @@ The property rental panel exposes:
 - full-property monthly rent;
 - optional property management settings.
 
-The lifecycle editor writes `PropertyPurchase.lifecycle_events` and packs them in the
-separate `lc` URL parameter. The positional `s` URL state keeps the rent override slot in
-the same position as the older ambiguous field, but the state key is now
-`rentalFullPropertyMonthlyUsd`.
+The lifecycle editor writes `PropertyPurchase.lifecycle_events` (state key
+`propertyLifecycleEvents`); the rent override's state key is `rentalFullPropertyMonthly`.
+Both travel in the single `?scenarios=` URL parameter (`scenarioSetToSearch` in
+`frontend/input_helpers.ts`).
 
 Rollout markers include rented-fraction changes, primary-residence changes, capital
 improvements, and property sales.
 
 ## Known Gaps
 
-The user's outside-rent obligation is still flat for the horizon:
-`ScenarioKey.monthly_rent_usd` plus `rental_location_id`. There is no product-level
+The user's outside-rent obligation, `ScenarioKey.monthly_rent` plus `rental_location_id`,
+indexes annually by that location's `rent:<market>` series. There is no product-level
 timeline event for changing outside rent. That should be explicit housing-cost state
 for the user, not implicit behavior derived only from owned-property primary-residence
 assignment.
@@ -152,6 +153,5 @@ deterministic scalar and leasing fees use an average-tenancy cadence.
 Useful focused targets:
 
 ```bash
-bazelisk test --config=rbe //augur/product:service_test //augur/api:config_test //augur/api:catalog_test //augur:browser_shell_test --test_output=errors
-bazelisk test --config=rbe //augur/rust:backend_test --test_output=errors
+bazelisk test --config=rbe //finance/augur/product:service_test //finance/augur/api:config_test //finance/augur/api:catalog_test //finance/augur/api:server_test //finance/augur:browser_shell_test --test_output=errors
 ```

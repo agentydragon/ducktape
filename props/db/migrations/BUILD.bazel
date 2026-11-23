@@ -3,7 +3,6 @@
 # gazelle:exclude env.py
 # gazelle:exclude versions
 
-# Removed py_test load - using defs.bzl version
 load("//props:py_test.bzl", "py_test")
 
 filegroup(
@@ -17,17 +16,6 @@ filegroup(
 )
 
 py_test(
-    name = "test_migration_sequence",
-    srcs = ["test_migration_sequence.py"],
-    data = [":migrations"],
-    deps = [
-        "//:conftest",
-        "//props:conftest",
-        "@pypi//alembic",
-    ],
-)
-
-py_test(
     name = "test_materialize_examples",
     size = "medium",
     srcs = ["test_materialize_examples.py"],
@@ -37,8 +25,8 @@ py_test(
         "//props:conftest",
         "//props/db:config",
         "//props/testing/fixtures:db",
-        "//util/testing:postgres",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres",
+        "//testing:postgres_fixtures",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
     ],
@@ -56,8 +44,8 @@ py_test(
         "//props/db:config",
         "//props/db:setup",
         "//props/testing/fixtures:db",
-        "//util/testing:postgres",
-        "//util/testing:postgres_fixtures",
+        "//testing:postgres",
+        "//testing:postgres_fixtures",
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",
     ],

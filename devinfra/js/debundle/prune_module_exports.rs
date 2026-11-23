@@ -31,11 +31,11 @@
 //!   imports are irrelevant here.
 //! - `Source`-bodied files (no AST) are upstream-verbatim and skipped.
 
-use binding_targets::module_export_name;
+use binding_targets::{imported_export_name, module_export_name, public_export_name};
 use std::collections::BTreeSet;
 
-use artifact::paths::{join_module_path, module_path_dirname};
-use artifact::{ChunkBundle, FileRole, JsFile};
+use artifact::paths::{emitted_file_abs_path, resolve_specifier};
+use artifact::{ChunkBundle, FileRole};
 use swc_ecma_ast::*;
 
 pub fn prune_unimported_module_exports(bundle: &mut ChunkBundle) {
@@ -44,7 +44,7 @@ pub fn prune_unimported_module_exports(bundle: &mut ChunkBundle) {
         .iter_mut()
         .flat_map(|chunk| &mut chunk.js.files)
         .filter_map(|file| {
-            let path = file_abs_path(file);
+            let path = emitted_file_abs_path(&file.metadata.source_path, &file.path);
             let role = file.metadata.role;
             Some((path, role, &mut file.ast_mut()?.module))
         })
@@ -89,23 +89,6 @@ fn collect_import_locals(module: &Module) -> BTreeSet<String> {
     locals
 }
 
-/// Output-tree-rooted path of a file: `<chunk_dir>/<file.path>`, where the
-/// chunk dir is the chunk's source path with the `.js` suffix dropped. Imports
-/// resolve against this same coordinate system (see `resolve_specifier`).
-fn file_abs_path(file: &JsFile) -> String {
-    let source_path = file.metadata.source_path.as_str();
-    let chunk_dir = source_path.strip_suffix(".js").unwrap_or(source_path);
-    join_module_path(&[chunk_dir, file.path.as_str()])
-}
-
-/// Resolve a relative module specifier against the importing file's absolute
-/// path, normalizing `.` / `..` so the result is directly comparable to a
-/// target file's `file_abs_path`.
-fn resolve_specifier(specifier: &str, importer_abs: &str) -> String {
-    let dir = module_path_dirname(importer_abs);
-    join_module_path(&[dir.as_str(), specifier])
-}
-
 fn collect_consumers(
     module: &Module,
     file_abs: &str,
@@ -121,10 +104,7 @@ fn collect_consumers(
                 for spec in &import.specifiers {
                     match spec {
                         ImportSpecifier::Named(named) => {
-                            consumed.insert(match &named.imported {
-                                Some(name) => module_export_name(name),
-                                None => named.local.sym.to_string(),
-                            });
+                            consumed.insert(imported_export_name(named));
                         }
                         ImportSpecifier::Namespace(_) => {
                             if let Some(src) = import.src.value.as_str() {
@@ -192,11 +172,7 @@ fn prune_local_named_exports(
             if import_locals.contains(&local) {
                 return true;
             }
-            let public = match &n.exported {
-                Some(name) => module_export_name(name),
-                None => local.clone(),
-            };
-            consumed.contains(&public)
+            consumed.contains(&public_export_name(n))
         });
         // Drop a now-empty `export {};` rather than emit it.
         !named.specifiers.is_empty()
@@ -257,10 +233,7 @@ mod tests {
             {
                 for spec in &named.specifiers {
                     if let ExportSpecifier::Named(n) = spec {
-                        names.push(match &n.exported {
-                            Some(name) => module_export_name(name),
-                            None => module_export_name(&n.orig),
-                        });
+                        names.push(public_export_name(n));
                     }
                 }
             }

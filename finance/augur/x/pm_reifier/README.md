@@ -20,7 +20,7 @@ so the reweight is fiction.)
 
 ## augur's native trajectory shape
 
-The macro model (`augur/x/models/state_space.py`) emits a **dense monthly level path per factor**, shape
+The macro model (`finance/augur/x/models/state_space.py`) emits a **dense monthly level path per factor**, shape
 `(rollout, horizon_months+1, factors)`, factors being augur wire-ids: `inflation` (CPI index), `sp500`,
 `crypto:BTC`, `home_value:<loc>`, `rent:<loc>`, plus private-equity issuer marks. The LLM is asked for
 exactly that — dense monthly paths over those series — plus the OpenAI PE issuer. Market thresholds
@@ -165,7 +165,7 @@ miscalibration actually _bad_? Score augur's structured `Q` on the **exact same 
 state-space model is a joint monthly log-return Gaussian, so its one-step marginal for series _s_ is
 `N(μ_s, σ_s²)` and the analytic PIT is `Φ((log(realized/last) − μ_s)/σ_s)` — pure local compute, no
 API. To stay apples-to-apples we fit `μ_s, σ_s` on the **identical trailing 24-month window** the LLM
-kernel saw each step (`//augur/x/pm_reifier:backtest_statespace`, runs on RBE). Both through the same
+kernel saw each step (`//finance/augur/x/pm_reifier:backtest_statespace_bin`, runs on RBE). Both through the same
 scorecard:
 
 | metric (pooled, n=100)       |           LLM kernel (glm-4.5) |    state-space (log-ret Gaussian) |

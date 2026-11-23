@@ -4,8 +4,8 @@ REST shapes follow Plaid's official OpenAPI document:
 https://github.com/plaid/plaid-openapi/blob/master/2020-09-14.yml. The models type the fields this
 service reads while allowing additional fields so Plaid can extend responses without breaking us.
 The SDK client itself uses plaid-python's generated request and response classes directly.
-Plaid's transaction webhook envelope and verification claims follow the webhook documentation:
-https://plaid.com/docs/transactions/webhooks/ and https://plaid.com/docs/api/webhooks/webhook-verification/.
+Plaid's webhook verification header and claims follow
+https://plaid.com/docs/api/webhooks/webhook-verification/.
 """
 
 from __future__ import annotations
@@ -83,11 +83,6 @@ class PlaidTransaction(PlaidPayload):
     personal_finance_category: PlaidPersonalFinanceCategory | None = None
 
 
-class TransactionsGetResponse(PlaidApiResponse):
-    total_transactions: int
-    transactions: list[PlaidTransaction] | None = None
-
-
 class PlaidRemovedTransaction(PlaidPayload):
     transaction_id: str
 
@@ -162,12 +157,6 @@ class PlaidLiabilities(PlaidPayload):
 class LiabilitiesGetResponse(PlaidApiResponse):
     liabilities: PlaidLiabilities | None = None
     accounts: list[PlaidAccount] | None = None
-
-
-class PlaidWebhookEnvelope(PlaidPayload):
-    webhook_type: str
-    webhook_code: str
-    item_id: str | None = None
 
 
 class PlaidWebhookVerificationHeader(PlaidPayload):

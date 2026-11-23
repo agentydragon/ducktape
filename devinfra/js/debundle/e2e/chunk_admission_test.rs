@@ -36,8 +36,6 @@ export { A, reader };
     }
 }
 
-// --- Spec-level override escape hatch -------------------------------------
-
 #[test]
 fn admission_override_notice_lists_every_suppressed_statement_once() {
     // Repeated identical violations share one notice line that lists

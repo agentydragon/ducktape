@@ -5,8 +5,7 @@
 
 use artifact::paths::join_module_path;
 use artifact::runtime_resources::{RuntimeResourceDestinations, RuntimeResourceKind};
-use js_ast::{set_str_value, str_value};
-use swc_common::{DUMMY_SP, SyntaxContext};
+use js_ast::{new_url_expr, set_str_value, str_value};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
@@ -114,38 +113,4 @@ pub(super) fn is_import_meta_url_expr(expr: &Expr) -> bool {
             })
         ) && prop.sym == *"url"
     )
-}
-
-pub(super) fn new_url_expr(source: &str) -> Expr {
-    Expr::New(NewExpr {
-        span: DUMMY_SP,
-        ctxt: SyntaxContext::empty(),
-        callee: Box::new(Expr::Ident(Ident::new_no_ctxt("URL".into(), DUMMY_SP))),
-        args: Some(vec![
-            ExprOrSpread {
-                spread: None,
-                expr: Box::new(Expr::Lit(Lit::Str(Str {
-                    span: DUMMY_SP,
-                    value: source.into(),
-                    raw: None,
-                }))),
-            },
-            ExprOrSpread {
-                spread: None,
-                expr: Box::new(import_meta_url_expr()),
-            },
-        ]),
-        type_args: None,
-    })
-}
-
-pub(super) fn import_meta_url_expr() -> Expr {
-    Expr::Member(MemberExpr {
-        span: DUMMY_SP,
-        obj: Box::new(Expr::MetaProp(MetaPropExpr {
-            span: DUMMY_SP,
-            kind: MetaPropKind::ImportMeta,
-        })),
-        prop: MemberProp::Ident(IdentName::new("url".into(), DUMMY_SP)),
-    })
 }

@@ -80,7 +80,7 @@ def fragment(mnemonic, ops, pending):
 def main():
     if len(sys.argv) != 3:
         print("usage: inline_strings <binary> <funcs.txt>", file=sys.stderr)
-        return 2
+        raise SystemExit(2)
     binary, funcs = sys.argv[1], sys.argv[2]
     addrs, names = load_funcs(funcs)
 
@@ -132,8 +132,7 @@ def main():
             run = (func, base, len(b), bytearray(b), pc) if disp == 0 else None
     emit(run)
     proc.wait()
-    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/agentydragon/ducktape/agentplane/testing/eventually"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health"
@@ -149,7 +150,7 @@ func TestAcceptDialerCanceledRequestDoesNotBlockNextConnection(t *testing.T) {
 		_, err := broker.DialContext(ctx, "ignored")
 		canceledResult <- err
 	}()
-	waitUntil(t, func() bool { return len(broker.requests) == 1 })
+	eventually.Within(t, time.Second, func() (bool, string) { return len(broker.requests) == 1, "the dial request was not queued" })
 	cancel()
 	if err := <-canceledResult; !errors.Is(err, context.Canceled) {
 		t.Fatalf("canceled DialContext error = %v, want context.Canceled", err)
@@ -177,7 +178,7 @@ func TestAcceptDialerCanceledRequestDoesNotBlockNextConnection(t *testing.T) {
 		}
 		nextResult <- connection
 	}()
-	waitUntil(t, func() bool { return len(broker.requests) == 1 })
+	eventually.Within(t, time.Second, func() (bool, string) { return len(broker.requests) == 1, "the dial request was not queued" })
 
 	secondGuest, secondHost := net.Pipe()
 	defer secondHost.Close()
@@ -282,17 +283,6 @@ func receiveConn(t *testing.T, accepted <-chan net.Conn, acceptError <-chan erro
 		t.Fatal("timed out waiting for a connection")
 	}
 	return nil
-}
-
-func waitUntil(t *testing.T, condition func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(time.Second)
-	for !condition() {
-		if time.Now().After(deadline) {
-			t.Fatal("condition did not become true")
-		}
-		time.Sleep(time.Millisecond)
-	}
 }
 
 type channelListener struct {

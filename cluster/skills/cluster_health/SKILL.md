@@ -27,7 +27,7 @@ Run checks in parallel where possible.
 - HelmReleases — ready status, failed upgrades
 - Terraform resources (tofu-controller) — ready and applied status
 - Identify suspended kustomizations and cross-reference with `cluster/docs/decisions.md`
-  "Suspended Kustomizations" to distinguish expected vs unexpected suspensions
+  "Parked application manifests" to distinguish expected vs unexpected suspensions
 
 ### Alertmanager & Prometheus Alerts
 
@@ -109,8 +109,8 @@ When images fail to pull, trace the full pipeline:
 - Check if the image exists in its registry (ghcr.io, or the Forgejo registry at
   `git.allegedly.works`)
 - Check if the CI build that produces the image succeeded — look at GitHub Actions
-  workflows (`gh run list`), BuildBuddy invocations, or the relevant `buildbuddy.yaml`
-  / `.github/workflows/` pipeline
+  workflows (`gh run list`), BuildBuddy invocations, or the relevant
+  `.github/workflows/` pipeline
 - Check if the image push step succeeded (GitHub Actions logs)
 - Report where the pipeline broke (build failed, push failed, tag missing, auth issue)
 
@@ -151,7 +151,7 @@ active low-severity Alertmanager alerts, resource pressure approaching limits>
 
 ## Expected / Known
 
-<intentional suspensions per plan.md, scaled-to-zero deployments, offline
+<intentional suspensions per decisions.md, scaled-to-zero deployments, offline
 roaming nodes>
 
 ## Fix Plan
@@ -164,6 +164,11 @@ dependency order>
 
 Check findings against:
 
-- `cluster/docs/decisions.md` "Suspended Kustomizations" — don't flag expected suspensions
+- `cluster/docs/decisions.md` "Parked application manifests" — don't flag expected suspensions
 - `cluster/docs/plan.md` "Next Actions" — note if findings match known TODOs
 - `cluster/docs/troubleshooting.md` — reference known fix procedures for matching symptoms
+- Open issues in `agentydragon/ducktape` — search by alert, resource, service, and symptom
+  (e.g. `gh issue list -R agentydragon/ducktape --state open --search '<term>'`), then read
+  relevant matches with `gh issue view`. Link matching issues and compare their evidence
+  with the live state; an issue being known does not make the current condition healthy.
+  If GitHub is unavailable, say that known-issue context could not be checked.

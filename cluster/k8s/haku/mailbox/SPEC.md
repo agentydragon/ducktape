@@ -23,7 +23,7 @@ A Stalwart mailserver serving `allegedly.works` mail, whose single mailbox
   SASL OAUTHBEARER). No mailbox password exists, and the directory
   structurally rejects password authentication.
 - **The mailbox is Haku's to manage.** Read, organize, delete — the contents
-  are agent-owned state (not operator-audited, unlike the old spool design).
+  are agent-owned state (not operator-audited).
 - **Receive-only.** No submission or relay service is configured; the server
   cannot send outbound mail, and the domain publishes SPF `-all` /
   DMARC `reject`.

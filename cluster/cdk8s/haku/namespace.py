@@ -34,7 +34,7 @@ def chart(app: App) -> Chart:
             # depends on it: baseline forbids hostNetwork/hostPort/host*, which is what stops a
             # pod (Haku has full CRUD here) from escaping the namespace-scoped force-proxy CCNP
             # via the host netns. Making it a visible label documents that load-bearing
-            # assumption and stops it silently drifting to privileged. See haku/workspaces.py.
+            # assumption and stops it silently drifting to privileged.
             "pod-security.kubernetes.io/enforce": "baseline",
         },
     )

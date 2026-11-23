@@ -8,10 +8,7 @@ package(
 py_library(
     name = "async_process",
     srcs = ["async_process.py"],
-    deps = [
-        "//agentplane/native:transport",
-        "@pypi//pydantic",
-    ],
+    deps = ["@pypi//pydantic"],
 )
 
 py_test(

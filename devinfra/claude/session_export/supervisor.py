@@ -8,7 +8,6 @@ credential this saves replaces whatever the loop was using.
 import asyncio
 import contextlib
 import logging
-from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Self
@@ -91,7 +90,6 @@ class SyncSupervisor:
         workers: int,
         live_streams: int,
         live_window: timedelta,
-        scopes: Sequence[str] = DEFAULT_SCOPES,
         api_transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         """`live_streams`: how many sessions to follow by event stream at once; 0 leaves the sync to its cycles."""
@@ -102,7 +100,6 @@ class SyncSupervisor:
         self._workers = workers
         self._live_streams = live_streams
         self._live_window = live_window
-        self._scopes = scopes
         self._api_transport = api_transport
         self._state = SyncState.IDLE
         self._pending: PairingAttempt | None = None
@@ -130,7 +127,7 @@ class SyncSupervisor:
 
     def start_pairing(self) -> str:
         """The URL to open in a browser signed in to the account. Replaces an attempt still waiting."""
-        self._pending = PairingAttempt.start(scopes=self._scopes, port=CALLBACK_PORT)
+        self._pending = PairingAttempt.start(scopes=DEFAULT_SCOPES, port=CALLBACK_PORT)
         return self._pending.url
 
     async def finish_pairing(self, redirect_url: str) -> None:

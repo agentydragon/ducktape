@@ -15,11 +15,12 @@ from pathlib import Path
 from cdk8s import App, Chart
 
 from cluster.cdk8s.cnpg import backup, cluster
-from cluster.cdk8s.generation import write_charts
+from cluster.cdk8s.generation import write_app
+from cluster.cdk8s.litellm.endpoint import NAMESPACE
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/db"
-DATABASE = cluster.PostgresRef.generated(name="litellm-db", namespace="litellm")
+DATABASE = cluster.PostgresRef.generated(name="litellm-db", namespace=NAMESPACE)
 
 
 def _chart(app: App) -> Chart:
@@ -38,5 +39,8 @@ def _chart(app: App) -> Chart:
     return chart
 
 
-def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, _chart)
+def write_manifests(root: Path) -> Chart:
+    app = App()
+    chart = _chart(app)
+    write_app(root, OUTPUT_DIR, app)
+    return chart

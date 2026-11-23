@@ -23,8 +23,8 @@ the facades keep these commands' contract, and a service that moves behind one u
 ## Commands
 
 One command group per service, each configured and failing independently: `agentplane actions` needs
-only the Action Service, `environments` uses the Runner Gateway at the existing Session Dispatcher
-endpoint, `session-dispatcher` uses the Session Dispatcher, `history` uses History, `notifications`
+only the Action Service, `environments` calls `EnvironmentService` on Environments, `session-dispatcher`
+uses the Session Dispatcher, `history` uses History, `notifications`
 uses only the Notification Service, and `egress` only the Egress rules API.
 Session commands operate on an existing Sandbox; they do not create an environment. A command whose
 configuration is absent exits `2` naming the missing
@@ -75,10 +75,7 @@ group, so another service joins as one more group under them.
 Every command takes `--json` and `--timeout`; paged lists take `--limit` and `--after`, as does the one-page inbox read.
 
 `environments` uses `AGENTPLANE_ENVIRONMENTS_URL` and its optional
-`AGENTPLANE_ENVIRONMENTS_CREDENTIAL` bearer when configured. If the new URL is unset, it keeps using
-`AGENTPLANE_SESSIONS_URL` and `AGENTPLANE_SESSIONS_CREDENTIAL`; a configured environments credential
-without its matching URL is a usage error. The environments credential is never taken from the
-sessions credential when a dedicated URL is set.
+`AGENTPLANE_ENVIRONMENTS_CREDENTIAL` bearer.
 `get` is an immediate current-state read: it reports readiness and resume eligibility as observed, and never
 waits or resumes. Watch-based wait adapters are future work. Use the fresh descriptor's
 `resume_eligibility`, `wake_generation`, and opaque `resume_token` before calling
@@ -110,7 +107,7 @@ must account for coverage rather than assuming the entries are complete.
 
 `agentplane session-dispatcher list` discovers current Dispatcher Session records, including waiting and failed
 materialization with no History yet. It requires only the Sessions URL and never contacts an
-environment. Results use retained owner authorization; the configured Pod-bound backend read scope
+environment. Results use retained owner authorization; the configured service-caller read scope
 also applies. `--limit` is 1-100 (default 50), and `--after` accepts the returned continuation token.
 Text output prints Sessions and a continuation hint; `--json` returns one page object with `sessions`
 and `nextPageToken`. Ordering is ascending Session UUID, with current reads rather than a frozen

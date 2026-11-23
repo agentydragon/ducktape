@@ -11,6 +11,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/threadfold"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -179,10 +180,10 @@ func TestOneBatchStoresOnlyTheLastRevisionOfABody(t *testing.T) {
 	if body := bodyOf(t, db, threadID, *reply.textRef); body != "abc" || reply.textRef.ChunkCount != 1 {
 		t.Fatalf("body = %q over %d chunks, want \"abc\" over 1", body, reply.textRef.ChunkCount)
 	}
-	if manifests := count(t, db, "SELECT count(*) FROM thread_payload_manifest WHERE thread_id = $1 AND owner_id = 'test-reply'", threadID); manifests != 1 {
+	if manifests := postgres.Count(t, db, "SELECT count(*) FROM thread_payload_manifest WHERE thread_id = $1 AND owner_id = 'test-reply'", threadID); manifests != 1 {
 		t.Fatalf("%d manifests for one batch's chain of writes, want 1", manifests)
 	}
-	if chunks := count(t, db, "SELECT count(*) FROM thread_payload_chunk WHERE thread_id = $1 AND owner_id = 'test-reply'", threadID); chunks != 1 {
+	if chunks := postgres.Count(t, db, "SELECT count(*) FROM thread_payload_chunk WHERE thread_id = $1 AND owner_id = 'test-reply'", threadID); chunks != 1 {
 		t.Fatalf("%d chunks for one batch's chain of writes, want 1", chunks)
 	}
 }

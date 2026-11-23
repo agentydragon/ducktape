@@ -1,13 +1,6 @@
 from __future__ import annotations
 
-from tana.domain.constants import (
-    AND_OPERATOR_ID,
-    MIN_TUPLE_CHILDREN,
-    NOT_OPERATOR_ID,
-    OR_OPERATOR_ID,
-    SEARCH_EXPRESSION_KEY_ID,
-)
-from tana.domain.nodes import BaseNode, TupleNode
+from tana.domain.nodes import MIN_TUPLE_CHILDREN, BaseNode, TupleNode
 from tana.domain.search import (
     BooleanOperator,
     BooleanSearch,
@@ -17,6 +10,7 @@ from tana.domain.search import (
     TextSearch,
     TypeSearch,
 )
+from tana.domain.system_nodes import AND_OPERATOR_ID, NOT_OPERATOR_ID, OR_OPERATOR_ID, SEARCH_EXPRESSION_KEY_ID
 from tana.domain.types import NodeId
 from tana.graph.graph import TanaGraph
 
@@ -36,30 +30,29 @@ def parse_search_expression(store: TanaGraph, search_node: BaseNode) -> SearchEx
     if not metadata:
         raise SearchParseError(f"Metadata node {search_node.props.meta_node_id} not found")
 
-    # Find search expression tuple in metadata children
-    for child in store.child_nodes(metadata):
+    metadata_children = store.child_nodes(metadata)
+    if expression_tuple := _find_expression_tuple(metadata_children):
+        return _parse_expression_components(store, expression_tuple.children[1:])
+
+    # Search definitions can also be embedded in a view tuple.
+    for child in metadata_children:
+        if isinstance(child, TupleNode):
+            for view in store.child_nodes(child):
+                if view.props.doc_type == "viewDef" and (
+                    expression_tuple := _find_expression_tuple(store.child_nodes(view))
+                ):
+                    return _parse_expression_components(store, expression_tuple.children[1:])
+    return None
+
+
+def _find_expression_tuple(children: list[BaseNode]) -> TupleNode | None:
+    for child in children:
         if (
             isinstance(child, TupleNode)
             and len(child.children) >= MIN_TUPLE_CHILDREN
             and child.children[0] == SEARCH_EXPRESSION_KEY_ID
         ):
-            return _parse_expression_components(store, child.children[1:])
-
-    # Check if search expression is in view definition
-    for child in store.child_nodes(metadata):
-        if not isinstance(child, TupleNode):
-            continue
-        for grandchild_id in child.children:
-            grandchild = store.get(grandchild_id)
-            if grandchild and grandchild.props.doc_type == "viewDef":
-                for ggchild in store.child_nodes(grandchild):
-                    if (
-                        isinstance(ggchild, TupleNode)
-                        and len(ggchild.children) >= MIN_TUPLE_CHILDREN
-                        and ggchild.children[0] == SEARCH_EXPRESSION_KEY_ID
-                    ):
-                        return _parse_expression_components(store, ggchild.children[1:])
-
+            return child
     return None
 
 

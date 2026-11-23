@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/agentydragon/ducktape/agentplane/egress/internal/decision"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 )
 
@@ -326,10 +327,7 @@ func TestRetentionAndRecentLimit(t *testing.T) {
 	if err := store.Cleanup(ctx); err != nil {
 		t.Fatal(err)
 	}
-	var rows int
-	if err := store.db.QueryRow("SELECT count(*) FROM egress_decision WHERE subject_namespace = $1", subject.Namespace).Scan(&rows); err != nil {
-		t.Fatal(err)
-	}
+	rows := postgres.Count(t, store.db, "SELECT count(*) FROM egress_decision WHERE subject_namespace = $1", subject.Namespace)
 	if rows != 3 {
 		t.Fatalf("cleanup left %d rows of the subject's 4, want the 3 current", rows)
 	}
