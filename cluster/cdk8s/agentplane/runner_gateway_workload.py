@@ -77,7 +77,7 @@ def add_service(scope: Construct, env: Environment) -> None:
         scope,
         "sessions-service",
         metadata=k8s.ObjectMeta(name=sessions.name, namespace=env.namespace, labels=sessions.labels),
-        spec=k8s.ServiceSpec(selector=runner_gateway.SESSIONS_ROUTING_LABELS, ports=[sessions.k8s_service_port()]),
+        spec=k8s.ServiceSpec(selector=sessions.pods.selector, ports=[sessions.k8s_service_port()]),
     )
 
 
@@ -128,6 +128,7 @@ def _add_dispatcher_workload(
         registry_secret_name=registry_secret_name,
         placement=placement,
     )
+    # Keep the legacy label through the root Service selector rollout so reverting the Service can still route.
     for key, value in runner_gateway.SESSIONS_ROUTING_LABELS.items():
         workload.deployment.pod_metadata.add_label(key, value)
     # Preserve the OpenTelemetry service identity across the deployment rename.
