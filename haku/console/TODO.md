@@ -27,6 +27,5 @@ The browser login flow is fixed in #3516/#3519 except for:
 
 ## Retained `vector` extension
 
-Nothing at head uses pgvector, but the 0135 baseline still creates a `halfvec` column on a fresh
-database, so CNPG (`cluster/cdk8s/haku/database.py`) and the test fixtures keep provisioning it.
-Drop it, with the `agentplane/indexing:vector_type` import, when a new baseline replaces 0135.
+The 0138 baseline no longer needs pgvector. After the new migration image is deployed,
+retire the old baseline’s CNPG extension provisioning in `cluster/cdk8s/haku/database.py`.

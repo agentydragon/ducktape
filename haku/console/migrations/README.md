@@ -1,16 +1,9 @@
 # Console schema baseline
 
-`0135` is the frozen final schema of the former chain, retaining its last revision
-ID. Databases already at `0135` apply only the later revisions. An older deployment must reach
-`0135` using the pre-squash image before adopting this baseline; do not stamp an
-older database forward or reset it. Downgrade-to-base remains unsupported, as it
-was for the previous console baseline.
-
-The baseline uses explicit Alembic/SQLAlchemy definitions to create the surviving tables, types, functions, triggers,
-constraints and indexes, including their physical legacy names. It preserves the
-`haku-state` logical index registration, without resurrecting the removed chat
-registration. The `vector` extension remains an external provisioning prerequisite
-(CNPG in deployment, the fixture in tests), not a new superuser migration operation.
+Revision `0138` creates the current schema on a fresh PostgreSQL database. A database already
+at `0138` applies no DDL or data updates. Before restoring an older backup with this image,
+use the pre-squash image to upgrade it to `0138`, including revocation of static Agent
+credentials. Never stamp an older database forward. Downgrade-to-base remains unsupported.
 
 ## Equivalence evidence
 
@@ -23,6 +16,6 @@ The original chain at `b78b07ffce` ran in disposable PostgreSQL CI:
   `//haku/console:test_agent_authority_schema`).
 - Artifact `test.outputs/haku_console_schema.sql`.
 
-That capture verified `0135` when it landed; later migrations are ordinary children. Current-schema
+That capture verified the former baseline, `0135`, when it landed. Current-schema
 checks live in `test_agent_authority_schema.py`: ORM agreement, row preservation, enum values, and
 head reapplication preserving the schema dump, public relation OIDs, migration stamp and seeded row.

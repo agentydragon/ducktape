@@ -37,9 +37,14 @@ from haku.console.identity.operator_auth import OPERATOR_SESSION_MAX_AGE_SECONDS
 from haku.console.identity.operator_identity import ResolvedOperatorIdentity, VerifiedExternalIdentity
 from haku.console.settings import Settings
 from testing.postgres import DatabaseClones, PostgresDatabaseTemplate
-from testing.postgres_fixtures import database_clones, database_names, postgres_admin_url, postgres_container
+from testing.postgres_fixtures import (
+    database_clones,
+    database_names,
+    postgres_admin_url,
+    postgres_container,
+    postgres_image,
+)
 from testing.sqlalchemy_engines import managed_async_engine
-from third_party.containers import pgvector_pg18
 
 # TestClient drives the app over httpx, imported inside starlette; gazelle cannot see it.
 # gazelle:include_dep @pypi//httpx
@@ -143,30 +148,22 @@ async def _resolve_operator_identity(app: Any, external_user_key: str) -> Resolv
 
 
 @pytest.fixture(scope="session")
-def postgres_image() -> str:
-    """Migrations create `vector` columns, so use the same pgvector capability as production."""
-    return pgvector_pg18.LAYOUT_RLOCATION
-
-
-@pytest.fixture(scope="session")
-def empty_vector_database_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseTemplate]:
-    """Install pgvector once as superuser; migration tests clone this pristine empty database."""
-    with PostgresDatabaseTemplate(
-        postgres_admin_url, "haku_console_empty_vector_template", extensions=("vector",)
-    ) as template:
+def empty_database_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseTemplate]:
+    """Migration tests clone this pristine empty database."""
+    with PostgresDatabaseTemplate(postgres_admin_url, "haku_console_empty_template") as template:
         yield template
 
 
 @pytest.fixture
-def db_url(empty_vector_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
+def db_url(empty_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
     """A pristine, empty per-test database (no migrations)."""
-    return database_clones.clone(empty_vector_database_template, drivername="postgresql+asyncpg")
+    return database_clones.clone(empty_database_template, drivername="postgresql+asyncpg")
 
 
 @pytest.fixture(scope="session")
 def migrated_database_template(postgres_admin_url: str) -> Iterator[PostgresDatabaseTemplate]:
-    """Install vector and migrate once, then provide isolated clones to runtime tests."""
-    with PostgresDatabaseTemplate(postgres_admin_url, "haku_console_template", extensions=("vector",)) as template:
+    """Migrate once, then provide isolated clones to runtime tests."""
+    with PostgresDatabaseTemplate(postgres_admin_url, "haku_console_template") as template:
         apply_migrations(template.url)
         yield template
 
