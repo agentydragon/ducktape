@@ -7,7 +7,6 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.driver.cluster import Cluster
 from agentplane.system_tests.driver.executor import Executor
@@ -72,7 +71,3 @@ async def test_storage_keeps_all_probes_after_controller_recovery(
         await cluster.kubectl("scale", "deployment/environments", "--replicas=1")
         # TaskGroup awaits the entire original storage scenario, including its
         # refusal, suspend/resume, retained-volume, file-content and cleanup probes.
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

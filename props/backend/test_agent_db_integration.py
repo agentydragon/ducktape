@@ -12,7 +12,6 @@ from collections.abc import AsyncGenerator
 from uuid import UUID, uuid4
 
 import pytest_asyncio
-import pytest_bazel
 
 from props.backend.auth import AgentRole, AuthenticatedIdentity, get_caller_db
 from props.core.agent_types import CriticTypeConfig
@@ -102,7 +101,3 @@ async def test_agent_db_can_see_own_run(
     finally:
         with contextlib.suppress(StopIteration):
             next(gen)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

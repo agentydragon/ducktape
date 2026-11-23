@@ -3,7 +3,6 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import PurePosixPath
 
-import pytest_bazel
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, SecretStr
 
@@ -143,7 +142,3 @@ def test_private_endpoint_normalizes_redirects_to_provider_paths():
         response = client.get("/internal/proxy/example/orders/1", headers=auth, follow_redirects=False)
         assert response.status_code == 502
         assert "location" not in response.headers
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

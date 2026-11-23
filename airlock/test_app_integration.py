@@ -13,7 +13,6 @@ from urllib.parse import parse_qs, urlparse
 
 import httpx
 import pytest
-import pytest_bazel
 from authlib.oauth2.rfc7636 import create_s256_code_challenge
 from itsdangerous import TimestampSigner
 
@@ -230,7 +229,3 @@ async def test_oauth_callback_keeps_pkce_state_bound_to_operator(
     assert mock_k8s_store.write_token.await_args_list[0].args[2] == token
     assert mock_k8s_store.write_token.await_args_list[1].args[2] == token
     assert mock_k8s_store.write_token.await_args_list[1].kwargs["fields"] == ACCESS_TOKEN_FIELDS
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

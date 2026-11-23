@@ -15,7 +15,6 @@ from uuid import UUID, uuid4
 
 import grpc
 import pytest
-import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 from PIL import Image
 
@@ -387,9 +386,6 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                     summary = await history.reader.get_session_summary(session_id)
                     assert summary.sandbox.uid == sandbox.uid
 
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 # Generated protobuf stubs require their direct typing dependency.
 # gazelle:include_dep @pypi//protobuf

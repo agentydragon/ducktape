@@ -10,7 +10,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-import pytest_bazel
 from fastapi.testclient import TestClient
 
 from props.config import LLMProxyConfig
@@ -48,7 +47,3 @@ def test_llm_routes_require_auth(path: str, body: dict[str, object]) -> None:
     with _client() as client:
         resp = client.post(path, json=body)
         assert resp.status_code == 401
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -9,7 +9,6 @@ from uuid import uuid4
 
 import httpx
 import pytest
-import pytest_bazel
 from opentelemetry import trace
 
 from agentplane.app.testing.client import Client
@@ -791,7 +790,3 @@ async def test_scope_cancellation_during_cleanup_waits_for_every_owner(
         await closing
     assert started == set(_OWNER_NAMES)
     assert finished == set(_OWNER_NAMES)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

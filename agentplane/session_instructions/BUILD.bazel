@@ -26,6 +26,5 @@ py_test(
         ":platform_instructions",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

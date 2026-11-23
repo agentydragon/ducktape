@@ -14,7 +14,6 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-import pytest_bazel
 from playwright.async_api import Playwright, expect
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
@@ -542,7 +541,3 @@ def _add_archive_version(
 def _jsonl_record(parsed: dict[str, object], timestamp: datetime) -> tuple[bytes, object, datetime, str, None]:
     raw = json.dumps(parsed, separators=(",", ":")).encode("utf-8") + b"\n"
     return raw, parsed, timestamp, str(parsed["type"]), None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

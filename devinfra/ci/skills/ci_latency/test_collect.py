@@ -68,9 +68,3 @@ def test_job_collection_keeps_each_attempt_and_checks_pagination_total():
     )
 
     assert [job["run_attempt"] for job in result] == [1, 2]
-
-
-if __name__ == "__main__":
-    import pytest_bazel
-
-    pytest_bazel.main()

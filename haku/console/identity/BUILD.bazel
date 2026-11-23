@@ -67,7 +67,6 @@ py_test(
         "//haku/console:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -122,7 +121,6 @@ py_test(
         "//haku/console:conftest",
         "@pypi//fastapi",
         "@pypi//httpx",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -143,7 +141,6 @@ py_test(
         "//testing:sqlalchemy_engines",
         "//util:db_url",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -161,7 +158,6 @@ py_test(
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -185,7 +181,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )

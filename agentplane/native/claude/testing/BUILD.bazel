@@ -97,7 +97,6 @@ py_test(
         "//agentplane/native/claude:conftest",
         "//agentplane/native/testing:async_process",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

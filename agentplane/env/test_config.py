@@ -3,7 +3,6 @@
 import json
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.env.config import CodexReadiness, Configuration, GuestResources, SystemdEnvironment
@@ -450,7 +449,3 @@ def test_log_level(level: str | None) -> None:
         assert "log_level" not in encoded
     else:
         assert encoded["log_level"] == level
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

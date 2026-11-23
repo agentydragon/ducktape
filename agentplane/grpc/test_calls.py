@@ -6,7 +6,6 @@ from pathlib import Path
 
 import grpc
 import pytest
-import pytest_bazel
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 
 from agentplane.grpc.calls import dial
@@ -83,7 +82,3 @@ def test_override_requires_a_dns_name_and_tls_credentials(server_name: str) -> N
 def test_override_cannot_be_ignored_on_plaintext_channels() -> None:
     with pytest.raises(ValueError, match="credentials"):
         dial("127.0.0.1:12345", server_name="localhost")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

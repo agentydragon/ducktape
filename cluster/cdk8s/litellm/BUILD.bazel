@@ -21,7 +21,6 @@ py_test(
         ":upstream_test_image",
         "//devinfra/oci",
         "//devinfra/testing:undeclared_outputs",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -196,7 +195,6 @@ py_test(
         "//model_catalog:catalog",
         "@pypi//cdk8s",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi_tana_litellm_proxy//litellm",
     ],
 )
@@ -210,7 +208,6 @@ py_test(
         "//cluster/cdk8s/public_coder:config",
         "//model_catalog:catalog",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

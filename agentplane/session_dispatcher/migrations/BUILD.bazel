@@ -57,7 +57,6 @@ py_test(
         "//testing:postgres",
         "//util:db_url",
         "@pypi//psycopg",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@rules_python//python/runfiles",
     ],

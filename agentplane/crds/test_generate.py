@@ -4,7 +4,6 @@ regenerate with `bb run //agentplane/crds:generate_bin` and commit the result wh
 
 from pathlib import Path
 
-import pytest_bazel
 import yaml
 from jsonschema import Draft4Validator
 from python.runfiles import Runfiles
@@ -44,7 +43,3 @@ def test_policybinding_schema_preserves_validation_and_condition_ownership(runfi
         {"policySets": ["basic"]},
     ):
         assert not validator.is_valid(invalid), invalid
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

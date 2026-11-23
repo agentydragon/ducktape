@@ -4,7 +4,6 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-import pytest_bazel
 from cdk8s import App
 
 from cluster.cdk8s.clickhouse import client, installation
@@ -64,7 +63,3 @@ def test_retiring_full_node_preserves_surviving_host_and_replica_names(chi: dict
         for host in hosts
     ] == [("0-1", "ovh-ns103656"), ("0-3", "ovh-ns102453")]
     assert all(host["templates"]["dataVolumeClaimTemplate"] == "data-piraeus-hdd" for host in hosts)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

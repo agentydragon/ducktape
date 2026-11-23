@@ -84,7 +84,6 @@ py_test(
         "//skills/info_gathering/evals/agent_runtime/testing:handlers",
         "//skills/info_gathering/evals/agent_runtime/testing/mcp:responses",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -109,7 +108,6 @@ py_test(
         "@pypi//more_itertools",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -130,7 +128,6 @@ py_test(
         "//skills/info_gathering/evals/agent_runtime/testing/mcp:responses",
         "@pypi//pyhamcrest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

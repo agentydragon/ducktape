@@ -32,7 +32,6 @@ py_test(
         "//devinfra/claude/claude_api/hooks:hook_base",
         "//devinfra/claude/claude_api/hooks:session_start",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

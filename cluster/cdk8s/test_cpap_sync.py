@@ -1,6 +1,5 @@
 """The CPAP guest exposes the card to the sync job and filesystem metrics to Alloy."""
 
-import pytest_bazel
 from cdk8s import App
 
 from cluster.cdk8s import cpap_sync
@@ -41,7 +40,3 @@ def test_gateway_listeners_and_ingress(scratch_app: App) -> None:
     assert len(policy["ingress"]) == len(expected)
     assert all(rule in policy["ingress"] for rule in expected)
     assert "egress" not in policy
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

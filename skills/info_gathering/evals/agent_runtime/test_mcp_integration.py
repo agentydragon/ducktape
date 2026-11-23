@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 
 from openai_utils.model import SystemMessage, UserMessage
 from skills.info_gathering.evals.agent_runtime.agent import Agent
@@ -33,7 +32,3 @@ async def test_agent_mcp_echo(mcp_tool_provider_echo, message) -> None:
     assert outputs, "No tool outputs captured"
     assert outputs[0].result.structured_content == {"echo": "hello"}
     assert res.strip() == "done"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

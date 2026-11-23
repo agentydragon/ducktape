@@ -6,7 +6,6 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-import pytest_bazel
 from cdk8s import App
 
 from agentplane.crd_group import GROUP
@@ -150,7 +149,3 @@ def test_the_proxy_resolves_every_standing_records_svid(resources: list[dict[str
             ],
             permissions,
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

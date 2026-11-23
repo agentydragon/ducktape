@@ -3,8 +3,6 @@
 from pathlib import Path
 from typing import Any
 
-import pytest_bazel
-
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.image_automation import check_image_automation_webhook, check_image_policy_markers
 from cluster.validation.k8s import parse_k8s_resources
@@ -55,7 +53,3 @@ def test_marked_file_reports_missing_policy_and_nonempty_flow_mapping(tmp_path: 
     missing, error = check_image_policy_markers(_cluster(), tmp_path)
     assert "flux-system:app" in missing
     assert "deployment.yaml:5" in error
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

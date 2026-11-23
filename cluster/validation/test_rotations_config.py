@@ -8,7 +8,6 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
 
@@ -62,7 +61,3 @@ def test_rotation_outputs_encrypt_tokens(runfiles: Runfiles, tmp_path: Path) -> 
             )
             assert manifest["stringData"][secret.token_key].startswith("ENC["), secret.path
             assert manifest["metadata"]["name"] == secret.name, secret.path
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

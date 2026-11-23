@@ -1,5 +1,4 @@
 import pytest
-import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart
 from cnpg_database_crds.io.cnpg.postgresql import DatabaseSpecDatabaseReclaimPolicy
 
@@ -46,7 +45,3 @@ def test_database_cluster_namespace_and_reclaim_policy(scratch_chart: Chart) -> 
         database_reclaim_policy=DatabaseSpecDatabaseReclaimPolicy.DELETE,
     )
     assert disposable.to_json()["spec"]["databaseReclaimPolicy"] == "delete"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

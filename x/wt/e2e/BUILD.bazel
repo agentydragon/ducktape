@@ -26,7 +26,6 @@ py_test(
         "//x/wt/testing:git_helpers",
         "@pypi//pygit2",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -45,7 +44,6 @@ py_test(
         "//x/wt/shared:github_models",
         "//x/wt/testing:asserts",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -59,7 +57,6 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -77,7 +74,6 @@ py_test(
         "//x/wt/testing:git_helpers",
         "//x/wt/testing:utils",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -94,7 +90,6 @@ py_test(
         "//:conftest",
         "//x/wt/testing:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -110,7 +105,6 @@ py_test(
         ":conftest",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -125,7 +119,6 @@ py_test(
         ":conftest",
         "//:conftest",
         "//x/wt/testing:git_helpers",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -141,7 +134,6 @@ py_test(
         "//:conftest",
         "//x/wt/testing:utils",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -157,7 +149,6 @@ py_test(
         "//:conftest",
         "//x/wt/testing:asserts",
         "//x/wt/testing:utils",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -173,6 +164,5 @@ py_test(
         "//:conftest",
         "//x/wt/testing:git_helpers",
         "@pypi//pygit2",
-        "@pypi//pytest_bazel",
     ],
 )

@@ -8,7 +8,6 @@ from typing import cast
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
-import pytest_bazel
 import yaml
 from testcontainers.core.wait_strategies import HttpWaitStrategy
 
@@ -62,7 +61,3 @@ def test_blackbox_modules_use_production_config(tmp_path: Path) -> None:
 
     assert _probe_success(tcp_metrics) == 1
     assert _probe_success(http_on_https_metrics) == 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

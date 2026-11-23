@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, Mock
 
 import grpc
 import pytest
-import pytest_bazel
 from google.protobuf.empty_pb2 import Empty
 
 from agentplane.history_service.api.history import history_service_pb2
@@ -49,7 +48,3 @@ async def test_history_unary_and_watch_send_no_bearer_for_service_svid(monkeypat
     assert unary_call.kwargs.get("metadata", ()) == ()
     assert watch_call.kwargs.get("metadata", ()) == ()
     assert stream.cancelled
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

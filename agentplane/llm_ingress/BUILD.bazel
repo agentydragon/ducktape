@@ -68,6 +68,5 @@ py_test(
     deps = [
         ":models",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )

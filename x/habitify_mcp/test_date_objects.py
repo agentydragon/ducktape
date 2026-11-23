@@ -2,7 +2,6 @@ from datetime import UTC, date, datetime
 
 import httpx
 import pytest
-import pytest_bazel
 
 from x.habitify_mcp.types import Status
 
@@ -27,7 +26,3 @@ async def test_status_date_matches_requested_instant(client, patch_client_method
         status = await client.set_habit_status("test-habit", Status.COMPLETED, target)
         assert put.call_args.kwargs["json"]["target_date"] == expected.isoformat()
         assert status.date == expected
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

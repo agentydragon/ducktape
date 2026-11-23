@@ -6,7 +6,6 @@ import subprocess
 from pathlib import Path
 from urllib.parse import urlparse
 
-import pytest_bazel
 from playwright.sync_api import Browser, Route, sync_playwright
 from python.runfiles import Runfiles
 
@@ -74,7 +73,3 @@ def test_relocated_stack_key(tmp_path: Path) -> None:
     assert f"{ORIGIN}/{ENTRY}:" in original_key.splitlines()[1]
     assert f"{ORIGIN}/{OWNER}:" in split_key.splitlines()[1]
     assert original_key not in split
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

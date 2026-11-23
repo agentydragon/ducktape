@@ -41,7 +41,6 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pygit2",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -64,7 +63,6 @@ py_test(
     deps = [
         ":sync_pubkeys",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 

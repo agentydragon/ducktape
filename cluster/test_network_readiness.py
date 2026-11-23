@@ -3,7 +3,6 @@
 from unittest.mock import Mock
 
 import pytest
-import pytest_bazel
 from kubernetes import client
 from kubernetes.client import ApiException
 
@@ -23,7 +22,3 @@ def test_probe_creation_failure_cleans_up_previous_nodes() -> None:
     assert error.value.status == 403
     first_pod = api.create_namespaced_pod.call_args_list[0].args[1]
     api.delete_namespaced_pod.assert_called_once_with(first_pod.metadata.name, "default", grace_period_seconds=0)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

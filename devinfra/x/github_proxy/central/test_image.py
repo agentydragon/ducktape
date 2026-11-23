@@ -5,7 +5,6 @@ import ssl
 import stat
 from pathlib import Path
 
-import pytest_bazel
 from aiohttp import ClientConnectionError, ClientSession, ClientTimeout
 
 from devinfra.oci.oci import load_oci_image
@@ -116,7 +115,3 @@ async def test_image_boots_with_readonly_secrets_and_persistent_capture(tmp_path
         assert raw.stat().st_uid == raw.stat().st_gid == 1000
         assert (capture / "sessions.jsonl").stat().st_size > 0
         previous = captured
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

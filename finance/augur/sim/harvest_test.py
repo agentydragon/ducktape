@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 import pytest
-import pytest_bazel
 from more_itertools import one
 
 from finance.augur.model.series import SP500_SYMBOL, SecurityKey, SecuritySymbol
@@ -381,7 +380,3 @@ def test_harvest_off_with_no_sales_books_no_capital_gains() -> None:
         for gain in book.capital_gains
         if gain.agent_id == ALICE and (gain.short_term_gain or gain.long_term_gain)
     ]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

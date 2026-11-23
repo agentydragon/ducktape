@@ -6,7 +6,6 @@ from collections.abc import Callable
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 from cdk8s import App
 from more_itertools import one
 
@@ -78,7 +77,3 @@ def test_openclaw_can_query_only_rules_on_the_local_relay(
     env = {item["name"]: item.get("value") for item in app["env"]}
     assert env["AGENTPLANE_EGRESS_GRPC_URL"] == f"http://{listener['listen_address']}"
     assert "AGENTPLANE_EGRESS_GRPC_CREDENTIAL" not in env
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

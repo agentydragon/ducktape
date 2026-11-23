@@ -8,7 +8,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 HOME_PREPARE = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/env/images/home_prepare"
@@ -106,7 +105,3 @@ def test_home_prepare_refuses_non_directory_and_symlink_paths(tmp_path: Path, in
     else:
         path = legacy_home if invalid_path.startswith("legacy") else agent_home
         assert path.is_symlink()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

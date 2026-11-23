@@ -1,7 +1,6 @@
 """Unit tests for secret function implementations."""
 
 import pytest
-import pytest_bazel
 
 from skills.info_gathering.evals.function_learning.functions import (
     AES_FIELD_AFFINE,
@@ -114,7 +113,3 @@ def test_aes_affine_known_values() -> None:
     assert AES_FIELD_AFFINE.evaluate(1) == 4
     # f(2) = (xtime(alpha) XOR beta) & 0xF = (0xAE XOR 0x83) & 0xF = 0x2D & 0xF = 13.
     assert AES_FIELD_AFFINE.evaluate(2) == 13
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

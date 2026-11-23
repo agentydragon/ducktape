@@ -485,9 +485,3 @@ def test_storage_diagnostics_keep_partial_timeout_output_and_continue(
             assert "Diagnostic command timed out" in content
         else:
             assert content == kind
-
-
-if __name__ == "__main__":
-    import pytest_bazel
-
-    pytest_bazel.main()

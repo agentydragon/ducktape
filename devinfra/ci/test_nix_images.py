@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
 
@@ -99,7 +98,3 @@ def test_changed_images_matches_globs(repo: Path, path: str, expected: list[str]
 
 def test_no_base_selects_every_image() -> None:
     assert changed_images(IMAGES, None, "HEAD") == ["shared-image", "site-image"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

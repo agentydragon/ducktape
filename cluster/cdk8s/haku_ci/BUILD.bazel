@@ -68,7 +68,6 @@ py_test(
         "//cluster/k8s:haku/forgejo-tea/haku-forgejo-tea.sops.yaml",
     ],
     deps = [
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],

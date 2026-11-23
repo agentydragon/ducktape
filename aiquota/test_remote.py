@@ -1,14 +1,10 @@
 from datetime import UTC, datetime
 
 import httpx
-import pytest_bazel
 import respx
 
 from aiquota.remote import QUOTAS_PATH, QuotaAPIClient
 from aiquota.render.view_model import AllQuotasView
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 
 async def test_fetches_normalized_quotas_with_bearer_token() -> None:

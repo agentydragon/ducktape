@@ -5,7 +5,6 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from platform_sessions.probe_types import ProbeOutcome, ProbeSource
@@ -74,7 +73,3 @@ def test_recorder_serializes_concurrent_completions():
         list(executor.map(lambda _: recorder.completed(ProbeOutcome.SUCCESS, ProbeSource.PERIODIC), range(100)))
     assert recorder.sequence == len(reporter.completions) == 100
     assert recorder.last == reporter.completions[-1]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

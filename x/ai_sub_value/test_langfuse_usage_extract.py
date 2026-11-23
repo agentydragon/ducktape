@@ -4,7 +4,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from x.ai_sub_value.langfuse_usage_extract import main, normalize_row, resolve_provider, write_checkpoint
 
@@ -113,7 +112,3 @@ def test_completed_extraction_removes_only_used_checkpoints(tmp_path: Path, monk
     assert later.exists()
     assert gzip.decompress(report.read_bytes()) == b"[]"
     assert (output / "langfuse-usage-weekly.json").is_file()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -200,9 +200,3 @@ def test_completed_gate_with_invalid_clock_is_unknown(started_at: str, completed
 
     assert result["class"] == "unclassifiable_current_rollup"
     assert result["at_merge"] == "unknown"
-
-
-if __name__ == "__main__":
-    import pytest_bazel
-
-    pytest_bazel.main()

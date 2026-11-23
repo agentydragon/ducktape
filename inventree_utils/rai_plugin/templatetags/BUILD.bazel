@@ -16,6 +16,5 @@ py_test(
         ":custom_tags",
         "@pypi//django",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

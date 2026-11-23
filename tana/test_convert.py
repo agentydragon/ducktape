@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from tana.domain.nodes import BaseNode
 from tana.export import convert, export_node_subset, tana_issues_to_tanapaste
@@ -110,7 +109,3 @@ def test_export_commands_frame_tanapaste(tmp_path, monkeypatch, capsys):
     output = capsys.readouterr()
     assert output.out == "%%tana%%\n"
     assert output.err == "Open issues exported: 0\n"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

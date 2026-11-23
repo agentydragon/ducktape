@@ -7,7 +7,6 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -320,7 +319,3 @@ def test_diagnostic_failure_preserves_gate_verdict(
         assert "Could not write selected-test label snapshot" in result.stderr
         with tarfile.open(tmp_path / "probe-upload.tgz") as archive:
             assert "selected-test-labels.json" not in archive.getnames()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

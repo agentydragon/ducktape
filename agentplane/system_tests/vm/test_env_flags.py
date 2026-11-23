@@ -1,7 +1,6 @@
 """`strict_env_flag` takes `0` or `1`, uses its default when unset and rejects any other value."""
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.vm.env_flags import strict_env_flag
 
@@ -25,7 +24,3 @@ def test_flag_rejects_other_values(monkeypatch: pytest.MonkeyPatch, value: str) 
     monkeypatch.setenv(FLAG, value)
     with pytest.raises(ValueError, match="must be '0' or '1'"):
         strict_env_flag(FLAG)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

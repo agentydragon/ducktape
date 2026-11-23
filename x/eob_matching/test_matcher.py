@@ -3,7 +3,6 @@ from itertools import product
 from types import SimpleNamespace
 
 import pytest
-import pytest_bazel
 
 from x.eob_matching import matcher
 from x.eob_matching.models import EOB, BankPayment, MatchConfidence, Matched, NotMatched, NotMatchedReason
@@ -98,7 +97,3 @@ def test_unresolved_reports_only_remaining_subsets(
     resolved, pending = matcher.match_payments([_payment(4, "first"), _payment(3, "second")], items, [])
     assert isinstance(resolved.result, Matched)
     assert pending.result == NotMatched(reason=reason, candidate_count=len(amounts), solution_count=count)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

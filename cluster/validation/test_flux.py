@@ -7,7 +7,6 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
-import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
 
@@ -91,7 +90,3 @@ def test_bootstrap_source_fetches_anonymously(runfiles: Runfiles) -> None:
     assert url.username is None
     assert source.get("provider", "generic") == "generic"
     assert "secretRef" not in source
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

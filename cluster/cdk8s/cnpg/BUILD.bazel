@@ -55,7 +55,6 @@ py_test(
         "//cluster/cdk8s/providers/cnpg:database",
         "@pypi//cdk8s",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

@@ -1,6 +1,5 @@
 """Typed Secret references embedded in Helm's untyped values retain Kubernetes field names."""
 
-import pytest_bazel
 from cdk8s import Chart
 
 from cluster.cdk8s.helm import helm_release, https_helm_repository
@@ -26,7 +25,3 @@ def test_helm_values_env_map(scratch_chart: Chart) -> None:
     assert spec["values"]["env"] == {
         "TOKEN": {"valueFrom": {"secretKeyRef": {"key": "token", "name": "test-credentials"}}}
     }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

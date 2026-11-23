@@ -1,12 +1,8 @@
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from aiquota.config import load
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 
 def test_missing_configuration_is_rejected(tmp_path: Path) -> None:

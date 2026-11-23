@@ -4,7 +4,6 @@ import shutil
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
@@ -34,7 +33,3 @@ def render_outputs(runfiles: Runfiles, stage_runner: StageRunner) -> Path:
 
 def test_render_3d_golden(runfiles: Runfiles, render_outputs: Path) -> None:
     assert_png_equal(render_outputs / "cube_with_hole.png", runfiles.root() / _GOLDEN)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

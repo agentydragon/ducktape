@@ -8,7 +8,6 @@ from typing import cast
 
 import httpx
 import pytest
-import pytest_bazel
 from dbus_fast.aio import MessageBus
 from dbus_fast.service import ServiceInterface
 from httpx_sse import ServerSentEvent
@@ -369,7 +368,3 @@ def test_error_text_redacts_token_before_applying_bound() -> None:
     token = "secret-token"
     assert _bounded_error(RuntimeError(f"prefix {token} suffix"), token) == "prefix [redacted] suffix"
     assert "secret" not in _bounded_error(RuntimeError(f"{token}{'x' * 500}"), token)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

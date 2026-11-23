@@ -88,7 +88,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//pygit2",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -121,7 +120,6 @@ py_test(
         "//finance/evidence:markets",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -137,7 +135,6 @@ py_test(
         "//:conftest",
         "//finance/augur/calibration:catalog",
         "//finance/evidence:markets",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

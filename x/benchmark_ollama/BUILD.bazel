@@ -36,6 +36,5 @@ py_test(
         "//:conftest",
         "@pypi//openai",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

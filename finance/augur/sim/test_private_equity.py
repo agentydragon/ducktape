@@ -3,7 +3,6 @@
 from decimal import Decimal
 
 import pytest
-import pytest_bazel
 
 from finance.augur.model.series import IssuerId, PrivateEquityEventKindCode, PrivateEquityRegimeCode
 from finance.augur.sim.capture import FinancialCapture, FinancialOutput
@@ -110,7 +109,3 @@ def test_recovery_cashout_applies_to_the_remaining_position_after_an_earlier_sal
     assert all(lot.units_remaining == lot.basis_remaining == 0 for lot in financial.months[-1].lots)
     assert world.accounting.ledger.balance(CASH) == 20
     assert world.accounting.ledger.trial_balance() == 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

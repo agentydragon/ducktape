@@ -7,7 +7,6 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-import pytest_bazel
 from cdk8s import App
 from more_itertools import one
 
@@ -249,7 +248,3 @@ def test_controller_may_bind_every_role_a_role_set_names(
     assert {p for p in Rbac(external_delegation).subjects(subject) if p.verb in {"bind", "*"}} == {
         p for p in needed if p.resource == "roles" and p.namespace != staging.ENV.namespace
     }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

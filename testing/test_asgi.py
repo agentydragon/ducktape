@@ -6,7 +6,6 @@ from contextlib import asynccontextmanager
 
 import httpx
 import pytest
-import pytest_bazel
 import uvicorn
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -216,7 +215,3 @@ def test_sync_helper_yields_a_ready_origin() -> None:
         response = client.get(origin)
 
     assert response.text == "pong"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

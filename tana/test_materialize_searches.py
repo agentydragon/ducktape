@@ -2,7 +2,6 @@ import json
 import sys
 
 import pytest
-import pytest_bazel
 
 from tana.export.materialize_searches import main
 
@@ -89,7 +88,3 @@ def test_materialize_one(export_path, monkeypatch, capsys):
     monkeypatch.setattr(sys, "argv", ["materialize_searches", str(export_path), "--search-id", "nested"])
     main()
     assert capsys.readouterr().out.startswith("\nSearch: View search\nID: nested\n")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

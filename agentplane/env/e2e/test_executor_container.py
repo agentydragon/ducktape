@@ -14,7 +14,6 @@ from uuid import uuid4
 
 import grpc.aio
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 from tenacity import AsyncRetrying, Retrying, retry, retry_if_exception_type, stop_after_delay, wait_fixed
 
@@ -562,7 +561,3 @@ async def test_process_output_resume_files_and_incarnation_fence(
 async def _drain(responses: AsyncIterator[executor_pb2.OpenSessionResponse]) -> None:
     async for _ in responses:
         pass
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

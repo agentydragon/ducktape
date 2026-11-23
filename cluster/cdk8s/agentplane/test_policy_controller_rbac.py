@@ -5,7 +5,6 @@ policy kind it reports on."""
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from agentplane.crd_group import GROUP
 from agentplane.policy_controller.settings import Settings
@@ -75,7 +74,3 @@ def test_only_the_policy_controller_writes_workload_credential_status(staging_ma
         for subject in binding.get("subjects", [])
     }
     assert writers == {("ServiceAccount", policy_controller.NAME, STAGING_NAMESPACE)}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

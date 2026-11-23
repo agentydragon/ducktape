@@ -1,7 +1,6 @@
 """Abrupt Runtime proxy loss with an in-flight central-sampler executor read."""
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.deployment.stack import Stack
 from agentplane.system_tests.driver.cluster import Cluster
@@ -25,7 +24,3 @@ async def test_gateway_crash_settles_live_central_read_and_accepts_next_input(
         Executor(template=POD_TEMPLATE, cwd="/state/workspaces/central-gateway-crash"),
         (str(deployment.k3s.binary), "crictl", "--config", str(deployment.k3s.work / "crictl.yaml")),
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

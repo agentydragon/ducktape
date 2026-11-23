@@ -7,7 +7,6 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, TestSummary
@@ -420,7 +419,3 @@ def test_publication_reads_retry_evidence_through_the_real_go_exporter(
         ).tests
     assert evidence.is_covered("//a:test")[0] is retry_passed
     assert evidence.already_failed("//a:test")[0] is not retry_passed
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

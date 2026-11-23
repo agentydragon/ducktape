@@ -1,4 +1,3 @@
-import pytest_bazel
 from cdk8s import App
 from more_itertools import one
 
@@ -16,7 +15,3 @@ def test_ready_etcd_targets_match_the_control_plane_roster(scratch_app: App, neb
         if endpoint["conditions"]["ready"]
         for address in endpoint["addresses"]
     ) == sorted((name, host.nebula_ip) for name, host in nebula_roster.control_planes().items())
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

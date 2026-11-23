@@ -11,7 +11,6 @@ from decimal import Decimal
 import numpy as np
 import numpy.typing as npt
 import pytest
-import pytest_bazel
 
 from finance.augur.api.portfolio import PortfolioConfig
 from finance.augur.model.exogenous import ExogenousSamplingRequest
@@ -130,7 +129,3 @@ def test_all_stopped_has_no_terminal_wealth_but_has_observed_unpaid_demands() ->
     assert different_future.rollout(RolloutRequest(scenario=wealth_request.scenario, seed=0)) == selected
     assert different_future.projection_summary(wealth_request) == wealth
     assert different_future.projection_summary(shortfall_request) == shortfall
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

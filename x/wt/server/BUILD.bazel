@@ -206,7 +206,6 @@ py_test(
         ":worktree_service",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -223,7 +222,6 @@ py_test(
         "//:conftest",
         "@pypi//psutil",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -235,6 +233,5 @@ py_test(
         ":gitstatusd_listener",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

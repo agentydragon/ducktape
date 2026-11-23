@@ -6,7 +6,6 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from cdk8s import App
 
 from cluster.cdk8s.kyverno import policies
@@ -39,7 +38,3 @@ class TestRequireGitops:
         )
         assert result.ok, result.stdout
         assert result.passed == 0, result.stdout
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

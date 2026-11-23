@@ -9,7 +9,6 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-import pytest_bazel
 
 from devinfra.pr_visuals.collection import (
     CollectedOutputs,
@@ -555,7 +554,3 @@ def test_unavailable_invocation_is_not_returned_as_a_missing_screenshot_run() ->
 
     assert list(observed.runs_by_invocation) == ["present"]
     assert observed.unavailable_invocations == ["absent"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

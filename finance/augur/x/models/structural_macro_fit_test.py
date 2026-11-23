@@ -13,7 +13,6 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.model.historical_windows import MacroHistory, load_macro_history
 from finance.augur.x.models.macro_var import fit_macro_var, macro_state_path
@@ -239,7 +238,3 @@ def test_fitted_artifact_contains_parameters_and_fit_reads_its_input_sources(
         "rate_beta_fitted_value",
         "rate_beta_r_squared",
     }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

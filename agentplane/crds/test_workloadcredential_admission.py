@@ -3,8 +3,6 @@ Identity subject, binding union, and transition rule that changes a subject only
 
 from typing import Any
 
-import pytest_bazel
-
 from agentplane.testing.crd_admission import CrdAdmission, crd_namespace
 
 NAMESPACE = "workload-credential-admission"
@@ -107,7 +105,3 @@ async def test_workload_credential_admission() -> None:
         await _unions(records)
         await _transitions(records)
         await _status(records)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

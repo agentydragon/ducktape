@@ -2,7 +2,6 @@
 
 import tomllib
 
-import pytest_bazel
 from cdk8s import App
 
 from cluster.cdk8s.gitlab_spike import runner
@@ -29,7 +28,3 @@ def test_manager_and_job_policies_select_distinct_workloads(scratch_app: App) ->
     assert job["automount_service_account_token"] is False
     assert any("kube-apiserver" in rule.get("toEntities", []) for rule in manager["egress"])
     assert all("kube-apiserver" not in rule.get("toEntities", []) for rule in jobs["egress"])
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

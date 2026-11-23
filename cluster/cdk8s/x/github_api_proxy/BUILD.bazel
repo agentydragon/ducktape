@@ -70,7 +70,6 @@ py_test(
         "//cluster/cdk8s/testing:promtool",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

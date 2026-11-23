@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pygit2
 import pytest
-import pytest_bazel
 
 from devinfra.precommit.conftest import commit, stage
 from devinfra.precommit.filename_conventions import check_filename_conventions
@@ -78,7 +77,3 @@ def test_both_filename_and_directory_violations(repo: pygit2.Repository) -> None
     dirs = [v for v in violations if "directory" in v]
     assert len(filenames) == 1
     assert len(dirs) == 1
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

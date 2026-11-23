@@ -1,6 +1,5 @@
 """Exercise the gateway probe's alert expressions with upstream promtool."""
 
-import pytest_bazel
 from cdk8s import App
 from more_itertools import one
 
@@ -32,7 +31,3 @@ def test_gateway_probe_rules(promtool: PromtoolRules, scratch_app: App) -> None:
     promtool(
         "ducktape/cluster/cdk8s/monitoring/testdata/gateway_probe_rules.yaml", {"gateway-probe.yaml": manifest["spec"]}
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

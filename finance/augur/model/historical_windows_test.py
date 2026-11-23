@@ -17,7 +17,6 @@ from unittest.mock import patch
 import numpy as np
 import polars as pl
 import pytest
-import pytest_bazel
 
 from finance.augur.model.bond_fund import BondFundSpec, YieldCurve
 from finance.augur.model.equity import EquitySpec
@@ -683,7 +682,3 @@ def test_ex_us_load_is_independent_and_can_be_composed_with_the_us_record(tmp_pa
     assert joint.ex_us_equity_level is not None
     np.testing.assert_allclose(joint.ex_us_equity_level[1:] / joint.ex_us_equity_level[:-1], 1.02)
     np.testing.assert_allclose(joint.equity_level[1:] / joint.equity_level[:-1], 1.013)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

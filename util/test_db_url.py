@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest_bazel
 from sqlalchemy.engine import URL, make_url
 
 from util.db_url import render_postgresql_url
@@ -45,7 +44,3 @@ def test_render_replaces_query_when_requested() -> None:
     rendered = render_postgresql_url(url, "postgresql", query={"sslmode": "disable"})
 
     assert make_url(rendered).query == {"sslmode": "disable"}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

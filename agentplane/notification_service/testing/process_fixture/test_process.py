@@ -6,7 +6,6 @@ from uuid import uuid4
 
 import grpc
 import pytest
-import pytest_bazel
 
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.notification_service.api.notifications import notifications_pb2, notifications_pb2_grpc
@@ -83,7 +82,3 @@ async def test_python_process_reads_owned_seed_rotates_and_stops(
                 await stub.ListSubscriptions(notifications_pb2.ListSubscriptionsRequest(), timeout=5)
             assert revoked.value.code() == grpc.StatusCode.UNAUTHENTICATED
         assert notification.process.returncode == 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

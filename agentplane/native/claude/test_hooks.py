@@ -7,7 +7,6 @@ themselves, not inferred from the model-visible outcome alone.
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 
 from agentplane.native.claude import scenarios
 from agentplane.native.claude.testing import anthropic_sse, frames
@@ -55,7 +54,3 @@ async def test_pretooluse_decision_gates_the_tool(
     # A PreToolUse hook's explicit decision (allow or deny) supersedes the permission prompt
     # entirely in this pinned build: no `can_use_tool` ever follows it, either way.
     assert frames.permission_prompts(captured) == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

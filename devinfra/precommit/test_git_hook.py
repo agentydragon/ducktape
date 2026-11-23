@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pygit2
 import pytest
-import pytest_bazel
 from opentelemetry.sdk.trace import TracerProvider
 
 from devinfra.precommit import git_hook
@@ -69,7 +68,3 @@ def test_pre_commit_reports_checks_and_writes_traces(
     assert records.keys() == {*checks, "precommit"}
     for check in checks:
         assert records[check] == ("ERROR" if invalid else "UNSET")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -1,6 +1,5 @@
 """Verify probe failures do not leak stored session data."""
 
-import pytest_bazel
 from pydantic import BaseModel, TypeAdapter
 from sqlalchemy import update
 
@@ -35,7 +34,3 @@ def test_superseded_probe_returns_typed_result_without_logging(tmp_path, caplog)
     assert result.outcome is ProbeOutcome.SUPERSEDED
     assert result.as_event()["outcome"] == "superseded"
     assert "session_probe" not in caplog.text
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -20,7 +20,6 @@ py_test(
         "//third_party/cli_proxy_api_tests:cli_proxy_api_image",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

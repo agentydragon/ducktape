@@ -81,7 +81,6 @@ py_test(
     deps = [
         ":import_graph",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -93,6 +92,5 @@ py_test(
         ":registry",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

@@ -1,7 +1,5 @@
 """Only Claude's selected, explicitly configured overrides become ingress metadata."""
 
-import pytest_bazel
-
 from agentplane.env.runtime.harness import Harness
 from cluster.cdk8s.agentplane.app_settings import model_catalog
 from cluster.cdk8s.agentplane.model_selections import (
@@ -32,7 +30,3 @@ def test_codex_overrides_are_catalog_entries_not_ingress_model_configs() -> None
 def test_central_sampler_selection_is_opt_in() -> None:
     catalog = model_catalog(STAGING_APP_MODELS)
     assert Harness.CENTRAL_SAMPLER not in catalog.harnesses
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

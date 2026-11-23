@@ -63,7 +63,6 @@ py_test(
         "//testing:postgres_fixtures",
         "@pypi//alembic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -111,7 +110,6 @@ py_test(
         "//:conftest",
         "//testing:postgres_fixtures",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -229,7 +227,6 @@ py_test(
         "//devinfra/oci",
         "//testing:container_logs",
         "//testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",
     ],
@@ -263,7 +260,6 @@ py_test(
         ":source_paths",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -289,7 +285,6 @@ py_test(
         "//:conftest",
         "//testing:postgres_fixtures",
         "@pypi//fastapi",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -301,7 +296,6 @@ py_test(
         ":cli",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -323,7 +317,6 @@ py_test(
         ":version_queries",
         "//:conftest",
         "//testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -344,7 +337,6 @@ py_test(
         ":testing",
         "//:conftest",
         "//testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -364,7 +356,6 @@ py_test(
         ":testing",
         "//:conftest",
         "//testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -383,7 +374,6 @@ py_test(
         ":testing",
         "//:conftest",
         "//testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -498,7 +488,6 @@ py_test(
         ":web_testing",
         "//:conftest",
         "@pypi//fastapi",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -523,7 +512,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//playwright",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -543,7 +531,6 @@ py_test(
         ":testing",
         "//:conftest",
         "//testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -562,7 +549,6 @@ py_test(
         ":testing",
         "//:conftest",
         "//testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -587,7 +573,6 @@ py_test(
         ":testing",
         "//:conftest",
         "//testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -599,7 +584,6 @@ py_test(
         ":claude_titles",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -619,7 +603,6 @@ py_test(
         ":testing",
         "//:conftest",
         "//testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -646,7 +629,6 @@ py_test(
         "//devinfra/testing:undeclared_outputs",
         "//testing:postgres_fixtures",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -668,7 +650,6 @@ py_test(
         ":version_lineage",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )

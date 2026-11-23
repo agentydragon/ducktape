@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import cast, override
 
 import grpc
-import pytest_bazel
 from google.protobuf.empty_pb2 import Empty
 from playwright.async_api import expect
 
@@ -180,7 +179,3 @@ async def test_environment_identity_change_obeys_real_gateway_and_kubernetes_adm
         await panel.get_by_role("button", name="Change identity").click()
         await expect(panel.get_by_text("Current: browser-identity")).to_be_visible()
         assert (await sandbox.sandbox())["spec"]["identity"] == {"name": "browser-identity"}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

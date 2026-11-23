@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from datetime import date
 
-import pytest_bazel
-
 from x.loom.gym.inspect_harness import headline_metric
 from x.loom.gym.scoring import CategoricalAnswer, score
 from x.loom.gym.task import CategoricalOutcome, CategoricalQuestion, Task
@@ -30,7 +28,3 @@ def test_categorical_headline_metric_resolves():
     key = headline_metric(metrics, "categorical")
     assert key == "log_loss"
     assert key in metrics
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

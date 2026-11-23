@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 
 from cluster.validation.checks import check_sops_decryption_blocks
 from cluster.validation.cluster import ParsedCluster
@@ -71,7 +70,3 @@ def test_suspended_kustomization_with_sops_is_skipped() -> None:
     cluster = _cluster(_sops_secret(), FluxKustomizationSpec(suspend=True))
 
     assert check_sops_decryption_blocks(cluster) == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

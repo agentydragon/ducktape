@@ -223,9 +223,3 @@ def test_completed_runner_occupancy_is_clipped_and_uses_github_job_clocks_only()
         "no_positive_runner_id": 1,
         "unfinished_or_unknown_status": 1,
     }
-
-
-if __name__ == "__main__":
-    import pytest_bazel
-
-    pytest_bazel.main()

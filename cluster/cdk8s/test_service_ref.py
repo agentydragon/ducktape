@@ -1,6 +1,5 @@
 """Service references distinguish client-facing ports from Pod ports and preserve endpoint overrides."""
 
-import pytest_bazel
 from more_itertools import one
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecEndpoints
 
@@ -46,7 +45,3 @@ def test_monitor_derives_service_selector_and_port_without_changing_custom_endpo
     assert endpoint.path == "/metrics"
     custom = ServiceMonitorSpecEndpoints(port="other-port", path="/custom-metrics", interval="37s")
     assert _SERVICE.service_monitor_spec(custom).endpoints == [custom]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

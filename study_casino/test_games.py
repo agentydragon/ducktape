@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest_bazel
-
 from study_casino.events import Card
 from study_casino.games import settle_blackjack
 
@@ -37,7 +35,3 @@ def test_blackjack_odd_wager_three_rounds_up_to_eight():
     # 3 * 2.5 = 7.5 → 8 (player-favouring; conventional in integer-credit casinos).
     s = settle_blackjack(_natural(), _dealer_seventeen(), current_wager=3)
     assert s.payout_tokens == 8
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

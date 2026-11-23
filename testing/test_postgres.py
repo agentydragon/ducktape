@@ -5,7 +5,6 @@ from contextlib import ExitStack
 from threading import Barrier
 
 import pytest
-import pytest_bazel
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError
@@ -264,7 +263,3 @@ def test_concurrent_clones_retry_the_same_name(admin_url: str) -> None:
     expected = DatabaseNames(node_id)
     assert names == {expected(), expected()}
     assert all(not _database_exists(admin_url, name) for name in names)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

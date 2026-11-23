@@ -1195,7 +1195,6 @@ py_test(
         "//:conftest",
         "//testing/browser:launcher",
         "@pypi//playwright",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import httpx
-import pytest_bazel
 
 from tana.firebase_resigner.resigner import ResignerConfig, _is_tana_ready, _pat_accepted
 
@@ -80,7 +79,3 @@ async def test_ready_uses_health_only_when_no_pat_configured() -> None:
     cfg = _config(pat=None)
     async with _client(handler) as http:
         assert await _is_tana_ready(http, cfg) is True
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -89,6 +89,5 @@ py_test(
         "//props/core:ids",
         "//props/core/models:examples",
         "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
     ],
 )

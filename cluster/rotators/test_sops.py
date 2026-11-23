@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import pytest_bazel
 import yaml
 
 from cluster.rotators import sops
@@ -39,7 +38,3 @@ def test_write_sops_yaml_preserves_key_order_and_keeps_long_values_on_one_line(m
     written = path.read_text()
     assert list(yaml.safe_load(written)) == ["zulu", "alpha", "mike"]
     assert f"alpha: {long_value}\n" in written
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

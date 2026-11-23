@@ -21,7 +21,6 @@ py_test(
         ":yaml_decimal",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )

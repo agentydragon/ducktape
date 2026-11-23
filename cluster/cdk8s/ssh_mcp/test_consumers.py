@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import pytest_bazel
 from cdk8s import App, Chart
 from more_itertools import one
 
@@ -105,7 +104,3 @@ def test_bearer_reaches_exactly_the_namespaces_that_may_call(
     }
     assert readers == admitted
     assert "agentplane-staging" in admitted
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

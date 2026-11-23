@@ -1,6 +1,5 @@
 """Exercise the central proxy's alert expressions with upstream promtool."""
 
-import pytest_bazel
 from cdk8s import App
 from more_itertools import one
 
@@ -16,7 +15,3 @@ def test_github_proxy_rules(promtool: PromtoolRules, scratch_app: App) -> None:
         "ducktape/cluster/cdk8s/x/github_api_proxy/testdata/github_proxy_rules.yaml",
         {"github-proxy.yaml": manifest["spec"]},
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

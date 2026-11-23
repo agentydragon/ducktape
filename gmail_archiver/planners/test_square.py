@@ -3,7 +3,6 @@
 from decimal import Decimal
 
 import pytest
-import pytest_bazel
 
 from gmail_archiver.planners.square import parse_square
 
@@ -41,7 +40,3 @@ def test_parse_square(make_email, body: str, merchant_name: str | None, amount: 
     result = parse_square(make_email(sender="receipts@messaging.squareup.com", body=body))
 
     assert (result.merchant_name, result.amount) == (merchant_name, amount)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

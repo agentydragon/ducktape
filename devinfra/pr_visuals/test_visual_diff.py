@@ -1,6 +1,5 @@
 from pathlib import Path
 
-import pytest_bazel
 from PIL import Image
 
 from devinfra.pr_visuals.visual_diff import compare_pngs
@@ -34,7 +33,3 @@ def test_compare_pngs_classifies_exact_diffs(tmp_path: Path) -> None:
     assert resized.dimension_changed is True
     assert resized.changed_pixels == 16
     assert resized.changed_fraction == 16 / 80
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -5,7 +5,6 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from cluster.validation.flux import parse_flux_kustomizations
@@ -40,7 +39,3 @@ def test_flux_build_renders_tree(repo_root: Path, runfiles: Runfiles) -> None:
         (resource.kind, resource.namespace, resource.name) for resource in resources
     }
     assert any(resource.kind == "Kustomization" and resource.namespace == "ducktape-flux" for resource in resources)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

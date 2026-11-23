@@ -5,7 +5,6 @@ from decimal import Decimal
 from typing import Literal
 
 import pytest
-import pytest_bazel
 
 from finance.augur.policy.funding import ClaimPayer
 from finance.augur.sim.actions import Action, Consume, DecisionActions
@@ -233,7 +232,3 @@ def test_indexed_accretion_income_is_preserved_without_claiming_final_period_cov
     assert result.trace.bond_cashflows is not None
     accretion = next(row for row in result.trace.bond_cashflows if row.month == 6)
     assert (accretion.accretion, accretion.coupon, accretion.redemption) == (100_000_000, 4_000_000, 0)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

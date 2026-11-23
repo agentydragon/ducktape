@@ -40,7 +40,6 @@ py_test(
         "//platform_sessions/provider:session_provider_pb2",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
         "@rules_python//python/runfiles",
     ],
@@ -69,7 +68,6 @@ py_test(
         "//:conftest",
         "@pypi//grpcio",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -83,7 +81,6 @@ py_test(
         "@pypi//cryptography",
         "@pypi//grpcio",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -174,7 +171,6 @@ py_test(
         "@pypi//grpcio",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
         "@rules_python//python/runfiles",
     ],
@@ -189,7 +185,6 @@ py_test(
         "//:conftest",
         "@pypi//filelock",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -207,7 +202,6 @@ py_test(
         "//:conftest",
         "@pypi//filelock",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -229,7 +223,6 @@ py_test(
         ":interactive_browser",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//starlette",
         "@pypi//websockets",
     ],
@@ -252,7 +245,6 @@ py_test(
         "//testing/browser:launcher",
         "@pypi//playwright",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//websockets",
     ],
 )

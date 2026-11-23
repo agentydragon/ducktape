@@ -18,7 +18,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
 
@@ -409,7 +408,3 @@ def test_no_legacy_agent_diagnostic_rbac(cluster: ParsedCluster, k8s_dir: Path) 
         for resource in resources
         if (resource.kind, resource.name) in retired
     ]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

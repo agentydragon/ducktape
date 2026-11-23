@@ -16,7 +16,6 @@ import asyncio
 from datetime import date
 
 import pytest
-import pytest_bazel
 
 from finance.augur.study.trinity.evidence_snapshot import snapshot_evidence
 from finance.augur.study.trinity.replay import (
@@ -134,7 +133,3 @@ def test_the_all_bond_row_stays_under_the_published_one(replay: Replay) -> None:
             continue
         reproduced = 100.0 * replay.success_rate(equity_share=0.0, withdrawal_rate=rate)
         assert reproduced <= paper, f"all-bond at {rate:.0%}: augur {reproduced:.0f}%, Table 3 {paper}%"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -7,7 +7,6 @@ from dataclasses import replace
 from pathlib import PurePosixPath
 from typing import Any
 
-import pytest_bazel
 from cdk8s import Chart
 from cdk8s_plus_34 import ConfigMap, EnvValue
 from more_itertools import one
@@ -248,7 +247,3 @@ def test_staging_sampler_routes_use_the_provider_protocol() -> None:
                 assert (model.responses.dialect, model.exec_encoding) == ("lite", "freeform")
             else:
                 assert (model.responses.dialect, model.exec_encoding) == ("standard", "json")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

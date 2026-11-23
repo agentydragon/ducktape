@@ -5,7 +5,6 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
-import pytest_bazel
 
 from gmail_api.labels import SystemLabel
 from gmail_archiver.inbox import GmailInbox
@@ -73,7 +72,3 @@ def test_delivered_date_in_the_body_sets_the_deadline(make_email) -> None:
     )
 
     assert plan.actions["latest"].action.labels_to_remove == {SystemLabel.INBOX}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

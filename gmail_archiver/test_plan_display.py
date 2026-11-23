@@ -1,7 +1,6 @@
 """Tests for plan table rendering."""
 
 import pytest
-import pytest_bazel
 from pydantic import BaseModel
 
 from gmail_archiver.plan import Action, PlannedAction
@@ -33,7 +32,3 @@ def test_each_planners_columns_reach_the_plan_table(
     planned = PlannedAction(planner_name="test-planner", action=Action(custom_data=custom_data))
 
     assert _collect_display_columns([planned]) == (columns, hide_subject)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

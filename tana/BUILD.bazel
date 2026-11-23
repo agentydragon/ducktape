@@ -14,7 +14,6 @@ py_test(
         "//tana/graph",
         "//tana/graph:loader",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -25,6 +24,5 @@ py_test(
         "//:conftest",
         "//tana/export:materialize_searches",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

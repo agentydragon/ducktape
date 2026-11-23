@@ -152,7 +152,6 @@ py_test(
         "//devinfra/claude:conftest",
         "//devinfra/claude/testing:container_e2e",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

@@ -9,7 +9,6 @@ config style (`STUDY_CASINO_ADMIN_USERS=...`).
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 
 from study_casino.config import Settings
 
@@ -46,7 +45,3 @@ def test_rng_secret_dev_fallback_when_oidc_is_disabled() -> None:
 
     assert settings.effective_rng_key_id() == "dev-insecure-fallback"
     assert settings.rng_secret_bytes().startswith(b"insecure-dev-only")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

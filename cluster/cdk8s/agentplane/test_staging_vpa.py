@@ -2,7 +2,6 @@
 
 from collections.abc import Callable
 
-import pytest_bazel
 from cdk8s import App, SizeRoundingBehavior
 from cdk8s_plus_34 import Deployment
 from more_itertools import one
@@ -28,7 +27,3 @@ def test_vpa_bounds_fit_staging_deployments(scratch_app_factory: Callable[[], Ap
         if maximum is not None:
             assert memory.limit is not None
             assert memory.limit.to_mebibytes(rounding=SizeRoundingBehavior.NONE) >= maximum
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

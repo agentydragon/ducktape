@@ -1,7 +1,6 @@
 """Boot one real CI test guest and exercise its ordinary ACPI shutdown path."""
 
 import pytest
-import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 from opentelemetry import trace
 
@@ -56,7 +55,3 @@ async def test_one_guest_receives_acpi_and_powers_down(
             )
 
     write_progress(output_dir, "sandbox_deleted", sandbox_uid=sandbox.target.uid)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

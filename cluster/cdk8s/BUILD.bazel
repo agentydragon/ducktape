@@ -174,7 +174,6 @@ py_test(
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
         "@pypi//cdk8s",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -222,7 +221,6 @@ py_test(
         "//model_catalog:catalog",
         "//model_catalog:policies",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -279,7 +277,6 @@ py_test(
         "@pypi//kubernetes_asyncio",
         "@pypi//more_itertools",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//tenacity",
         "@rules_python//python/runfiles",
@@ -296,7 +293,6 @@ py_test(
         ":helm",
         ":secret_ref",
         "@pypi//cdk8s",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -335,7 +331,6 @@ py_test(
         "//:conftest",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -366,7 +361,6 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//constructs",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -402,7 +396,6 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -429,7 +422,6 @@ py_test(
         "//util:settings_contract",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -462,7 +454,6 @@ py_test(
     deps = [
         ":fleet_rules",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -523,7 +514,6 @@ py_test(
         ":vpa_policy",
         "@pypi//cdk8s",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -655,7 +645,6 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -675,7 +664,6 @@ py_test(
         ":conftest",
         ":container_resources",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -757,7 +745,6 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//kubernetes_asyncio",
         "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
@@ -835,7 +822,6 @@ py_test(
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -1221,7 +1207,6 @@ py_test(
         "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//more_itertools",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -1898,7 +1883,6 @@ py_test(
         ":cpap_sync",
         "//:conftest",
         "@pypi//cdk8s",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -2034,7 +2018,6 @@ py_test(
         ":tofu_controller_release",
         "//:conftest",
         "@pypi//cdk8s",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -2165,7 +2148,6 @@ py_test(
         "//devinfra/testing:undeclared_outputs",
         "@pypi//pygohcl",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
@@ -2239,7 +2221,6 @@ py_test(
         "//:conftest",
         "//cluster/cdk8s/testing:manifests",
         "//cluster/cdk8s/testing:promtool",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
@@ -2257,7 +2238,6 @@ py_test(
         "//:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -2277,7 +2257,6 @@ py_test(
         "//:conftest",
         "//cluster/cdk8s/testing:manifests",
         "//cluster/cdk8s/testing:promtool",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],
@@ -2332,7 +2311,6 @@ py_test(
         ":namespaces",
         "@pypi//cdk8s",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -2374,7 +2352,6 @@ py_test(
         "//cluster/cdk8s/testing:manifests",
         "@pypi//cdk8s",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -2396,6 +2373,5 @@ py_test(
         "//cluster/cdk8s/testing:manifests",
         "@pypi//cdk8s",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

@@ -8,7 +8,6 @@ from typing import Any
 import httpx
 import pygit2
 import pytest
-import pytest_bazel
 
 from finance.evidence.markets import MarketEntry, Platform
 from finance.evidence.sources import EVIDENCE_SOURCES, EvidenceKind, EvidenceSource
@@ -361,7 +360,3 @@ def test_every_declared_source_is_fetched_and_written_verbatim(tmp_path: Path) -
 
     for source in EVIDENCE_SOURCES:
         assert (tmp_path / source.output_filename).read_bytes() == bodies[source.upstream_url]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

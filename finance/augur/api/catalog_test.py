@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from pydantic import HttpUrl
 
 from finance.augur.api.catalog import build_catalog, build_settings
@@ -109,7 +108,3 @@ def test_catalog_rejects_asset_for_unknown_property(
                 ),
             )
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

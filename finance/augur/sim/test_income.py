@@ -1,7 +1,5 @@
 """Income categories sort for reporting and keep a stable wire id."""
 
-import pytest_bazel
-
 from finance.augur.sim.ids import JurisdictionId
 from finance.augur.sim.income import (
     InterestIncome,
@@ -28,7 +26,3 @@ def test_reporting_order_places_taxable_interest_last() -> None:
         "interest:treasury",
         "interest:taxable",
     ]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

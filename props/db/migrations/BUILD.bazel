@@ -28,7 +28,6 @@ py_test(
         "//testing:postgres",
         "//testing:postgres_fixtures",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -47,7 +46,6 @@ py_test(
         "//props/testing/fixtures:db",
         "//testing:postgres",
         "//testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",
     ],

@@ -40,7 +40,6 @@ py_test(
         ":cli",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//typer",
     ],
 )

@@ -92,7 +92,6 @@ py_test(
         "//finance/evidence:sources",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -110,6 +109,5 @@ py_test(
         "@pypi//numpy",
         "@pypi//numpyro",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

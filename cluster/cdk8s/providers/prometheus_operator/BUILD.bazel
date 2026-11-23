@@ -57,6 +57,5 @@ py_test(
         ":prometheus_rule",
         "//:conftest",
         "//cluster/cdk8s:conftest",
-        "@pypi//pytest_bazel",
     ],
 )

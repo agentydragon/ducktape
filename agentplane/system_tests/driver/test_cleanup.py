@@ -3,7 +3,6 @@
 import asyncio
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.driver.cleanup import finish_cleanup
 
@@ -63,7 +62,3 @@ async def test_previous_caller_cancellation_is_not_confused_with_child_cancellat
 
     async with asyncio.timeout(2):
         await asyncio.create_task(caller())
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

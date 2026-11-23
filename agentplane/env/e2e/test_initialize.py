@@ -6,8 +6,6 @@ import asyncio
 import os
 from dataclasses import replace
 
-import pytest_bazel
-
 from agentplane.env.e2e.testing.config import RunnerTestConfig
 from agentplane.env.e2e.testing.driver import RunnerDriver, running
 from agentplane.env.e2e.testing.gateway import Gateway
@@ -104,7 +102,3 @@ async def test_a_failed_bootstrap_settles_admitted_commands_and_never_reruns(
         for session in sessions
     )
     assert (config.state_dir / "runs").read_text() == "run\n"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -13,7 +13,6 @@ import uuid
 from pathlib import Path
 from typing import Any, cast
 
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from agentplane.system_tests.k3s import baseline
@@ -217,7 +216,3 @@ def test_clean_image_store_reuse_and_rejected_reuse_paths(runfiles: Runfiles, k3
         finally:
             artifact = undeclared_outputs_dir() / "retained-store-proof.json"
             artifact.write_text(json.dumps(proof, indent=2, sort_keys=True) + "\n")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

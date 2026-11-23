@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 from typing import cast
 
 import pytest
-import pytest_bazel
 from rich.console import Console
 
 from gmail_api.messages import MessagePartHeader
@@ -117,7 +116,3 @@ def test_metadata_fetch_uses_metadata_cache_for_all_message_ids() -> None:
     ]
     assert repeated_messages == messages
     assert client.metadata_requests == [["metadata-cache-message"], ["full-cache-message", "uncached-message"]]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

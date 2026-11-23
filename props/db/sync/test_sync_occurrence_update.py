@@ -9,7 +9,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from more_itertools import one
 from sqlalchemy.orm import Session
 
@@ -362,7 +361,3 @@ def test_fp_relevant_files_change_detected(synced_test_session: Session):
     db_occ = _get_fp_occ(synced_test_session, "fp-001", "fp-occ-1")
     reconstructed = _fp_occ_from_orm(db_occ)
     assert Path("add.py") in reconstructed.relevant_files
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -10,7 +10,6 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
@@ -403,7 +402,3 @@ async def test_routed_interrupt_cannot_cross_quiesce_history_seal(
                 delayed_call.result()
         if gate.exists():
             await asyncio.to_thread(_archive_gate, gate, diagnostic_dir)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

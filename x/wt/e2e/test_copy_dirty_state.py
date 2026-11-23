@@ -4,7 +4,6 @@ import subprocess
 
 import pygit2
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from x.wt.shared.git_utils import git_run
@@ -109,7 +108,3 @@ def test_copy_dirty_state(copy_cli, real_config, source):
         "?? local/alias",
         "?? untracked.txt",
     }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

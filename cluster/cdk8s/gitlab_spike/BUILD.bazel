@@ -145,7 +145,6 @@ py_test(
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s/testing:manifests",
         "@pypi//cdk8s",
-        "@pypi//pytest_bazel",
     ],
 )
 

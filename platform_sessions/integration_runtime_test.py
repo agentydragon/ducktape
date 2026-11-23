@@ -1,7 +1,6 @@
 """The common lifecycle delegates provider checks without persisting rejected sessions."""
 
 import pytest
-import pytest_bazel
 from prometheus_client import CollectorRegistry
 from pydantic import BaseModel, TypeAdapter
 
@@ -85,7 +84,3 @@ async def test_refresh_reports_success_failure_and_recovery_without_provider_req
     last_success = registry.get_sample_value("platform_session_last_success_timestamp_seconds", identity)
     assert last_success is not None
     assert last_success > 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

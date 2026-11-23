@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import httpx
 import pytest
-import pytest_bazel
 
 from props.backend.app import BackendDeps, create_app
 from props.backend.oidc import load_oidc_settings
@@ -68,7 +67,3 @@ def test_is_admin_matches_allowlist_case_insensitively(oidc_env: None) -> None:
     assert settings.is_admin("Admin@Test.Invalid")
     assert settings.is_admin("other@example.com")
     assert not settings.is_admin("intruder@test.invalid")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

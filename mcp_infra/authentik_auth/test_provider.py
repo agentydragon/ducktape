@@ -6,7 +6,6 @@ from unittest.mock import Mock, patch
 
 import httpx
 import pytest
-import pytest_bazel
 from fastmcp.server.auth.oidc_proxy import OIDCConfiguration
 
 from mcp_infra.authentik_auth.config import AuthentikAuthConfig, DirectJwtTrust
@@ -147,7 +146,3 @@ def test_build_authentik_auth_without_direct_trusts_accepts_no_machine_tokens(
         "server": auth_build_harness.downstream_proxy_cls.return_value,
         "verifiers": [],
     }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from haku.console.conftest import console_settings
@@ -45,7 +44,3 @@ def test_settings_rejects_unrecognized_yaml_fields(tmp_path) -> None:
     )
     with pytest.raises(ValidationError):
         console_settings(_DATABASE_URL, tmp_path, config_file=config_file)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

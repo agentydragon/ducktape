@@ -7,7 +7,6 @@ from dataclasses import replace
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from agentplane.env.config import CodexReadiness, Configuration, SystemdEnvironment
@@ -214,7 +213,3 @@ def test_vm_template_matches_the_guest_disk_and_runtime_file_contract(
         vm_guest_contract["environment_runtime_trust"]["mount"],
         vm_guest_contract["environment_runtime_workload_trust"]["mount"],
     }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

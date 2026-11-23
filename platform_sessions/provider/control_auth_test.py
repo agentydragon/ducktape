@@ -2,7 +2,6 @@
 
 import grpc
 import pytest
-import pytest_bazel
 
 from platform_sessions.provider.control_auth import ControlBearerInterceptor
 
@@ -48,7 +47,3 @@ async def test_authentication_and_secret_rotation(tmp_path):
             assert received == [b"one", b"two"]
     finally:
         await server.stop(grace=0)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

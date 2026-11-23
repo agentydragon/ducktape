@@ -1,7 +1,6 @@
 """`RedisReplication` renders the required fields under their own names, derives pod
 anti-affinity from `metadata.name`, and leaves optional CRD fields unset on `None`."""
 
-import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart, Size
 from cdk8s_plus_34 import Cpu
 from redis_operator_redisreplication_crds.in_.opstreelabs.redis.redis import (
@@ -47,7 +46,3 @@ def test_resources_affinity_and_omitted_options(scratch_chart: Chart) -> None:
     assert "redisConfig" not in spec
 
     assert "preferredDuringSchedulingIgnoredDuringExecution" not in spec["affinity"]["nodeAffinity"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

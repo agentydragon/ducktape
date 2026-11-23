@@ -1,6 +1,5 @@
 """The installed controller and CRD must accept the Terraform resources GitOps creates."""
 
-import pytest_bazel
 from cdk8s import App, Chart
 
 from cluster.cdk8s import terraform, tofu_controller_release
@@ -24,7 +23,3 @@ def test_controller_accepts_gitops_terraform(scratch_app: App, scratch_chart: Ch
     source_ref = version["schema"]["openAPIV3Schema"]["properties"]["spec"]["properties"]["sourceRef"]
     assert resource.to_json()["spec"]["sourceRef"]["kind"] == "ExternalArtifact"
     assert "ExternalArtifact" in source_ref["properties"]["kind"]["enum"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

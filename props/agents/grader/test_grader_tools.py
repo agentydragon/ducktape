@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-import pytest_bazel
-
 from props.agents.grader.main import GraderState, _create_grader_tools
 from props.agents.grader.tools import IssueDetails
 from props.db.models import AgentRunStatus, ReportedIssueOccurrence
@@ -52,7 +50,3 @@ async def test_show_issue_returns_every_occurrence_of_the_issue(synced_db, synce
     assert details.rationale == f"Test issue {issue_id}"
     locations = sorted((loc.file, loc.start_line, loc.end_line) for occ in details.occurrences for loc in occ.locations)
     assert locations == [("add.py", 3, 4), ("subtract.py", 1, 1)]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

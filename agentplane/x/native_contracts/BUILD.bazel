@@ -53,7 +53,6 @@ py_test(
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//tenacity",
     ],
 )
@@ -90,7 +89,6 @@ py_test(
         "//devinfra/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//tenacity",
         "@rules_python//python/runfiles",
     ],
@@ -137,7 +135,6 @@ py_test(
         "//devinfra/testing:undeclared_outputs",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//tenacity",
         "@rules_python//python/runfiles",
     ],
@@ -176,6 +173,5 @@ py_test(
         "//agentplane/testing:scripted_model",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

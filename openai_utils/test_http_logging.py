@@ -7,7 +7,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-import pytest_bazel
 
 from openai_utils.http_logging import make_logging_httpx_async_client
 
@@ -81,7 +80,3 @@ async def test_unreadable_response_logs_empty_body(
     record = json.loads((tmp_path / "http.jsonl").read_text())
     assert record["resp_body"] == ""
     assert record["req_headers"]["authorization"] == "***"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

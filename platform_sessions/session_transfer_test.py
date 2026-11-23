@@ -2,7 +2,6 @@ import json
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from platform_sessions.limits import MAX_SESSION_BYTES
@@ -71,7 +70,3 @@ def test_export_requires_provider_identity(provider):
 def test_export_requires_object_session():
     with pytest.raises(ValueError, match="must be an object"):
         encode_json("example-provider", cast(dict, []))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -4,8 +4,6 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-import pytest_bazel
-
 from finance.plaid.spend.account_history import AccountHistory, AccountOpening
 from finance.plaid.spend.allowance import (
     AccountingPreparationCache,
@@ -179,7 +177,3 @@ def test_covered_history_before_activation_is_visible_but_startup_semantics_rema
     later_points = {point.date: point.observed_daily_minor_units for point in later_seven.points}
     assert later_points[date(2026, 1, 1)] == 0
     assert later_points[date(2026, 1, 2)] is None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

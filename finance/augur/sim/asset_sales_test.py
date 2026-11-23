@@ -5,8 +5,6 @@ from dataclasses import dataclass
 from decimal import Decimal
 from fractions import Fraction
 
-import pytest_bazel
-
 from finance.augur.model.gbm import GeometricBrownian
 from finance.augur.model.level_series_groups import AssetPriceGroups
 from finance.augur.model.series import SecurityKey, SecuritySymbol
@@ -443,7 +441,3 @@ def test_awkward_thirds_consume_exactly_the_whole_lot_basis() -> None:
     assert lot.units_remaining == lot.basis_remaining == 0
     # Each $41.66665/$41.66670 proceeds rounds independently to $41.67.
     assert rollout.summary.cash[0].values[-1] == 12_501
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

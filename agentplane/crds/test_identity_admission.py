@@ -3,8 +3,6 @@ identity, through Kubernetes admission and CEL."""
 
 from typing import Any
 
-import pytest_bazel
-
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.testing.crd_admission import CrdAdmission, crd_namespace
 
@@ -123,7 +121,3 @@ async def test_identity_and_kubernetes_account_admission() -> None:
         await _grants(namespace.kind("serviceaccountgrants", "ServiceAccountGrant"))
         await _managed_service_accounts(namespace.kind("managedserviceaccounts", "ManagedServiceAccount"), identity)
         await _binding_subjects(namespace.kind("policybindings", "PolicyBinding"))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

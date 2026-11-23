@@ -155,6 +155,5 @@ py_test(
         ":functions",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

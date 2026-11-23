@@ -16,7 +16,6 @@ from datetime import date, timedelta
 
 import httpx
 import pytest
-import pytest_bazel
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
 from opentelemetry import trace
@@ -750,7 +749,3 @@ async def test_create_entities_rejects_view_only_type(mcp_client: Client) -> Non
     """``entities_create`` only accepts ``WriteableEntityType``."""
     with pytest.raises(Exception, match="entity_type"):
         await mcp_client.call_tool("entities_create", {"items": [{"entity_type": "stock", "body": {"amount": 1}}]})
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

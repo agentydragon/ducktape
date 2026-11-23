@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import pytest_bazel
 from aiohttp import ClientResponse
 from aiohttp.test_utils import TestClient, TestServer
 
@@ -125,7 +124,3 @@ async def test_empty_history_does_not_echo_uploaded_transcript(peer) -> None:
     async with client.get(SESSION_PATH + "/worker/internal-events", headers=AUTH) as response:
         assert await response.json() == {"data": []}
     assert len(server.uploads) == 1
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -1,7 +1,6 @@
 """The shared construct gives only the egress proxy access and copies in no credential; each
 environment's own module decides which credentials it gets."""
 
-import pytest_bazel
 from cdk8s import Chart
 
 from cluster.cdk8s.agent_rbac_test_support import Permission, Rbac
@@ -23,7 +22,3 @@ def test_only_the_proxy_reads_and_nothing_is_copied(scratch_chart: Chart) -> Non
     assert rbac.identity("ServiceAccount", "egress", _PROXY_NAMESPACE) == {
         Permission(_CREDENTIALS_NAMESPACE, "", "secrets", verb) for verb in ("get", "list", "watch")
     }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

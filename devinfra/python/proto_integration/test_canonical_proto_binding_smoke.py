@@ -6,9 +6,3 @@ def test_first_party_proto_imports_canonical_status_from_runfiles() -> None:
 
     assert status.code == 7
     assert status.message == "permission denied"
-
-
-if __name__ == "__main__":
-    import pytest_bazel
-
-    pytest_bazel.main()

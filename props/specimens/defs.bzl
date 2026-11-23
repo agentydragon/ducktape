@@ -159,7 +159,6 @@ def specimen_targets(name, slug, split, code_srcs, code_strip_prefix = "", test_
             "//devinfra/oci:oci",
             "//testing:postgres_fixtures",
             "@pypi//pytest",
-            "@pypi//pytest_bazel",
             "@pypi//sqlalchemy",
             "@pypi//testcontainers",
         ],

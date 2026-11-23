@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import pytest_bazel
 import yaml
 from cdk8s import App
 from kubernetes_asyncio import client as k8s_client
@@ -136,7 +135,3 @@ async def test_cluster_secret_store_admission(scratch_app: App, eso_store_crds: 
                     await k8s_client.CustomObjectsApi(node).create_cluster_custom_object(
                         _GROUP, _VERSION, _RESOURCE, _store("ClusterSecretStore", "node-request"), dry_run="All"
                     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

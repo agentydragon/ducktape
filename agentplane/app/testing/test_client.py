@@ -14,7 +14,6 @@ from uuid import uuid4
 import grpc
 import httpx
 import pytest
-import pytest_bazel
 import tenacity
 from google.protobuf.json_format import ParseError
 from opentelemetry import trace
@@ -959,7 +958,3 @@ async def test_sandbox_mutations_carry_the_expected_uid() -> None:
     assert [json.loads(request.split("\r\n\r\n", 1)[1]) for request in observed[:2]] == [
         {"target": {"namespace": "test-ns", "name": "box", "uid": uid}}
     ] * 2
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

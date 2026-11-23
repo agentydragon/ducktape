@@ -1,7 +1,6 @@
 import json
 
 import pytest
-import pytest_bazel
 from cdk8s import Chart
 
 from cluster.cdk8s.namespace_access import AgentReadable
@@ -94,7 +93,3 @@ def test_vpa_profile_renders_explicit_container_policies(scratch_chart: Chart) -
             {"containerName": "sidecar", "controlledValues": "RequestsOnly", "mode": "Off"},
         ]
     }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

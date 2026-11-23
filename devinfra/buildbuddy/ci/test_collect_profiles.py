@@ -3,7 +3,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.buildbuddy.ci import collect_profiles
 
@@ -137,7 +136,3 @@ def test_bes_command_failure_keeps_stdout_and_stderr(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(subprocess, "run", fail)
     with pytest.raises(RuntimeError, match="returncode=3\nstdout=partial response\nstderr=unavailable"):
         collect_profiles.fetch_bes_events("invocation-123")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

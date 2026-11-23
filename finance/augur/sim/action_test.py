@@ -5,7 +5,6 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.actions import Action, ClaimId, Consume, DecisionActions, PayClaim, Transfer
 from finance.augur.sim.books import AccountRef
@@ -318,7 +317,3 @@ def test_leaving_the_with_block_closes_the_session() -> None:
         scoped.start()
     with pytest.raises(ValueError, match="finished, aborted or closed"):
         scoped.advance([])
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

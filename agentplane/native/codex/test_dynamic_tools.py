@@ -6,8 +6,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest_bazel
-
 from agentplane.native.codex import wire
 from agentplane.native.codex.testing import frames, responses_sse
 from agentplane.native.codex.testing.dynamic_tools import DynamicTool, DynamicToolServer
@@ -73,7 +71,3 @@ async def test_dynamic_tool_is_declared_and_called(codex: CodexHarness, openai_r
     assert completed_extra is not None
     assert completed_extra["success"] is True
     assert completed_extra["contentItems"] == [{"type": "inputText", "text": "LOOKUP: hi"}]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

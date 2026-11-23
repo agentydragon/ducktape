@@ -16,7 +16,6 @@ py_test(
     deps = [
         ":check_authentik_login",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

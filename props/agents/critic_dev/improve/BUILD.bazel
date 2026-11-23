@@ -57,7 +57,6 @@ py_test(
         "//props/db:models",
         "//props/testing:models",
         "@pypi//pyhamcrest",
-        "@pypi//pytest_bazel",
     ],
 )
 

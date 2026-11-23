@@ -3,7 +3,6 @@
 from copy import deepcopy
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.accounting import Accounting
 from finance.augur.sim.actions import Transfer
@@ -143,7 +142,3 @@ def test_zero_scheduled_cashflow_still_has_a_balanced_journal_entry(
     assert len(books.journal) == count + 1
     assert books.transfers[-1].amount == 0
     assert books.ledger.trial_balance() == 0
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

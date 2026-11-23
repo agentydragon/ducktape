@@ -143,7 +143,6 @@ py_test(
         ":conftest",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -155,7 +154,6 @@ py_test(
         ":square",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -182,7 +180,6 @@ py_test(
         "//gmail_archiver:models",
         "//gmail_archiver:plan",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -197,6 +194,5 @@ py_test(
         "//gmail_archiver:inbox",
         "//gmail_archiver:models",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

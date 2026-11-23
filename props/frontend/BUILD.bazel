@@ -182,7 +182,6 @@ py_test(
         "//props:conftest",
         "//testing:threaded_http",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -203,7 +202,6 @@ py_test(
         "//props/db:database",
         "//props/testing/fixtures:db",
         "//testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

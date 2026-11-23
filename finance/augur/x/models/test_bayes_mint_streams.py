@@ -11,7 +11,6 @@ import math
 import random
 
 import pytest
-import pytest_bazel
 
 from finance.augur.dates import DAYS_PER_MONTH
 from finance.augur.model.series import IssuerId
@@ -190,7 +189,3 @@ def test_priors_overridable() -> None:
         prices, valuations, priors=tight_priors, num_warmup=400, num_samples=500, num_chains=1
     )
     assert posterior.cash_over_v_pre_median == pytest.approx(0.30, abs=0.05)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

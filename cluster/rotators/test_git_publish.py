@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from cluster.rotators.git_publish import enter_sparse_checkout, push_outputs
 from testing.git_repo import git, init_git_repo
@@ -33,7 +32,3 @@ def test_sparse_publish_stages_only_rotated_outputs(tmp_path: Path, monkeypatch:
     assert git(remote, "show", "devel:unchanged.yaml") == "old\n"
     assert git(remote, "log", "-1", "--format=%ae", "devel").strip() == "rotator@example.test"
     assert git(remote, "log", "-1", "--format=%s", "devel").strip().endswith(": fake-token")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

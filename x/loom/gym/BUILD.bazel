@@ -166,7 +166,6 @@ py_test(
     deps = [
         ":agent_eval",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -180,7 +179,6 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -195,7 +193,6 @@ py_test(
         ":task",
         "//:conftest",
         "//finance/evidence:markets",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -207,7 +204,6 @@ py_test(
         ":model_cutoffs",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -220,7 +216,6 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -232,7 +227,6 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -249,7 +243,6 @@ py_test(
         ":series_tasks",
         ":task",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -263,7 +256,6 @@ py_test(
         ":series_tasks",
         ":task",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -274,7 +266,6 @@ py_test(
         ":dossier",
         ":monthly_series",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -286,7 +277,6 @@ py_test(
         ":monthly_series",
         ":task",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -298,7 +288,6 @@ py_test(
         ":monthly_series",
         ":task",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -310,7 +299,6 @@ py_test(
         ":path_tasks",
         ":task",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -321,7 +309,6 @@ py_test(
         ":compare_runs",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -332,7 +319,6 @@ py_test(
         ":monthly_series",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -356,7 +342,6 @@ py_test(
         "@pypi//inspect_ai",
         "@pypi//more_itertools",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -369,7 +354,6 @@ py_test(
         ":scoring",
         ":task",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 

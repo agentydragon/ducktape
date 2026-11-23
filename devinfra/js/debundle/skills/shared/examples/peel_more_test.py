@@ -9,7 +9,6 @@ import sys
 import zipfile
 from pathlib import Path
 
-import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
 
@@ -120,7 +119,3 @@ def test_shipped_recipe_reduces_residual_and_emits_the_expected_behavior(runfile
     )
     assert behavior.returncode == 0, behavior.stderr
     assert behavior.stdout == "7\n"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

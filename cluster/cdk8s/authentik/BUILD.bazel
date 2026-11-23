@@ -154,7 +154,6 @@ py_test(
     deps = [
         "//:conftest",
         "@pypi//pydantic",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",
     ],

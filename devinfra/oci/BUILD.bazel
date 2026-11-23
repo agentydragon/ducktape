@@ -17,7 +17,6 @@ py_test(
         ":crane",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -48,6 +47,5 @@ py_test(
         ":oci",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

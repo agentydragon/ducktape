@@ -189,7 +189,6 @@ py_test(
         "@pypi//numpy",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -209,7 +208,6 @@ py_test(
         "@pypi//numpy",
         "@pypi//numpyro",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -225,7 +223,6 @@ py_test(
         "//finance/augur/model:exogenous",
         "//finance/augur/model:series",
         "//finance/augur/model:testing",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -244,7 +241,6 @@ py_test(
         "//finance/augur/model:series",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -264,7 +260,6 @@ py_test(
         "//finance/augur/model:series",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -291,7 +286,6 @@ py_test(
         "//finance/evidence:sources",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -311,7 +305,6 @@ py_test(
         "//finance/augur/model:series",
         "@pypi//numpy",
         "@pypi//pydantic",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
 )
@@ -329,7 +322,6 @@ py_test(
         "//finance/augur:dates",
         "//finance/augur/model:series",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -346,7 +338,6 @@ py_test(
         "//finance/augur:dates",
         "//finance/augur/model:series",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -548,7 +539,6 @@ py_test(
         "//finance/evidence:sources",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -615,7 +605,6 @@ py_test(
         "//finance/evidence:loading",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -630,7 +619,6 @@ py_test(
         "//finance/augur/model:exogenous",
         "//finance/augur/model:series",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -647,7 +635,6 @@ py_test(
         "//finance/evidence:loading",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -664,7 +651,6 @@ py_test(
         "//finance/augur/model:testing",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -684,7 +670,6 @@ py_test(
         "@pypi//numpy",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -699,7 +684,6 @@ py_test(
         "//finance/augur/model:series",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -719,7 +703,6 @@ py_test(
         "//finance/augur/model/path_models:scenarios",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -738,7 +721,6 @@ py_test(
         "//finance/augur/model:series",
         "//finance/augur/model:testing",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -759,7 +741,6 @@ py_test(
         "@pypi//numpy",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -777,7 +758,6 @@ py_test(
         "@pypi//numpy",
         "@pypi//numpyro",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -815,7 +795,6 @@ py_test(
         "//finance/augur/model:series",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -831,7 +810,6 @@ py_test(
         "//finance/augur/model/path_models:scenarios",
         "@pypi//numpy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

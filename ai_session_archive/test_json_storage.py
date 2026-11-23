@@ -2,7 +2,6 @@
 # gazelle:include_dep :testing
 from pathlib import Path
 
-import pytest_bazel
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect, select
 from sqlalchemy.engine import Engine
@@ -226,7 +225,3 @@ def test_usage_observations_preserve_source_blocks_and_deduplicate_payloads(
     assert session_total.input_tokens == 42
     assert session_total.total_tokens == 52
     assert session_total.model is None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

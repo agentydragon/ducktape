@@ -42,7 +42,6 @@ py_test(
         ":conftest",
         ":deployment",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -112,7 +111,6 @@ py_test(
         "@ducktape_haku//haku/console:tool_calls",
         "@pypi//alembic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//testcontainers",
     ],
@@ -235,7 +233,6 @@ py_test(
         ":conftest",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -252,7 +249,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//respx",
     ],
 )
@@ -344,7 +340,6 @@ py_test(
         "//devinfra/oci",
         "//haku/console:static_test_image",
         "@pypi//httpx",
-        "@pypi//pytest_bazel",
         "@pypi//testcontainers",
     ],
 )
@@ -374,7 +369,6 @@ py_test(
         ":database_migrate",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -385,6 +379,5 @@ py_test(
         ":conftest",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

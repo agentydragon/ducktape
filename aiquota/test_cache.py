@@ -3,7 +3,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from aiquota.cache import QuotaCache, _assemble, _instantiate_accounts
 from aiquota.config import Config
@@ -22,9 +21,6 @@ from aiquota.providers.cli_proxy_api import CLIProxyAPIManagementClient
 from aiquota.providers.client import provider_client
 from aiquota.providers.codex import CodexProvider
 from aiquota.render.view_model import AllQuotasView, DisplaySelection, to_view
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 
 def test_cache_roundtrip(tmp_path: Path) -> None:

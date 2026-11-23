@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 
 from agentplane.app.testing.client import Client
 from agentplane.session_dispatcher.dispatcher.testing_client import SessionDispatcherClient
@@ -57,7 +56,3 @@ async def test_fresh_vm_session_workspace_is_created_for_harness_identity(
         await vm_workspace_ownership.fresh_vm_session_workspace_is_created_for_harness_identity(
             client, dispatcher, history, sandbox
         )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

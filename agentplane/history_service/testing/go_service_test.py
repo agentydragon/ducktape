@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock
 
 import grpc
 import pytest
-import pytest_bazel
 
 from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.api.history import history_service_pb2
@@ -94,7 +93,3 @@ async def test_snapshot_wait_deadline_covers_missing_announcement_and_blocked_re
     with pytest.raises(TimeoutError):
         await wait_for_history_snapshot(history, "test-session", timeout_s=0.01)
     assert cancelled.is_set() == block_read
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

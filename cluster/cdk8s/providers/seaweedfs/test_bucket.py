@@ -1,4 +1,3 @@
-import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart
 from seaweed_bucket_crds.com.seaweedfs.seaweed import BucketSpecClusterRef
 
@@ -17,7 +16,3 @@ def test_bucket_is_physically_named_after_its_metadata_and_leaves_empty_fields_u
     )
     spec = bucket.to_json()["spec"]
     assert spec == {"name": "test-bucket", "clusterRef": {"name": "test-seaweed"}}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

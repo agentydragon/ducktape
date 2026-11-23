@@ -6,7 +6,6 @@ from typing import Any, cast
 from urllib.parse import urlsplit
 
 import pytest
-import pytest_bazel
 import yaml
 from cdk8s import App, Chart
 from cdk8s_plus_34 import ConfigMap
@@ -130,7 +129,3 @@ def test_firecracker_launch_presets_use_the_guest_workspace() -> None:
     assert runtime.workspace_root == "/state/workspaces"
     assert thread.cwd == f"{runtime.workspace_root}/{{session_id}}"
     assert env.actions.orchestration_v1.presets["firecracker"].launch.template == preset.template
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

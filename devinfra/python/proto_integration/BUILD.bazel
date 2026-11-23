@@ -45,6 +45,5 @@ py_test(
     deps = [
         ":status_consumer",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )

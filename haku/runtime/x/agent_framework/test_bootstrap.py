@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pygit2
-import pytest_bazel
 
 from haku.runtime.x.agent_framework.bootstrap import clone_or_refresh, write_netrc
 
@@ -32,7 +31,3 @@ def test_clone_then_refresh(tmp_path: Path) -> None:
     # Second call refreshes the existing clone (fetch + hard-reset path), still clean.
     clone_or_refresh(str(src), dest, callbacks=callbacks)
     assert (dest / "f.txt").read_text() == "hello"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

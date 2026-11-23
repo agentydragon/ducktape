@@ -67,7 +67,6 @@ py_test(
         "//util/exec:models",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//tenacity",
     ],
 )
@@ -87,7 +86,6 @@ py_test(
         "//util/exec:models",
         "@pypi//fastmcp_slim",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -122,6 +120,5 @@ py_test(
         "//mcp_infra:conftest",
         "//mcp_infra/exec/docker:server",
         "@pypi//fastmcp_slim",
-        "@pypi//pytest_bazel",
     ],
 )

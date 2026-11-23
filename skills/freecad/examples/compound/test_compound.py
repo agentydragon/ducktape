@@ -3,7 +3,6 @@
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from skills.freecad.conftest import Stage, StageRunner
@@ -38,7 +37,3 @@ def test_svg_golden(runfiles: Runfiles, compound_outputs: Path) -> None:
 
 def test_pdf_golden(runfiles: Runfiles, compound_outputs: Path) -> None:
     assert_pdf_equal(compound_outputs / "compound.pdf", runfiles.root() / _GOLDEN_PDF)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

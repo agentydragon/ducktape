@@ -80,7 +80,6 @@ py_test(
         "//:conftest",
         "//devinfra/testing:undeclared_outputs",
         "@pypi//jsonschema",
-        "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@pypi//referencing",
         "@rules_python//python/runfiles",
@@ -94,7 +93,6 @@ py_test(
     deps = [
         "//:conftest",
         "//agentplane/testing:crd_admission",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -105,7 +103,6 @@ py_test(
     deps = [
         "//:conftest",
         "//agentplane/testing:crd_admission",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -190,7 +187,6 @@ py_test(
         "//:conftest",
         "//agentplane:crd_group",
         "//agentplane/testing:crd_admission",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -201,6 +197,5 @@ py_test(
     deps = [
         "//:conftest",
         "//agentplane/testing:crd_admission",
-        "@pypi//pytest_bazel",
     ],
 )

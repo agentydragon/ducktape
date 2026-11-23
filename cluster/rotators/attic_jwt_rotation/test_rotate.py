@@ -8,7 +8,6 @@ import certifi
 import httpx
 import pygit2
 import pytest
-import pytest_bazel
 import yaml
 from pydantic import ValidationError
 
@@ -510,7 +509,3 @@ def test_ensure_cache_reports_http_failure(statuses: tuple[int, ...]):
         pytest.raises(RuntimeError, match=f"HTTP {statuses[-1]}"),
     ):
         ensure_cache(client, "main")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

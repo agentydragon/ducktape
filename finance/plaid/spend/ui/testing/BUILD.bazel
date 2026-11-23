@@ -40,6 +40,5 @@ py_test(
         "//finance/plaid/spend:sustainability",
         "//finance/plaid/spend/testing:dashboard",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

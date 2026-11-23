@@ -2,7 +2,6 @@
 
 from typing import Any, cast
 
-import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
 
@@ -195,7 +194,3 @@ def test_shadow_target(runfiles: Runfiles, promtool: PromtoolRules) -> None:
         {"rule_files": ["worker.yaml"], "evaluation_interval": "1m", "tests": tests},
         {"worker.yaml": _worker_rules(runfiles)},
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

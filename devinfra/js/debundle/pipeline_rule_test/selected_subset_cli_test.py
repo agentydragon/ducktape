@@ -5,7 +5,6 @@ import os
 import subprocess
 from pathlib import Path
 
-import pytest_bazel
 from python.runfiles import Runfiles
 
 
@@ -55,7 +54,3 @@ def test_selected_graph_cli_uses_relocated_subset_runfile(runfiles: Runfiles) ->
     # relocated selected graph can therefore prove this residual is exhausted.
     assert report["status"] == "exhausted_no_peel"
     assert report["plan"] is None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

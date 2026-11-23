@@ -10,7 +10,6 @@ from typing import Any
 
 import httpx
 import pytest
-import pytest_bazel
 from starlette.applications import Starlette
 from starlette.types import Receive, Scope, Send
 
@@ -309,7 +308,3 @@ async def test_a_code_anthropic_refuses_is_reported_without_its_body(serve: Serv
     detail = refused.json()["detail"]
     assert "400" in detail  # the status Anthropic answered
     assert REFUSAL_BODY not in detail
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

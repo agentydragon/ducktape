@@ -2,7 +2,6 @@
 
 import subprocess
 
-import pytest_bazel
 from python.runfiles import Runfiles
 
 
@@ -23,7 +22,3 @@ def test_helm_templates_render(runfiles: Runfiles) -> None:
         check=True,
         stdout=subprocess.DEVNULL,
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

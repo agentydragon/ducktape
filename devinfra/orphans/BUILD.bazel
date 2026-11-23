@@ -26,6 +26,5 @@ py_test(
         "//:conftest",
         "//devinfra/bazel:workspace",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

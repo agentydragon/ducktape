@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import dataclasses
 
-import pytest_bazel
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 from python.runfiles import Runfiles
@@ -127,7 +126,3 @@ def test_proxy_providers_and_outpost_assignments(runfiles: Runfiles) -> None:
 
     assert not (present - assigned), f"Proxy providers without an outpost: {sorted(present - assigned)}"
     assert not (absent & assigned), f"Outposts reference retired proxy providers: {sorted(absent & assigned)}"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

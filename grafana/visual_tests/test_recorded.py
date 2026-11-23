@@ -5,7 +5,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-import pytest_bazel
 
 from grafana.visual_tests.recorded import (
     prepare_recorded_dashboard_fixture,
@@ -74,7 +73,3 @@ def test_fixture_covers_lazy_and_repeated_queries() -> None:
         validate_fixture(dashboard, fixture)
     fixture["panels"]["7"]["B"]["variants"]["b"] = {"frames": []}
     validate_fixture(dashboard, fixture)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

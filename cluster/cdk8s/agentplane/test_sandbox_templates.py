@@ -7,7 +7,6 @@ from dataclasses import replace
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 from cdk8s import Chart
 from cdk8s_plus_34 import ConfigMap, k8s
 from more_itertools import one
@@ -332,7 +331,3 @@ def test_runner_tool_config_role_is_scoped_to_the_canonical_map(
         mount_paths = {item["mountPath"] for item in container.get("volumeMounts", [])}
         assert "KUBECONFIG" not in env_names
         assert "/run/agentplane/config/kubeconfig" not in mount_paths
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

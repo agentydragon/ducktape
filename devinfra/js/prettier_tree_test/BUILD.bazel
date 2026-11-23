@@ -43,7 +43,6 @@ py_test(
     },
     deps = [
         "//:conftest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

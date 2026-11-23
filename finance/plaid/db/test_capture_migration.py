@@ -9,7 +9,6 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
-import pytest_bazel
 from sqlalchemy import create_engine, insert, select, text
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
@@ -210,7 +209,3 @@ async def test_required_capture_migration_refuses_unassigned_snapshot(
                 )
                 == "YES"
             )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

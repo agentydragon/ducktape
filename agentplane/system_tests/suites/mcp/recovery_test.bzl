@@ -47,6 +47,5 @@ def mcp_recovery_test(name, fixture_manifest, image_manifest):
             "//agentplane/system_tests/driver:scripted_upstream",
             "//agentplane/system_tests/scenarios:central_sampler",
             "@pypi//pytest",
-            "@pypi//pytest_bazel",
         ],
     )

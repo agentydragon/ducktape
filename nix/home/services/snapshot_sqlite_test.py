@@ -4,8 +4,6 @@ import sqlite3
 from contextlib import closing
 from pathlib import Path
 
-import pytest_bazel
-
 from nix.home.services import snapshot_sqlite
 
 
@@ -82,7 +80,3 @@ def test_does_not_follow_external_symlinks_or_read_pipes(tmp_path: Path) -> None
     output = tmp_path / "snapshots"
     assert snapshot_sqlite.snapshot_databases({"claude": root}, output) == []
     assert json.loads((output / "manifest.json").read_text())["databases"] == []
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

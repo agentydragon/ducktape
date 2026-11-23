@@ -2,7 +2,6 @@
 the CRD's validation rejects at apply."""
 
 import pytest
-import pytest_bazel
 from cdk8s import ApiObjectMetadata, Chart
 from flux_imagepolicy_crds.io.fluxcd.toolkit.image import (
     ImagePolicySpecDigestReflectionPolicy,
@@ -50,7 +49,3 @@ def test_always_digest_reflection_renders_its_interval(scratch_chart: Chart) -> 
     spec = policy.to_json()["spec"]
     assert spec["digestReflectionPolicy"] == "Always"
     assert spec["interval"] == "5m"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -1,5 +1,4 @@
 import pytest
-import pytest_bazel
 
 from devinfra.ci.skills.ci_latency.scripts import analyze_executions
 
@@ -217,7 +216,3 @@ def test_requires_unique_ids_and_an_explicit_utc_observation_time():
         analyze_executions.analyze({"invocation": []}, [{"execution": []}], "2026-10-30T16:00:00-07:00")
     with pytest.raises(ValueError, match="RFC3339 UTC"):
         analyze_executions.analyze({"invocation": []}, [{"execution": []}], "2026-10-30 23:00:00Z")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

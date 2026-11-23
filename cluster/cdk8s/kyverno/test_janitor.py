@@ -7,7 +7,6 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 import yaml
 from cdk8s import App, Chart
 
@@ -61,7 +60,3 @@ class TestJanitor:
         result = apply_policy(janitor_policy, _pod(tmp_path, age=timedelta(days=6)))
         # For a deleting policy the CLI reports a nonmatching Pod as a failed match.
         assert (result.passed, result.failed, result.errored) == (0, 1, 0), result.stdout
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

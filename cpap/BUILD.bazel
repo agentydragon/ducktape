@@ -39,7 +39,6 @@ py_test(
         "//:conftest",
         "//testing:git_repo",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -50,7 +49,6 @@ py_test(
         ":card",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

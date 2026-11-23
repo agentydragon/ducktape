@@ -7,7 +7,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-import pytest_bazel
 from fastapi.testclient import TestClient
 from itsdangerous import TimestampSigner
 from starlette.websockets import WebSocketDisconnect
@@ -82,7 +81,3 @@ def test_rejected_sessions_cannot_read_state_or_connect_websockets(settings: Set
         with pytest.raises(WebSocketDisconnect) as closed, client.websocket_connect("wss://casino.test/ws"):
             pass
         assert closed.value.code == 4001
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

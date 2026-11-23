@@ -6,7 +6,6 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
-import pytest_bazel
 from cdk8s import App
 
 from cluster.cdk8s.platform_sessions import app, config, remote
@@ -251,7 +250,3 @@ def test_myquest_canary_has_no_consumer_bearer_grant() -> None:
     assert all(
         route["instance"] != "myquest-canary" for bearer in bearers.values() for route in bearer.get("allow", [])
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

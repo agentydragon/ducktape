@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 import uvicorn
 from fastapi import FastAPI
 from typer.testing import CliRunner
@@ -24,7 +23,3 @@ def test_serve_runs_the_app_on_the_requested_address(monkeypatch: pytest.MonkeyP
 
     assert result.exit_code == 0, result.output
     assert runs == [(app, "0.0.0.0", 9000)]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

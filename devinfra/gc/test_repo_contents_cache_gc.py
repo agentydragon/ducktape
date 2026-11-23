@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from devinfra.gc import output_base_gc, repo_contents_cache_gc as gc
 from devinfra.gc.conftest import cache_entry_path, hold_posix_lock, link_external, make_base, make_cache_entry
@@ -426,7 +425,3 @@ def test_every_reason_is_described(reason: gc.RetainedEntryReason | gc.ReviewEnt
     else:
         inspection = gc.ReviewEntry(entry.contents, reason, detail="test-detail")
     assert gc.describe_reason(inspection)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

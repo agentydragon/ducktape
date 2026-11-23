@@ -3,7 +3,6 @@ from unittest.mock import MagicMock
 
 import httpx
 import pytest
-import pytest_bazel
 from kubernetes_asyncio import client
 
 from cluster.skills.flux_reconcile_audit.audit import classify, collect_universe, loki_reconcile_counts
@@ -131,7 +130,3 @@ async def test_loki_counts_route_by_kind_and_outcome() -> None:
         ("HelmRelease", "fail"): {},
         ("HelmRelease", "ok"): {"test-app": 5},
     }
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

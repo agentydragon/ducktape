@@ -84,7 +84,6 @@ py_test(
         "//gnome/testing:fixtures",  # keep: pytest_plugins
         "//gnome/testing:session",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )

@@ -6,7 +6,6 @@ from datetime import timedelta
 from pathlib import Path
 from uuid import uuid4
 
-import pytest_bazel
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
@@ -337,7 +336,3 @@ def test_parentless_restic_snapshot_uses_full_inventory(tmp_path: Path, postgres
         assert file_row is not None
         assert file_row.change_kind == "inventory"
         assert file_row.status == "complete"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

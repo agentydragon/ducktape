@@ -6,7 +6,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 
@@ -37,7 +36,3 @@ def test_shared_analysis_accepts_both_layouts(runfiles: Runfiles, output: str, m
         check=True,
     )
     assert json.loads(result.stdout) == {"input": 2, "double": 4}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

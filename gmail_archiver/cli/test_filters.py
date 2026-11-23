@@ -4,7 +4,6 @@ from pathlib import Path
 from unittest.mock import Mock, call
 
 import pytest
-import pytest_bazel
 from typer.testing import CliRunner
 
 from gmail_archiver.cli import filters
@@ -68,7 +67,3 @@ def test_filter_commands_preview_or_apply_expected_changes(
             )
         ),
     ]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

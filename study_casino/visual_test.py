@@ -11,7 +11,6 @@ from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from playwright.async_api import Playwright, ViewportSize
 
 from devinfra.testing.output_writer import BoundTestOutputs
@@ -124,7 +123,3 @@ def _seed_fixture_state(origin: str) -> None:
 async def test_casino_views_render(view: VisualPage, visible_text: str) -> None:
     await view.page.get_by_text(visible_text).first.wait_for(state="visible", timeout=15_000)
     await view.capture(full_page=True, animations="disabled", scale="css")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

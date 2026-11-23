@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import pytest_bazel
 import yaml
 from cdk8s import App, Chart
 from more_itertools import one
@@ -600,7 +599,3 @@ def test_rejects_runner_credential_mount_outside_relay(
         }
     )
     assert not apply(tmp_path, policy, resource, operation=operation).ok
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

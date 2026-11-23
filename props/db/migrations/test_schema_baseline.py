@@ -5,7 +5,6 @@ Only a disposable testcontainer database is used; no deployed database is contac
 
 from contextlib import ExitStack
 
-import pytest_bazel
 from sqlalchemy import create_engine, text
 from testcontainers.postgres import PostgresContainer
 
@@ -44,7 +43,3 @@ def test_schema_baseline(
         with engine.connect() as conn:
             assert conn.scalar(text("SELECT salt FROM agent_role_salt WHERE id = 1")) == salt
             assert conn.execute(PUBLIC_RELATION_IDENTITIES).all() == objects
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -14,7 +14,6 @@ from typing import Any
 
 import pygohcl
 import pytest
-import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
 
@@ -693,7 +692,3 @@ def test_public_coder_pause_retains_state_after_devbox_retirement(
         assert owner_specs[name]["deletionPolicy"] == "Orphan"
     assert owner_specs["public-coder-agent-app"].get("suspend", False) is True
     assert owner_specs["public-coder-agent-backup"]["suspend"] is True
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

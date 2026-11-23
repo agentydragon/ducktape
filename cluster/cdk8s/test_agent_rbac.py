@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 import pytest
-import pytest_bazel
 from cdk8s import App
 
 from cluster.cdk8s import agent_namespace_rbac, agent_rbac_base, agent_shared_rbac, ducktape_flux, loki_read_proxy
@@ -516,7 +515,3 @@ def test_aggregation_is_not_silently_ignored() -> None:
     )
     with pytest.raises(AssertionError, match="aggregated"):
         rbac.rules("ClusterRole", "aggregate", None)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

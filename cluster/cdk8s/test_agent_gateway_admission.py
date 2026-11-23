@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 from typing import Any
 
-import pytest_bazel
 import yaml
 from cdk8s import Chart
 from kubernetes_asyncio import client as k8s_client
@@ -93,7 +92,3 @@ async def test_agent_route_admission(scratch_chart: Chart) -> None:
             await core.create_namespaced_config_map(
                 namespace, k8s_client.V1ConfigMap(metadata=k8s_client.V1ObjectMeta(name="unrelated")), dry_run="All"
             )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

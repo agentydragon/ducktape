@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.model.gbm import GeometricBrownian
 
@@ -61,7 +60,3 @@ def test_a_sampled_level_keeps_the_precision_money_needs() -> None:
     gbm = GeometricBrownian(initial_value=value, monthly_log_return_mu=0.0, monthly_log_return_sigma=0.0)
     levels = gbm.sample_levels(rollout_seeds=(1,), horizon_months=1)
     assert levels[0, 0] == value, f"month 0 sampled as {levels[0, 0]!r}, not the {value!r} configured"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

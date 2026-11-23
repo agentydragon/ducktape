@@ -2,7 +2,6 @@
 
 import json
 
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from cluster.cdk8s.testing.promtool import PromtoolRules
@@ -29,7 +28,3 @@ def test_reliability_queries(runfiles: Runfiles, promtool: PromtoolRules) -> Non
         ]
     }
     promtool("ducktape/cluster/cdk8s/monitoring/testdata/smokeping_rules.yaml", {"smokeping.yaml": spec})
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

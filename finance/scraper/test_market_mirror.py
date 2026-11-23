@@ -5,7 +5,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-import pytest_bazel
 
 from finance.evidence.markets import MarketEntry, Platform, bets_jsonl_path, comments_jsonl_path, market_json_path
 from finance.scraper.http_fetch import HttpGet
@@ -222,7 +221,3 @@ async def test_request_pacer_spaces_requests() -> None:
     for _ in range(3):
         await pacer.wait()
     assert sleeps == pytest.approx([0.2, 0.2])
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

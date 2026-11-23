@@ -193,9 +193,3 @@ def test_invalid_app_caller_tls_settings_are_rejected(updates: dict[str, object]
 
 def test_operator_facades_can_add_app_svid_without_replacing_operator_oauth() -> None:
     _settings(actions_tls=_svid(ACTIONS_URI), connection_service_tls=_svid(MCP_EDGE_URI))
-
-
-if __name__ == "__main__":
-    import pytest_bazel
-
-    pytest_bazel.main()

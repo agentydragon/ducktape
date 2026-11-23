@@ -92,7 +92,6 @@ py_test(
         "//props/testing/fixtures:runs",
         "//util/exec:models",
         "@pypi//pyhamcrest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -121,6 +120,5 @@ py_test(
         "//props/core:ids",
         "//props/db:models",
         "@pypi//pyhamcrest",
-        "@pypi//pytest_bazel",
     ],
 )

@@ -4,7 +4,6 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 from syrupy.assertion import SnapshotAssertion
 
@@ -21,10 +20,6 @@ from aiquota.render.format import (
 )
 from aiquota.render.view_model import to_view
 from aiquota.testing.quota_fixtures import FIXTURE_NAMES, load_quota_fixture
-
-if __name__ == "__main__":
-    pytest_bazel.main()
-
 
 _NOW = datetime(2026, 1, 15, 12, 0, 0, tzinfo=UTC)
 

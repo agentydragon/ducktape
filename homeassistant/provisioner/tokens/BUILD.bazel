@@ -69,7 +69,6 @@ py_test(
         "//homeassistant/provisioner:conftest",
         "//homeassistant/provisioner:endpoint",
         "@pypi//kubernetes",
-        "@pypi//pytest_bazel",
         "@pypi//pytest_httpx2",
         "@pypi//respx",
     ],

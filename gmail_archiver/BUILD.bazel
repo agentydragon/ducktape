@@ -222,7 +222,6 @@ py_test(
         "//:conftest",
         "//gmail_api:labels",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -235,7 +234,6 @@ py_test(
         "//:conftest",
         "@pypi//google_api_python_client",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -250,7 +248,6 @@ py_test(
         "//:conftest",
         "//gmail_api:messages",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//rich",
     ],
 )
@@ -263,7 +260,6 @@ py_test(
         "//:conftest",
         "//openai_utils:json_schema",
         "//openai_utils:pydantic_strict_mode",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -285,6 +281,5 @@ py_test(
         "//gmail_archiver/planners:square",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

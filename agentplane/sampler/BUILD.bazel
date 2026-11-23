@@ -143,7 +143,6 @@ py_test(
         "@pypi//pillow",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//tenacity",
     ],
 )
@@ -169,7 +168,6 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//types_grpcio",  # keep: mypy follows generated gRPC interfaces
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
@@ -220,7 +218,6 @@ py_test(
         "@pypi//pillow",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -245,7 +242,6 @@ py_test(
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -274,7 +270,6 @@ py_test(
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//tenacity",
     ],
@@ -300,7 +295,6 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

@@ -4,7 +4,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.buildbuddy.ci.bes import Output
 from devinfra.ci.plan_releases import content_hash, is_published, main, matrix_include, plan
@@ -199,7 +198,3 @@ def test_registered_releases_have_valid_filenames_and_metadata_flags() -> None:
         assert row.as_matrix_row()["release_metadata"] in {"true", "false"}, row.pkg
         for _, filename in row.assets:
             assert "/" not in filename, f"{row.pkg}: filename must be a bare asset name, not a path"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

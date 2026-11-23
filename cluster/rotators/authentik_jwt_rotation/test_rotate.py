@@ -7,7 +7,6 @@ from pathlib import Path
 
 import httpx
 import pytest
-import pytest_bazel
 import yaml
 from pydantic import ValidationError
 
@@ -230,7 +229,3 @@ def test_rotated_outputs_satisfy_the_next_freshness_check(monkeypatch, probed_ro
     assert secret["metadata"]["annotations"]["description"]
     assert yaml.safe_load(probed_rotation.sops_file.read_text())[probed_rotation.token_field] == token
     assert not rotate.rotate_one(client, probed_rotation, config)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

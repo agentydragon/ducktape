@@ -224,7 +224,6 @@ py_test(
         "//cluster/cdk8s:conftest",
         "@pypi//cdk8s",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -239,6 +238,5 @@ py_test(
         "//cluster/cdk8s:conftest",
         "//cluster/cdk8s:stateful_infra",
         "@pypi//cdk8s",
-        "@pypi//pytest_bazel",
     ],
 )

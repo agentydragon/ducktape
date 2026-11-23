@@ -1,7 +1,6 @@
 """The indexed row and its variant ``state`` column compose to canonical ProtoJSON."""
 
 import pytest
-import pytest_bazel
 from google.protobuf.json_format import MessageToDict
 
 from agentplane.history_service.api.history import history_service_pb2
@@ -89,7 +88,3 @@ def test_stored_protojson_may_be_a_json_string() -> None:
     assert entity.WhichOneof("entity") == "command"
     assert entity.command.operation == command_pb2.OPERATION_INTERRUPT_TURN
     assert entity.command.outcome == history_service_pb2.THREAD_COMMAND_OUTCOME_PENDING
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

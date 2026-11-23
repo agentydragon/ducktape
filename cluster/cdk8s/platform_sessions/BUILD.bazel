@@ -69,7 +69,6 @@ py_test(
         "//cluster/cdk8s/testing:manifests",
         "@pypi//cdk8s",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -92,6 +91,5 @@ py_test(
         "@pypi//cryptography",
         "@pypi//docker",
         "@pypi//mitmproxy",
-        "@pypi//pytest_bazel",
     ],
 )

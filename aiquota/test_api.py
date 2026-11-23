@@ -10,7 +10,6 @@ from uuid import UUID
 import httpx
 import pytest
 import pytest_asyncio
-import pytest_bazel
 
 from aiquota import api
 from aiquota.api import (
@@ -41,9 +40,6 @@ from aiquota.render.view_model import AllQuotasView, refresh_view
 from aiquota.server_main import _frontend_dir
 from aiquota.settings import Settings
 from testing.asgi import serve_app_in_loop
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 
 class FakeFetcher:

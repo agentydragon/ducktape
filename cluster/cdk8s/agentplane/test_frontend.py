@@ -2,7 +2,6 @@
 
 from typing import Any
 
-import pytest_bazel
 from more_itertools import one
 
 from cluster.cdk8s.agentplane import app, frontend, staging
@@ -61,7 +60,3 @@ def test_frontend_has_no_runtime_credentials_or_outbound_access(staging_manifest
 def test_hostname_spread_names_existing_deployments(staging_manifests: list[dict[str, Any]]) -> None:
     deployments = {doc["metadata"]["name"] for doc in staging_manifests if doc["kind"] == "Deployment"}
     assert staging.ENV.hostname_spread_services <= deployments
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

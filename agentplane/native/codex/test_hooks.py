@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from agentplane.native.capture import codex_hook
 from agentplane.native.codex import scenarios, wire
@@ -80,7 +79,3 @@ async def test_pretooluse_decision_gates_the_tool(
     frames.assert_success(captured, final_text)
 
     assert len(_pretooluse_events(log_path)) == 1
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

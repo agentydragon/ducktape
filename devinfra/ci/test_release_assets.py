@@ -1,7 +1,6 @@
 from dataclasses import replace
 
 import pytest
-import pytest_bazel
 
 from devinfra.buildbuddy.ci.bes import Output
 from devinfra.ci.release_assets import Release, release_paths, resolve_asset
@@ -39,7 +38,3 @@ def test_release_paths_follow_ssot_order() -> None:
 def test_asset_resolution_fails_loudly_before_publication(outputs: list[Output], error: str) -> None:
     with pytest.raises(ValueError, match=error):
         resolve_asset({"//:a": outputs}, "//:a", "a.whl")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

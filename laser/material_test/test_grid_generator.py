@@ -7,7 +7,6 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from laser.lightburn.lbrn2_writer import LightBurnProject, RectShape, TextShape
@@ -469,7 +468,3 @@ def test_generate_legend_rect(labels: LabelsConfig, show_labels: bool, n_legend_
     )
     legend_rects = [s for s in generate(cfg).shapes if isinstance(s, RectShape) and s.cut_index == 0]
     assert len(legend_rects) == n_legend_rects
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

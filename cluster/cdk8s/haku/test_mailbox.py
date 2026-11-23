@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest_bazel
 from cdk8s import App
 from cdk8s_plus_34 import k8s
 from more_itertools import one
@@ -30,7 +29,3 @@ def test_smtp_ingress_config_targets_the_model_service_with_proxy_protocol(runfi
 
     assert "proxy_protocol on;" in ingress_config
     assert f"server {mailbox.SMTP.authority};" in ingress_config
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -24,7 +24,6 @@ py_test(
         "//:conftest",
         "//testing:threaded_http",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -37,7 +36,6 @@ py_test(
         "//:conftest",
         "@pypi//dbus_fast",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

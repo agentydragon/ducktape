@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from cluster.validation.kustomize import flux_generated_kustomization, stage_artifact_copies
 
@@ -57,7 +56,3 @@ def test_stage_artifact_copies_reject_unsafe_or_missing_paths(tmp_path: Path) ->
         stage_artifact_copies(repo_root, tmp_path / "artifact", [("@repo/source.yaml", "@artifact/../escape")])
     with pytest.raises(FileNotFoundError, match="source is missing"):
         stage_artifact_copies(repo_root, tmp_path / "artifact", [("@repo/missing.yaml", "@artifact/a.yaml")])
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

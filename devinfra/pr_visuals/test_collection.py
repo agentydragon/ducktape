@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import TypedDict, Unpack
 
 import pytest
-import pytest_bazel
 
 from devinfra.pr_visuals.artifacts import BESTestSummary, BuildBuddyArtifact
 from devinfra.pr_visuals.collection import (
@@ -392,7 +391,3 @@ def test_materialized_source_verifies_advertised_record_digest() -> None:
     assert not collected.complete
     assert not collected.selected
     assert any("does not match its advertised digest or size" in issue.message for issue in collected.issues)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

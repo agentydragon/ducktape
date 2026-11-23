@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.firecracker import runtime
 from agentplane.system_tests.k3s import baseline
@@ -64,7 +63,3 @@ def test_retained_cleanup_certifies_only_the_removed_device_plugin(
     assert receipt["daemonset_uid"] == "fake-daemonset"
     assert receipt["pod_uids"] == ["fake-plugin-pod"]
     assert receipt["cleanup"] == ("pending" if deletion_fails else "complete")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

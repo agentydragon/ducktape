@@ -4,7 +4,6 @@ from collections.abc import Callable
 from decimal import Decimal
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 
 from finance.augur.api.portfolio import (
@@ -168,7 +167,3 @@ def test_bond_face_is_kept_out_of_the_holdings_value_total(bond_portfolio: Calla
 
     assert portfolio.total_holdings_value == Decimal(0)
     assert portfolio.total_bond_face_value == Decimal(100_000)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

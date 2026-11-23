@@ -146,9 +146,3 @@ def test_imported_image_is_pinned_after_clean_attach(
             baseline.stop_owned(k3s, marker)
         finally:
             baseline._BASELINE_MARKER.unlink(missing_ok=True)
-
-
-if __name__ == "__main__":
-    import pytest_bazel
-
-    pytest_bazel.main()

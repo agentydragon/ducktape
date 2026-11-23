@@ -6,7 +6,6 @@ from unittest.mock import Mock
 
 import openai
 import pytest
-import pytest_bazel
 
 from x.benchmark_ollama import benchmark_ollama
 
@@ -142,7 +141,3 @@ def test_stream_iteration_errors_keep_the_callers_error_policies(
     with pytest.raises(openai.APIError) as raised:
         benchmark_ollama.measure_output(client, "test-model", 100.0)
     assert raised.value is error
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -143,7 +143,6 @@ py_test(
         "//finance/plaid/spend:portfolio_queries",
         "//testing:postgres",
         "@pypi//psycopg",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@rules_python//python/runfiles",
     ],

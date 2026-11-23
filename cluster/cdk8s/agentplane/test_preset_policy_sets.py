@@ -3,7 +3,6 @@
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from cluster.cdk8s.agentplane import kubernetes_account_ref, staging
 from cluster.cdk8s.agentplane.actions_staging_policies import (
@@ -95,7 +94,3 @@ def test_haku_and_claude_account_policy_order(staging_manifests: list[dict[str, 
     assert [policy for policy in claude if policy not in claude_only] == [
         policy for policy in haku if policy != haku_account_use
     ]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

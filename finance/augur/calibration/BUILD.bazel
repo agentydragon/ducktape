@@ -144,7 +144,6 @@ py_test(
         "//:conftest",
         "//finance/augur:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -159,7 +158,6 @@ py_test(
         "//finance/augur:conftest",
         "//finance/augur/model:series",
         "@pypi//numpy",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -175,7 +173,6 @@ py_test(
         "//finance/augur/model:series",
         "//finance/evidence:markets",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -198,7 +195,6 @@ py_test(
         "//finance/augur/model:testing",
         "//finance/evidence:markets",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -235,7 +231,6 @@ py_test(
         "//finance/evidence:loading",
         "//finance/evidence:sources",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -254,7 +249,6 @@ py_test(
         "//finance/augur/x/models:private_equity_risk",
         "//finance/evidence:markets",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -288,6 +282,5 @@ py_test(
         "//finance/augur:conftest",
         "//finance/evidence:markets",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

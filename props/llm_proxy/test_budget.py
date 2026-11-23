@@ -7,7 +7,6 @@ when budget is exceeded. Uses real Postgres with agent_run_budget_status view.
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 from fastapi import HTTPException
 
 from props.db.async_database import AsyncDatabase
@@ -103,7 +102,3 @@ async def test_budget_includes_child_run_costs(synced_db: Database) -> None:
             with pytest.raises(HTTPException) as exc_info:
                 await _check_budget(session, parent_id, budget_usd=0.10)
         assert exc_info.value.status_code == 429
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

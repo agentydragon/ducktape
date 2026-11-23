@@ -5,7 +5,6 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
-import pytest_bazel
 from more_itertools import one
 
 from agentplane.crd_group import GROUP
@@ -85,7 +84,3 @@ def test_notifications_have_their_own_account_without_app_egress(staging_manifes
         for rule in policy["egress"]
         for target in rule.get("toEndpoints", [])
     )
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

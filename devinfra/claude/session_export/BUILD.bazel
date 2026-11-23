@@ -141,7 +141,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//tenacity",
     ],
 )
@@ -157,7 +156,6 @@ py_test(
         "//:conftest",
         "//devinfra/claude:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -188,7 +186,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -257,7 +254,6 @@ py_test(
         "//testing:sqlalchemy_engines",
         "@pypi//alembic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -277,7 +273,6 @@ py_test(
         "//:conftest",
         "//devinfra/claude:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -323,7 +318,6 @@ py_test(
         "//devinfra/claude:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -365,7 +359,6 @@ py_test(
         "//testing:mock_oidc",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//starlette",
     ],
 )
@@ -403,7 +396,6 @@ py_test(
         "//:conftest",
         "//devinfra/claude:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//tenacity",
     ],
@@ -425,7 +417,6 @@ py_test(
         "//devinfra/claude:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -453,6 +444,5 @@ py_test(
         "@pypi//httpx",
         "@pypi//more_itertools",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

@@ -190,7 +190,6 @@ py_test(
     deps = [
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],
 )
@@ -263,7 +262,6 @@ py_test(
         "@pypi//playwright",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
         "@pypi//starlette",
         "@rules_python//python/runfiles",
     ],

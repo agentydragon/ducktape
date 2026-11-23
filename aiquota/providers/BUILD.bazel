@@ -124,7 +124,6 @@ py_test(
         "//aiquota:config",
         "//aiquota:models",
         "@pypi//httpx",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -139,7 +138,6 @@ py_test(
         "//aiquota:models",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -151,7 +149,6 @@ py_test(
         "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -174,7 +171,6 @@ py_test(
         "//devinfra/claude/claude_api:usage",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//respx",
     ],
 )
@@ -196,7 +192,6 @@ py_test(
         "//aiquota:models",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//respx",
     ],
 )
@@ -210,6 +205,5 @@ py_test(
         "//:conftest",
         "//aiquota:config",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

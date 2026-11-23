@@ -108,7 +108,6 @@ py_test(
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pyjwt",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -134,7 +133,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -160,7 +158,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -221,7 +218,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
         "@pypi//tenacity",
     ],
@@ -272,7 +268,6 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -306,7 +301,6 @@ py_test(
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -336,7 +330,6 @@ py_test(
         "@pypi//grpcio",
         "@pypi//playwright",
         "@pypi//protobuf",
-        "@pypi//pytest_bazel",
         "@pypi//types_grpcio",  # keep: mypy follows the generated PolicyService gRPC servicer
     ],
 )
@@ -385,7 +378,6 @@ py_test(
         "@pypi//playwright",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -408,7 +400,6 @@ py_test(
         "@pypi//asyncpg",
         "@pypi//httpx",
         "@pypi//protobuf",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -430,7 +421,6 @@ py_test(
         "//agentplane/proto:event_pb2",
         "@pypi//httpx",
         "@pypi//protobuf",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -454,7 +444,6 @@ py_test(
         "//agentplane/sandboxes/testing:sandbox_namespace",
         "@pypi//httpx",
         "@pypi//protobuf",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -481,7 +470,6 @@ py_test(
         "@pypi//playwright",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -503,7 +491,6 @@ py_test(
         "//agentplane/proto:event_pb2",
         "@pypi//httpx",
         "@pypi//protobuf",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -529,7 +516,6 @@ py_test(
         "//testing:asgi",
         "@pypi//httpx",
         "@pypi//protobuf",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -590,7 +576,6 @@ py_test(
         "//agentplane/sandboxes/runtimeconfig:model_catalog",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -632,7 +617,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//tenacity",
     ],
 )
@@ -654,7 +638,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -679,7 +662,6 @@ py_test(
         "//devinfra/testing:undeclared_outputs",
         "@pypi//httpx",
         "@pypi//protobuf",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -747,7 +729,6 @@ py_test(
         "//agentplane/session_dispatcher/dispatcher/api/session:session_dispatcher_pb2",
         "@pypi//httpx",
         "@pypi//protobuf",
-        "@pypi//pytest_bazel",
         "@pypi//tenacity",
     ],
 )

@@ -5,7 +5,6 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-import pytest_bazel
 import yaml
 from cdk8s import App, Chart
 
@@ -167,7 +166,3 @@ def test_piraeus_controller_network_policy_only_admits_api_tls(cluster_chart: Ch
     assert policy["spec"]["podSelector"]["matchLabels"] == {"app.kubernetes.io/component": "linstor-controller"}
     assert policy["spec"]["policyTypes"] == ["Ingress"]
     assert policy["spec"]["ingress"] == [{"ports": [{"port": 3371, "protocol": "TCP"}]}]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

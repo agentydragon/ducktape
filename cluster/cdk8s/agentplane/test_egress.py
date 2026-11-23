@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import pytest_bazel
 import yaml
 from more_itertools import one
 
@@ -460,7 +459,3 @@ def test_inference_is_granted_separately_from_platform_operations(catalog_manife
         secret = find_resource(catalog_manifests, "ExternalSecret", source["name"])
         assert secret["metadata"]["namespace"] == f"{staging.ENV.namespace}-egress-credentials"
         assert source["key"] in {item["secretKey"] for item in secret["spec"]["data"]}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

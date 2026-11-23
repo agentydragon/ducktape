@@ -4,7 +4,6 @@ from datetime import date
 
 import numpy as np
 import pytest
-import pytest_bazel
 
 from finance.augur.model.path_models.scenarios import DatedHistoricalSeries, HistoricalSeries
 from finance.augur.model.series import SP500_KEY
@@ -51,7 +50,3 @@ def test_monthly_sigma_excludes_the_observed_pair_across_a_calendar_gap() -> Non
     )
 
     assert _monthly_sigma(historical, SP500_KEY.wire_id) == pytest.approx(0.0)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

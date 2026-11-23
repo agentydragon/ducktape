@@ -8,7 +8,6 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
-import pytest_bazel
 from kubernetes_asyncio import client as k8s
 from kubernetes_asyncio.client.exceptions import ApiException
 from python.runfiles import Runfiles
@@ -138,7 +137,3 @@ async def test_cleanup_cannot_delete_a_replacement_namespace() -> None:
             await allocation.cleanup(api=server.api, allocation=wrong_uid)
         assert error.value.status == 409
         assert (await k8s.CoreV1Api(server.api).read_namespace(first)).metadata.deletion_timestamp is None
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

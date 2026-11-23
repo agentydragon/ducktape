@@ -21,6 +21,5 @@ py_test(
         ":workspace",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

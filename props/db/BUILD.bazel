@@ -157,7 +157,6 @@ py_test(
         "//props/core:splits",
         "//props/testing/fixtures:db",
         "//testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -181,7 +180,6 @@ py_test(
         "//props/testing/fixtures:runs",
         "//props/testing/fixtures:scopes",
         "//testing:postgres_fixtures",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -202,7 +200,6 @@ py_test(
         "//testing:postgres_fixtures",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -233,7 +230,6 @@ py_test(
         "//testing:postgres_fixtures",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )

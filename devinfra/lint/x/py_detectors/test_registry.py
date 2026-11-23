@@ -2,7 +2,6 @@ import ast
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.lint.x.py_detectors.models import Detection
 from devinfra.lint.x.py_detectors.registry import detection, run_all
@@ -33,7 +32,3 @@ def test_snippet_matches_source_snapshot(tmp_path: Path) -> None:
     (finding,) = run_all({"check": check}, tmp_path)
 
     assert finding.snippet == "    1: first = 1\n    2: second = 2"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -2,8 +2,6 @@
 
 from typing import Any
 
-import pytest_bazel
-
 from agentplane.testing.crd_admission import crd_namespace
 
 NAMESPACE = "policyset-admission"
@@ -106,7 +104,3 @@ async def test_policyset_admission() -> None:
         )
         for rule in invalid_rules:
             await policy_sets.rejects_create({"rules": [rule]})
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

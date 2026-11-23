@@ -2,8 +2,6 @@ import textwrap
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-import pytest_bazel
-
 from cluster.rotators.sops_stamps import remaining_hours, unencrypted_stamps
 
 
@@ -32,7 +30,3 @@ def test_remaining_hours_reads_unencrypted_expiry(tmp_path: Path):
     remaining = remaining_hours(unencrypted_stamps(f))
     assert remaining is not None
     assert 9 < remaining < 11
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

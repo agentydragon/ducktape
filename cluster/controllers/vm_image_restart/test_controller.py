@@ -9,7 +9,6 @@ from typing import Any
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-import pytest_bazel
 from kubernetes_asyncio import client
 from kubernetes_asyncio.client import ApiException
 
@@ -278,7 +277,3 @@ async def test_watch_relists_and_uses_the_list_resource_version(
             api, _SETTINGS.target_namespace, "virtualmachineinstances", name, store, changed
         )
     assert watcher.stop.call_count == 2
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

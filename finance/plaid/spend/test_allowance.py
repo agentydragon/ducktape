@@ -7,7 +7,6 @@ from typing import Literal
 from zoneinfo import ZoneInfo
 
 import pytest
-import pytest_bazel
 from pydantic import ValidationError
 from python.runfiles import Runfiles
 
@@ -836,10 +835,6 @@ def test_one_off_yaml_round_trip(one_off_configuration: Path):
     assert load_configuration(one_off_configuration) == loaded
     assert parsed.rules[0].description is not None
     assert parsed.rules[0].description.startswith("Confirmed example")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 
 def test_transaction_and_sparse_mapping_use_the_same_classification_facts() -> None:

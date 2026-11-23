@@ -1,7 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-import pytest_bazel
 
 from x.ai_sub_value.analyze import ObservedRate, Poll, UnavailableRate, measure_hour, require_single_quota_account
 
@@ -39,10 +38,6 @@ def test_gap_and_saturation_are_unavailable() -> None:
 def test_discontinued_series_is_unavailable() -> None:
     polls = [Poll(START + timedelta(minutes=5 * i), i, RESET) for i in range(13)]
     assert isinstance(measure_hour(polls, cutoff=polls[-1].at + timedelta(days=1)), UnavailableRate)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 
 def test_mixed_quota_accounts_are_rejected() -> None:

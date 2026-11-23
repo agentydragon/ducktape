@@ -3,7 +3,6 @@
 from typing import Any
 
 import pytest
-import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
 
@@ -25,7 +24,3 @@ def rule_files(runfiles: Runfiles) -> dict[str, dict[str, Any]]:
 )
 def test_prometheus_rules(promtool: PromtoolRules, rule_files: dict[str, dict[str, Any]], case: str) -> None:
     promtool(f"ducktape/cluster/cdk8s/monitoring/testdata/{case}_rules.yaml", rule_files)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

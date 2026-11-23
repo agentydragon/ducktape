@@ -4,7 +4,6 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-import pytest_bazel
 from cdk8s import App, Chart
 
 from cluster.cdk8s.agent_rbac_test_support import Permission, Rbac
@@ -154,7 +153,3 @@ def test_quest_bearer_has_its_own_secret_and_network_access(credentials: list[di
         ],
         "toPorts": [{"ports": [{"port": "8080", "protocol": "TCP"}]}],
     } in network["spec"]["egress"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

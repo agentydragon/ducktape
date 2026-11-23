@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import pytest_bazel
 import yaml
 from cdk8s import App
 
@@ -83,7 +82,3 @@ def test_store_requires_a_named_namespace(json_policy: Path, tmp_path: Path, spe
     )
     result = apply_policy(json_policy, resource, json_payload=True)
     assert (result.passed, result.failed, result.errored) == ((1, 0, 0) if allowed else (0, 1, 0)), result.stdout
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

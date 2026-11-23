@@ -7,7 +7,6 @@ import secrets
 from urllib.parse import parse_qs, urlparse
 
 import httpx
-import pytest_bazel
 from authlib.oauth2.rfc7636 import create_s256_code_challenge
 from fastmcp import FastMCP
 from key_value.aio.stores.memory import MemoryStore
@@ -156,7 +155,3 @@ async def test_build_authentik_auth_requires_consent_for_every_authorization() -
                 assert second_consent.status_code == 200
                 assert "Application Access Request" in second_consent.text
                 assert _hidden_input(second_consent.text, "txn_id")
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

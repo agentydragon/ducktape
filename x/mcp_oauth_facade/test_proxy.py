@@ -3,7 +3,6 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 import pytest
-import pytest_bazel
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
@@ -83,7 +82,3 @@ async def test_facade_filters_proxied_tools() -> None:
             assert [tool.name for tool in await client.list_tools()] == ["read_node"]
             with pytest.raises(ToolError):
                 await client.call_tool("trash_node", {})
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

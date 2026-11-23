@@ -305,9 +305,3 @@ def test_modify_labels_batch_sends_1000_ids_per_call_and_omits_empty_label_lists
         {"userId": "me", "body": {"ids": message_ids[1000:], **expected_label_fields}},
     ]
     assert batch_modify.return_value.execute.call_count == 2
-
-
-if __name__ == "__main__":
-    import pytest_bazel
-
-    pytest_bazel.main()

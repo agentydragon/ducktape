@@ -8,7 +8,6 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.vm import iotlb_capture
 from agentplane.system_tests.vm.iotlb_profile import Profile
@@ -152,7 +151,3 @@ def test_discovery_loads_verified_manifest_and_joins_on_teardown(tmp_path: Path)
     assert metadata["launchers"] == []
     assert metadata["errors"] == []
     assert not metadata["discovery_expired"]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

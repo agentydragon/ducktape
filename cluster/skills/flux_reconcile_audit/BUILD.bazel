@@ -31,7 +31,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

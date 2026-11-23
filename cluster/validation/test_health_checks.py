@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest_bazel
-
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.flux import FluxKustomizationSpec, HealthCheck
 from cluster.validation.health_checks import check_controller_health_checks, check_retry_policy
@@ -56,7 +54,3 @@ def test_retry_policy_reports_all_async_kustomizations_missing_a_retry_interval(
     errors = check_retry_policy(cluster)
     assert sorted(error.partition(":")[0] for error in errors) == ["checked", "waiting"]
     assert all("no retryInterval" in error for error in errors)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

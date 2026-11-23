@@ -163,9 +163,3 @@ def test_clickhouse_query_rejects_unexpanded_dashboard_variables(sql: str) -> No
         VERIFY_DASHBOARD["query_panels"](
             None, dashboard, {"ClickHouse": datasource}, {"clickhouse": datasource}, 1, 2, [], []
         )
-
-
-if __name__ == "__main__":
-    import pytest_bazel
-
-    pytest_bazel.main()

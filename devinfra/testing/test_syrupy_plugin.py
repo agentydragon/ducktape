@@ -1,5 +1,4 @@
 import pytest
-import pytest_bazel
 
 # gazelle:include_dep //devinfra/testing:syrupy_plugin
 
@@ -24,7 +23,3 @@ def test_exports_final_collection(pytester: pytest.Pytester, monkeypatch: pytest
     assert exported == path.read_text()
     assert "current" in exported
     assert "obsolete" not in exported
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

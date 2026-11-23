@@ -110,7 +110,6 @@ py_test(
         "@pypi//httpx_sse",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -239,7 +238,6 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -250,7 +248,6 @@ py_test(
         ":peak_windows",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -261,7 +258,6 @@ py_test(
         ":models",
         ":pace",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -279,7 +275,6 @@ py_test(
         "//aiquota/providers:codex_lib",
         "//aiquota/render:view_model_lib",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -291,7 +286,6 @@ py_test(
         "//:conftest",
         "//aiquota/render:view_model_lib",
         "@pypi//httpx",
-        "@pypi//pytest_bazel",
         "@pypi//respx",
     ],
 )
@@ -303,7 +297,6 @@ py_test(
         ":config",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -323,7 +316,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -337,7 +329,6 @@ py_test(
         "//:conftest",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -407,7 +398,6 @@ py_test(
         "//:conftest",
         "//aiquota/render:view_model_lib",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//typer",
     ],
 )

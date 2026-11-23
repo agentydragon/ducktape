@@ -2,8 +2,6 @@
 
 from typing import Any
 
-import pytest_bazel
-
 from agentplane.testing.crd_admission import CrdAdmission, crd_namespace
 
 NAMESPACE = "sandbox-admission"
@@ -304,7 +302,3 @@ async def test_egress_credential_source_and_target_validation() -> None:
         ]
         for index, (spec, valid) in enumerate(spec_cases):
             await _create(credentials, f"spec-{index}", spec, valid)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

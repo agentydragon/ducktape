@@ -5,7 +5,6 @@ from datetime import UTC, date, datetime, timedelta
 
 import httpx
 import pytest
-import pytest_bazel
 
 from aiquota.api import BackgroundCollector, CollectorMetrics, HistoryCollector
 from aiquota.clickhouse import ClickHouseSnapshotSink, schema_statements
@@ -24,9 +23,6 @@ from aiquota.models import (
     TokenActivityDay,
     TokenActivityObservation,
 )
-
-if __name__ == "__main__":
-    pytest_bazel.main()
 
 
 def _snapshot() -> QuotaSnapshot:

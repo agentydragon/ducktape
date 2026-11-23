@@ -4,7 +4,6 @@ from dataclasses import replace
 from pathlib import PurePosixPath
 from typing import Any
 
-import pytest_bazel
 import yaml
 from cdk8s import App
 from cdk8s_plus_34 import ConfigMap
@@ -279,7 +278,3 @@ def test_app_uses_dispatcher_grpc_target(staging_manifests: list[dict[str, Any]]
     endpoint = f"{service['metadata']['name']}.{staging.ENV.namespace}.svc.cluster.local:{grpc_port['port']}"
     app_config = config_map_yaml(staging_manifests, "app-config", "config.yaml")
     assert app_config["session_dispatcher_target"] == endpoint
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

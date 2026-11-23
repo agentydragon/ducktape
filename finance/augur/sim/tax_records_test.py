@@ -3,7 +3,6 @@
 from collections.abc import Mapping
 
 import pytest
-import pytest_bazel
 
 from finance.augur.sim.actions import Action, LotSale, PayClaim, Sell
 from finance.augur.sim.agent import EconomicAgent
@@ -193,7 +192,3 @@ def test_another_actors_income_gains_and_assessment_are_not_visible() -> None:
 def test_an_actor_who_is_not_a_taxpayer_has_no_tax_records() -> None:
     _, seen = run({}, taxed=False)
     assert {o.tax_records for o in seen} == {None}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -3,7 +3,6 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 import yaml
 from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
@@ -112,7 +111,3 @@ def test_directory_generator_options_are_written_under_kustomizes_key(tmp_path: 
     write_directory(tmp_path, _ARTIFACT, generator_options=GeneratorOptions(disable_name_suffix_hash=True))
     kustomization = yaml.safe_load((tmp_path / "test/app/kustomization.yaml").read_text())
     assert kustomization["generatorOptions"] == {"disableNameSuffixHash": True}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

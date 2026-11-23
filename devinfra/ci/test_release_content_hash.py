@@ -2,7 +2,6 @@ import hashlib
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 
 from devinfra.ci.release_content_hash import main, release_content_hash, release_content_hash_from_digests, tag_package
 
@@ -70,7 +69,3 @@ def test_publish_tag_round_trips_through_pin_sync_and_retention(
     assert tag == "skill-backtrace-8ed3f6ad685b"
     assert tag_package(tag) == "skill-backtrace"
     assert tag_package("skill-backtrace-0123abc") == "skill-backtrace"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

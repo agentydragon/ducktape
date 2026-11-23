@@ -3,7 +3,6 @@
 import datetime
 
 import pytest
-import pytest_bazel
 from prometheus_client import CollectorRegistry, generate_latest
 from pydantic import BaseModel
 
@@ -111,7 +110,3 @@ def test_latest_outcome_and_success_timestamp_ignore_stale_and_superseded_result
 
     with pytest.raises(ValueError, match="timezone-aware"):
         reporter.completed(ProbeOutcome.SUCCESS, ProbeSource.VERIFY, completed_at=datetime.datetime(2026, 1, 1))
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -52,7 +52,6 @@ py_test(
         ":network_readiness",
         "@pypi//kubernetes",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

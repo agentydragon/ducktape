@@ -63,7 +63,6 @@ py_test(
         "//:conftest",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

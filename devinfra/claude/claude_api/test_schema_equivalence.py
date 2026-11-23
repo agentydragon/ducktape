@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from devinfra.claude.claude_api.hooks.output import HookOutput
@@ -86,7 +85,3 @@ def test_missing_local_definition_reports_its_reference() -> None:
     schema = {"properties": {"value": {"$ref": "#/$defs/Missing"}}}
     with pytest.raises(ValueError, match=r"#/\$defs/Missing"):
         inline_refs(schema)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

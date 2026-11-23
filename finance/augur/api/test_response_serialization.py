@@ -7,7 +7,6 @@ from io import StringIO
 from typing import Any
 
 import pytest
-import pytest_bazel
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -141,7 +140,3 @@ def test_csv_download_without_budget_config(make_client: MakeClient) -> None:
     assert response.json() == {"detail": "no budget config for this deployment"}
     assert response.headers["cache-control"] == "no-store"
     assert client.post(path, json={}).status_code == 422
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

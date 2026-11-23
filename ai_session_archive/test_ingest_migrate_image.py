@@ -1,7 +1,6 @@
 """The importer image carries and can apply its own Alembic history."""
 
 # gazelle:include_dep //testing:postgres_fixtures
-import pytest_bazel
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from testcontainers.postgres import PostgresContainer
@@ -32,7 +31,3 @@ def test_importer_image_runs_migrations(empty_postgres_url: str, postgres_contai
             assert connection.scalar(text("SELECT version_num FROM alembic_version_ai_session_archive"))
     finally:
         engine.dispose()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

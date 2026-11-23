@@ -4,7 +4,6 @@ from io import BytesIO
 from unittest.mock import Mock
 
 import pytest
-import pytest_bazel
 
 from cluster.scripts import check_authentik_login
 
@@ -87,7 +86,3 @@ def test_password_login_cli(
         forward.assert_called_once_with("authentik", "authentik-server", 19080, 80)
         forward.return_value.terminate.assert_called_once()
         forward.return_value.wait.assert_called_once()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

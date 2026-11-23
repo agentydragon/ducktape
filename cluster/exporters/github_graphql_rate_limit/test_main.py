@@ -1,6 +1,5 @@
 import httpx
 import pytest
-import pytest_bazel
 from fastapi.testclient import TestClient
 
 from cluster.exporters.github_graphql_rate_limit.main import Settings, create_app
@@ -56,7 +55,3 @@ def test_metrics_endpoint_rejects_missing_quota_header() -> None:
     upstream = _response(remaining=321)
     del upstream.headers["x-ratelimit-remaining"]
     assert _scrape(upstream).status_code == 502
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

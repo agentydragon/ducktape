@@ -50,7 +50,6 @@ py_test(
         "//gmail_archiver:gmail_api_models",
         "//gmail_archiver:gmail_client",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//typer",
     ],
 )

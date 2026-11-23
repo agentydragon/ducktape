@@ -21,7 +21,6 @@ py_test(
     deps = [
         ":session_logs_lib",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

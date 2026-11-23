@@ -85,7 +85,6 @@ py_test(
         "@pypi//agent_framework_core",
         "@pypi//agent_framework_openai",  # keep: core's stub __init__ chains into it; mypy needs it present
         "@pypi//pytest_asyncio",  # keep: pytest plugin (auto async mode), not a direct import
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -96,6 +95,5 @@ py_test(
         ":bootstrap",
         "//:conftest",
         "@pypi//pygit2",
-        "@pypi//pytest_bazel",
     ],
 )

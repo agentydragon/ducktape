@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pytest_bazel
 from cdk8s import Chart
 
 from cluster.cdk8s import stateful_infra
@@ -41,7 +40,3 @@ def test_seaweedfs_components_carry_the_protected_priority_class(scratch_chart: 
     assert components, "found no pod-spawning components in the SeaweedFS CR"
     for path, component in components.items():
         assert component.get("priorityClassName") == stateful_infra.NAME, path
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

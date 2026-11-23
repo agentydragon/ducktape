@@ -43,9 +43,3 @@ def test_quick_reference_rendered(argv: list[str]) -> None:
     # The two columns stay apart when the fenced block renders verbatim.
     line = next(ln for ln in output.splitlines() if "ws templates" in ln)
     assert "ws templates                   LLM lanes" in line
-
-
-if __name__ == "__main__":
-    import pytest_bazel
-
-    pytest_bazel.main()

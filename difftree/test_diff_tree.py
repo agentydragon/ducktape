@@ -4,7 +4,6 @@ import re
 from dataclasses import replace
 
 import pytest
-import pytest_bazel
 
 from difftree.config import DEFAULT_CONFIG, Column, RenderConfig
 from difftree.conftest import make_diff_tree, render_to_string
@@ -252,7 +251,3 @@ def test_deletion_bar_alignment():
 
     # All positions should be the same (deletion bars are left-aligned, start at same column)
     assert len(set(positions)) == 1, f"Deletion bars not aligned: positions={positions}, lines={file_lines}"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

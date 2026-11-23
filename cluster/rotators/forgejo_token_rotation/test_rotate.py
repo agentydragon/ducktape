@@ -8,7 +8,6 @@ from typing import Any
 
 import httpx
 import pytest
-import pytest_bazel
 import yaml
 
 from cluster.rotators.forgejo_token_rotation import rotate
@@ -176,7 +175,3 @@ def test_only_published_rotations_prune_even_when_another_rotation_fails(
         with pytest.raises(SystemExit, match="rotations failed: broken"):
             rotate.main(config, pat)
     assert events == (["push", "prune"] if pushed else ["push"])
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

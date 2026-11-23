@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest_bazel
 from fastapi.testclient import TestClient
 
 from props.registry_proxy.app import create_app
@@ -28,7 +27,3 @@ def test_v2_requires_auth() -> None:
         resp = client.get("/v2/")
         assert resp.status_code == 401
         assert resp.headers["www-authenticate"] == 'Basic realm="props"'
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

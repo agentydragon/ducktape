@@ -12,7 +12,6 @@ from unittest.mock import Mock, PropertyMock
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
-import pytest_bazel
 from google.protobuf.json_format import ParseDict
 from playwright.async_api import CDPSession, Page, Request, Route, TimeoutError as PlaywrightTimeoutError, expect
 
@@ -550,7 +549,3 @@ async def test_a_long_offline_gap_resumes_the_same_shape_without_losing_the_draf
     finally:
         await page.context.set_offline(False)
         await document.dispose()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -3,7 +3,6 @@
 import subprocess
 from pathlib import Path
 
-import pytest_bazel
 from python.runfiles import Runfiles
 from sqlalchemy import create_engine, text
 
@@ -80,7 +79,3 @@ def test_concurrent_runners_serialize(postgres_admin_url: str, database_names: D
                 assert conn.scalar(text(f"SELECT count(*) FROM {_VERSION} WHERE version_id=14 AND is_applied")) == 1
         finally:
             engine.dispose()
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

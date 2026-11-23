@@ -8,7 +8,6 @@ from urllib.parse import parse_qsl, urlsplit
 
 import httpx
 import pytest
-import pytest_bazel
 from authlib.oauth2.rfc7636 import create_s256_code_challenge
 from pydantic import ValidationError
 
@@ -262,7 +261,3 @@ async def test_refresh_keeps_the_refresh_token_when_the_server_does_not_rotate_i
     token_endpoint = FakeTokenEndpoint({"access_token": "test-access-2", "expires_in": 28800})
     await OAuthTokenSource(store, token_endpoint.client).access_token()
     assert store.load().refresh_token.get_secret_value() == "test-refresh-1"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

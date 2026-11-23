@@ -49,7 +49,6 @@ py_test(
         "//finance/budget:schema",
         "@pypi//beancount",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 

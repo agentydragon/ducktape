@@ -14,6 +14,5 @@ py_test(
         ":forgejo_retention_report",
         "//testing:git_repo",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

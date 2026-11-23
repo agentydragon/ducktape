@@ -1,7 +1,6 @@
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from cluster.cdk8s.fleet_rules import (
     cilium_rules_enforce_something,
@@ -351,7 +350,3 @@ def test_an_sni_pin_may_not_share_an_endpoint_with_open_https_egress() -> None:
         },
     }
     assert len(https_egress_sni_conflicts([open_egress, clusterwide])) == 1
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

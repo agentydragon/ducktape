@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 
 import pytest
-import pytest_bazel
 from python.runfiles import Runfiles
 
 from agentplane.native.claude.testing.async_run import ClaudeRun
@@ -38,7 +37,3 @@ async def test_initialize_requires_its_control_reply(runfiles: Runfiles, tmp_pat
         assert result["origin"] == {"kind": "task-notification"}
         assert (await observed.next())["is_error"] is True
         assert (await observed.next())["response"]["request_id"] == "another-request"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

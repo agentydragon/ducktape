@@ -68,7 +68,6 @@ py_test(
         "//devinfra/x/github_proxy/central/testing:certificates",
         "//testing:container_logs",
         "@pypi//aiohttp",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -162,7 +161,6 @@ py_test(
         "//:conftest",
         "@pypi//mitmproxy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -174,7 +172,6 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -187,7 +184,6 @@ py_test(
         "@pypi//aiohttp",
         "@pypi//mitmproxy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -205,7 +201,6 @@ py_test(
         "@pypi//mitmproxy",
         "@pypi//prometheus_client",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -233,7 +228,6 @@ py_test(
         ":destinations",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -245,7 +239,6 @@ py_test(
         "//:conftest",
         "@pypi//mitmproxy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -258,6 +251,5 @@ py_test(
         "@pypi//aiohttp",
         "@pypi//mitmproxy",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

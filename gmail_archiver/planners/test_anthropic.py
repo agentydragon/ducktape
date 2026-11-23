@@ -3,7 +3,6 @@
 from datetime import datetime
 
 import pytest
-import pytest_bazel
 
 from gmail_archiver.planners.anthropic import parse_charge_date
 
@@ -42,7 +41,3 @@ def test_parse_charge_date(make_email, text: str, charge_date: datetime | None) 
     msg = make_email(sender="invoice+statements@mail.anthropic.com", body=text)
 
     assert parse_charge_date(msg) == charge_date
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

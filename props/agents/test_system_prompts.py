@@ -9,8 +9,6 @@ Renders each agent type's system prompt and writes the result to TEST_UNDECLARED
 
 from __future__ import annotations
 
-import pytest_bazel
-
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from props.agents.runtime import render_system_prompt
 from props.core.agent_types import CriticDevImproveTypeConfig, CriticDevOptimizeTypeConfig, TargetMetric
@@ -74,7 +72,3 @@ def test_critic_dev_improve_prompt():
         },
     )
     _write_output("critic_dev_improve.md", rendered)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

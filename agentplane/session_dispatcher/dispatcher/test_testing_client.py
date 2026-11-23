@@ -6,7 +6,6 @@ from typing import override
 
 import grpc
 import pytest
-import pytest_bazel
 
 from agentplane.grpc.calls import ServiceError
 from agentplane.grpc.serving import serving
@@ -171,7 +170,3 @@ async def test_native_client_verifies_tls_through_a_port_forward(tmp_path: Path)
         assert session.session_id == "test-session"
     finally:
         await server.stop(grace=0)
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

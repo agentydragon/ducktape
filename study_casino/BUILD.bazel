@@ -254,7 +254,6 @@ py_test(
         ":conftest",
         "//:conftest",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -268,7 +267,6 @@ py_test(
         "//:conftest",
         "@pypi//pydantic",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -280,7 +278,6 @@ py_test(
         ":credit_award",
         ":models",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -292,7 +289,6 @@ py_test(
         ":events",
         ":games",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -304,7 +300,6 @@ py_test(
         ":games",
         ":rng",
         "//:conftest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -321,7 +316,6 @@ py_test(
         "//:conftest",
         "//util:alembic_upgrade",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -345,7 +339,6 @@ py_test(
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
 )
@@ -369,7 +362,6 @@ py_test(
         "//util:playwright",
         "@pypi//playwright",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -398,7 +390,6 @@ py_test(
         "//util:playwright",
         "@pypi//playwright",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -454,7 +445,6 @@ py_test(
         "@pypi//httpx",
         "@pypi//itsdangerous",
         "@pypi//pytest",
-        "@pypi//pytest_bazel",
         "@pypi//starlette",
     ],
 )

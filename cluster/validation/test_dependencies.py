@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-import pytest_bazel
 
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.dependencies import check_source_references, validate_dependencies
@@ -91,7 +90,3 @@ def test_external_artifact_requires_a_declared_output_in_the_target_namespace() 
     (error,) = check_source_references(cluster)
     assert "sourceRef ExternalArtifact 'ducktape'" in error
     assert "no ArtifactGenerator declares that artifact there" in error
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import pytest_bazel
-
 from cluster.validation.cluster import ParsedCluster, parse_cluster
 from cluster.validation.flux import FluxKustomizationSpec
 from cluster.validation.k8s import K8sMetadata, K8sResource
@@ -55,7 +53,3 @@ def test_authorization_inventory_can_retain_suspended_owners_without_parked_work
     assert set(cluster.flux_kust_resources()) == {"running"}
     retained = cluster.flux_kust_resources(include_suspended=True)
     assert {resource.namespace for resources in retained.values() for resource in resources} == {"running", "held"}
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

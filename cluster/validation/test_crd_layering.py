@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest_bazel
-
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.dependencies import validate_operator_dependencies
 from cluster.validation.flux import DependsOn, FluxKustomizationSpec
@@ -70,7 +68,3 @@ def test_custom_kind_without_provider_fails() -> None:
     assert "test-app" in errors[0]
     assert "TestInstance" in errors[0]
     assert "test.example/v1" in errors[0]
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

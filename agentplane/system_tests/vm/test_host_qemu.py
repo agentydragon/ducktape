@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import pytest_bazel
 
 from agentplane.system_tests.vm import host_qemu
 from agentplane.system_tests.vm.shutdown_diagnostic import SHUTDOWN_COMPLETE, SHUTDOWN_REQUESTED
@@ -837,7 +836,3 @@ def test_pod_snapshot_rejects_replaced_launcher_uid_without_leaking_status() -> 
     )
 
     assert output.getvalue() == "POD_STATUS_UID_OR_SHAPE_MISMATCH\n"
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

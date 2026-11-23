@@ -16,7 +16,6 @@ from zoneinfo import ZoneInfo
 import asyncpg
 import pytest
 import pytest_asyncio
-import pytest_bazel
 from sqlalchemy.exc import SQLAlchemyError
 
 from finance.plaid.spend import service
@@ -1203,7 +1202,3 @@ async def test_event_stream_sends_initial_view_and_notification_update(
             updated = json.loads((await asyncio.wait_for(anext(stream), timeout=10)).partition("data: ")[2])
             assert updated["cards"][0]["spend_minor_units"] == 2_500
     assert not service._subscribers
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()

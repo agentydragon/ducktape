@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import httpx
-import pytest_bazel
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 from testcontainers.core.container import DockerContainer
 
@@ -75,7 +74,3 @@ def test_static_image_serves_assets_without_revalidation() -> None:
         assert rendered.exit_code == 0, rendered.output
         nginx_config = rendered.output.decode()
         assert "proxy_pass" not in nginx_config
-
-
-if __name__ == "__main__":
-    pytest_bazel.main()
