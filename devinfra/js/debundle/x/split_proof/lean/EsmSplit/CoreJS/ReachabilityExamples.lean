@@ -50,6 +50,23 @@ theorem hidden_capture_not_away : ¬ Away 1 (fun _ => False) (Reachable (objectS
   intro h
   exact h.region _ closure_cell_reachable rfl
 
+private def hoistedProgram (free : List Name) : Program := Program.single [
+  .decl .var "pivot" .undef, .opaque 17 [] [("callback", 0, true)] free .world]
+
+private def outsidePivot (node : HeapNode) : Bool := node.addr.region != 1
+
+private def linkedHoistCheck (W : World) (free : List Name) : Option Bool :=
+  let p := hoistedProgram free
+  match link p (initialState W p.regions) with
+  | .ok _ s => some (accessOk s [] outsidePivot)
+  | _ => none
+
+/-- The actual linker creates a constructible opaque callback in its own region,
+including its prototype cycle. Adding a capture of the pivot binding breaks separation. -/
+theorem hoisted_capture_check (W : World) :
+    linkedHoistCheck W [] = some true ∧ linkedHoistCheck W ["pivot"] = some false := by
+  constructor <;> cbv <;> rfl
+
 private def bindingState (value : Option Val) (mutable : Bool) : State readOnceWorld where
   heap := #[#[], #[]]
   cells := #[#[{ value, mutable }], #[]]

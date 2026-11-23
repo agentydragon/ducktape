@@ -481,6 +481,8 @@ lean_axiom_test(
         "CoreJS.decl_opaque_world_commute",
         "CoreJS.Access.reachable",
         "CoreJS.access_reachable",
+        "CoreJS.accessOk_iff",
+        "CoreJS.ReachabilityExamples.hoisted_capture_check",
         "CoreJS.Access.put",
         "CoreJS.Access.assign",
         "CoreJS.frames_newObject",
