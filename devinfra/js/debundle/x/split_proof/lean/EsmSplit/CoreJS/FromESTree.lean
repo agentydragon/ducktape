@@ -275,6 +275,14 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
         throw "linked != requires two string operands (string literals or typeof expressions)"
       return .binary .ne left right
     | _ => throw s!"unsupported linked binary operator {op}"
+  | "LogicalExpression" =>
+    let op : LogOp ← match ← field j "operator" with
+      | "&&" => pure .and
+      | "||" => pure .or
+      | "??" => pure .nullish
+      | other => throw s!"unsupported linked logical operator {other}"
+    let lower := linkedExpr imports inFunction ""
+    return .logical op (← lower (← j.getObjVal? "left")) (← lower (← j.getObjVal? "right"))
   | "ConditionalExpression" =>
     let lower := linkedExpr imports inFunction ""
     return .cond (← lower (← j.getObjVal? "test")) (← lower (← j.getObjVal? "consequent"))
