@@ -90,10 +90,22 @@ private def wideJsonFixture : Json :=
       ("computed", .bool false), ("method", .bool false), ("shorthand", .bool false),
       ("value", value), ("kind", .str "init")])])]
 
+private def commonJsonFields := #[jsonFixture, .null, .bool false, .str "shared", .num ⟨-3, 1⟩]
+
+private def sourceJsonFixture : Json := .arr (commonJsonFields ++ #[
+  Json.mkObj [("z", .bool true), ("a", .null)], .num ⟨1, 1⟩, .null, .null, .null])
+
+private def outputJsonFixture : Json := .arr (commonJsonFields ++ #[
+  Json.mkObj [("a", .null), ("z", .bool true)], .num ⟨10, 2⟩, .null, .null, .null])
+
 open Lean Elab Command in
 elab "#quoteJsonFixture" name:ident : command => do
-  let fixture := if name.getId == `quotedWideJsonFixture then wideJsonFixture else jsonFixture
-  for text in LinkedBehavior.jsonDefinitions name.getId.toString fixture do
+  let roots := match name.getId with
+    | `quotedWideJsonFixture => [("quotedWideJsonFixture", wideJsonFixture)]
+    | `quotedSourceJsonFixture => [("quotedSourceJsonFixture", sourceJsonFixture),
+        ("quotedOutputJsonFixture", outputJsonFixture)]
+    | _ => [(name.getId.toString, jsonFixture)]
+  for text in LinkedBehavior.jsonDefinitions roots do
     let .ok stx := Parser.runParserCategory (← getEnv) `command text
       | throwError "could not parse the quoted JSON definition"
     elabCommand stx
@@ -101,6 +113,14 @@ elab "#quoteJsonFixture" name:ident : command => do
 #quoteJsonFixture quotedJsonFixture
 
 theorem jsonLiteralRoundTrip : quotedJsonFixture = jsonFixture := rfl
+
+-- The roots share a chunk. The other chunks preserve distinct raw object trees
+-- and mantissa/exponent pairs even when their printed JSON agrees.
+#guard sourceJsonFixture.compress == outputJsonFixture.compress
+#quoteJsonFixture quotedSourceJsonFixture
+
+theorem sharedJsonLiteralRoundTrip : quotedSourceJsonFixture = sourceJsonFixture ∧
+    quotedOutputJsonFixture = outputJsonFixture := ⟨rfl, rfl⟩
 
 -- The recursion budget here applies only to elaborating the generated syntax.
 set_option maxRecDepth 512 in

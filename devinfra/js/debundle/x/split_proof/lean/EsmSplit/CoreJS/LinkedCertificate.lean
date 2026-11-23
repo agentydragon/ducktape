@@ -678,13 +678,17 @@ deriving instance Lean.ToExpr for EsmSplit.Plan
 private structure JsonDefs where
   definitions : Array String := #[]
   objectBuilders : Std.HashMap String String := {}
+  arrayFragments : Std.HashMap String String := {}
 
 private abbrev JsonQuote := StateM JsonDefs
 
 private def arrayFragment (stem term : String) : JsonQuote String := do
+  if let some name := (← get).arrayFragments[term]? then return name
   let name := s!"{stem}_array_{(← get).definitions.size}"
   let definition := s!"private def {name} : Array Lean.Json := {term}\n"
-  modify fun s => { s with definitions := s.definitions.push definition }
+  modify fun s =>
+    let fragments := s.arrayFragments.insert term name
+    { s with definitions := s.definitions.push definition, arrayFragments := fragments }
   return name
 
 private abbrev JsonTree := Std.DTreeMap.Internal.Impl String (fun _ => Lean.Json)
@@ -704,7 +708,9 @@ private def objectBuilder (stem body : String) (arity : Nat) : JsonQuote String 
   let name := s!"{stem}_object_{(← get).objectBuilders.size}"
   let params := String.intercalate " " ((List.range arity).map fun i => s!"v{i}")
   let definition := s!"private def {name} ({params} : Lean.Json) : Lean.Json := .obj ⟨⟨{body}⟩⟩\n"
-  modify fun s => { definitions := s.definitions.push definition, objectBuilders := s.objectBuilders.insert body name }
+  modify fun s =>
+    let builders := s.objectBuilders.insert body name
+    { s with definitions := s.definitions.push definition, objectBuilders := builders }
   return name
 
 mutual
@@ -728,7 +734,8 @@ private partial def jsonLiteral (stem : String) : Lean.Json → JsonQuote String
     return "(" ++ String.intercalate " " (name :: values) ++ ")"
 
 /-- Elaborate wide arrays as separate, bounded-size definitions. Join chunks in a
-balanced tree to keep the depth of the definition dependencies logarithmic. -/
+balanced tree to keep the depth of the definition dependencies logarithmic. Reuse
+identical generated terms, so both leaf chunks and complete branches can be shared. -/
 private partial def arrayLiteral (stem : String) (a : Array Lean.Json) (start stop : Nat) :
     JsonQuote String := do
   let chunkSize := 8
@@ -745,11 +752,15 @@ private partial def arrayLiteral (stem : String) (a : Array Lean.Json) (start st
     arrayFragment stem s!"Array.append {left} {right}"
 end
 
-/-- Quote the exact Lean JSON value, including the raw object tree and each number's
-mantissa and decimal exponent. No parsing or field reinsertion is needed in the certificate. -/
-def jsonDefinitions (name : String) (json : Lean.Json) : Array String :=
-  let (value, state) := (jsonLiteral name json).run {}
-  state.definitions.push s!"private def {name} : Lean.Json := {value}\n"
+/-- Quote exact Lean JSON values, including raw object trees and each number's
+mantissa and decimal exponent. Named roots share object layouts and identical
+array fragments. No parsing or field reinsertion is needed in the certificate. -/
+def jsonDefinitions (roots : List (String × Lean.Json)) : Array String :=
+  let quote : JsonQuote Unit := do
+    for (name, json) in roots do
+      let value ← jsonLiteral name json
+      modify fun s => { s with definitions := s.definitions.push s!"private def {name} : Lean.Json := {value}\n" }
+  (quote.run {}).2.definitions
 
 /-- The equation compiler puts a negative premise on the general unary case because
 `typeof` of a variable has its own lookup rule. The proof-producing `cbv` evaluator
@@ -1041,8 +1052,7 @@ def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) 
     pure ("attribute [cbv_eval] CoreJS.lookup_literalProperties\n" ++ String.join definitions)
   let writeTerms ← writes.batches.zipIdx.toList.mapM fun (batch, index) => writeBatchDefinitions index batch
   let p ← term (Lean.toExpr plan)
-  let asts := jsonDefinitions "sourceAST" sourceAST ++ jsonDefinitions "providers" providers ++
-    jsonDefinitions "files" files
+  let asts := jsonDefinitions [("sourceAST", sourceAST), ("providers", providers), ("files", files)]
   let writeImports := if writeTerms.isEmpty then "" else "import EsmSplit.Fast\n"
   let profileTerm := fun (p : HostProfile) => match p with
     | .empty => "CoreJS.HostProfile.empty"
