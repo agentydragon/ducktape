@@ -4630,6 +4630,17 @@ spec:
               version: v1
         podTemplate:
           spec:
+            containers:
+              - name: linstor-satellite
+                resources:
+                  requests:
+                    cpu: 75m
+                    memory: 640Mi
+              - name: drbd-reactor
+                resources:
+                  requests:
+                    cpu: 30m
+                    memory: 64Mi
             dnsPolicy: ClusterFirstWithHostNet
             hostNetwork: true
             initContainers:

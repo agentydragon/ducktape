@@ -133,6 +133,19 @@ def _storage_pool(name: str, data_device: str) -> dict[str, Any]:
     }
 
 
+def _sized_satellite_template(template: dict[str, Any], *, cpu: str, memory: str) -> dict[str, Any]:
+    return {
+        **template,
+        "spec": {
+            **template["spec"],
+            "containers": [
+                {"name": "linstor-satellite", "resources": {"requests": {"cpu": cpu, "memory": memory}}},
+                {"name": "drbd-reactor", "resources": {"requests": {"cpu": "30m", "memory": "64Mi"}}},
+            ],
+        },
+    }
+
+
 def _satellite_configuration(
     name: str,
     node_selector: dict[str, str],
@@ -540,7 +553,7 @@ def cluster_chart(app: App) -> Chart:
                 _satellite_configuration(
                     "wyrm2",
                     _WYRM2_SELECTOR,
-                    _NIXOS_SATELLITE_POD_TEMPLATE,
+                    _sized_satellite_template(_NIXOS_SATELLITE_POD_TEMPLATE, cpu="75m", memory="640Mi"),
                     [_storage_pool("ssd", _WYRM2_SSD_DATA_DEVICE), _storage_pool("hdd", _WYRM2_HDD_DATA_DEVICE)],
                     properties=_HDD_PROPERTIES,
                 ),
