@@ -12,6 +12,7 @@ from aiquota.render.view_model import AllQuotasView, to_view
 FIXTURE_NAMES = (
     "empty",
     "multiple_accounts",
+    "multi_account_live_shape",
     "banked_resets_ordinary",
     "banked_resets_exhausted",
     "banked_resets_pending",

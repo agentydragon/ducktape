@@ -50,7 +50,13 @@ async def view(
     ]
     + [
         pytest.param(scene, "dark", _NARROW_VIEWPORT, id=f"{scene}-dark-narrow")
-        for scene in ("hot", "paid_credits", "observed_account_2026_11_04", "banked_resets_ordinary")
+        for scene in (
+            "hot",
+            "paid_credits",
+            "observed_account_2026_11_04",
+            "banked_resets_ordinary",
+            "multi_account_live_shape",
+        )
     ],
 )
 async def test_dashboard(view: VisualPage) -> None:
