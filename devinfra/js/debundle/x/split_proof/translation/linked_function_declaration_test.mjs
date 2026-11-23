@@ -30,11 +30,11 @@ function split(name, source, modules, order, provider = "") {
 }
 
 // A call before the function declaration evaluates against the hoisted module
-// cell. A self-reference denotes that same public function object.
+// cell. A default parameter can read that same public function object.
 {
   const source = `
     const first = identify();
-    function identify() { return identify; }
+    function identify(value = identify) { return value; }
     export { first, identify };
   `;
   const order = ["call.mjs", "declaration.mjs"];
@@ -135,12 +135,6 @@ for (const [seed, value] of ["initialized", 42].entries()) {
 for (const [name, source, count, reason] of [
   ["async", "async function read() { return 3; } export { read };", 2, /unsupported async or generator function/],
   ["generator", "function* read() { return 3; } export { read };", 2, /unsupported async or generator function/],
-  [
-    "default-param",
-    "function read(x = 3) { return x; } export { read };",
-    2,
-    /unsupported function parameter AssignmentPattern/,
-  ],
   [
     "nested",
     "function read() { function nested() { return 3; } return nested(); } export { read };",

@@ -141,6 +141,14 @@ private partial def funcEq : MatchEq Func
     let ⟨p⟩ ← scalarEq params params'
     let ⟨b⟩ ← listEq stmtEq body body'
     return ⟨n ▸ k ▸ s ▸ p ▸ b ▸ rfl⟩
+  | .withDefaults name kind self params arity body, .withDefaults name' kind' self' params' arity' body' => do
+    let ⟨n⟩ ← scalarEq name name'
+    let ⟨k⟩ ← scalarEq kind kind'
+    let ⟨s⟩ ← scalarEq self self'
+    let ⟨p⟩ ← scalarEq params params'
+    let ⟨a⟩ ← scalarEq arity arity'
+    let ⟨b⟩ ← listEq stmtEq body body'
+    return ⟨n ▸ k ▸ s ▸ p ▸ a ▸ b ▸ rfl⟩
   | _, _ => none
 
 private partial def classMemberEq : MatchEq ClassMember
@@ -714,9 +722,12 @@ checked lookup avoids expanding the nested interpreter calls in the non-null her
 
 /-- Prove both obligations by evaluating the real module graphs with an arbitrary host world.
 `cbv` produces kernel-checkable equations for definitions with well-founded recursion. -/
-macro "verify_linked_programs " fuel:num : tactic => `(tactic|
-  constructor <;> (first | apply of_evaluation $fuel | apply of_browser_evaluation $fuel | apply sameExports_of_match) <;>
-    intro w <;> first | rfl | cbv <;> rfl)
+macro "verify_linked_programs " fuel:num useCbv:(" cbv_first")? : tactic => do
+  let reduce ← if useCbv.isSome then `(tactic| first | cbv <;> rfl | rfl)
+    else `(tactic| first | rfl | cbv <;> rfl)
+  `(tactic|
+    constructor <;> (first | apply of_evaluation $fuel | apply of_browser_evaluation $fuel | apply sameExports_of_match) <;>
+      intro w <;> $reduce)
 
 -- Check the actual theorem, whose reduction lemmas depend on the input program.
 open Lean Elab Command in
@@ -794,6 +805,10 @@ def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) 
   let observes := fun (e : Lean.Expr) => (e.find? fun t => t.isConstOf ``Prim.globalTypeof).isSome
   let premises := if observes sourceTerm || observes candidateTerm then profile else .empty
   let fuel ← witnessFuel premises source candidate
+  -- An initial reflexivity attempt can expand the parameter prelude before the
+  -- reflection tactic uses the evaluator's equations.
+  let hasDefaults := fun (e : Lean.Expr) => (e.find? fun t => t.isConstOf ``Func.withDefaults).isSome
+  let strategy := if hasDefaults sourceTerm || hasDefaults candidateTerm then " cbv_first" else ""
   let writes := collectWriteBatches (collectWriteBatches {} sourceTerm) candidateTerm
   let replace := fun e =>
     if e.isAppOfArity ``Prod.mk 4 then records.replacements[e]?
@@ -823,7 +838,7 @@ def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) 
     "private def profile := " ++ profileTerm profile ++ "\n" ++
     "private def premises := " ++ profileTerm premises ++ "\n" ++
     "private theorem executions : LinkedBehavior.EquivalentFor premises source candidate ∧ LinkedBehavior.SameExports source candidate := by\n" ++
-    s!"  verify_linked_programs {fuel}\n" ++
+    s!"  verify_linked_programs {fuel}{strategy}\n" ++
     "private def verified : Except String (PLift (LinkedBehavior.ASTEquivalent profile premises sourceAST providers files plan)) :=\n" ++
     "  LinkedBehavior.certifyASTs profile premises sourceAST providers files plan source candidate executions\n" ++
     "#audit_linked_programs verified\n" ++

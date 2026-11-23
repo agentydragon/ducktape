@@ -492,19 +492,31 @@ private partial def linkedFunction (profile : HostProfile) (imports : List Name)
     (j : Json) : Except String Func := do
   if (← j.getObjValAs? Bool "async") || (← j.getObjValAs? Bool "generator") then
     throw "unsupported async or generator function"
-  let mut params : Array Name := #[]
+  let parameters ← j.getObjValAs? (Array Json) "params"
+  let tags ← parameters.mapM fun param => field param "type"
+  let hasDefaults := tags.contains "AssignmentPattern"
+  let mut params : Array (Name × Option Expr) := #[]
   let mut bound : Array Name := #[]
   let mut bindings : Array Stmt := #[]
-  for (param, i) in (← j.getObjValAs? (Array Json) "params").zipIdx do
-    match ← field param "type" with
+  for ((param, tag), i) in (parameters.zip tags).zipIdx do
+    match tag with
     | "Identifier" =>
       let x ← localBinding param
-      params := params.push x
+      params := params.push (x, none)
+      bound := bound.push x
+    | "AssignmentPattern" =>
+      let target ← param.getObjVal? "left"
+      unless (← field target "type") == "Identifier" do
+        throw "expected an identifier in a default parameter"
+      let x ← localBinding target
+      let value ← linkedExpr profile imports true x (← param.getObjVal? "right")
+      params := params.push (x, some value)
       bound := bound.push x
     | "ObjectPattern" =>
+      if hasDefaults then throw "unsupported object pattern alongside default parameters"
       let fields ← linkedObjectPattern param
       let arg := s!":parameter:{i}"
-      params := params.push arg
+      params := params.push (arg, none)
       for (key, x) in fields do
         bound := bound.push x
         bindings := bindings.push (.decl .var x (.get (.var arg) (.str key)))
@@ -516,9 +528,25 @@ private partial def linkedFunction (profile : HostProfile) (imports : List Name)
   else if kind == .arrow then
     pure [.ret (← linkedExpr profile imports true "" body)]
   else throw "expected a function body block"
+  if hasDefaults then
+    let bodyVars := varNamesOf stmts
+    let defaultReads := params.toList.flatMap fun p => p.2.toList.flatMap Expr.free
+    -- The evaluator hoists body vars at entry. Only admit that hoisting when
+    -- it cannot shadow a reference in a default or merge a body's var with the parameter cell.
+    if bodyVars.any (fun x => bound.contains x || defaultReads.contains x) then
+      throw "body var overlaps named default parameters or their references"
+    let arity := (params.toList.takeWhile fun p => p.2.isNone).length
+    let slots := params.zipIdx.toList.map fun (_, i) => s!":parameter:{i}"
+    let initializers := (params.toList.zip slots).map fun ((x, defaultValue), slot) =>
+      let raw := Expr.var slot
+      let value := match defaultValue with
+        | some e => Expr.cond (.binary .strictEq raw .undef) e raw
+        | none => raw
+      Stmt.decl .let_ x value
+    return .withDefaults name kind self slots arity (initializers ++ [.block stmts])
   -- Static keys and identifier targets have no parameter expressions. The reads
   -- run before the body, using the same mutable cells as any body var redeclarations.
-  return .mk name kind self params.toList (bindings.toList ++ stmts)
+  return .mk name kind self (params.toList.map Prod.fst) (bindings.toList ++ stmts)
 
 /-- Public, static-name class elements. Default derived constructors forward to the base
 with the original new target. Explicit derived constructors require super-call semantics. -/

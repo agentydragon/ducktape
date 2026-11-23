@@ -36,16 +36,24 @@ function fixture(name, source) {
   return { ...files, out, run: (...opts) => lower(files.sourceFile, files.specFile, out, opts).verdict };
 }
 
-for (const binding of ["ambient", "local"]) {
+for (const [binding, defaulted] of [
+  ["ambient", false],
+  ["local", false],
+  ["ambient", true],
+  ["local", true],
+]) {
   const local = binding === "local";
-  const read = arrow(local ? [id("window")] : [], {
+  const parameters = local ? [id("window")] : [];
+  const type = {
     type: "UnaryExpression",
     prefix: true,
     operator: "typeof",
     argument: id("window"),
-  });
+  };
+  if (defaulted) parameters.push({ type: "AssignmentPattern", left: id("value"), right: type });
+  const read = arrow(parameters, defaulted ? id("value") : type);
   const test = fixture(
-    binding,
+    defaulted ? `${binding}-default` : binding,
     program([
       variable("const", "read", read),
       variable("const", "result", call(id("read"), local ? [literal(42)] : [])),
