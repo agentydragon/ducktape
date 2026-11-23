@@ -8,8 +8,10 @@ an external credential owner must use a non-file credential source instead.
 """
 
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from typing import Self
 from uuid import UUID
@@ -264,6 +266,22 @@ def _prepaid_balance_from_body(body: str) -> PrepaidBalanceAvailable:
     )
 
 
+async def _fetch_usage(get_body: Callable[[str, dict[str, str]], Awaitable[str | bytes]]) -> UsageResponse:
+    try:
+        body = await get_body(USAGE_URL, _USAGE_HEADERS)
+    except httpx.HTTPStatusError as error:
+        if error.response.status_code not in (400, 404):
+            raise
+        logger.warning("Claude reset inventory option rejected; retrying ordinary usage")
+        body = await get_body(PLAIN_USAGE_URL, _OAUTH_HEADERS)
+    return UsageResponse.model_validate_json(body)
+
+
+async def _get_usage_body(client: httpx.AsyncClient, token: str, url: str, headers: dict[str, str]) -> bytes:
+    response = await client.get(url, headers={**headers, "Authorization": f"Bearer {token}"})
+    return response.raise_for_status().content
+
+
 class ClaudeProvider(Provider):
     name = "claude"
 
@@ -300,18 +318,9 @@ class ClaudeProvider(Provider):
         now = datetime.now(UTC)
         if self.management_client:
             try:
-                try:
-                    body = await self.management_client.fetch_usage(
-                        self.name, USAGE_URL, _USAGE_HEADERS, capture_key=self.name
-                    )
-                except httpx.HTTPStatusError as e:
-                    if e.response.status_code not in (400, 404):
-                        raise
-                    logger.warning("Claude reset inventory option rejected; retrying ordinary usage")
-                    body = await self.management_client.fetch_usage(
-                        self.name, PLAIN_USAGE_URL, _OAUTH_HEADERS, capture_key=self.name
-                    )
-                usage = UsageResponse.model_validate_json(body)
+                usage = await _fetch_usage(
+                    partial(self.management_client.fetch_usage, self.name, capture_key=self.name)
+                )
             except Exception as e:
                 return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "CLIProxyAPI integration"))
             prepaid_balance = await self._best_effort_prepaid_balance()
@@ -328,14 +337,7 @@ class ClaudeProvider(Provider):
                     token = await _refresh_token(path, creds, client)
                     if not token:
                         return ProviderFetch(fetched_at=now, result=FetchError(error="token refresh failed"))
-                resp = await client.get(USAGE_URL, headers={**_USAGE_HEADERS, "Authorization": f"Bearer {token}"})
-                if resp.status_code in (400, 404):
-                    logger.warning("Claude reset inventory option rejected; retrying ordinary usage")
-                    resp = await client.get(
-                        PLAIN_USAGE_URL, headers={**_OAUTH_HEADERS, "Authorization": f"Bearer {token}"}
-                    )
-            resp.raise_for_status()
-            usage = UsageResponse.model_validate_json(resp.content)
+                usage = await _fetch_usage(partial(_get_usage_body, client, token))
         except Exception as e:
             return ProviderFetch(fetched_at=now, result=FetchError.from_exception(e, "claude quota fetch"))
 
