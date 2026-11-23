@@ -11,7 +11,6 @@ Takes immutable TreeNode from tree.py and renders it to Rich console output.
 
 from io import StringIO
 
-from more_itertools import one
 from rich.console import Console, ConsoleOptions, RenderResult
 from rich.table import Table
 from rich.text import Text
@@ -140,7 +139,7 @@ class DiffTree:
             and (self.config.max_depth is None or current_depth < self.config.max_depth)
         ):
             path_parts.append(current.name)
-            current = one(current.children.values())
+            current = current.children[0]
             current_depth += 1
 
         # Add the final node's name
@@ -161,7 +160,7 @@ class DiffTree:
         nodes_in_order.append(final_node)
 
         if self._should_recurse_into_children(final_node, final_depth):
-            for child in final_node.children.values():
+            for child in final_node.children:
                 child_tree = self._build_tree_structure(child, nodes_in_order, final_depth + 1)
                 tree.add(child_tree)
 
