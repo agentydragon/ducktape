@@ -56,6 +56,10 @@ private partial def exprEq : MatchEq Expr
     let ⟨left⟩ ← exprEq a a'
     let ⟨right⟩ ← exprEq b b'
     return ⟨left ▸ right ▸ rfl⟩
+  | .hasProp k o, .hasProp k' o' => do
+    let ⟨key⟩ ← exprEq k k'
+    let ⟨base⟩ ← exprEq o o'
+    return ⟨key ▸ base ▸ rfl⟩
   | .get o k, .get o' k' => do
     let ⟨base⟩ ← exprEq o o'
     let ⟨key⟩ ← exprEq k k'
