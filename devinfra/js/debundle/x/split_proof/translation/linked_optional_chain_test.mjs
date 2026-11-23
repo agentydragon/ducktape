@@ -3,9 +3,11 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   arrow,
+  block,
   call,
   exportNamed,
   forcePreview,
+  functionExpression,
   id,
   literal,
   lower,
@@ -14,6 +16,7 @@ import {
   prepare,
   program,
   property,
+  returns,
   root,
   variable,
 } from "./linked_programs_test_support.mjs";
@@ -116,6 +119,103 @@ assertCertified(split("generated-optional-reads", generated), [
   [0, "present"],
 ]);
 
+// The receiver and method getter each run once before arguments. Changing the
+// lexical base during argument evaluation leaves the call's receiver intact.
+const receivers = split(
+  "optional-method-receivers",
+  `const run = () => {
+    let trace = "";
+    const selected = {
+      value: "selected",
+      get method() {
+        trace += "g";
+        return function (seen) { return [this.value, seen]; };
+      }
+    };
+    let receiver = selected;
+    const argument = () => {
+      const seen = trace;
+      trace += "a";
+      receiver = { value: "replacement" };
+      return seen;
+    };
+    const absent = { get parent() { trace += "n"; return null; } };
+    const holder = { get parent() { trace += "p"; return selected; } };
+    if (absent.parent?.method(argument()) !== undefined) throw "null receiver";
+    const nested = holder.parent?.method(argument());
+    receiver = selected;
+    const lexical = receiver?.method(argument());
+    receiver = undefined;
+    if (receiver?.method(argument()) !== undefined) throw "undefined receiver";
+    const missingMethod = {};
+    let caught = false;
+    try { missingMethod?.method(argument()); } catch { caught = true; }
+    return [nested, lexical, trace, caught];
+  };
+  const result = run();
+  export { result };`
+);
+assertCertified(receivers, [["selected", "npg"], ["selected", "npgag"], "npgagaa", true]);
+assert.deepEqual(
+  lower(receivers.files.sourceFile, receivers.files.specFile, receivers.out, ["--check-output"]).verdict,
+  receivers.verdict
+);
+
+const optionalMethod = (object, method, args) => ({
+  type: "ChainExpression",
+  expression: {
+    type: "CallExpression",
+    callee: optionalMember(object, id(method), false).expression,
+    arguments: args,
+    optional: false,
+  },
+});
+const method = {
+  ...property(
+    "method",
+    functionExpression(
+      [],
+      block([
+        returns({
+          type: "MemberExpression",
+          object: { type: "ThisExpression" },
+          property: id("value"),
+          computed: false,
+          optional: false,
+        }),
+      ])
+    )
+  ),
+  method: true,
+};
+const generatedCalls = program([
+  variable("const", "invoke", arrow([id("receiver")], optionalMethod(id("receiver"), "method", []))),
+  variable("const", "result", {
+    type: "ArrayExpression",
+    elements: [
+      literal(null),
+      id("undefined"),
+      { type: "ObjectExpression", properties: [method, property("value", literal(7))] },
+      { type: "ObjectExpression", properties: [method, property("value", literal(false))] },
+    ].map((base) => call(id("invoke"), [base])),
+  }),
+  exportNamed([["result", "result"]]),
+]);
+assertCertified(split("generated-optional-method-calls", generatedCalls), [null, null, 7, false]);
+
+const uninitialized = split(
+  "optional-method-tdz",
+  `const run = () => {
+    const result = receiver?.method();
+    const receiver = { method() { return 7; } };
+    return result;
+  };
+  const result = run();
+  export { result };`
+);
+assertRejected(uninitialized, /original threw during linked initialization/);
+assert.deepEqual(observe(uninitialized.files.sourceFile, "result"), { error: "ReferenceError" });
+
 const reordered = `function read() { return current?.value ?? "missing"; }
   var current;
   current = { value: "ready" };
@@ -134,7 +234,9 @@ assert.deepEqual(observe(path.join(preview, entry), "result"), { result: "missin
 
 for (const [name, body, reason, expected] of [
   ["parenthesized-method", "(target?.method)()", /unsupported optional chain as a call target/, 42],
-  ["optional-method", "target?.method()", /unsupported optional chain/, 42],
+  ["optional-callee", "target.method?.()", /unsupported optional call/, 42],
+  ["optional-receiver-and-callee", "target?.method?.()", /unsupported optional call/, 42],
+  ["computed-optional-method", 'target?.["method"]()', /unsupported computed optional method call/, 42],
   ["continued-member", "target?.record.value", /unsupported optional chain/, 17],
   ["delete-chain", "delete target?.value", /delete/, true],
 ]) {
