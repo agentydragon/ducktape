@@ -16,6 +16,7 @@ import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.types import Lifespan
 
 from finance.plaid.spend.allowance import EstimatePeriodId, PeriodId, TransactionPeriodId
 from finance.plaid.spend.configuration import load_configuration
@@ -102,7 +103,7 @@ def _web_login_config(settings: SpendSettings) -> LoginConfig:
     )
 
 
-def create_app(settings: SpendSettings, *, service: SpendService, include_ui: bool = True) -> FastAPI:
+def create_app(settings: SpendSettings, *, service: SpendService) -> FastAPI:
     resolver = AuthentikOidcPrincipalResolver(
         expected_issuer=settings.api_oidc_issuer,
         discovered_issuer=settings.api_oidc_discovered_issuer,
@@ -116,29 +117,34 @@ def create_app(settings: SpendSettings, *, service: SpendService, include_ui: bo
         async with service.lifespan():
             yield
 
-    app = FastAPI(title="Plaid Spend", docs_url=None, redoc_url=None, lifespan=lifespan)
+    app = build_app(lifespan=lifespan)
     app.state.spend_service = service
     app.state.principal_resolver = resolver
     web_login_config = _web_login_config(settings)
     app.state.web_login_config = web_login_config
     install_login(app, web_login_config)
 
-    @app.get("/healthz")
-    async def healthz() -> JSONResponse:
-        running = service.is_running
-        return JSONResponse({"ok": running}, status_code=200 if running else status.HTTP_503_SERVICE_UNAVAILABLE)
+    @app.get("/", include_in_schema=False)
+    async def root() -> FileResponse:
+        return FileResponse(_UI_DIR / "index.html")
 
-    if include_ui:
-
-        @app.get("/", include_in_schema=False)
-        async def root() -> FileResponse:
-            return FileResponse(_UI_DIR / "index.html")
-
-        app.mount("/static", StaticFiles(directory=_UI_DIR), name="spend-ui")
+    app.mount("/static", StaticFiles(directory=_UI_DIR), name="spend-ui")
 
     @app.get("/favicon.ico", include_in_schema=False)
     async def favicon() -> Response:
         return Response(status_code=204)
+
+    return app
+
+
+def build_app(*, lifespan: Lifespan[FastAPI] | None) -> FastAPI:
+    """Register the public HTTP contract shared by the deployed app and schema export."""
+    app = FastAPI(title="Plaid Spend", docs_url=None, redoc_url=None, lifespan=lifespan)
+
+    @app.get("/healthz")
+    async def healthz(reader: SpendReader) -> JSONResponse:
+        running = reader.is_running
+        return JSONResponse({"ok": running}, status_code=200 if running else status.HTTP_503_SERVICE_UNAVAILABLE)
 
     @app.get("/api/v1/view", response_model=SpendView)
     async def get_view(
