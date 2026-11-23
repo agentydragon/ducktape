@@ -64,9 +64,13 @@ const guard = (actual, expected) => ({
 
 // Relocate a complete numeric enum initializer. Duplicate numeric values keep
 // both forward names and replace the reverse name on the second assignment.
-for (const values of [[3, 0, 3], Array.from({ length: 12 }, (_, i) => (i * 7) % 13)]) {
+for (const [scenario, values, initialFields] of [
+  ["duplicate", [3, 0, 3], {}],
+  ["fresh", Array.from({ length: 89 }, (_, i) => (i * 7) % 89), {}],
+  ["existing", Array.from({ length: 32 }, (_, i) => i), { Member3: "old", keep: "original" }],
+]) {
   const object = id("table");
-  const expected = {};
+  const expected = { ...initialFields };
   const writes = values.map((value, i) => {
     const name = `Member${i}`;
     expected[name] = value;
@@ -74,10 +78,11 @@ for (const values of [[3, 0, 3], Array.from({ length: 12 }, (_, i) => (i * 7) % 
     const forward = assignment(member(object, i % 2 ? literal(name) : id(name), Boolean(i % 2)), literal(value));
     return assignment(member(object, forward, true), literal(name));
   });
-  const initial = { type: "LogicalExpression", operator: "||", left: id("codes"), right: record() };
+  const old = record(...Object.entries(initialFields).map(([k, v]) => property(k, literal(v))));
+  const initial = { type: "LogicalExpression", operator: "||", left: id("codes"), right: old };
   const initializer = call(arrow([object], sequence(...writes, object)), [initial]);
   const source = program([variable("var", "codes", initializer), exportNamed([["codes", "Codes"]])]);
-  const { files, out, verdict, log } = split(`numeric-enum-${values.length}`, source, {
+  const { files, out, verdict, log } = split(`numeric-enum-${scenario}`, source, {
     [worker]: ["#0"],
     [entry]: ["#1"],
   });
@@ -100,6 +105,20 @@ for (const values of [[3, 0, 3], Array.from({ length: 12 }, (_, i) => (i * 7) % 
     assert.deepEqual(Reflect.ownKeys(namespace.Codes), Reflect.ownKeys(expected));
     assert.deepEqual(Object.getOwnPropertyDescriptors(namespace.Codes), Object.getOwnPropertyDescriptors(expected));
   }
+}
+
+// The receiver's non-writable length stops the first assignment before any later writes.
+{
+  const target = id("table");
+  const keys = ["length", ...Array.from({ length: 63 }, (_, i) => `field${i}`)];
+  const writes = keys.map((key, i) => assignment(member(target, literal(key), true), literal(i)));
+  const init = call(arrow([target], sequence(...writes, target)), [arrow([], literal(0))]);
+  const source = program([declare("codes", init), exportNamed([["codes", "Codes"]])]);
+  const { files, out, verdict, log } = split("readonly-batch", source, { [worker]: ["#0"], [entry]: ["#1"] });
+  assert.equal(verdict.status, "rejected", log);
+  assert.match(verdict.reason, /original threw during linked initialization/, log);
+  assert(!existsSync(out));
+  assert.deepEqual(observe(files.sourceFile, "Codes"), { error: "TypeError" });
 }
 
 // Guard the model itself against evaluating an operand out of order or twice.

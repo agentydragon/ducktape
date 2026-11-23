@@ -1,6 +1,7 @@
 import Lean.Elab.Deriving.ToExpr
 import Lean.Elab.Tactic.Cbv
 import Lean.Util.CollectAxioms
+import EsmSplit.CoreJS.BatchState
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.LinkedBehavior
 import EsmSplit.CoreJS.LiteralRecord
@@ -356,6 +357,155 @@ private def recordDefinitions (index : Nat) (fields : StringFields) (keys : Arra
       s!"  rw [CoreJS.lookup_literalProperties, {stem}Eq] <;> rfl\n"
   return definitions
 
+private inductive WriteWitness where
+  | string | number | receiver
+  | seq (left right : WriteWitness)
+  | assign (key rhs : WriteWitness) (name : String) (numberKey : Option Float)
+
+private structure WriteMatch where
+  witness : WriteWitness
+  minFuel : Nat
+  fields : List (String × Val) := []
+  /-- `none` denotes the receiver. Only literal values can be stored or used as keys. -/
+  value : Option Val := none
+
+private def quotedString : Lean.Expr → Option String
+  | .lit (.strVal value) => some value
+  | _ => none
+
+private def quotedVariable (e : Lean.Expr) : Option Name :=
+  if e.isAppOfArity ``Expr.var 1 then quotedString e.appArg! else none
+
+private def quotedNumber (e : Lean.Expr) : Option Float := do
+  unless e.isAppOfArity ``Float.ofBits 1 do none
+  let bits := e.appArg!
+  unless bits.isAppOfArity ``OfNat.ofNat 3 do none
+  let .lit (.natVal n) := bits.getAppArgs[1]! | none
+  return Float.ofBits (UInt64.ofNat n)
+
+/-- Inspect the exact constructor term that will be quoted. The generated witness
+checks the recognized operands, the fuel offsets, and every property key. -/
+private partial def matchWrites (receiver : Name) (e : Lean.Expr) : Option WriteMatch := do
+  if e.isAppOfArity ``Expr.str 1 then
+    let value ← quotedString e.appArg!
+    return { witness := .string, minFuel := 1, value := some (.str value) }
+  if e.isAppOfArity ``Expr.num 1 then
+    let value ← quotedNumber e.appArg!
+    return { witness := .number, minFuel := 1, value := some (.num value) }
+  if quotedVariable e == some receiver then
+    return { witness := .receiver, minFuel := 1 }
+  let args := e.getAppArgs
+  if e.isAppOfArity ``Expr.seq 2 then
+    let left ← matchWrites receiver args[0]!
+    let right ← matchWrites receiver args[1]!
+    return {
+      witness := .seq left.witness right.witness
+      minFuel := max left.minFuel right.minFuel + 1
+      fields := left.fields ++ right.fields
+      value := right.value }
+  unless e.isAppOfArity ``Expr.assign 2 do none
+  let target := args[0]!
+  unless target.isAppOfArity ``Target.member 2 do none
+  let targetArgs := target.getAppArgs
+  unless quotedVariable targetArgs[0]! == some receiver do none
+  let key ← matchWrites receiver targetArgs[1]!
+  let rhs ← matchWrites receiver args[1]!
+  let keyValue ← key.value
+  let value ← rhs.value
+  let .ok name := toStr keyValue | none
+  let numberKey := match keyValue with
+    | .num number => some number
+    | _ => none
+  return {
+    witness := .assign key.witness rhs.witness name numberKey
+    minFuel := max (key.minFuel + 2) (rhs.minFuel + 1)
+    fields := key.fields ++ rhs.fields ++ [(name, value)]
+    value := some value }
+
+private partial def lastOperand (e : Lean.Expr) : Lean.Expr :=
+  if e.isAppOfArity ``Expr.seq 2 then lastOperand e.appArg! else e
+
+private structure WriteBatch where
+  receiver : Name
+  left : Lean.Expr
+  right : Lean.Expr
+  matched : WriteMatch
+
+private def matchBatch (e : Lean.Expr) : Option WriteBatch := do
+  unless e.isAppOfArity ``Expr.seq 2 do none
+  let receiver ← quotedVariable (lastOperand e)
+  let matched ← matchWrites receiver e
+  -- At 64 writes, the ordinary growing-key proof already approaches 2 GiB.
+  unless matched.fields.length ≥ 64 do none
+  let mut seen : Std.HashSet String := {}
+  for (key, _) in matched.fields do
+    guard (!seen.contains key)
+    seen := seen.insert key
+  let args := e.getAppArgs
+  return { receiver, left := args[0]!, right := args[1]!, matched }
+
+private structure WriteBatches where
+  batches : Array WriteBatch := #[]
+  replacements : Std.HashMap Lean.Expr String := {}
+
+/-- Keep only maximal recognized trees and reuse exact matches across both programs. -/
+private partial def collectWriteBatches (collected : WriteBatches) (e : Lean.Expr) : WriteBatches :=
+  if collected.replacements.contains e then collected
+  else if let some batch := matchBatch e then
+    {
+      batches := collected.batches.push batch
+      replacements := collected.replacements.insert e s!"batch{collected.batches.size}Expr" }
+  else if e.isApp then e.getAppArgs.foldl collectWriteBatches collected
+  else collected
+
+private abbrev WriteQuote := StateT (Array String) (Except String)
+
+/-- Each concrete number conversion gets its own bounded reduction. The expression
+witness only refers to these kernel-checked equations. -/
+private def quoteWriteWitness (stem : String) (fuel : Nat) : WriteWitness → WriteQuote String
+  | .string => pure s!"(WriteExpr.string (n := n + {fuel - 1}))"
+  | .number => pure s!"(WriteExpr.number (n := n + {fuel - 1}))"
+  | .receiver => pure s!"(WriteExpr.receiverRead (n := n + {fuel - 1}))"
+  | .seq left right => do
+    let l ← quoteWriteWitness stem (fuel - 1) left
+    let r ← quoteWriteWitness stem (fuel - 1) right
+    return s!"(WriteExpr.seq (n := n + {fuel - 1}) {l} {r})"
+  | .assign key rhs name numberKey => do
+    let k ← quoteWriteWitness stem (fuel - 2) key
+    let r ← quoteWriteWitness stem (fuel - 1) rhs
+    let conversion ← match numberKey with
+      | none => pure "rfl"
+      | some number => do
+        let value ← liftM (term (Lean.toExpr (.num number : Val)))
+        let definitions ← get
+        let fact := s!"{stem}Key{definitions.size}"
+        set (definitions.push (s!"private theorem {fact} : toStr {value} = .ok {name.quote} := by\n" ++
+          "  cbv <;> rfl\n"))
+        pure fact
+    return s!"(WriteExpr.assign (n := n + {fuel - 3}) (name := {name.quote}) {k} {r} {conversion})"
+
+private def writeBatchDefinitions (index : Nat) (batch : WriteBatch) : Except String String := do
+  let stem := s!"batch{index}"
+  let left ← term batch.left
+  let right ← term batch.right
+  let fields ← term (Lean.toExpr batch.matched.fields)
+  let minFuel := batch.matched.minFuel
+  let receiver := batch.receiver.quote
+  let (witness, conversions) ← (quoteWriteWitness stem minFuel batch.matched.witness).run #[]
+  return String.join conversions.toList ++
+    s!"private def {stem}Left : Expr := {left}\n" ++
+    s!"private def {stem}Right : Expr := {right}\n" ++
+    s!"private def {stem}Expr : Expr := .seq {stem}Left {stem}Right\n" ++
+    s!"attribute [local cbv_opaque] {stem}Expr\n" ++
+    s!"private def {stem}Fields : List (String × Val) := {fields}\n" ++
+    s!"private theorem {stem}Writes (a : Addr) (n : Nat) :\n" ++
+    s!"    WriteExpr {receiver} a (n + {minFuel}) {stem}Expr {stem}Fields (.obj a) :=\n  {witness}\n" ++
+    s!"private theorem {stem}Eval " ++ "{W : World} (fuel : Nat) (env : Env) :\n" ++
+    s!"    (evalExpr fuel env {stem}Expr : M W Val) =\n" ++
+    s!"      evalBatch {receiver} {stem}Left {stem}Right {stem}Fields {minFuel} fuel env :=\n" ++
+    s!"  evalExpr_seq_batch {stem}Writes (by decide +kernel)\n" ++
+    s!"attribute [local cbv_eval] {stem}Eval\n"
+
 deriving instance Lean.ToExpr for EsmSplit.Module
 deriving instance Lean.ToExpr for EsmSplit.Plan
 
@@ -502,20 +652,24 @@ def certificate (sourceAST providers files : Lean.Json) (plan : EsmSplit.Plan) (
   let records ← recordQuotes source candidate
   let sourceTerm := Lean.toExpr source
   let candidateTerm := Lean.toExpr candidate
+  let writes := collectWriteBatches (collectWriteBatches {} sourceTerm) candidateTerm
   let replace := fun e =>
-    if e.isAppOfArity ``Prod.mk 4 then records.replacements[e]? else none
+    if e.isAppOfArity ``Prod.mk 4 then records.replacements[e]?
+    else if e.isAppOfArity ``Expr.seq 2 then writes.replacements[e]?
+    else none
   let s ← termWith replace sourceTerm
   let c ← termWith replace candidateTerm
   let recordTerms := if records.fields.isEmpty then "" else
     let keys := (literalReadKeys (literalReadKeys {} sourceTerm) candidateTerm).toArray.qsort (· < ·)
     "attribute [cbv_eval] CoreJS.lookup_literalProperties\n" ++
       String.join (records.fields.zipIdx.toList.map fun (fields, index) => recordDefinitions index fields keys)
+  let writeTerms ← writes.batches.zipIdx.toList.mapM fun (batch, index) => writeBatchDefinitions index batch
   let p ← term (Lean.toExpr plan)
   let asts := jsonDefinitions "sourceAST" sourceAST ++ jsonDefinitions "providers" providers ++
     jsonDefinitions "files" files
   return "import EsmSplit.CoreJS.LinkedCertificate\n\nopen CoreJS\n" ++
     "set_option maxRecDepth 16000\nset_option maxHeartbeats 2000000\nset_option cbv.warning false\n" ++
-    recordTerms ++
+    recordTerms ++ String.join writeTerms ++
     String.join asts.toList ++
     "private def plan : EsmSplit.Plan := " ++ p ++ "\n" ++
     "private def source : Program := " ++ s ++ "\n" ++
