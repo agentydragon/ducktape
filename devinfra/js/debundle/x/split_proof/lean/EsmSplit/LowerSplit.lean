@@ -409,7 +409,7 @@ private def writeCertificateData (work : System.FilePath) (terms : CertificateDa
 
 /-- Publication waits for the kernel-checked executions and the exact AST gate. -/
 private def verifyExecution (timings : Bool) (work : System.FilePath) (cert : CoreJS.LinkedBehavior.Certificate)
-    (dataArts : Lean.NameMap Lean.ImportArtifacts) : IO CoreJS.HostProfile := do
+    (dataArts : Lean.NameMap Lean.ImportArtifacts) : IO CoreJS.HostPremises := do
   let accepted ← match cert.checkpoint with
     | none => pure false
     | some checkpoint => try
@@ -426,11 +426,10 @@ private def emitVerdict (requested : String) (outcome : Except String Guarantee)
   IO.println (Json.mkObj ([("requested", toJson requested), ("scope", toJson scope)] ++ fields ++ extra)).compress
   return if outcome.isOk then 0 else 1
 
-private def profileVerdict (selected used : CoreJS.HostProfile) : List (String × Json) :=
+private def profileVerdict (selected : CoreJS.HostProfile) (used : CoreJS.HostPremises) : List (String × Json) :=
   match selected with
   | .empty => []
-  | .browserPage => [("hostProfile", toJson "browser-page"), ("assumptions", toJson (if used == .browserPage then
-      ["typeof window is object without observable effects throughout initialization"] else []))]
+  | .browserPage => [("hostProfile", toJson "browser-page"), ("assumptions", toJson used.assumptions)]
 
 private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (required : Option Guarantee) (checkOnly : Bool) (args : List String) : IO UInt32 := do
   let (replicate?, args) := Effects.takeFlag "--replicate" args
@@ -542,14 +541,14 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
         certifyOutput (Json.mkObj []) B P out work input checkOnly timings outputAsts source fun files =>
           timePhase timings "closed_declarations" fun _ => do
             IO.ofExcept (CoreJS.DeclarationArtifacts.check program files ss B P)
-        return ← emitVerdict request.label (.ok level) "closed-declarations" (profileVerdict profile .empty)
+        return ← emitVerdict request.label (.ok level) "closed-declarations" (profileVerdict profile {})
       catch e => return ← emitVerdict request.label (.error e.toString) "closed-declarations"
     let errorFields ← IO.mkRef ([] : List (String × Json))
     try
       unless layoutOk && !bad do throw (IO.userError "source placement or module linkage checks failed")
       let providers ← timePhase timings "provider_loading" fun _ => do
         loadProviders program bundlePath work
-      let used ← IO.mkRef CoreJS.HostProfile.empty
+      let used ← IO.mkRef ({} : CoreJS.HostPremises)
       certifyOutput providers B P out work input checkOnly timings outputAsts source fun files => do
         let decoded ← timePhase timings "linked_lowering" fun _ =>
           IO.lazyPure fun _ => CoreJS.LinkedInput.decodePair program providers files P profile

@@ -167,6 +167,8 @@ structure World where
   step : (fn : String) → (this : Primitive) → (args : List Primitive) → σ → HostResult × σ
   /-- An ambient `typeof` observation may fail, throw, or change host state. -/
   globalTypeof : String → σ → Option (HostResult × σ) := fun _ _ => none
+  /-- Read an ambient object as a host-owned identity and the resulting state. -/
+  globalRef : String → σ → Option (String × σ) := fun _ _ => none
   /-- **Stage two**: opaque code, a conversation. Told what to run, or how its last request ended, the world makes its
   next request. It sees the program's objects only through what it was handed, and its own state. -/
   talk : Told → σ → Request × σ
@@ -775,10 +777,16 @@ def observeGlobalTypeof (name : String) : M W Val := fun s =>
   | some (result, state) => fromWorld { s with world := { s.world with state } } result
   | none => .unknown s!"unsupported host typeof {name}" s
 
+def readGlobalRef (name : String) : M W Val := fun s =>
+  match W.globalRef name s.world.state with
+  | some (identity, state) => .ok (.host identity) { s with world := { s.world with state } }
+  | none => .unknown s!"unsupported host reference {name}" s
+
 def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
   let arg (i : Nat) : Val := args.getD i .undef
   match p with
   | .globalTypeof name => observeGlobalTypeof name
+  | .globalRef name => readGlobalRef name
   | .opaqueConstructorRef name => unknown s!"ambient constructor {name} is reached"
   | .opaqueSymbolForRef => unknown "ambient call Symbol.for is reached"
   | .log =>

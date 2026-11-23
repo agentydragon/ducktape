@@ -41,6 +41,7 @@ inductive LogOp where
 /-- Primitive operations and opaque ambient references used by the interpreter. -/
 inductive Prim where
   | globalTypeof (binding : String)
+  | globalRef (binding : String)
   | opaqueConstructorRef (binding : String)
   | opaqueSymbolForRef
   | log | defineProperty | create | getPrototypeOf | setPrototypeOf

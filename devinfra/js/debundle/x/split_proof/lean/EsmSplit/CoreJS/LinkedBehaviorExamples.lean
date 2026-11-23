@@ -163,7 +163,7 @@ private def checkClosure (body : Json) (p : Program)
   let source := closureAST body
   let files := Json.mkObj [("main.mjs", source)]
   let plan : EsmSplit.Plan := ⟨"main.mjs", [⟨"main.mjs", [0], [], []⟩]⟩
-  (LinkedBehavior.certifyASTs .empty .empty source (Json.mkObj []) files plan p p semantics).isOk
+  (LinkedBehavior.certifyASTs .empty {} source (Json.mkObj []) files plan p p semantics).isOk
 
 #guard checkClosure (stringLiteral "first") closureProgram closureExecution
 #guard !checkClosure (stringLiteral "second") closureProgram closureExecution

@@ -265,20 +265,23 @@ private def programEq : MatchEq Program
     let ⟨modules⟩ ← listEq moduleEq m m'
     return ⟨entry ▸ modules ▸ rfl⟩
 
-/-- For a selected profile, quantify over worlds satisfying its observations. -/
-def EquivalentFor (profile : HostProfile) (source candidate : Program) : Prop :=
-  match profile with
-  | .empty => Equivalent source candidate
-  | .browserPage => ∀ w, profile.Satisfied w →
+/-- Quantify over worlds satisfying the host observations used by the certificate. -/
+def EquivalentFor (premises : HostPremises) (source candidate : Program) : Prop :=
+  if premises = {} then Equivalent source candidate
+  else ∀ w, premises.Satisfied w →
       ∃ t : State w, Ends w source (.ok () t) ∧ Ends w candidate (.ok () t)
 
-theorem of_browser_evaluation {source candidate : Program} (fuel : Nat)
-    (checks : ∀ w, normal (runProgram (HostProfile.browserPage.specialize w) fuel source) = true ∧
-      runProgram (HostProfile.browserPage.specialize w) fuel source =
-        runProgram (HostProfile.browserPage.specialize w) fuel candidate) :
-    EquivalentFor .browserPage source candidate := by
+theorem of_host_evaluation {premises : HostPremises} {source candidate : Program} (fuel : Nat)
+    (checks : ∀ w, normal (runProgram (premises.specialize w) fuel source) = true ∧
+      runProgram (premises.specialize w) fuel source =
+        runProgram (premises.specialize w) fuel candidate) :
+    EquivalentFor premises source candidate := by
+  by_cases empty : premises = {}
+  · subst premises
+    exact of_evaluation fuel checks
+  simp [EquivalentFor, empty]
   intro w hw
-  have e := HostProfile.specialize_eq .browserPage w hw
+  have e := premises.specialize_eq w hw
   obtain ⟨hc, he⟩ := checks w
   rw [e] at hc he
   cases hs : runProgram w fuel source with
@@ -287,12 +290,14 @@ theorem of_browser_evaluation {source candidate : Program} (fuel : Nat)
 
 /-- The two programs are exactly the lowering of these three AST inputs under this placement.
 Their public bindings and their complete normally terminating executions agree in every world. -/
-def ASTEquivalent (profile premises : HostProfile) (source providers files : Lean.Json) (plan : EsmSplit.Plan) : Prop :=
+def ASTEquivalent (profile : HostProfile) (premises : HostPremises)
+    (source providers files : Lean.Json) (plan : EsmSplit.Plan) : Prop :=
   ∃ original candidate, LinkedInput.decodePair source providers files plan profile = .ok (original, candidate) ∧
     EquivalentFor premises original candidate ∧ SameExports original candidate
 
 /-- Decode the actual ASTs and transport the execution and export proofs to those programs. -/
-def certifyASTs (profile premises : HostProfile) (source providers files : Lean.Json) (plan : EsmSplit.Plan) (original candidate : Program)
+def certifyASTs (profile : HostProfile) (premises : HostPremises)
+    (source providers files : Lean.Json) (plan : EsmSplit.Plan) (original candidate : Program)
     (semantics : EquivalentFor premises original candidate ∧ SameExports original candidate) :
     Except String (PLift (ASTEquivalent profile premises source providers files plan)) := do
   match decoded : LinkedInput.decodePair source providers files plan profile with
@@ -364,7 +369,7 @@ private structure ProbeStateObservation where
   handed : List CoreJS.Addr
   deriving Lean.ToExpr
 
-private def observeProbeState (profile : HostProfile) (state : CoreJS.State (profile.specialize CoreJS.World.probe)) : ProbeStateObservation :=
+private def observeProbeState (profile : HostPremises) (state : CoreJS.State (profile.specialize CoreJS.World.probe)) : ProbeStateObservation :=
   { heap := state.heap.toList.map Array.toList
     cells := state.cells.toList.map Array.toList
     region := state.region
@@ -372,14 +377,14 @@ private def observeProbeState (profile : HostProfile) (state : CoreJS.State (pro
     worldState := state.world.state
     handed := state.world.handed.toList }
 
-private def probeStateLiteral (profile : HostProfile) (state : CoreJS.State (profile.specialize CoreJS.World.probe)) : String :=
+private def probeStateLiteral (profile : HostPremises) (state : CoreJS.State (profile.specialize CoreJS.World.probe)) : String :=
   match probeTerm (Lean.toExpr (observeProbeState profile state)) with
   | .ok literal => literal
   | .error _ => ""
 
 /-- Compare the complete state of two completed executions in the concrete probe.
 This is a refusal check only; matching probes still go through the all-world proof. -/
-def probeStatesEqual (profile : HostProfile) (left right : CoreJS.State (profile.specialize CoreJS.World.probe)) : Bool :=
+def probeStatesEqual (profile : HostPremises) (left right : CoreJS.State (profile.specialize CoreJS.World.probe)) : Bool :=
   probeStateLiteral profile left == probeStateLiteral profile right
 
 private abbrev StringFields := List (String × String)
@@ -835,7 +840,7 @@ macro "verify_linked_programs " fuel:num useCbv:(" cbv_first")? : tactic => do
     else `(tactic| first | exact ⟨rfl, rfl⟩ | cbv <;> constructor <;> rfl | constructor <;> $reduce)
   `(tactic|
     (constructor
-     · first | apply of_evaluation $fuel | apply of_browser_evaluation $fuel
+     · first | apply of_evaluation $fuel | apply of_host_evaluation $fuel
        intro w <;> $reduceExecution
      · apply sameExports_of_match
        intro w <;> $reduce))
@@ -881,7 +886,7 @@ macro "verify_linked_exports_from " source:ident candidate:ident : tactic =>
      first | rfl | cbv <;> rfl))
 
 /-- Reuse each checked link between execution and export matching. -/
-macro "verify_linked_programs_from " fuel:num source:ident candidate:ident : tactic => do
+macro "verify_linked_programs_from " fuel:num source:ident candidate:ident premises:ident : tactic => do
   let reduce ← `(tactic| first | cbv <;> constructor <;> rfl | exact ⟨rfl, rfl⟩)
   `(tactic|
     (constructor
@@ -890,10 +895,10 @@ macro "verify_linked_programs_from " fuel:num source:ident candidate:ident : tac
          intro w
          rw [run_after_link $fuel (($source w).get (by rfl)),
              run_after_link $fuel (($candidate w).get (by rfl))] <;> $reduce
-       | apply of_browser_evaluation $fuel
+       | apply of_host_evaluation (premises := $premises) $fuel
          intro w
-         rw [run_after_link $fuel (($source (HostProfile.browserPage.specialize w)).get (by rfl)),
-             run_after_link $fuel (($candidate (HostProfile.browserPage.specialize w)).get (by rfl))]
+         rw [run_after_link $fuel (($source (HostPremises.specialize $premises w)).get (by rfl)),
+             run_after_link $fuel (($candidate (HostPremises.specialize $premises w)).get (by rfl))]
          -- Lean 4.35 can panic when cbv simplifies the conjunction in the specialized world.
          constructor <;> (first | cbv <;> rfl | rfl)
      · verify_linked_exports_from $source $candidate))
@@ -911,7 +916,7 @@ elab "#audit_linked_programs " thm:ident : command => do
 the runs' final results cannot be the shared result required by `Equivalent`.
 The projection need not be injective: equality of states implies equality of
 their quoted projections, which is enough to make a mismatch decisive. -/
-theorem probeObservationMismatchRefutesEquivalent (profile : HostProfile) {source candidate : Program} {fuel : Nat}
+theorem probeObservationMismatchRefutesEquivalent (profile : HostPremises) {source candidate : Program} {fuel : Nat}
     {sourceState candidateState : CoreJS.State (profile.specialize CoreJS.World.probe)}
     (sourceRun : CoreJS.runProgram (profile.specialize CoreJS.World.probe) fuel source = .ok () sourceState)
     (candidateRun : CoreJS.runProgram (profile.specialize CoreJS.World.probe) fuel candidate = .ok () candidateState)
@@ -954,7 +959,7 @@ private def displayValue : Val → String
   | .error k msg => s!"{repr k}: {(msg.take 160).toString.quote}"
 
 /-- Inspect exported cells and their immediate own data properties without calling JS. -/
-private def observeExports (profile : HostProfile) (source candidate : Program)
+private def observeExports (profile : HostPremises) (source candidate : Program)
     (original split : State (profile.specialize World.probe)) : List ValuePair := Id.run do
   let world := profile.specialize World.probe
   let a := (exports world source).getD []
@@ -997,7 +1002,7 @@ private def firstExportDifference (values : List ValuePair) : Option Lean.Json :
 /-- Only fuel exhaustion can be resolved by a larger witness. A normal probe
 selects a witness for the kernel proof. If both runs finish but their complete
 states differ, the theorem above proves that no all-world certificate can hold. -/
-private def probeWitnessAt (profile : HostProfile) (source candidate : Program) (fuel : Nat) : Except Refusal (Option Nat) := do
+private def probeWitnessAt (profile : HostPremises) (source candidate : Program) (fuel : Nat) : Except Refusal (Option Nat) := do
   match sourceRun : runProgram (profile.specialize World.probe) fuel source with
   | .ok () sourceState =>
     match candidateRun : runProgram (profile.specialize World.probe) fuel candidate with
@@ -1026,7 +1031,7 @@ private def recordFuelLimit (source : Program) : Nat := Id.run do
         width := max width props.length
   return min 2048 (64 + width)
 
-private def witnessFuel (profile : HostProfile) (source candidate : Program) : Except Refusal Nat := do
+private def witnessFuel (profile : HostPremises) (source candidate : Program) : Except Refusal Nat := do
   let test := probeWitnessAt profile source candidate
   for fuel in [16, 32, 64] do
     if let some witness ← test fuel then return witness
@@ -1046,7 +1051,7 @@ structure Certificate where
   execution : String
   correspondence : String
   checkpoint : Option CheckpointText
-  premises : HostProfile
+  premises : HostPremises
 
 private def layoutDeclaration (visibility program : String) : String :=
   s!"{visibility}noncomputable def {program}Link (w : World) : Option (LinkedBehavior.CheckedLink {program} w) := by\n" ++
@@ -1079,7 +1084,7 @@ private def checkpointText (preamble options declarations correspondence : Strin
     "private theorem candidateRun (w : World) :\n" ++
     s!"    runProgram w {fuel} candidate = .ok () (sourceWitness w).val := by\n" ++
     reduceCandidate ++
-    "theorem executions : LinkedBehavior.EquivalentFor .empty source candidate ∧\n" ++
+    "theorem executions : LinkedBehavior.EquivalentFor {} source candidate ∧\n" ++
     "    LinkedBehavior.SameExports source candidate := by\n" ++
     "  constructor\n" ++
     s!"  · apply LinkedBehavior.of_runs {fuel}\n" ++
@@ -1108,8 +1113,9 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   let candidateTerm := Lean.toExpr candidate
   -- Only observations present in the checked programs can need a world hypothesis.
   -- The generated execution theorem independently checks the chosen strength.
-  let observes := fun (e : Lean.Expr) => (e.find? fun t => t.isConstOf ``Prim.globalTypeof).isSome
-  let premises := if observes sourceTerm || observes candidateTerm then profile else .empty
+  let uses := fun name => [sourceTerm, candidateTerm].any fun e => (e.find? (·.isConstOf name)).isSome
+  let premises : HostPremises :=
+    { windowTypeof := uses ``Prim.globalTypeof, windowRef := uses ``Prim.globalRef }
   let fuel ← liftM (witnessFuel premises source candidate)
   -- An initial reflexivity attempt can expand the parameter prelude before the
   -- reflection tactic uses the evaluator's equations.
@@ -1142,7 +1148,7 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   let stageLink := (source.modules.map (·.body.length)).sum ≥ 32
   let (layouts, tactic) := if stageLink then
     (layoutDeclaration "private " "source" ++ layoutDeclaration "private " "candidate",
-     s!"  first\n  | verify_linked_programs_from {fuel} sourceLink candidateLink\n  | {ordinaryTactic}\n")
+     s!"  first\n  | verify_linked_programs_from {fuel} sourceLink candidateLink premises\n  | {ordinaryTactic}\n")
     else ("", s!"  {ordinaryTactic}\n")
   let options := "\nopen CoreJS\n" ++
     "set_option maxRecDepth 16000\nset_option maxHeartbeats 2000000\nset_option cbv.warning false\n" ++
@@ -1153,7 +1159,8 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   let raw := String.join asts.toList ++ "private def plan : EsmSplit.Plan := " ++ p ++ "\n"
   let programs := s!"def source : Program := {s}\ndef candidate : Program := {c}\n"
   let profiles := fun (visibility : String) =>
-    s!"{visibility}def profile := {profileTerm profile}\n{visibility}def premises := {profileTerm premises}\n"
+    s!"{visibility}def profile := {profileTerm profile}\n" ++
+    s!"{visibility}def premises : HostPremises := ⟨{premises.windowTypeof}, {premises.windowRef}⟩\n"
   let execution := "namespace LinkedExecutionProof\n" ++ data ++ programs ++ profiles "" ++ layouts ++
     "theorem executions : LinkedBehavior.EquivalentFor premises source candidate ∧ LinkedBehavior.SameExports source candidate := by\n" ++
     tactic ++ "end LinkedExecutionProof\n"
@@ -1166,7 +1173,7 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   let correspondence := "open LinkedExecutionProof\n" ++ raw ++ gate
   -- The measured 384-field and 705-field cases benefit from separate processes.
   -- Smaller proofs avoid their startup cost. Write batches use file-local CBV rules.
-  let checkpoint := if premises = .empty ∧ writes.batches.isEmpty ∧ expandedBytes sourceData + expandedBytes candidateData ≥ 40 * 1024 then
+  let checkpoint := if premises = {} ∧ writes.batches.isEmpty ∧ expandedBytes sourceData + expandedBytes candidateData ≥ 40 * 1024 then
       some (checkpointText preamble options (data ++ programs) (raw ++ profiles "private " ++ gate) fuel stageLink)
     else none
   return { preamble, execution, correspondence, checkpoint, premises }

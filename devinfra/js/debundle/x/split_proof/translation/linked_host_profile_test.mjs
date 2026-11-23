@@ -80,9 +80,36 @@ for (const [binding, defaulted] of [
   }
 }
 
+{
+  const test = fixture(
+    "page-reference",
+    "const read = () => { const pass = (window) => window; return [pass(window), window, pass(17)]; }; const result = read(); export { result };"
+  );
+  assert.match(test.run().reason, /unsupported global window/);
+  assert(!existsSync(test.out));
+  const verdict = test.run("--host-contract", profile);
+  assert.equal(verdict.status, "certified", JSON.stringify(verdict));
+  assert.deepEqual(verdict.assumptions, [
+    "window returns the same page object without observable effects throughout initialization",
+  ]);
+  assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
+
+  const page = {};
+  globalThis.window = page;
+  try {
+    for (const file of [test.sourceFile, path.join(test.out, entry)]) {
+      const [passed, direct, lexical] = (await import(pathToFileURL(file).href)).result;
+      assert.equal(passed, page);
+      assert.equal(direct, page);
+      assert.equal(lexical, 17);
+    }
+  } finally {
+    delete globalThis.window;
+  }
+}
+
 for (const [name, body, reason] of [
-  ["bare", "return window;", /unsupported global window/],
-  ["property", "return typeof window.document;", /unsupported global window/],
+  ["property", "return typeof window.document;", /a property of host value window/],
   ["other-global", "return typeof document;", /unsupported global document/],
   ["tdz", "return typeof window; let window;", /threw during linked initialization/],
 ]) {
