@@ -9,7 +9,6 @@ missing-reference, cycle, and sibling-conflict policies. Haku's cycle approximat
 unwrapping, OpenAI's sibling-only repair, and Loom's singleton `allOf` handling are distinct contracts.
 
 Cover recursive and missing refs, conflicting siblings, nested definitions, and literal `$ref`
-keys inside defaults/examples. The current comparison helper can recurse indefinitely on a missing
-local definition; no current caller input triggering that was established. Do not replace runtime
-adapters wholesale with that helper. Done: compatible traversal mechanics have one implementation,
+keys inside defaults/examples. Do not replace runtime adapters wholesale with the test comparison
+helper. Done: compatible traversal mechanics have one implementation,
 with independent accepted/rejected payload tests and explicit treatment of lossy projections.
