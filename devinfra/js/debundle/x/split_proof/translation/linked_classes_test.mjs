@@ -26,9 +26,16 @@ function split(name, source, modules, order) {
 for (const [name, source, expected] of [
   [
     "default-derived",
+    `const Child = class extends null {};
+    const name = Child.name;
+    export const result = name;`,
+    "Child",
+  ],
+  [
+    "deferred-heritage",
     `class Base { static label = "base"; }
-    const Child = class extends Base {};
-    export const result = Child.label;`,
+    const read = () => (class extends Base {}).label;
+    export { read as result };`,
     "base",
   ],
   [
@@ -51,7 +58,7 @@ for (const [name, source, expected] of [
   ],
 ]) {
   const test = split(name, source, { "class.mjs": ["#0"], [entry]: ["#1", "#2"] }, ["class.mjs"]);
-  assert.equal(test.verdict.status, "certified", test.log);
+  assert.equal(test.verdict.status, "certified", name + ": " + test.log);
   if (name === "default-derived") {
     assert.equal(
       lower(test.files.sourceFile, test.files.specFile, test.out, ["--check-output"]).verdict.status,
