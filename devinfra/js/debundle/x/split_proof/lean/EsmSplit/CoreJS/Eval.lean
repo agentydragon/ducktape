@@ -638,19 +638,33 @@ def declareTops : List (Nat × Stmt) → M W (List (Nat × List (Name × Addr)))
 def Module.scope (frames : List (Nat × List (Name × Addr))) (m : Module) : List (Name × Addr) :=
   m.body.flatMap fun (id, _) => (frames.lookup id).getD []
 
-/-- What `import { name as … } from source` binds: the binding of the name that `source` exports as `name`, itself.
-Importing a name that the module does not export is an error of the program, found before anything runs. -/
+private def Program.resolveImportCell (P : Program) (frames : List (Nat × List (Name × Addr))) :
+    Nat → String → Name → Except Abort Addr
+  | 0, _, _ => .error (.error .syntax "cyclic re-export of an imported binding")
+  | fuel + 1, source, name => do
+    let some m := P.find source | throw (.unknown "model: an import of a module that is not in the program")
+    let some x := m.exports.lookup name | throw (.error .syntax s!"the module {source} does not export {name}")
+    if let some a := (m.scope frames).lookup x then
+      return a
+    let request := m.imports.findSome? fun i =>
+      (i.names.find? (fun (_, localName) => localName == x)).map fun (publicName, _) => (i.source, publicName)
+    let some (provider, publicName) := request | throw (.error .syntax s!"the export {name} of {source} is unbound")
+    P.resolveImportCell frames fuel provider publicName
+
+/-- Named imports and local export lists alias the original declaration's cell. A resolution
+can visit each (module, public name) at most once before repeating the same request forever.
+The number of export entries bounds those visits, with one extra step to report a missing
+export or module after the last entry. -/
 def Program.importCell (P : Program) (frames : List (Nat × List (Name × Addr))) (source : String) (name : Name) :
     Except Abort Addr :=
-  match P.find source with
-  | none => .error (.unknown "model: an import of a module that is not in the program")
-  | some m =>
-    match m.exports.lookup name with
-    | none => .error (.error .syntax s!"the module {source} does not export {name}")
-    | some x =>
-      match (m.scope frames).lookup x with
-      | some a => pure a
-      | none => .error (.unknown "an export of a name that the module imports")
+  P.resolveImportCell frames ((P.modules.map (·.exports.length)).sum + 1) source name
+
+theorem Program.importCell_local {P : Program} {frames : List (Nat × List (Name × Addr))}
+    {source : String} {name x : Name} {m : Module} {a : Addr}
+    (hmod : P.find source = some m) (hexp : m.exports.lookup name = some x)
+    (hcell : (m.scope frames).lookup x = some a) : P.importCell frames source name = .ok a := by
+  simp only [Program.importCell, Program.resolveImportCell, hmod, hexp, hcell]
+  rfl
 
 def Program.importCells (P : Program) (frames : List (Nat × List (Name × Addr))) (source : String) :
     List (Name × Name) → Except Abort (List (Name × Addr))
