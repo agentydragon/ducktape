@@ -32,7 +32,8 @@ private def importMeta (j : Json) : Bool :=
     (j.getObjVal? "meta" >>= FromESTree.identifier).toOption == some "import" &&
     (j.getObjVal? "property" >>= FromESTree.identifier).toOption == some "meta"
 
-private partial def uses (entry : String) (j : Json) : Except String (Array Use) := do
+/-- URL dependencies present in a parsed node, including nested function bodies. -/
+partial def uses (entry : String) (j : Json) : Except String (Array Use) := do
   if Lower.typ j == "MemberExpression" && importMeta (Lower.fld j "object") then
     unless (← j.getObjValAs? Bool "computed") == false &&
         (j.getObjVal? "property" >>= FromESTree.identifier).toOption == some "url" do

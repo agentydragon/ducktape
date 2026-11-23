@@ -1,8 +1,22 @@
+import EsmSplit.CoreJS.DynamicImports
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.ModuleLocation
 import EsmSplit.CoreJS.OpaqueInput
 
 open Lean (Json toJson)
+
+private def assets (j : Json) : Except String (String → Option CoreJS.ModuleLocation.Resource) := do
+  let entries : List (String × CoreJS.ModuleLocation.Resource) ← (← j.getObj?).toList.mapM fun (name, r) => do
+    return (name, ⟨← r.getObjValAs? String "url", ← r.getObjValAs? String "source"⟩)
+  let table := Std.HashMap.ofList entries
+  return fun name => table[name]?
+
+private def imports (input : Json) : Except String Json := do
+  let b ← CoreJS.DynamicImports.check (← input.getObjValAs? String "target")
+    (← input.getObjValAs? (List String) "linked") (← input.getObjVal? "parsed")
+    (← assets (← input.getObjVal? "before")) (← assets (← input.getObjVal? "after"))
+  return Json.arr #[toJson b.scripts, .arr (b.requests.toArray.map fun edge =>
+    .arr #[toJson edge.importer, toJson edge.source, toJson edge.exports])]
 
 private def location (input : Json) : Except String Json := do
   let originalName ← input.getObjValAs? String "originalName"
@@ -10,11 +24,6 @@ private def location (input : Json) : Except String Json := do
   let plan : EsmSplit.Plan := { entry := emittedName, mods := [
     ⟨emittedName, ← input.getObjValAs? (List Nat) "retained", [], []⟩,
     ⟨"new/scroll.mjs", ← input.getObjValAs? (List Nat) "moved", [], []⟩] }
-  let assets (j : Json) : Except String (String → Option CoreJS.ModuleLocation.Resource) := do
-    let entries : List (String × CoreJS.ModuleLocation.Resource) ← (← j.getObj?).toList.mapM fun (name, r) => do
-      return (name, ⟨← r.getObjValAs? String "url", ← r.getObjValAs? String "source"⟩)
-    let table := Std.HashMap.ofList entries
-    return fun name => table[name]?
   let sites ← CoreJS.ModuleLocation.check (← input.getObjVal? "source") originalName plan
     (← assets (← input.getObjVal? "before")) (← assets (← input.getObjVal? "after"))
   return .arr (sites.map fun (id, use) => match use with
@@ -58,6 +67,7 @@ private def fixtures (input : Json) : Except String Json := do
   let cases ← input.getArr?
   return .arr (← cases.mapM fun fixture => do
     let result ← match ← fixture.getObjValAs? String "kind" with
+      | "imports" => pure (imports (← fixture.getObjVal? "input"))
       | "location" => pure (location (← fixture.getObjVal? "input"))
       | "linked" => pure (check (← fixture.getObjVal? "input"))
       | "opaque" => pure (opaqueUnits (← fixture.getObjVal? "input"))
