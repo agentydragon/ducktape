@@ -68,19 +68,19 @@ def _target(name: str, uid: str) -> identity_pb2.EnvironmentTarget:
     return identity_pb2.EnvironmentTarget(namespace="test", name=name, uid=uid)
 
 
-def _create_targets(client: Client, names: tuple[str, ...]) -> dict[str, identity_pb2.EnvironmentTarget]:
-    created = {name: _target(name, str(uuid4())) for name in names}
-    cast(AsyncMock, client.create_sandbox).side_effect = list(created.values())
+def _create_targets(client: Client, *names: str) -> list[identity_pb2.EnvironmentTarget]:
+    created = [_target(name, str(uuid4())) for name in names]
+    cast(AsyncMock, client.create_sandbox).side_effect = created
     return created
 
 
 def _ready_for_targets(
-    views: dict[str, identity_pb2.EnvironmentTarget],
+    *expected: identity_pb2.EnvironmentTarget,
 ) -> Callable[[Client, identity_pb2.EnvironmentTarget], Awaitable[environment_service_pb2.EnvironmentDescriptor]]:
     async def ready(
         _client: Client, target: identity_pb2.EnvironmentTarget
     ) -> environment_service_pb2.EnvironmentDescriptor:
-        assert target == views[target.name]
+        assert target in expected
         view = _environment(target.name, target.uid, ready=True)
         _bind_runner_kind(view, RunnerCredentialKind.POD)
         return view
@@ -320,8 +320,8 @@ _OWNER_NAMES = ("owned-0", "owned-1")
 @pytest.fixture
 def ready_pair_client(monkeypatch: pytest.MonkeyPatch) -> Client:
     client = create_autospec(Client, instance=True)
-    targets = _create_targets(client, _OWNER_NAMES)
-    monkeypatch.setattr(app_sandbox, "wait_until_running", _ready_for_targets(targets))
+    targets = _create_targets(client, *_OWNER_NAMES)
+    monkeypatch.setattr(app_sandbox, "wait_until_running", _ready_for_targets(*targets))
     return cast(Client, client)
 
 
@@ -439,8 +439,8 @@ async def test_scope_keeps_scenario_error_when_sandbox_and_identity_cleanup_fail
     cluster: Cluster, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client = create_autospec(Client, instance=True)
-    created = _create_targets(client, ("owned",))["owned"]
-    monkeypatch.setattr(app_sandbox, "wait_until_running", _ready_for_targets({"owned": created}))
+    [created] = _create_targets(client, "owned")
+    monkeypatch.setattr(app_sandbox, "wait_until_running", _ready_for_targets(created))
     scenario_error = AssertionError("scenario failure")
     events: list[str] = []
 
@@ -477,7 +477,7 @@ async def test_scope_cleans_failed_boot_and_preserves_its_error(
     cluster: Cluster, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client = create_autospec(Client, instance=True)
-    created = _create_targets(client, ("failed-boot",))["failed-boot"]
+    [created] = _create_targets(client, "failed-boot")
     cleanup: list[tuple[str, object]] = []
 
     async def not_ready(
@@ -502,7 +502,7 @@ async def test_scope_selects_vm_validation_from_controller_binding_after_templat
     cluster: Cluster, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client = create_autospec(Client, instance=True)
-    created = _create_targets(client, ("custom-vm",))["custom-vm"]
+    [created] = _create_targets(client, "custom-vm")
     view = _environment(created.name, created.uid, ready=True, pod_uid="launcher-pod-uid")
     _bind_runner_kind(view, RunnerCredentialKind.VM)
     monkeypatch.setattr(app_sandbox, "wait_until_running", AsyncMock(return_value=view))
@@ -520,7 +520,7 @@ async def test_scope_does_not_select_vm_validation_for_pod_with_a_vm_like_templa
     cluster: Cluster, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client = create_autospec(Client, instance=True)
-    created = _create_targets(client, ("ordinary-pod",))["ordinary-pod"]
+    [created] = _create_targets(client, "ordinary-pod")
     view = _environment(created.name, created.uid, ready=True)
     _bind_runner_kind(view, RunnerCredentialKind.POD)
     monkeypatch.setattr(app_sandbox, "wait_until_running", AsyncMock(return_value=view))
@@ -538,7 +538,7 @@ async def test_scope_rejects_ready_view_without_runner_binding(
     cluster: Cluster, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client = create_autospec(Client, instance=True)
-    created = _create_targets(client, ("unbound-ready",))["unbound-ready"]
+    [created] = _create_targets(client, "unbound-ready")
     view = _environment(created.name, created.uid, ready=True)
     monkeypatch.setattr(app_sandbox, "wait_until_running", AsyncMock(return_value=view))
     monkeypatch.setattr(app_sandbox, "suspend_and_delete", AsyncMock())
@@ -550,7 +550,7 @@ async def test_scope_rejects_ready_view_without_runner_binding(
 
 async def test_scope_rejects_malformed_ready_runner_binding(cluster: Cluster, monkeypatch: pytest.MonkeyPatch) -> None:
     client = create_autospec(Client, instance=True)
-    created = _create_targets(client, ("malformed-ready",))["malformed-ready"]
+    [created] = _create_targets(client, "malformed-ready")
     view = _environment(created.name, created.uid, ready=True)
     view.kubernetes_diagnostics.sandbox_status.update({"runnerCredential": {"kind": 42}})
     monkeypatch.setattr(app_sandbox, "wait_until_running", AsyncMock(return_value=view))
@@ -565,17 +565,11 @@ async def test_scope_captures_failed_vm_before_suspend_and_preserves_readiness_e
     cluster: Cluster, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client = create_autospec(Client, instance=True)
-    created = _create_targets(client, ("failed-vm",))["failed-vm"]
+    [created] = _create_targets(client, "failed-vm")
     view = _environment(created.name, created.uid, ready=False, pod_uid=str(uuid4()))
     _bind_runner_kind(view, RunnerCredentialKind.VM)
     readiness_error = SandboxNotReadyError("VM did not reach Ready", last_view=view)
     events: list[str] = []
-
-    async def not_ready(
-        _client: Client, target: identity_pb2.EnvironmentTarget
-    ) -> environment_service_pb2.EnvironmentDescriptor:
-        assert target == created
-        raise readiness_error
 
     def capture(failed_view: environment_service_pb2.EnvironmentDescriptor, artifact_root: object) -> object:
         assert failed_view is view
@@ -586,7 +580,8 @@ async def test_scope_captures_failed_vm_before_suspend_and_preserves_readiness_e
         assert (name, uid) == (created.name, created.uid)
         events.append("suspend-delete")
 
-    monkeypatch.setattr(app_sandbox, "wait_until_running", not_ready)
+    readiness = AsyncMock(side_effect=readiness_error)
+    monkeypatch.setattr(app_sandbox, "wait_until_running", readiness)
     monkeypatch.setattr(app_sandbox.boot_rcu, "capture_readiness_failure", capture)
     monkeypatch.setattr(app_sandbox, "suspend_and_delete", delete)
 
@@ -594,6 +589,7 @@ async def test_scope_captures_failed_vm_before_suspend_and_preserves_readiness_e
         async with app_sandbox.sandbox_scope(cluster, client, trace.NoOpTracer()) as create:
             await create(created.name, template="renamed-kvm-template")
 
+    readiness.assert_awaited_once_with(client, created)
     assert raised.value is readiness_error
     assert events == ["capture", "suspend-delete"]
     assert any("Passive host QEMU readiness snapshot failed" in note for note in raised.value.__notes__)
@@ -603,17 +599,11 @@ async def test_scope_skips_capture_when_readiness_view_has_a_replacement_uid(
     cluster: Cluster, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client = create_autospec(Client, instance=True)
-    created = _create_targets(client, ("failed-vm",))["failed-vm"]
+    [created] = _create_targets(client, "failed-vm")
     replacement = _environment(created.name, str(uuid4()), ready=False, pod_uid=str(uuid4()))
     _bind_runner_kind(replacement, RunnerCredentialKind.VM)
     readiness_error = SandboxNotReadyError("VM was replaced", last_view=replacement)
     captures: list[str] = []
-
-    async def not_ready(
-        _client: Client, target: identity_pb2.EnvironmentTarget
-    ) -> environment_service_pb2.EnvironmentDescriptor:
-        assert target == created
-        raise readiness_error
 
     def capture(view: environment_service_pb2.EnvironmentDescriptor, _artifact_root: object) -> None:
         captures.append(view.target.uid)
@@ -621,7 +611,8 @@ async def test_scope_skips_capture_when_readiness_view_has_a_replacement_uid(
     async def delete(_cluster: Cluster, _client: Client, _name: str, _uid: str) -> None:
         return
 
-    monkeypatch.setattr(app_sandbox, "wait_until_running", not_ready)
+    readiness = AsyncMock(side_effect=readiness_error)
+    monkeypatch.setattr(app_sandbox, "wait_until_running", readiness)
     monkeypatch.setattr(app_sandbox.boot_rcu, "capture_readiness_failure", capture)
     monkeypatch.setattr(app_sandbox, "suspend_and_delete", delete)
 
@@ -629,6 +620,7 @@ async def test_scope_skips_capture_when_readiness_view_has_a_replacement_uid(
         async with app_sandbox.sandbox_scope(cluster, client, trace.NoOpTracer()) as create:
             await create("failed-vm", template="renamed-kvm-template")
 
+    readiness.assert_awaited_once_with(client, created)
     assert raised.value is readiness_error
     assert replacement.target.uid != created.uid
     assert captures == []
@@ -638,11 +630,11 @@ async def test_scope_skips_capture_for_pod_failure_and_ready_vm(
     cluster: Cluster, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client = create_autospec(Client, instance=True)
-    views = _create_targets(client, ("failed-pod", "ready-vm"))
-    failed_pod = _environment("failed-pod", views["failed-pod"].uid, ready=False, pod_uid=str(uuid4()))
+    pod_target, vm_target = _create_targets(client, "failed-pod", "ready-vm")
+    failed_pod = _environment(pod_target.name, pod_target.uid, ready=False, pod_uid=str(uuid4()))
     _bind_runner_kind(failed_pod, RunnerCredentialKind.POD)
     pod_error = SandboxNotReadyError("Pod did not reach Ready", last_view=failed_pod)
-    ready_vm = _environment("ready-vm", views["ready-vm"].uid, ready=True, pod_uid=str(uuid4()))
+    ready_vm = _environment(vm_target.name, vm_target.uid, ready=True, pod_uid=str(uuid4()))
     _bind_runner_kind(ready_vm, RunnerCredentialKind.VM)
     captures: list[str] = []
 
@@ -679,17 +671,11 @@ async def test_scope_keeps_generic_diagnostics_when_failed_readiness_has_no_bind
     cluster: Cluster, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client = create_autospec(Client, instance=True)
-    created = _create_targets(client, ("unbound-failure",))["unbound-failure"]
+    [created] = _create_targets(client, "unbound-failure")
     view = _environment(created.name, created.uid, ready=False, pod_uid="launcher-pod-uid")
     readiness_error = SandboxNotReadyError("Sandbox did not reach Ready", last_view=view)
     diagnostic_views: list[environment_service_pb2.EnvironmentDescriptor | None] = []
     captures: list[environment_service_pb2.EnvironmentDescriptor] = []
-
-    async def not_ready(
-        _client: Client, target: identity_pb2.EnvironmentTarget
-    ) -> environment_service_pb2.EnvironmentDescriptor:
-        assert target == created
-        raise readiness_error
 
     async def diagnostics(
         _cluster: Cluster,
@@ -707,7 +693,8 @@ async def test_scope_keeps_generic_diagnostics_when_failed_readiness_has_no_bind
     def capture(failed_view: environment_service_pb2.EnvironmentDescriptor, _artifact_root: object) -> None:
         captures.append(failed_view)
 
-    monkeypatch.setattr(app_sandbox, "wait_until_running", not_ready)
+    readiness = AsyncMock(side_effect=readiness_error)
+    monkeypatch.setattr(app_sandbox, "wait_until_running", readiness)
     monkeypatch.setattr(app_sandbox, "_write_sandbox_diagnostics", diagnostics)
     monkeypatch.setattr(app_sandbox.boot_rcu, "capture_readiness_failure", capture)
     monkeypatch.setattr(app_sandbox, "suspend_and_delete", AsyncMock())
@@ -716,6 +703,7 @@ async def test_scope_keeps_generic_diagnostics_when_failed_readiness_has_no_bind
         async with app_sandbox.sandbox_scope(cluster, client, trace.NoOpTracer()) as create:
             await create("unbound-failure", template="environment-vm-old-pod")
 
+    readiness.assert_awaited_once_with(client, created)
     assert raised.value is readiness_error
     assert diagnostic_views == [view]
     assert captures == []
