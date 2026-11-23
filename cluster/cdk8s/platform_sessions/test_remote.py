@@ -20,6 +20,20 @@ def direct_workloads(scratch_app_factory: Callable[[], App]) -> list[dict[str, A
         return remote.chart(scratch_app_factory(), record_upstream_traffic=False).to_json()
 
 
+def test_gateway_mounts_the_token_files_in_its_bearer_config(direct_workloads: list[dict[str, Any]]) -> None:
+    pod = find_resource(direct_workloads, "Deployment", "gateway")["spec"]["template"]["spec"]
+    mount = next(mount for mount in pod["containers"][0]["volumeMounts"] if mount["name"] == "bearers")
+    volume = next(volume for volume in pod["volumes"] if volume["name"] == mount["name"])
+    mounted = {
+        f"{mount['mountPath']}/{item['path']}"
+        for source in volume["projected"]["sources"]
+        for item in source["secret"]["items"]
+    }
+    assert remote.CONFIG.data is not None
+    configured = json.loads(remote.CONFIG.data["bearers.json"])
+    assert mounted == {bearer["token_file"] for bearer in configured.values()}
+
+
 def test_remote_workloads_share_connections_but_not_legacy_storage(
     scratch_app: App, direct_workloads: list[dict[str, Any]]
 ) -> None:

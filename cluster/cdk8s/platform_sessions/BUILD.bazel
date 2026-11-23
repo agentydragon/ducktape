@@ -23,6 +23,7 @@ py_library(
     srcs = [
         "app.py",
         "config.py",
+        "credentials.py",
         "remote.py",
     ],
     visibility = [

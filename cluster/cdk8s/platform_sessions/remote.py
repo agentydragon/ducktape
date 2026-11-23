@@ -36,12 +36,12 @@ from cluster.cdk8s.forgejo_registry import image_automation as forgejo_images, p
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import initial_request_annotations
 from cluster.cdk8s.platform_sessions import config
+from cluster.cdk8s.platform_sessions.credentials import BEARER_MIRRORS, NAMESPACE, bearer_key
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Port
 from cluster.cdk8s.volume_claim import volume_claim
 from cluster.cdk8s.vpa_policy import ContainerPolicy
 
-NAMESPACE = "platform-sessions"
 NAME = "platform-sessions-remote"
 OUTPUT_DIR = f"{GENERATED_ROOT}/{NAME}"
 PINS_DIR = f"{HAND_WRITTEN_ROOT}/{NAME}-image-pins"
@@ -55,16 +55,6 @@ SHARED_PROVIDERS_IMAGE = "platform-sessions-providers"
 PROVIDERS = tuple(str(item["id"]) for item in config.INTEGRATIONS["integrations"])
 BASE_INTEGRATIONS = [item for item in config.INTEGRATIONS["integrations"] if item["id"] != "myquest-canary"]
 BASE_PROVIDERS = tuple(str(item["id"]) for item in BASE_INTEGRATIONS)
-BEARER_FILES = (
-    "owner",
-    "aiquota",
-    "quest-scheduler",
-    "myquest-read",
-    "thrive-scraper",
-    "thrive-read",
-    "chatgpt-read",
-    "blueshield-read",
-)
 _GW_IMAGE = f"{forgejo_images.REGISTRY}/{GATEWAY}:unset"
 _TRUST = "/var/run/provider-trust/ca.crt"
 _TOKEN_DIR = "/var/run/provider-credentials"
@@ -600,13 +590,7 @@ def add_resources(chart: Chart, *, record_upstream_traffic: bool) -> None:
             k8s.Volume(
                 name="bearers",
                 projected=k8s.ProjectedVolumeSource(
-                    default_mode=0o440,
-                    sources=[
-                        _secret_projection(
-                            SecretRef(namespace=NAMESPACE, name=f"platform-sessions-{role}-bearer").key("token"), role
-                        )
-                        for role in BEARER_FILES
-                    ],
+                    default_mode=0o440, sources=[_secret_projection(bearer_key(name), name) for name in BEARER_MIRRORS]
                 ),
             ),
             k8s.Volume(
