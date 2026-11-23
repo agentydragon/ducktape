@@ -362,6 +362,7 @@ lean_axiom_test(
         "CoreJS.LinkedBehavior.probeObservationMismatchRefutesEquivalent",
         "CoreJS.LinkedBehaviorExamples.literalRoundTrip",
         "CoreJS.LinkedBehaviorExamples.jsonLiteralRoundTrip",
+        "CoreJS.LinkedBehaviorExamples.sharedJsonLiteralRoundTrip",
         "CoreJS.LinkedBehaviorExamples.movedClosure",
         "CoreJS.DeclarationArtifacts.check_sound",
         "CoreJS.DeclarationArtifacts.order_kept",
