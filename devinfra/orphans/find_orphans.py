@@ -17,6 +17,7 @@ Usage:
 import argparse
 import dataclasses
 import sys
+from collections.abc import Iterable
 from pathlib import Path
 from textwrap import dedent
 
@@ -87,46 +88,22 @@ def get_git_files(repo_root: Path) -> set[Path]:
     return {Path(entry.path) for entry in index}
 
 
-def run_report(
-    workspace: BazelWorkspace, whitelist_path: Path, *, keep_going: bool = False
+def classify_files(
+    git_files: set[Path], bazel_files: set[Path], whitelist_lines: Iterable[str]
 ) -> tuple[list[Path], list[PatternStats]]:
-    """Return (orphaned_files, per_pattern_stats), querying Bazel once.
-
-    Each non-blank, non-comment whitelist pattern is parsed exactly once and
-    reused for orphan filtering, dead-entry detection, and Bazel-coverage stats.
-
-    A pattern is "dead" (orphaned == 0) when it suppresses no orphaned files,
-    either because all matching files are now in Bazel (bazel_covered > 0)
-    or because the pattern matches no git-tracked files at all.
-    """
-    git_files = get_git_files(workspace.root)
-    bazel_files = query_bazel_files(workspace, keep_going=keep_going)
-
-    raw_orphans = git_files - bazel_files
-    covered_files = git_files - raw_orphans  # files in both git and Bazel
-
-    whitelist_lines = whitelist_path.read_text().splitlines()
-
-    # Parse each pattern once; reuse for filtering and stats.
-    specs: list[tuple[str, pathspec.PathSpec]] = []
+    """Count each pattern independently, including files matched by overlapping patterns."""
+    unlisted = git_files - bazel_files
+    stats = []
     for line in whitelist_lines:
-        stripped = line.strip()
-        if stripped and not stripped.startswith("#"):
-            specs.append((stripped, pathspec.PathSpec.from_lines("gitwildmatch", [stripped])))
-
-    def _is_whitelisted(path: Path) -> bool:
-        return any(spec.match_file(path) for _, spec in specs)
-
-    orphans = sorted(p for p in raw_orphans if not _is_whitelisted(p))
-    stats = [
-        PatternStats(
-            pattern=pattern,
-            orphaned=sum(spec.match_file(p) for p in raw_orphans),
-            bazel_covered=sum(spec.match_file(p) for p in covered_files),
-        )
-        for pattern, spec in specs
-    ]
-    return orphans, stats
+        pattern = line.strip()
+        if not pattern or pattern.startswith("#"):
+            continue
+        spec = pathspec.PathSpec.from_lines("gitwildmatch", [pattern])
+        matches = {path for path in git_files if spec.match_file(path)}
+        covered = len(matches & bazel_files)
+        stats.append(PatternStats(pattern=pattern, bazel_covered=covered, orphaned=len(matches) - covered))
+        unlisted.difference_update(matches)
+    return sorted(unlisted), stats
 
 
 def main() -> None:
@@ -151,7 +128,11 @@ def main() -> None:
     workspace = BazelWorkspace(root=repo_root, backend=detect_bazel_backend())
     whitelist_path = args.whitelist or repo_root / "devinfra/orphans/whitelist.txt"
 
-    orphans, stats = run_report(workspace, whitelist_path, keep_going=args.keep_going)
+    orphans, stats = classify_files(
+        get_git_files(repo_root),
+        query_bazel_files(workspace, keep_going=args.keep_going),
+        whitelist_path.read_text().splitlines(),
+    )
     orphan_libs = query_orphan_py_libraries(workspace, keep_going=args.keep_going)
 
     for orphan in orphans:
