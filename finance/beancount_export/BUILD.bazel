@@ -9,6 +9,7 @@ py_library(
     name = "export",
     srcs = ["export.py"],
     deps = [
+        "//finance/budget:classified_transaction",
         "//finance/budget:schema",
         "@pypi//beancount",
     ],
@@ -20,6 +21,7 @@ py_library(
     deps = [
         ":export",
         "//finance:yaml_decimal",
+        "//finance/budget:classified_transaction",
         "//finance/budget:schema",
         "//finance/budget:sql_read_model",
         "//finance/plaid/db:models",
@@ -43,8 +45,10 @@ py_test(
     deps = [
         ":export",
         "//:conftest",
+        "//finance/budget:classified_transaction",
         "//finance/budget:schema",
         "@pypi//beancount",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

@@ -26,9 +26,10 @@ import yaml
 from beancount import loader
 from beancount.parser import printer
 
-from finance.beancount_export.export import ClassifiedTxn, render_ledger
+from finance.beancount_export.export import render_ledger
+from finance.budget.classified_transaction import ClassifiedTransaction
 from finance.budget.schema import BudgetConfig
-from finance.budget.sql_read_model import ClassifiedRow, read_all_classified
+from finance.budget.sql_read_model import read_all_classified
 from finance.plaid.db.models import async_session_factory
 from finance.yaml_decimal import DecimalSafeLoader
 
@@ -79,22 +80,7 @@ def _database_url(config: BudgetConfig) -> str:
     return url
 
 
-def _to_txn(row: ClassifiedRow, currency: str) -> ClassifiedTxn:
-    return ClassifiedTxn(
-        transaction_id=row.transaction_id,
-        date=row.date,
-        amount=row.amount,
-        name=row.name,
-        account_id=row.account_id,
-        bucket_id=row.bucket_id,
-        merchant_name=row.merchant_name,
-        pfc_primary=row.pfc_primary,
-        pfc_detailed=row.pfc_detailed,
-        iso_currency_code=currency,
-    )
-
-
-async def _read_rows(config: BudgetConfig, db_url: str, *, window_end: date) -> tuple[ClassifiedRow, ...]:
+async def _read_rows(config: BudgetConfig, db_url: str, *, window_end: date) -> tuple[ClassifiedTransaction, ...]:
     engine, session_factory = async_session_factory(db_url)
     try:
         window_start = config.source.coverage_starts or _DEFAULT_FLOOR
@@ -113,9 +99,7 @@ def build_ledger(config: BudgetConfig, db_url: str, *, window_end: date, title: 
     for account_id in {row.account_id for row in rows}:
         funding.setdefault(account_id, _UNLINKED_ACCOUNT)
     buckets = {bucket.id: bucket for bucket in config.buckets}
-    ledger = render_ledger(
-        [_to_txn(row, currency) for row in rows], buckets, funding, title=title, operating_currency=currency
-    )
+    ledger = render_ledger(rows, buckets, funding, title=title, operating_currency=currency)
     _validate(ledger)
     log.info("rendered ledger", transactions=len(rows), accounts=len(funding), bytes=len(ledger))
     return ledger
