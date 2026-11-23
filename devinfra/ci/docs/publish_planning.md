@@ -11,7 +11,12 @@ release job rebuilds changed release assets; an image job builds its image
 before pushing. For a literal workspace test label, the publish job can reuse
 the `testSummary` from that same successful push-CI test invocation when its
 source, Bazel configuration, RBE image, terminal status, and one-attempt result
-all match. Otherwise the publication job runs its own tests as before.
+all match. Otherwise the publication job runs its own tests, except when the
+invocation proves a repeatable failure and the planner leaves that item out.
+
+The image planner runs only on `refs/heads/devel`. The GitHub runner holds
+registry credentials and publishes the image. The BuildBuddy runner builds the
+OCI layout.
 
 BuildBuddy keeps that invocation's Build Event Protocol stream and serves it as
 JSON. Each stream carries three things at once:
@@ -33,9 +38,9 @@ invocation ID, carry the current checkout's `COMMIT_SHA`, request `//...`, finis
 successfully, and match the publication job's `--config=rbe`, `--config=ci`
 and RBE image. A cached one-attempt pass is accepted because Bazel keys test
 results by source and configuration. Missing or unreadable evidence, custom
-release flags, per-test retries, multiple configurations, failed summaries, suites,
-external labels, wildcards, PR runs and dispatch runs preserve the publication
-test step.
+release flags, ambiguous results, suites, external labels, wildcards, PR runs and
+dispatch runs preserve the publication test step. Verified repeatable failures
+are handled separately.
 
 The workflow's test ID names the initial invocation. After `REMOTE_CACHE_EVICTED`,
 the loader follows its `PARENT_INVOCATION_ID` to the runner's ordered

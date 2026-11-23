@@ -175,60 +175,43 @@ runs:
           pin_digest=$(jq -r '.rbe_container.digest' devinfra/image_pins.json)
           RBE_CONTAINER_IMAGE="${pin_image}@${pin_digest}"
         fi
-        BB_IMAGE_ARGS=()
-        if [[ -n "$INPUT_RUNNER_CONTAINER_IMAGE" ]]; then
-          BB_IMAGE_ARGS+=(--container_image="docker://${INPUT_RUNNER_CONTAINER_IMAGE}")
-        fi
-
         # Override only CI-specific resources; bb reads shared defaults from .bbrc.
-        RUNNER_EXEC_PROPS=(
+        BB_REMOTE_COMMAND=(
+          bb remote
+          --disable_retry=true
           --runner_exec_properties=EstimatedFreeDiskBytes="$INPUT_DISK_BYTES"
           --runner_exec_properties=EstimatedComputeUnits="$INPUT_COMPUTE_UNITS"
         )
         if [[ -n "$INPUT_RUNNER_RECYCLING_KEY" ]]; then
-          RUNNER_EXEC_PROPS+=(--runner_exec_properties=runner-recycling-key="$INPUT_RUNNER_RECYCLING_KEY")
+          BB_REMOTE_COMMAND+=(--runner_exec_properties=runner-recycling-key="$INPUT_RUNNER_RECYCLING_KEY")
+        fi
+        BB_REMOTE_COMMAND+=("${ENV_ARGS[@]}")
+        if [[ -n "$INPUT_SCRIPT" ]]; then
+          BB_REMOTE_COMMAND+=(--remote_run_header="x-buildbuddy-platform.env-overrides=RBE_CONTAINER_IMAGE=${RBE_CONTAINER_IMAGE}")
+        fi
+        if [[ -n "$INPUT_RUNNER_CONTAINER_IMAGE" ]]; then
+          BB_REMOTE_COMMAND+=(--container_image="docker://${INPUT_RUNNER_CONTAINER_IMAGE}")
         fi
 
-        # --run_from_commit (optional): runner checks out the exact commit instead of
-        # mirroring the working tree as a patchset. See the run_from_commit input and
-        # bazel-ci.yml for the rationale.
-        RUN_FROM_COMMIT_ARGS=()
         if [[ -n "$INPUT_RUN_FROM_COMMIT" ]]; then
-          RUN_FROM_COMMIT_ARGS=(--run_from_commit="$INPUT_RUN_FROM_COMMIT")
+          BB_REMOTE_COMMAND+=(--run_from_commit="$INPUT_RUN_FROM_COMMIT")
           # A commit alone leaves BRANCH_NAME empty in the runner's bazelrc.
           # Keep the event's branch identity while the exact SHA remains authoritative.
           if [[ -n "$SOURCE_BRANCH" ]]; then
-            RUN_FROM_COMMIT_ARGS+=(--run_from_branch="$SOURCE_BRANCH")
+            BB_REMOTE_COMMAND+=(--run_from_branch="$SOURCE_BRANCH")
           fi
         fi
 
         if [[ -n "$INPUT_SCRIPT" ]]; then
-          # Forward RBE_CONTAINER_IMAGE so the script can interpolate it into Bazel flags.
-          ENV_ARGS+=(--remote_run_header="x-buildbuddy-platform.env-overrides=RBE_CONTAINER_IMAGE=${RBE_CONTAINER_IMAGE}")
-          BB_REMOTE_COMMAND=(
-            bb remote
-            --disable_retry=true
-            "${RUNNER_EXEC_PROPS[@]}"
-            "${ENV_ARGS[@]}"
-            "${BB_IMAGE_ARGS[@]}"
-            "${RUN_FROM_COMMIT_ARGS[@]}"
-            --script="$INPUT_SCRIPT"
-          )
+          BB_REMOTE_COMMAND+=(--script="$INPUT_SCRIPT")
         else
-          BAZEL_IMAGE_ARGS=(--remote_default_exec_properties="container-image=docker://${RBE_CONTAINER_IMAGE}")
           # shellcheck disable=SC2206 # word-splitting on $INPUT_ARGS is intended
           INPUT_ARGS_ARRAY=($INPUT_ARGS)
-          BB_REMOTE_COMMAND=(
-            bb remote
-            --disable_retry=true
-            "${RUNNER_EXEC_PROPS[@]}"
-            "${ENV_ARGS[@]}"
-            "${BB_IMAGE_ARGS[@]}"
-            "${RUN_FROM_COMMIT_ARGS[@]}"
+          BB_REMOTE_COMMAND+=(
             "${INPUT_ARGS_ARRAY[0]}"
             --config=rbe
             --config=ci
-            "${BAZEL_IMAGE_ARGS[@]}"
+            --remote_default_exec_properties="container-image=docker://${RBE_CONTAINER_IMAGE}"
             "${INPUT_ARGS_ARRAY[@]:1}"
           )
         fi

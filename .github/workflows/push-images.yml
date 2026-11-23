@@ -1,27 +1,5 @@
-# Publish OCI images, fanning out only over the ones whose content actually moved.
-#
-# The image roster lives in devinfra/ci/image_targets.json, not in this file.
-#
-# Two phases:
-#
-#   plan  — builds nothing. For image `.digest` targets reported by bazel-ci, this
-#           asks the invocation stream where each `<name>.json.sha256` is and
-#           fetches it, then compares it against the latest published content. An
-#           absent or ambiguous digest stays in the matrix. See
-#           devinfra/ci/plan_image_pushes.py.
-#
-#   push  — per changed image: reuse an exact verified push-CI test verdict when
-#           available, otherwise run the configured tests, then `bb remote build`
-#           the OCI layout and push a new pinned tag unless its digest is already
-#           the newest published one. A failing test skips only that image's push.
-#
-# When no image changed, the empty matrix avoids starting a per-image push job.
-#
-# Credentials live exactly where they should: registry auth happens on the GitHub
-# runner, not through the BB runner VM.
-#
-# The `props-agents` job below retains the former Props image-push path, but is
-# disabled while Props is down. The decision to revive or remove it is open.
+# Publication roster: devinfra/ci/image_targets.json.
+# Content and test-verdict reuse: devinfra/ci/docs/publish_planning.md.
 name: Push Images
 
 on:
@@ -54,15 +32,8 @@ on:
         default: ""
   workflow_dispatch:
 
-# Coalesce, never cancel. A newly queued run replaces whichever run is *pending* in this
-# group, so a burst of merges collapses into a single publish — but a run that is already
-# publishing is left alone. `cancel-in-progress: true` here is exactly what stalled image
-# rollouts for ~2.5h on a busy merge day (#2759): do not "fix" this flag.
-#
-# Skipping the superseded commits is safe because publishing is content-addressed. Every
-# image's digest is compared against what its registry last published, so whichever run
-# gets there publishes everything still outstanding — an image whose change landed in a
-# coalesced commit still differs from the registry and is picked up by the next run.
+# Let in-flight publication finish during merge bursts (#2759). The next run
+# compares registry digests again and picks up changes from superseded runs.
 concurrency:
   group: push-images-${{ github.ref }}
   cancel-in-progress: false
@@ -77,41 +48,29 @@ env:
 jobs:
   plan:
     name: Plan image pushes
-    # Deliberately no job-level `if`. `push` interpolates this job's `matrix` output
-    # into `strategy.matrix`, and a skipped job leaves that output empty — where
-    # `fromJSON('')` is a workflow-level error rather than an empty matrix. So the
-    # job always runs and always emits a valid matrix; the devel gate below decides
-    # whether it has anything in it. Same shape as release.yml's matrix job.
+    # Flux can deploy devel-prefixed tags. Only admit the devel branch, including
+    # when a manual dispatch selects a ref.
+    if: github.ref == 'refs/heads/devel'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
-      # Only publish from devel. `workflow_dispatch` can be triggered from any
-      # branch, but Flux ImagePolicy filters on `devel-YYYYMMDDHHMMSS-shortsha` and
-      # picks newest-alphabetical — so pushing that tag shape from a feature branch
-      # would immediately deploy unmerged code.
-      PUBLISH: ${{ github.ref_name == 'devel' }}
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       count: ${{ steps.plan.outputs.count }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
       - uses: ./.github/actions/setup-nix-devtools
-        if: env.PUBLISH == 'true'
         with:
           installables: ".#bbapi"
 
       - uses: imjasonh/setup-crane@v0.7
-        if: env.PUBLISH == 'true'
 
       - name: Authenticate to Forgejo registry
         env:
           FORGEJO_IMAGES_USERNAME: ${{ secrets.FORGEJO_IMAGES_USERNAME }}
           FORGEJO_IMAGES_PASSWORD: ${{ secrets.FORGEJO_IMAGES_PASSWORD }}
-        if: env.PUBLISH == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -129,11 +88,6 @@ jobs:
           RBE_CONTAINER_IMAGE: ${{ inputs.rbe_container_image }}
         run: |
           set -euo pipefail
-          if [ "$PUBLISH" != "true" ]; then
-            echo "Not on devel — nothing to publish."
-            { echo 'matrix={"include":[]}'; echo "count=0"; } >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
           python3 -m devinfra.ci.plan_image_pushes \
             --invocations "$INVOCATIONS" \
             --test-invocation-id "$TEST_INVOCATION_ID" \
@@ -142,11 +96,11 @@ jobs:
 
   push:
     needs: [plan]
-    if: needs.plan.outputs.count != '0'
+    if: needs.plan.outputs.count > 0
     name: Push ${{ matrix.image_name }}
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix || '{"include":[]}') }}
     uses: ./.github/workflows/publish-oci-image.yml
     with:
       image: ${{ matrix.image }}
