@@ -116,15 +116,6 @@ class WtClient:
     def set_hook_output_callback(self, cb: Callable[[HookOutputEvent], None] | None) -> None:
         self._hook_output_callback = cb
 
-    async def current_worktree_info(self) -> tuple[Path | None, str | None]:
-        res = await self.identify_worktree(Path.cwd())
-        if not res.is_worktree or not res.name:
-            return None, None
-        by_name = await self.get_worktree_by_name(res.name)
-        if by_name.exists and by_name.absolute_path:
-            return by_name.absolute_path, (res.relative_path or None)
-        return None, None
-
     async def _is_daemon_running(self) -> bool:
         """Check if the daemon is running."""
         try:
@@ -524,19 +515,26 @@ class WtClient:
         return res.absolute_path
 
     async def create_worktree_convenience(
-        self, name: str, *, source_name: str | None = None, from_default: bool = True, from_branch: str | None = None
+        self,
+        name: str,
+        *,
+        source_name: str | None = None,
+        source_wtid: WorktreeID | None = None,
+        from_default: bool = True,
+        from_branch: str | None = None,
     ) -> Path:
         validate_worktree_name(name)
         if source_name:
+            if source_wtid is not None:
+                raise ValueError("Specify a source worktree name or ID, not both")
             src = await self.get_worktree_by_name(source_name)
             if not src.exists or not src.wtid:
                 raise RuntimeError(f"Worktree '{source_name}' not found")
-            result = await self.create_worktree(name, source_wtid=src.wtid, source_branch=from_branch)
-            return result.absolute_path
-        if from_default:
-            result = await self.create_worktree(name, source_branch=from_branch)
-            return result.absolute_path
-        raise RuntimeError("Invalid create_worktree request: no source and from_default=False")
+            source_wtid = src.wtid
+        if source_wtid is None and not from_default:
+            raise RuntimeError("Invalid create_worktree request: no source and from_default=False")
+        result = await self.create_worktree(name, source_wtid=source_wtid, source_branch=from_branch)
+        return result.absolute_path
 
     async def remove_worktree_by_name(self, name: str, *, force: bool = False) -> None:
         listing = await self.list_worktrees()

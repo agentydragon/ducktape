@@ -71,6 +71,16 @@ class WorktreeService:
     ) -> Path:
         validate_worktree_name(name)
         self._require_post_creation_script_valid(config)
+        exclude: Path | None = None
+        if config.hydrate_worktrees and source_worktree is not None:
+            source_worktree = source_worktree.resolve()
+            if not source_worktree.exists():
+                raise RuntimeError(f"Source worktree does not exist: {source_worktree}")
+            managed_dir = config.worktrees_dir.resolve()
+            if managed_dir == source_worktree:
+                raise RuntimeError(f"Managed worktrees directory is the copy source: {source_worktree}")
+            if managed_dir.is_relative_to(source_worktree):
+                exclude = managed_dir.relative_to(source_worktree)
         worktree_path: Path = config.worktrees_dir / name
 
         if worktree_path.exists():
@@ -92,9 +102,7 @@ class WorktreeService:
             if config.hydrate_worktrees:
                 if source_worktree:
                     logger.info(f"Hydrating new worktree in {worktree_path} from {source_worktree}.")
-                    if not source_worktree.exists():
-                        raise RuntimeError(f"Source worktree does not exist: {source_worktree}")
-                    self._hydrate_worktree(config, source_worktree, worktree_path)
+                    self._hydrate_worktree(config, source_worktree, worktree_path, exclude=exclude)
                 else:
                     logger.info(f"Hydrating new worktree in {worktree_path} by checking out {branch_name}.")
                     repo = pygit2.Repository(worktree_path)
@@ -123,13 +131,13 @@ class WorktreeService:
             raise RuntimeError(f"Worktree '{name}' does not exist")
         return worktree_path
 
-    def _hydrate_worktree(self, config: Configuration, src: Path, dst: Path) -> None:
+    def _hydrate_worktree(self, config: Configuration, src: Path, dst: Path, *, exclude: Path | None) -> None:
         # Worktree creation uses --no-checkout, so seed the index from HEAD without writing files.
         repo = self.git_manager.get_repo(dst)
         index = repo.index
         index.read_tree(repo.head.peel(pygit2.Commit).tree)
         index.write()
-        get_copy_strategy(config.cow_method).copy(src, dst)
+        get_copy_strategy(config.cow_method).copy(src, dst, exclude=exclude)
 
     @staticmethod
     async def run_post_creation_script(

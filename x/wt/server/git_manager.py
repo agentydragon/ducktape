@@ -62,9 +62,9 @@ class GitManager:
     def branch_exists(self, branch_name: str) -> bool:
         return branch_name in self._main_repo.branches
 
-    def create_branch(self, branch_name: str, source_branch: str = "HEAD") -> None:
+    def create_branch(self, branch_name: str, source_revision: str = "HEAD") -> None:
         if not self.branch_exists(branch_name):
-            target_commit = _resolve_to_commit(self._main_repo, source_branch)
+            target_commit = _resolve_to_commit(self._main_repo, source_revision)
             self._main_repo.branches.local.create(branch_name, target_commit)
 
     async def get_working_directory_status(self) -> tuple[list[Path], list[Path]]:
@@ -89,14 +89,6 @@ class GitManager:
         if path is None or path == self.config.main_repo:
             return self._main_repo
         return pygit2.Repository(path)
-
-    def get_repo_head_shorthand(self, path: Path) -> str | None:
-        """Get the short branch name for the HEAD of a repository."""
-        repo = self.get_repo(path)
-        if repo.head_is_detached:
-            return None
-        shorthand = repo.head.shorthand
-        return shorthand or None
 
     def get_commit_info(self, ref: str, worktree: Path) -> CommitInfo:
         repo = self.get_repo(worktree)

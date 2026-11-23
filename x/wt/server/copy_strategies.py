@@ -12,19 +12,14 @@ from x.wt.shared.configuration import CowMethod
 EXCLUDE_NAMES: tuple[str, ...] = (".git", ".worktrees")
 
 
-def _get_copyable_entries(src: Path) -> list[Path]:
-    """List top-level entries to copy from src, excluding repo internals.
-
-    Excludes items in EXCLUDE_NAMES for all strategies to keep behavior consistent
-    across platforms and tools.
-    """
-    return [child for child in src.iterdir() if child.name not in EXCLUDE_NAMES]
+def _copyable_entries(src: Path, parent: Path, excluded_names: set[str]) -> list[Path]:
+    return [parent / child.name for child in (src / parent).iterdir() if child.name not in excluded_names]
 
 
 class CopyStrategy(ABC):
     @abstractmethod
-    def copy(self, src: Path, dst: Path) -> None:
-        pass
+    def copy(self, src: Path, dst: Path, *, exclude: Path | None = None) -> None:
+        """Copy src to dst, omitting the optional path relative to src."""
 
     @property
     @abstractmethod
@@ -33,10 +28,38 @@ class CopyStrategy(ABC):
 
 
 class ReflinkCopyStrategy(CopyStrategy):
-    def copy(self, src: Path, dst: Path) -> None:
-        entries = _get_copyable_entries(src)
+    def copy(self, src: Path, dst: Path, *, exclude: Path | None = None) -> None:
+        parent = Path()
+        parents: list[Path] = []
+        entries: list[Path] = []
+        excluded_names = set(EXCLUDE_NAMES)
+        if exclude is not None:
+            # Enumerate siblings only along the excluded path. Let cp recurse into
+            # every ordinary subtree in one invocation, preserving hardlinks.
+            for name in exclude.parts[:-1]:
+                child = parent / name
+                if name in excluded_names or not (src / child).is_dir(follow_symlinks=False):
+                    break
+                entries.extend(_copyable_entries(src, parent, excluded_names | {name}))
+                parents.append(child)
+                parent = child
+                excluded_names.clear()
+            else:
+                excluded_names.add(exclude.name)
+        entries.extend(_copyable_entries(src, parent, excluded_names))
+
+        # Preserve ancestors that will be empty once the excluded entry is skipped.
+        for directory in parents:
+            dest = dst / directory
+            if dest.is_symlink():
+                raise FileExistsError(f"Cannot copy through destination symlink: {dest}")
+            dest.mkdir(exist_ok=True)
         if entries:
-            subprocess.run(["cp", "--archive", "--reflink=auto", *entries, dst], check=True)
+            subprocess.run(
+                ["cp", "--archive", "--reflink=auto", "--parents", "--", *entries, dst.absolute()], cwd=src, check=True
+            )
+        for directory in reversed(parents):
+            shutil.copystat(src / directory, dst / directory, follow_symlinks=False)
 
     @property
     def method_name(self) -> str:
@@ -44,10 +67,17 @@ class ReflinkCopyStrategy(CopyStrategy):
 
 
 class RsyncCopyStrategy(CopyStrategy):
-    def copy(self, src: Path, dst: Path) -> None:
+    def copy(self, src: Path, dst: Path, *, exclude: Path | None = None) -> None:
         # Protect root entries of any type, including a linked worktree's .git file.
         # Keep the existing recursive directory exclusions.
         exclude_args = [f"--exclude={pattern}" for name in EXCLUDE_NAMES for pattern in (f"/{name}", f"{name}/")]
+        if exclude is not None:
+            pattern = exclude.as_posix()
+            # Rsync treats backslash literally unless the pattern has a glob character.
+            if any(char in pattern for char in "*?["):
+                for char in "\\*?[":
+                    pattern = pattern.replace(char, "\\" + char)
+            exclude_args.append(f"--exclude=/{pattern}")
         subprocess.run(["rsync", "-a", "--delete", *exclude_args, f"{src}/", f"{dst}/"], check=True)
 
     @property
