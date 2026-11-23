@@ -338,6 +338,32 @@ func TestRunnerArtifactsIncludeChildTargetsAndRunnerUploads(t *testing.T) {
 	}
 }
 
+func TestDownloadAllReportsMissingBlobAndSavesRemainingFiles(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("bytestream_url") == "bytestream://host/blobs/missing/4" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = io.WriteString(w, "kept")
+	}))
+	defer server.Close()
+	var files []artifact
+	for _, name := range []string{"missing", "available"} {
+		a := artifactForTest("//example:outputs", name)
+		a.File.File = &bespb.File_Uri{Uri: "bytestream://host/blobs/" + name + "/4"}
+		files = append(files, a)
+	}
+	dir := t.TempDir()
+	err := downloadAllArtifacts(&client{baseURL: server.URL, http: server.Client()}, files, dir)
+	if err == nil || !strings.Contains(err.Error(), "//example:outputs/missing") {
+		t.Fatalf("download error = %v, want the missing artifact's name", err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "available"))
+	if err != nil || string(got) != "kept" {
+		t.Fatalf("later download = %q, %v", got, err)
+	}
+}
+
 func TestArtifactAndToolLogDownloadsIncludeInvocationID(t *testing.T) {
 	const (
 		invocationID = "old-invocation-id"

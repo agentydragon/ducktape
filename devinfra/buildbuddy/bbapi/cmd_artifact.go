@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -412,13 +413,14 @@ func downloadAllArtifacts(c *client, artifacts []artifact, dir string) error {
 		return fmt.Errorf("create output directory: %w", err)
 	}
 	names := downloadNames(artifacts)
+	var failures []error
 	for i, a := range artifacts {
 		dest := filepath.Join(dir, names[i])
 		if err := saveArtifact(c, a, dest); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to download %s: %v\n", a.GetFile().GetName(), err)
+			failures = append(failures, fmt.Errorf("download %s: %w", a.matchKey(), err))
 		}
 	}
-	return nil
+	return errors.Join(failures...)
 }
 
 // downloadNames gives each artifact the file name it is saved under when they all go to one directory. An

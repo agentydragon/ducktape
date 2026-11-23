@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -238,18 +239,14 @@ func downloadAllToolLogs(c *client, logs []toolLog, dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create output directory: %w", err)
 	}
-	var failures []string
+	var failures []error
 	for _, l := range logs {
 		dest := filepath.Join(dir, l.InvocationId+"-"+filepath.Base(l.GetFile().GetName()))
 		if err := saveToolLog(c, l, dest); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to download %s %s: %v\n", l.InvocationId, l.GetFile().GetName(), err)
-			failures = append(failures, l.InvocationId+"/"+l.GetFile().GetName())
+			failures = append(failures, fmt.Errorf("download %s: %w", l.matchKey(), err))
 		}
 	}
-	if len(failures) > 0 {
-		return fmt.Errorf("failed to download %d build tool log(s): %s", len(failures), strings.Join(failures, ", "))
-	}
-	return nil
+	return errors.Join(failures...)
 }
 
 func saveToolLog(c *client, l toolLog, dest string) error {
