@@ -2747,8 +2747,6 @@ spec:
   dependsOn:
     - name: gitlab-spike-bootstrap
       namespace: ducktape-flux
-    - name: tofu-controller
-      namespace: ducktape-flux
     - name: forgejo
       namespace: ducktape-flux
     - name: crossplane-provider-opentofu

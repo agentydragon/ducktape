@@ -44,8 +44,6 @@ def validate_operator_dependencies(cluster: ParsedCluster, crd_to_operator: dict
             checked_operators.add(operator)
             # A HelmRelease is admitted before helm-controller installs its operator.
             # A zero-length graph path cannot order that install before sibling CRs.
-            # Providers applying resources directly (e.g. Flux image automation) do
-            # not have this asynchronous Helm installation boundary.
             if kust_name == operator and any(r.kind == "HelmRelease" for r in resources):
                 errors.append(
                     f"{kust_name} installs its operator through Helm and also applies {resource.kind} resources; "
