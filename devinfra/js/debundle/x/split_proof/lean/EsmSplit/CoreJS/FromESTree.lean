@@ -217,6 +217,7 @@ private def linkedObject (lower : Json → Except String Expr) (j : Json) : Exce
     let v ← p.getObjVal? "value"
     -- A direct anonymous function initializer would take its name from the property key.
     let value ← match ← field v "type" with
+      | "LogicalExpression" => lower v
       | "Literal" | "Identifier" | "ObjectExpression" | "ArrayExpression" | "MemberExpression"
       | "CallExpression" => lower v
       | kind => throw s!"unsupported object property value {kind}"

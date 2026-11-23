@@ -79,6 +79,8 @@ receiver and arrows capture the surrounding `this`. Optional chains, private nam
 
 Linked object literals may contain distinct identifier or string keys. Property values may be supported primitive literals, binding reads, nested object and dense array literals, nonoptional member reads, or supported calls. CoreJS creates a fresh ordinary object and initializes its own data properties in source order. A call in one property's value can stop evaluation before the following property. Computed property definitions, `__proto__`, methods, accessors, and spread are outside this fragment. A direct function expression or arrow as a property value is also outside the fragment, since an anonymous function in that position would take its name from the property key.
 
+A logical expression in a static data property, such as `{mode: config.mode || "default"}`, evaluates its left operand first. Only the selected operand supplies the property value, and an abrupt completion stops construction of the record.
+
 Linked dense array literals evaluate their elements left to right. Inside function bodies the checker also records array spread elements and the bindings their operands capture. If initialization reaches such a literal, CoreJS stops with an unknown result because iterator behavior is outside the model. Top-level array spread and array holes are rejected during lowering.
 
 Untagged template literals use their cooked text and evaluate substitutions from left to right. CoreJS converts each primitive substitution to a string before evaluating the next expression. A linked initialization that needs object-to-primitive conversion reaches an unknown result and cannot certify.
