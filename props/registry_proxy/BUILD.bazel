@@ -90,7 +90,6 @@ py_test(
         "//props/testing/fixtures:db",
         "//props/testing/fixtures:runs",
         "//testing:asgi",
-        "//testing:postgres_fixtures",
         "@pypi//fastapi",
         "@pypi//httpx",
         "@pypi//pytest",

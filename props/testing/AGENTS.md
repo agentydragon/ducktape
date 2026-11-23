@@ -2,9 +2,9 @@
 
 The root `props/conftest.py` holds configuration and tracing only. Opt in to shared fixture
 modules with `pytest_plugins` in each test module and a `gazelle:include_dep` for each plugin.
-Register `testing.postgres_fixtures` before `props.testing.fixtures.db` so Props' synchronous
-`engine` fixture overrides the shared asynchronous default. Agent container E2E tests register
-`props.agents.testing.e2e_pytest_plugins`, which bundles these with `runs`, `scopes`, `e2e_infra`,
+`props.testing.fixtures.db` provides the shared PostgreSQL container and the Props database
+fixtures, including the synchronous `engine`. Agent container E2E tests register
+`props.agents.testing.e2e_pytest_plugins`, which bundles `db` with `runs`, `scopes`, `e2e_infra`,
 `e2e_container` and `mcp_infra.testing.fixtures` (`async_docker_client`).
 
 Use `--keep-db` or `KEEP_TEST_DB=1` to inspect clones during the current pytest session. The

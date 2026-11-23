@@ -26,7 +26,6 @@ py_test(
         "//props/db:config",
         "//props/testing/fixtures:db",
         "//testing:postgres",
-        "//testing:postgres_fixtures",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

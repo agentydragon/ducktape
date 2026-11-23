@@ -163,7 +163,6 @@ py_test(
         "//props/testing/fixtures:db",
         "//props/testing/fixtures:ground_truth",
         "//props/testing/fixtures:runs",
-        "//testing:postgres_fixtures",
         "@pypi//pytest",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
@@ -184,7 +183,6 @@ py_test(
         "//props:conftest",
         "//props/testing/fixtures:db",
         "//props/testing/fixtures:runs",
-        "//testing:postgres_fixtures",
         "@pypi//pytest_asyncio",  # keep
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
@@ -341,7 +339,6 @@ py_test(
         "//props/testing/fixtures:db",
         "//props/testing/fixtures:ground_truth",
         "//props/testing/fixtures:runs",
-        "//testing:postgres_fixtures",
         "@pypi//pytest_bazel",
     ],
 )

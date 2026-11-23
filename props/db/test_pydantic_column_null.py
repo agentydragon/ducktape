@@ -11,9 +11,8 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from props.db.database import Database
 from props.db.models import PydanticColumn
 
-# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db
-pytest_plugins = ("testing.postgres_fixtures", "props.testing.fixtures.db")
+pytest_plugins = ("props.testing.fixtures.db",)
 
 
 class Base(DeclarativeBase):

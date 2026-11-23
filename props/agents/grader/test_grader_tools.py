@@ -12,16 +12,10 @@ from props.db.models import AgentRunStatus, ReportedIssueOccurrence
 from props.db.snapshots import LocationAnchor
 from props.testing.fixtures.runs import make_fake_critic_run, make_reported_issues
 
-# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db
 # gazelle:include_dep //props/testing/fixtures:ground_truth
 # gazelle:include_dep //props/testing/fixtures:runs
-pytest_plugins = (
-    "testing.postgres_fixtures",
-    "props.testing.fixtures.db",
-    "props.testing.fixtures.ground_truth",
-    "props.testing.fixtures.runs",
-)
+pytest_plugins = ("props.testing.fixtures.db", "props.testing.fixtures.ground_truth", "props.testing.fixtures.runs")
 
 
 async def test_show_issue_returns_every_occurrence_of_the_issue(synced_db, synced_test_session, example_subtract_orm):

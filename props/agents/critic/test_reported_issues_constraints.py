@@ -18,10 +18,9 @@ from props.db.database import Database
 from props.db.models import ReportedIssue, ReportedIssueOccurrence
 from props.db.snapshots import LocationAnchor
 
-# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db
 # gazelle:include_dep //props/testing/fixtures:runs
-pytest_plugins = ("testing.postgres_fixtures", "props.testing.fixtures.db", "props.testing.fixtures.runs")
+pytest_plugins = ("props.testing.fixtures.db", "props.testing.fixtures.runs")
 
 
 def test_occurrence_empty_locations_invalid(test_critic_run, db: Database):

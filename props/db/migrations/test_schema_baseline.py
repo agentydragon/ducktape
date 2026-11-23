@@ -15,9 +15,8 @@ from props.db.setup import upgrade_database
 from testing.postgres import PUBLIC_RELATION_IDENTITIES, DatabaseNames, create_temporary_database
 from testing.postgres_fixtures import dump_schema_for_migration_check
 
-# gazelle:include_dep //testing:postgres_fixtures
 # gazelle:include_dep //props/testing/fixtures:db
-pytest_plugins = ("testing.postgres_fixtures", "props.testing.fixtures.db")
+pytest_plugins = ("props.testing.fixtures.db",)
 
 
 def test_schema_baseline(
