@@ -1,4 +1,4 @@
-"""Unit tests for retry safety and QU validation in batch_tools.
+"""Unit tests for backend failures and QU validation in batch_tools.
 
 These tests mock the httpx2 client via pytest-httpx2's RESPX router to verify:
 - Mutating POSTs are never re-executed after they succeed (even when follow-up GET fails)
@@ -131,6 +131,29 @@ async def test_read_get_still_retried_on_timeout(mcp_client: tuple[Client, respx
     result = await client.call_tool("stock_get", {"products": [], "locations": []})
     assert unwrap_result(result) == []
     assert stock_route.calls.call_count == 2, "read GET should retry after a timeout"
+
+
+async def test_low_stock_report_survives_unavailable_locations(mcp_client: tuple[Client, respx.Router]) -> None:
+    client, router = mcp_client
+    router.get("/stock/volatile").respond(
+        json={
+            "missing_products": [{"id": 1, "amount_missing": "2", "product": {**PRODUCTS[0], "min_stock_amount": "5"}}]
+        }
+    )
+    router.get("/objects/locations").respond(status_code=503)
+
+    result = await client.call_tool("get_below_minimum_stock", {})
+
+    assert unwrap_result(result) == [
+        {
+            "product_id": 1,
+            "product_name": "TestProduct",
+            "amount": 3,
+            "min_amount": 5,
+            "qu_name": "pieces",
+            "deficit": 2,
+        }
+    ]
 
 
 async def test_unit_validation_rejects_wrong_qu(mcp_client: tuple[Client, respx.Router]) -> None:
