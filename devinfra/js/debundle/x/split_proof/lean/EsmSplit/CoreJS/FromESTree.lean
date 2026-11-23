@@ -253,6 +253,16 @@ private def linkedMember (lower : Json → Except String Expr) (j : Json) : Exce
   let key ← if ← j.getObjValAs? Bool "computed" then lower prop else identifier prop >>= stringExpr
   return (base, key)
 
+private def pairSequences : List Expr → List Expr
+  | a :: b :: rest => .seq a b :: pairSequences rest
+  | rest => rest
+
+/-- Successive pairing keeps ESTree's left-to-right order and final value.
+A flat operand list then needs logarithmic expression depth in CoreJS. -/
+private partial def sequenceTree (head : Expr) : List Expr → Expr
+  | [] => head
+  | next :: tail => sequenceTree (.seq head next) (pairSequences tail)
+
 mutual
 
 private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHint : Name)
@@ -313,7 +323,7 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
     let expressions ← j.getObjValAs? (List Json) "expressions"
     let first :: second :: rest := expressions | throw "expected at least two sequence operands"
     let lower := linkedExpr imports inFunction ""
-    (second :: rest).foldlM (fun acc operand => return .seq acc (← lower operand)) (← lower first)
+    return sequenceTree (← lower first) (← (second :: rest).mapM lower)
   | "CallExpression" =>
     if ← j.getObjValAs? Bool "optional" then throw "unsupported optional call"
     let lower := linkedExpr imports inFunction ""

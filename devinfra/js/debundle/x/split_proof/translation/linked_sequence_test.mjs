@@ -45,6 +45,7 @@ for (const [index, operands] of [
   [true, 0],
   [null, "ignored", false],
   [1, 2, 3, "last"],
+  [...Array.from({ length: 89 }, (_, i) => i), "wide final value"],
 ].entries()) {
   const expected = operands.at(-1);
   const sequence = { type: "SequenceExpression", expressions: operands.map(literal) };
