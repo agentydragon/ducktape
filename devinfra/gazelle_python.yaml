@@ -386,7 +386,6 @@ manifest:
     starlette: starlette
     statsmodels: statsmodels
     structlog: structlog
-    svg: svg_py
     syrupy: syrupy
     tabulate: tabulate
     tenacity: tenacity
@@ -431,4 +430,4 @@ manifest:
     zstandard: zstandard
   pip_repository:
     name: pypi
-integrity: 39866ae4285d41d19c64019f100106c4028dee1ca1d05c8fabffaf4265bbcf9d
+integrity: b8075382547a79ffab67c095a60b75b8bf5b4a5c60e0784a5a874b27586cbd77

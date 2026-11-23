@@ -5403,10 +5403,6 @@ structlog==26.1.0 \
     --hash=sha256:e081a26d6c373e6d201eca24eede26d8ffab07f88f477822e679183428d3d91e \
     --hash=sha256:f63a716cbd1b1291cf7661de7794b455acfa4c43c5bcf1630e6ad5ddc1adb3b7
     # via ducktape (pyproject.toml)
-svg-py==1.10.0 \
-    --hash=sha256:2e1391411a205220a0e72ca303f3c2d11dbd564cb1dbc445406c5e11421bcc4b \
-    --hash=sha256:54c7470347d5d79b30d059584a4f449da08b462903e8ce262981338bab755560
-    # via ducktape (pyproject.toml)
 syrupy==6.1.1 \
     --hash=sha256:6ac9ac6a42d70ae44156f5f157a9563b9bb8cc96dcf9364327f330463bff889a \
     --hash=sha256:7e584a8df4ede6dd3c1c44a77f9edc46186b6767a73dea6f0083044946839a59
