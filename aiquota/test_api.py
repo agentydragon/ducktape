@@ -1,8 +1,11 @@
 import asyncio
 import base64
+import json
+from collections import Counter
 from collections.abc import AsyncGenerator, AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from uuid import UUID
 
 import httpx
 import pytest
@@ -26,13 +29,14 @@ from aiquota.models import (
     ClaudeResetGrant,
     FetchError,
     FetchSuccess,
+    PrepaidBalanceAvailable,
     ProviderFetch,
     ProviderQuota,
     QuotaSnapshot,
     QuotaWindow,
     RawUpstreamResponse,
 )
-from aiquota.providers.claude import USAGE_URL
+from aiquota.providers.claude import PROFILE_URL, USAGE_URL
 from aiquota.render.view_model import AllQuotasView, refresh_view
 from aiquota.server_main import _frontend_dir
 from aiquota.settings import Settings
@@ -288,6 +292,60 @@ async def test_real_claude_provider_keeps_usage_and_prepaid_captures_separate(
         "exponent": 2,
         "currency": "USD",
     }
+
+
+async def test_managed_claude_reuses_each_profiles_organization_for_prepaid_balance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profiles = {f"selector-{index}": (str(UUID(int=index)), str(UUID(int=index + 10)), index) for index in (1, 2)}
+    requests: Counter[tuple[str, str]] = Counter()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/v0/management/auth-files":
+            return httpx.Response(200, json={"files": [{"provider": "claude", "auth_index": key} for key in profiles]})
+
+        assert request.url.path == "/v0/management/api-call"
+        payload = json.loads(request.content)
+        selector, url = payload["auth_index"], payload["url"]
+        requests[selector, url] += 1
+        account, organization, amount = profiles[selector]
+        bodies = {
+            PROFILE_URL: {"account": {"uuid": account}, "organization": {"uuid": organization}},
+            USAGE_URL: {"five_hour": {"utilization": amount}},
+            f"https://api.anthropic.com/api/oauth/organizations/{organization}/prepaid/credits": {
+                "currency": "USD",
+                "balance": {"credits": {"amount_minor": amount, "exponent": 2}},
+            },
+        }
+        return httpx.Response(200, json={"status_code": 200, "body": json.dumps(bodies[url])})
+
+    monkeypatch.setattr(
+        api, "_CapturingClientFactory", lambda: _CapturingClientFactory(transport=httpx.MockTransport(handler))
+    )
+    service = QuotaAPIService(
+        Config.model_validate(
+            {
+                "cli_proxy_api": {"url": "http://cliproxy.test/v0/management"},
+                "codex": {"enabled": False},
+                "zai": {"enabled": False},
+            }
+        ),
+        cli_proxy_api_key="management-key",
+    )
+    snapshot = await service.fetch(force_refresh=True)
+
+    quotas = {quota.account_id: quota.last_output.result for quota in snapshot.quotas.providers}
+    assert set(quotas) == {f"{account}:{organization}" for account, organization, _ in profiles.values()}
+    expected_captures = set()
+    for selector, (account, organization, amount) in profiles.items():
+        account_id = f"{account}:{organization}"
+        result = quotas[account_id]
+        assert isinstance(result, FetchSuccess)
+        assert result.windows[0].used_percent == amount
+        assert result.prepaid_balance == PrepaidBalanceAvailable(amount_minor=amount, exponent=2, currency="USD")
+        assert requests[selector, PROFILE_URL] == 1
+        expected_captures.update({f"claude:{account_id}", f"claude_prepaid_balance:{account_id}"})
+    assert snapshot.raw_responses.keys() == expected_captures
 
 
 async def test_prepaid_balance_raw_capture_is_claude_only(client: httpx.AsyncClient) -> None:

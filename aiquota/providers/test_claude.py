@@ -8,7 +8,13 @@ import pytest_bazel
 import respx
 
 from aiquota.config import ClaudeSettings
-from aiquota.models import ClaudeResetGrant, FetchSuccess, PrepaidBalanceAvailable, PrepaidBalanceUnavailable
+from aiquota.models import (
+    ClaudeResetGrant,
+    FetchError,
+    FetchSuccess,
+    PrepaidBalanceAvailable,
+    PrepaidBalanceUnavailable,
+)
 from aiquota.providers.claude import (
     PLAIN_USAGE_URL,
     PROFILE_URL,
@@ -221,41 +227,46 @@ async def test_management_api_uses_claude_auth_index_and_ignores_stored_credenti
     assert legacy_usage.call_count == 0
 
 
-async def test_rejected_reset_option_falls_back_to_plain_usage(tmp_path: Path) -> None:
-    provider = ClaudeProvider(_stored_credentials(tmp_path), provider_client())
-    with respx.mock(assert_all_called=False) as mock:
-        mock.get(USAGE_URL).mock(return_value=httpx.Response(400))
-        plain = mock.get(PLAIN_USAGE_URL).mock(
-            return_value=httpx.Response(200, json={"seven_day": {"utilization": 42}})
-        )
-        mock.get(PROFILE_URL).mock(return_value=httpx.Response(503))
-        output = await provider.fetch()
-    assert isinstance(output.result, FetchSuccess)
-    assert output.result.windows[0].used_percent == 42
-    assert output.result.claude_reset_grants is None
-    assert plain.called
+@pytest.mark.parametrize("transport", ["direct", "managed"])
+@pytest.mark.parametrize("status", [400, 404, 403])
+async def test_usage_fallback_only_for_rejected_reset_option(tmp_path: Path, transport: str, status: int) -> None:
+    requested: list[str] = []
+    responses = {
+        USAGE_URL: (status, {}),
+        PLAIN_USAGE_URL: (200, {"seven_day": {"utilization": 42}}),
+        PROFILE_URL: (503, {}),
+    }
 
-
-async def test_management_rejected_reset_option_falls_back_to_plain_usage() -> None:
-    management = CLIProxyAPIManagementClient("http://cliproxy.test/v0/management", "management-key", provider_client())
-    provider = ClaudeProvider(ClaudeSettings(), provider_client(), management_client=management)
-    with respx.mock(assert_all_called=False) as mock:
-        mock.get("http://cliproxy.test/v0/management" + MANAGEMENT_AUTH_FILES_PATH).mock(
-            return_value=httpx.Response(200, json={"files": [{"provider": "claude", "auth_index": "claude-auth"}]})
-        )
-
-        def response(request: httpx.Request) -> httpx.Response:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if transport == "managed":
+            if request.url.path.endswith(MANAGEMENT_AUTH_FILES_PATH):
+                return httpx.Response(200, json={"files": [{"provider": "claude", "auth_index": "claude-auth"}]})
+            assert request.url.path.endswith(MANAGEMENT_API_CALL_PATH)
             url = json.loads(request.content)["url"]
-            status = 200 if url == PLAIN_USAGE_URL else 400
-            body = json.dumps({"seven_day": {"utilization": 42}}) if status == 200 else "unsupported"
-            return httpx.Response(200, json={"status_code": status, "body": body}, request=request)
+        else:
+            url = str(request.url)
+        requested.append(url)
+        upstream_status, body = responses[url]
+        if transport == "managed":
+            return httpx.Response(200, json={"status_code": upstream_status, "body": json.dumps(body)})
+        return httpx.Response(upstream_status, json=body)
 
-        calls = mock.post("http://cliproxy.test/v0/management" + MANAGEMENT_API_CALL_PATH).mock(side_effect=response)
-        output = await provider.fetch()
-    assert isinstance(output.result, FetchSuccess)
-    assert output.result.windows[0].used_percent == 42
-    assert output.result.claude_reset_grants is None
-    assert [json.loads(call.request.content)["url"] for call in calls.calls][:2] == [USAGE_URL, PLAIN_USAGE_URL]
+    factory = provider_client(transport=httpx.MockTransport(handler))
+    management = (
+        CLIProxyAPIManagementClient("http://cliproxy.test/v0/management", "management-key", factory)
+        if transport == "managed"
+        else None
+    )
+    output = await ClaudeProvider(_stored_credentials(tmp_path), factory, management).fetch()
+
+    if status == 403:
+        assert isinstance(output.result, FetchError)
+        assert requested == [USAGE_URL]
+    else:
+        assert isinstance(output.result, FetchSuccess)
+        assert output.result.windows[0].used_percent == 42
+        assert output.result.claude_reset_grants is None
+        assert requested == [USAGE_URL, PLAIN_USAGE_URL, PROFILE_URL]
 
 
 async def test_prepaid_lookup_failure_keeps_successful_usage_and_marks_balance_unavailable(tmp_path: Path) -> None:
