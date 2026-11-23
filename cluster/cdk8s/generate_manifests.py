@@ -761,6 +761,7 @@ def generate_manifests(root: Path) -> None:
             functools.partial(
                 crossplane.opentofu_provider_chart,
                 kubernetes_identities=(
+                    gitlab_spike_flux.KUBERNETES_IDENTITY,
                     sso_providers.KUBERNETES_IDENTITY,
                     agent_machine_access.KUBERNETES_IDENTITY,
                     forgejo_images.KUBERNETES_IDENTITY,
@@ -1485,6 +1486,7 @@ def generate_manifests(root: Path) -> None:
         gitlab_spike_bootstrap_kustomization,
         tofu_controller_kustomization,
         forgejo_kustomization,
+        crossplane_opentofu_provider_kustomization,
     )
     gitlab_spike_integrations_artifact = artifact(
         gitlab_spike_flux.INTEGRATIONS_NAME, gitlab_spike_flux.INTEGRATIONS_DIR

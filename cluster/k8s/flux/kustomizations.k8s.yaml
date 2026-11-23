@@ -2751,6 +2751,8 @@ spec:
       namespace: ducktape-flux
     - name: forgejo
       namespace: ducktape-flux
+    - name: crossplane-provider-opentofu
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/gitlab-spike/gitops
   prune: true
