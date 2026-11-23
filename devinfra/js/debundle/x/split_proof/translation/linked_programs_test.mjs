@@ -21,6 +21,8 @@ import {
   observe,
   lower,
   prepare,
+  moduleEvaluationOrder,
+  forcePreview,
 } from "./linked_programs_test_support.mjs";
 
 // Move the first declaration to its own module and observe the result exported by the entry.
@@ -171,6 +173,67 @@ assertWorkerResult(
   "number"
 );
 
+// The first property must call with its receiver and its throw must skip the second property.
+assertWorkerResult(
+  "record-call-receiver-and-order",
+  `const worker = () => {
+    const read = function () { throw this.value; };
+    const receiver = { value: "first", read };
+    try {
+      return { first: receiver.read(), second: (() => { throw "second"; })() };
+    } catch (error) {
+      return error;
+    }
+  };
+  export const result = worker() === "first" ? "first" : (() => { throw 0; })();`,
+  "first"
+);
+
+// The same call returns the fallback before `later` initializes and reads the live binding after it initializes.
+{
+  const read = arrow(
+    [id("fallback")],
+    block([tryStatement(block([returns(id("later"))]), catchClause(null, block([returns(id("fallback"))])))])
+  );
+  const source = program([
+    variable("const", "read", read),
+    variable("const", "record", {
+      type: "ObjectExpression",
+      properties: [property("value", call(id("read"), [literal("before")]))],
+    }),
+    variable("const", "later", literal("after")),
+    exportNamed([["record", "result"]]),
+  ]);
+  for (const reordered of [false, true]) {
+    const dir = path.join(root, `generated-record-call-reordered-${reordered}`);
+    const spec = {
+      entry: "entry.mjs",
+      modules: { "record.mjs": ["#0", "#1"], "later.mjs": ["#2"], "entry.mjs": ["#3"] },
+      order: reordered ? ["later.mjs", "record.mjs"] : ["record.mjs", "later.mjs"],
+      sequential: true,
+    };
+    const files = prepare(dir, { source, provider: "", spec });
+    const out = path.join(dir, "out");
+    const { verdict, log } = lower(files.sourceFile, files.specFile, out);
+    let candidate = out;
+    if (reordered) {
+      assert.equal(verdict.status, "rejected", log);
+      assert.match(verdict.reason, /probe executions completed normally with different final states/, log);
+      assert(!existsSync(out));
+      candidate = path.join(dir, "preview");
+      forcePreview(files, candidate);
+    } else {
+      assert.equal(verdict.status, "certified", log);
+      assert.equal(verdict.guarantee, "normal-completion", log);
+    }
+    assert.deepEqual(moduleEvaluationOrder(candidate, spec.entry), [...spec.order, spec.entry], log);
+    assert.deepEqual(observe(files.sourceFile, "result"), { result: { value: "before" } }, log);
+    assert.deepEqual(observe(path.join(candidate, spec.entry), "result"), {
+      result: { value: reordered ? "after" : "before" },
+    });
+  }
+}
+
 // A wide, straight-line initializer consumes one level of fuel per property.
 const fields = Array.from({ length: 65 }, (_, i) => property(`field${i}`, literal(i)));
 assertWorkerResult(
@@ -293,7 +356,7 @@ for (const [name, expr, reason] of [
   ["record-getter", "({ get key() { return 1; } })", /static data property/],
   ["record-spread", "({ ...worker })", /static data property/],
   ["record-duplicate", '({ key: 1, "key": 2 })', /duplicate object property/],
-  ["record-direct-call", "({ key: worker() })", /unsupported object property value CallExpression/],
+  ["record-spread-call", "({ key: worker(...[]) })", /unsupported linked expression SpreadElement/],
   ["record-anonymous-function", "({ key: () => 1 })", /unsupported object property value ArrowFunctionExpression/],
   ["record-array-hole", "({ nested: { key: [, 1] } })", /unsupported array hole/],
   ["record-optional-member", "({ key: worker?.field })", /unsupported object property value ChainExpression/],
