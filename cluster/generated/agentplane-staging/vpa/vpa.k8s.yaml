@@ -22,7 +22,7 @@ spec:
     kind: Deployment
     name: actions
   updatePolicy:
-    updateMode: Initial
+    updateMode: Recreate
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -48,7 +48,7 @@ spec:
     kind: Deployment
     name: app
   updatePolicy:
-    updateMode: Initial
+    updateMode: Recreate
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -70,7 +70,7 @@ spec:
     kind: Deployment
     name: central-sampler
   updatePolicy:
-    updateMode: Initial
+    updateMode: Recreate
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -92,7 +92,7 @@ spec:
     kind: Deployment
     name: egress
   updatePolicy:
-    updateMode: Initial
+    updateMode: Recreate
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -116,7 +116,8 @@ spec:
     kind: Deployment
     name: electric
   updatePolicy:
-    updateMode: Initial
+    minReplicas: 1
+    updateMode: Recreate
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -142,7 +143,7 @@ spec:
     kind: Deployment
     name: environments
   updatePolicy:
-    updateMode: Initial
+    updateMode: Recreate
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -216,7 +217,7 @@ spec:
     kind: Deployment
     name: llm-ingress
   updatePolicy:
-    updateMode: Initial
+    updateMode: Recreate
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -242,7 +243,7 @@ spec:
     kind: Deployment
     name: mcp-edge
   updatePolicy:
-    updateMode: Initial
+    updateMode: Recreate
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -294,7 +295,7 @@ spec:
     kind: Deployment
     name: policy-controller
   updatePolicy:
-    updateMode: Initial
+    updateMode: Recreate
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler
@@ -320,7 +321,7 @@ spec:
     kind: Deployment
     name: sessions
   updatePolicy:
-    updateMode: Initial
+    updateMode: Recreate
 ---
 apiVersion: autoscaling.k8s.io/v1
 kind: VerticalPodAutoscaler

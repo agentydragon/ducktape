@@ -22,6 +22,7 @@ def requests_only_vpa(
     container_name: str,
     update_mode: str,
     target_kind: str = "Deployment",
+    min_replicas: int | None = None,
     min_memory_mib: int | None = None,
     max_memory_mib: int | None = None,
 ) -> VerticalPodAutoscaler:
@@ -32,7 +33,7 @@ def requests_only_vpa(
         metadata=ApiObjectMetadata(name=name, namespace=namespace),
         spec=VerticalPodAutoscalerSpec(
             target_ref=VerticalPodAutoscalerSpecTargetRef(api_version="apps/v1", kind=target_kind, name=name),
-            update_policy=VerticalPodAutoscalerSpecUpdatePolicy(update_mode=update_mode),
+            update_policy=VerticalPodAutoscalerSpecUpdatePolicy(update_mode=update_mode, min_replicas=min_replicas),
             resource_policy=VerticalPodAutoscalerSpecResourcePolicy(
                 container_policies=[
                     VerticalPodAutoscalerSpecResourcePolicyContainerPolicies(

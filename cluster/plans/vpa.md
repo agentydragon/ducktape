@@ -26,8 +26,9 @@ lack both. The 229 VPA objects also include Jobs and other targets; 66 were
 `Initial` applies at Pod creation; it does not resize a running Pod. `Recreate`
 can evict a running Pod. Goldilocks' `auto` label currently produces `Recreate`.
 Ntfy must not be evicted by VPA; keep it `Initial` until its availability design
-and the chosen update mode make that safe. Electric, CDviz and other singletons
-need the same workload-specific check, not automatic promotion.
+and the chosen update mode make that safe. Staging Electric accepts a sync
+interruption during VPA replacement and uses `Recreate` with `minReplicas: 1`.
+Review CDviz and other singletons according to their own availability requirements.
 
 For new policies, default to `RequestsOnly`; limits remain explicitly owned by
 the workload. **Preserve existing `RequestsAndLimits` policies**, including the
@@ -81,9 +82,9 @@ a wave as a group; do not impose a serial PR-and-observation cycle per workload.
 - Review admitted CPU requests on ordinary replacements for the nine replicated
   Agentplane staging services already expanded in
   [#18487](https://github.com/agentydragon/ducktape/pull/18487). Track uncapped
-  recommendations and per-node headroom before raising ceilings. Review Electric,
-  frontend, and dynamic Sandboxes separately for their own availability and
-  ownership requirements.
+  recommendations and per-node headroom before raising ceilings. On Electric’s first updater eviction, verify a
+  shape client reconnects and receives a new change from the existing replication
+  stream. Dynamic Sandboxes retain their own sizing and lifecycle ownership.
 - In parallel, classify the larger `monitoring` and `kube-system` Initial fleets,
   MCP/application singletons, and Goldilocks-disabled namespaces. The 2026-11-21
   snapshot has 31 monitoring and 12 kube-system Initial active controllers;
