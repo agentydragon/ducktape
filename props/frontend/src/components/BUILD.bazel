@@ -287,6 +287,7 @@ ts_library(
         "//props/frontend/src/lib:RunIdLink",
         "//props/frontend/src/lib:client",
         "//props/frontend/src/lib:formatters",
+        "//props/frontend/src/lib:run_filters",
         "//props/frontend/src/lib:schema",
         "//props/frontend/src/lib:status",
         "//props/frontend/src/lib:toast",

@@ -1,6 +1,6 @@
 """Exercise hash routing through the production app with a synthetic HTTP origin."""
 
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 import pytest
 import pytest_bazel
@@ -81,6 +81,24 @@ async def test_app_hash_navigation(visual: VisualHarness) -> None:
         await expect(view.page.get_by_role("cell", name=slug, exact=True)).to_be_visible()
         await view.page.go_forward()
         await expect(view.page.get_by_role("heading", name=slug, exact=True)).to_be_visible()
+
+
+async def test_runs_browser_sends_selected_filters(visual: VisualHarness) -> None:
+    async with visual.open() as view:
+        await view.page.route("**/auth/me", lambda route: route.fulfill(json={"email": "viewer@example.test"}))
+        await view.page.route("**/api/runs?*", lambda route: route.fulfill(json={"runs": [], "total_count": 0}))
+        await view.page.evaluate("() => { window.location.hash = '/runs'; window.mountApp(); }")
+        await expect(view.page.get_by_text("No runs found")).to_be_visible()
+        await view.page.get_by_label("Status", exact=True).click()
+        async with view.page.expect_request("**/api/runs?*"):
+            await view.page.get_by_role("option", name="timed out", exact=True).click()
+
+        await view.page.get_by_label("Agent Type", exact=True).click()
+        async with view.page.expect_request("**/api/runs?*") as request:
+            await view.page.get_by_role("option", name="grader", exact=True).click()
+        params = parse_qs(urlsplit((await request.value).url).query)
+        assert params["status"] == ["timed_out"]
+        assert params["agent_type"] == ["grader"]
 
 
 if __name__ == "__main__":

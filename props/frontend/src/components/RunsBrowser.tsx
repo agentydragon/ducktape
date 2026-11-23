@@ -11,8 +11,9 @@ import type {
   RunSortKey,
   Split,
 } from "../lib/schema";
-import { AGENT_RUN_STATUS_VALUES, AGENT_TYPE_VALUES, fetchRuns, type RunsFilters } from "../lib/api/client";
+import { fetchRuns, type RunsFilters } from "../lib/api/client";
 import { formatAge } from "../lib/formatters";
+import runFilters from "../lib/run_filter_values.json";
 import { formatStatus } from "../lib/status";
 import { toast } from "../lib/toast";
 import type { RunTrigger } from "../lib/types";
@@ -185,7 +186,7 @@ export default function RunsBrowser({
         <Select
           label="Status"
           placeholder="All"
-          data={AGENT_RUN_STATUS_VALUES.map((value) => ({ value, label: formatStatus(value) }))}
+          data={runFilters.statuses.map((value) => ({ value, label: formatStatus(value) }))}
           value={statusFilter || null}
           onChange={(value) => {
             setStatusFilter((value as AgentRunStatus | null) ?? "");
@@ -197,7 +198,7 @@ export default function RunsBrowser({
         <Select
           label="Agent Type"
           placeholder="All"
-          data={AGENT_TYPE_VALUES.map((value) => ({ value, label: value }))}
+          data={runFilters.agentTypes}
           value={agentTypeFilter || null}
           onChange={(value) => {
             setAgentTypeFilter((value as AgentType | null) ?? "");

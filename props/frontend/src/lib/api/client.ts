@@ -73,23 +73,6 @@ export function isGraderRun(run: AgentRunDetail): run is AgentRunDetail & { deta
   return "agent_type" in run.details && run.details.agent_type === "grader";
 }
 
-// Enum value arrays for UI dropdowns (must match schema definitions)
-export const AGENT_RUN_STATUS_VALUES: AgentRunStatus[] = [
-  "in_progress",
-  "exited",
-  "timed_out",
-  "cancelled",
-  "startup_failed",
-];
-
-export const AGENT_TYPE_VALUES: AgentType[] = [
-  "critic",
-  "grader",
-  "critic_dev_optimize",
-  "critic_dev_improve",
-  "freeform",
-];
-
 // Extract error message from API error response
 function extractErrorMessage(error: unknown, fallback: string): string {
   if (error && typeof error === "object") {

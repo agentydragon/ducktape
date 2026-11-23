@@ -19,6 +19,6 @@ export function getStatusColor(status: AgentRunStatus): string {
 }
 
 /** Formats status for display (replaces underscores with spaces) */
-export function formatStatus(status: AgentRunStatus): string {
+export function formatStatus(status: string): string {
   return status.replace(/_/g, " ");
 }
