@@ -52,7 +52,6 @@ lean_library(
 lean_library(
     name = "example_proof",
     srcs = [
-        "EsmSplit.lean",
         "EsmSplit/Controls.lean",
         "//devinfra/js/debundle/x/split_proof/lean/generated:generate_instance",
     ],
@@ -61,6 +60,8 @@ lean_library(
 
 lean_axiom_test(
     name = "axioms_test",
+    # Compile the root module locally so rules_lean can find it beside the merged EsmSplit/ imports.
+    srcs = ["EsmSplit.lean"],
     imports = ["EsmSplit"],
     theorems = [
         "EsmSplit.Bundle.conflict_symm",
