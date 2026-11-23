@@ -1,4 +1,4 @@
-import EsmSplit.CoreJS.RequestFrame
+import EsmSplit.CoreJS.HostFrame
 
 /-!
 # Reachability of prototype lookup
@@ -282,7 +282,9 @@ private theorem reachFrame_hostMember {r R cells A} (name key : String) :
   unfold hostMember
   split
   · exact reachFrame_pure r R cells A _ (by simp [SafeVal, Val.nodes])
-  · exact reachFrame_unknown r R cells A _ _
+  · split
+    · exact reachFrame_readHostRef r R cells A (.property name key)
+    · exact reachFrame_unknown r R cells A _ _
 
 private theorem stringOwn_safe {A s key v} (h : stringOwn s key = some v) : SafeVal A v := by
   unfold stringOwn at h
