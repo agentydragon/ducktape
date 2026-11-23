@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.aiquota" path="/org/gnome/shell/extensions/aiquota/">
+    <key name="panel-show-pace-unit" type="b">
+      <default>true</default>
+      <summary>Show the percentage-point unit in the panel</summary>
+      <description>Show pace as +21 pp instead of +21 in the top bar.</description>
+    </key>
+  </schema>
+</schemalist>

@@ -16,6 +16,8 @@ pkg_files(
         "icons/openai-symbolic.svg",
         "icons/zai-symbolic.svg",
         "metadata.json",
+        "prefs.js",
+        "schemas/org.gnome.shell.extensions.aiquota.gschema.xml",
         "stylesheet.css",
     ],
     strip_prefix = strip_prefix.from_pkg(),
