@@ -2,17 +2,16 @@
 
 Cross-command semantics of the `debundle` CLI: conventions, pipelines, and
 interactions that span commands. The per-command and per-flag reference is
-the clap doc-comments themselves — `debundle <command> --help` — and the
-code wins wherever prose and binary disagree. Future CLI ideas live in
-`TODO.md`.
+available through `debundle <command> --help`. See the [task chooser](../README.md#choose-a-task)
+for authoring workflows and `TODO.md` for open requests.
 
 The source-built CLI target is `@ducktape//devinfra/js/debundle:debundle` in
 consuming repositories, or `//devinfra/js/debundle:debundle` inside Ducktape.
 Prefer the project's CLI wrapper when provided: it supplies the matching
-graph, modules tree, and source root. All commands share the same
-JSON-on-stdout / readable-diagnostic-on-stderr convention.
+graph, modules tree, and source root. See [output formats](#output-format)
+for interactive output and machine-readable reports.
 
-## Find a workflow
+## Inspect static import paths
 
 To inspect original static ESM loading paths before a spec passes validation,
 run `debundle static-imports` with the same flat-spec or tree inputs as `run`:
@@ -38,12 +37,6 @@ without graph edges; calls through an alias are not traced. The command
 does not assert the original host-loader identity or clear runtime blockers.
 `--max-interop-sites` limits detailed site rows while per-chunk kind counts
 remain complete.
-
-The README's [task chooser](../README.md#choose-a-task) links to the recipe for
-inspection, extraction, reorganization, naming, selector stabilization, gate
-diagnosis, or delegation.
-
-Use `debundle <command> --help` for the current command and flag inventory.
 
 ## Delegating with an input snapshot
 
@@ -356,10 +349,15 @@ the complete prospective spec. For example, `merges.json`:
 ```
 
 ```bash
-debundle modules merge --batch merges.json --modules "$MODULES" \
-  --graph "$GRAPH" --source-root "$SOURCE_ROOT" --dry-run
+debundle modules merge --batch merges.json --modules "$CHUNK_MODULES" \
+  --graph "$GRAPH" --source-root "$SOURCE_ROOT" --import-order final-order.json --dry-run
 # Apply the same validated plan by omitting --dry-run.
 ```
+
+Pass the chunk's module subtree as `--modules`. When the batch creates a
+target, `final-order.json` must list every final nonentry owner in its
+reviewed import order. With only surviving owners, omitting `--import-order`
+keeps their relative order.
 
 Explicit `.yaml` filenames preserve their physical casing. Each entry uses the
 single-merge claim, annotation, comment and note rules. The batch rejects empty
@@ -1225,6 +1223,9 @@ refactors whose intermediate states would be invalid can land in one shot:
    move-source files — an interruption can never lose a member that was not
    yet written to its destination.
 
+Only drained move sources are eligible for cleanup. For new destination owners,
+pass `--import-order final-order.json` with the complete final nonentry priority.
+
 `--dry-run` runs steps 1–4 and stops. `--no-verify` skips step 3 (still
 does duplicate-claim detection — that's a structural error, not a
 validation one). `bindings unassign` shares the same post-batch validation
@@ -1843,16 +1844,11 @@ both member and source-match bindings; module edits address the top-level
 
 ## Out of scope
 
-- **No cross-process materializer reader.** `debundle run` reads the spec
-  and emits JS in one process — see `wire_format.md` § "Why pre-filter
-  facts (`StatementFacts`) aren't on the wire" and
-  `lessons_learned/cross_process_stage_b.md`.
 - **Shell tab completion.**
 
 ## See also
 
-- `design.md` — the realizability theorem the gate enforces; § "Layered
-  mental model" + § "Factor assembly inside `debundle run`" for the materializer.
+- `docs/design.md` describes the realizability theorem and assignment assembly inside `debundle run`.
 - `wire_format.md` — JSON sidecar conventions readers of these commands
   consume.
 - `selectors.md` / `spec_editing.md` — selector authoring and spec-editing

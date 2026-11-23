@@ -89,13 +89,10 @@ The sections below hold details, not competing priority queues.
    selector edits are proved by the shared structural resolver; diagnostics
    remain suggestions, and the author decides what to apply. Keep
    gate-before-write, atomic writes and dry-run reporting.
-5. **Excalidraw smoke follow-up.** The public corpus, accepted
-   spec and self-hosted browser smoke landed (<excalidraw/README.md>); the
-   smoke loads swapped packages through an import map. The public canonical
-   spec check is `excalidraw:canonical_summary`
-   (<plans/convergence_landing.md>). Remaining per
-   <plans/excalidraw_live_smoke.md>: dynamic-import coverage after startup and
-   a published screenshot. The current smoke covers startup and drawing.
+5. **Excalidraw smoke coverage.** Exercise post-startup locale, font-subsetting
+   and file-system imports. Capture a representative editor state with
+   `VisualPage.capture()` for PR review. See the [public corpus and current
+   browser checks](excalidraw/README.md).
 6. **Profile-backed AST and lookup work.** Measure cloning, file-name lookup
    and alpha-binding snapshots before ownership redesign, indexes or undo logs.
    Preserve ordering/hygiene and the independent Node differential oracle.

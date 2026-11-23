@@ -19,9 +19,9 @@ rejected.
 
 ## A11 intrinsic integrity assumption
 
-`docs/design.md` records A11 (that analyzed chunks run with unmodified built-in
-prototypes) as an assumption. Prototype pollution can invalidate purity-whitelist
-admission and is not detected. A top-level scan for assignments such as
-`<Builtin>.prototype.<x> = ...` could check the in-corpus portion; pollution from
-host code or other bundles remains an external assumption. Decide whether that
+The source-write census already guards exact slots for migrated native consumers.
+Hidden writes and host or external mutations remain the author's
+[A11 obligation](docs/design.md#conditions-on-the-input-chunk-assumptions-a1a11).
+For purity-table consumers, see [the planned migration](plans/abstract_interpreter.md).
+For broader whole-chunk admission, decide whether an additional mandatory
 check is worth its cost before changing the runtime contract.
