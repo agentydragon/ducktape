@@ -188,25 +188,13 @@ esbuild(
     deps = [":virtualized_history_scroll_harness_lib"],
 )
 
-filegroup(
-    name = "virtualized_history_scroll_harness_js",
-    testonly = True,
-    srcs = ["harness/dist/harness.js"],
-)
-
-filegroup(
-    name = "virtualized_history_scroll_harness_css",
-    testonly = True,
-    srcs = ["harness/dist/harness.css"],
-)
-
 py_visual_test(
     name = "virtualized_history_scroll_visual",
     assets = [
         "harness/index.html",
-        ":virtualized_history_scroll_harness_css",
+        ":harness/dist/harness.css",
     ],
-    harness = ":virtualized_history_scroll_harness_js",
+    harness = ":harness/dist/harness.js",
     test_deps = [
         "//testing/frontend_visual:capture",
         "//testing/frontend_visual:page_capture",
