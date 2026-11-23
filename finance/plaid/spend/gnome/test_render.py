@@ -34,7 +34,6 @@ from gnome.testing.session import GnomeMenuCapture, GnomeSession, exec_output, g
 pytest_plugins = ("gnome.testing.fixtures",)
 
 _EXTENSION_UUID = "plaid-spend@allegedly.works"
-_GSETTINGS = f"gsettings --schemadir /usr/share/gnome-shell/extensions/{_EXTENSION_UUID}/schemas"
 _SETTINGS_SCHEMA = "org.gnome.shell.extensions.plaid-spend"
 _FIXTURE_NAMES = (
     "ready_allowance",
@@ -161,7 +160,6 @@ def plaid_gnome_session(
         fake_daemon_script=runfiles.root() / _FAKE_DBUS_SERVICE,
         destination=_TEST_DBUS_DEST,
         object_path=_TEST_DBUS_PATH,
-        compile_extension_schemas=True,
     )
 
 
@@ -181,16 +179,13 @@ def _set_panel_settings(
     session: GnomeSession, settings: dict[str, str | list[str] | bool], *, wait_for_paint: bool = True
 ) -> None:
     for key, value in settings.items():
-        argument = shlex.quote(json.dumps(value, ensure_ascii=False))
-        result = session.exec(f"{_GSETTINGS} set {_SETTINGS_SCHEMA} {key} {argument}")
-        assert result.exit_code == 0, (key, exec_output(result))
+        session.gsettings("set", _SETTINGS_SCHEMA, key, json.dumps(value, ensure_ascii=False))
     if wait_for_paint:
         session.wait_for_paint()
 
 
 def _reset_panel_settings(session: GnomeSession) -> None:
-    result = session.exec(f"{_GSETTINGS} reset-recursively {_SETTINGS_SCHEMA}")
-    assert result.exit_code == 0, exec_output(result)
+    session.gsettings("reset-recursively", _SETTINGS_SCHEMA)
     session.wait_for_paint()
 
 
@@ -720,7 +715,7 @@ def test_preferences_window_opens(session: GnomeSession, test_outputs: BoundTest
         result = session.exec(
             "gdbus call --session --timeout 10 --dest org.gnome.Shell.Extensions "
             "--object-path /org/gnome/Shell/Extensions --method org.gnome.Shell.Extensions.OpenExtensionPrefs "
-            "'plaid-spend@allegedly.works' '' '{}'"
+            f"{shlex.quote(_EXTENSION_UUID)} '' '{{}}'"
         )
         raise AssertionError(f"Preferences service call failed: {exec_output(result)}") from error
     test_outputs.publish(
