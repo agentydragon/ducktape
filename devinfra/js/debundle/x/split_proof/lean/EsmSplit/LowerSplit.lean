@@ -452,10 +452,7 @@ private def checkOrdinaryExecution (timings : Bool) (work : System.FilePath) (ce
         ("import LinkedExecutionProof\n" ++ cert.preamble ++ cert.correspondence) #[]
 
 /-- Publication waits for the kernel-checked executions and the exact AST gate. -/
-private def verifyExecution (timings : Bool) (profile : CoreJS.HostProfile) (work : System.FilePath) (program providers files : Json) (P : Plan)
-    (original candidate : CoreJS.Program) : IO CoreJS.HostProfile := do
-  let cert ← timePhase timings "certificate_preparation" fun _ => do
-    IO.ofExcept (CoreJS.LinkedBehavior.certificate profile program providers files P original candidate)
+private def verifyExecution (timings : Bool) (work : System.FilePath) (cert : CoreJS.LinkedBehavior.Certificate) : IO CoreJS.HostProfile := do
   let accepted ← match cert.checkpoint with
     | none => pure false
     | some checkpoint => try
@@ -589,20 +586,34 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
             IO.ofExcept (CoreJS.DeclarationArtifacts.check program files ss B P)
         return ← emitVerdict request.label (.ok level) "closed-declarations" (profileVerdict profile .empty)
       catch e => return ← emitVerdict request.label (.error e.toString) "closed-declarations"
+    let errorFields ← IO.mkRef ([] : List (String × Json))
     try
       unless checks.layout && !bad do throw (IO.userError "source placement or module linkage checks failed")
       let providers ← timePhase timings "provider_loading" fun _ => do
         loadProviders program bundlePath work
       let used ← IO.mkRef CoreJS.HostProfile.empty
       certifyOutput providers B P out work input checkOnly timings outputAsts source fun files => do
-        let (original, candidate) ← timePhase timings "linked_lowering" fun _ => do
-          IO.ofExcept (CoreJS.LinkedInput.decodePair program providers files P profile)
+        let decoded ← timePhase timings "linked_lowering" fun _ =>
+          IO.lazyPure fun _ => CoreJS.LinkedInput.decodePair program providers files P profile
+        let (original, candidate) ← match decoded with
+          | .ok pair => pure pair
+          | .error reason =>
+            errorFields.set [("reason_code", toJson "linked_input")]
+            throw (IO.userError reason)
         unless request == .normalCompletion do
           throw (IO.userError "linked execution proves only normal-completion")
-        used.set (← verifyExecution timings profile work program providers files P original candidate)
+        let prepared ← timePhase timings "certificate_preparation" fun _ =>
+          IO.lazyPure fun _ => CoreJS.LinkedBehavior.certificate profile program providers files P original candidate
+        let cert ← match prepared with
+          | .ok cert => pure cert
+          | .error refusal =>
+            let detail := (refusal.observation.map fun value => ("observation", value)).toList
+            errorFields.set (("reason_code", toJson refusal.code.label) :: detail)
+            throw (IO.userError refusal.reason)
+        used.set (← verifyExecution timings work cert)
       let active ← used.get
       return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs" (profileVerdict profile active)
-    catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs"
+    catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs" (← errorFields.get)
   let model ← modelBody asts corejsPath?
   if let some path := moveReportPath? then
     let report := model >>= moveReport asts B S P

@@ -190,6 +190,13 @@ for (const dependent of [false, true]) {
   if (dependent) {
     assert.equal(verdict.status, "rejected", log);
     assert.match(verdict.reason, /probe executions completed normally with different final states/);
+    assert.equal(verdict.reason_code, "probe_mismatch", log);
+    assert.deepEqual(verdict.observation, {
+      kind: "value",
+      path: ["result"],
+      original: '"string"',
+      split: '"object"',
+    });
     assert(!existsSync(out));
     candidate = path.join(dir, "preview");
     forcePreview(files, candidate);
@@ -211,6 +218,7 @@ for (const [kind, syntax] of [
   );
   assert.equal(verdict.status, "rejected");
   assert.equal(verdict.reason, `statement 1: unsupported array ${kind}`);
+  assert.equal(verdict.reason_code, "linked_input");
   assert(!existsSync(out));
 }
 
@@ -250,6 +258,16 @@ for (const elements of [[], [literal(2), array([literal(null)])]]) {
     if (dependsOnOrder) {
       assert.equal(verdict.status, "rejected", log);
       assert.match(verdict.reason, /probe executions completed normally with different final states/);
+      assert.equal(verdict.reason_code, "probe_mismatch", log);
+      assert.equal(verdict.observation?.kind, "alias", log);
+      const [[first], [second]] = verdict.observation.paths;
+      const names = [first, second].sort();
+      assert(names.includes("alias"), log);
+      assert.deepEqual(
+        [verdict.observation.original_alias, verdict.observation.split_alias],
+        [names.includes("left"), names.includes("right")],
+        log
+      );
       assert(!existsSync(out));
       candidate = path.join(dir, "preview");
       forcePreview(files, candidate);
