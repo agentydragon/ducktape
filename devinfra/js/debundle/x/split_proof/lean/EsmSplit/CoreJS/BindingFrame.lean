@@ -293,7 +293,7 @@ private theorem reachFrame_addPrototype {r R cells A} (away : Away r R A) (objec
 
 theorem reachFrame_makeFunc {r R cells A} (away : Away r R A)
     (outside : ∀ a, a.region ≠ r → A (.cell a)) (objectRoot : A (.obj objectProto))
-    (functionRoot : A (.obj functionProto))
+    (functionRoot : A (.obj functionProto)) (asyncRoot : A (.obj asyncFunctionProto))
     (allocate : ∀ o : Obj, (∀ node ∈ o.nodes, A node) →
       ReachFrame r R cells A (fun a => A (.obj a)) (alloc o : M W Addr))
     (env : Env) (safe : ∀ node ∈ env.nodes, A node) (f : Func) :
@@ -315,7 +315,8 @@ theorem reachFrame_makeFunc {r R cells A} (away : Away r R A)
   · intro node hn
     simp [Obj.nodes, Property.nodes, Val.nodes, Code.nodes] at hn
     rcases hn with rfl | captures
-    · exact functionRoot
+    · unfold Func.intrinsicProto
+      split <;> assumption
     · exact Env.nodes_capture he f.closes node captures
 
 private theorem ReachFrame.forM {r R cells A} {α : Type} {f : α → M W PUnit}
@@ -328,7 +329,7 @@ private theorem ReachFrame.forM {r R cells A} {α : Type} {f : α → M W PUnit}
 
 theorem reachFrame_enterBlock {r R cells A} (away : Away r R A)
     (outside : ∀ a, a.region ≠ r → A (.cell a)) (objectRoot : A (.obj objectProto))
-    (functionRoot : A (.obj functionProto))
+    (functionRoot : A (.obj functionProto)) (asyncRoot : A (.obj asyncFunctionProto))
     (allocate : ∀ o : Obj, (∀ node ∈ o.nodes, A node) →
       ReachFrame r R cells A (fun a => A (.obj a)) (alloc o : M W Addr))
     (env : Env) (safe : ∀ node ∈ env.nodes, A node) (body : List Stmt) :
@@ -340,7 +341,7 @@ theorem reachFrame_enterBlock {r R cells A} (away : Away r R A)
     · intro _ _
       exact reachFrame_pure r R cells A e he
     · intro f _
-      apply (reachFrame_makeFunc away outside objectRoot functionRoot allocate e he f).bind
+      apply (reachFrame_makeFunc away outside objectRoot functionRoot asyncRoot allocate e he f).bind
       intro v hv
       exact reachFrame_initVar away e f.name v he hv
   · intro p hp node hn
@@ -349,7 +350,7 @@ theorem reachFrame_enterBlock {r R cells A} (away : Away r R A)
 
 theorem reachFrame_enterFunction {r R cells A} (away : Away r R A)
     (outside : ∀ a, a.region ≠ r → A (.cell a)) (objectRoot : A (.obj objectProto))
-    (functionRoot : A (.obj functionProto))
+    (functionRoot : A (.obj functionProto)) (asyncRoot : A (.obj asyncFunctionProto))
     (allocate : ∀ o : Obj, (∀ node ∈ o.nodes, A node) →
       ReachFrame r R cells A (fun a => A (.obj a)) (alloc o : M W Addr))
     (f : Func) (closed : Env) (safe : ∀ node ∈ closed.nodes, A node) (this : Val) (ht : SafeVal A this)
@@ -358,7 +359,7 @@ theorem reachFrame_enterFunction {r R cells A} (away : Away r R A)
   unfold enterFunction
   apply (reachFrame_declare away outside _ _ (Env.nodes_setThis safe ?_) ?_).bind
   · intro e he
-    exact reachFrame_enterBlock away outside objectRoot functionRoot allocate e he f.body
+    exact reachFrame_enterBlock away outside objectRoot functionRoot asyncRoot allocate e he f.body
   · split
     · exact Env.nodes_this safe
     · exact ht

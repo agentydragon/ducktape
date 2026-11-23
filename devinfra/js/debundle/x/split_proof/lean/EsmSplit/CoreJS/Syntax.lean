@@ -48,9 +48,9 @@ inductive Prim where
   | log | defineProperty | create | getPrototypeOf | setPrototypeOf
   deriving DecidableEq, Repr
 
-/-- `normal` can be called and constructed, `method` and `arrow` only called, `classCtor` only constructed. -/
+/-- `normal` can be called and constructed, `method`, `asyncMethod` and `arrow` only called, `classCtor` only constructed. -/
 inductive FuncKind where
-  | normal | arrow | method | classCtor
+  | normal | arrow | method | asyncMethod | classCtor
   deriving DecidableEq, Repr
 
 /-- What an opaque statement does when it runs. -/

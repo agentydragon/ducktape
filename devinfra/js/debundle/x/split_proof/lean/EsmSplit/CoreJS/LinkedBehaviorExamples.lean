@@ -215,4 +215,19 @@ private theorem objectSpreadExecution : LinkedBehavior.Equivalent objectSpreadPr
   ((FromESTree.linkedUnit ["source"] (closureUnit (objectSpreads #[imported "source"]))).map Stmt.free).toOption ==
     some ["source"]
 
+-- Inspect the CoreJS heap as well as checking the emitted JavaScript in Node.
+private def asyncMethodShape : M World.probe Bool := do
+  let fn ← makeFunc ⟨[], .undef⟩ (.opaque "read" .asyncMethod false 1 0 1 [] (some "deferred"))
+  let .obj proto ← prim (callFn 8) .getPrototypeOf [fn] | return false
+  let .obj parent ← prim (callFn 8) .getPrototypeOf [.obj proto] | return false
+  let .str name ← getProp (callFn 8) fn (.str "name") | return false
+  let .num arity ← getProp (callFn 8) fn (.str "length") | return false
+  let hasPrototype ← hasProp (.str "prototype") fn
+  return proto == asyncFunctionProto && parent == functionProto && proto != parent &&
+    name == "read" && arity == 1 && !(← isConstructor fn) && (hasPrototype matches .bool false)
+
+#guard match asyncMethodShape (initialState World.probe 1) with
+  | .ok result _ => result
+  | _ => false
+
 end CoreJS.LinkedBehaviorExamples

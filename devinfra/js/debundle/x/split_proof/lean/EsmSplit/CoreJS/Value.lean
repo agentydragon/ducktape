@@ -310,6 +310,10 @@ def initVar (env : Env) (x : Name) (v : Val) : M W Unit :=
 def objectProto : Addr := ⟨0, 0⟩
 def functionProto : Addr := ⟨0, 1⟩
 def arrayProto : Addr := ⟨0, 2⟩
+def asyncFunctionProto : Addr := ⟨0, 3⟩
+
+def Func.intrinsicProto (f : Func) : Addr :=
+  if f.kind == .asyncMethod then asyncFunctionProto else functionProto
 
 /-- The string-keyed members of `Object.prototype`. A program reads one from any object that has no property of that name. -/
 def objectProtoNames : List String :=
@@ -330,7 +334,11 @@ private def hostMembers (owner : String) (names : List String) : List (String ×
 private def hostAccessor (owner k : String) : String × Property :=
   (k, .accessor (.host s!"get {owner}.{k}") (.host s!"set {owner}.{k}") false true)
 
-/-- The three prototypes, with every member a value of the host. `Function.prototype` is itself callable. -/
+/-- String-keyed own properties of %AsyncFunction.prototype%. -/
+def asyncFunctionPrototype : Obj :=
+  { proto := some functionProto, props := [("constructor", .data (.host "AsyncFunction") false false true)] }
+
+/-- The intrinsic prototypes, with every member a value of the host. `Function.prototype` is itself callable. -/
 def builtins : Array Obj := #[
   { proto := none, props := hostMembers "Object.prototype" objectProtoNames ++ [hostAccessor "Object.prototype" "__proto__"] },
   { proto := some objectProto, code := some (.host "Function.prototype"),
@@ -338,7 +346,8 @@ def builtins : Array Obj := #[
       hostAccessor "Function.prototype" "arguments", hostAccessor "Function.prototype" "caller"] ++
       hostMembers "Function.prototype" functionProtoNames },
   { proto := some objectProto, array := true,
-    props := ("length", .data (.num 0) true false false) :: hostMembers "Array.prototype" arrayProtoNames }]
+    props := ("length", .data (.num 0) true false false) :: hostMembers "Array.prototype" arrayProtoNames },
+  asyncFunctionPrototype]
 
 /-! ## The host functions the world answers for -/
 
