@@ -93,6 +93,12 @@ statements 104 and 105. Both trials reject the module-level `try` in statement
 176 and leave the output directory absent.
 Each target records the source filename, placement spec and verdict.
 
+One target needs the existing editor module record. Unit `#1751` imports
+`image-GAAHSSAO-YDUOJAAS.js`, which statically imports `ok`, `pk` and `qk`
+from `chunk-PN7KOLDJ.js`. This unit follows the moved scroll function in both
+orders. A behavioral proof must preserve the live export cells seen on re-entry
+and account for the promise returned by the loader.
+
 Both targets render two diagnostic placements with `--diagnostic … --force` into separate
 directories, reparses their entries and compares their public names against the editor's 611 names.
 Those outputs are uncertified previews. The `--plan` report counts source-order conflicts in

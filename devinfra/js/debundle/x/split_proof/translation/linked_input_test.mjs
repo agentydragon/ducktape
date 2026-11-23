@@ -52,6 +52,70 @@ for (const [controls, reason] of [
   cases.push({ kind: "linked", input: linked(controls), expected: reason });
 }
 
+const entryFile = "dist/main.js";
+const targetFile = "assets/lazy.js";
+const resource = (file, source) => ({ url: new URL(file, "https://example.org/app/").href, source });
+function locations({
+  expr = '() => [import.meta.url, import("../assets/lazy.js")]',
+  originalName = entryFile,
+  emittedName = entryFile,
+  moved = [1],
+  retained = [0],
+  before = {},
+  after = {},
+} = {}) {
+  const later = `const later = ${expr};`;
+  const scroll = "const scroll = () => 42;";
+  const text = `${later} ${scroll}`;
+  const old = { [entryFile]: resource(entryFile, text), [targetFile]: resource(targetFile, "export const x = 1;") };
+  return {
+    source: parse(text),
+    originalName,
+    emittedName,
+    retained,
+    moved,
+    before: { ...old, ...before },
+    after: {
+      ...old,
+      [entryFile]: resource(entryFile, later),
+      "new/scroll.mjs": resource("new/scroll.mjs", scroll),
+      ...after,
+    },
+  };
+}
+
+cases.push({
+  kind: "location",
+  input: locations(),
+  expected: [
+    [0, "import.meta.url"],
+    [0, "../assets/lazy.js", targetFile],
+  ],
+});
+for (const [opts, expected] of [
+  [{ originalName: "alias.js" }, /source entry path differs/],
+  [{ before: { [entryFile]: resource(entryFile, "different") } }, /parsed source differs/],
+  [
+    { after: { [entryFile]: { ...resource(entryFile, ""), url: "https://other.example/dist/main.js" } } },
+    /effective entry URL changed/,
+  ],
+  [{ moved: [0], retained: [1] }, /URL-sensitive unit 0 moved/],
+  [{ before: { "new/scroll.mjs": resource("new/scroll.mjs", "") } }, /output path already exists/],
+  [{ after: { [targetFile]: resource(targetFile, "export const x = 2;") } }, /target URL or source changed/],
+  [{ after: { [targetFile]: resource("elsewhere.js", "export const x = 1;") } }, /target URL or source changed/],
+  [{ expr: '() => import("../assets/missing.js")' }, /missing original dynamic target/],
+  [{ expr: '() => import("./main.js")' }, /dynamic target is an output module/],
+  [{ expr: '() => import("../../outside.js")' }, /leaves the module tree/],
+  [{ expr: "() => import(name)" }, /expected a string literal/],
+  [{ expr: '() => import("./dep.js", {with: {type: "json"}})' }, /unsupported dynamic import options/],
+  [{ expr: "() => import.meta" }, /expected import.meta.url/],
+  [{ expr: "() => import.meta.resolve" }, /expected import.meta.url/],
+  [{ expr: '() => eval("scroll")' }, /direct `eval`/],
+  [{ expr: 'await import("./lazy.js")' }, /top-level `await`/],
+]) {
+  cases.push({ kind: "location", input: locations(opts), expected });
+}
+
 // A public alias through a glue import must resolve to the same declaration.
 cases.push({ kind: "linked", input: linked({ exposesGlue: true }), expected: orders });
 cases.push({
