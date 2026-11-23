@@ -348,7 +348,6 @@ kind: Workspace
 metadata:
   annotations:
     crossplane.io/external-name: default
-    crossplane.io/paused: "true"
   name: gitlab-spike
 spec:
   deletionPolicy: Orphan
