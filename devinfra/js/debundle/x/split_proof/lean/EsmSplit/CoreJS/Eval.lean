@@ -63,10 +63,10 @@ def makeFunc (env : Env) (f : Func) : M W Val := do
   pure (.obj a)
 
 /-- A function whose body is part `part` of the opaque code `code`, closed over `cells`. -/
-def makeOpaque (code part : Nat) (cells : List (Option Addr)) (name : String) (length : Nat) (constructor : Bool) :
-    M W Val := do
+def makeOpaque (code part : Nat) (cells : List (Option Addr)) (name : String) (length : Nat) (constructor : Bool)
+    (proto : Addr := functionProto) : M W Val := do
   let a ← alloc {
-    proto := some functionProto, code := some (.opaque code part cells constructor),
+    proto := some proto, code := some (.opaque code part cells constructor),
     props := [("length", .data (.num (Float.ofNat length)) false false true),
       ("name", .data (.str name) false false true)] }
   (if constructor then addPrototype a else pure ())
@@ -107,7 +107,7 @@ def toldOf : Except Val Told → M W Told
   | .error v => do pure (.threw (← toW v))
 
 /-- The bindings an opaque statement is handed, in the order of `opaqueNames`. -/
-def opaqueCells (env : Env) (decls : List (Name × DeclKind)) (funs : List (Name × Nat × Bool)) (free : List Name) :
+def opaqueCells (env : Env) (decls : List (Name × DeclKind)) (funs : List OpaqueHoist) (free : List Name) :
     List (Option Addr) :=
   (opaqueNames decls funs free).map fun x => env.vars.lookup x
 
@@ -723,10 +723,13 @@ def unitsOf (linked : List (Module × Env)) : List (Nat × Stmt × Env) :=
   linked.flatMap fun (m, env) => m.body.map fun (id, s) => (id, s, env)
 
 /-- The functions an opaque statement declares get their values: function `k` is part `k` of its code. -/
-def initOpaque (code : Nat) (cells : List (Option Addr)) (env : Env) : List (Name × Nat × Bool) → Nat → M W Unit
+def initOpaque (code : Nat) (cells : List (Option Addr)) (env : Env) : List OpaqueHoist → Nat → M W Unit
   | [], _ => pure ()
-  | (x, length, constructor) :: rest, part => do
-    initVar env x (← makeOpaque code part cells x length constructor)
+  | (x, length, kind) :: rest, part => do
+    let v ← match kind with
+      | .ordinary constructor => makeOpaque code part cells x length constructor
+      | .asyncFn => makeOpaque code part cells x length false asyncFunctionProto
+    initVar env x v
     initOpaque code cells env rest (part + 1)
 
 /-- A declared function gets its value, in the region of its declaration and the scope of its module. -/

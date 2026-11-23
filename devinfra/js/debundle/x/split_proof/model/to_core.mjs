@@ -835,6 +835,10 @@ export function coreFromParsed(
     };
     visit(root, false);
   }
+  function hoist(name, fn) {
+    if (fn.generator) refuse(fn, "a generator declaration requires the generator prototype");
+    return [name, paramLength(fn.params), fn.async ? "async" : true];
+  }
   /** The top-level statement or declarator `node` as an opaque statement with the identity `id`. */
   function opaqueStatement(node, id) {
     const decls = [];
@@ -843,16 +847,14 @@ export function coreFromParsed(
     for (const { v, def } of within_(defs, node)) {
       if (seen.has(v.name)) continue;
       seen.add(v.name);
-      if (def.type === "FunctionName")
-        funs.push([v.name, paramLength(def.node.params), !(def.node.async || def.node.generator)]);
+      if (def.type === "FunctionName") funs.push(hoist(v.name, def.node));
       else if (def.type === "ClassName") decls.push([v.name, "let"]);
       else if (def.type === "Variable") decls.push([v.name, def.parent.kind === "let" ? "let" : def.parent.kind]);
       else refuse(node, `a declaration of kind ${def.type}`);
     }
     if (node.type === "ExportDefaultDeclaration") {
       const d = node.declaration;
-      if (d.type === "FunctionDeclaration" && !d.id)
-        funs.push(["default", paramLength(d.params), !(d.async || d.generator)]);
+      if (d.type === "FunctionDeclaration" && !d.id) funs.push(hoist("default", d));
       else if (d.type === "ClassDeclaration" && !d.id) decls.push(["*default*", "let"]);
       else if (d.type !== "FunctionDeclaration" && d.type !== "ClassDeclaration") decls.push(["*default*", "const"]);
       for (const [x] of [...decls, ...funs]) seen.add(x);
@@ -868,7 +870,7 @@ export function coreFromParsed(
   /**
    * What the opaque statement `node` makes when it runs, if it only makes functions, else `null` (the world runs it).
    * A function declaration makes nothing when it runs: its function is made when the program is linked. A declaration
-   * whose initializer is a function or an arrow, whatever its parameters and body, makes `[name, length, constructor]`.
+   * whose initializer is an ordinary function or a synchronous arrow makes `[name, length, constructor]`.
    */
   function closures(node, decls, funs) {
     const declared = node.type === "ExportDefaultDeclaration" ? node.declaration : node;
@@ -876,9 +878,9 @@ export function coreFromParsed(
     if (node.type !== "VariableDeclarator" || node.id.type !== "Identifier" || decls.length !== 1 || funs.length !== 0)
       return null;
     const f = node.init;
+    if (f?.async || f?.generator) return null;
     if (f?.type === "ArrowFunctionExpression") return [[node.id.name, paramLength(f.params), false]];
-    if (f?.type === "FunctionExpression")
-      return [[f.id?.name ?? node.id.name, paramLength(f.params), !(f.async || f.generator)]];
+    if (f?.type === "FunctionExpression") return [[f.id?.name ?? node.id.name, paramLength(f.params), true]];
     return null;
   }
 

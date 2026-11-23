@@ -44,6 +44,20 @@ export const inheritanceOpaqueCases = [
 
 export const opaqueCases = [
   {
+    name: "hoisted async functions share their intrinsic prototype and cannot construct",
+    source: `
+      const plain = function() {};
+      console.log(later.name, later.length, "prototype" in later,
+        Object.getPrototypeOf(later) === Object.getPrototypeOf(other),
+        Object.getPrototypeOf(later) === Object.getPrototypeOf(plain),
+        Object.getPrototypeOf(Object.getPrototypeOf(later)) === Object.getPrototypeOf(plain));
+      try { new later(); } catch (e) { console.log("new rejected"); }
+      async function later(a, ...rest) { return a; }
+      async function other() { return 3; }
+    `,
+    scripts: {},
+  },
+  {
     name: "opaque class methods capture distinct enclosing function invocations",
     source: `
       function make(value) {

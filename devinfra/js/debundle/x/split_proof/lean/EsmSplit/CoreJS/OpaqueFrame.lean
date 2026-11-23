@@ -192,7 +192,7 @@ theorem converse_frames (r : Nat) (R : Addr → Prop) (code : Nat) (cells : List
 
 /-- A whole `.world` statement inherits the request premise of its conversation. -/
 theorem opaque_world_frames (r : Nat) (R : Addr → Prop) (n : Nat) (env : Env) (code : Nat)
-    (decls : List (Name × DeclKind)) (funs : List (Name × Nat × Bool)) (free : List Name)
+    (decls : List (Name × DeclKind)) (funs : List OpaqueHoist) (free : List Name)
     (hrequests : ∀ k < n, ∀ req, (∃ told state, (W.talk told state).1 = req) →
       Frames r R (perform (callFn k) (construct k) code (opaqueCells env decls funs free) req : M W Told)) :
     Frames r R (execStmt n env (.opaque code decls funs free .world) : M W Flow) := by
@@ -323,7 +323,7 @@ requests frame the declaration's region and read cells. This is a semantic premi
 theorem decl_opaque_world_commute {n i j : Nat} {env : Env} {e : Expr} {R : Addr → Prop}
     (hij : i ≠ j) (kind : DeclKind) (x : Name) (he : e.allocOnly = true)
     (hw : Within (i + 1) R env e.readsNow) (hx : ∀ c, env.vars.lookup x = some c → c.region = i + 1)
-    (code : Nat) (decls : List (Name × DeclKind)) (funs : List (Name × Nat × Bool)) (free : List Name)
+    (code : Nat) (decls : List (Name × DeclKind)) (funs : List OpaqueHoist) (free : List Name)
     (hrequests : ∀ k < n, ∀ req, (∃ told state, (W.talk told state).1 = req) →
       Frames (i + 1) R (perform (callFn k) (construct k) code (opaqueCells env decls funs free) req : M W Told)) :
     Commute (runUnit n env i (.decl kind x e) : M W Flow)
