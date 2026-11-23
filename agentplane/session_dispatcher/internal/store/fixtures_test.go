@@ -96,7 +96,7 @@ func enqueueWithSession(t *testing.T, store *Store, ctx context.Context, session
 		if _, err := createSession(store, ctx, sessionID, sandboxName, sandboxUID, &sessionpb.SessionSpec{}, nil, nil); err != nil {
 			return nil, err
 		}
-		if _, err := store.DB.ExecContext(ctx, "UPDATE session SET state=$2 WHERE session_id=$1", sessionID, SessionAcceptedState); err != nil {
+		if _, err := store.DB.ExecContext(ctx, "UPDATE session SET state_value=$2 WHERE session_id=$1", sessionID, SessionAcceptedState); err != nil {
 			return nil, err
 		}
 	} else if err != nil {

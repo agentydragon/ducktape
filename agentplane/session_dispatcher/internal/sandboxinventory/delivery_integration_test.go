@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -24,6 +25,7 @@ import (
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	sandboxapi "github.com/agentydragon/ducktape/agentplane/sandboxes/api"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher"
+	dispatcherpb "github.com/agentydragon/ducktape/agentplane/session_dispatcher/dispatcher/api/session/session_dispatcherpb"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/internal/store"
 	"github.com/agentydragon/ducktape/agentplane/session_dispatcher/migrations"
 	"github.com/agentydragon/ducktape/agentplane/testing/kubeapiserver"
@@ -35,7 +37,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
-
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -336,9 +337,9 @@ func TestClaimErrorsRetryWithoutRescan(t *testing.T) {
 				f.await(t, f.runtime.opened, session)
 				f.accepted(t, session)
 			}
-			table, state := "dispatch", store.DeliveringState
+			table, state := "dispatch", int32(store.DeliveringState)
 			if sessionClaim {
-				table, state = "session", store.SessionInProgressState
+				table, state = "session", int32(store.SessionInProgressState)
 			}
 			// A sequence increment survives the aborted transaction. The first claim
 			// raises a real serialization error; a later claim can commit without any
@@ -346,7 +347,7 @@ func TestClaimErrorsRetryWithoutRescan(t *testing.T) {
 			if _, err := f.queueStore.DB.ExecContext(f.ctx, `CREATE SEQUENCE test_claims;
    CREATE FUNCTION test_fail_claim() RETURNS trigger LANGUAGE plpgsql AS $$
    BEGIN IF nextval('test_claims')=1 THEN RAISE EXCEPTION 'test transient claim failure' USING ERRCODE='40001'; END IF; RETURN NEW; END $$;
-   CREATE TRIGGER test_fail_claim BEFORE UPDATE ON `+table+` FOR EACH ROW WHEN (OLD.state IS DISTINCT FROM NEW.state AND NEW.state='`+state+`') EXECUTE FUNCTION test_fail_claim()`); err != nil {
+   CREATE TRIGGER test_fail_claim BEFORE UPDATE ON `+table+` FOR EACH ROW WHEN (OLD.state_value IS DISTINCT FROM NEW.state_value AND NEW.state_value=`+strconv.FormatInt(int64(state), 10)+`) EXECUTE FUNCTION test_fail_claim()`); err != nil {
 				t.Fatal(err)
 			}
 			scans := f.catalog.scans.Load()
@@ -420,7 +421,7 @@ func TestLeaseExpiryAndTwoReplicasPreserveHeadOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.queueStore.SettleSession(f.ctx, session, *owner, []string{store.SessionWaitingState}, store.SessionInProgressState, ""); err != nil {
+	if _, err := f.queueStore.SettleSession(f.ctx, session, *owner, []dispatcherpb.SessionStatus_Materialization{store.SessionWaitingState}, store.SessionInProgressState, ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.queueStore.DB.ExecContext(f.ctx, `UPDATE session_delivery_lease SET expires_at=clock_timestamp()+interval '2 seconds' WHERE session_id=$1`, session); err != nil {

@@ -14,24 +14,13 @@ import (
 )
 
 func DescribeSession(row *store.Session) (*dispatcherpb.Session, error) {
-	var materialization dispatcherpb.SessionStatus_Materialization
-	switch row.State {
-	case store.SessionWaitingState:
-		materialization = dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_WAITING
-	case store.SessionInProgressState:
-		materialization = dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_IN_PROGRESS
-	case store.SessionAcceptedState:
-		materialization = dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_ACCEPTED
-	case store.SessionFailedState:
-		materialization = dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_FAILED
-	case store.SessionUnknownState:
-		materialization = dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_UNKNOWN
-	default:
-		return nil, fmt.Errorf("unknown Session materialization %q", row.State)
+	_, known := dispatcherpb.SessionStatus_Materialization_name[int32(row.State)]
+	if !known || row.State == dispatcherpb.SessionStatus_SESSION_MATERIALIZATION_UNSPECIFIED {
+		return nil, fmt.Errorf("unknown Session materialization %d", row.State)
 	}
 	result := &dispatcherpb.Session{
 		SessionId: row.SessionID,
-		Status:    &dispatcherpb.SessionStatus{Activity: describeActivity(row), Materialization: materialization, DeliveryBlocker: row.DeliveryBlocker, WakeAssessment: row.WakeAssessment},
+		Status:    &dispatcherpb.SessionStatus{Activity: describeActivity(row), Materialization: row.State, DeliveryBlocker: row.DeliveryBlocker, WakeAssessment: row.WakeAssessment},
 		CreatedAt: timestamppb.New(row.CreatedAt), UpdatedAt: timestamppb.New(row.UpdatedAt),
 	}
 	if row.ExecutionIdentity != nil {

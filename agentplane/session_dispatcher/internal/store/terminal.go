@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 
+	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	"github.com/google/uuid"
 )
 
@@ -27,12 +28,12 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) error {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `WITH settled AS (UPDATE dispatch SET
-			state=CASE WHEN delivery_attempted OR state=$4 THEN $5 ELSE $6 END,
+			state_value=CASE WHEN delivery_attempted OR state_value=$4 THEN $5::integer ELSE $6::integer END,
 			reason='sandbox_deleted',updated_at=now()
-			WHERE sandbox_uid=$1 AND (state IN ($2,$3) OR (state=$4 AND operation='submit_input'))
+			WHERE sandbox_uid=$1 AND (state_value IN ($2,$3) OR (state_value=$4 AND operation_value=$8))
 			RETURNING session_id)
 			SELECT pg_notify($7, session_id) FROM (SELECT DISTINCT session_id FROM settled) s`,
-			sandboxUID, QueueState, DeliveringState, AdmittedState, UnknownState, FailedState, NotifyChannel); err != nil {
+			sandboxUID, QueueState, DeliveringState, AdmittedState, UnknownState, FailedState, NotifyChannel, commandpb.Operation_OPERATION_SUBMIT_INPUT); err != nil {
 			return err
 		}
 		// Older schemas allowed standalone dispatches. Preserve their existing cleanup.
@@ -43,10 +44,11 @@ func (s *Store) EndSandbox(ctx context.Context, sandboxUID string) error {
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE session SET
 			environment_deleted_at=COALESCE(environment_deleted_at, now()),
-			state=CASE state WHEN 'WAITING' THEN 'FAILED' WHEN 'IN_PROGRESS' THEN 'UNKNOWN' ELSE state END,
-			reason=CASE WHEN state IN ('WAITING','IN_PROGRESS') THEN 'sandbox_deleted' ELSE reason END,
+			state_value=CASE state_value WHEN $2 THEN $3 WHEN $4 THEN $5 ELSE state_value END,
+			reason=CASE WHEN state_value IN ($2,$4) THEN 'sandbox_deleted' ELSE reason END,
 			updated_at=CASE WHEN environment_deleted_at IS NULL THEN now() ELSE updated_at END
-			WHERE sandbox_uid=$1 AND environment_deleted_at IS NULL`, sandboxUID); err != nil {
+			WHERE sandbox_uid=$1 AND environment_deleted_at IS NULL`,
+			sandboxUID, SessionWaitingState, SessionFailedState, SessionInProgressState, SessionUnknownState); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM session_delivery_lease WHERE session_id IN
