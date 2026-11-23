@@ -11,7 +11,6 @@ from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 from testing.frontend_visual.capture import VisualHarness
 from testing.frontend_visual.viewports import Viewport
 
-pytest_plugins = ("testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 

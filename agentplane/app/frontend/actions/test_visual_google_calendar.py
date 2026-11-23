@@ -18,7 +18,6 @@ from agentplane.app.frontend.testing.app import AgentplaneFixture
 from testing.frontend_visual.capture import VisualPage
 from testing.frontend_visual.viewports import MOBILE_TOUCH, Viewport
 
-pytest_plugins = ("testing.frontend_visual.fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 CALENDAR_START = {"date_time": "2026-11-23T09:00:00-08:00", "time_zone": "America/Los_Angeles"}

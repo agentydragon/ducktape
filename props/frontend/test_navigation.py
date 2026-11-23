@@ -8,7 +8,6 @@ from playwright.async_api import Route, expect
 
 from testing.frontend_visual.capture import VisualHarness
 
-pytest_plugins = ("testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 

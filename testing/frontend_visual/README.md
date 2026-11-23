@@ -22,7 +22,7 @@ deterministic contexts, render health, visual fixtures, and screenshot publicati
   selectors, clicks, waits, or capture instructions.
 - **`VisualHarness` / `VisualPage`** (`testing/frontend_visual/capture.py`) own browser lifecycle,
   render-health checks, screenshot mechanics and review publication.
-- **`py_visual_test`** owns Bazel runfiles, the Python entry point and the `visual` tag.
+- **`py_visual_test`** owns Bazel runfiles, the Python entry point, fixture registration and the `visual` tag.
 
 ## Example
 
@@ -33,8 +33,6 @@ from playwright.async_api import expect
 
 from testing.frontend_visual.capture import VisualHarness
 
-# gazelle:include_dep //testing/frontend_visual:fixtures
-pytest_plugins = ("testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
@@ -53,7 +51,9 @@ if __name__ == "__main__":
 Pass `test_module`, `test_srcs`, direct `test_deps`, bundled `harness`, `assets` and
 `title` to `py_visual_test`. Exclude macro-owned test sources from Gazelle so it does
 not create a second test target. Prefer one test source per target; put shared helpers in
-Gazelle-managed libraries rather than loading sibling test modules into one runner.
+Gazelle-managed libraries rather than loading sibling test modules into one runner. Standalone
+`py_test` targets that use these fixtures load `testing.frontend_visual.fixtures` through
+`pytest_plugins` and declare the corresponding Bazel dependency.
 
 `visual.open()` can load a harness without any fixture ID. For harnesses with callable
 setup APIs, configure the mocks and mount the component from Python before asserting

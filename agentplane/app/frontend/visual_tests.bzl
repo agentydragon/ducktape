@@ -47,6 +47,7 @@ def agentplane_visual_test(
         devtools_viewport = True,
         harness = bundle + "_js",
         shard_count = shard_count,
+        args = ["-p", "agentplane.app.frontend.testing.visual_fixtures"],
         test_deps = test_deps + [
             "//agentplane/app/frontend/testing:app",
             "//agentplane/app/frontend/testing:visual_fixtures",
