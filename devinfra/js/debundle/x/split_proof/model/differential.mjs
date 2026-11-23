@@ -883,7 +883,11 @@ for (const job of splitJobs) {
 if (!same([...host.globals].sort(), [...HOST_GLOBALS].sort()))
   failures.push(`the front end lets through ${HOST_GLOBALS}, the model has rules for ${host.globals}`);
 for (const [owner, listed] of Object.entries(host.prototypes)) {
-  const real = Object.getOwnPropertyNames(owner.split(".").reduce((o, k) => o[k], globalThis));
+  const prototype =
+    owner === "AsyncFunction.prototype"
+      ? Object.getPrototypeOf(async () => {})
+      : owner.split(".").reduce((o, k) => o[k], globalThis);
+  const real = Object.getOwnPropertyNames(prototype);
   if (!same([...listed].sort(), real.sort()))
     failures.push(`${owner}: the model lists ${listed.sort()}, Node has ${real}`);
 }

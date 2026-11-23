@@ -401,6 +401,7 @@ def main (args : List String) : IO UInt32 := do
         ("Object.prototype", strings ("__proto__" :: objectProtoNames)),
         ("Function.prototype", strings (["length", "name", "arguments", "caller"] ++ functionProtoNames)),
         ("Array.prototype", strings ("length" :: arrayProtoNames)),
+        ("AsyncFunction.prototype", strings (asyncFunctionPrototype.props.map Prod.fst)),
         ("String.prototype", strings stringProtoNames),
         ("Number.prototype", strings numberProtoNames),
         ("Boolean.prototype", strings booleanProtoNames)]),

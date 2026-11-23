@@ -55,7 +55,7 @@ def addPrototype (a : Addr) : M W Unit := do
 def makeFunc (env : Env) (f : Func) : M W Val := do
   let env ← selfScope env f.self f.name
   let a ← alloc {
-    proto := some functionProto, code := some (.closure f (env.capture f.closes) []),
+    proto := some f.intrinsicProto, code := some (.closure f (env.capture f.closes) []),
     props := [("length", .data (.num (Float.ofNat f.length)) false false true),
       ("name", .data (.str f.name) false false true)] }
   (if f.kind == .normal then addPrototype a else pure ())
