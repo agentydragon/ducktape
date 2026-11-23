@@ -20,7 +20,8 @@ import Std.Data.HashSet
     lowersplit --diagnostic <bundle.mjs|bundle.json> <spec.json> <outdir> [--lean <Generated.lean>] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]
 
 JavaScript source and annotated ESTree dumps share the Acorn parser and scope/literal metadata.
-Certified mode reparses the staged output and checks the requested CoreJS guarantee before publication.
+Certified mode checks the requested CoreJS guarantee before publication.
+With --check-output, it reparses the existing tree before running the proof.
 Lean computes the footprints
 (`Effects.lean`, under the premises in the file, if any), plans the split, runs the checks, writes the modules, and with `--lean` writes a
 Lean file whose `by decide +kernel` makes the kernel certify the same facts.
@@ -302,7 +303,7 @@ def Guarantee.label : Guarantee → String
   | .normalCompletion => "normal-completion"
 
 /-- Premises for the closed-declaration artifact theorems. The caller checks Valid
-and checks the reparsed files against these same extracted statements before publishing. -/
+and certifies the output ASTs against these same extracted statements. -/
 private def declarationProof? (program : Json) (B : Bundle) (P : Plan) :
     Option (Guarantee × List CoreJS.Stmt) := do
   let groups ← (CoreJS.DeclarationInput.decode program).toOption
@@ -572,12 +573,11 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
     IO.lazyPure fun _ => mkPlan B S
   let _ ← IO.lazyPure fun _ => P.mods.length + (P.mods.map (·.imports.length)).sum
   let t4 ← lap "mkPlan" t3
-  let checks ← timePhase timings "plan_checks" fun _ => do
-    report B S P required.isNone
-  let ok := checks.ok
-  let t5 ← lap "all checks" t4
   if let some request := required then
-    if let some (level, ss) := (if ok && !bad then declarationProof? program B P else none) then
+    let layoutOk ← timePhase timings "plan_checks" fun _ => reportLayout B S P false
+    -- Only the closed-declaration theorem needs the footprint-based order check.
+    let declaration := if layoutOk && !bad then declarationProof? program B P else none
+    if let some (level, ss) := declaration.filter (fun _ => decide (OrderOk B P)) then
       try
         if request == .allOutcomes && level != .allOutcomes then
           throw (IO.userError "the checked reorder proves only normal-completion")
@@ -588,7 +588,7 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
       catch e => return ← emitVerdict request.label (.error e.toString) "closed-declarations"
     let errorFields ← IO.mkRef ([] : List (String × Json))
     try
-      unless checks.layout && !bad do throw (IO.userError "source placement or module linkage checks failed")
+      unless layoutOk && !bad do throw (IO.userError "source placement or module linkage checks failed")
       let providers ← timePhase timings "provider_loading" fun _ => do
         loadProviders program bundlePath work
       let used ← IO.mkRef CoreJS.HostProfile.empty
@@ -614,6 +614,8 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
       let active ← used.get
       return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs" (profileVerdict profile active)
     catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs" (← errorFields.get)
+  let ok ← reportPlanChecks B S P
+  let t5 ← lap "all checks" t4
   let model ← modelBody asts corejsPath?
   if let some path := moveReportPath? then
     let report := model >>= moveReport asts B S P
