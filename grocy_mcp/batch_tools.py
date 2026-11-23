@@ -303,14 +303,6 @@ def register_batch_tools(
                 body[key] = None
         return body
 
-    def _changes(current: dict[str, Any], body: dict[str, Any]) -> dict[str, dict[str, Any]] | None:
-        changes = {
-            field: {"old": current.get(field), "new": body.get(field)}
-            for field in ("amount", "best_before_date", "purchased_date", "price", "location_id", "open", "note")
-            if current.get(field) != body.get(field)
-        }
-        return changes or None
-
     async def _list_reference(
         client: GrocyClient, entity_type: EntityType, detail: DetailLevel, model: Any
     ) -> list[Any]:
@@ -319,51 +311,37 @@ def register_batch_tools(
             return [BriefListItem(id=int(row["id"]), name=str(row["name"])) for row in rows]
         return [model.model_validate(row) for row in rows]
 
-    async def _build_enrichment_maps(
-        client: GrocyClient,
-    ) -> tuple[dict[int, dict[str, Any]], dict[int, str], dict[int, str]]:
+    async def _load_stock_entry_enricher(client: GrocyClient) -> Callable[[dict[str, Any]], StockEntryDetail]:
         products_raw, qu_names, location_names = await asyncio.gather(
             client.list_entities(EntityType.PRODUCT),
             client.entity_name_map(EntityType.QUANTITY_UNIT),
             client.entity_name_map(EntityType.LOCATION),
         )
-        return ({int(p["id"]): p for p in products_raw}, qu_names, location_names)
+        products_by_id = {int(product["id"]): product for product in products_raw}
 
-    async def _enrich_stock_entry(
-        client: GrocyClient,
-        entry_data: dict[str, Any],
-        *,
-        products_by_id: dict[int, dict[str, Any]] | None = None,
-        qu_names: dict[int, str] | None = None,
-        location_names: dict[int, str] | None = None,
-    ) -> StockEntryDetail:
-        if products_by_id is None or qu_names is None or location_names is None:
-            products_by_id, qu_names, location_names = await _build_enrichment_maps(client)
+        def enrich(entry: dict[str, Any]) -> StockEntryDetail:
+            product_id = int(entry["product_id"])
+            product = products_by_id.get(product_id)
+            product_name = str(product["name"]) if product else f"id={product_id}"
+            stock_qu_id = int(product["qu_id_stock"]) if product else 0
+            loc_id = entry.get("location_id")
+            if loc_id is None:
+                loc_id = int(product["location_id"]) if product else 0
+            return StockEntryDetail(
+                entry_id=int(entry["id"]),
+                product_id=product_id,
+                product_name=product_name,
+                amount=float(entry["amount"]),
+                qu_name=qu_names.get(stock_qu_id, f"id={stock_qu_id}"),
+                location_name=location_names.get(int(loc_id), f"id={loc_id}"),
+                best_before_date=_parse_date(entry.get("best_before_date")),
+                purchased_date=_parse_date(entry.get("purchased_date")),
+                price=float(entry["price"]) if entry.get("price") is not None else None,
+                open=entry.get("open") in (True, 1, "1"),
+                note=entry.get("note"),
+            )
 
-        product_id = int(entry_data["product_id"])
-        product = products_by_id.get(product_id)
-        product_name = str(product["name"]) if product else f"id={product_id}"
-        stock_qu_id = int(product["qu_id_stock"]) if product else 0
-        qu_name = qu_names.get(stock_qu_id, f"id={stock_qu_id}")
-        loc_id = entry_data.get("location_id")
-        if loc_id is not None:
-            location_name = location_names.get(int(loc_id), f"id={loc_id}")
-        else:
-            default_loc = int(product["location_id"]) if product else 0
-            location_name = location_names.get(default_loc, f"id={default_loc}")
-        return StockEntryDetail(
-            entry_id=int(entry_data["id"]),
-            product_id=product_id,
-            product_name=product_name,
-            amount=float(entry_data["amount"]),
-            qu_name=qu_name,
-            location_name=location_name,
-            best_before_date=_parse_date(entry_data.get("best_before_date")),
-            purchased_date=_parse_date(entry_data.get("purchased_date")),
-            price=float(entry_data["price"]) if entry_data.get("price") is not None else None,
-            open=entry_data.get("open") in (True, 1, "1"),
-            note=entry_data.get("note"),
-        )
+        return enrich
 
     @mcp.tool()
     async def entities_create(
@@ -770,7 +748,7 @@ def register_batch_tools(
 
         if products is not None:
             _check_batch_size(products, "products")
-            products_by_id, qu_names, location_names = await _build_enrichment_maps(client)
+            enrich = await _load_stock_entry_enricher(client)
             all_results: list[StockEntryOk | StockEntryError] = []
             for product_ref in products:
                 resolved = await client.resolve_entity(EntityType.PRODUCT, product_ref)
@@ -780,14 +758,7 @@ def register_batch_tools(
                     entries_data: list[dict[str, Any]] = r.json()
                     for entry_data in entries_data:
                         try:
-                            detail = await _enrich_stock_entry(
-                                client,
-                                entry_data,
-                                products_by_id=products_by_id,
-                                qu_names=qu_names,
-                                location_names=location_names,
-                            )
-                            all_results.append(StockEntryOk(entry=detail))
+                            all_results.append(StockEntryOk(entry=enrich(entry_data)))
                         except Exception as e:
                             all_results.append(
                                 StockEntryError(entry_id=int(entry_data.get("id", 0)), error=_format_exc(e))
@@ -798,16 +769,13 @@ def register_batch_tools(
 
         # Entry ID mode: batch GET /stock/entry/{id}
         assert entry_ids is not None
-        products_by_id, qu_names, location_names = await _build_enrichment_maps(client)
+        enrich = await _load_stock_entry_enricher(client)
 
         async def _fetch(entry_id: int) -> StockEntryOk:
             async def _do() -> StockEntryOk:
                 r = await client.get(f"/stock/entry/{entry_id}")
                 r.raise_for_status()
-                detail = await _enrich_stock_entry(
-                    client, r.json(), products_by_id=products_by_id, qu_names=qu_names, location_names=location_names
-                )
-                return StockEntryOk(entry=detail)
+                return StockEntryOk(entry=enrich(r.json()))
 
             return await _retry(_do)
 
@@ -840,13 +808,18 @@ def register_batch_tools(
                 entry_r.raise_for_status()
                 current: dict[str, Any] = entry_r.json()
                 body = await _merge_stock_entry(client, item, current)
-                changes = _changes(current, body)
+                changes = {
+                    field: {"old": current.get(field), "new": value}
+                    for field, value in body.items()
+                    if current.get(field) != value
+                }
                 r = await client.put(f"/stock/entry/{item.entry_id}", json=body)
                 r.raise_for_status()
                 updated_r = await client.get(f"/stock/entry/{item.entry_id}")
                 updated_r.raise_for_status()
-                detail = await _enrich_stock_entry(client, updated_r.json())
-                return StockEntryEditOk(entry=detail, changes=changes or None)
+                updated = updated_r.json()
+                enrich = await _load_stock_entry_enricher(client)
+                return StockEntryEditOk(entry=enrich(updated), changes=changes or None)
             except Exception as e:
                 return StockEntryError(entry_id=item.entry_id, error=_format_exc(e))
 
