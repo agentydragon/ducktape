@@ -7,10 +7,8 @@ TSCONFIG = "//finance/augur/frontend:tsconfig"
 
 openapi_zod_ts_library(
     name = "schema_zod",
-    config = "openapi-ts.config.mjs",
     schema = "//finance/augur/api:frontend_openapi_json",
     tsconfig = TSCONFIG,
-    deps = ["//:node_modules/zod"],
 )
 
 ts_library(

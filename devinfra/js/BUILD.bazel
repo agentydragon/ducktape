@@ -38,6 +38,7 @@ js_binary(
 js_binary(
     name = "openapi_zod_codegen",
     data = [
+        "openapi-zod.config.mjs",
         ":schema_remote_fetch_guard",
         "//:node_modules/@hey-api/openapi-ts",
     ],
