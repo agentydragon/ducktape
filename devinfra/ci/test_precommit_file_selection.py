@@ -97,7 +97,7 @@ def test_non_pr_events_keep_all_file_role_setup(event_name: str) -> None:
 
 
 @pytest.mark.parametrize("event_name", ["push", "workflow_dispatch"])
-def test_non_pr_selection_keeps_roles_without_runninggit(
+def test_non_pr_selection_keeps_roles_without_running_git(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, event_name: str
 ) -> None:
     monkeypatch.chdir(tmp_path)
