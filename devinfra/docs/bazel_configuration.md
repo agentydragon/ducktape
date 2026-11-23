@@ -1,158 +1,68 @@
-# Bazel Configuration and BuildBuddy RBE
-
-This document is the source of truth for Bazel rc ownership and execution
-policy in Ducktape. Update it with any change to `.bazelrc`, the NixOS Bazel
-module, BuildBuddy credential generation, or CI/session Bazel setup.
+# Bazel configuration and BuildBuddy RBE
 
 ## Policy
 
-All Ducktape build-like commands (`build`, `test`, and `run`) enable the
-workspace's `rbe` config. Build, lint, typecheck, and normal test actions execute
-only on BuildBuddy: Bazel must fail rather than fall back locally. The sole
-spawn exception is `TestRunner` for an explicitly local non-Docker live test.
-`bazel run` launches the completed binary on the Bazel client, and
-Bazel-internal repository/analysis work stays in that client process.
+Ducktape's [workspace rc](../../.bazelrc) imports the [RBE policy](../bazel/rbe.bazelrc)
+for every build, test and run. Build actions, including code generation, lint and
+typechecking, execute on BuildBuddy. An unavailable worker or missing credential fails the build.
 
-The configuration layers have separate owners:
+| Layer      | Owner                                                                                                          | Settings                                                               |
+| ---------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| System     | [NixOS Bazel module](../../nix/nixos/modules/bazel/system.bazelrc)                                             | Host shell, host/test `PATH`, `nix-ld`                                 |
+| User       | Home Manager's `~/.bazelrc`                                                                                    | UI, [local caches](bazel_worktree_cache_sharing.md), credential import |
+| Credential | [Home Manager](../../nix/home/modules/buildbuddy.nix) or [session/CI setup](../buildbuddy/docs/integration.md) | `common:rbe --remote_header=…`                                         |
+| Workspace  | [RBE policy](../bazel/rbe.bazelrc)                                                                             | RBE selection, endpoints, action placement, worker shell               |
 
-| Layer      | Owner                                                 | Contents                                                                        |
-| ---------- | ----------------------------------------------------- | ------------------------------------------------------------------------------- |
-| System     | `nix/nixos/modules/bazel/system.bazelrc`              | NixOS local shell, host/test PATH, and nix-ld environment                       |
-| User       | Home Manager's `~/.bazelrc`                           | UI preferences, local disk/archive caches, and the BuildBuddy credential import |
-| Credential | `nix/home/modules/buildbuddy.nix` or session/CI setup | Only `common:rbe --remote_header=...`                                           |
-| Workspace  | `devinfra/bazel/rbe.bazelrc`, imported by `.bazelrc`  | RBE selection/endpoints, action placement, and worker shell                     |
-
-Credentials do not select RBE and are not sent unless a repository enables the
-`rbe` config. Conversely, Ducktape selects RBE even when no credential is
-available; the build then fails authentication instead of silently executing
-locally.
+The credential applies only when a workspace enables `rbe`. Entry points may add metadata,
+output preferences, filters and credentials. Keep execution policy in the workspace rc.
 
 ## Execution environments and entry points
 
-There are two different locality decisions:
+| Command                              | Where the Bazel client runs | Use                                                                         |
+| ------------------------------------ | --------------------------- | --------------------------------------------------------------------------- |
+| `bbr` (`bb remote`)                  | BuildBuddy's hosted runner  | Ordinary build, test and query                                              |
+| `bb run`                             | Caller                      | Run a built program against local files, services or Kubernetes credentials |
+| `bazelisk test` on a controlled host | Caller                      | Non-Docker live tests needing host credentials                              |
 
-1. **Where the Bazel client runs.** Bzlmod module extensions, repository rules,
-   analysis, and Bazel-internal file work run here. This includes rules_js's
-   pnpm/Node setup and any lockfile update performed during repository setup.
-2. **Where build actions run.** Compilation, code generation, lint, typecheck,
-   and ordinary test actions may run on BuildBuddy workers when `rbe` is
-   enabled.
-
-BuildBuddy remote execution does not move the Bazel client automatically. A
-local `bb run` therefore still needs the caller's runtime to execute downloaded
-repository-rule tools, even though its build actions are remote. Conversely,
-`bbr`/`bb remote` moves the outer Bazel client to a BuildBuddy runner, so the
-runner's environment—not the caller's—runs repository rules and the completed
-`run` binary.
-
-Use the entry points as follows:
-
-| Entry point                       | Bazel client and repository rules | Build actions                                     | Completed `run` binary / local live test | Use it for                                                                    |
-| --------------------------------- | --------------------------------- | ------------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------- |
-| `bb build` / `bb test` / `bb run` | Caller                            | BuildBuddy, under `rbe`                           | Caller                                   | Caller-local services, Kubernetes access, and live tests                      |
-| `bbr` / `bb remote`               | BuildBuddy's outer FHS runner     | BuildBuddy, if the runner receives `--config=rbe` | Outer runner                             | Ordinary builds, tests, and queries from an uncontrolled or Nix-shaped client |
-| Direct `bazelisk` on NixOS        | NixOS host                        | Local or BuildBuddy, explicitly selected          | NixOS host                               | Controlled development and debugging                                          |
-| NixOS devbox/VM                   | Controlled NixOS host             | Local or BuildBuddy, explicitly selected          | VM                                       | A stable local client and caller-local acceptance tests                       |
-
-`bbr` is the preferred default for ordinary build-like work from Claude Code
-Web and similar uncontrolled containers. It avoids requiring those containers
-to reproduce every NixOS/FHS compatibility detail. Use direct `bb run` (or
-direct `bazelisk`) when the requested process must retain the caller's network,
-Kubernetes credentials, filesystem, or other local services.
-
-Do not interpret remote failure as permission to fall back locally. The RBE
-configuration deliberately makes locality explicit so a missing remote
-credential or unavailable worker cannot silently change the execution and
-credential boundary.
+Module extensions, repository rules (including pnpm and lockfile updates), analysis,
+symlink creation and the completed `bazel run` program run on the **client**.
+For local regeneration and retrieval, see [lockfiles](lockfiles.md) and
+[Syrupy snapshot updates](syrupy_snapshots.md#updating-snapshots).
 
 ### Credential boundary for hosted `bb remote`
 
-The current egress credential-substitution contract is a **local-client**
-contract. It can replace a whole HTTP header or gRPC metadata value while the
-request crosses the Agentplane proxy. It does not give a BuildBuddy-hosted
-runner the caller's Sandbox workload identity.
-
-With direct `bb run`, the local client and any caller-local live test remain in
-the Sandbox, so a configured placeholder can be resolved on the intended local
-path. With `bbr`/`bb remote`, the outer control request may be authenticated,
-but the Bazel command embedded in `RunRequest` is executed later on the
-BuildBuddy runner. Under the current header-only substitution contract, that
-embedded placeholder remains inert. The hosted runner also has neither the
-caller Pod's Kubernetes token nor a runner-side Agentplane gateway, so it
-cannot use the current Sandbox-authenticated path to reach the staging
-Kubernetes API.
-
-Therefore:
-
-- use direct `bb run` from a controlled caller for staging acceptance tests that
-  need Kubernetes access;
-- use `bbr` for ordinary builds and tests that do not need caller-local
-  services or credentials;
-- do not treat successful outer `bb remote` authentication as proof that the
-  nested hosted Bazel process can authenticate; and
-- do not add a generic body rewrite or place a real staging credential in the
-  hosted command as an incidental workaround.
-
-The deferred hosted-runner alternatives and their weaker/stronger security
-boundaries are recorded in
-[`agentplane/docs/buildbuddy_remote_auth.md`](../../agentplane/docs/buildbuddy_remote_auth.md).
-
-### NixOS and Nix-built images
-
-NixOS hosts and Nix-built OCI images share package ownership but not a runtime
-substrate. NixOS can use `nix-ld`, the system Bazel rc, and stable
-`/run/current-system/sw/bin` paths. A `dockerTools` image has no NixOS
-activation, `envfs`, or automatic `nix-ld` setup; downloaded FHS-linked tools
-need actual filesystem defaults such as `/lib64/ld-linux-x86-64.so.2`, expected
-library directories, `/bin/bash`, and `/usr/bin/env`.
-
-The public-coder OpenClaw image should keep this compatibility surface in its Nix image
-definition. A controlled NixOS devbox/VM should keep the host-specific pieces
-in the NixOS module. Neither environment should leak Nix store paths into
-remote actions; see the shell-path and strict-action-environment rules below.
-
-### Host CA bundles in the development shell
-
-The root `.envrc` preserves a nonempty `SSL_CERT_FILE` supplied by the host and
-falls back to `/etc/ssl/certs/ca-certificates.crt` when unset or empty. The pinned
-`devShell` does not set this variable, so `use flake` leaves the caller's choice
-intact. Keep that property when adding shell packages or environment settings.
-
-In an Agentplane sandbox box the Pod owns its generated runtime PEM bundle and
-client environment, plus a separate PKCS12 trust store for Bazel's JVM. It adds
-the egress proxy's bundle to the image's own roots and uses a system rc that points Bazel's
-JVM at that store and passes the proxy and CA variables to tests
-(`cluster/cdk8s/agentplane/sandbox_pod.py`).
-The generic repository shell must not replace that bundle or hardcode its path.
-These settings govern client-local repository fetches, not remote build actions.
+The hosted client cannot use the caller Pod's Kubernetes identity. An Agentplane egress
+proxy can authenticate the outer request, but a placeholder in the nested Bazel command
+remains a placeholder. Staging projects a BuildBuddy key for hosted builds. Run staging
+Kubernetes checks from a controlled caller with the required access. Agent-container
+execution policy, key exposure and deferred designs belong to the
+[Agentplane authentication guide](../../agentplane/docs/buildbuddy_remote_auth.md).
+See also [hosted runner configuration](../buildbuddy/docs/remote.md).
 
 ## Action placement
 
-“Local” always means local to the Bazel client, which differs by entry point:
+Normal and Docker tests run on RBE. The [live OpenAI test macro](../../openai_utils/testing/testing.bzl)
+marks credentialed non-Docker tests for execution on the client. Bazel propagates
+`no-remote-exec` to build and aspect actions too. The workspace strips it from every
+mnemonic except `TestRunner`. The `remote,local` strategy can then select a local runner
+for an explicitly local test. A remote failure cannot retry locally. CI builds live targets
+for lint and typechecking and filters credentialed test runs.
 
-| Work class                                    | Direct `bazelisk` / `bb` on NixOS or FHS | `bbr` outer FHS runner    | BuildBuddy execution worker |
-| --------------------------------------------- | ---------------------------------------- | ------------------------- | --------------------------- |
-| Module extensions and repository rules        | Runs in the client                       | Runs in the outer runner  | Never                       |
-| Analysis and Bazel-internal file/symlink work | Runs in the client                       | Runs in the outer runner  | Never                       |
-| Build, codegen, Ruff, mypy, and aspect spawns | Submitted by the client                  | Submitted by outer runner | Runs here                   |
-| Regular `TestRunner`                          | Submitted by the client                  | Submitted by outer runner | Runs here                   |
-| Non-Docker live `TestRunner`                  | Runs in the client                       | Runs in the outer runner  | Never                       |
-| Docker live `TestRunner`                      | Submitted by the client                  | Submitted by outer runner | Runs here                   |
-| Completed `bazel run` executable              | Runs in the client                       | Runs in the outer runner  | Never                       |
+## Shell paths and trust
 
-Bazel normally copies a target's `no-remote-exec` tag to every spawn created
-for that target, including `PyWriteBuildData`, Ruff, and mypy aspect actions.
-The RBE config removes that execution requirement from every mnemonic except
-`TestRunner`, then gives `TestRunner` the ordered strategies `remote,local`.
-An ordinary test remains remote; an explicitly local test rejects the first
-strategy and selects the second. This is eligibility-based selection, not
-failure fallback: `--remote_local_fallback=false` still prevents an RBE failure
-from retrying locally.
-
-The `live_openai_py_test` macro marks only non-Docker `.live` variants local.
-Variants with `requires_docker = True` remain fully remote. CI builds all live
-targets so their lint/typecheck actions stay covered, while
-`--test_tag_filters=-live_openai_api` prevents credentialed test execution.
+- **NixOS host.** The system rc uses `/run/current-system/sw/bin/bash` and sets test
+  `PATH` for client-local `#!/usr/bin/env bash` launchers. On RBE, the shell is
+  `/bin/bash`. Bazel chooses `--shell_executable` for the configuration, before it
+  places individual actions. Strict action environments keep host Nix store paths
+  out of remote spawns. [NixOS compatibility investigation](../debug/nixos_bazel_bash/README.md)
+- **Nix-built OCI client.** Repository tools downloaded for FHS need a loader
+  (e.g. `/lib64/ld-linux-x86-64.so.2`), its library directories, `/bin/bash` and
+  `/usr/bin/env` in the image. `dockerTools` images have no NixOS activation to supply them.
+- **Host CA.** The [devshell entry point](../../.envrc) preserves a supplied
+  `SSL_CERT_FILE` and otherwise uses `/etc/ssl/certs/ca-certificates.crt`.
+  Keep the host choice when adding shell packages. The [Agentplane Pod](../../cluster/cdk8s/agentplane/sandbox_pod.py)
+  supplies the proxy CA alongside the image roots, the JVM's PKCS12 store and
+  proxy/CA variables for tests. Repository fetches use the client's trust configuration.
 
 ## Client job limit
 
@@ -168,63 +78,14 @@ One pair of full `//...` sweeps on 2026-10-31, with fresh tests and warm compile
 actions: 100 took 30.7 s longer than 50 and hit `REMOTE_CACHE_EVICTED` and
 `RST_STREAM` failures; concurrency was not shown to cause them.
 
-## Shell paths
-
-Shell actions use paths from their execution environment:
-
-- Local NixOS configuration uses
-  `/run/current-system/sw/bin/bash`, which remains stable across system
-  generations.
-- Ducktape's RBE configuration overrides it with `/bin/bash`, which exists on
-  the Ubuntu BuildBuddy workers.
-
-`--shell_executable` is configuration-wide; it cannot choose a different path
-after Bazel decides where a build action runs. This is why Ducktape forbids
-local fallback from its RBE configuration. A selected local `TestRunner`
-launches its test executable directly; the NixOS test `PATH` ensures
-`#!/usr/bin/env bash` launchers find the Nix shell.
-
-`--incompatible_strict_action_env` prevents Nix store paths from leaking into
-remote actions. NixOS-only `PATH`, `NIX_LD`, and `NIX_LD_LIBRARY_PATH` values
-remain scoped to local host/test/repository work in the system rc.
-
-## Entry points
-
-Within Ducktape, direct `bazelisk`, `bb run`, CI, Codex, and Claude sessions all
-inherit the same workspace RBE policy. Entry points may add metadata, quiet
-output, test filters, or credentials; they must not duplicate RBE selection,
-endpoints, strategy, or shell configuration.
-
-`bbr` remains the preferred agent command for build/test/query because it runs
-the outer Bazel invocation on a BuildBuddy runner. That runner is also the
-client-local location in the table above. Use direct `bazelisk test` for a
-non-Docker live target that needs credentials or services from the actual host.
-`bazelisk run` and `bb run` build through RBE but execute the requested binary
-on the caller.
-
-Local cache layout and `--repo_contents_cache` policy are owned by the User
-layer; see <bazel_worktree_cache_sharing.md>.
-
 ## Verification
 
-`devinfra/nixos_bazel_test/run.sh test` is the NixOS end-to-end contract. It
-boots the real `bazel-test` image and seeds a miniature workspace with the
-production `rbe.bazelrc`. The shared smoke script also runs directly on the FHS
-GitHub runner. On both clients it proves from execution logs that:
+The [execution contract workflow](../../.github/workflows/nixos-bazel-rbe.yml)
+runs the [same smoke checks](../nixos_bazel_test/smoke_test.sh) on the FHS GitHub runner
+and a booted NixOS image (`devinfra/nixos_bazel_test/run.sh test`). Both use the production
+RBE rc in a miniature workspace. Execution logs must show remote Ruff and build actions,
+a remote regular test and a client-local tagged test with a remote build action. The
+completed `bazel run` binary must produce its marker.
 
-- Ruff and all `bazel run` build actions execute remotely before the completed
-  binary runs in the client;
-- an ordinary `TestRunner` and its build action execute remotely; and
-- an explicitly local `TestRunner` runs in the client while its build action
-  still executes remotely.
-
-`.github/workflows/nixos-bazel-rbe.yml` runs both FHS and NixOS variants for
-relevant internal pull requests, pushes to `devel`, and manual dispatches.
-The workflow skips pull requests whose head repository differs from this
-repository. It uses `BUILDBUDDY_API_KEY` and `ATTIC_READ_TOKEN` for BuildBuddy
-and Nix-cache setup.
-
-For cache layout and worktree mechanics, see
-<bazel_worktree_cache_sharing.md>. For `bb remote`'s outer-runner behavior, see
-<../buildbuddy/docs/remote.md>. Historical NixOS compatibility investigation is in
-<../debug/nixos_bazel_bash/README.md>.
+The workflow runs on relevant same-repository PRs, pushes to `devel` touching those paths
+and manual dispatches. It uses `BUILDBUDDY_API_KEY` and `ATTIC_READ_TOKEN`.
