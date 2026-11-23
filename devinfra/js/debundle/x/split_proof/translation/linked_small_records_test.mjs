@@ -12,7 +12,7 @@ import {
   property,
   root,
   variable,
-} from "./linked_programs_test_support.mjs";
+} from "./testing/linked_programs.mjs";
 
 const records = Array.from({ length: 28 }, (_, index) => ({
   name: `item${index}`,
