@@ -578,9 +578,7 @@ fn namespace_factory_keeps_unrelated_optional_member_values_independent() {
             "static/peer",
             "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
         )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
-            .build()]),
+        .with_chunk_export_purity(&[peer_api_callback_factories(&["make"]).build()]),
     );
     assert_preserved_entry_output(&fixture, "ready 42\n");
 }
@@ -607,9 +605,7 @@ fn optional_namespace_member_aliases_still_disable_factory_deferral() {
             "static/peer",
             "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
         )];
-        let purity = [ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
-            .build()];
+        let purity = [peer_api_callback_factories(&["make"]).build()];
         let colocated = run_fixture(
             FixtureOpts::new(
                 &source,
@@ -824,15 +820,16 @@ fn inferred_var_factory_keeps_a_caught_preinitialization_throw() {
     assert_preserved_entry_output(&fixture, "TypeError\n");
 }
 
+const INLINE_ACTION_PEER: &str = r#"export function action(callback) {
+function wrapped() { return callback(); }
+wrapped.kind = 'action';
+return wrapped;
+}
+"#;
+
 #[test]
 fn audited_inline_factory_defers_its_single_callback() {
-    let peers = [(
-        "static/peer",
-        "export function action(callback) {\n\
-         function wrapped() { return callback(); }\n\
-         wrapped.kind = 'action';\n\
-         return wrapped;\n}\n",
-    )];
+    let peers = [("static/peer", INLINE_ACTION_PEER)];
     let fixture = run_fixture(
         FixtureOpts::new(
             "import { action as create } from './peer.js';\n\
@@ -850,13 +847,7 @@ fn audited_inline_factory_defers_its_single_callback() {
 
 #[test]
 fn inline_only_contract_keeps_other_call_shapes_conservative() {
-    let peers = [(
-        "static/peer",
-        "export function action(callback) {\n\
-         function wrapped() { return callback(); }\n\
-         wrapped.kind = 'action';\n\
-         return wrapped;\n}\n",
-    )];
+    let peers = [("static/peer", INLINE_ACTION_PEER)];
     for (setup, call, members) in [
         (
             "const callback = () => later;\n",
@@ -923,12 +914,7 @@ fn inline_only_contract_does_not_compose_a_retained_object() {
 #[test]
 fn inline_only_contract_does_not_cross_an_unresolved_reexport() {
     let peers = [
-        (
-            "static/peer",
-            "export function action(callback) {\n\
-             function wrapped() { return callback(); }\n\
-             wrapped.kind = 'action';\nreturn wrapped;\n}\n",
-        ),
+        ("static/peer", INLINE_ACTION_PEER),
         (
             "static/bridge",
             "export { action as create } from './peer.js';\n",
@@ -952,12 +938,7 @@ fn inline_only_contract_does_not_cross_an_unresolved_reexport() {
 
 #[test]
 fn inline_only_result_invoked_before_later_write_remains_atomic() {
-    let peers = [(
-        "static/peer",
-        "export function action(callback) {\n\
-         function wrapped() { return callback(); }\n\
-         wrapped.kind = 'action';\nreturn wrapped;\n}\n",
-    )];
+    let peers = [("static/peer", INLINE_ACTION_PEER)];
     expect_atomic_conflict_rejection(
         FixtureOpts::new(
             "import { action } from './peer.js';\n\
@@ -1733,6 +1714,10 @@ fn primitive_metadata_writes_keep_the_callback_deferred() {
     assert_preserved_entry_output(&fixture, "42 factory\n");
 }
 
+fn peer_api_callback_factories(members: &[&str]) -> ChunkExportPurityBuilder {
+    ChunkExportPurityBuilder::new("static/peer").with_callback_factory_members("api", members)
+}
+
 const NAMESPACE_FACTORY: &str = "export const api = {\n\
     make(callback) { return { invoke: () => callback() }; },\n\
     wrap(inner) { return { invoke: () => inner.invoke() }; },\n\
@@ -1749,9 +1734,7 @@ fn expect_namespace_factory_contract_rejection<'a>(
     causes: &[&str],
 ) {
     let peer = [("static/peer", peer_source)];
-    let contracts = [ChunkExportPurityBuilder::new("static/peer")
-        .with_callback_factory_members("api", factory_members)
-        .build()];
+    let contracts = [peer_api_callback_factories(factory_members).build()];
     expect_namespace_factory_rejection(
         opts.with_extra_chunks(&peer)
             .with_chunk_export_purity(&contracts),
@@ -1769,9 +1752,7 @@ fn namespace_factories_compose_without_eager_callback_reads() {
             modules(),
         )
         .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make", "wrap"])
-            .build()]),
+        .with_chunk_export_purity(&[peer_api_callback_factories(&["make", "wrap"]).build()]),
     );
     assert_preserved_entry_output(&fixture, "42\n");
 }
@@ -1797,24 +1778,26 @@ fn namespace_factory_ignores_local_subclass_prototype_argument() {
             ],
         )
         .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
-            .build()]),
+        .with_chunk_export_purity(&[peer_api_callback_factories(&["make"]).build()]),
     );
     assert_preserved_entry_output(&fixture, "42\n");
 }
+
+const INHERITED_NAMESPACE_ALIAS: &str = r#"import { api } from './peer.js';
+class LocalBase { static shared = api; }
+class LocalChild extends LocalBase {}
+let later = 0;
+LocalChild.shared.make = callback => callback();
+const wrapped = api.make(() => later);
+later = 42;
+console.log(wrapped);
+"#;
 
 #[test]
 fn namespace_factory_retains_inherited_static_namespace_alias() {
     let fixture = run_fixture(
         FixtureOpts::new(
-            "import { api } from './peer.js';\n\
-             class LocalBase { static shared = api; }\n\
-             class LocalChild extends LocalBase {}\n\
-             let later = 0;\n\
-             LocalChild.shared.make = callback => callback();\n\
-             const wrapped = api.make(() => later);\n\
-             later = 42;\nconsole.log(wrapped);\n",
+            INHERITED_NAMESPACE_ALIAS,
             vec![logical_module_with_anon(
                 "app",
                 &binding_members(["LocalBase", "LocalChild", "wrapped", "later"]),
@@ -1825,9 +1808,7 @@ fn namespace_factory_retains_inherited_static_namespace_alias() {
             )],
         )
         .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
-            .build()]),
+        .with_chunk_export_purity(&[peer_api_callback_factories(&["make"]).build()]),
     );
     assert_preserved_entry_output(&fixture, "0\n");
 }
@@ -1836,13 +1817,7 @@ fn namespace_factory_retains_inherited_static_namespace_alias() {
 fn namespace_factory_rejects_split_inherited_static_namespace_alias() {
     expect_atomic_conflict_rejection(
         FixtureOpts::new(
-            "import { api } from './peer.js';\n\
-             class LocalBase { static shared = api; }\n\
-             class LocalChild extends LocalBase {}\n\
-             let later = 0;\n\
-             LocalChild.shared.make = callback => callback();\n\
-             const wrapped = api.make(() => later);\n\
-             later = 42;\nconsole.log(wrapped);\n",
+            INHERITED_NAMESPACE_ALIAS,
             vec![
                 logical_module_with_anon(
                     "callbacks/wrapped",
@@ -1853,9 +1828,7 @@ fn namespace_factory_rejects_split_inherited_static_namespace_alias() {
             ],
         )
         .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
-            .build()]),
+        .with_chunk_export_purity(&[peer_api_callback_factories(&["make"]).build()]),
         &["callbacks/wrapped", "values/later"],
         &["eager_use", "sequenced"],
     );
@@ -1875,9 +1848,7 @@ fn namespace_factory_ignores_self_initialized_unrelated_object() {
             ],
         )
         .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
-            .build()]),
+        .with_chunk_export_purity(&[peer_api_callback_factories(&["make"]).build()]),
     );
     assert_preserved_entry_output(&fixture, "42 0\n");
 }
@@ -1909,9 +1880,7 @@ console.log(wrapped.invoke(), provider.limit, provider.candidates().length);
             ],
         )
         .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
-            .build()]),
+        .with_chunk_export_purity(&[peer_api_callback_factories(&["make"]).build()]),
     );
     assert_preserved_entry_output(&fixture, "42 Infinity 0\n");
 }
@@ -1947,9 +1916,7 @@ fn namespace_factory_keeps_unproven_instance_writes_conservative() {
             )
             .with_import_order(&["callbacks/wrapped", "values/later", "residual"])
             .with_extra_chunks(&[("static/peer", NAMESPACE_FACTORY)])
-            .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-                .with_callback_factory_members("api", &["make"])
-                .build()]),
+            .with_chunk_export_purity(&[peer_api_callback_factories(&["make"]).build()]),
             &["callbacks/wrapped", "values/later"],
             &["eager_use", "sequenced"],
         );
@@ -1975,12 +1942,16 @@ fn namespace_factory_defers_member_reads_inside_callback_result_literals() {
                  other: 'member',\n\
              };\n",
         )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
-            .build()]),
+        .with_chunk_export_purity(&[peer_api_callback_factories(&["make"]).build()]),
     );
     assert_preserved_entry_output(&fixture, "42\n");
 }
+
+const REGISTER_CALLBACK_PEER: &str = r#"export const api = {
+make(callback) { return { invoke: () => callback() }; },
+register(callback) { return callback; },
+};
+"#;
 
 #[test]
 fn namespace_factory_ignores_member_callees_in_callback_result_literals() {
@@ -1995,16 +1966,8 @@ fn namespace_factory_ignores_member_callees_in_callback_result_literals() {
             )],
         )
         .with_import_order(&["callbacks/wrapped", "residual"])
-        .with_extra_chunks(&[(
-            "static/peer",
-            "export const api = {\n\
-                 make(callback) { return { invoke: () => callback() }; },\n\
-                 register(callback) { return callback; },\n\
-             };\n",
-        )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
-            .build()]),
+        .with_extra_chunks(&[("static/peer", REGISTER_CALLBACK_PEER)])
+        .with_chunk_export_purity(&[peer_api_callback_factories(&["make"]).build()]),
     );
     assert_preserved_entry_output(&fixture, "42\n");
 }
@@ -2071,8 +2034,7 @@ fn audited_factory_result_in_another_namespace_allows_an_adjacent_metadata_write
             "export const api = { make(callback) { return { invoke: () => callback() }; } };\n\
              export const other = { make(callback) { return { invoke: () => callback() }; } };\n",
         )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
+        .with_chunk_export_purity(&[peer_api_callback_factories(&["make"])
             .with_callback_factory_members("other", &["make"])
             .build()]),
     );
@@ -2160,8 +2122,7 @@ fn a_replaced_factory_returning_another_namespace_stays_conservative() {
             "import { api } from './peer.js';\nexport function getNamespace() { return api; }\n",
         ),
     ];
-    let contracts = [ChunkExportPurityBuilder::new("static/peer")
-        .with_callback_factory_members("api", &["make"])
+    let contracts = [peer_api_callback_factories(&["make"])
         .with_callback_factory_members("other", &["make"])
         .build()];
     let preserved = run_fixture(
@@ -2216,9 +2177,7 @@ fn namespace_factory_ignores_unrelated_call_results_outside_mutation_receivers()
             "static/peer",
             "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
         )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
-            .build()]),
+        .with_chunk_export_purity(&[peer_api_callback_factories(&["make"]).build()]),
     );
     assert_preserved_entry_output(&fixture, "42\n");
 }
@@ -2243,9 +2202,7 @@ fn namespace_factory_ignores_unrelated_constructor_results_outside_mutation_rece
             "static/peer",
             "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
         )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
-            .build()]),
+        .with_chunk_export_purity(&[peer_api_callback_factories(&["make"]).build()]),
     );
     assert_preserved_entry_output(&fixture, "42\n");
 }
@@ -2270,8 +2227,7 @@ fn namespace_factory_keeps_unrelated_constructor_write_receivers_conservative() 
             "static/peer",
             "export const api = { make(callback) { return { invoke: () => callback() }; }, other: 'member' };\n",
         )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
+        .with_chunk_export_purity(&[peer_api_callback_factories(&["make"])
             .build()]),
         &["callbacks/wrapped", "values/later"],
         &["eager_use", "sequenced"],
@@ -2305,9 +2261,7 @@ fn assert_namespace_factory_publication_rejected(prefix: &str) {
             "static/peer",
             "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
         )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
-            .build()]),
+        .with_chunk_export_purity(&[peer_api_callback_factories(&["make"]).build()]),
         &["callbacks/wrapped", "values/later"],
         &["eager_use", "sequenced"],
     );
@@ -2418,9 +2372,7 @@ fn namespace_factory_class_field_alias_observes_api_mutation_at_runtime() {
             "static/peer",
             "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
         )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
-            .build()]),
+        .with_chunk_export_purity(&[peer_api_callback_factories(&["make"]).build()]),
     );
     assert_preserved_entry_output(&fixture, "true 42\n");
 }
@@ -2439,16 +2391,8 @@ fn namespace_factory_keeps_computed_member_callees_conservative_in_literals() {
             )],
         )
         .with_import_order(&["callbacks/wrapped", "residual"])
-        .with_extra_chunks(&[(
-            "static/peer",
-            "export const api = {\n\
-                 make(callback) { return { invoke: () => callback() }; },\n\
-                 register(callback) { return callback; },\n\
-             };\n",
-        )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
-            .build()]),
+        .with_extra_chunks(&[("static/peer", REGISTER_CALLBACK_PEER)])
+        .with_chunk_export_purity(&[peer_api_callback_factories(&["make"]).build()]),
         &["callbacks/wrapped"],
         &["eager_use", "sequenced"],
     );
@@ -2472,8 +2416,7 @@ fn unrelated_primitive_operator_results_do_not_disable_namespace_factories() {
             "static/peer",
             "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
         )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
+        .with_chunk_export_purity(&[peer_api_callback_factories(&["make"])
             .build()]),
     );
     assert_preserved_entry_output(&fixture, "42\n");
@@ -2485,9 +2428,7 @@ fn primitive_operator_operands_keep_callback_reentry_visible() {
         "static/peer",
         "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
     )];
-    let contracts = [ChunkExportPurityBuilder::new("static/peer")
-        .with_callback_factory_members("api", &["make"])
-        .build()];
+    let contracts = [peer_api_callback_factories(&["make"]).build()];
     expect_atomic_conflict_rejection(
         FixtureOpts::new(
             "import { api } from './peer.js';\n\
@@ -2716,9 +2657,7 @@ fn logical_operator_results_still_preserve_namespace_alternatives() {
             "static/peer",
             "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
         )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
-            .build()]),
+        .with_chunk_export_purity(&[peer_api_callback_factories(&["make"]).build()]),
         &["callbacks/wrapped", "values/later"],
         &["eager_use", "sequenced"],
     );
@@ -2750,9 +2689,7 @@ fn namespace_factory_allows_audited_method_results_and_unrelated_callback_receiv
                  other: 'member',\n\
              };\n",
         )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
-            .build()]),
+        .with_chunk_export_purity(&[peer_api_callback_factories(&["make"]).build()]),
     );
     assert_preserved_entry_output(&fixture, "42\n");
 }
@@ -2780,9 +2717,7 @@ fn namespace_factory_keeps_fresh_container_identity_separate_from_contents() {
             "static/peer",
             "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
         )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
-            .build()]),
+        .with_chunk_export_purity(&[peer_api_callback_factories(&["make"]).build()]),
     );
     assert_preserved_entry_output(&fixture, "1 42\n");
 }
@@ -2800,9 +2735,7 @@ fn namespace_inside_fresh_container_can_still_replace_a_factory_member() {
         "static/peer",
         "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
     )];
-    let purity = [ChunkExportPurityBuilder::new("static/peer")
-        .with_callback_factory_members("api", &["make"])
-        .build()];
+    let purity = [peer_api_callback_factories(&["make"]).build()];
     let write = "holder.api.make = callback => { globalThis.observed = callback(); return { invoke: () => callback() }; };";
     let colocated = run_fixture(
         FixtureOpts::new(
@@ -2891,9 +2824,7 @@ fn namespace_container_publication_and_uncertain_receivers_remain_conservative()
             "static/peer",
             "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
         )];
-        let purity = [ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
-            .build()];
+        let purity = [peer_api_callback_factories(&["make"]).build()];
         let colocated = run_fixture(
             FixtureOpts::new(
                 &source,
@@ -3222,8 +3153,7 @@ fn namespace_factory_ignores_adjacent_fresh_error_metadata_writes() {
             "static/peer",
             "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
         )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
+        .with_chunk_export_purity(&[peer_api_callback_factories(&["make"])
             .build()]),
     );
     assert_preserved_entry_output(&fixture, "42 factory 1 2\n");
@@ -3235,9 +3165,7 @@ fn fresh_error_metadata_proof_keeps_namespace_mutation_conservative() {
         "static/peer",
         "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
     )];
-    let contracts = [ChunkExportPurityBuilder::new("static/peer")
-        .with_callback_factory_members("api", &["make"])
-        .build()];
+    let contracts = [peer_api_callback_factories(&["make"]).build()];
     for (helper, setup, has_global_alias, import_order) in [
         (
             "function helper(result, first) { result.make = first; return (result = Error('x'), result.make = first, result); }",
@@ -3365,9 +3293,7 @@ fn fresh_error_metadata_proof_requires_every_write_to_be_adjacent() {
         "static/peer",
         "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
     )];
-    let contracts = [ChunkExportPurityBuilder::new("static/peer")
-        .with_callback_factory_members("api", &["make"])
-        .build()];
+    let contracts = [peer_api_callback_factories(&["make"]).build()];
     for body in [
         "result.name = 'before'; return (result = Error(message), result.name = 'factory', result);",
         "return (result = Error(message), noop(), result.name = 'factory', result);",
@@ -3442,9 +3368,7 @@ fn destructuring_namespace_member_writes_cannot_hide_early_callback_reads() {
              later = 42;\nconsole.log(wrapped.invoke());\n"
         );
         let peers = [("static/peer", peer)];
-        let contracts = [ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
-            .build()];
+        let contracts = [peer_api_callback_factories(&["make"]).build()];
         expect_atomic_conflict_rejection(
             FixtureOpts::new(
                 &source,
@@ -3500,9 +3424,7 @@ fn unrelated_destructuring_member_writes_keep_factory_callbacks_deferred() {
             "static/peer",
             "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
         )])
-        .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
-            .build()]),
+        .with_chunk_export_purity(&[peer_api_callback_factories(&["make"]).build()]),
     );
     assert_preserved_entry_output(&fixture, "42 metadata\n");
 }
@@ -3526,9 +3448,7 @@ fn destructuring_member_values_keep_namespace_publication_visible() {
             "static/peer",
             "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
         )];
-        let contracts = [ChunkExportPurityBuilder::new("static/peer")
-            .with_callback_factory_members("api", &["make"])
-            .build()];
+        let contracts = [peer_api_callback_factories(&["make"]).build()];
         expect_atomic_conflict_rejection(
             FixtureOpts::new(
                 &source,
@@ -3595,8 +3515,7 @@ fn private_namespace_capabilities_keep_unrelated_receivers_independent() {
                 ],
             )
             .with_extra_chunks(&[("static/peer", &peer)])
-            .with_chunk_export_purity(&[ChunkExportPurityBuilder::new("static/peer")
-                .with_callback_factory_members("api", &["make"])
+            .with_chunk_export_purity(&[peer_api_callback_factories(&["make"])
                 .with_namespace_independent_members("api", &["make", "marker", "children", "Base"])
                 .build()]),
         );
@@ -3610,8 +3529,7 @@ fn namespace_capability_privacy_rejects_explicit_namespace_routes() {
         "static/peer",
         "export const api = { marker: 'ready', make(callback) { return { invoke: () => callback() }; } };\nexport const other = api;\n",
     )];
-    let contracts = [ChunkExportPurityBuilder::new("static/peer")
-        .with_callback_factory_members("api", &["make"])
+    let contracts = [peer_api_callback_factories(&["make"])
         .with_namespace_independent_members("api", &["make", "marker"])
         .with_namespace_independent_members("other", &["make", "marker"])
         .build()];
@@ -3716,8 +3634,7 @@ fn namespace_capability_privacy_preserves_early_result_invocation() {
         "static/peer",
         "export const api = { make(callback) { return { invoke: () => callback() }; } };\n",
     )];
-    let contracts = [ChunkExportPurityBuilder::new("static/peer")
-        .with_callback_factory_members("api", &["make"])
+    let contracts = [peer_api_callback_factories(&["make"])
         .with_namespace_independent_members("api", &["make"])
         .build()];
     expect_atomic_conflict_rejection(
