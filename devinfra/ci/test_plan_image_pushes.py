@@ -6,18 +6,9 @@ import pytest_bazel
 
 from devinfra.buildbuddy.ci.bes import BuildBuddyError, Invocation, Output, merge
 from devinfra.ci.image_registry import Registry
-from devinfra.ci.plan_image_pushes import (
-    Decision,
-    Image,
-    decide,
-    digest_uri,
-    load_images,
-    local_digests,
-    matrix_include,
-    plan,
-)
+from devinfra.ci.plan_image_pushes import Image, decide, digest_uri, load_images, local_digests, main, matrix_include
 from devinfra.ci.publication_test_verdicts import TestEvidence
-from devinfra.oci.crane import Crane
+from devinfra.oci.crane import Crane, CraneError
 
 NO_CI = TestEvidence(problem="no CI invocation")
 
@@ -109,12 +100,19 @@ def test_an_unreadable_blob_keeps_the_image(capsys: pytest.CaptureFixture[str]) 
     assert "could not read its digest" in capsys.readouterr().err
 
 
-def test_no_invocation_means_no_digests_and_so_everything_pushes() -> None:
-    """push-images runs under always(); a skipped bazel-ci must publish too much."""
-    images = [image(name=n, target=f"//{n}:image") for n in ("a", "b", "c")]
-    assert local_digests(images, None, lambda _: b"") == {}
-    decisions = plan(images, lambda i: decide(i, {}, FakeCrane({})), workers=3)
-    assert len(matrix_include(decisions, NO_CI)) == len(images)
+def test_missing_build_evidence_defers_to_push_jobs_without_contacting_the_registry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spec = tmp_path / "images.json"
+    spec.write_text(json.dumps({"images": {"a": {"target": "//a:image"}, "b": {"target": "//b:image"}}}))
+    output = tmp_path / "output"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+
+    main(["--spec", str(spec), "--crane", str(tmp_path / "nonexistent")])
+
+    matrix, count = output.read_text().splitlines()
+    assert count == "count=2"
+    assert [row["image_name"] for row in json.loads(matrix.removeprefix("matrix="))["include"]] == ["a", "b"]
 
 
 def test_unchanged_digest_is_not_pushed() -> None:
@@ -164,14 +162,23 @@ def test_content_matching_an_older_publish_is_still_pushed() -> None:
     assert decide(subject, {"airlock": "sha256:reverted"}, crane).needs_push
 
 
-def test_a_registry_error_fails_the_plan_rather_than_skipping() -> None:
-    """An unreadable registry is not evidence the image is unchanged."""
+def test_registry_access_failure_stops_the_planner_before_it_writes_any_jobs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spec = tmp_path / "images.json"
+    spec.write_text(json.dumps({"images": {"pending": {"target": "//p:image"}, "known": {"target": "//k:image"}}}))
+    output = tmp_path / "output"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    monkeypatch.setattr("devinfra.ci.plan_image_pushes.local_digests", lambda *_: {"known": "sha256:current"})
+    crane = tmp_path / "crane"
+    crane.write_text("#!/bin/sh\necho 'DENIED: requested access is denied' >&2\nexit 1\n")
+    crane.chmod(0o755)
 
-    def explode(_: Image) -> Decision:
-        raise RuntimeError("crane ls failed (exit 1):\nunexpected status code 500")
+    with pytest.raises(CraneError, match="DENIED") as error:
+        main(["--spec", str(spec), "--crane", str(crane)])
 
-    with pytest.raises(RuntimeError, match="500"):
-        plan([image()], explode, workers=2)
+    assert error.value.command == ("digest", "ghcr.io/agentydragon/known:latest")
+    assert not output.exists()
 
 
 def test_load_images_rejects_a_field_it_does_not_understand(tmp_path: Path) -> None:
