@@ -423,40 +423,46 @@ private def checkProofModule (work : System.FilePath) (setup : Lean.ModuleSetup)
   IO.FS.writeFile config (toJson setup).compress
   checkLean work (#[s!"--setup={config}"] ++ args ++ #[file.toString])
 
-private def checkCheckpoint (work : System.FilePath) (text : CoreJS.LinkedBehavior.CheckpointText) : IO Unit := do
+private def checkCheckpoint (timings : Bool) (work : System.FilePath) (text : CoreJS.LinkedBehavior.CheckpointText) : IO Unit := do
   let stages := #[(`LinkedReplayInput, text.input), (`LinkedReplaySource, text.source), (`LinkedReplayProof, text.execution)]
   let mut importArts := ({} : Lean.NameMap _)
   for (name, code) in stages do
     let compiled := work / (name.toString ++ ".olean")
-    checkProofModule work { name, importArts } code #["-o", compiled.toString]
+    timePhase timings name.toString fun _ => do
+      checkProofModule work { name, importArts } code #["-o", compiled.toString]
     importArts := importArts.insert name (.ofArrays #[#[compiled]])
-  checkProofModule work { name := `LinkedReplayGate, importArts } text.gate #[]
+  timePhase timings "ast_correspondence" fun _ => do
+    checkProofModule work { name := `LinkedReplayGate, importArts } text.gate #[]
 
 /-- The ordinary execution proof can also be imported into a separate AST gate. -/
-private def checkOrdinaryExecution (work : System.FilePath) (cert : CoreJS.LinkedBehavior.Certificate) : IO Unit := do
+private def checkOrdinaryExecution (timings : Bool) (work : System.FilePath) (cert : CoreJS.LinkedBehavior.Certificate) : IO Unit := do
   if cert.correspondence.utf8ByteSize < 512 * 1024 then
     let file := work / "LinkedExecution.lean"
     IO.FS.writeFile file (cert.preamble ++ cert.execution ++ cert.correspondence)
-    checkLean work #[file.toString]
+    timePhase timings "execution_and_correspondence" fun _ => do
+      checkLean work #[file.toString]
   else
     let name := `LinkedExecutionProof
     let compiled := work / "LinkedExecutionProof.olean"
-    checkProofModule work { name } (cert.preamble ++ cert.execution) #["-o", compiled.toString]
+    timePhase timings "execution_proof" fun _ => do
+      checkProofModule work { name } (cert.preamble ++ cert.execution) #["-o", compiled.toString]
     let importArts := ({} : Lean.NameMap _).insert name (.ofArrays #[#[compiled]])
-    checkProofModule work { name := `LinkedExecution, importArts }
-      ("import LinkedExecutionProof\n" ++ cert.preamble ++ cert.correspondence) #[]
+    timePhase timings "ast_correspondence" fun _ => do
+      checkProofModule work { name := `LinkedExecution, importArts }
+        ("import LinkedExecutionProof\n" ++ cert.preamble ++ cert.correspondence) #[]
 
 /-- Publication waits for the kernel-checked executions and the exact AST gate. -/
-private def verifyExecution (profile : CoreJS.HostProfile) (work : System.FilePath) (program providers files : Json) (P : Plan)
+private def verifyExecution (timings : Bool) (profile : CoreJS.HostProfile) (work : System.FilePath) (program providers files : Json) (P : Plan)
     (original candidate : CoreJS.Program) : IO CoreJS.HostProfile := do
-  let cert ← IO.ofExcept (CoreJS.LinkedBehavior.certificate profile program providers files P original candidate)
+  let cert ← timePhase timings "certificate_preparation" fun _ => do
+    IO.ofExcept (CoreJS.LinkedBehavior.certificate profile program providers files P original candidate)
   let accepted ← match cert.checkpoint with
     | none => pure false
     | some checkpoint => try
-        checkCheckpoint work checkpoint
+        checkCheckpoint timings work checkpoint
         pure true
       catch _ => pure false
-  unless accepted do checkOrdinaryExecution work cert
+  unless accepted do checkOrdinaryExecution timings work cert
   return cert.premises
 
 private def emitVerdict (requested : String) (outcome : Except String Guarantee) (scope : Option String := none) (extra : List (String × Json) := []) : IO UInt32 := do
@@ -490,13 +496,15 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
     | [b, s, o] => pure (b, s, o, none)
     | [b, s, o, "--lean", l] => pure (b, s, o, some l)
     | _ => do IO.eprintln "usage: lowersplit --diagnostic <bundle.mjs|bundle.json> <spec.json> <outdir> [--lean <file>] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]"; throw (IO.userError "usage")
+  let timings := required.isSome && (← IO.getEnv "SPLIT_PROOF_TIMINGS") == some "1"
   let tStart ← IO.monoMsNow
   let lap (what : String) (t0 : Nat) : IO Nat := do
     let t ← IO.monoMsNow
     if required.isNone then
       IO.println s!"  [time] {what}: {t - t0} ms"; (← IO.getStdout).flush
     return t
-  let program ← loadProgram bundlePath work required.isSome
+  let program ← timePhase timings "input_parse" fun _ => do
+    loadProgram bundlePath work required.isSome
   let source ← IO.ofExcept (program.getObjValAs? String "sourceText")
   let input := work / "source.mjs"
   IO.FS.writeFile input source
@@ -521,7 +529,8 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
       IO.println s!"  footprints read from {p}: the premises printed by `lower` when it wrote them apply"
       loadFootprints p units
     | none => do
-      let (fps, analysis) ← IO.lazyPure fun _ => Effects.footprints units (Effects.importsOf asts) prem exported.toArray
+      let (fps, analysis) ← timePhase timings "footprints" fun _ => do
+        IO.lazyPure fun _ => Effects.footprints units (Effects.importsOf asts) prem exported.toArray
       if required.isNone then
         for line in Effects.premiseLines prem analysis do IO.println line
       pure fps
@@ -562,10 +571,12 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
           && S.moduleOf B i != some S.entry then
         if required.isSome then throw (IO.userError s!"statement {i} is an `{t}` outside the entry module")
         IO.println s!"  FAIL  statement {i} is an `{t}` outside the entry module"; bad := true
-  let P ← IO.lazyPure fun _ => mkPlan B S
+  let P ← timePhase timings "placement" fun _ => do
+    IO.lazyPure fun _ => mkPlan B S
   let _ ← IO.lazyPure fun _ => P.mods.length + (P.mods.map (·.imports.length)).sum
   let t4 ← lap "mkPlan" t3
-  let checks ← report B S P required.isNone
+  let checks ← timePhase timings "plan_checks" fun _ => do
+    report B S P required.isNone
   let ok := checks.ok
   let t5 ← lap "all checks" t4
   if let some request := required then
@@ -573,19 +584,22 @@ private def runInDir (profile : CoreJS.HostProfile) (work : System.FilePath) (re
       try
         if request == .allOutcomes && level != .allOutcomes then
           throw (IO.userError "the checked reorder proves only normal-completion")
-        certifyOutput (Json.mkObj []) B P out work input checkOnly outputAsts source fun files =>
-          IO.ofExcept (CoreJS.DeclarationArtifacts.check program files ss B P)
+        certifyOutput (Json.mkObj []) B P out work input checkOnly timings outputAsts source fun files =>
+          timePhase timings "closed_declarations" fun _ => do
+            IO.ofExcept (CoreJS.DeclarationArtifacts.check program files ss B P)
         return ← emitVerdict request.label (.ok level) "closed-declarations" (profileVerdict profile .empty)
       catch e => return ← emitVerdict request.label (.error e.toString) "closed-declarations"
     try
       unless checks.layout && !bad do throw (IO.userError "source placement or module linkage checks failed")
-      let providers ← loadProviders program bundlePath work
+      let providers ← timePhase timings "provider_loading" fun _ => do
+        loadProviders program bundlePath work
       let used ← IO.mkRef CoreJS.HostProfile.empty
-      certifyOutput providers B P out work input checkOnly outputAsts source fun files => do
-        let (original, candidate) ← IO.ofExcept (CoreJS.LinkedInput.decodePair program providers files P profile)
+      certifyOutput providers B P out work input checkOnly timings outputAsts source fun files => do
+        let (original, candidate) ← timePhase timings "linked_lowering" fun _ => do
+          IO.ofExcept (CoreJS.LinkedInput.decodePair program providers files P profile)
         unless request == .normalCompletion do
           throw (IO.userError "linked execution proves only normal-completion")
-        used.set (← verifyExecution profile work program providers files P original candidate)
+        used.set (← verifyExecution timings profile work program providers files P original candidate)
       let active ← used.get
       return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs" (profileVerdict profile active)
     catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs"

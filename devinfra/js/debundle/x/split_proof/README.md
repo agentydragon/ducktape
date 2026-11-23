@@ -140,6 +140,20 @@ all-world proof that fails to reduce yields a rejection. A successful comparison
 reports `"scope":"linked-programs"`.
 [AST certificate](lean/EsmSplit/CoreJS/LinkedCertificate.lean) · [Linked behavior theorem](lean/EsmSplit/CoreJS/LinkedBehavior.lean)
 
+### Measure certification
+
+Set `SPLIT_PROOF_TIMINGS=1` to write phase names and elapsed milliseconds as JSON lines on stderr. Stdout carries the certification verdict. One Lean process reports a combined execution and AST correspondence time. Staged proofs report the subprocesses individually, including any attempted checkpoint before a fallback.
+
+For public comparisons, use the wide-table reversal and linked module graph:
+
+```sh
+p=//devinfra/js/debundle/x/split_proof
+bbr test "$p/translation:linked_wide_table_reversal_test" "$p/translation:linked_module_graph_test" \
+  --test_env=SPLIT_PROOF_TIMINGS=1 --test_output=all --nocache_test_results
+```
+
+Compare the same fixture, proof mode and runner across revisions. Record peak memory separately from the phase times.
+
 ### Inspect an uncertified preview
 
 `lowersplit --diagnostic bundle.mjs spec.json output` runs the structural checks and prints model diagnostics. Use `--plan <file>` to inspect module order, statement placement and conflicting pairs, or `--force` to emit a preview of a rejected plan. Successful diagnostic runs also produce uncertified previews. Experiments can pass `--corejs <program.json>` here to supply an external lowering by statement ID. [Move rules and proof inventory](docs/footprint_soundness.md)
