@@ -76,8 +76,9 @@ Linked sequence expressions evaluate their operands from left to right, stop at 
 Linked member expressions support dot access and computed keys with modeled primitive
 property names. A member call evaluates its receiver and key once, reads the callee before
 evaluating arguments, and passes the receiver as `this`. Ordinary functions have the call's
-receiver and arrows capture the surrounding `this`. Optional chains, private names, and
-`super` are outside the linked fragment.
+receiver and arrows capture the surrounding `this`. Private names and `super` are outside the linked fragment.
+
+A single optional member read `binding?.key` or `binding?.[key]` can use a resolved lexical binding, including an import. A null or undefined base yields `undefined` without computing a key or invoking a getter. Otherwise the read captures the base before evaluating the key and keeps that base as the getter's receiver. Optional calls, continued chains, and chains used directly as call targets remain outside the linked fragment.
 
 Linked `key in base` evaluates the key expression and then the base expression.
 A primitive base throws before the key is converted. On a modeled object, CoreJS

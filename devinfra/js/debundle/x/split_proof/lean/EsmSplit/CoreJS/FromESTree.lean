@@ -271,8 +271,9 @@ private def linkedTemplate (lower : Json → Except String Expr) (j : Json) : Ex
 
 /-- Decode a property access, retaining the receiver and the unevaluated key for
 the interpreter's property read, call, or write. -/
-private def linkedMember (lower : Json → Except String Expr) (j : Json) : Except String (Expr × Expr) := do
-  if ← j.getObjValAs? Bool "optional" then throw "unsupported optional member access"
+private def linkedMember (lower : Json → Except String Expr) (j : Json) (allowOptional := false) :
+    Except String (Expr × Expr) := do
+  if (← j.getObjValAs? Bool "optional") && !allowOptional then throw "unsupported optional member access"
   let obj ← j.getObjVal? "object"
   let prop ← j.getObjVal? "property"
   if (← field obj "type") == "Super" then throw "unsupported super member access"
@@ -303,6 +304,19 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
   | "MemberExpression" =>
     let (base, key) ← linkedMember (linkedExpr imports inFunction "") j
     return .get base key
+  | "ChainExpression" =>
+    let member ← j.getObjVal? "expression"
+    unless (← field member "type") == "MemberExpression" do throw "unsupported optional chain"
+    unless ← member.getObjValAs? Bool "optional" do throw "unsupported optional chain"
+    let receiver ← member.getObjVal? "object"
+    unless (← field receiver "type") == "Identifier" do
+      throw "optional member base is not a lexical binding"
+    let (base, key) ← linkedMember (linkedExpr imports inFunction "") member (allowOptional := true)
+    let .var _ := base | throw "optional member base is not a lexical binding"
+    -- The guards only read a lexical cell. No effects intervene before the
+    -- property read fetches its base, then evaluates the key and reads the property.
+    let absent := Expr.logical .or (.binary .strictEq base .undef) (.binary .strictEq base .null)
+    return .cond absent .undef (.get base key)
   | "AssignmentExpression" =>
     let op ← field j "operator"
     unless op == "=" do throw s!"unsupported linked assignment operator {op}"
@@ -404,10 +418,14 @@ private partial def linkedExpr (imports : List Name) (inFunction : Bool) (nameHi
     let lower := linkedExpr imports inFunction ""
     let callee ← j.getObjVal? "callee"
     let args ← j.getObjValAs? (List Json) "arguments"
-    if (← field callee "type") == "MemberExpression" then
+    match ← field callee "type" with
+    | "MemberExpression" =>
       let (base, key) ← linkedMember lower callee
       return .callMethod base key (← args.mapM lower)
-    return .call (← lower callee) (← args.mapM lower)
+    | "ChainExpression" =>
+      -- Parentheses preserve the selected property's Reference for the call.
+      throw "unsupported optional chain as a call target"
+    | _ => return .call (← lower callee) (← args.mapM lower)
   | "ArrowFunctionExpression" | "FunctionExpression" =>
     let arrow := kind == "ArrowFunctionExpression"
     let id ← if arrow then pure Json.null else j.getObjVal? "id"
