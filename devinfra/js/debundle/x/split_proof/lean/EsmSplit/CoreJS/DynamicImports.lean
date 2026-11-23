@@ -23,7 +23,9 @@ structure Boundary where
   requests : List LinkedRequest := []
   deriving Repr
 
-private def requests (name : String) (ast : Json) (resource : Resource) : Except String (Array Import) := do
+/-- Discover the direct static dependencies to collect for one external JavaScript file, using
+the validation the complete boundary check applies to each transitive script. -/
+def requests (name : String) (ast : Json) (resource : Resource) : Except String (Array Import) := do
   unless (← ast.getObjValAs? String "sourceText") == resource.source do throw "parsed source differs from resource"
   let mut imports := #[]
   for node in ← ESTreeUnits.checkedNodes ast resource.source do
