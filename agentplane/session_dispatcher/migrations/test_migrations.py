@@ -13,7 +13,7 @@ from util.db_url import render_postgresql_url
 # SQLAlchemy loads this URL dialect dynamically.
 # gazelle:include_dep @pypi//psycopg
 
-_SERVICE = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/session_dispatcher/cmd/runner-gateway_/runner-gateway"
+_SERVICE = Runfiles.CreateOrRaise().root() / "ducktape/agentplane/session_dispatcher/cmd/sessions_/sessions"
 _VERSION = "runner_gateway_dispatcher_goose_version"
 
 

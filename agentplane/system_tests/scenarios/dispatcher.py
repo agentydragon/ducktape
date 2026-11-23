@@ -238,7 +238,7 @@ async def _crashed_dispatcher_process(
     assert isinstance(pid, int)
     assert pid > 1
     executable = await asyncio.to_thread(Path(f"/proc/{pid}/exe").readlink)
-    assert executable.name == "runner-gateway", executable
+    assert executable.name == "sessions", executable
 
     async def send_signal(name: str) -> None:
         command = await asyncio.create_subprocess_exec(

@@ -59,9 +59,9 @@ Source lives under `agentplane/session_dispatcher/`: `cmd/` owns signal/log setu
 `rpc.listen_address` accepts a TCP address or an inherited `fd:N` as documented by
 [`agentplane/net/listener`](../net/listener/README.md).
 
-Build `//agentplane/session_dispatcher/cmd:runner-gateway` or `//agentplane/session_dispatcher:image`.
+Build `//agentplane/session_dispatcher/cmd:sessions` or `//agentplane/session_dispatcher:image`.
 The same binary embeds Goose migrations and applies them before request handling or workers start.
-`runner-gateway --migrate-only` initializes a database using the same lifecycle and
+`sessions --migrate-only` initializes a database using the same lifecycle and
 `AGENTPLANE_SESSIONS_DISPATCHER_DATABASE_URL`. PostgreSQL session locks serialize simultaneous
 startup attempts. Integration tests exercise real PostgreSQL and queue-to-Runner delivery over
 the separate Environments mTLS receiver on RBE.
