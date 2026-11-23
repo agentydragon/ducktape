@@ -186,3 +186,27 @@ for (const [name, param] of [
   assert.equal(result.verdict.status, "rejected", result.log);
   assert(!existsSync(result.out));
 }
+
+{
+  const source = `
+    const run = () => {
+      let calls = 0;
+      const input = { get a() { calls += 1; return undefined; }, b: null };
+      const { a: first = 12, b: second = 17, c: third = first + 1, create: make = () => third } = input;
+      let sawTDZ = false;
+      try {
+        const { missing: earlier = later, other: later = 9 } = input;
+      } catch (error) {
+        sawTDZ = typeof error === "object";
+      }
+      return [calls, first, second, third, make(), make.name, sawTDZ];
+    };
+    const result = run();
+    export { result };
+  `;
+  const { files, out, verdict, log } = sequentialSplit("local-defaults", source);
+  assert.equal(verdict.status, "certified", log);
+  for (const file of [files.sourceFile, path.join(out, entry)]) {
+    assert.deepEqual(observe(file, "result"), { result: [1, 12, null, 13, 13, "make", true] });
+  }
+}
