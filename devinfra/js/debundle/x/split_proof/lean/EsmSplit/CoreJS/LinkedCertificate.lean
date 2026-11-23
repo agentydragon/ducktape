@@ -3,11 +3,14 @@ import Lean.Elab.Tactic.Cbv
 import Lean.Util.CollectAxioms
 import EsmSplit.CoreJS.BatchState
 import EsmSplit.CoreJS.ClassParents
+import EsmSplit.CoreJS.DenseArray
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.LinkedBehavior
 import EsmSplit.CoreJS.LiteralRecord
 
 namespace CoreJS.LinkedBehavior
+
+attribute [cbv_eval] DenseArray.reduce
 -- Lean cannot derive DecidableEq for nested mutual inductives. Compare the constructors
 -- produced by LinkedInput; every successful branch returns equality, including deferred code.
 private abbrev MatchEq (α : Type) := (a b : α) → Option (PLift (a = b))
@@ -719,6 +722,23 @@ checked lookup avoids expanding the nested interpreter calls in the non-null her
               cases value <;> try (simp only [hc, hk, hp]; rfl)
               case obj p =>
                 simpa only [hc, hk, hp] using classParents_ownPrototype call ho hc hk hp
+
+/-- An own data property does not need the prototype-walk fuel or accessor dispatch. -/
+@[cbv_eval] private theorem getProp_obj_str (call : Call W) (a : Addr) (key : String) (s : State W) :
+    getProp call (.obj a) (.str key) s =
+      match (s.objAt a).bind (fun o => o.props.lookup key) with
+      | some (.data v ..) => .ok v s
+      | _ => getFrom call a (.obj a) key s := by
+  cases ho : s.objAt a with
+  | none => rfl
+  | some o =>
+    simp only [Option.bind_some]
+    cases hp : o.props.lookup key with
+    | none => rfl
+    | some p =>
+      cases p with
+      | accessor => rfl
+      | data => exact getProp_ownData call ho hp
 
 /-- Prove both obligations by evaluating the real module graphs with an arbitrary host world.
 `cbv` produces kernel-checkable equations for definitions with well-founded recursion. -/
