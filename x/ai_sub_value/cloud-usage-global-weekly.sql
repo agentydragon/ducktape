@@ -14,7 +14,7 @@ SELECT json_build_object(
         'last_assistant_event_utc', to_char(max(created_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
     ),
     'session_id_count', (SELECT count(*) FROM sessions),
-    'deduplication_scenario', 'message IDs deduplicated globally across sessions; 133 missing-message-ID events remain individually scoped to session and event ID',
+    'deduplication_scenario', 'message IDs deduplicated globally across sessions; events without message IDs remain individually scoped to session and event ID',
     'weekly_time_assignment', 'earliest observed final-sequence events.created_at among session copies; copied message IDs can have different archive timestamps, so week placement is uncertain',
     'token_estimate', 'global-ID point estimate: minimum last-sequence counter across session copies per message ID; lower/upper bounds retain min/max over all streamed events and copies',
     'payment_lane', 'unknown',
