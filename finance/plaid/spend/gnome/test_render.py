@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import re
 import shlex
-import zipfile
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
 from datetime import datetime
@@ -25,16 +24,15 @@ import pytest_bazel
 from PIL import Image, ImageChops, ImageStat
 from python.runfiles import Runfiles
 
-from devinfra.oci.oci import load_oci_image
 from devinfra.testing.output_writer import BoundTestOutputs
 from finance.plaid.spend.allowance import PeriodId
 from finance.plaid.spend.models import SpendView
 from finance.plaid.spend.testing import dashboard
-from gnome.test_image import gnome_shell_test
 from gnome.testing.fake_daemon import fake_daemon
 from gnome.testing.session import GnomeMenuCapture, GnomeSession, exec_output, gnome_session, string_reply, wait_until
 
-_EXTENSION_ZIP = "ducktape/finance/plaid/spend/gnome/plaid-spend-desktop.zip"
+pytest_plugins = ("gnome.testing.fixtures",)
+
 _EXTENSION_UUID = "plaid-spend@allegedly.works"
 _GSETTINGS = f"gsettings --schemadir /usr/share/gnome-shell/extensions/{_EXTENSION_UUID}/schemas"
 _SETTINGS_SCHEMA = "org.gnome.shell.extensions.plaid-spend"
@@ -72,19 +70,6 @@ def test_extension_metadata_supports_gnome_50(extension_dir: Path) -> None:
     metadata = json.loads((extension_dir / "metadata.json").read_text())
 
     assert "50" in metadata["shell-version"]
-
-
-@pytest.fixture(scope="module")
-def gnome_shell_test_image() -> str:
-    return load_oci_image(gnome_shell_test.LAYOUT_RLOCATION)
-
-
-@pytest.fixture(scope="module")
-def extension_dir(runfiles: Runfiles, tmp_path_factory: pytest.TempPathFactory) -> Path:
-    dest = tmp_path_factory.mktemp("plaid-spend-extension")
-    with zipfile.ZipFile(runfiles.root() / _EXTENSION_ZIP) as extension_zip:
-        extension_zip.extractall(dest)
-    return dest
 
 
 @pytest.fixture(scope="module")

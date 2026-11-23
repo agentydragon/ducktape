@@ -5,6 +5,18 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_testonly = True)
 
 py_library(
+    name = "fixtures",
+    srcs = ["fixtures.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//devinfra/oci",
+        "//gnome/test_image:gnome_shell_test",
+        "@pypi//pytest",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+py_library(
     name = "session",
     srcs = ["session.py"],
     data = [":fake_daemon_js"],
