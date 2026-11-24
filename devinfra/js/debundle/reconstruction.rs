@@ -8,7 +8,7 @@
 //! the marked reading-only tree writer consumes.
 
 use source_identity::ChunkId;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -19,7 +19,6 @@ use final_global_resolution::{
     assess_final_global_resolution,
 };
 use gate::{ChunkGateRejection, UnmatchedSpecClaim};
-use js_ast::GlobalUseElisions;
 use lowering::FinalizedCandidateEmissionDraft;
 use report_io::write_json;
 use validate_emitted_exports::validate_emitted_exports;
@@ -52,94 +51,65 @@ impl VendorManifestOutput {
     }
 }
 
-/// Ready-to-validate output syntax and replacement decisions for one program.
-/// Diagnostic reports are separate from the accepted output tree.
-pub struct ReconstructionPlan {
-    files: EmissionFiles,
-    vendor: Arc<VendorResolutionPlan>,
+/// Check the final syntax, vendor replacements and source global uses before emission.
+pub fn validate_reconstruction(
+    candidate: FinalizedCandidateEmissionDraft,
+    global_resolution_sources: &GlobalResolutionSources,
+    unresolved_claims: &[UnmatchedSpecClaim],
+    browser_options: Option<&spec::EmitBrowserHarnessConfig>,
     vendor_manifest: Option<VendorManifestOutput>,
-    unresolved_claims: Vec<UnmatchedSpecClaim>,
-    browser_harness: Option<BrowserHarnessPlan>,
-    global_resolution_sources: GlobalResolutionSources,
-    global_use_elisions: BTreeMap<ChunkId, GlobalUseElisions>,
-}
-
-impl ReconstructionPlan {
-    pub fn new(
-        candidate: FinalizedCandidateEmissionDraft,
-        global_resolution_sources: GlobalResolutionSources,
-        unresolved_claims: Vec<UnmatchedSpecClaim>,
-        browser_options: Option<&spec::EmitBrowserHarnessConfig>,
-        vendor_manifest: Option<VendorManifestOutput>,
-    ) -> Result<Self> {
-        let global_use_elisions = candidate.global_use_elisions().clone();
-        let (files, vendor) = candidate.into_files_and_vendor_plan();
-        let browser_harness = browser_options
-            .map(|options| {
-                BrowserHarnessPlan::prepare(files.files(), &vendor.full_swap_packages(), options)
-            })
-            .transpose()?;
-        Ok(Self {
-            files,
-            vendor,
-            vendor_manifest,
-            unresolved_claims,
-            browser_harness,
-            global_resolution_sources,
-            global_use_elisions,
+) -> Result<ValidatedPlan> {
+    let (files, vendor, global_use_elisions) = candidate.into_reconstruction_parts();
+    let browser_harness = browser_options
+        .map(|options| {
+            BrowserHarnessPlan::prepare(files.files(), &vendor.full_swap_packages(), options)
         })
-    }
-
-    /// Validate the exact reconstructed syntax after all body transformations.
-    /// Keep both post-reconstruction safeguards: synthesized directives are not
-    /// fully covered by the input-space replacement checks.
-    pub fn validate(self) -> Result<ValidatedPlan> {
-        validate_partial_swap_consumers(&self.files, &self.vendor)?;
-        let excluded_chunk_ids = self.vendor.full_swap_chunk_ids();
-        validate_emitted_exports(&self.files, &excluded_chunk_ids)?;
-        reject_unresolved_claims(&self.unresolved_claims)?;
-        let global_resolution = assess_final_global_resolution(
-            &self.global_resolution_sources,
-            self.files.files(),
-            &excluded_chunk_ids,
-            &self.global_use_elisions,
+        .transpose()?;
+    validate_partial_swap_consumers(&files, &vendor)?;
+    let excluded_chunk_ids = vendor.full_swap_chunk_ids();
+    validate_emitted_exports(&files, &excluded_chunk_ids)?;
+    reject_unresolved_claims(unresolved_claims)?;
+    let global_resolution = assess_final_global_resolution(
+        global_resolution_sources,
+        files.files(),
+        &excluded_chunk_ids,
+        &global_use_elisions,
+    );
+    let captures = global_resolution
+        .chunks
+        .iter()
+        .flat_map(|(chunk, assessment)| {
+            assessment
+                .findings
+                .iter()
+                .filter(|finding| finding.reason == GlobalResolutionReason::CapturedByBinding)
+                .map(move |finding| {
+                    format!(
+                        "  - chunk {chunk}: source global `{}` captured in {}",
+                        finding.symbol.as_deref().unwrap_or("<unknown>"),
+                        finding.output_files.join(", "),
+                    )
+                })
+        })
+        .collect::<Vec<_>>();
+    if !captures.is_empty() {
+        bail!(
+            "reconstructed program captures source global references:\n{}",
+            captures.join("\n")
         );
-        let captures = global_resolution
-            .chunks
-            .iter()
-            .flat_map(|(chunk, assessment)| {
-                assessment
-                    .findings
-                    .iter()
-                    .filter(|finding| finding.reason == GlobalResolutionReason::CapturedByBinding)
-                    .map(move |finding| {
-                        format!(
-                            "  - chunk {chunk}: source global `{}` captured in {}",
-                            finding.symbol.as_deref().unwrap_or("<unknown>"),
-                            finding.output_files.join(", "),
-                        )
-                    })
-            })
-            .collect::<Vec<_>>();
-        if !captures.is_empty() {
-            bail!(
-                "reconstructed program captures source global references:\n{}",
-                captures.join("\n")
-            );
-        }
-        Ok(ValidatedPlan {
-            files: self.files,
-            vendor: self.vendor,
-            vendor_manifest: self.vendor_manifest,
-            excluded_chunk_ids,
-            browser_harness: self.browser_harness,
-            global_resolution,
-        })
     }
+    Ok(ValidatedPlan {
+        files,
+        vendor,
+        vendor_manifest,
+        excluded_chunk_ids,
+        browser_harness,
+        global_resolution,
+    })
 }
 
 /// An immutable concrete plan accepted by the shared final validator.
-/// Only `ReconstructionPlan::validate` can construct this capability.
+/// Only [`validate_reconstruction`] can construct this capability.
 pub struct ValidatedPlan {
     files: EmissionFiles,
     vendor: Arc<VendorResolutionPlan>,
@@ -194,7 +164,7 @@ impl RejectedPlan {
         rejections: Vec<ChunkGateRejection>,
         unresolved_claims: &[UnmatchedSpecClaim],
     ) -> Result<Self> {
-        let (files, vendor) = candidate.into_files_and_vendor_plan();
+        let (files, vendor, _) = candidate.into_reconstruction_parts();
         ensure!(
             !rejections.is_empty(),
             "a rejected plan needs at least one gate rejection"

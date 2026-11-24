@@ -3132,7 +3132,7 @@ validation, and writing:
   and facades remain planned outputs. For browser output, prepare the HTML entry
   and preload targets, bootstrap, rewritten HTML, and asset destinations before
   final acceptance, including in dry runs.
-- **Validate.** Consume the final `ReconstructionPlan`, checking synthesized
+- **Validate.** Consume the finalized candidate, checking synthesized
   partial-swap consumers, duplicate public exports, unresolved claims, and
   source globals captured by emitted bindings. Return
   an immutable `ValidatedPlan` only on acceptance. These final checks supplement

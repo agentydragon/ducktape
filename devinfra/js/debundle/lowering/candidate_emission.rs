@@ -150,15 +150,15 @@ impl FinalizedCandidateEmissionDraft {
         &self.references_by_symbol
     }
 
-    /// Prepared-parse global-use sites each vendor residual strip removed,
-    /// per partially-swapped chunk.
-    pub fn global_use_elisions(&self) -> &BTreeMap<ChunkId, GlobalUseElisions> {
-        &self.global_use_elisions
-    }
-
-    /// Consume the finalized product for reconstruction. No caller can
-    /// rewrite the files after this point.
-    pub fn into_files_and_vendor_plan(self) -> (EmissionFiles, Arc<VendorResolutionPlan>) {
-        (self.files, self.vendor_plan)
+    /// Consume the finalized files, their replacements and the source-global sites
+    /// elided by vendor stripping. These all describe the same candidate.
+    pub fn into_reconstruction_parts(
+        self,
+    ) -> (
+        EmissionFiles,
+        Arc<VendorResolutionPlan>,
+        BTreeMap<ChunkId, GlobalUseElisions>,
+    ) {
+        (self.files, self.vendor_plan, self.global_use_elisions)
     }
 }

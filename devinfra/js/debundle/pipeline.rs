@@ -30,7 +30,7 @@ use lowering::{
 };
 use output_layout::GLOBAL_RESOLUTION_REPORT;
 use prepare_chunks::{SourcePreparation, prepare_js_chunks};
-use reconstruction::{EmittablePlan, ReconstructionPlan, RejectedPlan, VendorManifestOutput};
+use reconstruction::{EmittablePlan, RejectedPlan, VendorManifestOutput, validate_reconstruction};
 use spec::{ChunkExportPurity, LogicalModule, NodeBuiltinModuleExt, TransformSpec};
 use spec_modules::read_flat_transform_spec;
 use spec_tree::{
@@ -1385,14 +1385,13 @@ fn run_prepared_transform(
 
     // Freeze the exact final syntax and replacement decisions before any
     // accepted-program output is written. Diagnostic reports may already exist.
-    let validated_plan = ReconstructionPlan::new(
+    let validated_plan = validate_reconstruction(
         candidate,
-        global_resolution_sources,
-        unmatched_spec_claims,
+        &global_resolution_sources,
+        &unmatched_spec_claims,
         spec.emit_browser_harness.as_ref(),
         VendorManifestOutput::prepare(swap_cfg.output_manifest_path.as_deref(), vendor_report),
-    )?
-    .validate()?;
+    )?;
     let emission_files = validated_plan.files();
     let excluded_chunk_ids = validated_plan.excluded_chunk_ids();
 
