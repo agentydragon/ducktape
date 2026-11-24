@@ -175,17 +175,12 @@ lean_binary(
     deps = [":effects"],
 )
 
-# Source groups used only to compile the deliberately unsound `no_writes` checker.
-filegroup(
-    name = "translate_mutation_base_sources",
-    srcs = ["EsmSplit/TranslateMain.lean"],
-    visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants:__subpackages__"],
-)
-
-filegroup(
-    name = "translate_mutation_source",
-    srcs = ["EsmSplit/Translate.lean"],
-    visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants:__subpackages__"],
+exports_files(
+    [
+        "EsmSplit/Translate.lean",
+        "EsmSplit/TranslateMain.lean",
+    ],
+    visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants/no_writes:__pkg__"],
 )
 
 splitter_launcher(
