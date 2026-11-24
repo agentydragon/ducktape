@@ -1,4 +1,4 @@
-import EsmSplit.CoreJS.EvaluatorFrame
+import EsmSplit.CoreJS.HiddenRegion
 import EsmSplit.CoreJS.LinkedPivotCheck
 import EsmSplit.CoreJS.LinkWorld
 import EsmSplit.CoreJS.StateMatch
@@ -98,6 +98,36 @@ private structure CheckedSchedule (ready : State World.probe) (source : List Lin
     runUnits n source (linkState w ready) = .ok () final ↔
       runUnits n units (linkState w ready) = .ok () final
 
+private def checkHiddenMove? (ready : State World.probe) (pre crossed suffix : List LinkedUnit) (pivot : LinkedUnit) :
+    Option (PLift (∀ w n (final : State w),
+      runUnits n (pre ++ crossed ++ [pivot] ++ suffix) (linkState w ready) = .ok () final ↔
+        runUnits n (pre ++ [pivot] ++ crossed ++ suffix) (linkState w ready) = .ok () final)) := do
+  let q ← observerRegion? ready (pivot.1 + 1)
+  let masked := ready.put q #[] #[]
+  let ⟨hq, access, scope⟩ ← checkIsolated? masked q (pre ++ crossed ++ [pivot])
+  let ⟨checks⟩ ← (checkPivot masked pre crossed pivot).toOption
+  return ⟨by
+    intro w n final
+    let H := ready.heap[q]?.getD #[]
+    let C := ready.cells[q]?.getD #[]
+    have restore : (linkState w masked).put q H C = linkState w ready := by
+      change linkState w ((ready.put q #[] #[]).put q H C) = _
+      rw [State.put_put]
+      simp only [State.put, H, C, set!_same rfl]
+    have reordered : ∀ u ∈ pre ++ [pivot] ++ crossed, IsolatedUnit q u := by
+      intro u hu
+      apply scope
+      simpa only [List.mem_append, List.mem_singleton, or_assoc, or_left_comm, or_comm] using hu
+    rw [← restore, runUnits_restore hq n _ suffix scope _ _ (Access.linkState access) H C,
+      runUnits_restore hq n _ suffix reordered _ _ (Access.linkState access) H C]
+    apply exists_congr
+    intro t
+    apply and_congr_left
+    intro _
+    simpa only [List.append_nil] using runUnits_move (suffix := []) n t
+      (⟨Access.linkState checks.access, checks.localFlag, checks.scope⟩ :
+        CheckedPivot (linkState w masked) pre crossed pivot)⟩
+
 /-- Instantiation has already initialized hoisted functions in both links. For an
 inert body step, even a crossed unit that calls the function commutes with it.
 An allocating initializer still needs the region and capture checks. -/
@@ -113,8 +143,11 @@ private def checkMove (ready : State World.probe) (pre crossed suffix : List Lin
         (fun _ _ => trivial) (fun _ _ _ _ _ _ _ => trivial)
       intro u _
       exact ⟨fun s _ => inert_commute inert s, fun s _ => commute_inert inert s⟩⟩
-  let ⟨checks⟩ ← checkPivot ready pre crossed pivot
-  return ⟨fun w n final => runUnits_move n final (checks.forWorld w)⟩
+  match checkPivot ready pre crossed pivot with
+  | .ok ⟨checks⟩ => return ⟨fun w n final => runUnits_move n final (checks.forWorld w)⟩
+  | .error why =>
+    let some proof := checkHiddenMove? ready pre crossed suffix pivot | throw why
+    return proof
 
 /-- Match the requested order from left to right. Each move is checked against
 the prefix already placed, including units moved by previous steps. -/

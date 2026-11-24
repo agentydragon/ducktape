@@ -71,6 +71,45 @@ const changed = safe.run(refusalScope, "--check-output");
 assert.equal(changed.status, "rejected");
 assert.match(changed.reason, /differs from its generated ESTree/);
 
+// The hoisted function points into the pivot's region at link time.
+// Nobody can reach it during this crossing, but the suffix calls it.
+const hiddenObserver = fixture(
+  "isolated-hoisted-observer",
+  `const bytes = new Uint8Array([9]);
+   var later = () => 7;
+   function observe() { return later(); }
+   const result = observe() + bytes[0];
+   export { bytes, later, observe, result };`,
+  ["#1"],
+  ["#0", "#2", "#3", "#4"]
+);
+const hidden = hiddenObserver.run(pivotScope);
+assert.equal(hidden.status, "certified", JSON.stringify(hidden));
+assert.deepEqual(hiddenObserver.run(pivotScope, "--check-output"), hidden);
+for (const file of [hiddenObserver.sourceFile, path.join(hiddenObserver.out, "entry.mjs")]) {
+  const { result, observe } = await import(pathToFileURL(file));
+  assert.equal(result, 16);
+  assert.equal(observe(), 7);
+}
+
+// A getter reaches the hoisted observer and records the pivot's type in a
+// mutable binding. Moving the initializer would record "function".
+const reachedObserver = fixture(
+  "getter-reaches-hoisted-observer",
+  `var seen = "";
+   const before = { get value() { observe(); return 0; } }.value;
+   var later = () => 7;
+   function observe() { seen = typeof later; }
+   export { before, seen, later, observe };`,
+  ["#2"],
+  ["#0", "#1", "#3", "#4"]
+);
+assert.equal((await import(pathToFileURL(reachedObserver.sourceFile))).seen, "undefined");
+const reached = reachedObserver.run(refusalScope);
+assert.equal(reached.status, "rejected", JSON.stringify(reached));
+assert.match(reached.reason, /linked state already exposes the region of unit 2/);
+assert(!existsSync(reachedObserver.out));
+
 const earlyRead = fixture(
   "moved-region-in-initial-heap",
   `function callScroll() { return scroll({ amount: 1 }); }
