@@ -140,44 +140,35 @@ the existing local host-binding proof.
 
 ### Browser smoke
 
-CI runs the certified editor smoke on RBE.
+The smoke uses a [Rust ownership subset](../../../excalidraw/editor_smoke_subset.json):
+it keeps `centerScrollOn` from the canonical
+[scroll spec](../../../excalidraw/spec/modules/editor/packages/excalidraw/scene/scroll.yaml).
+To change the placement, edit the subset's module paths and readable member names.
+Rust resolves selectors in the full spec before applying the subset. Unselected
+units stay in the entry; selected owners retain their relative import priority.
+The Rust apply target can emit this split. Its graph output gives Lean the same
+unit owners and execution order through the same adapter as the full authored replay.
 
 ```sh
 p=//devinfra/js/debundle/x/split_proof/integration/excalidraw
 bbr test --config=ci "${p}:excalidraw_certified_editor_browser_smoke"
 ```
 
-The placement extracts 454 units from the pinned editor.
+Lean uses the editor's original public entry URL, certifies its generated modules
+with `--structural`, the `browser-page` profile and the live HTTP origin, then
+rechecks the files with `--check-output`. Chromium exercises both the original
+app and the certified overlay. The test compares the served module bytes and
+all 611 editor exports, draws a rectangle, checks Undo, and calls the moved
+scroll helper through the editor's public binding.
 
-| Module                   | Source units                          |
-| ------------------------ | ------------------------------------- |
-| `startup.mjs`            | `#5–18`                               |
-| `codecs.mjs`             | `#19–300`                             |
-| `utilities.mjs`          | `#301–353`                            |
-| `palette-primitives.mjs` | `#359–366`                            |
-| `constants.mjs`          | 74 literal initializers in `#385–471` |
-| `font-strings.mjs`       | `#404`, `#548–549`                    |
-| `frame-animation.mjs`    | `#550–554`                            |
-| `collections.mjs`        | 12 collection helpers in `#555–597`   |
-| `coordinates.mjs`        | `#559–560`                            |
-| `scroll.mjs`             | `#1337`                               |
-
-The prefix keeps its execution order. Later declarations move ahead of the
-residual entry, which retains the file picker imports and interleaved computed
-initializers. The checker selects the multiple-move proof with `--structural`,
-the `browser-page` profile and the live HTTP origin. The test
-repeats certification with `--check-output`, then runs the original and
-certified editor in separate Chromium contexts at the same origin. It checks the
-served entry, provider and extracted module bytes, compares all 611 entry
-export names, draws a rectangle, checks that Undo is enabled and checks the
-`Bg` scene-centering result.
-
-The baseline and isolated scroll and startup placements are opt-in diagnostic
-targets.
+The separate `:excalidraw_synthetic_editor_stress` test retains the pinned
+454-unit, ten-module schedule for multiple-move proof and browser coverage.
+Its positional fixture exercises the checker at scale; those module boundaries
+are synthetic. The original-only baseline and the order-preserving synthetic
+startup stress case are also available:
 
 ```sh
-bbr test "${p}:excalidraw_original_editor_browser_smoke"
-bbr test "${p}:excalidraw_certified_scroll_browser_smoke" "${p}:excalidraw_certified_startup_browser_smoke"
+bbr test "${p}:excalidraw_original_editor_browser_smoke" "${p}:excalidraw_synthetic_startup_stress"
 ```
 
 [Smoke test](browser_smoke_test.py)
