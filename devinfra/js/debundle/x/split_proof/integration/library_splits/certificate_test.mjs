@@ -73,6 +73,29 @@ for (const source of process.argv.slice(2)) {
       results.push({ library, strategy, outcome: "certified", scope: verdict.scope });
     }
   }
+  if (library === "semver") {
+    const host = path.join(tmp, "portable.json");
+    writeFileSync(host, JSON.stringify({ profile: "ecmascript", stableIntrinsicValues: ["Object.defineProperty@1"] }));
+    const placement = extract(n, 1);
+    const args = [...inputs(source, "semver-portable", placement), "--host-contract", host];
+    const verdict = certificate(args);
+    assert.equal(verdict.status, "certified", JSON.stringify(verdict));
+    assert.equal(verdict.scope, "linked-structural-pivot");
+    assert.equal(verdict.hostProfile, "ecmascript");
+    assert.match(
+      verdict.assumptions.join("\n"),
+      /Object\.defineProperty@1:.*intrinsic\.Object\.defineProperty.*no observable effects/
+    );
+    assert.deepEqual(certificate([...args, "--check-output"]), verdict);
+    assert.deepEqual(await smoke(library, path.join(args[2], placement.entry)), baseline);
+    results.push({
+      library,
+      strategy: "advance-second-portable",
+      outcome: "certified",
+      scope: verdict.scope,
+      assumptions: verdict.assumptions,
+    });
+  }
 }
 
 assert(results.some((row) => row.strategy === "advance-function" && row.outcome === "certified"));

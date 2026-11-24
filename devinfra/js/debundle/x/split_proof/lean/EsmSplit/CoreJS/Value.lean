@@ -796,10 +796,16 @@ def readHostRef (ref : HostRef) : M W Val := fun s =>
       | .property receiver key => s!"{receiver}.{key}"
     .unknown s!"unsupported host reference {name}" s
 
+/-- Receivers whose property lookup can be answered by a host observation.
+The portable Object contract exposes only the saved method reference. -/
+def observedHostProperty (owner key : String) : Bool :=
+  owner == "window" || owner.startsWith "window." || (owner == "intrinsic.Object" && key == "defineProperty")
+
 /-- A member of a global of the host: a function the world answers for. -/
 def hostMember (name k : String) : M W Val :=
   if ((hostNamespaces.lookup name).getD []).contains k then pure (.host s!"{name}.{k}")
-  else if name == "window" || name.startsWith "window." then readHostRef (.property name k)
+  else if observedHostProperty name k then
+    readHostRef (.property name k)
   else unknown s!"a property of host value {name}"
 
 /-- `base[key]`. A getter runs with `base` as `this`. -/

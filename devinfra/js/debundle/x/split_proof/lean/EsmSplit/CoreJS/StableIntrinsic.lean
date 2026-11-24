@@ -16,6 +16,9 @@ namespace StableIntrinsic
 
 def mathPI : StableIntrinsic := ⟨"Math.PI@1", "Math", "window.Math", "PI", .number 0x400921fb54442d18⟩
 
+def objectDefineProperty : StableIntrinsic :=
+  ⟨"Object.defineProperty@1", "Object", "intrinsic.Object", "defineProperty", .identity "intrinsic.Object.defineProperty"⟩
+
 /-- Neither observation changes host state. The binding must keep returning the
 same receiver throughout initialization, including across retained units. -/
 def Satisfied (d : StableIntrinsic) (w : World) : Prop :=
@@ -37,7 +40,7 @@ def readExpr (d : StableIntrinsic) : Expr :=
 world's receiver/key observation, not to an intrinsic method. -/
 def dispatched (d : StableIntrinsic) : Bool :=
   !((hostNamespaces.lookup d.owner).getD []).contains d.key &&
-    (d.owner == "window" || d.owner.startsWith "window.")
+    observedHostProperty d.owner d.key
 
 private theorem pureRead {w : World} {ref value}
     (h : w.StableRead ref value) :
