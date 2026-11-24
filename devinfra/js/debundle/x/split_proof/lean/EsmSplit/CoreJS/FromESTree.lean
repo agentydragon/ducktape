@@ -931,7 +931,7 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
     Except String Stmt := do
   let kind ← field j "type"
   let nested := scope != .module
-  if nested || ["TryStatement", "ForStatement"].contains kind then
+  if nested || ["IfStatement", "TryStatement", "ForStatement"].contains kind then
     let blockScope := if nested then scope else LinkedScope.moduleBlock
     match kind with
     | "BlockStatement" => return ← linkedBlock profile imports scope j
@@ -941,9 +941,9 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
     | "EmptyStatement" => return .block []
     | "IfStatement" =>
       let test ← linkedExpr profile imports true "" (← j.getObjVal? "test")
-      let consequent ← linkedStatement profile imports scope (← j.getObjVal? "consequent")
+      let consequent ← linkedStatement profile imports blockScope (← j.getObjVal? "consequent")
       let alternate ← j.getObjVal? "alternate"
-      let elseBranch ← if alternate == .null then pure (.block []) else linkedStatement profile imports scope alternate
+      let elseBranch ← if alternate == .null then pure (.block []) else linkedStatement profile imports blockScope alternate
       return .ite test consequent elseBranch
     | "SwitchStatement" => return ← linkedSwitch profile imports scope j
     | "VariableDeclaration" =>
