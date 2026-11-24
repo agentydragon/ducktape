@@ -6,12 +6,24 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import NamedTuple
 
-EXPECTED_STDOUT = {"fresh_factory": "42\n", "retained_constructor": "42\n", "persistent_registry": "42\n"}
-CONTROL_CASES = {
-    "fresh_factory": ("named_callback.js", 0, "42\n", ("callbacks/wrapped", "values/later")),
-    "retained_constructor": ("unlisted_arity.js", 0, "42\n", ("callbacks/wrapped", "values/later")),
-    "persistent_registry": ("early_emit.js", 1, "ReferenceError", ("callbacks/registration", "values/later")),
+EXPECTED_STDOUT = "42\n"
+
+
+class Control(NamedTuple):
+    source: str
+    callback_module: str
+    node_error: str | None = None
+    required_cause: str | None = None
+
+
+CONTROLS = {
+    "fresh_factory": Control("named_callback.js", "callbacks/wrapped"),
+    "retained_constructor": Control("unlisted_arity.js", "callbacks/wrapped"),
+    "persistent_registry": Control(
+        "early_emit.js", "callbacks/registration", node_error="ReferenceError", required_cause="eager_use"
+    ),
 }
 
 
@@ -39,48 +51,44 @@ def run_tree(debundle: Path, fixture: Path, out_root: Path) -> subprocess.Comple
     )
 
 
-def _assert_conflict(
-    out_root: Path,
-    modules: tuple[str, str],
-    result: subprocess.CompletedProcess[str],
-    required_cause: str | None = None,
-) -> None:
+def _assert_conflict(out_root: Path, control: Control, result: subprocess.CompletedProcess[str]) -> None:
     report = out_root / "reports/tree/main/atomic_group_conflicts.json"
     if not report.is_file():
         raise AssertionError(f"missing atomic-group rejection report for CLI result:\n{result.stderr}")
     conflicts = json.loads(report.read_text())
-    if not any(
-        all(any(claim.get("module") == module for claim in conflict.get("claims", [])) for module in modules)
-        and (required_cause is None or required_cause in conflict.get("causes", []))
-        for conflict in conflicts
-    ):
-        raise AssertionError(f"no atomic-group conflict spans {modules} with cause {required_cause}: {conflicts!r}")
+    modules = {control.callback_module, "values/later"}
+    for conflict in conflicts:
+        if modules <= {claim.get("module") for claim in conflict.get("claims", [])} and (
+            control.required_cause is None or control.required_cause in conflict.get("causes", [])
+        ):
+            return
+    raise AssertionError(f"no atomic-group conflict spans {modules} with cause {control.required_cause}: {conflicts!r}")
+
+
+def node_baseline(node: Path, fixture: Path, expected_error: str | None = None) -> subprocess.CompletedProcess[str]:
+    result = run([str(node), str(fixture / "source/main.js")], fixture)
+    if expected_error is None:
+        if result.returncode == 0 and result.stdout == EXPECTED_STDOUT and not result.stderr:
+            return result
+    elif result.returncode != 0 and expected_error in result.stderr:
+        return result
+    raise AssertionError(
+        f"unexpected Node baseline for {fixture}: exit={result.returncode}, stdout={result.stdout!r}, stderr={result.stderr!r}"
+    )
 
 
 def _run_control(debundle: Path, node: Path, fixture: Path, out_root: Path, name: str) -> str:
-    control_name, expected_exit, expected_output, modules = CONTROL_CASES[name]
+    control = CONTROLS[name]
     with tempfile.TemporaryDirectory(prefix="debundle-contract-control-") as tmp:
         control_fixture = Path(tmp) / name
         shutil.copytree(fixture, control_fixture)
-        shutil.copyfile(control_fixture / "source/controls" / control_name, control_fixture / "source/main.js")
-        baseline = run([str(node), str(control_fixture / "source/main.js")], control_fixture)
-        baseline_matches = (
-            baseline.returncode == 0 and baseline.stdout == expected_output and not baseline.stderr
-            if expected_exit == 0
-            else baseline.returncode != 0 and expected_output in baseline.stderr
-        )
-        if not baseline_matches:
-            raise AssertionError(
-                f"unexpected Node control baseline for {name}: "
-                f"exit={baseline.returncode}, stdout={baseline.stdout!r}, stderr={baseline.stderr!r}"
-            )
+        shutil.copyfile(control_fixture / "source/controls" / control.source, control_fixture / "source/main.js")
+        baseline = node_baseline(node, control_fixture, control.node_error)
         output = out_root / "controls" / name
         transformed = run_tree(debundle, control_fixture, output)
         if transformed.returncode == 0:
             raise AssertionError(f"debundle accepted unsupported control {name}")
-        _assert_conflict(
-            output, modules, transformed, required_cause="eager_use" if name == "persistent_registry" else None
-        )
+        _assert_conflict(output, control, transformed)
     return baseline.stdout + baseline.stderr
 
 
@@ -91,13 +99,9 @@ def run_examples(debundle: Path, node: Path, fixtures: Path, out_root: Path) -> 
     out_root = out_root.resolve()
     outputs = {}
     out_root.mkdir(parents=True, exist_ok=True)
-    for name, expected in EXPECTED_STDOUT.items():
+    for name in CONTROLS:
         fixture = fixtures / name
-        baseline = run([str(node), str(fixture / "source/main.js")], fixture)
-        if baseline.returncode != 0:
-            raise RuntimeError(f"Node baseline failed for {name}:\n{baseline.stderr}")
-        if baseline.stdout != expected or baseline.stderr:
-            raise AssertionError(f"unexpected Node baseline for {name}: {baseline.stdout!r} {baseline.stderr!r}")
+        baseline = node_baseline(node, fixture)
 
         output = out_root / name
         transformed = run_tree(debundle, fixture, output)
@@ -114,7 +118,7 @@ def run_examples(debundle: Path, node: Path, fixtures: Path, out_root: Path) -> 
             )
         outputs[name] = emitted.stdout
 
-    for name in CONTROL_CASES:
+    for name in CONTROLS:
         outputs[f"control:{name}"] = _run_control(debundle, node, fixtures / name, out_root, name)
     return outputs
 
