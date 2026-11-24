@@ -1,6 +1,7 @@
 // Programs for `differential.mjs`, for what the generator rarely writes. Each runs in Node and in the model and must
 // print the same and end the same way. A case with `end: "unknown"` uses a value of the host that the model has no
-// rule for (`allowHost`) or an operation the model leaves to the host; there only the model's ending is checked.
+// rule for (`allowHost`) or an operation the model leaves to the host. `expectedStop` also checks the reason,
+// how much of the recording was consumed, and the output prefix.
 export const inheritanceCases = [
   {
     name: "default derived constructors forward arguments and the final instance prototype",
@@ -629,9 +630,32 @@ export const cases = [
     end: "unknown",
   },
   {
-    name: "the host returns a string outside the Basic Multilingual Plane",
-    source: `console.log("before"); const s = String.fromCodePoint(128512); console.log(s.length);`,
+    name: "host recordings preserve supplementary receivers, arguments and results",
+    source: `
+      const s = String.fromCodePoint(0x10000);
+      console.log(s, s.isWellFormed(), "x".concat(s), "a𐀀".indexOf(s), "a𐀀b".slice(1, 3));
+      console.log(s === "𐀀", s.charCodeAt(0), s.charCodeAt(1), s.codePointAt(0));
+    `,
+    end: "normal",
+  },
+  {
+    name: "a supplementary string from the host can be thrown",
+    source: `throw String.fromCodePoint(0x10000);`,
+    end: "throw",
+  },
+  {
+    name: "a reached host result containing an isolated surrogate stops replay at that call",
+    source: `
+      console.log("before");
+      const s = String.fromCharCode(0xd800);
+      console.log(s.concat(s).toWellFormed());
+    `,
     end: "unknown",
+    expectedStop: {
+      detail: "the host returns a string containing an isolated UTF-16 surrogate",
+      left: 2,
+      out: ["before"],
+    },
   },
   {
     name: "a member of a host global the world does not answer for",

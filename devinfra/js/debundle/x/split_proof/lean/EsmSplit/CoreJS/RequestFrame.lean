@@ -176,12 +176,8 @@ theorem reachFrame_fromW (r R cells A) (v : WVal) :
   apply ReachFrame.of_frames (frames_fromW r R v)
   intro s hs hr
   cases v with
-  | prim p =>
-    simp only [fromW]
-    split
-    · refine ⟨?_, hs⟩
-      cases p <;> simp [SafeVal, Primitive.val, Val.nodes]
-    · exact hs
+  | prim p => exact ⟨by cases p <;> simp [SafeVal, Primitive.val, Val.nodes], hs⟩
+  | illFormedString => exact hs
   | handle k =>
     simp only [fromW]
     split

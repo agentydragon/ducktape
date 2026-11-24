@@ -32,11 +32,12 @@ open Lean (Json)
 
 namespace CoreJS
 
-/-- A call of a host function in a recording, and how it ended. -/
+/-- A call of a host function in a recording, and how it ended. A receiver or argument of `none`
+records an ill-formed UTF-16 string, which cannot match a model value. -/
 structure Recorded where
   fn : String
-  this : Primitive
-  args : List Primitive
+  this : Option Primitive
+  args : List (Option Primitive)
   result : HostResult
 
 /-- Requests for one part of opaque code, with Node expectations for its own-key responses. -/
@@ -124,9 +125,9 @@ def samePrimitive : Primitive → Primitive → Bool
   | .str a, .str b => a == b
   | _, _ => false
 
-def samePrimitives : List Primitive → List Primitive → Bool
+def samePrimitives : List (Option Primitive) → List Primitive → Bool
   | [], [] => true
-  | a :: as, b :: bs => samePrimitive a b && samePrimitives as bs
+  | some a :: as, b :: bs => samePrimitive a b && samePrimitives as bs
   | _, _ => false
 
 def showPrimitive : Primitive → String
@@ -136,8 +137,9 @@ def showPrimitive : Primitive → String
   | .num n => Num.toString n
   | .str s => (Json.str s).compress
 
-def showCall (fn : String) (this : Primitive) (args : List Primitive) : String :=
-  s!"{fn} on {showPrimitive this} with ({", ".intercalate (args.map showPrimitive)})"
+def showCall (fn : String) (this : Option Primitive) (args : List (Option Primitive)) : String :=
+  let showArg := fun v : Option Primitive => v.elim "<ill-formed UTF-16 string>" showPrimitive
+  s!"{fn} on {showArg this} with ({", ".intercalate (args.map showArg)})"
 
 /-- The world a recording describes. A call that is not the next recorded one stops the replay and throws. -/
 def replay (calls : List Recorded) (scripts : Scripts := []) : World where
@@ -149,14 +151,15 @@ def replay (calls : List Recorded) (scripts : Scripts := []) : World where
       (.throw (.str "world: not the recorded call"), { st with left := [], problem := st.problem.or (some why) })
     match st.left with
     | r :: rest =>
-      if r.fn == fn && samePrimitive r.this this && samePrimitives r.args args then (r.result, { st with left := rest })
-      else stop s!"the model calls {showCall fn this args}, Node called {showCall r.fn r.this r.args}"
-    | [] => stop s!"the model calls {showCall fn this args} after Node's last call"
+      if r.fn == fn && r.this.any (samePrimitive · this) && samePrimitives r.args args then
+        (r.result, { st with left := rest })
+      else stop s!"the model calls {showCall fn (some this) (args.map some)}, Node called {showCall r.fn r.this r.args}"
+    | [] => stop s!"the model calls {showCall fn (some this) (args.map some)} after Node's last call"
 
 namespace Decode
 
-/-- A primitive of a recording: `["u"]`, `["n"]`, `["b", true]`, `["d", bits]`, `["s", text]`, or `["x"]` for a string
-that is not in the model (one with a character outside the Basic Multilingual Plane, or half of one). -/
+/-- A representable primitive: `["u"]`, `["n"]`, `["b", true]`, `["d", bits]` or `["s", text]`
+with well-formed Unicode text. -/
 def primitive (j : Json) : Except String Primitive := do
   match (← j.getArr?).toList with
   | [.str "u"] => pure .undef
@@ -167,8 +170,13 @@ def primitive (j : Json) : Except String Primitive := do
     | some bits => pure (.num (Float.ofBits bits.toUInt64))
     | none => throw s!"not the bits of a number: {hex}"
   | [.str "s", .str s] => pure (.str s)
-  | [.str "x"] => pure (.str (String.singleton (Char.ofNat 0x10000)))
   | _ => throw "a primitive was expected"
+
+/-- The recorder writes an isolated surrogate as `["x"]` before JSON encoding. -/
+def recordedPrimitive (j : Json) : Except String (Option Primitive) :=
+  match j with
+  | .arr #[.str "x"] => pure none
+  | _ => some <$> primitive j
 
 def errorKind : String → Except String ErrorKind
   | "TypeError" => pure .type
@@ -181,11 +189,17 @@ def errorKind : String → Except String ErrorKind
 /-- `{"fn", "this", "args", and one of "ret": primitive, "throw": primitive, "error": the name of the error's class}`. -/
 def recorded (j : Json) : Except String Recorded := do
   let fn ← j.getObjValAs? String "fn"
-  let this ← j.getObjVal? "this" >>= primitive
-  let args ← (← j.getObjVal? "args" >>= Json.getArr?).toList.mapM primitive
+  let this ← j.getObjVal? "this" >>= recordedPrimitive
+  let args ← (← j.getObjVal? "args" >>= Json.getArr?).toList.mapM recordedPrimitive
   let result ← match j.getObjVal? "ret", j.getObjVal? "throw", j.getObjVal? "error" with
-    | .ok v, _, _ => .ret <$> primitive v
-    | _, .ok v, _ => .throw <$> primitive v
+    | .ok v, _, _ => do
+      match ← recordedPrimitive v with
+      | some p => pure (.ret p)
+      | none => pure (.unknown "the host returns a string containing an isolated UTF-16 surrogate")
+    | _, .ok v, _ => do
+      match ← recordedPrimitive v with
+      | some p => pure (.throw p)
+      | none => pure (.unknown "the host throws a string containing an isolated UTF-16 surrogate")
     | _, _, .ok (.str name) => (.error · "") <$> errorKind name
     | _, _, _ => throw s!"the recorded call of {fn} has no ending"
   pure { fn, this, args, result }
@@ -194,7 +208,10 @@ def recorded (j : Json) : Except String Recorded := do
 def wval (j : Json) : Except String WVal :=
   match j.getArr? with
   | .ok #[.str "r", k] => do pure (.handle (← k.getNat?))
-  | _ => .prim <$> primitive j
+  | _ => do
+    match ← recordedPrimitive j with
+    | some p => pure (.prim p)
+    | none => pure .illFormedString
 
 def primName : String → Except String Prim
   | "log" => pure .log

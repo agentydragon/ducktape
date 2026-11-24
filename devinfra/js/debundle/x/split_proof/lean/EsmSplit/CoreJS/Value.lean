@@ -120,6 +120,8 @@ def Val.primitive? : Val → Option Primitive
 (`Host.handed`), so the world can name no other object. -/
 inductive WVal where
   | prim (p : Primitive)
+  /-- An external string that contains an isolated UTF-16 surrogate. -/
+  | illFormedString
   | handle (k : Nat)
   | error (kind : ErrorKind) (msg : String)
   | host (name : String)
@@ -158,11 +160,12 @@ inductive Request where
   | newFunction (part : Nat) (name : String) (length : Nat) (constructor : Bool)
   | prim (p : Prim) (args : List WVal)
 
-/-- How a call of a host function ends: with a primitive, with a thrown primitive, or with a thrown error object. -/
+/-- How a call of a host function ends. The world can also report an unrepresentable result. -/
 inductive HostResult where
   | ret (v : Primitive)
   | throw (v : Primitive)
   | error (kind : ErrorKind) (msg : String)
+  | unknown (why : String)
 
 /-- Ambient bindings and properties of opaque host objects are distinct observations. -/
 inductive HostRef where
@@ -455,17 +458,12 @@ def worldArgs (name : String) (this : Val) (args : List Val) : Option (Primitive
   let this ← if method then this.primitive? else some .undef
   pure (this, ← args.mapM Val.primitive?)
 
-/-- A string of the model has no character outside the Basic Multilingual Plane: the model counts code points, and
-JavaScript code units. -/
-def Primitive.inModel : Primitive → Bool
-  | .str s => s.toList.all fun c => c.toNat < 0x10000
-  | _ => true
-
 /-- What the world gave back, as the model's result. -/
 def fromWorld (s : State W) : HostResult → Res W Val
-  | .ret v => if v.inModel then .ok v.val s else .unknown "the host returns a string outside the Basic Multilingual Plane" s
-  | .throw v => if v.inModel then .throw v.val s else .unknown "the host throws a string outside the Basic Multilingual Plane" s
+  | .ret v => .ok v.val s
+  | .throw v => .throw v.val s
   | .error kind msg => .throw (.error kind msg) s
+  | .unknown why => .unknown why s
 
 /-- A call of the host function `name`: the world's step, if the world answers for it. -/
 def hostCall (name : String) (this : Val) (args : List Val) : M W Val :=
@@ -969,7 +967,8 @@ def toW (v : Val) : M W WVal :=
 
 /-- The value the world names. -/
 def fromW : WVal → M W Val
-  | .prim p => if p.inModel then pure p.val else unknown "the world gives a string outside the Basic Multilingual Plane"
+  | .prim p => pure p.val
+  | .illFormedString => unknown "the world gives a string containing an isolated UTF-16 surrogate"
   | .handle k => fun s =>
     match s.world.handed[k]? with
     | some a => .ok (.obj a) s

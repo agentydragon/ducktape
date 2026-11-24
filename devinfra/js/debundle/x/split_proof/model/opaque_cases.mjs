@@ -483,13 +483,13 @@ export const opaqueCases = [
     },
   },
   {
-    name: "a throw of opaque code is caught by the program",
+    name: "a supplementary string thrown by opaque code is caught by the program",
     source: `
-      function fail(x) { for (const c of [x]) throw c; }
-      try { fail(7); } catch (e) { console.log("caught", e); }
+      function fail() { for (const c of ["𐀀"]) throw c; }
+      try { fail(); } catch (e) { console.log("caught", e); }
       console.log("after");
     `,
-    scripts: { "0/1": [["throw", r(2)]] },
+    scripts: { "0/1": [["throw", ["s", "𐀀"]]] },
   },
   {
     name: "an arrow with destructuring and default parameters is made without the world and called by the program",

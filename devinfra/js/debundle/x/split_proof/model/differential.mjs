@@ -136,13 +136,14 @@ const hostNames = spawnSync(corejs, ["--host-names"], { encoding: "utf8" });
 assert.equal(hostNames.status, 0, `corejs --host-names failed: ${hostNames.stderr}`);
 const host = JSON.parse(hostNames.stdout);
 const isPrimitive = (v) => v === null || ["undefined", "boolean", "number", "string"].includes(typeof v);
-/** A primitive as `Decode.primitive` of `Run.lean` reads it. */
+const isWellFormed = String.prototype.isWellFormed;
+/** A primitive as `Decode.recordedPrimitive` of `Run.lean` reads it. */
 const encode = (v) => {
   if (v === undefined) return ["u"];
   if (v === null) return ["n"];
   if (typeof v === "boolean") return ["b", v];
   if (typeof v === "number") return ["d", bits(v)];
-  return /[\ud800-\udfff]/.test(v) ? ["x"] : ["s", v];
+  return Reflect.apply(isWellFormed, v, []) ? ["s", v] : ["x"];
 };
 let recording = null; // the calls of the program that is running
 let inHost = false; // inside a recorded call, or inside this harness
@@ -316,6 +317,15 @@ function slice(program, banned) {
 
 // { label, source, entry, program, node, result, expectEnd, set }: `program` is what `corejs` reads
 const jobs = [];
+if (broad) {
+  for (const source of [String.raw`"\ud800";`, String.raw`({ "\udfff": 1 });`, "`\udfff`;"]) {
+    assert.throws(
+      () => toCore(source),
+      (e) => e instanceof Refused && e.message.includes("isolated UTF-16 surrogate"),
+      JSON.stringify(source)
+    );
+  }
+}
 for (const c of selectedCases) {
   const translated = accepted(c.source, { allowHost: c.allowHost ?? false });
   assert(translated !== null, `case ${c.name}: the front end refuses it`);
@@ -324,6 +334,7 @@ for (const c of selectedCases) {
     source: c.source,
     program: single(translated),
     expectEnd: c.end ?? null,
+    expectedStop: c.expectedStop,
     set: null,
   });
 }
@@ -536,7 +547,16 @@ for (const job of jobs) {
     fail(`the model should end ${job.expectEnd}`, null);
     continue;
   }
-  // a program that uses a host value prints in Node what the host does; only the model's ending is checked
+  if (job.expectedStop) {
+    const { detail, left, out } = job.expectedStop;
+    if (
+      got.detail !== detail ||
+      got.left !== left ||
+      !same(got.out, out) ||
+      !same(job.node.out.slice(0, out.length), out)
+    )
+      fail("replay stopped at the wrong boundary", job.node);
+  }
   if (job.expectEnd === "unknown") continue;
   const node = job.node;
   const s = job.set === null ? null : summary[job.set];
