@@ -27,7 +27,7 @@ Bazel supplies Lean, Node, Python, and the JavaScript dependencies. For focused 
 | Fuzz the example renderer                                    | `bb run "$p:render_fuzz" -- 600 1`                                                    |
 | Check translation fixtures and effect cases                  | `bbr test "$p/translation:fixtures_test" "$p/effects:effects_cases_test"`             |
 | Run a larger translation fuzz sample                         | `bb run "$p/translation:translation_fuzz" -- --count 150 --seed 1 --require-accepted` |
-| Run the extended CoreJS comparison                           | `bbr test "$p/translation:corejs_differential_sweep_test"`                            |
+| Run the extended CoreJS comparison                           | `bbr test "$p/model:corejs_differential_sweep_test"`                                  |
 | Run the debundle case corpus                                 | [Corpus commands](debundle_cases/README.md#run-it)                                    |
 | Lower public library bundles and check their splits          | [Bundle commands](experiments/README.md#6-lower-the-ast-into-lean)                    |
 

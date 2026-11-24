@@ -5,14 +5,14 @@ then sends split plans through the real `lowersplit` emitter in diagnostic mode.
 test runs compare the model and Node; emitted files are uncertified previews. CI:
 
 ```sh
-bbr test //devinfra/js/debundle/x/split_proof/translation:corejs_differential_test \
-  //devinfra/js/debundle/x/split_proof/translation:corejs_binding_differential_test \
-  //devinfra/js/debundle/x/split_proof/translation:corejs_inheritance_differential_test
+bbr test //devinfra/js/debundle/x/split_proof/model:corejs_differential_test \
+  //devinfra/js/debundle/x/split_proof/model:corejs_binding_differential_test \
+  //devinfra/js/debundle/x/split_proof/model:corejs_inheritance_differential_test
 ```
 
 The broad CI suite runs the handwritten cases and required generated comparisons
 once with seeds 1 and 2. The binding suite uses seeds 1–12. Run
-`translation:corejs_differential_sweep_test` explicitly for 40 seeds and
+`model:corejs_differential_sweep_test` explicitly for 40 seeds and
 random split plans. Appended `--test_arg=--count --test_arg=N`,
 `--test_arg=--seed --test_arg=S` and `--test_arg=--splits --test_arg=K` override
 the target's arguments.

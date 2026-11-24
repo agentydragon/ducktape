@@ -593,11 +593,9 @@ js_test(
     entry_point = "footprint_reduce_test.mjs",
 )
 
-# The CoreJS model (`lean/EsmSplit/CoreJS`) against Node, on hand-written cases and on programs of `testing/gen/` cut down to
-# the model's fragment: both must print the same and end the same way.
 _MODEL = "//devinfra/js/debundle/x/split_proof/model"
 
-_COREJS_DIFFERENTIAL_DATA = [
+_EXCALIDRAW_COREJS_DATA = [
     "//devinfra/js/debundle/x/split_proof/translation/testing:program_generator",
     ":scope_metadata",
     ":split_dump",
@@ -612,7 +610,7 @@ _COREJS_DIFFERENTIAL_DATA = [
     "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
 ]
 
-_COREJS_DIFFERENTIAL_ENV = {
+_EXCALIDRAW_COREJS_ENV = {
     "COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:corejs)",
     "EVALORDER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:evalorder)",
     "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
@@ -640,66 +638,15 @@ js_test(
     },
 )
 
-js_test(
-    name = "corejs_differential_test",
-    size = "medium",
-    args = [
-        "--count",
-        "2",
-        "--seed",
-        "1",
-        "--splits",
-        "0",
-    ],
-    data = _COREJS_DIFFERENTIAL_DATA,
-    entry_point = _MODEL + ":differential",
-    env = _COREJS_DIFFERENTIAL_ENV,
-)
-
-js_test(
-    name = "corejs_inheritance_differential_test",
-    size = "medium",
-    args = [
-        "--inheritance-only",
-        "--count",
-        "24",
-        "--seed",
-        "1",
-        "--splits",
-        "0",
-    ],
-    data = _COREJS_DIFFERENTIAL_DATA,
-    entry_point = _MODEL + ":differential",
-    env = _COREJS_DIFFERENTIAL_ENV,
-    shard_count = 2,
-)
-
-js_test(
-    name = "corejs_binding_differential_test",
-    size = "medium",
-    args = [
-        "--bindings-only",
-        "--count",
-        "12",
-        "--seed",
-        "1",
-        "--splits",
-        "0",
-    ],
-    data = _COREJS_DIFFERENTIAL_DATA,
-    entry_point = _MODEL + ":differential",
-    env = _COREJS_DIFFERENTIAL_ENV,
-)
-
 # Bounded public-workload investigation; reports refusals without treating them as proof failures.
 js_test(
     name = "excalidraw_certificate_census",
     size = "large",
     timeout = "long",
-    data = _COREJS_DIFFERENTIAL_DATA + ["//devinfra/js/debundle/excalidraw:bundle"],
+    data = _EXCALIDRAW_COREJS_DATA + ["//devinfra/js/debundle/excalidraw:bundle"],
     entry_point = "debug/excalidraw_certificates/run.mjs",
     env = dict(
-        _COREJS_DIFFERENTIAL_ENV,
+        _EXCALIDRAW_COREJS_ENV,
         EXCALIDRAW_OUTPUTS = "$(rootpaths //devinfra/js/debundle/excalidraw:bundle)",
     ),
     tags = ["manual"],
@@ -742,7 +689,7 @@ js_test(
 js_test(
     name = "excalidraw_authored_placements",
     size = "large",
-    data = _COREJS_DIFFERENTIAL_DATA + [
+    data = _EXCALIDRAW_COREJS_DATA + [
         "//devinfra/js/debundle/x/split_proof/translation/testing:ast_assertions",
         ":" + _EXCALIDRAW_EDITOR_SPEC,
         ":" + _EXCALIDRAW_MAIN_SPEC,
@@ -751,7 +698,7 @@ js_test(
     ],
     entry_point = "debug/excalidraw_certificates/authored.mjs",
     env = dict(
-        _COREJS_DIFFERENTIAL_ENV,
+        _EXCALIDRAW_COREJS_ENV,
         EDITOR_LEAN_SPEC = "$(rootpath :" + _EXCALIDRAW_EDITOR_SPEC + ")",
         EXCALIDRAW_INPUTS = "$(rootpaths //devinfra/js/debundle/excalidraw:inputs)",
         MAIN_LEAN_SPEC = "$(rootpath :" + _EXCALIDRAW_MAIN_SPEC + ")",
@@ -906,23 +853,6 @@ js_binary(
     visibility = ["//devinfra/js/debundle/x/split_proof:__pkg__"],
 )
 
-js_test(
-    name = "corejs_differential_sweep_test",
-    size = "large",
-    args = [
-        "--count",
-        "40",
-        "--seed",
-        "1",
-        "--splits",
-        "150",
-    ],
-    data = _COREJS_DIFFERENTIAL_DATA,
-    entry_point = _MODEL + ":differential",
-    env = _COREJS_DIFFERENTIAL_ENV,
-    tags = ["manual"],
-)
-
 js_library(
     name = "bazel_parser",
     srcs = ["bazel_parser.mjs"],
@@ -1069,6 +999,7 @@ js_library(
 js_library(
     name = "split_dump",
     srcs = ["split_dump.mjs"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
     deps = [
         ":node_modules/acorn",
         ":node_modules/eslint-scope",

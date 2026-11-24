@@ -161,6 +161,7 @@ lean_binary(
         "//devinfra/js/debundle/x/split_proof:__pkg__",
         "//devinfra/js/debundle/x/split_proof/effects:__pkg__",
         "//devinfra/js/debundle/x/split_proof/experiments/splits:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/model:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
     ],
     deps = [":effects"],
@@ -200,6 +201,7 @@ sh_binary(
         "//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__",
         "//devinfra/js/debundle/x/split_proof/experiments/splits:__pkg__",
         "//devinfra/js/debundle/x/split_proof/lean/generated:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/model:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
     ],
@@ -343,6 +345,7 @@ lean_binary(
     entry = "EsmSplit/EvalOrder.lean",
     visibility = [
         "//devinfra/js/debundle/x/split_proof/es_order:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/model:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
     ],
     deps = [":plan"],
@@ -371,7 +374,10 @@ lean_binary(
     name = "corejs",
     srcs = ["EsmSplit/CoreJSMain.lean"],
     entry = "EsmSplit/CoreJSMain.lean",
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/model:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
+    ],
     deps = [":corejs_runtime"],
 )
 
