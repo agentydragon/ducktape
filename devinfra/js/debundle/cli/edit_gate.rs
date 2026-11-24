@@ -651,9 +651,7 @@ pub fn source_claim_sets_from_post_spec(post_spec: &PostEditSpec) -> Vec<SourceC
         .iter()
         .map(|module| SourceClaimSet {
             module_path: &module.path,
-            member_selectors: &module.claims.member_selectors,
-            source_matches: &module.claims.source_matches,
-            anonymous_selectors: &module.claims.anonymous_selectors,
+            module: &module.claims,
         })
         .collect()
 }

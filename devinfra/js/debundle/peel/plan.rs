@@ -1195,9 +1195,7 @@ fn patch_plan_rows(
             .iter()
             .map(|patch_set| SourceClaimSet {
                 module_path: &patch_set.file,
-                member_selectors: &patch_set.claims.member_selectors,
-                source_matches: &patch_set.claims.source_matches,
-                anonymous_selectors: &patch_set.claims.anonymous_selectors,
+                module: &patch_set.claims,
             })
             .collect::<Vec<_>>(),
     )?;
@@ -1557,9 +1555,7 @@ fn resolve_module_path_source_unit_ids(
             .zip(&all_claims)
             .map(|(file, claims)| SourceClaimSet {
                 module_path: file,
-                member_selectors: &claims.member_selectors,
-                source_matches: &claims.source_matches,
-                anonymous_selectors: &claims.anonymous_selectors,
+                module: claims,
             })
             .collect::<Vec<_>>(),
         index,
