@@ -1,9 +1,8 @@
 # Keep sibling tools, experiments and fuzz fixtures out of the parent package and Gazelle.
 # gazelle:exclude experiments
 # gazelle:exclude fuzz
-# gazelle:exclude lowering
 
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary")
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
 load("//devinfra/lint:linters.bzl", "eslint_test")
 load("//devinfra/python:defs.bzl", "py_binary")
 
@@ -27,21 +26,6 @@ exports_files(
 )
 
 js_library(
-    name = "lowering_dump_core",
-    srcs = [
-        "lowering/dump_core.mjs",
-    ],
-    visibility = [
-        "//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__",
-        "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
-        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
-        "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:__pkg__",
-    ],
-    deps = ["//devinfra/js/debundle/x/split_proof/translation:scope_metadata"],
-)
-
-js_library(
     name = "seeded_random",
     srcs = ["seeded_random.mjs"],
     visibility = ["//devinfra/js/debundle/x/split_proof:__subpackages__"],
@@ -56,17 +40,10 @@ js_library(
     ],
 )
 
-# Lowering entries and torture.mjs are inputs to the experiment.
 js_library(
     name = "lint_sources",
     testonly = True,
-    srcs = glob(
-        [
-            "experiments/**/*.mjs",
-            "lowering/*.mjs",
-        ],
-        exclude = ["lowering/torture.mjs"],
-    ),
+    srcs = glob(["experiments/**/*.mjs"]),
 )
 
 eslint_test(
@@ -75,6 +52,7 @@ eslint_test(
         ":lint_sources",
         ":reporting",
         ":seeded_random",
+        "//devinfra/js/debundle/x/split_proof/lowering:lint_sources",
     ],
 )
 
@@ -108,23 +86,4 @@ js_run_binary(
     stdout = "generated/example.json",
     tool = "//devinfra/js/debundle/x/split_proof/translation:dump_ast",
     visibility = ["//devinfra/js/debundle/x/split_proof/lean/generated:__pkg__"],
-)
-
-js_library(
-    name = "real_bundle_entries",
-    srcs = glob(["lowering/entries/*.mjs"]),
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
-)
-
-js_binary(
-    name = "compare_footprints",
-    data = [
-        "lowering/statement_shape.mjs",
-        "//devinfra/js/debundle/x/split_proof/lean:lower",
-        "//devinfra/js/debundle/x/split_proof/translation:bazel_parser",
-        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
-    ],
-    entry_point = "lowering/compare.mjs",
-    env = {"LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)"},
-    tags = ["manual"],
 )

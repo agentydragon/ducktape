@@ -40,7 +40,7 @@ js_library(
     name = "diagnostic_split",
     srcs = ["diagnostic_split.mjs"],
     deps = [
-        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+        "//devinfra/js/debundle/x/split_proof/lowering:dump_core",
         "//devinfra/js/debundle/x/split_proof/translation:node_modules/acorn",
         "//devinfra/js/debundle/x/split_proof/translation:node_modules/eslint-scope",
     ],

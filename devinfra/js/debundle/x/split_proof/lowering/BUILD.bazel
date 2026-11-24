@@ -1,0 +1,38 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library")
+
+js_library(
+    name = "dump_core",
+    srcs = ["dump_core.mjs"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:__pkg__",
+    ],
+    deps = ["//devinfra/js/debundle/x/split_proof/translation:scope_metadata"],
+)
+
+js_binary(
+    name = "compare_footprints",
+    data = [
+        "statement_shape.mjs",
+        "//devinfra/js/debundle/x/split_proof/lean:lower",
+        "//devinfra/js/debundle/x/split_proof/translation:bazel_parser",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+    ],
+    entry_point = "compare.mjs",
+    env = {"LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)"},
+    tags = ["manual"],
+)
+
+# The torture file and subpackage entries are inputs to the experiment.
+js_library(
+    name = "lint_sources",
+    testonly = True,
+    srcs = glob(
+        ["*.mjs"],
+        exclude = ["torture.mjs"],
+    ),
+    visibility = ["//devinfra/js/debundle/x/split_proof:__pkg__"],
+)
