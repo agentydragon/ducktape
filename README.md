@@ -10,7 +10,7 @@ report snapshots. The [report index](index.html) links each review and its obser
 
 - **CI test cost:** [test and fixture audit](ci-test-cost/index.html), with fresh Action and Thread browser costs, devel push controls, and a current dependency graph probe. [Evidence](ci-test-cost/evidence.json) · [Manifest](ci-test-cost/manifest.json)
 
-- **Latency (22–24 November UTC):** [report](latency/index.html). Five of 11 heads in the latest fixed window passed the required checks. The observed medians missed the 30% target. Earlier daily and Firecracker measurements retain their original windows. [Evidence](latency/evidence.json) · [Manifest](latency/manifest.json)
+- **Latency (22–24 November UTC):** [report](latency/index.html). Five of 11 heads in the latest fixed window passed the required checks. The observed medians missed the 30% target. A [separate matched trial](latency/index.html#paired-precommit) shortened the all-green clock from 374 to 152 seconds on one Nix-only PR. Earlier daily and Firecracker measurements retain their original windows. [Evidence](latency/evidence.json) · [Manifest](latency/manifest.json)
 
 - **Reliability (15–21 November UTC; partial 22 November):** [report](reliability/index.html). Thirteen of 168 sampled heads remained red. The separate 22 November sample includes one verified fresh sandbox frontend recovery and four fresh first-attempt VM passes. [Evidence](reliability/evidence.json) · [Manifest](reliability/manifest.json)
 

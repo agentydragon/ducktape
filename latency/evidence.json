@@ -291,7 +291,7 @@
   },
   "fixed_windows": [
     {
-      "utc": "23:18:44\u201323:38:59",
+      "utc": "23:18:44–23:38:59",
       "rollout": "Sparse Bazel checkout, host-profile sharding, and block storage reuse. Six heads inherited linked-program sharding.",
       "heads": [
         {
@@ -1568,7 +1568,7 @@
       ]
     },
     {
-      "utc": "23:39:00\u201323:44:39",
+      "utc": "23:39:00–23:44:39",
       "rollout": "Sparse resolver was present in workflow ancestry. These same-repository heads took the ordinary CI path.",
       "heads": [
         {
@@ -1738,7 +1738,7 @@
       ]
     },
     {
-      "utc": "23:50:26\u201323:55:25",
+      "utc": "23:50:26–23:55:25",
       "rollout": "Lean partition, cdk8s classification, both shards, and shared storage control plane. Hosted admission overlapped the dispatcher replay and a publication fanout.",
       "heads": [
         {
@@ -2031,7 +2031,7 @@
       ]
     },
     {
-      "utc": "23:56:00\u201300:10:00",
+      "utc": "23:56:00–00:10:00",
       "rollout": "Same changes as the preceding window, with the sparse trusted-fork resolver in workflow ancestry. No fork exercised it.",
       "heads": [
         {
@@ -3068,6 +3068,58 @@
         "remaining_jobs": 5,
         "historical_runner_s_of_omitted": 14223
       }
+    }
+  },
+  "matched_precommit_trial": {
+    "dispatch": "2026-11-24T00:43:22Z",
+    "last_gate_completed": "2026-11-24T00:49:36Z",
+    "workflow": 45299454803,
+    "tested_merge": "8ec08d64147f8a7babc19e763575ec66ea48b299",
+    "pull_request": 19653,
+    "changed_nix_files": 2,
+    "all_hosts_started_s": 3,
+    "jobs": [
+      {
+        "role": "Bazel",
+        "id": 138128032079,
+        "conclusion": "success",
+        "completed_s": 102,
+        "affected_targets": 0
+      },
+      {
+        "role": "Artifacts and imports",
+        "id": 138128031675,
+        "conclusion": "success",
+        "completed_s": 152
+      },
+      {
+        "role": "Slim pre-commit",
+        "id": 138128032104,
+        "conclusion": "success",
+        "completed_s": 69,
+        "setup_s": 28,
+        "hooks_s": 12
+      },
+      {
+        "role": "Full pre-commit",
+        "id": 138128032136,
+        "conclusion": "success",
+        "completed_s": 374,
+        "setup_s": 336,
+        "hooks_s": 13
+      }
+    ],
+    "required_green_full_s": 374,
+    "required_green_slim_s": 152,
+    "elapsed_reduction_s": 222,
+    "elapsed_reduction_percent": 59.36,
+    "limits": "Single stacked Nix-only PR after the census cutoff. Fresh Ubuntu 26.04 hosts used different image revisions and regions (westus and us-west-2).",
+    "rustc_cache_transfer": {
+      "full_attempt_s": 304.7,
+      "http_status": 200,
+      "terminal_error": "HTTP/2 framing",
+      "full_retry_passed": true,
+      "slim_fetched_rustc": false
     }
   }
 }

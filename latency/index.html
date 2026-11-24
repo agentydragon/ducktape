@@ -63,7 +63,7 @@
       import { html, mount } from "../report.js";
 
       const evidenceSha =
-        "17b2f7295478d2a77383426c8501b6eb7325488401b0b5722b8a860b11e8d94d";
+        "0a6fcee82d3276070078723cfaf5db52814a947a8191de72733e11ee6c3e9fe2";
       const response = await fetch(`./evidence.json?v=${evidenceSha}`);
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const bytes = await response.arrayBuffer();
@@ -166,6 +166,9 @@
                 00:10 UTC. Baseline from 22 November 00:00 through 23 November
                 22:49:59 UTC. Inspected devel
                 <${Code}>${e.source_devel_commit}<//><//
+              >
+              <${Text} mt="sm" size="sm"
+                >${link("#paired-precommit", "Later matched pre-commit trial")}<//
               >
             </header>
 
@@ -411,6 +414,38 @@
                   ·
                   ${inv("5be30f7e-e215-40e9-baea-67dceeec765d", "Candidate tests")}<//
                 >
+              <//>
+            </section>
+
+            <section id="paired-precommit">
+              <${Title} order=${2}
+                >On one matched Nix-only PR, all gates passed 222 s earlier<//
+              >
+              <${Text} my="sm">
+                A separate dispatch at 00:43:22 UTC on 24 November used the same
+                two-Nix-file workload on all four runners. Each started at +3 s
+                and passed. Both arms share Bazel (+102 s, zero affected
+                targets) and the real artifacts/imports check (+152 s). Full
+                pre-commit finished at +374 s and slim pre-commit finished at
+                +69 s. The last required gate moved from pre-commit to
+                artifacts/imports. Relative to dispatch, all three gates passed
+                at +152 s with slim pre-commit, down from +374 s with full
+                pre-commit (59.36% earlier).${" "}
+                ${run(45299454803, "Matched dispatch")} ·
+                ${link(repo + "/commit/8ec08d64147f8a7babc19e763575ec66ea48b299", "Tested merge")}
+              <//>
+              <${Text} size="sm">
+                Full Nix setup took 336 s and hooks 13 s. Slim setup took 28 s
+                and hooks 12 s. The full job's public Attic rustc NAR transfer
+                returned HTTP 200 and failed after 304.7 s with an HTTP/2
+                framing error. Nix retried and the job passed. The slim job
+                avoided fetching rustc. Fresh Ubuntu 26.04 hosts used different
+                image revisions and regions (westus and us-west-2). This elapsed
+                comparison captures avoidance of a specific cache stall on one
+                stacked workload after the 00:10 UTC census cutoff. It leaves
+                normal-cache savings and the 30% production goal
+                unverified.${" "}
+                ${job(45299454803, 138128032136, "Full pre-commit log")}
               <//>
             </section>
 

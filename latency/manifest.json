@@ -2,9 +2,9 @@
   "source_devel_commit": "b7e76ee81df6f7d9f5c6115c32dd18ad30faf63b",
   "window_start_utc": "2026-11-22T00:00:00Z",
   "window_end_utc": "2026-11-24T00:10:00Z",
-  "published_at_utc": "2026-11-24T00:36:12.760748+00:00",
+  "published_at_utc": "2026-11-24T00:50:48.055632+00:00",
   "attribution": "not collected",
   "previous_report_commit": "b6e32be8b1f4b06e00850878beae3902f0846a24",
-  "report_sha256": "60690c4b1a6dd3ea81ecdde89d282b873910a998059472bbc50ec5d987f7e675",
-  "evidence_sha256": "17b2f7295478d2a77383426c8501b6eb7325488401b0b5722b8a860b11e8d94d"
+  "report_sha256": "9a81446aa2b5fb0a12a8f82e6eaceb10d5cc3466f8a55d72918422f27cd28252",
+  "evidence_sha256": "0a6fcee82d3276070078723cfaf5db52814a947a8191de72733e11ee6c3e9fe2"
 }
