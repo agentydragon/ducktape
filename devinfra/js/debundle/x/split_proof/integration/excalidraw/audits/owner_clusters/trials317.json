@@ -1,0 +1,15 @@
+{
+  "source_sha256": "fa1cfc7930fe3c0e2b4d95e6cb14ebde21068014cd92db303622509d9a0d455c",
+  "canonical_sha256": "7a44ab884ba62c79f402204e62b85e2498c9b9b9922524fa5afbf7d5b5aa15b4",
+  "selected_sha256": "6b39e30dfcc8110f795fb58f3585ae83259c6228bf18ad0466a0e917fb9bdaa4",
+  "baseline_evidence": "https://app.buildbuddy.io/invocation/32ce1694-d870-449f-ba52-2de1080bc4d1",
+  "trials": {
+    "default_delta": {
+      "add": {
+        "packages/excalidraw/change": ["Delta"]
+      },
+      "status": "certified",
+      "evidence": "https://app.buildbuddy.io/invocation/ba8387f0-0d37-4c9e-9e9a-b9496569e86d"
+    }
+  }
+}
