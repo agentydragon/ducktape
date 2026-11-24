@@ -89,8 +89,9 @@ checks that all 13 `import()` and
 to existing bundle files, and the scroll module uses a new asset path.
 The decoder retains the React factory in statement 5, lowers the `Uint8Array`
 constructor reference in statement 41 and accepts the flat object bindings in
-statements 104 and 105. The recorded concrete-checker trials reject the
-module-level `try` in statement 176 and leave the output directory absent.
+statements 104 and 105. The concrete-checker trials lower the module-level
+`try` in statement 176, then reject the module-level `for` in statement 178
+and leave the output directory absent.
 Each target records the source filename, placement spec and verdict.
 
 One target needs the existing editor module record. Unit `#1751` imports

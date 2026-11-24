@@ -404,6 +404,15 @@ private def deferredFunction (j : Json) (kind : FuncKind) (name : Name) (self : 
   if captures.contains "arguments" then throw reason
   return .opaque name kind self arity code part captures (some reason)
 
+private inductive LinkedScope where
+  | module
+  | moduleBlock
+  | function
+  deriving BEq
+
+private def LinkedScope.varBinder (scope : LinkedScope) (kind : String) : Json → Except String Name :=
+  if scope == .function || kind != "var" then localBinding else moduleBinding
+
 mutual
 
 private partial def linkedExpr (profile : HostProfile) (imports : List Name) (inFunction : Bool) (nameHint : Name)
@@ -640,7 +649,7 @@ private partial def linkedFunction (profile : HostProfile) (imports : List Name)
   unless bound.toList.Nodup do throw "duplicate function parameter"
   let body ← j.getObjVal? "body"
   let lowered := if (← field body "type") == "BlockStatement" then
-    linkedFunctionBody profile imports body (allowFunctions := true)
+    linkedBlockBody profile imports .function body (allowFunctions := true)
   else if kind == .arrow then
     linkedExpr profile imports true "" body |>.map (fun e => [.ret e])
   else throw "expected a function body block"
@@ -731,11 +740,12 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
   if parent == .null then return .cls name (id != .null) ctor members.toList
   return .derived name (id != .null) (← linkedExpr profile imports inFunction "" parent) members.toList derivedCtor
 
-private partial def linkedLocalDeclarations (profile : HostProfile) (imports : List Name) (offset : Nat) (j : Json) :
-    Except String (Array Stmt) := do
+private partial def linkedBlockDeclarations (profile : HostProfile) (imports : List Name) (scope : LinkedScope)
+    (offset : Nat) (j : Json) : Except String (Array Stmt) := do
   let declarations ← j.getObjValAs? (Array Json) "declarations"
   if declarations.isEmpty then throw "expected at least one declarator"
   let kind ← field j "kind"
+  let binder := scope.varBinder kind
   let mut result := #[]
   for d in declarations do
     let id ← d.getObjVal? "id"
@@ -746,7 +756,7 @@ private partial def linkedLocalDeclarations (profile : HostProfile) (imports : L
         | "let" => pure DeclKind.let_
         | "const" => pure DeclKind.const
         | _ => throw s!"unsupported declaration {kind}"
-      let patternIdentifier := linkedPatternIdentifier localBinding
+      let patternIdentifier := linkedPatternIdentifier binder
       let bindings ← linkedObjectPattern id fun target => do
         if (← field target "type") != "AssignmentPattern" then
           return (← patternIdentifier target, none)
@@ -771,35 +781,37 @@ private partial def linkedLocalDeclarations (profile : HostProfile) (imports : L
           else
             result := result.push (.decl declKind bound property)
     else
-      result := result.push (← Prod.snd <$> declaratorWith localBinding (linkedExpr profile imports true) kind d)
+      result := result.push (← Prod.snd <$> declaratorWith binder (linkedExpr profile imports true) kind d)
   return result
 
-/-- Keep every declarator in its enclosing statement list. Function instantiation hoists
-all its vars, and block instantiation creates the lexical bindings before initialization. -/
-private partial def linkedFunctionBody (profile : HostProfile) (imports : List Name) (block : Json)
+/-- Keep every declarator in its enclosing statement list. Linking or function
+instantiation hoists its vars, and block instantiation creates its lexical bindings. -/
+private partial def linkedBlockBody (profile : HostProfile) (imports : List Name) (scope : LinkedScope) (block : Json)
     (allowFunctions := false) : Except String (List Stmt) := do
   let mut result := #[]
   for stmt in ← block.getObjValAs? (Array Json) "body" do
     let kind ← field stmt "type"
     if kind == "VariableDeclaration" then
-      result := result ++ (← linkedLocalDeclarations profile imports result.size stmt)
+      result := result ++ (← linkedBlockDeclarations profile imports scope result.size stmt)
     else if allowFunctions && kind == "FunctionDeclaration" then
       let name ← stmt.getObjVal? "id" >>= localBinding
       result := result.push (.funDecl (← linkedFunction profile imports .normal name false stmt))
     else
-      result := result.push (← linkedStatement profile imports true stmt)
+      result := result.push (← linkedStatement profile imports scope stmt)
   return result.toList
 
-/-- A block introduces a fresh lexical scope each time it executes. Function `var`s
-still hoist through it via `Stmt.varNames`. -/
-private partial def linkedFunctionBlock (profile : HostProfile) (imports : List Name) (j : Json) : Except String Stmt := do
+/-- A block introduces a fresh lexical scope each time it executes. Its `var`s
+hoist through it via `Stmt.varNames`. -/
+private partial def linkedBlock (profile : HostProfile) (imports : List Name) (scope : LinkedScope) (j : Json) :
+    Except String Stmt := do
   unless (← field j "type") == "BlockStatement" do throw "expected a statement block"
-  return .block (← linkedFunctionBody profile imports j)
+  return .block (← linkedBlockBody profile imports scope j)
 
 /-- With no fallthrough and no case-scope lexical bindings, a switch is a chain of
 strict comparisons against a saved discriminant. A trailing default runs only
 after all case tests fail. -/
-private partial def linkedSwitch (profile : HostProfile) (imports : List Name) (j : Json) : Except String Stmt := do
+private partial def linkedSwitch (profile : HostProfile) (imports : List Name) (scope : LinkedScope) (j : Json) :
+    Except String Stmt := do
   let lower := linkedExpr profile imports true ""
   let discriminant ← lower (← j.getObjVal? "discriminant")
   let saved := ":switch:discriminant"
@@ -826,54 +838,58 @@ private partial def linkedSwitch (profile : HostProfile) (imports : List Name) (
       else if ["ClassDeclaration", "FunctionDeclaration"].contains kind then
         throw "unsupported switch lexical declaration"
       if containsBreak statement then throw "unsupported nested switch break"
-      body := body.push (← linkedStatement profile imports true statement)
+      body := body.push (← linkedStatement profile imports scope statement)
     let branch := Stmt.block body.toList
     dispatch ← if test == .null then pure branch else do
       pure (.ite (.binary .strictEq (.var saved) (← lower test)) branch dispatch)
     hasFollowingClause := true
   return .block [.decl .const saved discriminant, dispatch]
 
-private partial def linkedStatement (profile : HostProfile) (imports : List Name) (inFunction : Bool) (j : Json) :
+private partial def linkedStatement (profile : HostProfile) (imports : List Name) (scope : LinkedScope) (j : Json) :
     Except String Stmt := do
-  if inFunction then
-    match ← field j "type" with
-    | "BlockStatement" => return ← linkedFunctionBlock profile imports j
+  let kind ← field j "type"
+  let nested := scope != .module
+  if nested || kind == "TryStatement" then
+    match kind with
+    | "BlockStatement" => return ← linkedBlock profile imports scope j
     | "ClassDeclaration" =>
       let name ← j.getObjVal? "id" >>= localBinding
       return .decl .let_ name (← linkedClass profile imports true name j)
     | "EmptyStatement" => return .block []
     | "IfStatement" =>
       let test ← linkedExpr profile imports true "" (← j.getObjVal? "test")
-      let consequent ← linkedStatement profile imports true (← j.getObjVal? "consequent")
+      let consequent ← linkedStatement profile imports scope (← j.getObjVal? "consequent")
       let alternate ← j.getObjVal? "alternate"
-      let elseBranch ← if alternate == .null then pure (.block []) else linkedStatement profile imports true alternate
+      let elseBranch ← if alternate == .null then pure (.block []) else linkedStatement profile imports scope alternate
       return .ite test consequent elseBranch
-    | "SwitchStatement" => return ← linkedSwitch profile imports j
+    | "SwitchStatement" => return ← linkedSwitch profile imports scope j
     | "VariableDeclaration" =>
-      -- An unbraced branch can declare vars, which already belong to the enclosing function.
+      -- An unbraced branch can declare vars, which already belong to the enclosing module or function.
       unless (← field j "kind") == "var" do throw "expected a var declaration in statement position"
-      return .block (← linkedLocalDeclarations profile imports 0 j).toList
+      return .block (← linkedBlockDeclarations profile imports scope 0 j).toList
     | "WhileStatement" =>
       let test ← linkedExpr profile imports true "" (← j.getObjVal? "test")
-      return .loop (.block []) test .undef (← linkedStatement profile imports true (← j.getObjVal? "body"))
+      return .loop (.block []) test .undef (← linkedStatement profile imports scope (← j.getObjVal? "body"))
     | "ForStatement" =>
       let lower := linkedExpr profile imports true ""
       let init ← j.getObjVal? "init"
       let initializer ← if init == .null then pure (.block []) else do
         if (← field init "type") == "VariableDeclaration" then
           -- Keep the declaration directly in the header so each iteration captures its own let cell.
-          pure (← declarationWith localBinding (linkedExpr profile imports true) init).2
+          let binder := scope.varBinder (← field init "kind")
+          pure (← declarationWith binder (linkedExpr profile imports true) init).2
         else pure (.expr (← lower init))
       let test ← j.getObjVal? "test"
       let test ← if test == .null then pure (.bool true) else lower test
       let update ← j.getObjVal? "update"
       let update ← if update == .null then pure .undef else lower update
-      return .loop initializer test update (← linkedStatement profile imports true (← j.getObjVal? "body"))
+      return .loop initializer test update (← linkedStatement profile imports scope (← j.getObjVal? "body"))
     | "BreakStatement" | "ContinueStatement" =>
       unless (← j.getObjVal? "label") == .null do throw "unsupported labeled loop control"
       return if (← field j "type") == "BreakStatement" then .brk else .cont
     | "TryStatement" =>
-      let body ← linkedFunctionBlock profile imports (← j.getObjVal? "block")
+      let blockScope := if scope == .module then LinkedScope.moduleBlock else scope
+      let body ← linkedBlock profile imports blockScope (← j.getObjVal? "block")
       let handler ← j.getObjVal? "handler"
       let finalizer ← j.getObjVal? "finalizer"
       if handler == .null && finalizer == .null then throw "expected catch or finally"
@@ -881,13 +897,13 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
         unless (← field handler "type") == "CatchClause" do throw "expected a catch clause"
         let param ← handler.getObjVal? "param"
         let name ← if param == .null then pure none else some <$> localBinding param
-        pure (.tryCatch body name (← linkedFunctionBlock profile imports (← handler.getObjVal? "body")))
+        pure (.tryCatch body name (← linkedBlock profile imports blockScope (← handler.getObjVal? "body")))
       if finalizer == .null then return protectedBody
-      return .tryFinally protectedBody (← linkedFunctionBlock profile imports finalizer)
+      return .tryFinally protectedBody (← linkedBlock profile imports blockScope finalizer)
     | _ => pure ()
-  let binder := if inFunction then localBinding else moduleBinding
-  statementWith (linkedExpr profile imports inFunction "") (declarationWith binder (linkedExpr profile imports inFunction))
-    inFunction j
+  let binder := if nested then localBinding else moduleBinding
+  statementWith (linkedExpr profile imports nested "") (declarationWith binder (linkedExpr profile imports nested))
+    (scope == .function) j
 
 end
 
@@ -925,7 +941,7 @@ def linkedDeclaration (imports : List Name) (j : Json) (profile : HostProfile :=
 def linkedUnit (imports : List Name) (j : Json) (profile : HostProfile := .empty) : Except String Stmt := do
   if ["FunctionDeclaration", "ClassDeclaration", "VariableDeclaration"].contains (← field j "type") then
     return (← linkedDeclaration imports j profile).2
-  linkedStatement profile imports false j
+  linkedStatement profile imports .module j
 
 /-- A named export of a local binding, in (public, local) order. -/
 def exportSpec (j : Json) : Except String (Name × Name) := do
