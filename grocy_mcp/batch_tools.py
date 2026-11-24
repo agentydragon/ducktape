@@ -1,17 +1,9 @@
-"""Concurrency is bounded by an asyncio.Semaphore so that large batches don't
-overwhelm Grocy's PHP/SQLite backend. The authenticated backend client is a
-FastMCP dependency resolved once before the batch tool body, then shared by its
-item workers. Reads retry transient errors with exponential backoff.
+"""Handwritten Grocy batch tools share one authenticated client per MCP call.
 
-IMPORTANT: reads/GETs go through _retry(), which retries transient errors
-including timeouts. Mutating requests go through _retry_mutation(), which
-retries only errors that prove no request was sent. A timeout, transport
-failure, or server error may arrive after Grocy applied the mutation, so a
-blind re-send can double-apply it (the 2026-04-17 stock-inflation incident:
-products 90, 95, 97). Such ambiguous outcomes raise
-MutationMayHaveAppliedError so the caller can verify state before retrying
-manually. The follow-up GET that reads new_amount is best-effort, outside any
-retry loop.
+Retried GETs check HTTP status inside each attempt. A mutation can retry only
+when the request was never sent. Retrying an ambiguous response can apply the
+same purchase twice (the 2026-04-17 stock-inflation incident). Follow-up reads
+for purchase receipts run outside the mutation retry loop.
 """
 
 from __future__ import annotations
@@ -241,6 +233,15 @@ def register_batch_tools(
                 raise
         raise AssertionError("unreachable")
 
+    async def _get_with_retry(
+        client: GrocyClient, path: str, *, params: dict[str, int] | None = None
+    ) -> httpx2.Response:
+        async def get() -> httpx2.Response:
+            response = await client.get(path, params=params)
+            return response.raise_for_status()
+
+        return await _retry(get)
+
     async def _retry_mutation[T](fn: Callable[[], Awaitable[T]], *, describe: str) -> T:
         return await _retry(fn, mutation=True, describe=describe)
 
@@ -393,12 +394,8 @@ def register_batch_tools(
         _check_batch_size(entity_types, "entity_types")
 
         async def _fetch(entity_type: ReadableEntityType) -> tuple[str, list[Any]]:
-            async def _do() -> tuple[str, list[Any]]:
-                r = await client.get(f"/objects/{entity_type}")
-                r.raise_for_status()
-                return str(entity_type), r.json()
-
-            return await _retry(_do)
+            r = await _get_with_retry(client, f"/objects/{entity_type}")
+            return str(entity_type), r.json()
 
         pairs = await asyncio.gather(*[_fetch(et) for et in entity_types])
         return dict(pairs)
@@ -447,13 +444,8 @@ def register_batch_tools(
         """
 
         async def _fetch(object_id: int) -> GetOk:
-            async def _do() -> dict[str, Any]:
-                r = await client.get(f"/objects/{entity_type}/{object_id}")
-                r.raise_for_status()
-                data: dict[str, Any] = r.json()
-                return data
-
-            data = await _retry(_do)
+            r = await _get_with_retry(client, f"/objects/{entity_type}/{object_id}")
+            data = r.json()
             names = None
             if entity_type == "shopping_list":
                 (product, unit), shopping_list = await asyncio.gather(
@@ -502,11 +494,10 @@ def register_batch_tools(
         additional bucket.
         """
         stock_r, qu_names, location_names = await asyncio.gather(
-            _retry(lambda: client.get("/stock")),
+            _get_with_retry(client, "/stock"),
             client.entity_name_map(EntityType.QUANTITY_UNIT),
             client.entity_name_map(EntityType.LOCATION),
         )
-        stock_r.raise_for_status()
         stock_data: list[dict[str, Any]] = stock_r.json()
 
         product_ids: set[int] = set()
@@ -763,8 +754,7 @@ def register_batch_tools(
             for product_ref in products:
                 resolved = await client.resolve_entity(EntityType.PRODUCT, product_ref)
                 try:
-                    r = await _retry(functools.partial(client.get, f"/stock/products/{resolved.id}/entries"))
-                    r.raise_for_status()
+                    r = await _get_with_retry(client, f"/stock/products/{resolved.id}/entries")
                     entries_data: list[dict[str, Any]] = r.json()
                     for entry_data in entries_data:
                         try:
@@ -782,12 +772,8 @@ def register_batch_tools(
         enrich = await _load_stock_entry_enricher(client)
 
         async def _fetch(entry_id: int) -> StockEntryOk:
-            async def _do() -> StockEntryOk:
-                r = await client.get(f"/stock/entry/{entry_id}")
-                r.raise_for_status()
-                return StockEntryOk(entry=enrich(r.json()))
-
-            return await _retry(_do)
+            r = await _get_with_retry(client, f"/stock/entry/{entry_id}")
+            return StockEntryOk(entry=enrich(r.json()))
 
         return await _ordered_batch(
             entry_ids,
@@ -1366,8 +1352,7 @@ def register_batch_tools(
 
     async def _fetch_volatile(client: GrocyClient, *, days_ahead: int | None = None) -> dict[str, Any]:
         params = {"due_soon_days": days_ahead} if days_ahead is not None else {}
-        r = await _retry(lambda: client.get("/stock/volatile", params=params))
-        r.raise_for_status()
+        r = await _get_with_retry(client, "/stock/volatile", params=params)
         data: dict[str, Any] = r.json()
         return data
 
