@@ -41,12 +41,13 @@ private def codeMatch : MatchEq Code
   | _, _ => none
 
 private def objMatch : MatchEq Obj
-  | ⟨proto, props, code, array⟩, ⟨proto', props', code', array'⟩ => do
+  | ⟨proto, props, code, array, rx⟩, ⟨proto', props', code', array', rx'⟩ => do
     let ⟨p⟩ ← scalarEq proto proto'
     let ⟨ps⟩ ← scalarEq props props'
     let ⟨c⟩ ← slotMatch codeMatch code code'
     let ⟨a⟩ ← scalarEq array array'
-    return ⟨p ▸ ps ▸ c ▸ a ▸ rfl⟩
+    let ⟨r⟩ ← scalarEq rx rx'
+    return ⟨p ▸ ps ▸ c ▸ a ▸ r ▸ rfl⟩
 
 /-- Match the complete linked state, including heap addresses, objects,
 bindings and the world's handed handles. The probe's private state is Unit. -/

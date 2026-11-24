@@ -46,11 +46,47 @@ private theorem safe_arg {A : HeapNode → Prop} {args : List Val} (safe : ∀ x
   | none => exact fun _ hn => by cases hn
   | some x => exact safe x (list_index_mem h)
 
+private theorem reachFrame_readRegExp {r R cells A} (away : Away r R A) (call : Call W)
+    (hf : CallFramed r R cells A call) (root : A (.obj objectProto))
+    (getter : RegExpGetter) (v : Val) (safe : SafeVal A v) :
+    ReachFrame r R cells A (SafeVal A) (readRegExp call getter v) := by
+  unfold readRegExp
+  apply (reachFrame_requireObj _ v safe).bind
+  intro a ha
+  have slot (letter : Option Char) : ReachFrame r R cells A (SafeVal A) (do
+      regexpSlot a (← getObj a).regexp letter : M W Val) := by
+    apply (reachFrame_getObj away ha).bind
+    intro o _
+    unfold regexpSlot
+    cases o.regexp <;> cases letter <;> simp only <;> repeat' split
+    all_goals first
+      | exact reachFrame_pure r R cells A _ (fun _ hn => by cases hn)
+      | exact reachFrame_unknown r R cells A _ _
+      | exact reachFrame_typeError _
+  cases getter with
+  | source => exact slot none
+  | flag c => exact slot (some c)
+  | flags =>
+    have flags (keys : List (String × String)) :
+        ReachFrame r R cells A (fun _ => True) (regexpFlags call v keys) := by
+      induction keys with
+      | nil => exact reachFrame_pure r R cells A _ trivial
+      | cons pair rest ih =>
+        rcases pair with ⟨key, letter⟩
+        apply (reachFrame_getProp away call hf.getter root v (.str key) safe).bind
+        intro value _
+        apply (reachFrame_lift (P := fun _ => True) (toBoolean value) (fun _ _ => trivial)).bind
+        intro enabled _
+        exact ih.bind fun tail _ => reachFrame_pure r R cells A _ trivial
+    exact (flags regexpFlagOrder).bind fun text _ =>
+      reachFrame_pure r R cells A (P := SafeVal A) (Val.str text) (fun _ hn => by cases hn)
+
 theorem reachFrame_prim {r R cells A} (away : Away r R A) (call : Call W) (hf : CallFramed r R cells A call)
     (objects : ∀ a : Addr, a.region ≠ r → A (.obj a)) (root : A (.obj objectProto))
     (p : Prim) (args : List Val) (safe : ∀ x ∈ args, SafeVal A x) :
     ReachFrame r R cells A (SafeVal A) (prim call p args) := by
   cases p with
+  | regExpGet getter => exact reachFrame_readRegExp away call hf root getter _ (safe_arg safe 0)
   | globalTypeof name => exact reachFrame_observeGlobalTypeof r R cells A name
   | globalRef name => exact reachFrame_readHostRef r R cells A (.binding name)
   | opaqueAmbientRef name | opaqueConstructorRef name => exact reachFrame_unknown r R cells A _ _
