@@ -48,40 +48,36 @@ def main() -> None:
     parser.add_argument("--config", type=Path, required=True)
     args = parser.parse_args()
 
-    chunks = sorted(path.relative_to(args.bundle_dir).as_posix() for path in args.bundle_dir.rglob("*.js"))
+    files = sorted(
+        path.relative_to(args.bundle_dir).as_posix() for path in args.bundle_dir.rglob("*") if path.is_file()
+    )
+    chunks = [file for file in files if file.endswith(".js")]
     if "main.js" not in chunks:
         raise ValueError(f"bundle has no entry chunk: {args.bundle_dir=}")
     aliases = aliases_by_chunk(args.metafile, chunks, yaml.safe_load(args.aliases.read_text()))
-    chunk_ids = [aliases.get(chunk, chunk).removesuffix(".js") for chunk in chunks]
-    args.chunks_dir.mkdir(parents=True, exist_ok=True)
-    for chunk_id, chunk in zip(chunk_ids, chunks, strict=True):
-        (args.chunks_dir / f"{chunk_id}.js").parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(args.bundle_dir / chunk, args.chunks_dir / f"{chunk_id}.js")
-    for asset in args.bundle_dir.rglob("*"):
-        if asset.is_file() and asset.suffix != ".js":
-            target = args.chunks_dir / asset.relative_to(args.bundle_dir)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(asset, target)
+    for file in files:
+        target = args.chunks_dir / aliases.get(file, file)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(args.bundle_dir / file, target)
     shutil.copyfile(args.index_html, args.chunks_dir / "index.html")
     (args.chunks_dir / "asset-summary.json").write_text(json.dumps({"entryPoints": {"html": "index.html"}}))
-    args.js_list.write_text(
-        "".join(
-            f"{chunk_id}.js\t{chunk}\n" if chunk in aliases else f"{chunk}\n"
-            for chunk_id, chunk in zip(chunk_ids, chunks, strict=True)
-        )
-    )
 
     config = yaml.safe_load(args.template.read_text())
     config["inputs"] = {"root": args.inputs_root, "js_list_path": args.js_list_path}
     config["browser_harness"] = {"asset_summary_path": f"{args.inputs_root}/asset-summary.json"}
     policies = config.setdefault("unassigned_mode", {})
     import_orders = config.setdefault("import_order", {})
-    for chunk_id in chunk_ids:
+    js_list = []
+    for chunk in chunks:
+        staged_name = aliases.get(chunk, chunk)
+        js_list.append(f"{staged_name}\t{chunk}\n" if chunk in aliases else f"{chunk}\n")
+        chunk_id = staged_name.removesuffix(".js")
         policies.setdefault(chunk_id, {"kind": "inline_in_entry"})
         # Every generated non-authored chunk is explicitly inline, so its
         # emitted non-entry owner universe is empty. Preserve any priorities
         # authored in the template for chunks with logical modules.
         import_orders.setdefault(chunk_id, [])
+    args.js_list.write_text("".join(js_list))
     args.config.write_text(yaml.safe_dump(config, sort_keys=False))
 
 
