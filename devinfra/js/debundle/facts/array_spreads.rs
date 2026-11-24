@@ -53,7 +53,7 @@ impl StableArraySpreadShapes {
                 let Some(&ordinal) = ordinals.get(&decl.span.lo.0) else {
                     break;
                 };
-                if primitive_array_literal(array) {
+                if js_ast::is_dense_primitive_array(array) {
                     previous.insert(binding.id.to_id(), (ordinal, array.span.lo.0));
                     continue;
                 }
@@ -76,7 +76,7 @@ impl StableArraySpreadShapes {
                         source_origins.insert(element.expr.span().lo.0, origin);
                         true
                     } else {
-                        primitive_literal(&element.expr)
+                        js_ast::is_primitive_literal(element.expr.unwrap_parens())
                     }
                 });
                 if valid && !tokens.is_empty() {
@@ -100,19 +100,4 @@ impl StableArraySpreadShapes {
         }
         shapes
     }
-}
-
-fn primitive_array_literal(array: &ArrayLit) -> bool {
-    array.elems.iter().all(|element| {
-        element
-            .as_ref()
-            .is_some_and(|element| element.spread.is_none() && primitive_literal(&element.expr))
-    })
-}
-
-fn primitive_literal(expr: &Expr) -> bool {
-    matches!(
-        expr.unwrap_parens(),
-        Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_))
-    )
 }

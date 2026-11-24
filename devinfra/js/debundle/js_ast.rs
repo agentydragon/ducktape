@@ -11,16 +11,35 @@ use swc_common::{
     SyntaxContext,
 };
 use swc_ecma_ast::{
-    ComputedPropName, Decl, EsReserved, ExportNamedSpecifier, ExportSpecifier, Expr, ExprOrSpread,
-    Id, Ident, IdentName, ImportDecl, ImportNamedSpecifier, ImportPhase, ImportSpecifier, Lit,
-    MemberExpr, MemberProp, MetaPropExpr, MetaPropKind, Module, ModuleDecl, ModuleExportName,
-    ModuleItem, NamedExport, NewExpr, Stmt, Str, VarDecl, VarDeclKind, VarDeclarator,
+    ArrayLit, ComputedPropName, Decl, EsReserved, ExportNamedSpecifier, ExportSpecifier, Expr,
+    ExprOrSpread, Id, Ident, IdentName, ImportDecl, ImportNamedSpecifier, ImportPhase,
+    ImportSpecifier, Lit, MemberExpr, MemberProp, MetaPropExpr, MetaPropKind, Module, ModuleDecl,
+    ModuleExportName, ModuleItem, NamedExport, NewExpr, Stmt, Str, VarDecl, VarDeclKind,
+    VarDeclarator,
 };
 use swc_ecma_codegen::text_writer::JsWriter;
 use swc_ecma_codegen::{Config, Emitter};
 use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax, lexer::Lexer};
 use swc_ecma_transforms_base::resolver;
 use swc_ecma_visit::{VisitMutWith, VisitWith};
+
+/// A literal whose evaluation produces a primitive JS value (in particular, not a RegExp).
+/// Callers matching source syntax choose whether to unwrap parentheses first.
+pub fn is_primitive_literal(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_))
+    )
+}
+
+/// No holes or spreads: every element is an explicit primitive literal.
+pub fn is_dense_primitive_array(array: &ArrayLit) -> bool {
+    array.elems.iter().all(|element| {
+        element.as_ref().is_some_and(|element| {
+            element.spread.is_none() && is_primitive_literal(element.expr.unwrap_parens())
+        })
+    })
+}
 
 /// Run `body` inside a fresh `swc_common::GLOBALS` arena. Production
 /// entry point (`main.rs`) wraps the

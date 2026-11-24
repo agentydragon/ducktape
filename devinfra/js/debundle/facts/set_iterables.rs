@@ -488,20 +488,13 @@ pub(crate) fn primitive_literal_property_keys(object: &ObjectLit) -> Option<BTre
         if key == "__proto__" {
             return None;
         }
-        if is_primitive_literal(&kv.value) {
+        if js_ast::is_primitive_literal(kv.value.unwrap_parens()) {
             primitive_keys.insert(key);
         } else {
             primitive_keys.remove(&key);
         }
     }
     Some(primitive_keys)
-}
-
-fn is_primitive_literal(expr: &Expr) -> bool {
-    matches!(
-        expr.unwrap_parens(),
-        Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_))
-    )
 }
 
 fn proven_static_member_sets(
@@ -556,7 +549,7 @@ fn proven_static_member_sets(
                                 .get(&object)
                                 .is_some_and(|keys| keys.contains(prop.sym.as_ref()))
                     }
-                    other => is_primitive_literal(other),
+                    other => js_ast::is_primitive_literal(other.unwrap_parens()),
                 }
             });
             if has_member && all_primitive {
@@ -591,28 +584,13 @@ fn collect_const_primitive_arrays(body: &[TopLevelItemView<'_>]) -> BTreeMap<Id,
             continue;
         };
         let source = match init.unwrap_parens() {
-            Expr::Array(array) if array_is_primitive_literal(array) => None,
+            Expr::Array(array) if js_ast::is_dense_primitive_array(array) => None,
             Expr::Ident(ident) if candidates.contains_key(&ident.to_id()) => Some(ident.to_id()),
             _ => continue,
         };
         candidates.insert(binding.id.to_id(), ArrayCandidate { source });
     }
     candidates
-}
-
-fn array_is_primitive_literal(array: &ArrayLit) -> bool {
-    array.elems.iter().all(|element| {
-        let Some(element) = element else {
-            return false;
-        };
-        if element.spread.is_some() {
-            return false;
-        }
-        matches!(
-            element.expr.unwrap_parens(),
-            Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_))
-        )
-    })
 }
 
 fn is_standard_set_constructor(
@@ -629,7 +607,7 @@ fn has_fresh_primitive_array_argument(args: &[ExprOrSpread]) -> bool {
     matches!(
         args,
         [ExprOrSpread { spread: None, expr }]
-            if matches!(expr.unwrap_parens(), Expr::Array(array) if array_is_primitive_literal(array))
+            if matches!(expr.unwrap_parens(), Expr::Array(array) if js_ast::is_dense_primitive_array(array))
     )
 }
 
