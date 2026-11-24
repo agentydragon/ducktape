@@ -21,12 +21,12 @@ private def receiver (s : State W) (env : Env) (name : String) : Option Obj := d
 
 private def readOwn (s : State W) (env : Env) (name key : String) : Option Val := do
   let obj ← receiver s env name
-  let .data value .. ← obj.props.lookup key | none
+  let .data value .. ← obj.props.lookup (PropertyKey.str key) | none
   return value
 
 private theorem readOwn_witness {s : State W} (h : readOwn s env name key = some v) :
     ∃ c a b o w e d, env.vars.lookup name = some c ∧ s.cellAt c = some ⟨some (.obj a), b⟩ ∧
-      s.objAt a = some o ∧ o.props.lookup key = some (.data v w e d) := by
+      s.objAt a = some o ∧ o.props.lookup (PropertyKey.str key) = some (.data v w e d) := by
   cases hc : env.vars.lookup name with
   | none => simp [readOwn, receiver, hc] at h
   | some cell =>
@@ -42,7 +42,7 @@ private theorem readOwn_witness {s : State W} (h : readOwn s env name key = some
           cases ho : s.objAt addr with
           | none => simp [ho] at h
           | some obj =>
-            cases hp : obj.props.lookup key with
+            cases hp : obj.props.lookup (PropertyKey.str key) with
             | none => simp [ho, hp] at h
             | some p =>
               cases p <;> simp [ho, hp] at h

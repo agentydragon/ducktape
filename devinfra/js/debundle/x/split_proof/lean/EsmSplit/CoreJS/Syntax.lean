@@ -53,6 +53,7 @@ inductive Prim where
   | regExpGet (getter : RegExpGetter)
   | globalTypeof (binding : String)
   | globalRef (binding : String)
+  | iteratorSymbol
   | opaqueAmbientRef (binding : String)
   | opaqueConstructorRef (binding : String)
   | opaqueAmbientMemberRef (receiver member : String)

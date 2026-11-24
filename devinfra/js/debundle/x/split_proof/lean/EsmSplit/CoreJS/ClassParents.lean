@@ -19,7 +19,7 @@ theorem State.objectCount_pos_of_objAt {s : State W} {a : Addr} {o : Obj}
 returns its value without calling a getter, traversing the prototype, or mutating the heap. -/
 theorem getProp_ownData {s : State W} {a : Addr} {o : Obj} {key : String} {v : Val}
     {w e c : Bool} (call : Call W) (hObj : s.objAt a = some o)
-    (hp : o.props.lookup key = some (.data v w e c)) :
+    (hp : o.props.lookup (PropertyKey.str key) = some (.data v w e c)) :
     getProp call (.obj a) (.str key) s = .ok v s := by
   have hLookup : lookupProp a key s = .ok (some (.data v w e c)) s := by
     change Res.ok (findProp s s.objectCount a key) s = _
@@ -33,9 +33,9 @@ theorem getProp_ownData {s : State W} {a : Addr} {o : Obj} {key : String} {v : V
 /-- An own data `prototype` is found at the first lookup step. Heritage evaluation returns its address without
 invoking a getter or changing the state. -/
 theorem classParents_ownPrototype {s : State W} {a p : Addr} {o : Obj} {f : Func} {closed : Env}
-    {fields : List (String × Expr)} {w e c : Bool} (call : Call W) (hObj : s.objAt a = some o)
+    {fields : List (PropertyKey × Expr)} {w e c : Bool} (call : Call W) (hObj : s.objAt a = some o)
     (hCode : o.code = some (.closure f closed fields)) (hKind : f.kind = .classCtor)
-    (hProto : o.props.lookup "prototype" = some (.data (.obj p) w e c)) :
+    (hProto : o.props.lookup (PropertyKey.str "prototype") = some (.data (.obj p) w e c)) :
     classParents call (.obj a) s = .ok (a, some p) s := by
   have hConstructor : isConstructor (.obj a) s = .ok true s := by
     simp only [isConstructor, M.bind_apply, getObj, hObj, hCode, hKind] <;> rfl
@@ -44,18 +44,18 @@ theorem classParents_ownPrototype {s : State W} {a p : Addr} {o : Obj} {f : Func
   rfl
 
 theorem classParents_extends {s t : State W} {a p : Addr} {o : Obj} {f : Func} {closed : Env}
-    {fields : List (String × Expr)} {w e c : Bool} (call : Call W) (h : Extends s t)
+    {fields : List (PropertyKey × Expr)} {w e c : Bool} (call : Call W) (h : Extends s t)
     (hObj : s.objAt a = some o) (hCode : o.code = some (.closure f closed fields)) (hKind : f.kind = .classCtor)
-    (hProto : o.props.lookup "prototype" = some (.data (.obj p) w e c)) :
+    (hProto : o.props.lookup (PropertyKey.str "prototype") = some (.data (.obj p) w e c)) :
     classParents call (.obj a) t = .ok (a, some p) t :=
   classParents_ownPrototype call (h.objs a o hObj) hCode hKind hProto
 
 /-- Either state can replay heritage lookup when both already contain the constructor record. -/
 theorem classParents_replay {W' : World} {s : State W} {t : State W'} {a p : Addr} {o : Obj} {f : Func}
-    {closed : Env} {fields : List (String × Expr)} {w e c : Bool} {parents : Addr × Option Addr}
+    {closed : Env} {fields : List (PropertyKey × Expr)} {w e c : Bool} {parents : Addr × Option Addr}
     (call : Call W) (call' : Call W') (hObj : s.objAt a = some o) (hObj' : t.objAt a = some o)
     (hCode : o.code = some (.closure f closed fields)) (hKind : f.kind = .classCtor)
-    (hProto : o.props.lookup "prototype" = some (.data (.obj p) w e c)) :
+    (hProto : o.props.lookup (PropertyKey.str "prototype") = some (.data (.obj p) w e c)) :
     classParents call (.obj a) s = .ok parents s ↔ classParents call' (.obj a) t = .ok parents t := by
   rw [classParents_ownPrototype call hObj hCode hKind hProto,
     classParents_ownPrototype call' hObj' hCode hKind hProto]

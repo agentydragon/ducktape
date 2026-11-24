@@ -530,7 +530,7 @@ theorem Same.members_succ (env env' : Env) (proto c : Addr) (ms : List ClassMemb
     (evalMembers (n + 1) env proto c ms : M W _) = evalMembers (n + 1) env' proto c ms := by
   cases ms <;> unfold evalMembers <;> same ih hN
 
-theorem Same.fields_succ (env env' : Env) (a : Addr) (fs : List (String × Expr))
+theorem Same.fields_succ (env env' : Env) (a : Addr) (fs : List (PropertyKey × Expr))
     (hN : Agree (fs.flatMap (·.2.free)) env env') :
     (evalFields (n + 1) env a fs : M W _) = evalFields (n + 1) env' a fs := by
   cases fs <;> unfold evalFields <;> same ih hN

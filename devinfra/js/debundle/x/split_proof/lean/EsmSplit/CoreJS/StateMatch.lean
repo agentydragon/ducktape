@@ -13,7 +13,7 @@ private def slotMatch (value : MatchEq α) : MatchEq (Option α)
   | some a, some b => (value a b).map fun h => ⟨congrArg some h.down⟩
   | _, _ => none
 
-private def fieldMatch : MatchEq (String × Expr)
+private def fieldMatch : MatchEq (PropertyKey × Expr)
   | (a, v), (b, w) => do
     let ⟨name⟩ ← scalarEq a b
     let ⟨initial⟩ ← SyntaxMatch.exprEq v w

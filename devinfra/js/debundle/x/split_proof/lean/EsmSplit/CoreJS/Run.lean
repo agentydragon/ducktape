@@ -21,7 +21,8 @@ An unsupported AST produces a `malformed` result with its statement index and re
 a run of the program in Node made, in order, each with how it ended. The model runs in the world that answers exactly
 those calls: the next call of the model has to be the next one of the recording, the same function with the same
 receiver and arguments, and ends as it did there. `world` in the output says where the model's calls left the
-recording, if they did, and `left` how many recorded calls the model did not make.
+recording, if they did, and `left` how many recorded calls the model did not make. A recording with
+`"iteratorSymbol": true` supplies the stable, effect-free observation of the ambient `Symbol.iterator`.
 
 `corejs --host-names` prints the members the model gives the host's prototypes, and the host functions it asks the
 world about. `corejs --footprints` checks footprints against a program (`checkFootprints`), and `corejs --moves`
@@ -142,10 +143,12 @@ def showCall (fn : String) (this : Option Primitive) (args : List (Option Primit
   s!"{fn} on {showArg this} with ({", ".intercalate (args.map showArg)})"
 
 /-- The world a recording describes. A call that is not the next recorded one stops the replay and throws. -/
-def replay (calls : List Recorded) (scripts : Scripts := []) : World where
+def replay (calls : List Recorded) (scripts : Scripts := []) (iteratorSymbol : Bool := false) : World where
   σ := Replay
   init := { left := calls, scripts }
   talk := Replay.told
+  hostRef ref st :=
+    if iteratorSymbol && ref == .property "Symbol" "iterator" then some ("Symbol.iterator", st) else none
   step fn this args st :=
     let stop (why : String) : HostResult × Replay :=
       (.throw (.str "world: not the recorded call"), { st with left := [], problem := st.problem.or (some why) })
@@ -186,22 +189,23 @@ def errorKind : String → Except String ErrorKind
   | "URIError" => pure .uri
   | name => throw s!"an error the model has no kind for: {name}"
 
-/-- `{"fn", "this", "args", and one of "ret": primitive, "throw": primitive, "error": the name of the error's class}`. -/
+/-- A call records a return, throw, engine error, or an unrepresentable host result. -/
 def recorded (j : Json) : Except String Recorded := do
   let fn ← j.getObjValAs? String "fn"
   let this ← j.getObjVal? "this" >>= recordedPrimitive
   let args ← (← j.getObjVal? "args" >>= Json.getArr?).toList.mapM recordedPrimitive
-  let result ← match j.getObjVal? "ret", j.getObjVal? "throw", j.getObjVal? "error" with
-    | .ok v, _, _ => do
+  let result ← match j.getObjVal? "ret", j.getObjVal? "throw", j.getObjVal? "error", j.getObjVal? "unknown" with
+    | .ok v, _, _, _ => do
       match ← recordedPrimitive v with
       | some p => pure (.ret p)
       | none => pure (.unknown "the host returns a string containing an isolated UTF-16 surrogate")
-    | _, .ok v, _ => do
+    | _, .ok v, _, _ => do
       match ← recordedPrimitive v with
       | some p => pure (.throw p)
       | none => pure (.unknown "the host throws a string containing an isolated UTF-16 surrogate")
-    | _, _, .ok (.str name) => (.error · "") <$> errorKind name
-    | _, _, _ => throw s!"the recorded call of {fn} has no ending"
+    | _, _, .ok (.str name), _ => (.error · "") <$> errorKind name
+    | _, _, _, .ok (.str why) => pure (.unknown why)
+    | _, _, _, _ => throw s!"the recorded call of {fn} has no ending"
   pure { fn, this, args, result }
 
 /-- A value in a script: a primitive as in a recording, or `["r", k]` for register `k`. -/
@@ -262,6 +266,11 @@ def world (j : Json) : Except String (List Recorded) :=
   | .ok calls => do (← calls.getArr?).toList.mapM recorded
   | .error _ => pure []
 
+def iteratorObservation (j : Json) : Except String Bool :=
+  match j.getObjVal? "iteratorSymbol" with
+  | .ok value => value.getBool?
+  | .error _ => pure false
+
 end Decode
 
 /-- A thrown value, as far as a run in Node is compared with: a primitive with its type, an error by its kind. -/
@@ -271,6 +280,7 @@ def describe {W : World} (s : State W) : Val → String
   | .bool b => if b then "boolean:true" else "boolean:false"
   | .num n => "number:" ++ Num.toString n
   | .str x => "string:" ++ x
+  | .iteratorSymbol => "symbol:Symbol(Symbol.iterator)"
   | .obj a => if isCallable s (.obj a) then "function" else "object"
   | .error .type _ => "TypeError"
   | .error .reference _ => "ReferenceError"
@@ -286,9 +296,14 @@ def showVal : Val → String
   | .bool b => toString b
   | .num n => s!"#{n.toBits}"
   | .str x => (Json.str x).compress
+  | .iteratorSymbol => "Symbol.iterator"
   | .obj a => s!"@{a.region}.{a.index}"
   | .error kind msg => s!"error {reprStr kind} {msg}"
   | .host name => s!"host {name}"
+
+private def showKey : PropertyKey → String
+  | .str k => (Json.str k).compress
+  | .iteratorSymbol => "Symbol.iterator"
 
 def showAddr (a : Addr) : String := s!"@{a.region}.{a.index}"
 
@@ -301,12 +316,12 @@ def showCode : Code → String
   | .derivedBody before args f env =>
     s!"derived {f.name} {f.params} {before.length} {args.length} {env.vars.map fun (x, a) => (x, showAddr a)}"
   | .closure f env fields =>
-    s!"closure {f.name} {f.params} {env.vars.map fun (x, a) => (x, showAddr a)} {showVal env.this} {fields.map (·.1)}"
+    s!"closure {f.name} {f.params} {env.vars.map fun (x, a) => (x, showAddr a)} {showVal env.this} {fields.map fun (k, _) => showKey k}"
   | .host name => s!"host {name}"
   | .opaque code part cells ctor => s!"opaque {code} {part} {cells.map (·.map showAddr)} {ctor}"
 
 def showObj (o : Obj) : String :=
-  s!"{o.proto.map showAddr} {o.props.map fun (k, p) => (k, showProperty p)} {o.code.map showCode} {o.array} {repr o.regexp}"
+  s!"{o.proto.map showAddr} {o.props.map fun (k, p) => (showKey k, showProperty p)} {o.code.map showCode} {o.array} {repr o.regexp}"
 
 def showBinding (b : Binding) : String := s!"{b.value.map showVal} {b.mutable}"
 
@@ -318,23 +333,25 @@ def showState {W : World} (s : State W) : String :=
 
 /-- `s`: the state the run ended in. Its region says where: 0 outside every statement, `i + 1` in the statement
 with identity `i`. `state` is a hash of `showState`. -/
-def report {calls : List Recorded} {scripts : Scripts} (order : List String) (s : State (replay calls scripts))
-    (ending detail : String) : String :=
+def report {calls : List Recorded} {scripts : Scripts} {iteratorSymbol : Bool}
+    (order : List String) (s : State (replay calls scripts iteratorSymbol)) (ending detail : String) : String :=
   (Json.mkObj [("out", Json.arr (s.out.map Json.str)), ("end", ending), ("detail", detail), ("region", s.region),
     ("order", Json.arr (order.toArray.map Json.str)), ("world", s.world.state.problem.getD ""),
     ("left", s.world.state.left.length), ("handed", s.world.handed.size),
     ("state", toString (hash (showState s)))]).compress
 
 def runLine (fuel : Nat) (line : String) (decode := Decode.program) : String :=
-  match Json.parse line >>= fun j => do pure (← decode j, ← Decode.world j, ← Decode.scripts j) with
+  match Json.parse line >>= fun j =>
+    do pure (← decode j, ← Decode.world j, ← Decode.scripts j, ← Decode.iteratorObservation j) with
   | .error msg => report [] (initialState (replay [] []) 0) "malformed" msg
-  | .ok (program, calls, scripts) =>
+  | .ok (program, calls, scripts, iteratorSymbol) =>
     let order := program.evalOrder
-    match runProgram (replay calls scripts) fuel program with
+    let recorded := replay calls scripts iteratorSymbol
+    match runProgram recorded fuel program with
     | .ok () s => report order s "normal" ""
     | .throw v s => report order s "throw" (describe s v)
     | .unknown why s => report order s "unknown" why
-    | .fuel => report order (initialState (replay calls scripts) 0) "fuel" ""
+    | .fuel => report order (initialState recorded 0) "fuel" ""
 
 def strings (names : List String) : Json := Json.arr (names.toArray.map Json.str)
 
@@ -415,16 +432,17 @@ def moveCensus (program : Program) (lines : Option (List String)) : Except Strin
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["--host-names"] =>
+    let ownStringNames (o : Obj) := strings (o.props.filterMap fun (k, _) => k.string?)
     IO.println (Json.mkObj [
       ("prototypes", Json.mkObj [
         ("Object.prototype", strings ("__proto__" :: objectProtoNames)),
         ("Function.prototype", strings (["length", "name", "arguments", "caller"] ++ functionProtoNames)),
         ("Array.prototype", strings ("length" :: arrayProtoNames)),
-        ("Iterator.prototype", strings (iteratorPrototype.props.map Prod.fst)),
-        ("Generator.prototype", strings (generatorPrototype.props.map Prod.fst)),
-        ("GeneratorFunction.prototype", strings (generatorFunctionPrototype.props.map Prod.fst)),
-        ("RegExp.prototype", strings (regexpPrototype.props.map Prod.fst)),
-        ("AsyncFunction.prototype", strings (asyncFunctionPrototype.props.map Prod.fst)),
+        ("Iterator.prototype", ownStringNames iteratorPrototype),
+        ("Generator.prototype", ownStringNames generatorPrototype),
+        ("GeneratorFunction.prototype", ownStringNames generatorFunctionPrototype),
+        ("RegExp.prototype", ownStringNames regexpPrototype),
+        ("AsyncFunction.prototype", ownStringNames asyncFunctionPrototype),
         ("String.prototype", strings stringProtoNames),
         ("Number.prototype", strings numberProtoNames),
         ("Boolean.prototype", strings booleanProtoNames)]),

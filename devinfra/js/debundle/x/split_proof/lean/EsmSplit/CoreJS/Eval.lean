@@ -52,7 +52,8 @@ def addPrototype (a : Addr) (generator : Bool := false) : M W Unit := do
   let p ← alloc {
     proto := some (if generator then generatorProto else objectProto),
     props := if generator then [] else [("constructor", .data (.obj a) true false true)] }
-  modifyObj a fun o => { o with props := o.props ++ [("prototype", .data (.obj p) true false false)] }
+  modifyObj a fun o => { o with props := o.props ++
+    [(PropertyKey.str "prototype", Property.data (.obj p) true false false)] }
 
 /-- A function object for `f`, closed over the bindings of `env` that its code can mean. -/
 def makeFunc (env : Env) (f : Func) : M W Val := do
@@ -91,7 +92,10 @@ def perform (call : Call W) (construct : Val → List Val → M W Val) (code : N
     pure (.value (.prim .undef))
   | .delete o k => do pure (.value (← toW (← deleteProp (← fromW o) (← fromW k))))
   | .has k o => do pure (.value (← toW (← hasProp (← fromW k) (← fromW o))))
-  | .keys o => do pure (.keys (← ownKeys (← fromW o)))
+  | .keys o => do
+    let keys ← ownKeys (← fromW o)
+    let some names := keys.mapM PropertyKey.string? | unknown "symbol property keys cross the opaque host boundary"
+    pure (.keys names)
   | .call f this args => do pure (.value (← toW (← call (← fromW f) (← fromW this) (← args.mapM fromW))))
   | .construct f args => do pure (.value (← toW (← construct (← fromW f) (← args.mapM fromW))))
   | .newObject proto => do
@@ -191,7 +195,7 @@ def derivedScope (before : List Stmt) (body : Func) : Func :=
   .mk body.name .classCtor false body.params (before ++ body.body)
 
 /-- Build the class after evaluating and checking its heritage. -/
-def finishDerived (runMembers : Env → Addr → Addr → List ClassMember → M W (List (Bool × String)))
+def finishDerived (runMembers : Env → Addr → Addr → List ClassMember → M W (List (Bool × PropertyKey)))
     (env : Env) (name : Name) (self : Bool) (members : List ClassMember) (parents : Addr × Option Addr)
     (ctor : Option (List Stmt × List Expr × Func) := none) : M W Val := do
   let proto ← alloc { proto := parents.2, props := [] }
@@ -216,9 +220,9 @@ def constructParent (construct : Val → List Val → M W Val) (parent : Option 
 
 /-- The descriptors of a freshly allocated dense array, in element order. -/
 def arrayObject (vs : List Val) : Obj :=
-  let items := vs.zipIdx.map fun (v, i) => (toString i, Property.data v true true true)
+  let items := vs.zipIdx.map fun (v, i) => (PropertyKey.str (toString i), Property.data v true true true)
   { proto := some arrayProto, array := true,
-    props := items ++ [("length", .data (.num (Float.ofNat vs.length)) true false false)] }
+    props := items ++ [(PropertyKey.str "length", Property.data (.num (Float.ofNat vs.length)) true false false)] }
 
 mutual
 
@@ -397,7 +401,7 @@ def evalProps : Nat → Env → Addr → List PropDef → M W Unit
 
 /-- The members of a class body: methods and accessors are defined now. Of each field, in order, its key is returned
 and whether it is static; its initializer is in the text (`fieldInits`). -/
-def evalMembers : Nat → Env → Addr → Addr → List ClassMember → M W (List (Bool × String))
+def evalMembers : Nat → Env → Addr → Addr → List ClassMember → M W (List (Bool × PropertyKey))
   | 0, _, _, _, _ => outOfFuel
   | _ + 1, _, _, _, [] => pure []
   | n + 1, env, proto, c, m :: ms => do
@@ -420,7 +424,7 @@ def evalMembers : Nat → Env → Addr → Addr → List ClassMember → M W (Li
     pure (field.toList ++ (← evalMembers n env proto c ms))
 
 /-- Fields, in order, on the object at `a`: each initializer runs in `env`, whose `this` is that object. -/
-def evalFields : Nat → Env → Addr → List (String × Expr) → M W Unit
+def evalFields : Nat → Env → Addr → List (PropertyKey × Expr) → M W Unit
   | 0, _, _, _ => outOfFuel
   | _ + 1, _, _, [] => pure ()
   | n + 1, env, a, (k, init) :: rest => do

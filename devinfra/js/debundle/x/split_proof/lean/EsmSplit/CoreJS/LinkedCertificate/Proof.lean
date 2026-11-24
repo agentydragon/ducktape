@@ -13,6 +13,9 @@ namespace CoreJS.LinkedBehavior
 
 attribute [cbv_eval] DenseArray.reduce
 
+-- Reduce the string-key comparisons in ordinary property writes directly.
+attribute [cbv_eval] PropertyKey.str_beq
+
 /-- Quantify over worlds satisfying the host observations used by the certificate. -/
 def EquivalentFor (premises : HostPremises) (source candidate : Program) : Prop :=
   if premises = {} then Equivalent source candidate
@@ -117,7 +120,7 @@ checked lookup avoids expanding the nested interpreter calls in the non-null her
       | some o =>
         match o.code with
         | some (.closure f ..) =>
-          match f.kind, o.props.lookup "prototype" with
+          match f.kind, o.props.lookup (PropertyKey.str "prototype") with
           | .classCtor, some (.data (.obj p) ..) => .ok (a, some p) s
           | _, _ => classParentsNonNull call (.obj a) s
         | _ => classParentsNonNull call (.obj a) s
@@ -132,7 +135,7 @@ checked lookup avoids expanding the nested interpreter calls in the non-null her
       case closure f closed fields =>
         cases hk : f.kind <;> try (simp only [hc, hk]; rfl)
         case classCtor =>
-          cases hp : o.props.lookup "prototype" with
+          cases hp : o.props.lookup (PropertyKey.str "prototype") with
           | none => simp only [hc, hk, hp]; rfl
           | some property =>
             cases property <;> try (simp only [hc, hk, hp]; rfl)
@@ -144,14 +147,14 @@ checked lookup avoids expanding the nested interpreter calls in the non-null her
 /-- An own data property does not need the prototype-walk fuel or accessor dispatch. -/
 @[cbv_eval] private theorem getProp_obj_str (call : Call W) (a : Addr) (key : String) (s : State W) :
     getProp call (.obj a) (.str key) s =
-      match (s.objAt a).bind (fun o => o.props.lookup key) with
+      match (s.objAt a).bind (fun o => o.props.lookup (PropertyKey.str key)) with
       | some (.data v ..) => .ok v s
       | _ => getFrom call a (.obj a) key s := by
   cases ho : s.objAt a with
   | none => rfl
   | some o =>
     simp only [Option.bind_some]
-    cases hp : o.props.lookup key with
+    cases hp : o.props.lookup (PropertyKey.str key) with
     | none => rfl
     | some p =>
       cases p with

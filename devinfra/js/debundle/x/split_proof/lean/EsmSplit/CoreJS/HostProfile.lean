@@ -35,6 +35,9 @@ def bindingIdentity (profile : HostProfile) (name : String) : Option String := d
 
 def identity (profile : HostProfile) : HostRef → Option String
   | .binding name | .property "window" name => profile.bindingIdentity name
+  | .property "Symbol" "iterator" => do
+    guard (profile == .browserPage)
+    return "Symbol.iterator"
   | .property receiver key => do
     guard (profile == .browserPage)
     let owner ← receiver.dropPrefix? "window."
@@ -64,7 +67,9 @@ def assumptions (p : HostPremises) : List String :=
     let read := match ref with
       | .binding name => name
       | .property receiver key => receiver ++ "." ++ key
-    let result := if identity == "window" then "the same page object" else s!"the stable host reference {identity}"
+    let result := if ref == .property "Symbol" "iterator" && identity == "Symbol.iterator" then
+      "the well-known iterator symbol"
+    else if identity == "window" then "the same page object" else s!"the stable host reference {identity}"
     s!"{read} returns {result} without observable effects throughout initialization")
 
 /-- This world selects candidate premises. The certificate independently checks execution

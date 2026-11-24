@@ -191,7 +191,7 @@ theorem reachFrame_toW (r R cells A) (v : Val) (hv : SafeVal A v) :
     ReachFrame r R cells A (fun _ => True) (toW v : M W WVal) := by
   apply ReachFrame.of_frames (frames_toW r R v)
   intro s hs hr
-  cases v <;> try exact ⟨trivial, hs⟩
+  cases v <;> try first | exact ⟨trivial, hs⟩ | exact hs
   case obj a =>
     simp only [toW]
     split
@@ -342,7 +342,7 @@ theorem reachFrame_modifyObj {r R cells A} (away : Away r R A) (a : Addr) (ha : 
       exact hs.closed _ _ hn (.obj ho hm)
 
 theorem reachFrame_ownKeys {r R cells A} (away : Away r R A) (v : Val) (hv : SafeVal A v) :
-    ReachFrame r R cells A (fun _ => True) (ownKeys v : M W (List String)) := by
+    ReachFrame r R cells A (fun _ => True) (ownKeys v : M W (List PropertyKey)) := by
   cases v <;> try exact reachFrame_unknown r R cells A _ _
   case obj a =>
     exact (reachFrame_getObj away (safeVal_obj.1 hv)).bind fun o _ =>
@@ -373,8 +373,13 @@ theorem perform_bindingOrKeys {r R cells A} (away : Away r R A) (call : Call W)
         (reachFrame_setCell away a ha v hv).bind fun _ _ =>
           reachFrame_pure r R cells A (Told.value (.prim .undef)) trivial
   case keys w =>
-    exact (reachFrame_fromW r R cells A w).bind fun v hv =>
-      (reachFrame_ownKeys away v hv).bind fun ks _ => reachFrame_pure r R cells A (Told.keys ks) trivial
+    apply (reachFrame_fromW r R cells A w).bind
+    intro v hv
+    apply (reachFrame_ownKeys away v hv).bind
+    intro ks _
+    split
+    · exact reachFrame_pure r R cells A (Told.keys _) trivial
+    · exact reachFrame_unknown r R cells A _ _
 
 /-- A read can publish an object handle, initialization can copy that handle into another binding, and a later read
 can publish the alias again. The same capability envelope covers the whole sequence, including failed requests. -/

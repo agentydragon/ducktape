@@ -48,7 +48,7 @@ theorem modifyObj_self {s t : State W} {f : Obj → Obj} {a : Addr} {o : Obj}
     have hi : objs[a.index]? = some o := by simpa [hh] using ho
     simp [Array.getElem?_modify, hi]
 
-private theorem defineOwn_preserves_other {s t : State W} {a c : Addr} {key : String} {desc : Desc}
+private theorem defineOwn_preserves_other {s t : State W} {a c : Addr} {key : PropertyKey} {desc : Desc}
     (hne : c ≠ a) (h : defineOwn a key desc s = .ok () t) : t.objAt c = s.objAt c := by
   unfold defineOwn at h
   obtain ⟨o, s1, ho, hrest⟩ := bind_ok h
@@ -67,7 +67,7 @@ private theorem defineOwn_preserves_other {s t : State W} {a c : Addr} {key : St
 
 private theorem evalMembers_instance_preserves_ctor (n : Nat) (env : Env) (proto ctor : Addr)
     (hne : ctor ≠ proto) (ms : List ClassMember) (hm : literalInstanceMembers ms = true)
-    {s t : State W} {keys : List (Bool × String)} {o : Obj} (ho : s.objAt ctor = some o)
+    {s t : State W} {keys : List (Bool × PropertyKey)} {o : Obj} (ho : s.objAt ctor = some o)
     (h : evalMembers n env proto ctor ms s = .ok keys t) : t.objAt ctor = some o := by
   induction n generalizing ms s t keys with
   | zero => cases h
@@ -101,7 +101,7 @@ private theorem evalExpr_plainClass_origin {n : Nat} {env : Env} {name : Name}
     {s t : State W} {v : Val} (h : evalExpr n env (.cls name false ctor ms) s = .ok v t) :
     ∃ a p o, v = .obj a ∧ a.region = s.region ∧ t.objAt a = some o ∧
       o.code = some (.closure ctor (env.capture (ctor.free ++ freeMembers ms)) []) ∧
-      o.props.lookup "prototype" = some (.data (.obj p) false false false) := by
+      o.props.lookup (.str "prototype") = some (.data (.obj p) false false false) := by
   cases n with
   | zero => cases h
   | succ n =>
@@ -163,7 +163,7 @@ theorem plainClassVar_origin {n id : Nat} {env : Env} {x name : Name} {ctor : Fu
     ∃ cell a p o, env.vars.lookup x = some cell ∧ cell.region = id + 1 ∧
       t.cellAt cell = some ⟨some (.obj a), true⟩ ∧ a.region = id + 1 ∧ t.objAt a = some o ∧
       o.code = some (.closure ctor (env.capture (ctor.free ++ freeMembers ms)) []) ∧
-      o.props.lookup "prototype" = some (.data (.obj p) false false false) := by
+      o.props.lookup (.str "prototype") = some (.data (.obj p) false false false) := by
   obtain ⟨u, hexec, rfl⟩ := runUnit_ok h
   cases n with
   | zero => cases hexec

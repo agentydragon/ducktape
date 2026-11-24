@@ -42,8 +42,9 @@ inductive WriteExpr (receiver : Name) (a : Addr) : Nat → Expr → List (String
 
 private theorem setProp_key {call : Call W} {key : Val} (h : toStr key = .ok k) :
     setProp call (.obj a) key v = (setProp call (.obj a) (.str k) v : M W Unit) := by
-  simp only [setProp, toKey, h]
-  rfl
+  have convert : (toKey key : M W PropertyKey) = toKey (.str k) := by
+    cases key <;> first | contradiction | simp only [toStr] at h; contradiction | simp only [toKey, h]; rfl
+  simp only [setProp, convert]
 
 /-- A description and a matching trace determine the expression's complete CoreJS result. -/
 theorem WriteExpr.eval (desc : WriteExpr x a fuel e fields v) (trace : WriteTrace env x a s fields t) :

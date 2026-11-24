@@ -34,28 +34,28 @@ private theorem batchReceiver_read {s : State W} (h : batchReceiver env x s = so
             simp [readVar, hx, hc, getState, bind, pure]
 
 private def appendProps (fields : List (String × Val)) (obj : Obj) : Obj :=
-  { obj with props := obj.props ++ fields.map (fun (k, v) => (k, .data v true true true)) }
+  { obj with props := obj.props ++ fields.map (fun (k, v) => (PropertyKey.str k, Property.data v true true true)) }
 
 private def appendBatch (a : Addr) (fields : List (String × Val)) (s : State W) : State W :=
   { s with heap := s.heap.modify a.region (·.modify a.index (appendProps fields)) }
 
-private def excludes (keys : List String) (props : List (String × Property)) : Bool :=
+private def excludes (keys : List PropertyKey) (props : List (PropertyKey × Property)) : Bool :=
   props.all fun prop => !keys.contains prop.1
 
 private theorem excludes_fresh {fields : List (String × Val)}
-    (check : excludes (fields.map Prod.fst) props = true) :
-    ∀ f ∈ fields, f.1 ∉ props.map Prod.fst := by
+    (check : excludes (fields.map (fun f => .str f.1)) props = true) :
+    ∀ f ∈ fields, PropertyKey.str f.1 ∉ props.map Prod.fst := by
   intro f hf h
   obtain ⟨prop, hp, hkey⟩ := List.mem_map.mp h
   have disjoint := List.all_eq_true.mp check prop hp
-  have key : prop.1 ∈ fields.map Prod.fst := hkey ▸ List.mem_map_of_mem hf
+  have key : prop.1 ∈ fields.map (fun f => PropertyKey.str f.1) := hkey ▸ List.mem_map_of_mem hf
   simp [key] at disjoint
 
 private def batchGuard (a : Addr) (fields : List (String × Val)) (s : State W) : Bool :=
   a != objectProto &&
     match s.objAt a, s.objAt objectProto with
     | some obj, some proto =>
-      let keys := fields.map Prod.fst
+      let keys := fields.map (fun f => PropertyKey.str f.1)
       !obj.array && obj.proto == some objectProto && proto.proto.isNone &&
         excludes keys obj.props && excludes keys proto.props
     | _, _ => false
@@ -75,8 +75,8 @@ private theorem trace_exists {s : State W} (fields : List (String × Val))
     (proto : o.proto = some objectProto) (hne : objectProto ≠ a)
     (root : s.objAt objectProto = some p) (top : p.proto = none)
     (unique : (fields.map Prod.fst).Nodup)
-    (fresh : ∀ f ∈ fields, f.1 ∉ o.props.map Prod.fst)
-    (inherited : ∀ f ∈ fields, p.props.lookup f.1 = none) :
+    (fresh : ∀ f ∈ fields, PropertyKey.str f.1 ∉ o.props.map Prod.fst)
+    (inherited : ∀ f ∈ fields, p.props.lookup (PropertyKey.str f.1) = none) :
     ∃ t, WriteTrace env x a s fields t := by
   induction fields generalizing s o with
   | nil => exact ⟨s, .nil (batchReceiver_read bound)⟩
@@ -94,7 +94,7 @@ private theorem trace_exists {s : State W} (fields : List (String × Val))
     have changed : u.objAt a = some (add o) :=
       modifyObj_self obj (show modifyObj a add s = .ok () u from rfl)
     have root' : u.objAt objectProto = some p := (objAt_modify _ _ _ _ hne).trans root
-    have fresh' : ∀ f ∈ rest, f.1 ∉ (add o).props.map Prod.fst := by
+    have fresh' : ∀ f ∈ rest, PropertyKey.str f.1 ∉ (add o).props.map Prod.fst := by
       intro f hf
       have diff : f.1 ≠ k := fun eq => unique.1 (eq ▸ List.mem_map_of_mem hf)
       simpa [add, appendProps, diff] using fresh f (by simp [hf])
@@ -117,7 +117,7 @@ private theorem checkedTrace {s : State W} (bound : batchReceiver env x s = some
       simp only [ho, hp, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, Option.isNone_iff_eq_none] at objects
       obtain ⟨⟨⟨⟨ordinary, proto⟩, top⟩, own⟩, inherited⟩ := objects
       have fresh := excludes_fresh own
-      have inheritedAbsent : ∀ f ∈ fields, parent.props.lookup f.1 = none :=
+      have inheritedAbsent : ∀ f ∈ fields, parent.props.lookup (PropertyKey.str f.1) = none :=
         fun f hf => lookup_none_iff_not_mem_keys.mpr (excludes_fresh inherited f hf)
       obtain ⟨t, trace⟩ := trace_exists fields bound ho ordinary proto hne hp top unique fresh inheritedAbsent
       let call : Call W := fun _ _ _ => outOfFuel

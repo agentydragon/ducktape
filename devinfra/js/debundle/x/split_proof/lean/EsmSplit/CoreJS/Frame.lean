@@ -319,7 +319,7 @@ theorem makeFunc_keeps (env : Env) (f : Func) {base s : State W} (hb : Extends b
   · exact keeps_bind (initSelf_keeps _ h1 hb hb3) fun _ s4 _ hb4 => (inert_pure _).keeps hb4
 
 /-- A property defined on an object that `base` does not have. -/
-theorem defineOwn_keeps (a : Addr) (k : String) (d : Desc) {base s : State W} (hb : Extends base s)
+theorem defineOwn_keeps (a : Addr) (k : PropertyKey) (d : Desc) {base s : State W} (hb : Extends base s)
     (ha : base.objAt a = none) : (defineOwn a k d s).Keeps base := by
   unfold defineOwn
   refine keeps_bind ((inert_getObj a).keeps hb) fun o s1 _ hb1 => ?_

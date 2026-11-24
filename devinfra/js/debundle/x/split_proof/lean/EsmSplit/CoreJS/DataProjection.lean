@@ -26,7 +26,7 @@ structure ReceiverAt (s : State W) (env : Env) (base : Name) (cell obj : Addr) (
   object : s.objAt obj = some record
 
 def Field.own (record : Obj) (f : Field) : Prop :=
-  ∃ w e c, record.props.lookup f.key = some (.data f.value w e c)
+  ∃ w e c, record.props.lookup (.str f.key) = some (.data f.value w e c)
 
 private def writeField (n : Nat) (env : Env) (f : Field) : M W Flow :=
   match n with

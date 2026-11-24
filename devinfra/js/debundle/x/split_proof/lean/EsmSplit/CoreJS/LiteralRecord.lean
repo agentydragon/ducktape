@@ -27,20 +27,20 @@ theorem freeProps_literalFields (fields : List (String × String)) : freeProps (
 def literalDataProperty (value : String) : Property :=
   .data (.str value) true true true
 
-private def addField (props : List (String × Property)) (pair : String × String) :
-    List (String × Property) :=
+private def addField (props : List (PropertyKey × Property)) (pair : String × String) :
+    List (PropertyKey × Property) :=
   setOwn props pair.1 (literalDataProperty pair.2)
 
 /-- Own properties after defining the string fields in source order. `setOwn`
 keeps the first position of a key and replaces its value on a duplicate. -/
-@[cbv_opaque] def literalProperties (fields : List (String × String)) : List (String × Property) :=
+@[cbv_opaque] def literalProperties (fields : List (String × String)) : List (PropertyKey × Property) :=
   fields.foldl addField []
 
 /-- An ordinary object with those own data properties. -/
 def literalRecord (fields : List (String × String)) : Obj :=
   { proto := some objectProto, props := literalProperties fields }
 
-private theorem lookup_isSome (props : List (String × Property)) (key : String) :
+private theorem lookup_isSome (props : List (PropertyKey × Property)) (key : PropertyKey) :
     (props.lookup key).isSome = props.any (·.1 == key) := by
   induction props with
   | nil => rfl
@@ -50,7 +50,7 @@ private theorem lookup_isSome (props : List (String × Property)) (key : String)
     · simp [h]
     · simp [List.lookup_cons, beq_eq_false_iff_ne.mpr h, beq_eq_false_iff_ne.mpr (Ne.symm h), ih]
 
-private theorem lookup_changed (props : List (String × Property)) (key search : String) (p : Property) :
+private theorem lookup_changed (props : List (PropertyKey × Property)) (key search : PropertyKey) (p : Property) :
     (props.map fun (k, v) => if k == key then (k, p) else (k, v)).lookup search =
       (props.lookup search).map (fun v => if search == key then p else v) := by
   induction props with
@@ -66,7 +66,7 @@ private theorem lookup_changed (props : List (String × Property)) (key search :
       cases h' : k == key <;>
         simp only [List.map_cons, h', Bool.false_eq_true, ↓reduceIte, List.lookup_cons, hfalse, ih]
 
-private theorem lookup_setOwn (props : List (String × Property)) (key search : String) (p : Property) :
+private theorem lookup_setOwn (props : List (PropertyKey × Property)) (key search : PropertyKey) (p : Property) :
     (setOwn props key p).lookup search =
       if search == key then some p else props.lookup search := by
   rw [setOwn, ← lookup_isSome]
@@ -85,9 +85,9 @@ private theorem lookup_setOwn (props : List (String × Property)) (key search : 
       simp [h]
     · simp [beq_eq_false_iff_ne.mpr h']
 
-private theorem lookup_fields (fields : Fields) (props : List (String × Property)) (key : String) :
-    ((fields.foldl addField props).lookup key) =
-      (((fields.reverse).lookup key).map literalDataProperty).orElse (fun _ => props.lookup key) := by
+private theorem lookup_fields (fields : Fields) (props : List (PropertyKey × Property)) (key : String) :
+    ((fields.foldl addField props).lookup (PropertyKey.str key)) =
+      (((fields.reverse).lookup key).map literalDataProperty).orElse (fun _ => props.lookup (PropertyKey.str key)) := by
   induction fields generalizing props with
   | nil => rfl
   | cons a rest ih =>
@@ -95,7 +95,7 @@ private theorem lookup_fields (fields : Fields) (props : List (String × Propert
     simp only [List.foldl_cons, List.reverse_cons, List.lookup_append, List.lookup_cons, List.lookup_nil]
     rw [ih]
     cases rest.reverse.lookup key <;> cases matchKey : key == k <;>
-      simp only [Option.orElse, Option.or, Option.map, addField, lookup_setOwn, matchKey, Bool.false_eq_true,
+      simp only [Option.orElse, Option.or, Option.map, addField, lookup_setOwn, PropertyKey.str_beq, matchKey, Bool.false_eq_true,
         ↓reduceIte]
 
 /-- The fallback after the concrete property equations. Keeping the underlying
@@ -166,7 +166,7 @@ theorem miss {tree : Tree} {keys : List String} {key : String} (atKey : read tre
 end LiteralFieldIndex
 
 theorem lookup_literalProperties (fields : List (String × String)) (key : String) :
-    (literalProperties fields).lookup key = lookupLiteralProperty fields key := by
+    (literalProperties fields).lookup (PropertyKey.str key) = lookupLiteralProperty fields key := by
   simp [literalProperties, lookup_fields, lookupLiteralProperty, lookupLiteralValue]
 
 private theorem modify_allocated (s : State W) (objs : Array Obj)
@@ -204,8 +204,8 @@ private theorem alloc_field (previous : Fields) (k v : String) :
     unfold createData defineOwn
     rw [M.bind_assoc, bind_of_ok hg]
     have harray : (literalRecord previous).array = false := rfl
-    simp only [harray, Bool.false_eq_true, ite_false]
-    have hl : (literalRecord previous).props.lookup k = (previous.reverse.lookup k).map literalDataProperty :=
+    simp only [harray]
+    have hl : (literalRecord previous).props.lookup (PropertyKey.str k) = (previous.reverse.lookup k).map literalDataProperty :=
       lookup_literalProperties previous k
     rw [hl]
     have hd : applyDesc (((previous.reverse).lookup k).map literalDataProperty)
@@ -235,7 +235,7 @@ private theorem eval_fields (n : Nat) (env : Env) (previous fields : Fields)
     rcases p with ⟨k, v⟩
     obtain ⟨n, rfl⟩ : ∃ m, n = m + 2 := by simp at fuel; exact ⟨n - 2, by omega⟩
     have runRest := ih (n + 1) (previous ++ [(k, v)]) (by simp at fuel; omega)
-    have hkey : (toKey (.str k) : M W String) = pure k := rfl
+    have hkey : (toKey (.str k) : M W PropertyKey) = pure (.str k) := rfl
     simp only [List.map_cons, literalField, evalProps, evalExpr, M.pure_bind, M.bind_assoc, hkey]
     change
       (alloc (literalRecord previous) >>= fun a => createData a k (.str v) >>= fun _ =>

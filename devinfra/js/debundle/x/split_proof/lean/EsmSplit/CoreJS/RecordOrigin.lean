@@ -9,19 +9,19 @@ namespace RecordOrigin
 
 def property (kv : String × Expr) : PropDef := .init (.str kv.1) kv.2
 
-private def dataProps (xs : List (String × Val)) : List (String × Property) :=
+private def dataProps (xs : List (String × Val)) : List (PropertyKey × Property) :=
   xs.map fun (k, v) => (k, .data v true true true)
 
 private theorem fresh_key {xs : List (String × Val)} (h : k ∉ xs.map Prod.fst) :
-    (dataProps xs).lookup k = none ∧ (dataProps xs).any (·.1 == k) = false := by
+    (dataProps xs).lookup (PropertyKey.str k) = none ∧ (dataProps xs).any (·.1 == k) = false := by
   induction xs with
   | nil => exact ⟨rfl, rfl⟩
   | cons a rest ih =>
     rcases a with ⟨key, value⟩
     simp only [List.map_cons, List.mem_cons, not_or] at h
     obtain ⟨hl, ha⟩ := ih h.2
-    change (((key, Property.data value true true true) :: dataProps rest).lookup k = none) ∧
-      ((key == k) || (dataProps rest).any (·.1 == k)) = false
+    change (((PropertyKey.str key, Property.data value true true true) :: dataProps rest).lookup (PropertyKey.str k) = none) ∧
+      ((PropertyKey.str key == .str k) || (dataProps rest).any (·.1 == k)) = false
     have hne : key ≠ k := Ne.symm h.1
     simp [List.lookup_cons, beq_eq_false_iff_ne.mpr h.1, hne, hl, ha]
 
@@ -79,7 +79,7 @@ private theorem fields_origin (fuel : Nat) (env : Env) (fs : List (String × Exp
         exact ⟨(k, v) :: ys, by simp [hkeys], by simpa [List.append_assoc] using hobj⟩
 
 private theorem lookup_record (ys : List (String × Val)) (k : String) (hk : k ∈ ys.map Prod.fst) :
-    ∃ v, (record ys).props.lookup k = some (.data v true true true) := by
+    ∃ v, (record ys).props.lookup (PropertyKey.str k) = some (.data v true true true) := by
   induction ys with
   | nil => cases hk
   | cons f tail ih =>
@@ -88,7 +88,7 @@ private theorem lookup_record (ys : List (String × Val)) (k : String) (hk : k �
     · subst key; exact ⟨value, by simp [record, dataProps]⟩
     · simp only [List.map_cons, List.mem_cons] at hk
       obtain ⟨v, hv⟩ := ih (hk.resolve_left heq)
-      exact ⟨v, by simpa only [record, dataProps, List.map_cons, List.lookup_cons,
+      exact ⟨v, by simpa only [record, dataProps, List.map_cons, List.lookup_cons, PropertyKey.str_beq,
         beq_eq_false_iff_ne.mpr heq] using hv⟩
 
 /-- A successful var declaration establishes a binding to an object in the
@@ -100,7 +100,7 @@ theorem literalVar_origin {n id : Nat} {env : Env} {x : Name} {fs : List (String
     (run : runUnit n env id (.decl .var x (.obj (fs.map property))) s = .ok flow t) :
     ∃ cell a o, env.vars.lookup x = some cell ∧ t.cellAt cell = some ⟨some (.obj a), true⟩ ∧
       a.region = id + 1 ∧ t.objAt a = some o ∧
-      ∀ k ∈ fs.map Prod.fst, ∃ v, o.props.lookup k = some (.data v true true true) := by
+      ∀ k ∈ fs.map Prod.fst, ∃ v, o.props.lookup (PropertyKey.str k) = some (.data v true true true) := by
   obtain ⟨u, hexec, rfl⟩ := runUnit_ok run
   cases n with
   | zero => cases hexec
