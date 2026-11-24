@@ -60,6 +60,9 @@ type ingressConfig struct {
 	SettleDeltas bool `mapstructure:"settle_deltas"`
 	// CompactDeltas packs original streamed events into bounded, lossless storage blocks while live.
 	CompactDeltas bool `mapstructure:"compact_deltas"`
+	// CompactExecutionEvidence packs BoundaryRecord and ExecutionProgress events after every reader
+	// replica supports those block kinds. Keep this disabled during a mixed-version rollout.
+	CompactExecutionEvidence bool `mapstructure:"compact_execution_evidence"`
 }
 
 func defaultConfig() config {

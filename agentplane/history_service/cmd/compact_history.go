@@ -25,7 +25,7 @@ func runCompactHistory(ctx context.Context, args []string) error {
 		return err
 	}
 	defer db.Close()
-	history := storage.NewStore(db, storage.Options{})
+	history := storage.NewStore(db, storage.Options{CompactExecutionEvidence: options.includeExecutionEvidence})
 	run := func(id uuid.UUID) error {
 		result, err := history.CompactHistory(ctx, id, options.apply)
 		slog.InfoContext(ctx, "historical compaction Session", "session_id", id, "apply", options.apply,

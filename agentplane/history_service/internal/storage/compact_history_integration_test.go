@@ -107,3 +107,34 @@ func TestHistoricalPackingLeavesOrdinaryEntriesInsideExistingBlockSpans(t *testi
 	assertBlocksDoNotOverlap(t, store, id)
 	assertEntries(t, readPage(t, store, id, 0, 1000).Entries, original...)
 }
+
+func TestHistoricalPackingExecutionEvidenceRequiresExplicitScope(t *testing.T) {
+	writer := NewStore(testDB(t), Options{})
+	id := opened(t, writer)
+	var original []*eventlogpb.EventEntry
+	for index := range 160 {
+		original = append(original, executionEvidenceEntry(uint64(index+1), index%2 == 0))
+	}
+	appendEntries(t, writer, id, original...)
+	defaultDryRun, err := writer.CompactHistory(t.Context(), id, false)
+	if err != nil || defaultDryRun.Entries != 0 || defaultDryRun.Blocks != 0 {
+		t.Fatalf("default historical scope included execution evidence: %+v, %v", defaultDryRun, err)
+	}
+
+	compactor := NewStore(writer.db, Options{CompactExecutionEvidence: true})
+	dryRun, err := compactor.CompactHistory(t.Context(), id, false)
+	if err != nil || dryRun.Entries != int64(len(original)) || dryRun.Blocks != 2 || dryRun.PackedBytes >= dryRun.UncompressedBytes {
+		t.Fatalf("evidence dry run: %+v, %v", dryRun, err)
+	}
+	if raw, blocks := packedRows(t, compactor, id); raw != len(original) || blocks != 0 {
+		t.Fatalf("dry run wrote %d ordinary rows and %d blocks", raw, blocks)
+	}
+	result, err := compactor.CompactHistory(t.Context(), id, true)
+	if err != nil || result != dryRun {
+		t.Fatalf("apply %+v differs from dry run %+v: %v", result, dryRun, err)
+	}
+	assertBlocksDoNotOverlap(t, compactor, id)
+	reader := NewStore(writer.db, Options{})
+	assertEntries(t, readPage(t, reader, id, 0, len(original)).Entries, original...)
+	appendEntries(t, reader, id, original[31:38]...)
+}

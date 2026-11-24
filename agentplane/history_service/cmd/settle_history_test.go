@@ -27,9 +27,16 @@ func TestHistoryMaintenanceRequiresAnExplicitScopeAndWritePolicy(t *testing.T) {
 		if err != nil || one.all || one.session.String() != session || one.apply != apply {
 			t.Fatalf("one Session: %+v %v", one, err)
 		}
+		withEvidence, err := parseHistoryMaintenanceOptions("compact-history", []string{"--session", session, mode, "--include-execution-evidence"})
+		if err != nil || !withEvidence.includeExecutionEvidence {
+			t.Fatalf("execution evidence scope: %+v %v", withEvidence, err)
+		}
 		all, err := parseHistoryMaintenanceOptions("compact-history", []string{"--all", mode})
 		if err != nil || !all.all || all.apply != apply {
 			t.Fatalf("all Sessions: %+v %v", all, err)
 		}
+	}
+	if _, err := parseHistoryMaintenanceOptions("settle-history", []string{"--all", "--apply", "--include-execution-evidence"}); err == nil {
+		t.Fatal("settle-history accepted an unrelated compaction option")
 	}
 }
