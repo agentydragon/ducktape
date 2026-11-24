@@ -191,7 +191,7 @@ For public comparisons, use the wide-table reversal and the 48-reader linked mod
 
 ```sh
 p=//devinfra/js/debundle/x/split_proof
-bbr test "$p/translation/linked:linked_wide_table_reversal_test" "$p/translation/linked:linked_module_graph_scale_test" \
+bbr test "$p/translation/linked:wide_table_reversal_test" "$p/translation/linked:module_graph_scale_test" \
   --test_env=SPLIT_PROOF_TIMINGS=1 --test_output=all --nocache_test_results
 ```
 
