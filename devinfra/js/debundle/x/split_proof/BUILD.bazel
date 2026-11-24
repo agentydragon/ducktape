@@ -1,10 +1,9 @@
-# Keep sibling tools, experiments and fuzz fixtures out of the parent package and Gazelle.
+# Experiments and fuzz scripts have hand-maintained Bazel targets.
 # gazelle:exclude experiments
 # gazelle:exclude fuzz
 
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
 load("//devinfra/lint:linters.bzl", "eslint_test")
-load("//devinfra/python:defs.bzl", "py_binary")
 
 exports_files(
     [
@@ -19,6 +18,7 @@ exports_files(
         "example/controls/effect_order.json",
     ],
     visibility = [
+        "//devinfra/js/debundle/x/split_proof/fuzz:__pkg__",
         "//devinfra/js/debundle/x/split_proof/lean:__pkg__",
         "//devinfra/js/debundle/x/split_proof/lean/generated:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
@@ -54,28 +54,6 @@ eslint_test(
         ":seeded_random",
         "//devinfra/js/debundle/x/split_proof/lowering:lint_sources",
     ],
-)
-
-# keep
-py_binary(
-    name = "render_fuzz",
-    srcs = [
-        "fuzz/bazel_main.py",
-        "fuzz/fuzz.py",
-    ],
-    data = [
-        "example/input/bundle.mjs",
-        "example/spec.json",
-        "//devinfra/js/debundle/x/split_proof/lean:render",
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    env = {
-        "NODE_RUNFILE": "$(rlocationpath @nodejs_linux_amd64//:bin/node)",
-        "RENDER_RUNFILE": "$(rlocationpath //devinfra/js/debundle/x/split_proof/lean:render)",
-    },
-    main = "fuzz/bazel_main.py",
-    tags = ["manual"],
-    deps = ["@rules_python//python/runfiles"],
 )
 
 js_run_binary(

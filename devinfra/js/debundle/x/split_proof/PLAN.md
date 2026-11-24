@@ -349,7 +349,7 @@ Acceptance for every step, after running the [debundle case corpus](debundle_cas
 
 - `unsound-accept` stays at 0. A step that unlocks entries is also a soundness test: the first run of the corpus found two accepted splits that fail to load.
 - The step's entries leave `unsupported` and `strict-*`, or the PR says why one stays.
-- `lean:example_test`, `:render_fuzz`, and the mutation test still pass.
+- `lean:example_test`, `fuzz:render_fuzz`, and the mutation test still pass.
 
 Steps are independent PRs. Steps 2–5 touch different Lean files and can run in parallel. Order by entries unlocked per effort:
 

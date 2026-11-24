@@ -109,7 +109,7 @@ lean_binary(
     name = "render",
     srcs = ["Main.lean"],
     entry = "Main.lean",
-    visibility = ["//devinfra/js/debundle/x/split_proof:__pkg__"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/fuzz:__pkg__"],
     deps = [
         ":example_proof",
         ":fixture_renderer",
