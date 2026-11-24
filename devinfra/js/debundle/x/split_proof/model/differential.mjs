@@ -123,6 +123,7 @@ function describe(v) {
   if (v instanceof Error) return v.constructor.name;
   if (v === null || v === undefined) return String(v);
   if (typeof v === "object" || typeof v === "function") return typeof v;
+  if (typeof v === "symbol") return v === iteratorSymbol ? "symbol:Symbol(Symbol.iterator)" : "symbol";
   return `${typeof v}:${String(v)}`;
 }
 
@@ -140,12 +141,14 @@ const isWellFormed = String.prototype.isWellFormed;
 const symbolConstructor = Symbol;
 const iteratorSymbol = Symbol.iterator;
 
-function observesIteratorSymbol() {
+function symbolObservations() {
   const binding = Object.getOwnPropertyDescriptor(globalThis, "Symbol");
   const member = Object.getOwnPropertyDescriptor(symbolConstructor, "iterator");
-  return (
-    binding?.value === symbolConstructor && member?.value === iteratorSymbol && !member.writable && !member.configurable
-  );
+  const stableConstructor = binding?.value === symbolConstructor;
+  return {
+    symbolConstructor: stableConstructor,
+    iteratorSymbol: stableConstructor && member?.value === iteratorSymbol && !member.writable && !member.configurable,
+  };
 }
 /** A primitive as `Decode.recordedPrimitive` of `Run.lean` reads it. */
 const encode = (v) => {
@@ -220,7 +223,7 @@ async function runFileInNode(file) {
     out.push(format(...args));
     inHost = before;
   };
-  const stableIteratorSymbol = observesIteratorSymbol();
+  const initialSymbols = symbolObservations();
   recording = [];
   for (const w of wrapped) Object.defineProperty(w.owner, w.key, { ...w.descriptor, value: w.proxy });
   let ending;
@@ -235,12 +238,14 @@ async function runFileInNode(file) {
   recording = null;
   console.log = log;
   if (ending.thrown !== undefined || ending.detail === null) ending.detail = describe(ending.thrown);
+  const finalSymbols = symbolObservations();
   return {
     out,
     end: ending.end,
     detail: ending.detail,
     world,
-    iteratorSymbol: stableIteratorSymbol && observesIteratorSymbol(),
+    iteratorSymbol: initialSymbols.iteratorSymbol && finalSymbols.iteratorSymbol,
+    symbolConstructor: initialSymbols.symbolConstructor && finalSymbols.symbolConstructor,
   };
 }
 
@@ -282,8 +287,8 @@ let modelSeconds = 0;
 function runModel(jobs) {
   if (jobs.length === 0) return;
   const input = path.join(work, "programs.jsonl");
-  const recordings = jobs.map(({ program, node }) =>
-    JSON.stringify({ ...program, world: node.world, iteratorSymbol: node.iteratorSymbol })
+  const recordings = jobs.map(({ program, node: { world, iteratorSymbol, symbolConstructor } }) =>
+    JSON.stringify({ ...program, world, iteratorSymbol, symbolConstructor })
   );
   writeFileSync(input, recordings.join("\n") + "\n");
   checkpoint(`CoreJS batch: ${jobs.map((j) => j.label).join("; ")}`);

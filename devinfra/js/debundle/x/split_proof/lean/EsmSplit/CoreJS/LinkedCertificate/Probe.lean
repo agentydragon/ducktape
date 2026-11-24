@@ -87,6 +87,7 @@ private structure ValuePair where
 private def pathKey : PropertyKey → Lean.Json
   | .str name => .str name
   | .iteratorSymbol => Lean.Json.mkObj [("symbol", .str "Symbol.iterator")]
+  | .symbol a => Lean.Json.mkObj [("symbol", .str "fresh"), ("region", Lean.toJson a.region), ("index", Lean.toJson a.index)]
 
 private def displayValue : Val → String
   | .undef => "undefined"
@@ -95,6 +96,7 @@ private def displayValue : Val → String
   | .num n => if n.toBits == 0x8000000000000000 then "-0" else toString n
   | .str s => (s.take 160).toString.quote
   | .iteratorSymbol => "Symbol.iterator"
+  | .symbol a => s!"symbol@{a.region}.{a.index}"
   | .obj _ => "object"
   | .host n => "host value " ++ n
   | .error k msg => s!"{repr k}: {(msg.take 160).toString.quote}"

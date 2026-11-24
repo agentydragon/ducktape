@@ -54,6 +54,7 @@ inductive Prim where
   | globalTypeof (binding : String)
   | globalRef (binding : String)
   | iteratorSymbol
+  | freshSymbol
   | opaqueAmbientRef (binding : String)
   | opaqueConstructorRef (binding : String)
   | opaqueAmbientMemberRef (receiver member : String)

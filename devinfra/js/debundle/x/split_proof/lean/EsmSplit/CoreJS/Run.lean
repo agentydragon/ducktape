@@ -23,6 +23,7 @@ those calls: the next call of the model has to be the next one of the recording,
 receiver and arguments, and ends as it did there. `world` in the output says where the model's calls left the
 recording, if they did, and `left` how many recorded calls the model did not make. A recording with
 `"iteratorSymbol": true` supplies the stable, effect-free observation of the ambient `Symbol.iterator`.
+`"symbolConstructor": true` supplies the stable, effect-free observation of the ambient `Symbol` intrinsic.
 
 `corejs --host-names` prints the members the model gives the host's prototypes, and the host functions it asks the
 world about. `corejs --footprints` checks footprints against a program (`checkFootprints`), and `corejs --moves`
@@ -143,12 +144,11 @@ def showCall (fn : String) (this : Option Primitive) (args : List (Option Primit
   s!"{fn} on {showArg this} with ({", ".intercalate (args.map showArg)})"
 
 /-- The world a recording describes. A call that is not the next recorded one stops the replay and throws. -/
-def replay (calls : List Recorded) (scripts : Scripts := []) (iteratorSymbol : Bool := false) : World where
+def replay (calls : List Recorded) (scripts : Scripts := []) (refs : List (HostRef × String) := []) : World where
   σ := Replay
   init := { left := calls, scripts }
   talk := Replay.told
-  hostRef ref st :=
-    if iteratorSymbol && ref == .property "Symbol" "iterator" then some (.identity "Symbol.iterator", st) else none
+  hostRef ref st := (refs.lookup ref).map fun identity => (.identity identity, st)
   step fn this args st :=
     let stop (why : String) : HostResult × Replay :=
       (.throw (.str "world: not the recorded call"), { st with left := [], problem := st.problem.or (some why) })
@@ -266,14 +266,19 @@ def world (j : Json) : Except String (List Recorded) :=
   | .ok calls => do (← calls.getArr?).toList.mapM recorded
   | .error _ => pure []
 
-def iteratorObservation (j : Json) : Except String Bool :=
-  match j.getObjVal? "iteratorSymbol" with
-  | .ok value => value.getBool?
-  | .error _ => pure false
+def hostRefs (j : Json) : Except String (List (HostRef × String)) := do
+  let observed key := match j.getObjVal? key with
+    | .ok value => value.getBool?
+    | .error _ => pure false
+  let iteratorSymbol ← observed "iteratorSymbol"
+  let symbolConstructor ← observed "symbolConstructor"
+  return (if iteratorSymbol then [(.property "Symbol" "iterator", "Symbol.iterator")] else []) ++
+    (if symbolConstructor then [(.binding "Symbol", "intrinsic.Symbol")] else [])
 
 end Decode
 
-/-- A thrown value, as far as a run in Node is compared with: a primitive with its type, an error by its kind. -/
+/-- Describe a thrown value for the Node comparison. Fresh symbols are identified by type here;
+their identity is observable inside the program. -/
 def describe {W : World} (s : State W) : Val → String
   | .undef => "undefined"
   | .null => "null"
@@ -281,6 +286,7 @@ def describe {W : World} (s : State W) : Val → String
   | .num n => "number:" ++ Num.toString n
   | .str x => "string:" ++ x
   | .iteratorSymbol => "symbol:Symbol(Symbol.iterator)"
+  | .symbol _ => "symbol"
   | .obj a => if isCallable s (.obj a) then "function" else "object"
   | .error .type _ => "TypeError"
   | .error .reference _ => "ReferenceError"
@@ -289,7 +295,9 @@ def describe {W : World} (s : State W) : Val → String
   | .error .uri _ => "URIError"
   | .host _ => "host"
 
-/-- A value as text, an object by its address. -/
+private def showSymbol (a : Addr) : String := s!"symbol@{a.region}.{a.index}"
+
+/-- A value as text, an object or a fresh symbol by its address. -/
 def showVal : Val → String
   | .undef => "undefined"
   | .null => "null"
@@ -297,6 +305,7 @@ def showVal : Val → String
   | .num n => s!"#{n.toBits}"
   | .str x => (Json.str x).compress
   | .iteratorSymbol => "Symbol.iterator"
+  | .symbol a => showSymbol a
   | .obj a => s!"@{a.region}.{a.index}"
   | .error kind msg => s!"error {reprStr kind} {msg}"
   | .host name => s!"host {name}"
@@ -304,6 +313,7 @@ def showVal : Val → String
 private def showKey : PropertyKey → String
   | .str k => (Json.str k).compress
   | .iteratorSymbol => "Symbol.iterator"
+  | .symbol a => showSymbol a
 
 def showAddr (a : Addr) : String := s!"@{a.region}.{a.index}"
 
@@ -333,8 +343,8 @@ def showState {W : World} (s : State W) : String :=
 
 /-- `s`: the state the run ended in. Its region says where: 0 outside every statement, `i + 1` in the statement
 with identity `i`. `state` is a hash of `showState`. -/
-def report {calls : List Recorded} {scripts : Scripts} {iteratorSymbol : Bool}
-    (order : List String) (s : State (replay calls scripts iteratorSymbol)) (ending detail : String) : String :=
+def report {calls : List Recorded} {scripts : Scripts} {refs : List (HostRef × String)}
+    (order : List String) (s : State (replay calls scripts refs)) (ending detail : String) : String :=
   (Json.mkObj [("out", Json.arr (s.out.map Json.str)), ("end", ending), ("detail", detail), ("region", s.region),
     ("order", Json.arr (order.toArray.map Json.str)), ("world", s.world.state.problem.getD ""),
     ("left", s.world.state.left.length), ("handed", s.world.handed.size),
@@ -342,11 +352,11 @@ def report {calls : List Recorded} {scripts : Scripts} {iteratorSymbol : Bool}
 
 def runLine (fuel : Nat) (line : String) (decode := Decode.program) : String :=
   match Json.parse line >>= fun j =>
-    do pure (← decode j, ← Decode.world j, ← Decode.scripts j, ← Decode.iteratorObservation j) with
+    do pure (← decode j, ← Decode.world j, ← Decode.scripts j, ← Decode.hostRefs j) with
   | .error msg => report [] (initialState (replay [] []) 0) "malformed" msg
-  | .ok (program, calls, scripts, iteratorSymbol) =>
+  | .ok (program, calls, scripts, refs) =>
     let order := program.evalOrder
-    let recorded := replay calls scripts iteratorSymbol
+    let recorded := replay calls scripts refs
     match runProgram recorded fuel program with
     | .ok () s => report order s "normal" ""
     | .throw v s => report order s "throw" (describe s v)

@@ -299,7 +299,7 @@ private theorem reachFrame_protoProp {r R cells A} (away : Away r R A) (call : C
     (root : A (.obj objectProto)) (owner : String) (names : List String)
     (base : Val) (hb : SafeVal A base) (key : PropertyKey) :
     ReachFrame r R cells A (SafeVal A) (protoProp call owner names base key) := by
-  cases key <;> simp only [protoProp] <;> split
+  cases key <;> simp only [protoProp] <;> try split
   all_goals first
   | exact reachFrame_pure r R cells A _ (by simp [SafeVal, Val.nodes])
   | exact reachFrame_getFrom away call framed root base hb _
@@ -316,7 +316,7 @@ private theorem reachFrame_hostMember {r R cells A} (name key : String) :
 
 private theorem stringOwn_safe {A s key v} (h : stringOwn s key = some (.ok v)) : SafeVal A v := by
   cases key with
-  | iteratorSymbol => cases h
+  | iteratorSymbol | symbol _ => cases h
   | str key =>
     simp only [stringOwn] at h
     split at h
@@ -362,7 +362,7 @@ theorem reachFrame_getProp {r R cells A} (away : Away r R A) (call : Call W)
     intro k _
     cases k with
     | str k => exact reachFrame_hostMember name k
-    | iteratorSymbol => exact reachFrame_unknown r R cells A _ _
+    | iteratorSymbol | symbol _ => exact reachFrame_unknown r R cells A _ _
 
 /-- Reading a property preserves reachability when calls to retrieved getters do. -/
 theorem perform_get {r R cells A} (away : Away r R A) (call : Call W)

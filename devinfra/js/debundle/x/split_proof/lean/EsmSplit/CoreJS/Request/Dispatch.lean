@@ -96,6 +96,17 @@ theorem reachFrame_prim {r R cells A} (away : Away r R A) (call : Call W) (hf : 
     split
     · exact reachFrame_pure r R cells A (P := SafeVal A) Val.iteratorSymbol (by simp [SafeVal, Val.nodes])
     · exact reachFrame_unknown r R cells A _ _
+  | freshSymbol =>
+    apply (reachFrame_readHostRef r R cells A (.binding "Symbol")).bind
+    intro value _
+    have fresh : ReachFrame r R cells A (SafeVal A)
+        (Val.symbol <$> alloc { proto := none, props := [] } : M W Val) :=
+      (reachFrame_alloc _ (by simp [Obj.nodes]) objects).bind fun a _ =>
+        reachFrame_pure r R cells A (Val.symbol a) (by simp [SafeVal, Val.nodes])
+    repeat' first
+      | exact fresh
+      | exact reachFrame_unknown r R cells A _ _
+      | split
   | opaqueAmbientRef name | opaqueConstructorRef name => exact reachFrame_unknown r R cells A _ _
   | opaqueAmbientMemberRef receiver member => exact reachFrame_unknown r R cells A _ _
   | log => exact reachFrame_prim_log call args

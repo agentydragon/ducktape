@@ -86,7 +86,7 @@ theorem copySpread_le {call call' : Call W} (h : Call.le call call') (target : A
 
 theorem protoProp_le {call call' : Call W} (h : Call.le call call') (owner : String) (names : List String) (base : Val)
     (k : PropertyKey) : protoProp call owner names base k ⊑ protoProp call' owner names base k := by
-  cases k <;> simp only [protoProp] <;> split
+  cases k <;> simp only [protoProp] <;> try split
   all_goals first | exact M.le_refl _ | exact getFrom_le h _ _ _
 
 theorem getProp_le {call call' : Call W} (h : Call.le call call') (base key : Val) :
