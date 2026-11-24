@@ -138,7 +138,10 @@ lean_binary(
     # `lean_binary` runs the entry with `lean --run` on each call: it elaborates the entry and interprets the checker,
     # about ten times slower than the native build of `lake build`. The tests that call it are `medium` or larger.
     entry = "EsmSplit/TranslateMain.lean",
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/effects:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
+    ],
     deps = [
         ":effects",
         ":planner",
@@ -153,6 +156,7 @@ lean_binary(
     entry = "EsmSplit/LowerMain.lean",
     visibility = [
         "//devinfra/js/debundle/x/split_proof:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/effects:__pkg__",
         "//devinfra/js/debundle/x/split_proof/experiments/splits:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
     ],

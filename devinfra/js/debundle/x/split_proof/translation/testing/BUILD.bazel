@@ -59,5 +59,9 @@ js_library(
 js_library(
     name = "program_generator",
     srcs = glob(["gen/*.mjs"]),
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/effects:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
+    ],
     deps = ["//devinfra/js/debundle/x/split_proof:seeded_random"],
 )

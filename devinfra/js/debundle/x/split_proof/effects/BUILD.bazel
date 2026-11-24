@@ -1,14 +1,5 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
 load("//devinfra/lint:linters.bzl", "eslint_test")
-
-# The golden cases for the effect analysis. The tests that run them are `effects_cases_test` and
-# `effects_permutations_test` in //devinfra/js/debundle/x/split_proof/translation, beside the checker's other
-# tests.
-js_library(
-    name = "run",
-    srcs = ["run.mjs"],
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
-)
 
 js_library(
     name = "cases",
@@ -19,7 +10,6 @@ js_library(
         "debug/p1_known_gaps/cases.mjs",
         "targeted.mjs",
     ],
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
     deps = ["//devinfra/js/debundle/x/split_proof:seeded_random"],
 )
 
@@ -33,4 +23,123 @@ js_library(
 eslint_test(
     name = "eslint_test",
     srcs = [":lint_sources"],
+)
+
+# The golden cases of the effect analysis: what each unit of a small bundle touches, and Node's verdict on reorders.
+_TRANSLATE = "//devinfra/js/debundle/x/split_proof/lean:translate"
+
+_EFFECTS_CASES_DATA = [
+    ":cases",
+    "//devinfra/js/debundle/x/split_proof/translation:pair",
+    _TRANSLATE,
+    "//devinfra/js/debundle/x/split_proof/lean:lower",
+]
+
+_EFFECTS_CASES_ENV = {
+    "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
+    "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
+}
+
+js_test(
+    name = "effects_cases_test",
+    size = "medium",
+    data = _EFFECTS_CASES_DATA,
+    entry_point = "run.mjs",
+    env = _EFFECTS_CASES_ENV,
+    shard_count = 4,
+)
+
+js_test(
+    name = "effects_known_gaps_test",
+    size = "medium",
+    args = ["--known-gaps"],
+    data = _EFFECTS_CASES_DATA + ["//devinfra/js/debundle/x/split_proof/translation:generator_gap_cases"],
+    entry_point = "run.mjs",
+    env = _EFFECTS_CASES_ENV,
+)
+
+js_test(
+    name = "effects_generated_known_gaps_test",
+    size = "medium",
+    args = [
+        "--generated-known-gaps",
+        "--seed",
+        "20261121",
+    ],
+    data = _EFFECTS_CASES_DATA + [
+        "//devinfra/js/debundle/x/split_proof/translation/testing:program_generator",
+    ],
+    entry_point = "run.mjs",
+    env = _EFFECTS_CASES_ENV,
+)
+
+js_test(
+    name = "effects_permutations_test",
+    size = "large",
+    args = [
+        "--permutations",
+        "3",
+        "--seed",
+        "1",
+    ],
+    data = _EFFECTS_CASES_DATA,
+    entry_point = "run.mjs",
+    env = _EFFECTS_CASES_ENV,
+    shard_count = 4,
+    tags = ["manual"],
+)
+
+js_test(
+    name = "effects_targeted_fuzz_test",
+    size = "medium",
+    args = [
+        "--seed",
+        "20261121",
+    ],
+    data = _EFFECTS_CASES_DATA,
+    entry_point = "run.mjs",
+    env = {
+        "CASES": "./targeted.mjs",
+        "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
+        "TRANSLATE": "$(rootpath " + _TRANSLATE + ")",
+    },
+)
+
+_REFLECTIVE_RECEIVER_DATA = _EFFECTS_CASES_DATA + [
+    "//devinfra/js/debundle/x/split_proof/translation/testing:program_generator",
+    "reflective_receivers.mjs",
+]
+
+_REFLECTIVE_RECEIVER_ENV = dict(
+    _EFFECTS_CASES_ENV,
+    CASES = "./reflective_receivers.mjs",
+)
+
+js_test(
+    name = "reflective_receivers_test",
+    size = "medium",
+    args = [
+        "--seed",
+        "20261121",
+    ],
+    data = _REFLECTIVE_RECEIVER_DATA,
+    entry_point = "run.mjs",
+    env = _REFLECTIVE_RECEIVER_ENV,
+)
+
+js_test(
+    name = "reflective_receivers_second_seed_test",
+    size = "medium",
+    args = [
+        "--seed",
+        "77",
+    ],
+    data = _REFLECTIVE_RECEIVER_DATA,
+    entry_point = "run.mjs",
+    env = _REFLECTIVE_RECEIVER_ENV,
+)
+
+js_test(
+    name = "prototype_observations_test",
+    entry_point = "prototype_observations_test.mjs",
 )
