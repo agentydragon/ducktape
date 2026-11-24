@@ -15,8 +15,6 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const ownershipDatabaseURLEnv = "AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL"
-
 // runOwnershipCommand handles the central sampler image's one-off ownership subcommands. The
 // database URL comes from the same Secret-backed environment variable as normal sampler startup.
 func runOwnershipCommand(ctx context.Context, args []string, stdout io.Writer) (bool, error) {
@@ -51,9 +49,9 @@ func runOwnershipCommand(ctx context.Context, args []string, stdout io.Writer) (
 		return true, errors.New("--manifest is required for forward and reverse")
 	}
 
-	databaseURL := strings.TrimSpace(os.Getenv(ownershipDatabaseURLEnv))
+	databaseURL := strings.TrimSpace(os.Getenv(samplerDatabaseURLEnv))
 	if databaseURL == "" {
-		return true, fmt.Errorf("%s is required", ownershipDatabaseURLEnv)
+		return true, fmt.Errorf("%s is required", samplerDatabaseURLEnv)
 	}
 	databaseURL = strings.Replace(databaseURL, "postgresql+asyncpg://", "postgresql://", 1)
 	db, err := sql.Open("postgres", databaseURL)

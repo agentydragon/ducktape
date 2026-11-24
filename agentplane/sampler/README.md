@@ -76,8 +76,9 @@ it serves.
 Migration 21 adds the sampler journal's block table. With `event_block_writes` enabled, the
 writer seals completed 32-cursor windows in the append transaction. Each block compresses up to
 32 consecutive exact event frames and decodes to at most 2 MiB. The live tail, oversized frames,
-and groups that do not benefit from compression stay in standalone rows. Standalone rows before
-the current window stay readable without a backfill. The exporter and recovery read both forms.
+and groups that do not benefit from compression stay in standalone rows. The
+[historical packing Job](#historical-journal-packing) can pack earlier completed windows.
+The exporter and recovery read both forms.
 
 Deploy the block-capable image across all replicas with `event_block_writes` omitted before
 enabling it. To roll back block writes, remove the setting and roll the block-capable image
@@ -176,6 +177,46 @@ when the shared host exits.
 
 TODO: Evaluate a stronger kernel-enforced isolation boundary for cells or Sessions if aggregate
 container limits stop meeting the production resource contract.
+
+## Historical journal packing
+
+The sampler image provides `compact-journal` for an online backfill of retained standalone rows.
+It takes `--session ID` or `--all`, and requires an explicit `--dry-run` or `--apply`. Run it
+after migration 21 and the rollout of block-capable readers to every sampler replica. The Job
+image must also contain the maintenance command. Backfill works independently of the live
+`event_block_writes` setting.
+
+From the repo root, create a staging Job using the deployed image and the existing sampler
+database Secret. This Bash function prints the Job name:
+
+```bash
+sampler_pack() (
+  set -euo pipefail
+  k=(kubectl -n agentplane-staging)
+  image=$("${k[@]}" get deployment central-sampler \
+    -o jsonpath='{.spec.template.spec.containers[?(@.name=="central-sampler")].image}')
+  "${k[@]}" create --dry-run=client -f agentplane/sampler/ops/compact-journal-job.yaml -o json |
+    jq --arg image "$image" --args '
+      .spec.template.spec.containers[0] |=
+        (.image = $image | .args = (["compact-journal"] + $ARGS.positional))
+    ' -- "$@" |
+    "${k[@]}" create -f - -o name
+)
+job=$(sampler_pack --all --dry-run)
+kubectl -n agentplane-staging logs -f "$job" --pod-running-timeout=5m
+kubectl -n agentplane-staging wait --for=condition=complete --timeout=1m "$job"
+```
+
+The per-Session summary counts the events and blocks selected, the existing stored frame bytes,
+and the packed payload bytes. Indexes, row overhead and released filesystem space are separate
+measurements. Preview a Session with `sampler_pack --session "$session_id" --dry-run`, then use
+`--apply` on the same scope. Use `sampler_pack --all --apply` for all Sessions. The command
+bounds each Session's pass by its starting cursor and leaves the incomplete tail for live writes.
+Progress logs report the current cursor during long sessions. Apply pauses 50 ms between changed
+windows. To stop it, delete the Job; a later run skips rows already moved into committed blocks.
+Watch CNPG free space,
+replication lag and WAL archival while it runs, especially if History maintenance shares the cluster.
+See the [staging Job template](ops/compact-journal-job.yaml).
 
 ## Agentplane opt in
 

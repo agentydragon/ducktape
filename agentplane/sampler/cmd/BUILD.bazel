@@ -9,6 +9,7 @@ package(default_visibility = ["//visibility:public"])
 go_library(
     name = "main_lib",
     srcs = [
+        "compact_journal.go",
         "main.go",
         "ownership.go",
     ],
