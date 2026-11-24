@@ -9,11 +9,10 @@ use thiserror::Error;
 use crate::report_builders::build_dependency_graph_report;
 use analysis::assignment_assembly::{AtomicGroupConflict, assemble_assignment};
 use analysis::atomic_groups::{AtomicGroup, DependencyGraphAndAtomicGroups};
-use analysis::graph::build_module_quotient;
 use analysis::module_assignment::ModuleAssignment;
 use analysis::{
     BindingCatalogue, BindingScopeError, DependencyGraphReport, EntryDestination, ModuleId,
-    ModuleQuotient, PlannedModule, StructuralPlacementCheck,
+    PlannedModule, StructuralPlacementCheck,
 };
 use source_identity::SourceUnitId;
 
@@ -44,15 +43,13 @@ pub enum AssignmentAnalysisBuildError {
 }
 
 /// Per-chunk assignment analysis: the spec's assignment of the
-/// dependency graph, plus the realizability views derived from it
-/// (`module_quotient`, `import_order`, `assembly_conflicts`) and small
-/// caches downstream consumers consult on the hot path.
+/// dependency graph, atomic-group conflicts, and the concrete import schedule.
 ///
 /// Holds a reference to the [`AssignmentInputs`] it was built
 /// from (`inputs`); report emission and downstream emit code reach
 /// inputs (`bindings`, `planned_modules`, etc.) through `inputs()`.
 /// Fields are private so the assignment cannot change independently of its
-/// cached quotient, SCCs, and import order.
+/// cached realizability verdict and import schedule.
 #[derive(Debug, Clone)]
 pub struct AssignmentAnalysis {
     inputs: Arc<AssignmentInputs>,
@@ -72,11 +69,6 @@ pub struct AssignmentAnalysis {
     /// by construction; the materializer bails on these before
     /// emitting code.
     assembly_conflicts: Vec<AtomicGroupConflict>,
-    module_quotient: ModuleQuotient,
-    /// SCC partition of `module_quotient` in `tarjan_scc` reverse-
-    /// topological order. Precomputed at build time for
-    /// `report_builders::build_quotient_scc_reports`.
-    module_quotient_sccs: Vec<Vec<ModuleId>>,
     /// The author-supplied shared priority, retained exactly for reports/plans.
     import_priority: Vec<spec::ModulePath>,
     import_schedule: EsmImportSchedule,
@@ -546,10 +538,6 @@ impl AssignmentAnalysis {
         &self.atomic_groups
     }
 
-    pub fn module_quotient(&self) -> &ModuleQuotient {
-        &self.module_quotient
-    }
-
     /// Canonical report path for a destination. Real output paths come from
     /// their `PlannedModule`; the entry keeps the historic report label at
     /// this serialization boundary without becoming a planned output.
@@ -599,12 +587,6 @@ impl AssignmentAnalysis {
         };
         let assignment = outcome.assignment;
         let assembly_conflicts = outcome.conflicts;
-        let module_quotient = build_module_quotient(&dependency_graph, &assignment);
-        // Cache the module-quotient SCC partition so downstream consumers
-        // (`report_builders::build_quotient_scc_reports`, the validator's
-        // verdict path) share one Tarjan walk instead of each
-        // recomputing it.
-        let module_quotient_sccs = module_quotient.sccs();
         let inputs = Arc::new(AssignmentInputs::build(
             chunk_id,
             dependency_graph,
@@ -625,20 +607,10 @@ impl AssignmentAnalysis {
             assignment,
             atomic_groups,
             assembly_conflicts,
-            module_quotient,
-            module_quotient_sccs,
             import_priority: priority.to_vec(),
             import_schedule,
             realizability: OnceLock::from(validation.verdict),
         })
-    }
-
-    /// SCC partition of `module_quotient` (the module quotient), in
-    /// `tarjan_scc` reverse-topological order. Precomputed at build
-    /// time and shared with downstream consumers in lieu of a fresh
-    /// Tarjan walk.
-    pub fn module_quotient_sccs(&self) -> &[Vec<ModuleId>] {
-        &self.module_quotient_sccs
     }
 
     /// Concrete schedule retained by the gate, effect sweeps and emitter.

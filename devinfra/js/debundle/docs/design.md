@@ -3973,35 +3973,30 @@ the dep graph captures that read without special-case logic. If the spec also
 gives `mod_a` an at-init read of something in `mod_b`, the cycle is mutual and
 rejected.
 
-## AssignmentInputs + `AssignmentAnalysis`: dependency graph plus quotient
+## Assignment inputs and analysis
 
 The runtime data structures the validator and emitter both consume are a pair:
 the `gate` crate's per-chunk `AssignmentInputs` (inputs + IR, built from the
 spec-independent `DependencyGraphAndAtomicGroups`) and a
 `AssignmentAnalysis` wrapping it (assignment + derived realizability views).
-Together they carry the chunk's statement facts, the binding catalogue, the
-explicit logical modules, the dependency graph, and the module dep graph derived by
-quotienting that dependency graph under the spec assignment.
-
-Statement facts feed the dependency graph (stored on `AssignmentInputs`), and the
-module dep graph is a quotient of that dependency graph under the current spec
-assignment (stored on `AssignmentAnalysis`). ``AssignmentAnalysis`::inputs()`
-returns the shared inputs; `module_quotient()` and `module_quotient_sccs()` expose
-the derived module graph. `ValidatedAssignment::assignment_analysis()` retains
-the accepted analysis while lowering projects its emission placement.
+Statement facts feed the dependency graph, which `AssignmentInputs` stores
+along with the binding catalogue and explicit logical modules.
+`AssignmentAnalysis::inputs()` returns these shared inputs. Full graph reporting
+projects the dependency graph onto the spec assignment and computes the
+structural SCCs of that quotient. `ValidatedAssignment::assignment_analysis()`
+retains the accepted analysis while lowering projects its emission placement.
 
 `CandidatePreflight::prepare` computes the realizability validation, emitted
 order, and structural placement of one immutable assignment once; its
 `CandidateEvaluation` retains that validation beside the diagnostic sweeps and
 yields a `ValidatedAssignment` only when atomic-group, schedule, and
 cross-destination rebinding checks pass. Lowering requires this immutable borrow
-of the checked assignment. Assignment inputs and
-derived graph views are private and exposed only through immutable accessors, so
-callers cannot change the assignment independently of its retained concrete
-import schedule or quotient. Rejection reports remain available to diagnostics
-without constructing an emission capability. This checks the assignment and
-shared schedule; vendor consumer and final export checks still run on the
-emitted files.
+of the checked assignment. Assignment inputs and analysis are exposed through
+immutable accessors, so callers cannot change the assignment independently of
+its retained concrete import schedule. Rejection reports remain available to
+diagnostics without constructing an emission capability. This checks the
+assignment and shared schedule. Vendor consumer and final export checks still
+run on the emitted files.
 
 `BindingId` carries the interned source `ChunkId` together with the full SWC
 `Id` (symbol and `SyntaxContext`). `BindingCatalogue` stores that chunk identity

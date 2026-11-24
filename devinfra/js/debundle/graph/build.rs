@@ -315,10 +315,8 @@ impl From<DuplicateTopLevelDeclaration> for DependencyGraphBuildError {
 }
 
 /// Build the fine dependency graph from per-statement facts under the
-/// per-chunk [`GraphOptions`]. Pure IR construction: no module
-/// assignment, no quotient. Module-level dependencies are derived later
-/// by [`build_module_quotient`] given a [`ModuleAssignment`] mapping source units to
-/// destination modules.
+/// per-chunk [`GraphOptions`]. Module-level dependencies are derived later
+/// by projecting edges through a [`ModuleAssignment`].
 ///
 /// `commuting_statements` are the chunk's resolved author premises; each is
 /// applied by [`apply_commuting_statements`] after every edge exists, so the
@@ -326,7 +324,6 @@ impl From<DuplicateTopLevelDeclaration> for DependencyGraphBuildError {
 /// edges a premise made inert. Entries that inert nothing are returned beside
 /// the graph as warnings.
 ///
-/// [`build_module_quotient`]: super::quotient::build_module_quotient
 /// [`ModuleAssignment`]: crate::module_assignment::ModuleAssignment
 pub fn build_dependency_graph_with(
     facts: &[StatementFacts],
