@@ -56,7 +56,7 @@ private inductive BodyFormat where
   | structural (pivots : Std.HashSet Nat) (location : LinkedDeployment.Access)
 
 private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (imports : List Name)
-    (origin : Nat) (j : Json) (exported : Bool) : Except String (Stmt × List Name) := do
+    (origin : Nat) (providerSite : Option (String × Nat)) (j : Json) (exported : Bool) : Except String (Stmt × List Name) := do
   if let .structural pivots location := format then
     unless pivots.contains origin do
       -- A whole-unit opaque hoist represents ordinary and async functions.
@@ -65,7 +65,10 @@ private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (impo
       if Lower.typ j == "FunctionDeclaration" && Lower.flag j "generator" then
         if let some why := Lower.outsideModel false j then throw why
       else
-        let s ← OpaqueInput.unit origin j location.unitNames[origin]?
+        let names := match providerSite with
+          | none => location.entryAccess.unitNames[origin]?
+          | some (name, ordinal) => location.providers[name]?.bind fun a => a.unitNames[ordinal]?
+        let s ← OpaqueInput.unit origin j names
         return (s, if exported then (Lower.topDefs j).eraseDups else [])
   let ast := ((numberFunctions origin j).run 1).1
   if exported then
@@ -74,7 +77,7 @@ private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (impo
   return (← FromESTree.linkedUnit imports ast profile, [])
 
 private def parse (format : BodyFormat) (profile : HostProfile) (path : String) (nodes : Array Json)
-    (base : Nat := 0) (origins : Option (Array Nat) := none) : Except String Parsed := do
+    (base : Nat := 0) (origins : Option (Array Nat) := none) (provider : Bool := false) : Except String Parsed := do
   let mut imports := #[]
   for j in nodes do
     if (← typ j) == "ImportDeclaration" then
@@ -89,7 +92,7 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
         | some ids =>
           let some id := ids[units.size]? | throw "emitted body length differs from the placement"
           pure id
-      format.lower profile names origin ast exported
+      format.lower profile names origin (if provider then some (path, i) else none) ast exported
     match ← typ j with
     | "ImportDeclaration" => pure ()
     | "ExportNamedDeclaration" =>
@@ -122,7 +125,7 @@ private def readProviders (format : BodyFormat) (profile : HostProfile) (provide
   let mut offset := base
   for (name, file) in providers do
     let nodes ← (ESTreeUnits.nodes file).mapError fun why => s!"{name}: {why}"
-    let p ← (parse format profile name nodes offset).mapError fun why => s!"{name}: {why}"
+    let p ← (parse format profile name nodes offset (provider := true)).mapError fun why => s!"{name}: {why}"
     for req in p.imports do
       unless names.contains req.source do throw s!"{name}: missing provider dependency {req.source}"
     modules := modules.push (p.numbered name offset)

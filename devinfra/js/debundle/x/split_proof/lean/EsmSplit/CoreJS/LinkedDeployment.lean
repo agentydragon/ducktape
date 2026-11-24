@@ -15,19 +15,20 @@ structure Input where
   assets : Json
   before : Std.HashMap String ModuleLocation.Resource
 
-structure Access where
+structure ModuleAccess where
   unitNames : Std.HashMap Nat (List Name) := {}
   imports : List Import := []
   nativeUrl : Option String := none
 
-/-- Read the external graph for each location-sensitive unit. An overlay at the
-same effective URLs replaces only the plan's paths. The paired input check
-independently verifies the syntax and linkage at each of those paths. -/
-def check (inputs : Input) (source providers : Json) (plan : EsmSplit.Plan) : Except String Access := do
-  let resources (name : String) := inputs.before[name]?
-  let sites ← ModuleLocation.check source inputs.entry plan resources resources inputs.nativeRecord
-  let static := (← providers.getObj?).toList.map Prod.fst
-  let linked := plan.entry :: static
+structure Access where
+  entryAccess : ModuleAccess := {}
+  providers : Std.HashMap String ModuleAccess := {}
+
+/-- Check lazy targets from one referrer, including every static edge back to
+a linked module. The extra cells belong to this referrer's scope. -/
+private def checkSites (inputs : Input) (name : String) (linked : List String)
+    (sites : Array (Nat × ModuleLocation.Use)) : Except String ModuleAccess := do
+  let resources (path : String) := inputs.before[path]?
   let mut requirements : Std.HashMap Nat (List (String × Name)) := {}
   for (id, use) in sites do
     let bindings ← match use with
@@ -36,7 +37,7 @@ def check (inputs : Input) (source providers : Json) (plan : EsmSplit.Plan) : Ex
         let boundary ← DynamicImports.check target linked inputs.assets resources resources
         pure <| boundary.requests.flatMap fun edge => edge.exports.map (edge.source, ·)
     requirements := requirements.insert id ((requirements[id]?.getD [] ++ bindings).eraseDups)
-  let mut access : Access := {}
+  let mut access : ModuleAccess := {}
   for (id, requests) in requirements.toArray.qsort (fun a b => a.1 < b.1) do
     let mut names := []
     for ((source, exported), index) in requests.zipIdx do
@@ -46,30 +47,52 @@ def check (inputs : Input) (source providers : Json) (plan : EsmSplit.Plan) : Ex
     access := { access with unitNames := access.unitNames.insert id names.reverse }
   for (id, use) in sites do
     if use == .metadata then
-      let some old := resources inputs.entry | throw "missing entry resource"
+      let some old := resources name | throw "missing metadata resource"
       access := { access with
         nativeUrl := some old.effectiveUrl
         unitNames := access.unitNames.insert id ((NativeRecord.slot :: access.unitNames[id]?.getD []).eraseDups) }
   return { access with imports := access.imports.reverse }
 
-/-- Add only capability aliases to the entry scope. The targets are part of
-the already-loaded module graph, including the entry for genuine re-entry. -/
+def check (inputs : Input) (source providers : Json) (plan : EsmSplit.Plan) : Except String Access := do
+  let resources (name : String) := inputs.before[name]?
+  let sites ← ModuleLocation.check source inputs.entry plan resources resources inputs.nativeRecord
+  let files := (← providers.getObj?).toList
+  let linked := plan.entry :: files.map Prod.fst
+  let entryAccess ← checkSites inputs plan.entry linked sites
+  let mut others := ∅
+  for (name, file) in files do
+    if (plan.find name).isSome then throw s!"provider overlaps emitted module: {name}"
+    let some res := resources name | throw s!"missing provider resource: {name}"
+    let uses ← (ModuleLocation.providerUses file name res inputs.nativeRecord).mapError fun why => s!"{name}: {why}"
+    let access ← (checkSites inputs name linked uses).mapError fun why => s!"{name}: {why}"
+    others := others.insert name access
+  return {entryAccess, providers := others}
+
+/-- Add the capability aliases to their referring modules. Preserve the actual
+order even when a lazy dependency re-enters through a provider or the entry. -/
 def Access.attach (access : Access) (program : Program) : Except String Program := do
-  let result := { program with modules := program.modules.map fun module =>
-    if module.name == program.entry then { module with imports := module.imports ++ access.imports }
-    else module }
+  let records := access.providers.insert program.entry access.entryAccess
+  let result := { program with modules := program.modules.map fun md =>
+    {md with imports := md.imports ++ (records[md.name]?.map (·.imports)).getD []} }
   unless result.evalOrder == program.evalOrder do throw "loader capabilities changed the static module order"
-  let some url := access.nativeUrl | return result
-  -- Model-only dependency. It owns the cell captured by entries in both graphs;
-  -- its only unit runs first, after linking but before any original initializer.
-  let name := ":native-browser-record"
-  if (result.find name).isSome then throw "metadata module already exists"
-  let id := result.regions
-  let root := NativeRecord.slot
-  let helper : Module := ⟨name, [], [(id, .decl .const root (NativeRecord.initial url id))], [(root, root)]⟩
+  let owners := (records.toList.filterMap fun (name, a) => a.nativeUrl.map (name, ·)).mergeSort
+    fun a b => decide (a.1 ≤ b.1)
+  if owners.isEmpty then return result
+  -- One model-only dependency initializes distinct cells for distinct records.
+  -- Stable region identities must not depend on the split module order.
+  let helperName := ":native-browser-record"
+  if (result.find helperName).isSome then throw "metadata module already exists"
+  let exported := fun (owner : String) => ":record:" ++ owner
+  let body := owners.zipIdx.map fun ((name, url), idx) =>
+    let id := result.regions + idx
+    (id, Stmt.decl .const (exported name) (NativeRecord.initial url id))
+  let helper : Module := ⟨helperName, [], body, owners.map fun (name, _) => (exported name, exported name)⟩
   let bound := {result with modules := helper :: result.modules.map fun md =>
-    if md.name == result.entry then {md with imports := ⟨name, [(root, root)]⟩ :: md.imports} else md}
-  unless bound.evalOrder == name :: result.evalOrder do throw "metadata dependency changed module order"
+    if ((records[md.name]?).bind (·.nativeUrl)).isSome then
+      {md with imports := ⟨helperName, [(exported md.name, NativeRecord.slot)]⟩ :: md.imports}
+    else if md.name == program.entry then {md with imports := ⟨helperName, []⟩ :: md.imports}
+    else md}
+  unless bound.evalOrder == helperName :: result.evalOrder do throw "metadata dependency changed module order"
   return bound
 
 end CoreJS.LinkedDeployment
