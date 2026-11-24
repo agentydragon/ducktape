@@ -20,7 +20,7 @@ use artifact::{
 };
 use gate::{
     CandidatePreflight, CandidateRelocationAssessmentReport, ChunkGateRejection,
-    StructuralPlacementAssessment, StructuralPlacementStatus, UnmatchedSpecClaim,
+    StructuralPlacementStatus, UnmatchedSpecClaim,
 };
 
 use output_layout::MODULES_REPORT;
@@ -297,10 +297,7 @@ pub struct MaterializeSpecInputs<'a> {
 pub struct SelectedOwnershipPreflight {
     pub source_unit_modules: BTreeMap<String, Option<spec::ModulePath>>,
     pub emitted_owner_paths: BTreeSet<spec::ModulePath>,
-    pub source_unit_binding_exports: BTreeMap<String, Vec<SelectedBindingExport>>,
-    pub gate_accepts: bool,
-    pub structural_placement: StructuralPlacementAssessment,
-    pub structural_accepts: bool,
+    pub source_unit_binding_exports: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 /// Shared, source-bound inputs for several selected ownership preflights.
@@ -443,12 +440,17 @@ impl<'a> SelectedOwnershipPreflightSession<'a> {
                 nested_var_statements: &finalized.ast_analysis.nested_var_statements,
             });
         let candidate = CandidatePreflight::prepare(assignment_analysis, &placement_projection);
-        let gate_accepts = !candidate.is_rejected();
-        let structural_placement = candidate.placement_assessment().clone();
-        let structural_accepts = structural_placement.status
-            == StructuralPlacementStatus::NoKnownBlocker
-            && structural_placement.coverage.is_complete()
-            && structural_placement.emission_mappable;
+        ensure!(
+            !candidate.is_rejected(),
+            "selected ownership assignment was rejected by the realizability gate"
+        );
+        let placement = candidate.placement_assessment();
+        ensure!(
+            placement.status == StructuralPlacementStatus::NoKnownBlocker
+                && placement.coverage.is_complete()
+                && placement.emission_mappable,
+            "selected ownership assignment has unresolved structural placement: {placement:?}"
+        );
 
         let assignment = assignment_analysis.assignment();
         let entry_destination = assignment.entry_destination().module_id();
@@ -475,12 +477,9 @@ impl<'a> SelectedOwnershipPreflightSession<'a> {
                         let export_name = assignment_analysis.inputs().export_name_for(
                             &analysis::BindingId::new(finalized.chunk_id_interned, binding.clone()),
                         )?;
-                        Ok(SelectedBindingExport {
-                            binding: binding.0.to_string(),
-                            export_name: export_name.to_string(),
-                        })
+                        Ok((binding.0.to_string(), export_name.to_string()))
                     })
-                    .collect::<Result<Vec<_>>>()?;
+                    .collect::<Result<BTreeMap<_, _>>>()?;
             source_unit_binding_exports.insert(report_id, exports);
         }
         ensure!(
@@ -495,9 +494,6 @@ impl<'a> SelectedOwnershipPreflightSession<'a> {
             source_unit_modules,
             emitted_owner_paths,
             source_unit_binding_exports,
-            gate_accepts,
-            structural_placement,
-            structural_accepts,
         })
     }
 }
@@ -599,27 +595,6 @@ pub fn with_selected_ownership_preflight<R>(
         source_asts,
     };
     action(&mut session)
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SelectedBindingExport {
-    pub binding: String,
-    pub export_name: String,
-}
-
-impl SelectedOwnershipPreflight {
-    pub fn ensure_accepted(&self) -> Result<()> {
-        ensure!(
-            self.gate_accepts,
-            "selected ownership assignment was rejected by the realizability gate"
-        );
-        ensure!(
-            self.structural_accepts,
-            "selected ownership assignment has unresolved structural placement: {:?}",
-            self.structural_placement
-        );
-        Ok(())
-    }
 }
 
 pub fn materialize_logical_modules(
