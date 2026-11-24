@@ -674,6 +674,9 @@ theorem Same.stmt_succ (env env' : Env) (s : Stmt) (hN : Agree s.free env env') 
       rcases List.mem_append.1 hx with hx | hx
       · exact List.mem_append_right _ (fresh_lex init x hx)
       · exact List.mem_append_left _ (List.mem_append_right _ hx)
+  | breakScope body =>
+    simp only [execStmt]
+    rw [ih.stmt _ _ body hN]
   | tryCatch body param handler =>
     unfold execStmt
     dsimp only

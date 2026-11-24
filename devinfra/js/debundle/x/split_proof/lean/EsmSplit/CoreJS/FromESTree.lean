@@ -354,11 +354,16 @@ private partial def sequenceTree (head : Expr) : List Expr → Expr
   | [] => head
   | next :: tail => sequenceTree (.seq head next) (pairSequences tail)
 
-private partial def containsBreak (j : Json) : Bool :=
-  match j with
-  | .obj fields => (field j "type").toOption == some "BreakStatement" ||
-      fields.toList.any (fun (_, child) => containsBreak child)
-  | .arr items => items.any containsBreak
+/-- A final abrupt statement prevents fallthrough. A break inside an inner
+loop or switch is consumed there, so inspecting its subtree would be unsound. -/
+private partial def endsSwitchCase (j : Json) : Bool :=
+  match (field j "type").toOption with
+  | some "BlockStatement" =>
+    ((j.getObjValAs? (Array Json) "body").toOption >>= (·.back?)).any endsSwitchCase
+  | some "IfStatement" =>
+    (j.getObjVal? "consequent").toOption.any endsSwitchCase &&
+      (j.getObjVal? "alternate").toOption.any endsSwitchCase
+  | some "BreakStatement" | some "ContinueStatement" | some "ReturnStatement" | some "ThrowStatement" => true
   | _ => false
 
 /-- Find a direct super call at the start of a statement's expression. After
@@ -970,43 +975,40 @@ private partial def linkedBlock (profile : HostProfile) (imports : List Name) (s
   unless (← field j "type") == "BlockStatement" do throw "expected a statement block"
   return .block (← linkedBlockBody profile imports scope j)
 
-/-- With no fallthrough and no case-scope lexical bindings, a switch is a chain of
-strict comparisons against a saved discriminant. A trailing default runs only
-after all case tests fail. -/
+/-- Compare labels in order against the saved discriminant and run the first
+matching body, with empty labels sharing the following body. Each nonfinal body
+must exit abruptly and a trailing default runs after all case tests fail. -/
 private partial def linkedSwitch (profile : HostProfile) (imports : List Name) (scope : LinkedScope) (j : Json) :
     Except String Stmt := do
   let lower := linkedExpr profile imports true ""
   let discriminant ← lower (← j.getObjVal? "discriminant")
   let saved := ":switch:discriminant"
   let mut dispatch := Stmt.block []
-  let mut hasFollowingClause := false
+  let mut following : Option Stmt := none
   let cases ← j.getObjValAs? (Array Json) "cases"
   for clause in cases.toList.reverse do
     unless (← field clause "type") == "SwitchCase" do throw "expected a switch case"
     let test ← clause.getObjVal? "test"
-    if test == .null && hasFollowingClause then throw "unsupported nontrailing switch default"
-    let mut statements ← clause.getObjValAs? (Array Json) "consequent"
-    let terminal := statements.back?.bind fun last => (field last "type").toOption
-    if terminal == some "BreakStatement" then
-      unless (← statements.back!.getObjVal? "label") == .null do
-        throw "unsupported labeled switch break"
-      statements := statements.pop
-    else if hasFollowingClause && terminal != some "ReturnStatement" && terminal != some "ThrowStatement" then
-      throw "unsupported switch fallthrough"
-    let mut body := #[]
-    for statement in statements do
-      let kind ← field statement "type"
-      if kind == "VariableDeclaration" then
-        unless (← field statement "kind") == "var" do throw "unsupported switch lexical declaration"
-      else if ["ClassDeclaration", "FunctionDeclaration"].contains kind then
-        throw "unsupported switch lexical declaration"
-      if containsBreak statement then throw "unsupported nested switch break"
-      body := body.push (← linkedStatement profile imports scope statement)
-    let branch := Stmt.block body.toList
+    if test == .null && following.isSome then throw "unsupported nontrailing switch default"
+    let statements ← clause.getObjValAs? (Array Json) "consequent"
+    let branch ← match following, statements.isEmpty with
+      | some body, true => pure body
+      | _, _ => do
+        if following.isSome && !(statements.back?.any endsSwitchCase) then
+          throw "unsupported switch fallthrough"
+        let mut body := #[]
+        for statement in statements do
+          let kind ← field statement "type"
+          if kind == "VariableDeclaration" then
+            unless (← field statement "kind") == "var" do throw "unsupported switch lexical declaration"
+          else if ["ClassDeclaration", "FunctionDeclaration"].contains kind then
+            throw "unsupported switch lexical declaration"
+          body := body.push (← linkedStatement profile imports scope statement)
+        pure (.block body.toList)
     dispatch ← if test == .null then pure branch else do
       pure (.ite (.binary .strictEq (.var saved) (← lower test)) branch dispatch)
-    hasFollowingClause := true
-  return .block [.decl .const saved discriminant, dispatch]
+    following := some branch
+  return .block [.decl .const saved discriminant, .breakScope dispatch]
 
 private partial def linkedStatement (profile : HostProfile) (imports : List Name) (scope : LinkedScope) (j : Json) :
     Except String Stmt := do

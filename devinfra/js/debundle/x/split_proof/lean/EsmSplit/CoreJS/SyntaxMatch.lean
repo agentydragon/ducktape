@@ -280,6 +280,7 @@ partial def stmtEq : MatchEq Stmt
     let ⟨u⟩ ← exprEq update update'
     let ⟨b⟩ ← stmtEq body body'
     return ⟨i ▸ t ▸ u ▸ b ▸ rfl⟩
+  | .breakScope a, .breakScope b => (stmtEq a b).map fun h => ⟨congrArg Stmt.breakScope h.down⟩
   | .tryCatch body param handler, .tryCatch body' param' handler' => do
     let ⟨b⟩ ← stmtEq body body'
     let ⟨p⟩ ← scalarEq param param'
