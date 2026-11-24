@@ -1060,8 +1060,7 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
       -- of the RHS. Even a closure captured there retains the uninitialized cell.
       let head : List Stmt := if kind == .var then [.decl .const source value] else
         [.decl .let_ source .undef,
-          .loop [] (.bool true) .undef
-            (.block [.expr (.assign (.var source) value), .brk, .decl .let_ name .undef])]
+          .breakScope (.block [.expr (.assign (.var source) value), .brk, .decl .let_ name .undef])]
       return .block (head ++ [
         .decl .const table (.prim .forInKeys [.var source]),
         .decl .let_ index (.num 0),
