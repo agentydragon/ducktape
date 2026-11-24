@@ -182,10 +182,11 @@ py_test(
             LOWERSPLIT = "$(rlocationpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
         ),
         main = _EXCALIDRAW_BROWSER_PY,
-        tags = ["manual"],
+        tags = [] if placement == "editor" else ["manual"],
         deps = _EXCALIDRAW_BROWSER_DEPS,
     )
     for placement in [
+        "editor",
         "scroll",
         "startup",
     ]
