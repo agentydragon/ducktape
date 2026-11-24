@@ -42,16 +42,18 @@ theorem of_host_evaluation {premises : HostPremises} {source candidate : Program
 /-- The two programs are exactly the lowering of these three AST inputs under this placement.
 Their public bindings and their complete normally terminating executions agree in every world. -/
 def ASTEquivalent (profile : HostProfile) (premises : HostPremises)
-    (source providers files : Lean.Json) (plan : EsmSplit.Plan) : Prop :=
-  ∃ original candidate, LinkedInput.decodePair source providers files plan profile = .ok (original, candidate) ∧
+    (source providers files : Lean.Json) (plan : EsmSplit.Plan)
+    (deployment : Option LinkedDeployment.Input := none) : Prop :=
+  ∃ original candidate, LinkedInput.decodePair source providers files plan profile deployment = .ok (original, candidate) ∧
     EquivalentFor premises original candidate ∧ SameExports original candidate
 
 /-- Decode the actual ASTs and transport the execution and export proofs to those programs. -/
 def certifyASTs (profile : HostProfile) (premises : HostPremises)
     (source providers files : Lean.Json) (plan : EsmSplit.Plan) (original candidate : Program)
-    (semantics : EquivalentFor premises original candidate ∧ SameExports original candidate) :
-    Except String (PLift (ASTEquivalent profile premises source providers files plan)) := do
-  match decoded : LinkedInput.decodePair source providers files plan profile with
+    (semantics : EquivalentFor premises original candidate ∧ SameExports original candidate)
+    (deployment : Option LinkedDeployment.Input := none) :
+    Except String (PLift (ASTEquivalent profile premises source providers files plan deployment)) := do
+  match decoded : LinkedInput.decodePair source providers files plan profile deployment with
   | .error why => throw why
   | .ok (a, b) =>
     let some ⟨before⟩ := SyntaxMatch.programEq a original | throw "source AST does not match the certified program"
@@ -60,11 +62,11 @@ def certifyASTs (profile : HostProfile) (premises : HostPremises)
 
 /-- Successful execution of the production checker establishes a claim about the input
 and output ASTs for every host world. Its callers can discard the proof at runtime. -/
-theorem checkASTs_sound {profile premises source providers files plan original candidate}
+theorem checkASTs_sound {profile premises source providers files plan original candidate deployment}
     (semantics : EquivalentFor premises original candidate ∧ SameExports original candidate)
-    (accepted : (certifyASTs profile premises source providers files plan original candidate semantics).isOk = true) :
-    ASTEquivalent profile premises source providers files plan := by
-  cases h : certifyASTs profile premises source providers files plan original candidate semantics with
+    (accepted : (certifyASTs profile premises source providers files plan original candidate semantics deployment).isOk = true) :
+    ASTEquivalent profile premises source providers files plan deployment := by
+  cases h : certifyASTs profile premises source providers files plan original candidate semantics deployment with
   | error why => rw [h] at accepted; contradiction
   | ok proof => exact proof.down
 

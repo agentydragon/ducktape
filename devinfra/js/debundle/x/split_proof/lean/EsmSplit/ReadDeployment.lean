@@ -26,6 +26,8 @@ def readDeployment (program providers : Json) (bundlePath work : System.FilePath
   let some entry := bundlePath.fileName | throw (IO.userError "source module is missing a filename")
   let source ← IO.ofExcept (program.getObjValAs? String "sourceText")
   let uses ← IO.ofExcept (ModuleLocation.entryUses program entry source nativeRecord)
+  let dynamicTargets (uses : Array (Nat × ModuleLocation.Use)) := uses.filterMap fun (_, use) =>
+    match use with | .dynamicImport _ target => some target | .metaUrl | .metadata => none
   let staticProviders ← IO.ofExcept providers.getObj?
   let linked := Std.HashSet.ofList (entry :: staticProviders.toList.map Prod.fst)
   let root := bundlePath.parent.getD "."
@@ -36,11 +38,12 @@ def readDeployment (program providers : Json) (bundlePath work : System.FilePath
   let mut resources := Std.HashMap.ofList [(entry, asset entry source)]
   let mut parsed : Array (String × Json) := #[]
   let mut seen := linked
+  let mut frontier := dynamicTargets uses
   for (name, ast) in staticProviders.toList do
     let text ← IO.ofExcept (ast.getObjValAs? String "sourceText")
+    let providerUses ← IO.ofExcept ((ModuleLocation.entryUses ast name text).mapError (s!"{name}: " ++ ·))
     resources := resources.insert name (asset name text)
-  let mut frontier := uses.filterMap fun (_, use) =>
-    match use with | .dynamicImport _ target => some target | .metaUrl | .metadata => none
+    frontier := frontier ++ dynamicTargets providerUses
   while !frontier.isEmpty do
     let mut requests := #[]
     for name in frontier do
