@@ -581,8 +581,9 @@ def test_non_admin_can_still_redeem_prize(non_admin_client: TestClient) -> None:
     assert r.status_code == 200, r.text
 
 
-def test_admin_can_create_prize_for_other_user(admin_app: tuple[TestClient, Callable[[str], None]]) -> None:
-    """Rai (admin) creates a prize in Auragon's catalog."""
+def test_admin_can_manage_prize_for_other_user(
+    admin_app: tuple[TestClient, Callable[[str], None]], db_url: str
+) -> None:
     c, set_user = admin_app
     set_user("rai")
     r = c.post(
@@ -591,6 +592,8 @@ def test_admin_can_create_prize_for_other_user(admin_app: tuple[TestClient, Call
     )
     assert r.status_code == 200, r.text
     assert r.json()["result"]["user"] == "auragon"
+
+    prize_id = r.json()["result"]["prize_id"]
 
     # Auragon sees the new prize in her catalog.
     set_user("auragon")
@@ -601,6 +604,22 @@ def test_admin_can_create_prize_for_other_user(admin_app: tuple[TestClient, Call
     set_user("rai")
     rai_state = c.get("/state").json()
     assert not any(p["name"] == "Custom prize for auragon" for p in rai_state["prizes"])
+
+    target = {"target_user": "auragon", "prize_id": prize_id}
+    update = c.post(
+        "/actions/prize/update", json={**target, "client_action_id": "rai-edit", "name": "Mocha", "cost": 3}
+    )
+    assert update.status_code == 200, update.text
+    delete = c.post("/actions/prize/delete", json={**target, "client_action_id": "rai-delete"})
+    assert delete.status_code == 200, delete.text
+
+    with Session(create_engine(db_url)) as session:
+        entries = session.scalars(select(LedgerEventRow).order_by(LedgerEventRow.id)).all()
+        assert [row.action_type for row in entries] == ["prize.create", "prize.update", "prize.delete"]
+        for row in entries:
+            details = json.loads(row.details_json)
+            assert row.user_id == details["target_user"] == "auragon"
+            assert details["by"] == "rai"
 
 
 def test_admin_users_endpoint_lists_seeded_users(admin_app: tuple[TestClient, Callable[[str], None]]) -> None:

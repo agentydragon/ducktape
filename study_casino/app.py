@@ -500,7 +500,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             s.add(PrizeRow(id=prize_id, user_id=balance.user_id, name=body.name, cost=body.cost))
             return ActionMutation(
                 result=PrizeCreateResult(prize_id=prize_id, name=body.name, cost=body.cost, user=balance.user_id),
-                details={"name": body.name, "cost": body.cost, "target_user": balance.user_id, "by": balance.user_id},
+                details={"name": body.name, "cost": body.cost, "target_user": balance.user_id, "by": username},
             )
 
         # commit_action pushes state_changed to `owner` — no extra push needed for cross-user admin actions.
@@ -519,7 +519,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
             s.delete(row)
             return ActionMutation(
                 result=PrizeDeleteResult(prize_id=body.prize_id, user=balance.user_id),
-                details={"name": row.name, "cost": row.cost, "target_user": balance.user_id, "by": balance.user_id},
+                details={"name": row.name, "cost": row.cost, "target_user": balance.user_id, "by": username},
             )
 
         return await commit_action(username=owner, body=body, action_type="prize.delete", mutator=mutate)
@@ -549,7 +549,7 @@ def create_app(settings: Settings, *, store: SqlStore | None = None) -> FastAPI:
                     "name": row.name,
                     "cost": row.cost,
                     "target_user": balance.user_id,
-                    "by": balance.user_id,
+                    "by": username,
                 },
             )
 
