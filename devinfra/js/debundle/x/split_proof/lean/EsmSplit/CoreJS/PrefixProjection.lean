@@ -10,10 +10,12 @@ Unrecognized operations forget the whole table, including aliased receivers. -/
 namespace CoreJS.PrefixProjection
 
 private inductive Shape where
+  | number (value : Float)
   | text (value : String)
   | numbers (fields : List (String × Float))
 
 private def Shape.Holds (s : State w) : Shape → Val → Prop
+  | .number x, v => v = .num x
   | .text str, v => v = .str str
   | .numbers fields, v => ∃ a o, v = .obj a ∧ s.objAt a = some o ∧
       ∀ k x, fields.lookup k = some x → o.props.lookup (.str k) = some (.data (.num x) true true true)
@@ -21,7 +23,7 @@ private def Shape.Holds (s : State w) : Shape → Val → Prop
 private theorem Shape.transport {s t : State w} {shape : Shape} (h : shape.Holds s v)
     (objects : ∀ a o, s.objAt a = some o → t.objAt a = some o) : shape.Holds t v := by
   cases shape with
-  | text => exact h
+  | number | text => exact h
   | numbers =>
     obtain ⟨a, o, value, atObj, fields⟩ := h
     exact ⟨a, o, value, objects _ _ atObj, fields⟩
@@ -161,8 +163,77 @@ private theorem numberFields_alloc (fs : List (String × Float)) :
   | nil => rfl
   | cons f rest ih => exact ih
 
+/-- Substitute only initialized Number cells. The proof expression retains
+the operator tree and its fuel cost; the recorded result is available to a
+subsequent declaration in this same prefix. -/
+private structure Numeric (p : Facts) (env : Env) (e : Expr) where
+  value : Float
+  closed : Expr
+  same : ∀ {w} n (s : State w), Holds p s → evalExpr n env e s = evalExpr n env closed s
+  evaluates : ∀ {w} n, (evalExpr n env closed : M w Val) = outOfFuel ∨
+    evalExpr (W := w) n env closed = pure (.num value)
+
+private def numberLeaf (p : Facts) (env : Env) (e : Expr) (x : Float)
+    (read : ∀ {w} n (s : State w), Holds p s → evalExpr n env e s = evalExpr n env (.num x) s) :
+    Numeric p env e :=
+  ⟨x, .num x, @read, by intro w n; cases n <;> first | exact Or.inl rfl | exact Or.inr rfl⟩
+
+private def numeric? (p : Facts) (env : Env) : (e : Expr) → Option (Numeric p env e)
+  | .num x => some (numberLeaf p env _ x (fun _ _ _ => rfl))
+  | .var x => do
+    let ⟨c, ⟨lk⟩⟩ ← found? (env.vars.lookup x)
+    let ⟨.number value, ⟨fact⟩⟩ ← found? (p.entries.lookup c) | none
+    return numberLeaf p env _ value (by
+      intro w n s hs
+      cases n with
+      | zero => rfl
+      | succ =>
+        obtain ⟨v, read, hv⟩ := hs.read lk fact
+        change v = .num value at hv
+        subst v; exact read)
+  | .binary op left right => do
+    guard op.numberArithmetic
+    let a ← numeric? p env left
+    let b ← numeric? p env right
+    match hb : binop op (.num a.value) (.num b.value) with
+    | .ok (.num value) =>
+      return ⟨value, .binary op a.closed b.closed, by
+        intro w n s hs
+        cases n with
+        | zero => rfl
+        | succ n =>
+          simp only [evalExpr, M.bind_apply, a.same n s hs]
+          rcases a.evaluates (w := w) n with hf | ha
+          · rw [hf]; rfl
+          · have pureAt : (pure (.num a.value) : M w Val) s = .ok (.num a.value) s := rfl
+            simp only [ha, pureAt, b.same n s hs], by
+        intro w n
+        cases n with
+        | zero => exact Or.inl rfl
+        | succ n =>
+          rw [evalExpr]
+          rcases a.evaluates (w := w) n with hf | ha
+          · rw [hf]; exact Or.inl rfl
+          rw [ha, M.pure_bind]
+          rcases b.evaluates (w := w) n with hf | hy
+          · rw [hf]; exact Or.inl rfl
+          rw [hy, M.pure_bind, hb]; exact Or.inr rfl⟩
+    | _ => none
+  | _ => none
+
+private def Numeric.step (a : Numeric p env e) : ExprStep p env e :=
+  ⟨a.closed, some (.number a.value), a.same, by
+    intro w n s t v hs run
+    rw [a.same n s hs] at run
+    rcases a.evaluates (w := w) n with hf | hv
+    · rw [hf] at run; cases run
+    · rw [hv] at run; cases run
+      exact ⟨Extends.refl _, fun _ h => by cases h; rfl⟩⟩
+
 private def infer? (p : Facts) (env : Env) (e : Expr) : Option (ExprStep p env e) := do
   match he : e with
+  | .num _ | .binary .. =>
+    return (← numeric? p env e).step
   | .str text =>
     return ⟨e, some (.text text), fun _ _ _ => rfl, by
       intro w n s t v _ run

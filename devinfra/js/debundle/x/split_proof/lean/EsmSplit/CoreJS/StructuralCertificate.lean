@@ -28,6 +28,18 @@ private def declarator? (node : Lean.Json) : Option Lean.Json := do
   let #[d] := Lower.items (Lower.fld node "declarations") | none
   return d
 
+/-- Producer hints for local Number operands. Only the checked linked prefix
+can supply a value for a name; the parse tree chooses units to lower. -/
+private partial def numericNames (node : Lean.Json) : List String :=
+  match Lower.typ node with
+  | "Identifier" =>
+    if Lower.str (Lower.fld node "k") == "T" then [Lower.str (Lower.fld node "name")] else []
+  | "BinaryExpression" =>
+    if ["+", "-", "*", "/", "%"].contains (Lower.str (Lower.fld node "operator")) then
+      numericNames (Lower.fld node "left") ++ numericNames (Lower.fld node "right")
+    else []
+  | _ => []
+
 /-- Lower nearby prefix units, including an unmoved producer, on a second
 attempt. The hint only selects ASTs: the prefix proof checks actual linked
 cells and every intervening step in both complete schedules. -/
@@ -37,16 +49,19 @@ private def projectionHints (source : Lean.Json) (pivots : List Nat) : Except St
   for id in pivots do
     let some node := nodes[id]? | continue
     let some d := declarator? node | continue
-    let member := Lower.fld d "init"
-    let base := Lower.fld member "object"
-    unless Lower.typ member == "MemberExpression" && !Lower.flag member "computed" &&
-        Lower.typ base == "Identifier" && Lower.str (Lower.fld base "k") == "T" do continue
-    let start := id - 32
-    for i in [start:id] do
+    let init := Lower.fld d "init"
+    let base := Lower.fld init "object"
+    let objectRead := Lower.typ init == "MemberExpression" && !Lower.flag init "computed" &&
+      Lower.typ base == "Identifier" && Lower.str (Lower.fld base "k") == "T"
+    let names := if objectRead then [Lower.str (Lower.fld base "name")]
+      else if Lower.typ init == "BinaryExpression" then numericNames init else []
+    if names.isEmpty then continue
+    for i in [id - 32:id] do
       let some producer := nodes[i]?.bind declarator? | continue
-      unless Lower.typ (Lower.fld producer "init") == "ObjectExpression" &&
-          Lower.fld (Lower.fld producer "id") "name" == Lower.fld base "name" do continue
+      unless names.contains (Lower.str (Lower.fld (Lower.fld producer "id") "name")) do continue
+      if objectRead && Lower.typ (Lower.fld producer "init") != "ObjectExpression" then continue
       extra := extra ++ (Array.range (id - i)).map (i + ·)
+      break
   return extra.toList
 
 /-- The checked executions are exactly the original and generated graphs.

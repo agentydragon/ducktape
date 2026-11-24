@@ -290,7 +290,10 @@ def checkStructuralSchedule (intrinsics : List StableIntrinsic) (source candidat
   let runs ← match checkRuns intrinsics before.ready sourceUnits candidateUnits with
     | .ok ok => pure ok
     | .error why => do
-      unless sourceUnits.any (fun u => u.stmt matches .decl _ _ (.get (.var _) (.str _))) do throw why
+      unless sourceUnits.any (fun u => match u.stmt with
+        | .decl _ _ (.get (.var _) (.str _)) => true
+        | .decl _ _ (.binary op _ _) => op.numberArithmetic
+        | _ => false) do throw why
       let ⟨beforeUnits, ⟨left⟩⟩ := PrefixProjection.prepare before.ready sourceUnits
       let ⟨afterUnits, ⟨right⟩⟩ := PrefixProjection.prepare before.ready candidateUnits
       let (count, ⟨middle⟩) ← checkRuns intrinsics before.ready beforeUnits afterUnits
