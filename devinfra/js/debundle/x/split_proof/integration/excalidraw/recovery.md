@@ -55,6 +55,12 @@ The following screening and refusal counts describe the earlier 107-binding
 baseline; they are evidence for the rule changes, not a count of remaining
 refusals on the current checker.
 
+The [multiple-observer rule](https://github.com/agentydragon/ducktape/pull/19747)
+subsequently certified `vectorNormalize` alongside all 224 bindings above.
+Two hoisted geometry helpers capture that binding. The checker accounts for
+both observers before restoring the suffix state; a getter that reaches a
+mutable observer still prevents the move. [225-binding replay and negative controls](https://app.buildbuddy.io/invocation/b3a3b9cf-e163-47e8-ac5b-43f873525eeb).
+
 ## What limited the candidate set
 
 To select a trial, join the canonical Rust graph to the scope-annotated original
