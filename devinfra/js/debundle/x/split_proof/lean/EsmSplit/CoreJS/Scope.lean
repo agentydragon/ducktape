@@ -330,19 +330,26 @@ syntax "free_here" : tactic
 macro_rules
   | `(tactic| free_here) => `(tactic| simp [Expr.free, Target.free, Stmt.free])
 
+-- Match the equality before proving agreement on the selected names.
+syntax "same_apply " term:max " using " ident : tactic
+macro_rules
+  | `(tactic| same_apply $rule using $hN) => `(tactic|
+      (with_reducible apply $rule
+       with_reducible exact ($hN).mono (by free_mem)))
+
 /-- A part of a rule: one of the interpreter's functions in the two scopes, or an operation that looks a name up. -/
 syntax "same_part " ident ident : tactic
 macro_rules
   | `(tactic| same_part $ih $hN) => `(tactic| first
-    | with_reducible exact ($ih).expr _ _ _ (($hN).mono (by free_mem))
-    | with_reducible exact ($ih).args _ _ _ (($hN).mono (by free_mem))
-    | with_reducible exact ($ih).target _ _ _ (($hN).mono (by free_mem))
-    | with_reducible exact ($ih).props _ _ _ _ (($hN).mono (by free_mem))
-    | with_reducible exact ($ih).members _ _ _ _ _ (($hN).mono (by free_mem))
-    | with_reducible exact ($ih).fields _ _ _ _ (($hN).mono (by free_mem))
-    | with_reducible exact ($ih).stmt _ _ _ (($hN).mono (by free_mem))
-    | with_reducible exact ($ih).stmts _ _ _ (($hN).mono (by free_mem))
-    | with_reducible exact makeFunc_agree (($hN).mono (by free_mem))
+    | same_apply ($ih).expr using $hN
+    | same_apply ($ih).args using $hN
+    | same_apply ($ih).target using $hN
+    | same_apply ($ih).props using $hN
+    | same_apply ($ih).members using $hN
+    | same_apply ($ih).fields using $hN
+    | same_apply ($ih).stmt using $hN
+    | same_apply ($ih).stmts using $hN
+    | same_apply makeFunc_agree using $hN
     | with_reducible exact readVar_agree (($hN).vars _ (by free_here))
     | with_reducible exact writeVar_agree (($hN).vars _ (by free_here)) _
     | with_reducible exact initVar_agree (($hN).vars _ (by free_here)) _
