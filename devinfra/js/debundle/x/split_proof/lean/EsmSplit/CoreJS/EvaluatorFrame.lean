@@ -1,3 +1,4 @@
+import EsmSplit.CoreJS.IteratorFrame
 import EsmSplit.CoreJS.ExpressionFrame
 import EsmSplit.CoreJS.ObjectFrame
 import EsmSplit.CoreJS.OpaqueClosureFrame
@@ -120,7 +121,8 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
         · exact evalDerived_reachFrame_step away object cell objectRoot functionRoot env safe (prev.call cells)
             (prev.expr cells) (prev.members cells)
       · intro cells env es safe
-        exact evalArgs_reachFrame_step (fun e => prev.expr cells env e safe) (fun es => prev.args cells env es safe) es
+        exact evalArgs_reachFrame_step (fun e => prev.expr cells env e safe) (fun es => prev.args cells env es safe)
+          (iteratorValues_reachFrame away (callFn n) (prev.call cells) objectRoot (Ne.symm hr) n) es
       · intro cells env t safe
         exact evalTarget_reachFrame_step (fun e => prev.expr cells env e safe) t
       · intro cells env a ps safe ha

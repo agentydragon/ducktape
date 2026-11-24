@@ -505,6 +505,11 @@ private inductive LinkedScope where
 private def LinkedScope.varBinder (scope : LinkedScope) (kind : String) : Json → Except String Name :=
   if scope == .function || kind != "var" then localBinding else moduleBinding
 
+private def linkedArgument (lower : Json → Except String Expr) (j : Json) : Except String Expr := do
+  if j == .null then throw "unsupported array hole"
+  if (← field j "type") == "SpreadElement" then return .spreadArg (← lower (← j.getObjVal? "argument"))
+  lower j
+
 /-- Named defaults initialize lexical parameter cells in order from the raw argument slots.
 Ordinary functions then enter a body block; derived constructors run their prefix before super. -/
 private inductive LinkedFunctionParts where
@@ -549,10 +554,10 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
       let optionalReceiver ← member.getObjValAs? Bool "optional"
       if optionalCallee == optionalReceiver then throw reason
       if isSuperMember member then
-        return .callSuper (← memberKey lower member) (← (← body.getObjValAs? (List Json) "arguments").mapM lower) true
+        return .callSuper (← memberKey lower member) (← (← body.getObjValAs? (List Json) "arguments").mapM (linkedArgument lower)) true
       if ← member.getObjValAs? Bool "computed" then throw "unsupported computed optional method call"
       let (base, key) ← linkedMember lower member (allowOptional := optionalReceiver)
-      let args ← (← body.getObjValAs? (List Json) "arguments").mapM lower
+      let args ← (← body.getObjValAs? (List Json) "arguments").mapM (linkedArgument lower)
       return if optionalCallee then .callOptionalCallee base key args else .callOptionalReceiver base key args
     let member := body
     unless (← field member "type") == "MemberExpression" do throw "unsupported optional chain"
@@ -597,13 +602,7 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
   | "ArrayExpression" =>
     let elements ← j.getObjValAs? (List Json) "elements"
     let lower := linkedExpr profile imports inFunction ""
-    let values : List (ArrayElementKind × Expr) ← elements.mapM fun element => do
-      if element == .null then throw "unsupported array hole"
-      if (← field element "type") == "SpreadElement" then
-        return (.spread, ← lower (← element.getObjVal? "argument"))
-      return (.element, ← lower element)
-    if values.any (fun (kind, _) => kind == .spread) then return .arrWithSpread values
-    return .arr (values.map Prod.snd)
+    return .arr (← elements.mapM (linkedArgument lower))
   | "TemplateLiteral" => linkedTemplate (linkedExpr profile imports inFunction "") j
   | "UnaryExpression" =>
     let argument ← j.getObjVal? "argument"
@@ -685,8 +684,8 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
       if profile.opaqueConstructor name then
         -- Evaluation stops at the callee, before an argument can throw or mutate state.
         -- Retain argument syntax and binding references in the deferred function.
-        return .new (.prim (.opaqueConstructorRef name) []) (← args.mapM lower)
-    return .new (← lower callee) (← args.mapM lower)
+        return .new (.prim (.opaqueConstructorRef name) []) (← args.mapM (linkedArgument lower))
+    return .new (← lower callee) (← args.mapM (linkedArgument lower))
   | "CallExpression" =>
     if ← j.getObjValAs? Bool "optional" then throw "unsupported optional call"
     let lower := linkedExpr profile imports inFunction ""
@@ -702,17 +701,17 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     match ← field callee "type" with
     | "MemberExpression" =>
       if isSuperMember callee then
-        return .callSuper (← memberKey lower callee) (← args.mapM lower) false
+        return .callSuper (← memberKey lower callee) (← args.mapM (linkedArgument lower)) false
       if ambientSymbolMember? callee == some "for" then
         -- Retain deferred arguments and their captures. Initialization stops at
         -- the opaque callee reference before it can evaluate an argument.
-        return .call (.prim (.opaqueAmbientMemberRef "Symbol" "for") []) (← args.mapM lower)
+        return .call (.prim (.opaqueAmbientMemberRef "Symbol" "for") []) (← args.mapM (linkedArgument lower))
       let (base, key) ← linkedMember lower callee
-      return .callMethod base key (← args.mapM lower)
+      return .callMethod base key (← args.mapM (linkedArgument lower))
     | "ChainExpression" =>
       -- Parentheses preserve the selected property's Reference for the call.
       throw "unsupported optional chain as a call target"
-    | _ => return .call (← lower callee) (← args.mapM lower)
+    | _ => return .call (← lower callee) (← args.mapM (linkedArgument lower))
   | "ArrowFunctionExpression" | "FunctionExpression" =>
     let arrow := kind == "ArrowFunctionExpression"
     let id ← if arrow then pure Json.null else j.getObjVal? "id"
@@ -845,7 +844,7 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
   let args ← if forward && before.isEmpty && (← fn.getObjValAs? (Array Json) "params").isEmpty then
     pure none
   else some <$> rawArgs.mapM fun arg => do
-    linkedExpr profile imports true "" (← prepareBeforeSuper arg true)
+    linkedArgument (linkedExpr profile imports true "") (← prepareBeforeSuper arg true)
   let stmts := rest.toList ++ tail
   let post := Json.obj ((← block.getObj?).insert "body" (.arr stmts.toArray))
   match ← linkedFunctionParts profile imports .classCtor name false (.obj ((← fn.getObj?).insert "body" post)) with

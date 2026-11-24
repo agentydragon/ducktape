@@ -176,7 +176,6 @@ assertWorkerResult("record-computed", 'const worker = () => ({ ["key"]: 1 }); ex
 for (const [name, expr, reason] of [
   ["computed-getter", '({ get ["key"]() { return 1; } })', /accessor named by a computed key/],
   ["record-duplicate", '({ key: 1, "key": 2 })', /duplicate object property/],
-  ["record-spread-call", "({ key: worker(...[]) })", /unsupported linked expression SpreadElement/],
   ["record-array-hole", "({ nested: { key: [, 1] } })", /unsupported array hole/],
 ]) {
   const { verdict, out } = workerSplit(name, `const worker = () => ${expr}; export const result = worker();`);

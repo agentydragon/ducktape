@@ -320,8 +320,15 @@ include ih
 theorem Mono.expr_succ (env : Env) (e : Expr) : (evalExpr (n + 1) env e : M W _) ⊑ evalExpr (m + 1) env e := by
   cases e <;> unfold evalExpr <;> try unfold finishDerived <;> mono ih
 
-theorem Mono.args_succ (env : Env) (es : List Expr) : (evalArgs (n + 1) env es : M W _) ⊑ evalArgs (m + 1) env es := by
-  cases es <;> unfold evalArgs <;> mono ih
+theorem Mono.args_succ (hFuel : n ≤ m) (env : Env) (es : List Expr) : (evalArgs (n + 1) env es : M W _) ⊑ evalArgs (m + 1) env es := by
+  cases es with
+  | nil => exact M.le_refl _
+  | cons e es =>
+    unfold evalArgs
+    generalize e.argument = arg
+    obtain ⟨spread, operand⟩ := arg
+    cases spread <;> simp only [Bool.false_eq_true, ↓reduceIte] <;> mono ih
+    exact iteratorValues_le ih.callLe hFuel _
 
 theorem Mono.target_succ (env : Env) (t : Target) : (evalTarget (n + 1) env t : M W _) ⊑ evalTarget (m + 1) env t := by
   cases t <;> unfold evalTarget <;> mono ih
@@ -459,7 +466,7 @@ theorem mono : ∀ n m, n ≤ m → Mono W n m := by
     | zero => omega
     | succ m =>
       have ih := ih m (by omega)
-      exact ⟨ih.expr_succ, ih.args_succ, ih.target_succ, ih.props_succ, ih.members_succ, ih.fields_succ, ih.call_succ,
+      exact ⟨ih.expr_succ, ih.args_succ (by omega), ih.target_succ, ih.props_succ, ih.members_succ, ih.fields_succ, ih.call_succ,
         ih.construct_succ, ih.binding_succ (by omega), ih.stmt_succ (by omega), ih.stmts_succ, ih.loop_succ, ih.converse_succ⟩
 
 theorem runUnits_le {n m : Nat} (h : n ≤ m) (units : List LinkedUnit) :

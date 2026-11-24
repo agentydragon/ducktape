@@ -238,7 +238,7 @@ private def spread (operand : Json) : Json := node "SpreadElement" [("argument",
 private def arrayLiteral (elements : Array Json) : Json := node "ArrayExpression" [("elements", .arr elements)]
 
 private def spreadProgram : Program :=
-  let body : Expr := .arrWithSpread [(.spread, .str "first"), (.spread, .arr [])]
+  let body : Expr := .arr [.spreadArg (.str "first"), .spreadArg (.arr [])]
   ⟨"main.mjs", [⟨"main.mjs", [], [(0, .expr (.func (.mk "" .arrow false [] [.ret body])))], []⟩]⟩
 
 private theorem spreadExecution :

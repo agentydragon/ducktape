@@ -587,7 +587,17 @@ theorem Same.expr_succ (env env' : Env) (e : Expr) (hN : Agree e.free env env') 
 
 theorem Same.args_succ (env env' : Env) (es : List Expr) (hN : Agree (freeExprs es) env env') :
     (evalArgs (n + 1) env es : M W _) = evalArgs (n + 1) env' es := by
-  cases es <;> unfold evalArgs <;> same ih hN
+  cases es with
+  | nil => rfl
+  | cons e es =>
+    have head := ih.expr env env' e.argument.2 (hN.mono fun x hx =>
+      List.mem_append_left _ (by simpa using hx))
+    have tail := ih.args env env' es (hN.mono fun _ hx => List.mem_append_right _ hx)
+    unfold evalArgs
+    generalize ha : e.argument = arg at *
+    obtain ⟨spread, operand⟩ := arg
+    dsimp only at head
+    rw [head, tail]
 
 theorem Same.target_succ (env env' : Env) (t : Target) (hN : Agree t.free env env') :
     (evalTarget (n + 1) env t : M W _) = evalTarget (n + 1) env' t := by

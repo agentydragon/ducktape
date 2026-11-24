@@ -105,11 +105,6 @@ inductive OpaqueRun where
   | closures (fns : List (String × Nat × Bool))
   deriving DecidableEq
 
-inductive ArrayElementKind where
-  | element
-  | spread
-  deriving DecidableEq
-
 mutual
 
 inductive Expr where
@@ -127,8 +122,8 @@ inductive Expr where
   | func (f : Func)
   | obj (props : List PropDef)
   | arr (elems : List Expr)
-  /-- The exact elements of an array literal containing spread. The interpreter stops if it reaches this expression. -/
-  | arrWithSpread (elems : List (ArrayElementKind × Expr))
+  /-- A spread operand in a call, construction or array element list. -/
+  | spreadArg (source : Expr)
   /-- `class name { … }`; `self` when the body sees the name. -/
   | cls (name : String) (self : Bool) (ctor : Func) (members : List ClassMember)
   /-- A derived class. An explicit constructor splits its body at the direct super call. -/
@@ -378,7 +373,7 @@ def Expr.free : Expr → List Name
   | .func f => f.free
   | .obj props => freeProps props
   | .arr elems => freeExprs elems
-  | .arrWithSpread elems => freeArrayElements elems
+  | .spreadArg source => source.free
   | .cls name self ctor members => (ctor.free ++ freeMembers members).filter fun x => !(self && x == name)
   | .derived name self parent members ctor =>
     ((parent.free ++ freeMembers members) ++ derivedCtorFree ctor).filter fun x => !(self && x == name)
@@ -474,10 +469,6 @@ def freeExprs : List Expr → List Name
   | [] => []
   | e :: es => e.free ++ freeExprs es
 
-def freeArrayElements : List (ArrayElementKind × Expr) → List Name
-  | [] => []
-  | (_, e) :: es => e.free ++ freeArrayElements es
-
 def freeProps : List PropDef → List Name
   | [] => []
   | p :: ps => p.free ++ freeProps ps
@@ -491,6 +482,15 @@ def freeStmts : List Stmt → List Name
   | s :: ss => s.free ++ freeStmts ss
 
 end
+
+/-- Evaluate the operand exactly once, then expand it if the source list requested iteration. -/
+def Expr.argument (e : Expr) : Bool × Expr :=
+  match e with
+  | .spreadArg source => (true, source)
+  | _ => (false, e)
+
+@[simp] theorem Expr.argument_free (e : Expr) : e.argument.2.free = e.free := by
+  cases e <;> rfl
 
 /-- The names a function's code can mean in the scope it is made in, its own name included: what it closes over. -/
 def Func.closes (f : Func) : List Name := if f.self then f.name :: f.free else f.free
