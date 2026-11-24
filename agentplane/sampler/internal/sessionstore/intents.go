@@ -351,7 +351,7 @@ func (s *Store) beginCompaction(ctx context.Context, owner Owner, request Intent
 	return id, wire, nil
 }
 
-func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID string, audit any, original, replacement protocol.Context) error {
+func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID string, audit any, original, replacement protocol.Context, validateReplacement func(protocol.Context) error) error {
 	resultWire, err := marshal(audit)
 	if err != nil {
 		return err
@@ -406,6 +406,11 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 		conversation.Pending = nil
 		if err := s.recordEnvironmentContext(conversation, session, true); err != nil {
 			return err
+		}
+		if validateReplacement != nil {
+			if err := validateReplacement(conversation.ActiveContext); err != nil {
+				return err
+			}
 		}
 		if _, err := s.settleNotifications(ctx, tx, conversation, session, true); err != nil {
 			return err

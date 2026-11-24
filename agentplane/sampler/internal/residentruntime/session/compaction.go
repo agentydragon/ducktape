@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
@@ -75,7 +76,11 @@ func (r *Driver) compact(ctx context.Context, owner sessionstore.Owner, live *li
 	if err != nil {
 		return r.providerFailure(ctx, owner, session, intentID, err)
 	}
-	return r.finishProvider(ctx, owner, intentID, func(writeCtx context.Context) error {
-		return r.store.FinishCompaction(writeCtx, owner, intentID, result.Audit, original, replacement)
+	err = r.finishProvider(ctx, owner, intentID, func(writeCtx context.Context) error {
+		return r.store.FinishCompaction(writeCtx, owner, intentID, result.Audit, original, replacement, plan.ValidateReplacement)
 	})
+	if errors.As(err, new(*protocol.KnownFailureError)) {
+		return r.providerFailure(ctx, owner, session, intentID, err)
+	}
+	return err
 }

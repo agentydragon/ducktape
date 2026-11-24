@@ -203,7 +203,7 @@ func (c *Context) TurnComplete() bool {
 		return false
 	}
 	last := c.messages[len(c.messages)-1]
-	return last.Role == "assistant" && len(last.ToolCalls) == 0
+	return last.Role == "assistant" && len(last.ToolCalls) == 0 && !last.CompactionGenerated
 }
 
 func inspect(messages []message) ([]protocol.ToolInvocation, map[string]bool, error) {

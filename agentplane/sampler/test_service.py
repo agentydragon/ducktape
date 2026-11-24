@@ -25,7 +25,7 @@ from agentplane.native.codex.testing.responses_sse import (
     Reasoning,
     response_stream,
 )
-from agentplane.native.testing.model_endpoint import SseEvent
+from agentplane.native.testing.model_endpoint import JsonResponse, SseEvent
 from agentplane.proto import event_pb2
 from agentplane.sampler.api import sampler_admin_pb2, sampler_pb2
 from agentplane.sampler.settings import (
@@ -918,8 +918,9 @@ async def test_unknown_json_function_call_returns_function_output(
     assert not failed_results[0].succeeded
 
 
+@pytest.mark.parametrize("compact", [False, True])
 async def test_chat_completions_tool_round_trip(
-    endpoint: Endpoint, config: Settings, store: Store, tmp_path: Path
+    endpoint: Endpoint, config: Settings, store: Store, tmp_path: Path, compact: bool
 ) -> None:
     config.models["test-model"] = ModelConfig(
         connection="provider",
@@ -927,12 +928,18 @@ async def test_chat_completions_tool_round_trip(
         reasoning_efforts={"", "medium", "low"},
         api="chat_completions",
         exec_encoding="json",
+        chat_compaction=ChatCompactionConfig(max_tokens=1024, keep_recent_tokens=128, auto_compact_tokens=256)
+        if compact
+        else None,
     )
     request = create_request(tmp_path)
     request.spec.reasoning_effort = "medium"
+    user_text = "Use the tool. " * 100 if compact else "Use the tool."
+    reasoning = "Think through the tool call."
+    public_progress = "Checking the result."
     async with service(config) as stub:
         await stub.CreateSession(request, timeout=10)
-        await submit_input(stub, session_id=request.session_id, command_id="chat", text="Use the tool.", timeout_s=10)
+        await submit_input(stub, session_id=request.session_id, command_id="chat", text=user_text, timeout_s=10)
         call_chunk = {
             "id": "chat-tool",
             "choices": [
@@ -940,7 +947,8 @@ async def test_chat_completions_tool_round_trip(
                     "index": 0,
                     "delta": {
                         "role": "assistant",
-                        "reasoning_content": "Use the tool.",
+                        "content": public_progress,
+                        "reasoning_content": reasoning,
                         "tool_calls": [
                             {
                                 "index": 0,
@@ -959,7 +967,7 @@ async def test_chat_completions_tool_round_trip(
             initial = exchange.request.body
             assert initial["model"] == "chat-test-model"
             assert initial["reasoning_effort"] == "medium"
-            assert {"role": "user", "content": "Use the tool."} in initial["messages"]
+            assert {"role": "user", "content": user_text} in initial["messages"]
             assert initial["tools"][0]["function"]["name"] == "exec"
             # The first stream contains a complete-looking call, then disconnects without [DONE].
             call_event = SseEvent("chunk", b"data: " + json.dumps(call_chunk).encode() + b"\n\n")
@@ -967,17 +975,61 @@ async def test_chat_completions_tool_round_trip(
 
         async with await endpoint.next() as exchange:
             assert exchange.request.body == initial
-            await exchange.send(call_event, SseEvent("done", b"data: [DONE]\n\n"))
+            await exchange.send(
+                call_event,
+                SseEvent("usage", b'data: {"choices":[],"usage":{"total_tokens":500}}\n\n'),
+                SseEvent("done", b"data: [DONE]\n\n"),
+            )
+
+        if compact:
+            async with await endpoint.next() as exchange:
+                summary_request = exchange.request.body
+                assert summary_request["tool_choice"] == "none"
+                assert {"role": "user", "content": user_text} in summary_request["messages"]
+                source = summary_request["messages"]
+                assistant = next(m for m in source if m.get("tool_calls"))
+                tool = next(m for m in source if m["role"] == "tool")
+                assert assistant["content"] == public_progress
+                assert assistant["reasoning_content"] == reasoning
+                assert assistant["tool_calls"][0]["id"] == "chat-call"
+                assert tool["tool_call_id"] == "chat-call"
+                assert "42" in tool["content"]
+                await exchange.send(
+                    SseEvent(
+                        "chunk",
+                        b'data: {"id":"chat-handoff","choices":[{"delta":{"content":"Use the tool."},"finish_reason":"stop"}]}\n\n',
+                    ),
+                    SseEvent("done", b"data: [DONE]\n\n"),
+                )
 
         async with await endpoint.next() as exchange:
             continued = exchange.request.body
-            assistant = next(m for m in continued["messages"] if m["role"] == "assistant")
-            tool = next(m for m in continued["messages"] if m["role"] == "tool")
-            assert assistant["reasoning_content"] == "Use the tool."
-            assert assistant["tool_calls"][0]["id"] == "chat-call"
-            assert tool["role"] == "tool"
-            assert tool["tool_call_id"] == "chat-call"
-            assert "42" in tool["content"]
+            messages = continued["messages"]
+            if compact:
+                assert all(
+                    "reasoning_content" not in m and "tool_calls" not in m and m["role"] != "tool" for m in messages
+                )
+                assert all(m.get("content") not in {user_text, public_progress} for m in messages)
+                retained = [m["content"] for m in messages if m["role"] == "user"]
+                assert len(retained) == 1
+                assert "[truncated]" in retained[0]
+                assert [m for m in messages if m["role"] == "assistant"] == [
+                    {"role": "assistant", "content": "Summary of earlier conversation:\nUse the tool."}
+                ]
+            else:
+                assistant = next(m for m in messages if m.get("tool_calls"))
+                tool = next(m for m in messages if m["role"] == "tool")
+                assert assistant["reasoning_content"] == reasoning
+                assert assistant["content"] == public_progress
+                assert assistant["tool_calls"] == [
+                    {
+                        "id": "chat-call",
+                        "type": "function",
+                        "function": {"name": "exec", "arguments": '{"code":"text(42)"}'},
+                    }
+                ]
+                assert tool["tool_call_id"] == "chat-call"
+                assert "42" in tool["content"]
             await exchange.send(
                 SseEvent(
                     "chunk",
@@ -991,6 +1043,15 @@ async def test_chat_completions_tool_round_trip(
                 SseEvent("done", b"data: [DONE]\n\n"),
             )
         assert (await turn_completed(stub, request.session_id, "chat")).status == event_pb2.TURN_STATUS_COMPLETED
+        transcript = await store.transcript_items(request.session_id)
+        original = next(m for m in transcript if m.get("tool_calls"))
+        assert original["reasoning_content"] == reasoning
+        assert original["content"] == public_progress
+        old_tool = next(m for m in transcript if m["role"] == "tool")
+        assert old_tool["tool_call_id"] == "chat-call"
+        assert "42" in old_tool["content"]
+        assert {"role": "user", "content": user_text} in transcript
+        assert any(m["role"] == "system" and "<environment_context>" in m["content"] for m in transcript)
 
         entries = await store.events(request.session_id, 0, limit=10000)
         dispatches = [
@@ -1008,6 +1069,12 @@ async def test_chat_completions_tool_round_trip(
         ]
         assert [tool.item_id for tool in completed_tools] == ["chat-call"]
         assert completed_tools[0].tool.succeeded
+        observed_reasoning = [
+            entry.event.item_completed.text
+            for entry in entries
+            if entry.event.HasField("item_completed") and entry.event.item_completed.item_id == "chat-tool#reasoning"
+        ]
+        assert observed_reasoning == [reasoning]
         metadata = None
         body = bytearray()
         async for part in stub.admin.ReadProviderRequest(
@@ -1023,12 +1090,19 @@ async def test_chat_completions_tool_round_trip(
         assert json.loads(body) == continued
 
 
-@pytest.mark.parametrize("automatic", [False, True])
+@pytest.mark.parametrize("case", ["manual", "automatic", "overlong_input", "context_limit"])
 async def test_chat_completions_compaction(
-    endpoint: Endpoint, config: Settings, tmp_path: Path, automatic: bool
+    endpoint: Endpoint,
+    config: Settings,
+    store: Store,
+    tmp_path: Path,
+    case: Literal["manual", "automatic", "overlong_input", "context_limit"],
 ) -> None:
-    def completion(reply: str, *, tokens: int = 12) -> tuple[SseEvent, SseEvent, SseEvent]:
-        chunk = {"id": f"chat-{reply}", "choices": [{"index": 0, "delta": {"content": reply}, "finish_reason": "stop"}]}
+    def completion(reply: str, *, tokens: int = 12, reasoning: str = "") -> tuple[SseEvent, SseEvent, SseEvent]:
+        delta = {"content": reply}
+        if reasoning:
+            delta["reasoning_content"] = reasoning
+        chunk = {"id": f"chat-{reply}", "choices": [{"index": 0, "delta": delta, "finish_reason": "stop"}]}
         usage = {"choices": [], "usage": {"total_tokens": tokens}}
         return (
             SseEvent("chunk", b"data: " + json.dumps(chunk).encode() + b"\n\n"),
@@ -1036,6 +1110,8 @@ async def test_chat_completions_compaction(
             SseEvent("done", b"data: [DONE]\n\n"),
         )
 
+    automatic = case in {"automatic", "overlong_input"}
+    overlong = case in {"overlong_input", "context_limit"}
     config.models["test-model"] = ModelConfig(
         connection="provider",
         provider_model="chat-test-model",
@@ -1044,9 +1120,11 @@ async def test_chat_completions_compaction(
         exec_encoding="json",
         chat_compaction=ChatCompactionConfig(
             max_tokens=8192,
-            keep_recent_turns=1,
+            keep_recent_tokens=12,
             auto_compact_tokens=256 if automatic else None,
-            summary_prompt_template=None if automatic else "Write a work handoff. Keep {{.KeepRecentTurns}} turns.",
+            summary_prompt_template=None
+            if automatic
+            else "Write a handoff. The user message budget is {{.KeepRecentTokens}} tokens.",
             replacement=None
             if automatic
             else ChatCompactionReplacement(role="user", template="<handoff>{{.Summary}}</handoff>"),
@@ -1055,7 +1133,9 @@ async def test_chat_completions_compaction(
     request = create_request(tmp_path)
     request.spec.reasoning_effort = "medium"
     old = "old source " * 300
-    recent = "Keep this request verbatim."
+    old_answer = "old answer " * 32
+    old_reasoning = "Reasoning from the older prefix."
+    recent = "Long user request. " * 300 if overlong else "Keep this request verbatim."
     async with service(config) as stub:
         await stub.CreateSession(request, timeout=10)
         await submit_input(stub, session_id=request.session_id, command_id="old", text=old, timeout_s=10)
@@ -1063,7 +1143,7 @@ async def test_chat_completions_compaction(
             first_request = exchange.request.body
             assert first_request["reasoning_effort"] == "medium"
             assert first_request["stream_options"] == {"include_usage": True}
-            await exchange.send(*completion("old answer", tokens=500))
+            await exchange.send(*completion(old_answer, tokens=500, reasoning=old_reasoning))
         assert (await turn_completed(stub, request.session_id, "old")).status == event_pb2.TURN_STATUS_COMPLETED
 
         await stub.ChangeReasoningEffort(
@@ -1089,14 +1169,17 @@ async def test_chat_completions_compaction(
             assert frozen["tools"] == first_request["tools"]
             messages = frozen["messages"]
             assert messages[: len(first_request["messages"])] == first_request["messages"]
-            assert {"role": "assistant", "content": "old answer"} in messages
+            assert {"role": "assistant", "content": old_answer, "reasoning_content": old_reasoning} in messages
             assert {"role": "user", "content": recent} in messages
+            assert ({"role": "assistant", "content": "recent answer"} in messages) == (not automatic)
             assert messages[-1]["role"] == "user"
             if automatic:
                 assert "handoff" in messages[-1]["content"]
             else:
-                assert messages[-1]["content"] == "Write a work handoff. Keep 1 turns."
-            if automatic:
+                assert messages[-1]["content"] == ("Write a handoff. The user message budget is 12 tokens.")
+            if case == "context_limit":
+                await exchange.respond(JsonResponse(b'{"error":{"code":"context_length_exceeded"}}', 400))
+            elif automatic:
                 await exchange.send(*completion("truncated summary")[:-1])
             else:
                 await exchange.send(*completion("retained summary"))
@@ -1105,7 +1188,12 @@ async def test_chat_completions_compaction(
                 assert exchange.request.body == frozen
                 await exchange.send(*completion("retained summary"))
         else:
-            await wait_for_command(stub, request.session_id, "compact", sampler_pb2.COMMAND_OUTCOME_APPLIED)
+            outcome = (
+                sampler_pb2.COMMAND_OUTCOME_FAILED if case == "context_limit" else sampler_pb2.COMMAND_OUTCOME_APPLIED
+            )
+            compact = await wait_for_command(stub, request.session_id, "compact", outcome)
+            if case == "context_limit":
+                assert "context_length_exceeded" in compact.failure_reason
             await submit_input(stub, session_id=request.session_id, command_id="after", text="Go on.", timeout_s=10)
 
         async with await endpoint.next() as exchange:
@@ -1120,14 +1208,29 @@ async def test_chat_completions_compaction(
                 if automatic
                 else {"role": "user", "content": "<handoff>retained summary</handoff>"}
             )
-            assert expected in messages
+            assert (expected in messages) == (case != "context_limit")
             assert all("sampler_compaction_summary" not in m for m in messages)
-            assert {"role": "user", "content": recent} in messages
-            assert not any("old source" in m["content"] or "truncated summary" in m["content"] for m in messages)
+            if case != "context_limit":
+                assert all(m.get("content") != "recent answer" for m in messages)
+            if case == "overlong_input":
+                retained = [m["content"] for m in messages if m["role"] == "user"]
+                assert len(retained) == 1
+                assert "[truncated]" in retained[0]
+            assert ({"role": "user", "content": recent} in messages) == (case != "overlong_input")
+            assert ({"role": "user", "content": old} in messages) == (case == "context_limit")
+            assert all("truncated summary" not in m["content"] for m in messages)
             await exchange.send(*completion("done"))
 
         command = "recent" if automatic else "after"
         assert (await turn_completed(stub, request.session_id, command)).status == event_pb2.TURN_STATUS_COMPLETED
+        entries = await store.events(request.session_id, 0, limit=10000)
+        authored = {
+            entry.event.harness_user_message_confirmed.turn_id: entry.event.harness_user_message_confirmed.text
+            for entry in entries
+            if entry.event.HasField("harness_user_message_confirmed")
+        }
+        assert authored["old"] == old
+        assert authored["recent"] == recent
 
 
 @pytest.mark.parametrize("dialect", ["lite", "standard"])

@@ -517,7 +517,7 @@ func TestChatGPTResponsesModelChangeContinuesRetainedConversation(t *testing.T) 
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err := store.FinishCompaction(ctx, owner, compaction, map[string]any{"status": "completed"}, conversation.Context(), compacted); err != nil {
+				if err := store.FinishCompaction(ctx, owner, compaction, map[string]any{"status": "completed"}, conversation.Context(), compacted, nil); err != nil {
 					t.Fatal(err)
 				}
 			}

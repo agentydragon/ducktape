@@ -71,6 +71,8 @@ type sampleResult struct {
 type compactionPlan struct {
 	Preparation *providerrequest.Preparation
 	Apply       func(*sampleResult) (protocol.Context, error)
+	// ValidateReplacement runs after the environment refresh and before new notifications.
+	ValidateReplacement func(protocol.Context) error
 }
 
 // These adapters compose native packages with sampler-owned session and route policy.
@@ -227,7 +229,7 @@ func (a chatAdapter) Sample(ctx context.Context, client *http.Client, connection
 
 func (a chatAdapter) AutoCompactTokens(_ *int, state protocol.Context) *int {
 	config := a.config.ChatCompaction
-	if config != nil && config.AutoCompactTokens != nil && state.(*chatcompletions.Context).CanCompact(config.KeepRecentTurns) {
+	if config != nil && config.AutoCompactTokens != nil && state.(*chatcompletions.Context).CanCompact(config.RecentTokenBudget()) {
 		return config.AutoCompactTokens
 	}
 	return nil
@@ -243,9 +245,14 @@ func (a chatAdapter) PrepareCompaction(c *sessionstore.Conversation, session *se
 		return nil, err
 	}
 	return &compactionPlan{
-		Preparation: &providerrequest.Preparation{ModelConfig: a.config, SessionEffort: session.Effort, Compaction: true},
+		Preparation: &providerrequest.Preparation{
+			ModelConfig: a.config, SessionEffort: session.Effort, Compaction: true,
+		},
 		Apply: func(result *sampleResult) (protocol.Context, error) {
 			return plan.Apply(result.Records, result.Audit.(chatcompletions.Audit))
+		},
+		ValidateReplacement: func(replacement protocol.Context) error {
+			return plan.CheckReduction(replacement.(*chatcompletions.Context))
 		},
 	}, nil
 }
