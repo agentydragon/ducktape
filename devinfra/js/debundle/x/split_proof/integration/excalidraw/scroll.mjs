@@ -12,8 +12,9 @@ const chunks = process.env.EXCALIDRAW_INPUTS.split(" ").find((file) => file.ends
 assert(chunks);
 const authored = JSON.parse(readFileSync(process.env.EDITOR_LEAN_SPEC, "utf8"));
 const scroll = "packages/excalidraw/scene/scroll.mjs";
-const selected = authored.modules[scroll];
-assert.deepEqual(selected, ["#1337", "#1338"]);
+// Keep the two exported helpers as the namespace-refusal witness.
+assert.deepEqual(authored.modules[scroll], ["#1336", "#1337", "#1338"]);
+const selected = ["#1337", "#1338"];
 const selectors = Object.values(authored.modules).flat();
 assert.equal(selectors.length, 1787);
 const all = Array.from({ length: selectors.length }, (_, i) => "#" + i);

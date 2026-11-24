@@ -61,6 +61,32 @@ Two hoisted geometry helpers capture that binding. The checker accounts for
 both observers before restoring the suffix state; a getter that reaches a
 mutable observer still prevents the move. [225-binding replay and negative controls](https://app.buildbuddy.io/invocation/b3a3b9cf-e163-47e8-ac5b-43f873525eeb).
 
+## The scroll dependency closure
+
+The pinned [scroll.ts](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/excalidraw/scene/scroll.ts#L14)
+uses a private helper, `isOutsideViewPort` (unit 1336, `qb`). It reads only
+`sceneCoordsToViewportCoords`, which the editor already exports as `sb`.
+[Adding the viewport helper to the named selection](https://app.buildbuddy.io/invocation/c88359e1-9673-4325-9990-1599c71d3220)
+passed the canonical and selected Rust gates, both Lean checks and Chromium.
+
+Two other private entry cells prevent moving `calculateScrollCenter`:
+
+- `Lm` (1745) is [getVisibleElements in element/index.ts](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/excalidraw/element/index.ts#L89).
+  Its predicate `isInvisiblySmallElement` already has the public name `zj`.
+- `Eb` (1269) is [getClosestElementBounds in element/bounds.ts](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/excalidraw/element/bounds.ts#L935).
+  Its point and map helpers have public bindings. Its private
+  [getElementBounds](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/excalidraw/element/bounds.ts#L816)
+  (1264, `xt`) delegates to [ElementBounds](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/excalidraw/element/bounds.ts#L72).
+  The bundle creates the class (1247), initializes its static WeakMap (1248)
+  and binds the alias `pb` read by `xt` (1249).
+
+The Rust atomic dependency graph puts 1745 and 1264 in the same 410-unit
+component despite their different upstream homes. Assigning the helpers to
+their original modules splits that component across the entry, `element/index`
+and `element/bounds`; both the [canonical gate](https://app.buildbuddy.io/invocation/bdb36333-a093-4883-82c2-c7376e45b82c)
+and the [named-subset gate](https://app.buildbuddy.io/invocation/892125c3-5f45-4cfb-8abc-6c687835303d)
+refused it before Lean emission.
+
 ## What limited the candidate set
 
 To select a trial, join the canonical Rust graph to the scope-annotated original

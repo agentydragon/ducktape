@@ -1,6 +1,16 @@
 # Upstream owner: packages/excalidraw/scene/scroll.ts
 source_matches:
   - match: |
+      var isOutsideViewPort = (appState, cords) => {
+        let [x1, y1, x2, y2] = cords,
+          { x: viewportX1, y: viewportY1 } = sceneCoordsToViewportCoords({sceneX: x1, sceneY: y1}, appState),
+          { x: viewportX2, y: viewportY2 } = sceneCoordsToViewportCoords({sceneX: x2, sceneY: y2}, appState);
+        return viewportX2 - viewportX1 > appState.width || viewportY2 - viewportY1 > appState.height;
+      };
+    bindings:
+      - isOutsideViewPort
+
+  - match: |
       var selected = ({
         scenePoint: scenePoint,
         viewportDimensions: viewportDimensions,
