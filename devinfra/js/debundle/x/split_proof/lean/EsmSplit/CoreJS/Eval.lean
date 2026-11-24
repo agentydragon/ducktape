@@ -48,10 +48,10 @@ def initSelf (env : Env) (self : Bool) (name : Name) (v : Val) : M W Unit :=
 
 /-- A generator has a fresh prototype with no own constructor. An ordinary constructor's prototype
 has an own property pointing back to the function. -/
-def addPrototype (a : Addr) (generator : Bool := false) : M W Unit := do
+def addPrototype (a : Addr) (kind : FuncKind := .normal) : M W Unit := do
   let p ← alloc {
-    proto := some (if generator then generatorProto else objectProto),
-    props := if generator then [] else [("constructor", .data (.obj a) true false true)] }
+    proto := some kind.instanceProto,
+    props := if kind == .normal then [("constructor", .data (.obj a) true false true)] else [] }
   modifyObj a fun o => { o with props := o.props ++
     [(PropertyKey.str "prototype", Property.data (.obj p) true false false)] }
 
@@ -62,7 +62,7 @@ def makeFunc (env : Env) (f : Func) : M W Val := do
     proto := some f.intrinsicProto, code := some (.closure f (env.capture f.closes) []),
     props := [("length", .data (.num (Float.ofNat f.length)) false false true),
       ("name", .data (.str f.name) false false true)] }
-  (if f.kind == .normal || f.kind == .generator then addPrototype a (f.kind == .generator) else pure ())
+  (if f.kind.hasOwnPrototype then addPrototype a f.kind else pure ())
   initSelf env f.self f.name (.obj a)
   pure (.obj a)
 

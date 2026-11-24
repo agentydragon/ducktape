@@ -42,13 +42,11 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
   have object (a : Addr) (h : a.region ≠ r) : A (.obj a) := h
   have objectRoot : A (.obj objectProto) := Ne.symm hr
   have functionRoot : A (.obj functionProto) := Ne.symm hr
-  have prototypeRoot (generator : Bool) : A (.obj (if generator then generatorProto else objectProto)) := by
-    cases generator <;> exact Ne.symm hr
+  have prototypeRoot (kind : FuncKind) : A (.obj kind.instanceProto) := by
+    cases kind <;> exact Ne.symm hr
   have intrinsicRoot (f : Func) : A (.obj f.intrinsicProto) := by
     unfold Func.intrinsicProto
-    split
-    · exact Ne.symm hr
-    · split <;> exact Ne.symm hr
+    cases f.kind <;> exact Ne.symm hr
   have arrayRoot : A (.obj arrayProto) := Ne.symm hr
   have regexpRoot : A (.obj regexpProto) := Ne.symm hr
   have allocate (cells : List (Option Addr)) (o : Obj) (ho : ∀ node ∈ o.nodes, A node) :

@@ -269,12 +269,12 @@ theorem reachFrame_copyBindings {r R cells A} (away : Away r R A)
     ReachFrame r R cells A (fun env' => ∀ n ∈ env'.nodes, A n) (copyBindings env xs : M W Env) :=
   (reachFrame_boundCells away env xs safe).bind_stateRead fun bs hb => reachFrame_declare away outside env bs safe hb
 
-theorem reachFrame_addPrototype {r R cells A} {generator : Bool} (away : Away r R A)
-    (root : A (.obj (if generator then generatorProto else objectProto)))
+theorem reachFrame_addPrototype {r R cells A} {kind : FuncKind} (away : Away r R A)
+    (root : A (.obj kind.instanceProto))
     (allocate : ∀ o : Obj, (∀ node ∈ o.nodes, A node) →
       ReachFrame r R cells A (fun a => A (.obj a)) (alloc o : M W Addr))
     (a : Addr) (ha : A (.obj a)) :
-    ReachFrame r R cells A (fun _ => True) (addPrototype a generator : M W Unit) := by
+    ReachFrame r R cells A (fun _ => True) (addPrototype a kind : M W Unit) := by
   unfold addPrototype
   apply (allocate _ ?_).bind
   · intro p hp
@@ -287,18 +287,18 @@ theorem reachFrame_addPrototype {r R cells A} {generator : Bool} (away : Away r 
     · exact Or.inr hp
     · exact Or.inl (Or.inr (Or.inr h))
   · intro node hn
-    cases generator
-    · simp [Obj.nodes, Property.nodes, Val.nodes] at hn
+    by_cases normal : kind == .normal
+    · simp [normal, Obj.nodes, Property.nodes, Val.nodes] at hn
       rcases hn with rfl | rfl
       · exact root
       · exact ha
-    · simp [Obj.nodes, Property.nodes, Val.nodes] at hn
+    · simp [normal, Obj.nodes, Property.nodes, Val.nodes] at hn
       subst node
       exact root
 
 theorem reachFrame_makeFunc {r R cells A} (away : Away r R A)
     (outside : ∀ a, a.region ≠ r → A (.cell a))
-    (prototypeRoot : ∀ generator : Bool, A (.obj (if generator then generatorProto else objectProto)))
+    (prototypeRoot : ∀ kind : FuncKind, A (.obj kind.instanceProto))
     (functionRoot : ∀ f : Func, A (.obj f.intrinsicProto))
     (allocate : ∀ o : Obj, (∀ node ∈ o.nodes, A node) →
       ReachFrame r R cells A (fun a => A (.obj a)) (alloc o : M W Addr))
@@ -310,7 +310,7 @@ theorem reachFrame_makeFunc {r R cells A} (away : Away r R A)
   apply (allocate _ ?_).bind
   · intro a ha
     have proto : ReachFrame r R cells A (fun _ => True)
-        (if f.kind == .normal || f.kind == .generator then addPrototype a (f.kind == .generator)
+        (if f.kind.hasOwnPrototype then addPrototype a f.kind
          else pure () : M W Unit) := by
       split
       · exact reachFrame_addPrototype away (prototypeRoot _) allocate a ha
@@ -335,7 +335,7 @@ private theorem ReachFrame.forM {r R cells A} {α : Type} {f : α → M W PUnit}
 
 theorem reachFrame_enterBlock {r R cells A} (away : Away r R A)
     (outside : ∀ a, a.region ≠ r → A (.cell a))
-    (prototypeRoot : ∀ generator : Bool, A (.obj (if generator then generatorProto else objectProto)))
+    (prototypeRoot : ∀ kind : FuncKind, A (.obj kind.instanceProto))
     (functionRoot : ∀ f : Func, A (.obj f.intrinsicProto))
     (allocate : ∀ o : Obj, (∀ node ∈ o.nodes, A node) →
       ReachFrame r R cells A (fun a => A (.obj a)) (alloc o : M W Addr))
@@ -357,7 +357,7 @@ theorem reachFrame_enterBlock {r R cells A} (away : Away r R A)
 
 theorem reachFrame_enterFunction {r R cells A} (away : Away r R A)
     (outside : ∀ a, a.region ≠ r → A (.cell a))
-    (prototypeRoot : ∀ generator : Bool, A (.obj (if generator then generatorProto else objectProto)))
+    (prototypeRoot : ∀ kind : FuncKind, A (.obj kind.instanceProto))
     (functionRoot : ∀ f : Func, A (.obj f.intrinsicProto))
     (allocate : ∀ o : Obj, (∀ node ∈ o.nodes, A node) →
       ReachFrame r R cells A (fun a => A (.obj a)) (alloc o : M W Addr))

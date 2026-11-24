@@ -21,7 +21,7 @@ private theorem reachFrame_makeOpaque {r R cells A} (away : Away r R A)
         (if constructor then addPrototype a else pure () : M W Unit) := by
       cases constructor
       · exact reachFrame_pure r R cells A () trivial
-      · exact reachFrame_addPrototype (generator := false) away objectRoot (fun o hs => reachFrame_alloc o hs objects) a ha
+      · exact reachFrame_addPrototype (kind := .normal) away objectRoot (fun o hs => reachFrame_alloc o hs objects) a ha
     exact prototypeFrame.bind fun _ _ => reachFrame_pure r R cells A (Val.obj a) (safeVal_obj.2 ha)
   · intro n hn
     simp [Obj.nodes, Property.nodes, Code.nodes, Val.nodes] at hn
