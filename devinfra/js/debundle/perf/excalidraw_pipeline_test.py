@@ -63,33 +63,20 @@ def test_execute_phase_preserves_logs_and_propagates_child_failure(tmp_path: Pat
     assert "Command being timed" in (output / "gnu-time.txt").read_text()
 
 
-@pytest.mark.parametrize(
-    ("profile", "tool", "absent"), [(ProfileMode.CPU, "perf", "heaptrack"), (ProfileMode.HEAP, "heaptrack", "perf")]
-)
-def test_profile_modes_are_separate(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, profile: ProfileMode, tool: str, absent: str
-) -> None:
-    monkeypatch.setattr(excalidraw_pipeline, "runner_tool", lambda name: name)
-    analyzer = ["analyzer", "--projection", "input"]
-    command = excalidraw_pipeline.phase_command(analyzer, phase="analyze", profile=profile, outputs=tmp_path)
-    assert command[0] == tool
-    assert absent not in command
-    profiled_analyzer = [*analyzer, "--metrics-file", str(tmp_path / "metrics.jsonl")]
-    assert command[-len(profiled_analyzer) :] == profiled_analyzer
-    assert (
-        excalidraw_pipeline.phase_command(analyzer, phase="project", profile=profile, outputs=tmp_path)
-        == profiled_analyzer
-    )
-
-
+@pytest.mark.parametrize(("profile", "tool"), [(ProfileMode.CPU, "perf"), (ProfileMode.HEAP, "heaptrack")])
 @pytest.mark.parametrize("phase", ["project", "analyze", "apply"])
-@pytest.mark.parametrize("profile", [ProfileMode.CPU, ProfileMode.HEAP])
-def test_profiled_phase_writes_metrics_to_its_output_directory(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, phase: str, profile: ProfileMode
+def test_profiled_phase_keeps_metrics_and_wraps_only_analyze(
+    tmp_path: Path, phase: str, profile: ProfileMode, tool: str
 ) -> None:
-    monkeypatch.setattr(excalidraw_pipeline, "runner_tool", lambda name: name)
-    command = excalidraw_pipeline.phase_command(["debundle", phase], phase=phase, profile=profile, outputs=tmp_path)
-    assert command[-2:] == ["--metrics-file", str(tmp_path / "metrics.jsonl")]
+    argv = ["debundle", phase]
+    command = excalidraw_pipeline.phase_command(argv, phase=phase, profile=profile, outputs=tmp_path)
+    expected = [*argv, "--metrics-file", str(tmp_path / "metrics.jsonl")]
+    if phase == "analyze":
+        assert Path(command[0]).name == tool
+        assert {Path(arg).name for arg in command} & {"perf", "heaptrack"} == {tool}
+        assert command[command.index("--") + 1 :] == expected
+    else:
+        assert command == expected
 
 
 @pytest.mark.parametrize("profile", [ProfileMode.CPU, ProfileMode.HEAP])
