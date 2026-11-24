@@ -27,6 +27,7 @@ pytest_plugins = ("testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 SCROLL = "packages/excalidraw/scene/scroll.mjs"
+STARTUP = "packages/excalidraw/editor/startup.mjs"
 
 
 def resolve(runfiles: Runfiles, path: str) -> Path:
@@ -48,7 +49,9 @@ def editor_source(runfiles: Runfiles) -> Path:
     return bundle / name
 
 
-def certify_scroll(runfiles: Runfiles, source: Path, *, deployment_origin: str | None = None) -> Path:
+def certify_editor_split(
+    runfiles: Runfiles, source: Path, origin: str, module: str, ordinals: tuple[int, ...], pivot: int | None
+) -> dict[str, Path]:
     authored = json.loads(resolve(runfiles, os.environ["EDITOR_LEAN_SPEC"]).read_text())
     assert authored["modules"][SCROLL] == ["#1337", "#1338"]
     selectors = [unit for units in authored["modules"].values() for unit in units]
@@ -56,16 +59,16 @@ def certify_scroll(runfiles: Runfiles, source: Path, *, deployment_origin: str |
     assert len(selectors) == len(source_order)
     assert set(selectors) == set(source_order)
     artifacts = undeclared_outputs_dir()
-    if deployment_origin is not None:
-        (artifacts / "browser-origin.txt").write_text(f"{deployment_origin}\n")
-    spec = artifacts / "scroll.json"
+    (artifacts / "browser-origin.txt").write_text(f"{origin}\n")
+    spec = artifacts / f"{PurePosixPath(module).stem}.json"
+    moved = [f"#{index}" for index in ordinals]
     # Keep the public URL of the editor so main.js can use its original imports.
     spec.write_text(
         json.dumps(
             {
                 "entry": source.name,
-                "modules": {source.name: [unit for unit in source_order if unit != "#1337"], SCROLL: ["#1337"]},
-                "order": [SCROLL],
+                "modules": {source.name: [unit for unit in source_order if unit not in moved], module: moved},
+                "order": [module],
                 "sequential": True,
             }
         )
@@ -82,11 +85,15 @@ def certify_scroll(runfiles: Runfiles, source: Path, *, deployment_origin: str |
         "normal-completion",
         "--host-contract",
         profile,
-        "--structural-pivot",
-        "1337",
+        "--deployment-origin",
+        origin,
     ]
-    if deployment_origin is not None:
-        command.extend(["--deployment-origin", deployment_origin])
+    if pivot is None:
+        scope = "linked-structural-order"
+        command.append("--structural-order")
+    else:
+        scope = "linked-structural-pivot"
+        command.extend(["--structural-pivot", str(pivot)])
     verdicts = []
     for stage, args in [("emit", []), ("check-output", ["--check-output"])]:
         run = subprocess.run([*command, *args], capture_output=True, text=True, check=False)
@@ -96,12 +103,12 @@ def certify_scroll(runfiles: Runfiles, source: Path, *, deployment_origin: str |
         assert verdict["status"] == "certified", verdict
         assert verdict["requested"] == "normal-completion", verdict
         assert verdict["guarantee"] == "normal-completion", verdict
-        assert verdict["scope"] == "linked-structural-pivot", verdict
+        assert verdict["scope"] == scope, verdict
         assert verdict["hostProfile"] == "browser-page", verdict
         assert isinstance(verdict["assumptions"], list), verdict
         verdicts.append(verdict)
     assert verdicts[0] == verdicts[1]
-    return out
+    return {name: out / name for name in (source.name, module)}
 
 
 def serve_file(url: str, file: Path) -> Route:
@@ -113,10 +120,11 @@ def serve_file(url: str, file: Path) -> Route:
     return Route(f"/{url}", get)
 
 
-def install_editor_overlay(app: Starlette, source: Path, certified: Path) -> None:
-    if (source.parent / SCROLL).exists(follow_symlinks=False):
-        raise ValueError(f"the emitted scroll route shadows an original public asset ({SCROLL})")
-    app.router.routes[:0] = [serve_file(name, certified / name) for name in (source.name, SCROLL)]
+def install_editor_overlay(app: Starlette, source: Path, files: dict[str, Path]) -> None:
+    for name in files:
+        if name != source.name and (source.parent / name).exists(follow_symlinks=False):
+            raise ValueError(f"the emitted route shadows an original public asset ({name})")
+    app.router.routes[:0] = [serve_file(name, path) for name, path in files.items()]
 
 
 def replay_app(bundle: Path, index: Path, fonts: Path) -> Starlette:
@@ -152,7 +160,11 @@ def editor_providers(runfiles: Runfiles, editor_source: Path) -> list[str]:
 
 
 async def smoke(
-    playwright_driver: Playwright, origin: str, source: Path, providers: list[str], certified: Path | None = None
+    playwright_driver: Playwright,
+    origin: str,
+    source: Path,
+    providers: list[str],
+    overlay: dict[str, Path] | None = None,
 ) -> list[str]:
     editor = source.name
     async with deterministic_browser_context(
@@ -212,8 +224,8 @@ async def smoke(
         assert errors == []
         assert [url for url, response in responses.items() if response.status >= 400] == []
         expected_files = {name: source.parent / name for name in ["main.js", editor, *providers]}
-        if certified is not None:
-            expected_files.update({name: certified / name for name in (editor, SCROLL)})
+        if overlay is not None:
+            expected_files.update(overlay)
         for name, file in expected_files.items():
             assert await responses[f"{origin}/{name}"].body() == file.read_bytes(), name
         return list(namespace["names"])
@@ -234,11 +246,12 @@ async def test_original_editor_replacement_routes(tmp_path: Path) -> None:
     (certified / source.name).write_text("export const replacement = true;")
     (certified / "provider.js").write_text("export const provider = false;")
 
+    overlay = {name: certified / name for name in (source.name, SCROLL)}
     app = replay_app(source.parent, index, fonts)
     async with serve_app_in_loop(app) as origin, httpx.AsyncClient(base_url=origin, trust_env=False) as client:
         assert (await client.get(f"/{source.name}")).content == source.read_bytes()
         assert (await client.get(f"/{SCROLL}")).status_code == 404
-        install_editor_overlay(app, source, certified)
+        install_editor_overlay(app, source, overlay)
         for name, file in {
             source.name: certified / source.name,
             SCROLL: certified / SCROLL,
@@ -253,7 +266,7 @@ async def test_original_editor_replacement_routes(tmp_path: Path) -> None:
     existing.parent.mkdir(parents=True)
     existing.write_text("export const original = true;")
     with pytest.raises(ValueError, match="shadows an original public asset"):
-        install_editor_overlay(app, source, certified)
+        install_editor_overlay(app, source, overlay)
 
 
 async def test_original_editor(
@@ -263,19 +276,26 @@ async def test_original_editor(
         await smoke(playwright_driver, origin, editor_source, editor_providers)
 
 
-async def test_certified_scroll(
+@pytest.mark.parametrize(
+    ("module", "ordinals", "pivot"),
+    [pytest.param(SCROLL, (1337,), 1337, id="scroll"), pytest.param(STARTUP, tuple(range(5, 19)), None, id="startup")],
+)
+async def test_certified_editor_split(
     playwright_driver: Playwright,
     runfiles: Runfiles,
     editor_app: Starlette,
     editor_source: Path,
     editor_providers: list[str],
+    module: str,
+    ordinals: tuple[int, ...],
+    pivot: int | None,
 ) -> None:
     async with serve_app_in_loop(editor_app) as origin:
-        certified = await asyncio.to_thread(certify_scroll, runfiles, editor_source, deployment_origin=origin)
+        files = await asyncio.to_thread(certify_editor_split, runfiles, editor_source, origin, module, ordinals, pivot)
         original = await smoke(playwright_driver, origin, editor_source, editor_providers)
-        # The first browser context has closed. Switch only the two routes on the running server.
-        install_editor_overlay(editor_app, editor_source, certified)
-        assert await smoke(playwright_driver, origin, editor_source, editor_providers, certified) == original
+        # The first browser context has closed. Switch only the certified routes on the running server.
+        install_editor_overlay(editor_app, editor_source, files)
+        assert await smoke(playwright_driver, origin, editor_source, editor_providers, files) == original
 
 
 if __name__ == "__main__":

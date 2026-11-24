@@ -144,7 +144,7 @@ Run these opt-in targets on RBE:
 ```sh
 p=//devinfra/js/debundle/x/split_proof/translation
 bbr test "$p:excalidraw_original_editor_browser_smoke"
-bbr test "$p:excalidraw_certified_scroll_browser_smoke"
+bbr test "$p:excalidraw_certified_scroll_browser_smoke" "$p:excalidraw_certified_startup_browser_smoke"
 ```
 
 The baseline loads the pinned editor. The split test certifies the single move
@@ -155,6 +155,12 @@ the served entry and provider bytes, draws a rectangle, waits for Undo to
 become enabled and checks the `Bg` scene-centering result. The split test also
 checks the served `scroll.mjs` bytes and compares all 611 entry export names
 with the baseline.
+The startup replay extracts the 14 initialization units `#5` through `#18`
+into `packages/excalidraw/editor/startup.mjs`. These define the CommonJS
+wrappers used by the editor, including the React entry. `--structural-order`
+checks that the units run in the original order immediately after the five
+provider imports. The startup replay compares the same 611-name namespace and
+browser behavior while checking the new module's served bytes.
 [Smoke test](browser_smoke_test.py)
 
 ### Direct AST lowering for negated initializers
