@@ -1,6 +1,5 @@
 import { BINARY, LOGICAL, UNARY } from "./to_core.mjs";
-import { rng } from "../translation/testing/gen/core.mjs";
-import { lcg32 } from "../seeded_random.mjs";
+import { lcg32, seededRandom } from "../seeded_random.mjs";
 
 // Bounded CoreJS programs. Every selected family executes; no unit filtering or unknown-code retry.
 // Prefix units 0 and 1 are independent allocations. Swapping them is a required real-emitter move control.
@@ -541,7 +540,7 @@ export function generatedInheritanceCases(seed) {
 }
 
 export function generatedHeritageSplit(seed) {
-  const random = rng(seed);
+  const random = seededRandom(seed);
   const n = 1 + random.int(9);
   const choose = (options, index, count) => {
     const remaining = [...options];
