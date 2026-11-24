@@ -869,19 +869,34 @@ async def test_clear_shopping_list_keeps_list_and_other_lists_items(
     assert untouched.json()["note"] == list_name
 
 
-async def _add_dated_stock(client: Client, ref_data: RefData, products: dict[str, date]) -> None:
-    items = [
+async def _add_dated_lot(
+    client: Client,
+    ref_data: RefData,
+    product: str,
+    due: date,
+    *,
+    amount: int = 3,
+    location: str | None = None,
+    price: int | None = None,
+) -> int:
+    [added] = await call_tool(
+        client,
+        "stock_add",
         {
-            "product": name,
-            "qu": ref_data.qu,
-            "location": ref_data.location,
-            "amount": 3,
-            "best_before_date": due.isoformat(),
-        }
-        for name, due in products.items()
-    ]
-    added = await call_tool(client, "stock_add", {"items": items})
-    assert [row["kind"] for row in added] == ["ok"] * len(items), added
+            "items": [
+                {
+                    "product": product,
+                    "qu": ref_data.qu,
+                    "location": location or ref_data.location,
+                    "amount": amount,
+                    "price": price,
+                    "best_before_date": due.isoformat(),
+                }
+            ]
+        },
+    )
+    assert added["kind"] == "ok", added
+    return int(added["entry_id"])
 
 
 async def test_expiring_stock_returns_openable_lots_with_their_own_amounts_and_locations(
@@ -892,43 +907,27 @@ async def test_expiring_stock_returns_openable_lots_with_their_own_amounts_and_l
     fridge = f"Fridge-{ref_data.suffix}"
     [location] = await call_tool(mcp_client, "locations_create", {"items": [{"name": fridge}]})
     assert location["kind"] == "ok", location
-    matching = {}
-    for place, amount, days, price in [(fridge, 2, 1, 1), (fridge, 3, 1, 2), (ref_data.location, 5, 20, 1)]:
-        [added] = await call_tool(
-            mcp_client,
-            "stock_add",
-            {
-                "items": [
-                    {
-                        "product": product,
-                        "location": place,
-                        "amount": amount,
-                        "price": price,
-                        "qu": ref_data.qu,
-                        "best_before_date": (today + timedelta(days=days)).isoformat(),
-                    }
-                ]
-            },
-        )
-        assert added["kind"] == "ok", added
-        if days == 1:
-            matching[added["entry_id"]] = amount
+    due = today + timedelta(days=1)
+    first = await _add_dated_lot(mcp_client, ref_data, product, due, amount=2, location=fridge, price=1)
+    second = await _add_dated_lot(mcp_client, ref_data, product, due, amount=3, location=fridge, price=2)
+    await _add_dated_lot(mcp_client, ref_data, product, today + timedelta(days=20), amount=5)
 
     rows = await call_tool(mcp_client, "get_expiring_stock", {"days_ahead": 3})
     lots = [r for r in rows if r["product_name"] == product]
-    assert len(lots) == len(matching) == 2
-    due = (today + timedelta(days=1)).isoformat()
+    assert len(lots) == 2
     assert {(r["entry_id"], r["location_name"], r["amount"], r["best_before_date"]) for r in lots} == {
-        (entry_id, fridge, amount, due) for entry_id, amount in matching.items()
+        (first, fridge, 2, due.isoformat()),
+        (second, fridge, 3, due.isoformat()),
     }
-    details = await call_tool(mcp_client, "stock_entries_list", {"entry_ids": list(matching)})
-    assert {r["entry"]["entry_id"]: r["entry"]["amount"] for r in details} == matching
+    details = await call_tool(mcp_client, "stock_entries_list", {"entry_ids": [r["entry_id"] for r in lots]})
+    assert {r["entry"]["entry_id"]: r["entry"]["amount"] for r in details} == {first: 2, second: 3}
 
 
 async def test_expiring_stock_honors_window(mcp_client: Client, ref_data: RefData) -> None:
     today = datetime.now(UTC).date()
     soon, later = ref_data.products
-    await _add_dated_stock(mcp_client, ref_data, {soon: today + timedelta(days=2), later: today + timedelta(days=12)})
+    await _add_dated_lot(mcp_client, ref_data, soon, today + timedelta(days=2))
+    await _add_dated_lot(mcp_client, ref_data, later, today + timedelta(days=12))
 
     for window, expected in [(0, {}), (11, {soon: 2}), (12, {soon: 2, later: 12})]:
         rows = await call_tool(mcp_client, "get_expiring_stock", {"days_ahead": window})
@@ -936,7 +935,7 @@ async def test_expiring_stock_honors_window(mcp_client: Client, ref_data: RefDat
             row["product_name"]: row["days_until_expiry"] for row in rows if row["product_name"] in ref_data.products
         } == expected
 
-    await _add_dated_stock(mcp_client, ref_data, {soon: today})
+    await _add_dated_lot(mcp_client, ref_data, soon, today)
     due_today = await call_tool(mcp_client, "get_expiring_stock", {"days_ahead": 0})
     assert [row["days_until_expiry"] for row in due_today if row["product_name"] == soon] == [0]
 
@@ -947,14 +946,15 @@ async def test_expired_stock_distinguishes_use_by_from_best_before(mcp_client: C
     assert edited[0]["kind"] == "ok", edited
 
     past = datetime.now(UTC).date() - timedelta(days=2)
-    await _add_dated_stock(mcp_client, ref_data, {best_before: past, use_by: past})
+    await _add_dated_lot(mcp_client, ref_data, best_before, past)
+    entry_id = await _add_dated_lot(mcp_client, ref_data, use_by, past)
+    await _add_dated_lot(mcp_client, ref_data, use_by, past + timedelta(days=5))
     rows = await call_tool(mcp_client, "get_expired_stock", {})
     assert best_before not in {row["product_name"] for row in rows}
-    [lot] = await call_tool(mcp_client, "stock_entries_list", {"products": [use_by]})
     assert [row for row in rows if row["product_name"] == use_by] == [
         {
             "product_id": ref_data.product_ids[1],
-            "entry_id": lot["entry"]["entry_id"],
+            "entry_id": entry_id,
             "product_name": use_by,
             "amount": 3,
             "qu_name": ref_data.qu,
