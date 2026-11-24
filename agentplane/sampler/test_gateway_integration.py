@@ -173,6 +173,7 @@ async def test_gateway_shell_patch_and_history_survive_executor_loss(
                 request.spec.placement.central_sampler_v1.executor_environment.uid = sandbox.destination.target.uid
                 sampler_settings.environment_namespace = sandbox.destination.target.namespace
                 sampler_settings.event_block_writes = True
+                sampler_settings.deduplicate_tool_catalogs = True
                 request.setup_script = (
                     "printf before > artifact.txt\n"
                     "printf 'gateway setup stdout\\n'\n"

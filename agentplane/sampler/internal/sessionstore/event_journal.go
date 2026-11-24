@@ -8,12 +8,9 @@ import (
 
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/eventcodec"
+	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore/internal/contentdb"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 )
-
-type journalQueryer interface {
-	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
-}
 
 func (s *Store) Events(ctx context.Context, id string, after uint64, limit int) ([]*eventlogpb.EventEntry, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
@@ -27,7 +24,7 @@ func (s *Store) Events(ctx context.Context, id string, after uint64, limit int) 
 	return readJournalRange(ctx, s.db, id, after+1, min(after+uint64(limit), math.MaxInt32))
 }
 
-func journalEntry(ctx context.Context, q journalQueryer, sessionID string, sequence uint64) (*eventlogpb.EventEntry, error) {
+func journalEntry(ctx context.Context, q contentdb.Queryer, sessionID string, sequence uint64) (*eventlogpb.EventEntry, error) {
 	entries, err := readJournalRange(ctx, q, sessionID, sequence, sequence)
 	if err != nil {
 		return nil, err
@@ -43,26 +40,15 @@ type journalFrame struct {
 	wire     []byte
 }
 
-func readJournalRange(ctx context.Context, q journalQueryer, sessionID string, first, last uint64) ([]*eventlogpb.EventEntry, error) {
+func readJournalRange(ctx context.Context, q contentdb.Queryer, sessionID string, first, last uint64) ([]*eventlogpb.EventEntry, error) {
 	frames, err := journalFrames(ctx, q, sessionID, first, last)
-	if err != nil {
+	if err != nil || len(frames) == 0 {
 		return nil, err
 	}
-	var entries []*eventlogpb.EventEntry
-	for _, frame := range frames {
-		entry := &eventlogpb.EventEntry{}
-		if err := eventcodec.Decode(frame.wire, entry); err != nil {
-			return nil, fmt.Errorf("decode event at cursor %d: %w", frame.sequence, err)
-		}
-		if entry.GetCursor() != frame.sequence {
-			return nil, fmt.Errorf("event at cursor %d contains cursor %d", frame.sequence, entry.GetCursor())
-		}
-		entries = append(entries, entry)
-	}
-	return entries, nil
+	return decodeJournalEntries(ctx, q, frames)
 }
 
-func journalFrames(ctx context.Context, q journalQueryer, sessionID string, first, last uint64) ([]journalFrame, error) {
+func journalFrames(ctx context.Context, q contentdb.Queryer, sessionID string, first, last uint64) ([]journalFrame, error) {
 	// One MVCC snapshot sees either a sealed block or all its former standalone rows.
 	// The maximum span lets both parts of the union use their session/sequence index.
 	oldestBlock := max(first, eventcodec.MaxBlockEntries) - eventcodec.MaxBlockEntries + 1

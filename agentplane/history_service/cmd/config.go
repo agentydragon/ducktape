@@ -63,6 +63,7 @@ type ingressConfig struct {
 	// CompactExecutionEvidence packs BoundaryRecord and ExecutionProgress events after every reader
 	// replica supports those block kinds. Keep this disabled during a mixed-version rollout.
 	CompactExecutionEvidence bool `mapstructure:"compact_execution_evidence"`
+	DeduplicateToolCatalogs  bool `mapstructure:"deduplicate_tool_catalogs"`
 }
 
 func defaultConfig() config {

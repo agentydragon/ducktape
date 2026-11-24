@@ -90,7 +90,7 @@ func (s *Store) compactHistoryBatch(ctx context.Context, sessionID uuid.UUID, ki
 		}
 		var first uint64
 		err := tx.QueryRowContext(ctx, `SELECT cursor FROM session_event
-			WHERE session_id=$1 AND kind=$2 AND cursor>$3 AND cursor<=$4 AND octet_length(payload)<=$5
+			WHERE session_id=$1 AND kind=$2 AND cursor>$3 AND cursor<=$4 AND catalog_id IS NULL AND octet_length(payload)<=$5
 			ORDER BY cursor LIMIT 1`, sessionID, kind, after, through, blockBytes/2).Scan(&first)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil
@@ -112,13 +112,13 @@ func (s *Store) compactHistoryBatch(ctx context.Context, sessionID uuid.UUID, ki
 			if blockFirst <= first {
 				next = min(through, blockLast)
 				return tx.QueryRowContext(ctx, `SELECT count(*) FROM session_event
-					WHERE session_id=$1 AND kind=$2 AND cursor>=$3 AND cursor<=$4 AND octet_length(payload)<=$5`,
+					WHERE session_id=$1 AND kind=$2 AND cursor>=$3 AND cursor<=$4 AND catalog_id IS NULL AND octet_length(payload)<=$5`,
 					sessionID, kind, first, next, blockBytes/2).Scan(&result.Skipped)
 			}
 			upper = min(through, blockFirst-1)
 		}
 		rows, err := tx.QueryContext(ctx, `SELECT cursor,octet_length(payload) FROM session_event
-			WHERE session_id=$1 AND kind=$2 AND cursor>=$3 AND cursor<=$4 AND octet_length(payload)<=$5
+			WHERE session_id=$1 AND kind=$2 AND cursor>=$3 AND cursor<=$4 AND catalog_id IS NULL AND octet_length(payload)<=$5
 			ORDER BY cursor LIMIT $6`, sessionID, kind, first, upper, blockBytes/2, blockEntries)
 		if err != nil {
 			return err

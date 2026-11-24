@@ -195,6 +195,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 		History: storage.NewStore(ingressDB, storage.Options{
 			SettleDeltas: c.Ingress.SettleDeltas, CompactDeltas: c.Ingress.CompactDeltas,
 			CompactExecutionEvidence: c.Ingress.CompactExecutionEvidence,
+			DeduplicateToolCatalogs:  c.Ingress.DeduplicateToolCatalogs,
 		}),
 		SamplerServiceActor: c.Ingress.SamplerServiceActor,
 		Timing:              ingress.Timing{IdleAck: ingressIdleAck, SilenceLimit: ingressSilenceLimit},

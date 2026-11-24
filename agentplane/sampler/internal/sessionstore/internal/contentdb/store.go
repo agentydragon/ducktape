@@ -40,7 +40,7 @@ func New(ctx context.Context, tx *sql.Tx, references ContentReferences) *Store {
 }
 
 func (s *Store) PutContent(kind content.ContentKind, payload json.RawMessage) (content.ContentID, error) {
-	stored, err := content.CanonicalContent(kind, payload)
+	stored, err := content.PrepareContent(kind, payload)
 	if err != nil {
 		return "", err
 	}
@@ -81,30 +81,8 @@ func (s *Store) Prefetch(ids []content.ContentID) error {
 				missing = append(missing, string(id))
 			}
 		}
-		for len(missing) > 0 {
-			n := min(len(missing), 256)
-			rows, err := s.tx.QueryContext(s.ctx, `SELECT id,kind,payload FROM sampler_content WHERE id=ANY($1::text[])`, pq.Array(missing[:n]))
-			if err != nil {
-				return err
-			}
-			for rows.Next() {
-				var stored content.StoredContent
-				if err := rows.Scan(&stored.ID, &stored.Kind, &stored.Payload); err != nil {
-					rows.Close()
-					return err
-				}
-				if err := content.VerifyContent(stored); err != nil {
-					rows.Close()
-					return err
-				}
-				s.cache[stored.ID] = stored
-			}
-			err = rows.Err()
-			rows.Close()
-			if err != nil {
-				return err
-			}
-			missing = missing[n:]
+		if err := readContent(s.ctx, s.tx, missing, s.cache); err != nil {
+			return err
 		}
 		ids = nil
 		for _, id := range level {
@@ -118,6 +96,49 @@ func (s *Store) Prefetch(ids []content.ContentID) error {
 			}
 			ids = append(ids, refs...)
 		}
+	}
+	return nil
+}
+
+type Queryer interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+// ReadContent verifies the requested rows' content IDs. A row can be absent from
+// the result when the store has no matching content.
+func ReadContent(ctx context.Context, q Queryer, ids []string) (map[content.ContentID]content.StoredContent, error) {
+	found := make(map[content.ContentID]content.StoredContent, len(ids))
+	if err := readContent(ctx, q, ids, found); err != nil {
+		return nil, err
+	}
+	return found, nil
+}
+
+func readContent(ctx context.Context, q Queryer, ids []string, found map[content.ContentID]content.StoredContent) error {
+	for len(ids) > 0 {
+		n := min(len(ids), 256)
+		rows, err := q.QueryContext(ctx, `SELECT id,kind,payload FROM sampler_content WHERE id=ANY($1::text[])`, pq.Array(ids[:n]))
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var stored content.StoredContent
+			if err := rows.Scan(&stored.ID, &stored.Kind, &stored.Payload); err != nil {
+				rows.Close()
+				return err
+			}
+			if err := content.VerifyContent(stored); err != nil {
+				rows.Close()
+				return err
+			}
+			found[stored.ID] = stored
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return err
+		}
+		ids = ids[n:]
 	}
 	return nil
 }

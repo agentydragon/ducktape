@@ -41,6 +41,7 @@ type Store struct {
 	providerRetryMaxBackoff    time.Duration
 	eventBlockWrites           bool
 	contextSourceWrites        bool
+	deduplicateToolCatalogs    bool
 	// now dates the model-visible environment context.
 	now func() time.Time
 }
@@ -56,6 +57,7 @@ func New(db *sql.DB, operationTimeout time.Duration, settings *samplersettings.S
 		providerRetryMaxBackoff:    settings.ProviderRetryMaxBackoff(),
 		eventBlockWrites:           settings.EventBlockWrites,
 		contextSourceWrites:        settings.ContextSourceWrites,
+		deduplicateToolCatalogs:    settings.DeduplicateToolCatalogs,
 	}
 }
 
@@ -329,6 +331,12 @@ func (s *Store) appendEvent(ctx context.Context, tx *sql.Tx, session *Session, e
 	wire, err := proto.MarshalOptions{Deterministic: true}.Marshal(entry)
 	if err != nil {
 		return nil, err
+	}
+	if s.deduplicateToolCatalogs {
+		wire, err = detachJournalCatalog(ctx, tx, entry, wire)
+		if err != nil {
+			return nil, err
+		}
 	}
 	wire, err = eventcodec.Encode(wire)
 	if err != nil {

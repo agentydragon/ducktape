@@ -1,6 +1,7 @@
 package contentdb
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -30,6 +31,11 @@ func TestContentAndContextShareHashesAndFollowCallerRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	catalogPayload := []byte(`[ { "name": "fixture_tool" } ]`)
+	catalog, err := store.PutContent(content.ContentJavaScriptToolCatalog, catalogPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
 	profilePayload, err := json.Marshal(map[string]any{
 		"instructions_ref": instructions,
 		"tool_refs":        []content.ContentID{tool},
@@ -43,6 +49,13 @@ func TestContentAndContextShareHashesAndFollowCallerRollback(t *testing.T) {
 	}
 	if err := store.Save(); err != nil {
 		t.Fatal(err)
+	}
+	catalogs, err := ReadContent(t.Context(), tx, []string{string(catalog)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored := catalogs[catalog]; stored.Kind != content.ContentJavaScriptToolCatalog || !bytes.Equal(stored.Payload, catalogPayload) {
+		t.Fatalf("shared content changed JavaScript catalog: %v", stored)
 	}
 	reader := New(t.Context(), tx, providerrequest.ContentReferences)
 	if err := reader.Prefetch([]content.ContentID{profile}); err != nil {

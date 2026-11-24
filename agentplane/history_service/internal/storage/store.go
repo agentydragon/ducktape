@@ -157,6 +157,7 @@ type Options struct {
 	SettleDeltas             bool
 	CompactDeltas            bool
 	CompactExecutionEvidence bool
+	DeduplicateToolCatalogs  bool
 }
 
 func NewStore(db *sql.DB, options Options) *Store {
@@ -476,10 +477,19 @@ func (s *Store) Append(ctx context.Context, sessionID uuid.UUID, entries []*even
 				return err
 			}
 			kind := observationNumber(entry)
-			compactable := len(payload) <= blockBytes/2 && liveCompactionEnabled(s.options, historypb.EventKind(kind))
-			if _, err := tx.ExecContext(ctx, "INSERT INTO session_event (session_id, cursor, payload, kind, compactable) VALUES ($1, $2, $3, $4, $5)",
-				sessionID, cursor, payload, kind, compactable); err != nil {
-				return err
+			var catalogStored bool
+			if s.options.DeduplicateToolCatalogs {
+				catalogStored, err = insertCatalogEvent(ctx, tx, sessionID, entry, payload, kind)
+				if err != nil {
+					return err
+				}
+			}
+			if !catalogStored {
+				compactable := len(payload) <= blockBytes/2 && liveCompactionEnabled(s.options, historypb.EventKind(kind))
+				if _, err := tx.ExecContext(ctx, "INSERT INTO session_event (session_id, cursor, payload, kind, compactable) VALUES ($1, $2, $3, $4, $5)",
+					sessionID, cursor, payload, kind, compactable); err != nil {
+					return err
+				}
 			}
 			row.sourceID, row.lastCursor, appended = &sourceID, cursor, append(appended, entry)
 		}
@@ -796,7 +806,7 @@ func readSequenceChunk(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, las
 				WHERE r.session_id=$1 AND r.first_cursor<=requested.sequence AND r.last_cursor>=requested.sequence)
 		FROM unnest($2::bigint[]) WITH ORDINALITY AS requested(sequence,position)
 		LEFT JOIN LATERAL (
-			SELECT cursor,kind,octet_length(payload) AS size FROM session_event
+			SELECT cursor,kind,octet_length(payload)+COALESCE(catalog_size,0) AS size FROM session_event
 			WHERE session_id=$1 AND cursor>=requested.sequence AND cursor<=$3 ORDER BY cursor LIMIT 1
 		) candidate ON true ORDER BY requested.position`, sessionID, pq.Array(sequences), lastCursor)
 	if err != nil {

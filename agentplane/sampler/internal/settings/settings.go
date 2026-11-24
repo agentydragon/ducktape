@@ -39,6 +39,7 @@ type Settings struct {
 	MaxLiveSessions                        int                         `json:"max_live_sessions"`
 	ContextSourceWrites                    bool                        `json:"context_source_writes,omitempty"`
 	EventBlockWrites                       bool                        `json:"event_block_writes,omitempty"`
+	DeduplicateToolCatalogs                bool                        `json:"deduplicate_tool_catalogs,omitempty"`
 	ProviderResponseHeaderTimeoutSeconds   *int                        `json:"provider_response_header_timeout_seconds,omitempty"`
 	ProviderIdleTimeoutSeconds             *int                        `json:"provider_idle_timeout_seconds,omitempty"`
 	ProviderProgressLeaseCoalescingSeconds *int                        `json:"provider_progress_lease_coalescing_seconds,omitempty"`
