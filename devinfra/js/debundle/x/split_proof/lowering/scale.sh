@@ -18,7 +18,7 @@ row() {
   dimensions=$(
     node --input-type=module - "$bundle" "$blocks" "$copies" "$dir/spec.json" <<'JS'
 import { readFileSync, writeFileSync } from "node:fs";
-import { spec } from "../experiments/splits/gen_spec.mjs";
+import { spec } from "../integration/library_splits/gen_spec.mjs";
 import { topLevelStatements } from "../translation/scope_metadata.mjs";
 
 const [bundle, blocks, copies, output] = process.argv.slice(2);

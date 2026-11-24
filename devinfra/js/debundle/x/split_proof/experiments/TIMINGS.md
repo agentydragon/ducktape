@@ -2,7 +2,7 @@
 
 Every number here was measured on one machine (4 cores, 15 GB, Linux), Lean 4.35.0 from nixpkgs.
 Node was v22.23.5 for the first measurements and v24.22.2 for the later ones. Node only parses and runs smoke tests, so it is not in the check times.
-Wall-clock unless noted. Raw output is in [`records/`](records) and [`splits/results/`](splits/results).
+Wall-clock unless noted. Raw output is in [`records/`](records) and [split results](../integration/library_splits/results).
 Where a run did not finish, the table says so and gives the time at which I stopped it.
 
 The checker went through six stages. Names used below:
