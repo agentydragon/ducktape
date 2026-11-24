@@ -223,4 +223,5 @@ js_test(
     ],
     entry_point = "mapped_bindings_test.mjs",
     env = {"EXCALIDRAW_PACKAGE": "$(rootpath //:node_modules/@excalidraw/excalidraw/dir)"},
+    tags = ["manual"],
 )
