@@ -9,7 +9,6 @@ local instance : Lean.ToExpr Float where
   toExpr n := Lean.mkApp (Lean.mkConst ``Float.ofBits) (Lean.toExpr n.toBits)
   toTypeExpr := Lean.mkConst ``Float
 
-deriving instance Lean.ToExpr for ArrayElementKind
 deriving instance Lean.ToExpr for DeclKind
 deriving instance Lean.ToExpr for UnOp
 deriving instance Lean.ToExpr for BinOp

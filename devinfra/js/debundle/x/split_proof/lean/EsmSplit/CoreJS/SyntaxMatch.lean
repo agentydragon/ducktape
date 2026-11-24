@@ -33,8 +33,7 @@ partial def exprEq : MatchEq Expr
   | .host a, .host b => (scalarEq a b).map fun h => ⟨congrArg Expr.host h.down⟩
   | .obj a, .obj b => (listEq propEq a b).map fun h => ⟨congrArg Expr.obj h.down⟩
   | .arr a, .arr b => (listEq exprEq a b).map fun h => ⟨congrArg Expr.arr h.down⟩
-  | .arrWithSpread a, .arrWithSpread b =>
-    (listEq arrayElementEq a b).map fun h => ⟨congrArg Expr.arrWithSpread h.down⟩
+  | .spreadArg a, .spreadArg b => (exprEq a b).map fun h => ⟨congrArg Expr.spreadArg h.down⟩
   | .prim op args, .prim op' args' => do
     let ⟨operator⟩ ← scalarEq op op'
     let ⟨arguments⟩ ← listEq exprEq args args'
@@ -152,12 +151,6 @@ private partial def targetEq : MatchEq Target
     let ⟨key⟩ ← exprEq k k'
     return ⟨base ▸ key ▸ rfl⟩
   | _, _ => none
-
-private partial def arrayElementEq : MatchEq (ArrayElementKind × Expr)
-  | (kind, e), (kind', e') => do
-    let ⟨tag⟩ ← scalarEq kind kind'
-    let ⟨value⟩ ← exprEq e e'
-    return ⟨tag ▸ value ▸ rfl⟩
 
 private partial def derivedCtorEq : MatchEq (Option (List Stmt × Option (List Expr) × Func))
   | none, none => some ⟨rfl⟩

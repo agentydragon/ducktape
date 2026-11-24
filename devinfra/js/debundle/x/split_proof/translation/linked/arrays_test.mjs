@@ -92,25 +92,30 @@ function observedProgram(initializer, result) {
   }
 }
 
-// Even a catch around the spread cannot turn the model's unknown result into
-// a normal completion. Node accepts this iterable and runs the same source.
-{
-  const { files, out, verdict, log } = workerSplit(
-    "reached-array-spread",
-    `const worker = () => {
-      try {
-        return [...[1, 2]];
-      } catch {
-        return [];
-      }
-    };
-    const value = worker(); export { value as result };`,
-    entryUnits
+for (const [name, body, expected] of [
+  ["array", "return [0, ...[1, 2], 3];", [0, 1, 2, 3]],
+  ["method", "const o = { x: 9, f(a,b) {return [this.x, a, b];} }; return o.f(...[1], 2);", [9, 1, 2]],
+  ["new", "class A { constructor(a,b) {this.x = a+b;} } return new A(...[2,3]).x;", 5],
+  [
+    "super",
+    "class A { constructor(x) {this.x=x;} } class B extends A {constructor() {super(...[7]);}} return new B().x;",
+    7,
+  ],
+  [
+    "throw",
+    'const o = { get value() {throw "first";} }; try { return [...o.value, (() => {throw "later";})()]; } catch(e) {return e;}',
+    "first",
+  ],
+  ["noniterable", "try {return [...42];} catch(e) {return 42;}", 42],
+]) {
+  assertCertifiedResult(
+    workerSplit(
+      `reached-spread-${name}`,
+      `const worker = () => { ${body} }; const value = worker(); export { value as result };`,
+      entryUnits
+    ),
+    expected
   );
-  assert.equal(verdict.status, "rejected", log);
-  assert.match(verdict.reason, /original reached an unknown result during linked initialization: array spread/);
-  assert(!existsSync(out));
-  assert.deepEqual(observe(files.sourceFile, "result"), { result: [1, 2] });
 }
 
 // Vary array lengths and compose literals, linked reads and calls in element positions.
@@ -204,12 +209,7 @@ for (const enabled of [true, false]) {
     `const worker = [1]; const value = ${enabled} ? [0, ...worker] : [42]; export { value as result };`,
     entryUnits
   );
-  if (enabled) {
-    assertRejected(replay, /original reached an unknown result during linked initialization: array spread/);
-    assert.deepEqual(observe(replay.files.sourceFile, "result"), { result: [0, 1] });
-  } else {
-    assertCertifiedResult(replay, [42]);
-  }
+  assertCertifiedResult(replay, enabled ? [0, 1] : [42]);
 }
 
 assertRejected(

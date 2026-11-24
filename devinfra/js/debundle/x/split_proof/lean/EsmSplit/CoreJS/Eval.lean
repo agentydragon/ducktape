@@ -366,7 +366,7 @@ def evalExpr : Nat → Env → Expr → M W Val
       let vs ← evalArgs n env elems
       let a ← alloc (arrayObject vs)
       pure (.obj a)
-    | .arrWithSpread _ => unknown "array spread requires iterator semantics"
+    | .spreadArg _ => unknown "spread outside an element or argument list"
     | .cls name self ctor members => do
       let env ← selfScope env self name
       let proto ← alloc { proto := some objectProto, props := [] }
@@ -490,8 +490,10 @@ def evalArgs : Nat → Env → List Expr → M W (List Val)
   | 0, _, _ => outOfFuel
   | _ + 1, _, [] => pure []
   | n + 1, env, e :: es => do
-    let v ← evalExpr n env e
-    pure (v :: (← evalArgs n env es))
+    let (spread, operand) := e.argument
+    let v ← evalExpr n env operand
+    let values ← if spread then iteratorValues n (callFn n) v else pure [v]
+    return values ++ (← evalArgs n env es)
 
 def evalTarget : Nat → Env → Target → M W Ref
   | 0, _, _ => outOfFuel

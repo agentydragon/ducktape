@@ -79,16 +79,27 @@ theorem reachFrame_putRef {r R cells A} (away : Away r R A) (call : Call W) (fra
 theorem evalArgs_reachFrame_step {r R cells A n} {env : Env}
     (eval : ∀ e, ReachFrame r R cells A (SafeVal A) (evalExpr n env e : M W Val))
     (tail : ∀ es, ReachFrame r R cells A (fun vs => ∀ v ∈ vs, SafeVal A v) (evalArgs n env es : M W _))
+    (iterate : ∀ v, SafeVal A v →
+      ReachFrame r R cells A (fun vs => ∀ x ∈ vs, SafeVal A x) (iteratorValues n (callFn n) v : M W _))
     (es : List Expr) :
     ReachFrame r R cells A (fun vs => ∀ v ∈ vs, SafeVal A v) (evalArgs (n + 1) env es : M W _) := by
   cases es with
   | nil => exact reachFrame_pure r R cells A [] (by simp)
   | cons e es =>
-    exact (eval e).bind fun v hv =>
-      (tail es).bind fun vs hvs => reachFrame_pure r R cells A (v :: vs) fun value member => by
-        rcases List.mem_cons.mp member with rfl | h
-        · exact hv
-        · exact hvs value h
+    unfold evalArgs
+    generalize e.argument = arg
+    obtain ⟨spread, operand⟩ := arg
+    apply (eval operand).bind
+    intro v hv
+    have prefix : ReachFrame r R cells A (fun vs => ∀ x ∈ vs, SafeVal A x)
+        (if spread then iteratorValues n (callFn n) v else pure [v] : M W (List Val)) := by
+      cases spread
+      · exact reachFrame_pure r R cells A [v] (by simpa using hv)
+      · exact iterate v hv
+    apply prefix.bind
+    intro vs hs
+    exact (tail es).bind fun rest hr => reachFrame_pure r R cells A (vs ++ rest) fun x h =>
+      (List.mem_append.mp h).elim (hs x) (hr x)
 
 theorem evalTarget_reachFrame_step {r R cells A n} {env : Env}
     (eval : ∀ e, ReachFrame r R cells A (SafeVal A) (evalExpr n env e : M W Val)) (target : Target) :
@@ -171,7 +182,7 @@ theorem evalExpr_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env)
   | arr es => exact makeArray es
   | cls name self f members => exact makeClass name self f members
   | derived name self base members ctor => exact extendClass name self base members ctor
-  | arrWithSpread _ => exact reachFrame_unknown r R cells A _ _
+  | spreadArg _ => exact reachFrame_unknown r R cells A _ _
   | get o k =>
     exact (eval o).bind fun base hb => (eval k).bind fun key _ => get base key hb
   | getSuper k =>
