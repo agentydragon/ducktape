@@ -91,6 +91,54 @@ const nullBase = sequentialSplit(
 );
 assertCertifiedResult(nullBase, "prefix;first;second;");
 
+const continuation = sequentialSplit(
+  "super-expression-continuation",
+  `const trace = { value: "" };
+   class Base { constructor() { trace.value += "base;"; return { value: "replacement" }; } }
+   class Child extends Base {
+     field = "initialized";
+     constructor(flag) {
+       if ((super(), trace.value += this.field + ";", flag)) trace.value += this.value + ";";
+       else trace.value += "else;";
+     }
+   }
+   class Returned extends Base {
+     field = "returned";
+     constructor() { return super(); }
+   }
+   class ReturningExpression extends Base {
+     field = "evaluated";
+     constructor() { return (super(), trace.value += this.field + ";", { wrapped: this }); }
+   }
+   new Child(true);
+   new Child(false);
+   const returned = new Returned();
+   const expression = new ReturningExpression();
+   export const result = [trace.value, returned.field, returned.value, expression.wrapped.value];`,
+  { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3", "#4", "#5", "#6", "#7", "#8", "#9"] },
+  ["base.mjs"]
+);
+assertCertifiedResult(continuation, [
+  "base;initialized;replacement;base;initialized;else;base;base;evaluated;",
+  "returned",
+  "replacement",
+  "replacement",
+]);
+assert.deepEqual(
+  lower(continuation.files.sourceFile, continuation.files.specFile, continuation.out, ["--check-output"]).verdict,
+  continuation.verdict
+);
+
+const conditional = sequentialSplit(
+  "conditional-super-refused",
+  `class Base {}
+   class Child extends Base { constructor(flag) { if (flag && super()) this.ok = true; } }
+   export const result = Child;`,
+  { "base.mjs": ["#0"], "entry.mjs": ["#1", "#2"] },
+  ["base.mjs"]
+);
+assertRejected(conditional, /expected a direct super call/);
+
 for (const [name, body] of [
   ["nested-receiver", "const x = 1 + this.x; super(x);"],
   ["captured-receiver", "const read = () => this.x; super(read);"],

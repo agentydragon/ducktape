@@ -360,16 +360,28 @@ private partial def containsBreak (j : Json) : Bool :=
   | .arr items => items.any containsBreak
   | _ => false
 
-/-- A standalone super call or one followed by the other operands of a comma expression. -/
-private def leadingSuper? (stmt : Json) : Option (Json × List Json) := do
-  guard ((field stmt "type").toOption == some "ExpressionStatement")
-  let expr ← (stmt.getObjVal? "expression").toOption
-  let expressions ← if (field expr "type").toOption == some "SequenceExpression" then
+/-- Find a direct super call at the start of a statement's expression. After
+construction, the residual expression sees the initialized receiver and fields. -/
+private def leadingSuper? (stmt : Json) : Option (Json × Option Json) := do
+  let kind ← (field stmt "type").toOption
+  let fieldName ← match kind with
+    | "ExpressionStatement" => some "expression"
+    | "IfStatement" => some "test"
+    | "ReturnStatement" => some "argument"
+    | _ => none
+  let expr ← (stmt.getObjVal? fieldName).toOption
+  let operands ← if (field expr "type").toOption == some "SequenceExpression" then
     (expr.getObjValAs? (List Json) "expressions").toOption else pure [expr]
-  let call :: rest := expressions | none
+  let call :: rest := operands | none
   guard ((field call "type").toOption == some "CallExpression")
   guard ((call.getObjVal? "callee" >>= (field · "type")).toOption == some "Super")
-  return (call, rest)
+  if kind == "ExpressionStatement" && rest.isEmpty then return (call, none)
+  let residual := match rest with
+    | [] => Json.mkObj [("type", .str "ThisExpression")]
+    | [expr] => expr
+    | _ => Json.mkObj [("type", .str "SequenceExpression"), ("expressions", .arr rest.toArray)]
+  let fields ← stmt.getObj?.toOption
+  return (call, some (.obj (fields.insert fieldName residual)))
 
 /-- Until super initializes the receiver, the evaluator can run expressions that neither
 read the receiver nor create code that could later observe its uninitialized binding. -/
@@ -781,7 +793,7 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
   else some <$> rawArgs.mapM fun arg => do
     checkBeforeSuper arg
     linkedExpr profile imports true "" arg
-  let stmts := rest.map (fun e => Json.mkObj [("type", .str "ExpressionStatement"), ("expression", e)]) ++ tail
+  let stmts := rest.toList ++ tail
   let post := Json.obj ((← block.getObj?).insert "body" (.arr stmts.toArray))
   match ← linkedFunctionParts profile imports .classCtor name false (.obj ((← fn.getObj?).insert "body" post)) with
   | .complete body =>
