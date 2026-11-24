@@ -734,7 +734,7 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
 /-- Split a derived constructor at its direct super call, including a call at the head
 of a comma expression. All three parts run with the same parameter and local cells. -/
 private partial def linkedDerivedConstructor (profile : HostProfile) (imports : List Name)
-    (name : Name) (fn : Json) : Except String (List Stmt × List Expr × Func) := do
+    (name : Name) (fn : Json) : Except String (List Stmt × Option (List Expr) × Func) := do
   for param in ← fn.getObjValAs? (Array Json) "params" do
     if (← field param "type") == "AssignmentPattern" then
       discard <| localBinding (← param.getObjVal? "left")
@@ -759,7 +759,15 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
       checkBeforeSuper expr
       before := before.push (.expr (← linkedExpr profile imports true "" expr))
     | other => throw s!"unsupported {other} before super"
-  let args ← (← call.getObjValAs? (List Json) "arguments").mapM fun arg => do
+  let rawArgs ← call.getObjValAs? (List Json) "arguments"
+  let forward := match rawArgs with
+    | [arg] => (field arg "type").toOption == some "SpreadElement" &&
+      (arg.getObjVal? "argument" >>= identifier).toOption == some "arguments" &&
+      (arg.getObjVal? "argument" >>= (field · "k")).toOption == some "L"
+    | _ => false
+  let args ← if forward && before.isEmpty && (← fn.getObjValAs? (Array Json) "params").isEmpty then
+    pure none
+  else some <$> rawArgs.mapM fun arg => do
     checkBeforeSuper arg
     linkedExpr profile imports true "" arg
   let stmts := rest.map (fun e => Json.mkObj [("type", .str "ExpressionStatement"), ("expression", e)]) ++ tail

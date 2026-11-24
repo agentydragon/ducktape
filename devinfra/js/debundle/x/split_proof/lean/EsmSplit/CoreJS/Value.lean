@@ -99,7 +99,7 @@ inductive Code where
   /-- An implicit derived constructor with public instance fields initialized on the superclass result. -/
   | derivedFields (closed : Env) (fields : List (PropertyKey × Expr))
   /-- Execute the prefix, call super, initialize fields, then run the remaining body. -/
-  | derivedBody (before : List Stmt) (superArgs : List Expr) (body : Func) (closed : Env)
+  | derivedBody (before : List Stmt) (superArgs : Option (List Expr)) (body : Func) (closed : Env)
       (fields : List (PropertyKey × Expr))
   | closure (f : Func) (env : Env) (fields : List (PropertyKey × Expr))
   | host (name : String)
@@ -437,6 +437,11 @@ def regexpGetters : List (String × RegExpGetter) := [
   ("ignoreCase", .flag 'i'), ("multiline", .flag 'm'), ("source", .source), ("sticky", .flag 'y'),
   ("unicode", .flag 'u'), ("unicodeSets", .flag 'v')]
 
+def arrayIteratorProto : Addr := ⟨0, regexpProto.index + 1 + regexpGetters.length⟩
+
+def arrayIteratorPrototype : Obj :=
+  { proto := some iteratorProto, props := hostMembers "ArrayIterator.prototype" ["next"] }
+
 def regexpPrototype : Obj :=
   let getters := regexpGetters.zipIdx.map fun ((name, _), i) =>
     (PropertyKey.str name, Property.accessor (.obj ⟨0, regexpProto.index + 1 + i⟩) .undef false true)
@@ -463,7 +468,7 @@ def builtins : Array Obj := #[
     props := ("length", .data (.num 0) true false false) ::
       (hostMembers "Array.prototype" arrayProtoNames ++ [hostIterator "Array.prototype.values"]) },
   asyncFunctionPrototype, iteratorPrototype, generatorPrototype, generatorFunctionPrototype,
-  asyncIteratorPrototype, asyncGeneratorPrototype, asyncGeneratorFunctionPrototype, regexpPrototype] ++ (regexpGetters.map fun (k, g) => regexpGetterObject k g).toArray
+  asyncIteratorPrototype, asyncGeneratorPrototype, asyncGeneratorFunctionPrototype, regexpPrototype] ++ (regexpGetters.map fun (k, g) => regexpGetterObject k g).toArray ++ #[arrayIteratorPrototype]
 
 /-! ## The host functions the world answers for -/
 

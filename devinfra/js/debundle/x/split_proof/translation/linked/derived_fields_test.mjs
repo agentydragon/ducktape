@@ -71,3 +71,25 @@ const abrupt = sequentialSplit(
   ["base.mjs"]
 );
 assertCertifiedResult(abrupt, 1);
+
+const forwarded = sequentialSplit(
+  "derived-fresh-arguments",
+  `const identity = {};
+  class Base {
+    constructor(first, second, third) {
+      this.values = [first === identity, second === undefined ? "empty" : second, third === undefined];
+    }
+  }
+  class Child extends Base {
+    constructor() { (super(...arguments), this.finished = true); }
+  }
+  class Further extends Child {}
+  export const result = (() => {
+    const empty = new Further(), full = new Further(identity, 8);
+    if (!empty.finished || !full.finished || Child.length !== 0) throw "constructor";
+    return [empty.values, full.values];
+  })();`,
+  { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3", "#4"] },
+  ["base.mjs"]
+);
+assertCertifiedResult(forwarded, [[false, "empty", true], [true, 8, true]]);

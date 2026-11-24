@@ -307,7 +307,7 @@ private def changedSuperclass (inPrefix : Bool) : Program :=
   .single [
     superclass "Base" "base",
     superclass "Alternate" "alternate",
-    .decl .const "Child" (.derived "Child" false (.var "Base") [] (some (before, args, tail))),
+    .decl .const "Child" (.derived "Child" false (.var "Base") [] (some (before, some args, tail))),
     .expr (.new (.var "Child") [])
   ]
 
@@ -319,6 +319,16 @@ private def changedSuperclass (inPrefix : Bool) : Program :=
 
 #guard match runProgram World.probe 96 (changedSuperclass true) with
   | .ok _ state => state.out == #["argument", "alternate"]
+  | _ => false
+
+-- A fresh arguments object has its own intrinsic iterator, but the next method on the
+-- resulting iterator's prototype remains mutable. The forwarding shortcut must check it.
+private def modifiedIterator : M World.probe (List Val) := do
+  modifyObj arrayIteratorProto fun proto => { proto with props := [] }
+  forwardFreshArguments [.num 7]
+
+#guard match modifiedIterator (initialState World.probe 1) with
+  | .unknown reason _ => reason == "arguments spread uses a modified array iterator"
   | _ => false
 
 end CoreJS.LinkedBehaviorExamples
