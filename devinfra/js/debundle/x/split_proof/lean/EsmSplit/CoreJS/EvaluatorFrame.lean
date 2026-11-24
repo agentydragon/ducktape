@@ -44,6 +44,7 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
   have functionRoot : A (.obj functionProto) := Ne.symm hr
   have asyncRoot : A (.obj asyncFunctionProto) := Ne.symm hr
   have arrayRoot : A (.obj arrayProto) := Ne.symm hr
+  have regexpRoot : A (.obj regexpProto) := Ne.symm hr
   have allocate (cells : List (Option Addr)) (o : Obj) (ho : ∀ node ∈ o.nodes, A node) :
       ReachFrame r R cells A (fun a => A (.obj a)) (alloc o : M W Addr) :=
     reachFrame_alloc o ho object
@@ -105,7 +106,7 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
           (fun e => prev.expr cells env e safe) (fun es => prev.args cells env es safe)
           (fun t => prev.target cells env t safe) (prev.call cells)
           (fun f es sf sa => prev.construct cells f f es sf sf sa) (make cells env safe)
-          (createObject cells env safe)
+          regexpRoot (allocate cells) (createObject cells env safe)
         · exact evalArray_reachFrame_step env arrayRoot (fun es => prev.args cells env es safe) (allocate cells)
         · exact evalClass_reachFrame_step away object cell objectRoot functionRoot env safe (prev.members cells) (prev.fields cells)
         · exact evalDerived_reachFrame_step away object cell objectRoot functionRoot env safe (prev.call cells)
