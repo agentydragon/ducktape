@@ -430,7 +430,6 @@ rust_library(
         ":artifact",
         ":final_global_resolution",
         ":gate",
-        ":js_ast",
         ":lowering",
         ":output_layout",
         ":report_io",
