@@ -36,9 +36,8 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
         "entity_update",
         "Partial update: send only the writable columns you want to change. Omitted fields are "
         "preserved. To null a nullable field, include it explicitly with value null. "
-        "Do NOT blindly round-trip the full `entities_get` response — GET returns server-computed "
-        "columns (e.g. `qu_factor_*`, `has_sub_products` on products, `userfields`) that Grocy "
-        "rejects on PUT with 400. For common fields prefer the typed helpers — `products_edit`, "
+        "Grocy product reads attach userfields to the stored columns. Sending the full "
+        "`entities_get` result back can fail with HTTP 400. For common fields prefer `products_edit`, "
         "`stock_entry_edit`, `shopping_list_item_edit` — and reserve `entity_update` for advanced "
         "fields those don't cover (e.g. `default_best_before_days_after_freezing`, "
         "`should_not_be_frozen`, `qu_id_consume` on products). Never set `best_before_date` to "

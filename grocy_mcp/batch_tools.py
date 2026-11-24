@@ -32,7 +32,7 @@ from pydantic import Field
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential
 
 from grocy_mcp.client import GrocyClient, ResolvedQU
-from grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS, EntityType, GettableEntityType, ReadableEntityType
+from grocy_mcp.grocy_types import EntityType, GettableEntityType, ReadableEntityType
 from grocy_mcp.mcp_types import (
     DETAIL_DESC,
     MAX_BATCH_SIZE,
@@ -52,7 +52,6 @@ from grocy_mcp.mcp_types import (
     CreateShoppingListItem,
     DetailLevel,
     EditOk,
-    EditProductField,
     EditProductItem,
     EditShoppingListField,
     EditStockEntryField,
@@ -306,18 +305,17 @@ def register_batch_tools(
     async def _list_reference(
         client: GrocyClient, entity_type: EntityType, detail: DetailLevel, model: Any
     ) -> list[Any]:
-        rows = await client.list_entities(entity_type)
+        rows = (await client.entities_by_id(entity_type)).values()
         if detail == DetailLevel.BRIEF:
             return [BriefListItem(id=int(row["id"]), name=str(row["name"])) for row in rows]
         return [model.model_validate(row) for row in rows]
 
     async def _load_stock_entry_enricher(client: GrocyClient) -> Callable[[dict[str, Any]], StockEntryDetail]:
-        products_raw, qu_names, location_names = await asyncio.gather(
-            client.list_entities(EntityType.PRODUCT),
+        products_by_id, qu_names, location_names = await asyncio.gather(
+            client.entities_by_id(EntityType.PRODUCT),
             client.entity_name_map(EntityType.QUANTITY_UNIT),
             client.entity_name_map(EntityType.LOCATION),
         )
-        products_by_id = {int(product["id"]): product for product in products_raw}
 
         def enrich(entry: dict[str, Any]) -> StockEntryDetail:
             product_id = int(entry["product_id"])
@@ -402,6 +400,34 @@ def register_batch_tools(
         pairs = await asyncio.gather(*[_fetch(et) for et in entity_types])
         return dict(pairs)
 
+    async def _linked_row(client: GrocyClient, kind: EntityType, raw_id: object) -> dict[str, Any]:
+        if not isinstance(raw_id, (int, str)) or isinstance(raw_id, bool):
+            return {}
+        try:
+            object_id = int(raw_id)
+            if object_id > 0:
+                async with sem:
+                    response = await client.get(f"/objects/{kind}/{object_id}")
+                    response.raise_for_status()
+                row = response.json()
+                if isinstance(row, dict) and str(row.get("id")) == str(object_id):
+                    return row
+        except httpx2.HTTPError, ValueError:
+            pass  # Linked names are optional. Keep the shopping row.
+        return {}
+
+    def _row_name(row: dict[str, Any]) -> str | None:
+        name = row.get("name")
+        return name if isinstance(name, str) and name.strip() else None
+
+    async def _shopping_product_and_unit(
+        client: GrocyClient, product_id: object
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        product = await _linked_row(client, EntityType.PRODUCT, product_id)
+        # Grocy stores amount in stock units. The row's qu_id only selects its display unit.
+        unit = await _linked_row(client, EntityType.QUANTITY_UNIT, product.get("qu_id_stock"))
+        return product, unit
+
     @mcp.tool()
     async def entities_get(
         entity_type: GettableEntityType,
@@ -417,26 +443,6 @@ def register_batch_tools(
         results also include available names for the linked product, list and unit.
         """
 
-        async def _linked_name(kind: EntityType, raw_id: object) -> str | None:
-            if not isinstance(raw_id, (int, str)) or isinstance(raw_id, bool):
-                return None
-            try:
-                object_id = int(raw_id)
-                if object_id <= 0:
-                    return None
-                async with sem:
-                    response = await client.get(f"/objects/{kind}/{object_id}")
-                    response.raise_for_status()
-                row = response.json()
-                if isinstance(row, dict) and str(row.get("id")) == str(object_id):
-                    name = row.get("name")
-                    if isinstance(name, str) and name.strip():
-                        return name
-            except httpx2.HTTPError, ValueError:
-                # Linked names are optional. Keep the shopping row.
-                return None
-            return None
-
         async def _fetch(object_id: int) -> GetOk:
             async def _do() -> dict[str, Any]:
                 r = await client.get(f"/objects/{entity_type}/{object_id}")
@@ -447,12 +453,13 @@ def register_batch_tools(
             data = await _retry(_do)
             names = None
             if entity_type == "shopping_list":
-                product, shopping_list, unit = await asyncio.gather(
-                    _linked_name(EntityType.PRODUCT, data.get("product_id")),
-                    _linked_name(EntityType.SHOPPING_LIST, data.get("shopping_list_id")),
-                    _linked_name(EntityType.QUANTITY_UNIT, data.get("qu_id")),
+                (product, unit), shopping_list = await asyncio.gather(
+                    _shopping_product_and_unit(client, data.get("product_id")),
+                    _linked_row(client, EntityType.SHOPPING_LIST, data.get("shopping_list_id")),
                 )
-                names = ShoppingItemNames(product_name=product, list_name=shopping_list, unit_name=unit)
+                names = ShoppingItemNames(
+                    product_name=_row_name(product), list_name=_row_name(shopping_list), unit_name=_row_name(unit)
+                )
             return GetOk(entity_type=entity_type, object_id=object_id, data=data, shopping_item_names=names)
 
         return await _ordered_batch(
@@ -864,7 +871,7 @@ def register_batch_tools(
         conversions between units, list `quantity_unit_conversions` via
         `entities_list`.
         """
-        rows = await client.list_entities(EntityType.QUANTITY_UNIT)
+        rows = (await client.entities_by_id(EntityType.QUANTITY_UNIT)).values()
         if detail == DetailLevel.BRIEF:
             return [
                 BriefQuantityUnit(id=int(r["id"]), name=str(r["name"]), name_plural=r.get("name_plural")) for r in rows
@@ -986,6 +993,19 @@ def register_batch_tools(
             client, items, "/objects/shopping_lists", lambda item: item.model_dump(exclude_none=True)
         )
 
+    async def _resolve_product_references(client: GrocyClient, body: dict[str, Any]) -> None:
+        for field, column, kind in (
+            ("location", "location_id", EntityType.LOCATION),
+            ("stock_qu", "qu_id_stock", EntityType.QUANTITY_UNIT),
+            ("purchase_qu", "qu_id_purchase", EntityType.QUANTITY_UNIT),
+            ("consume_qu", "qu_id_consume", EntityType.QUANTITY_UNIT),
+            ("parent_product", "parent_product_id", EntityType.PRODUCT),
+            ("product_group", "product_group_id", EntityType.PRODUCT_GROUP),
+        ):
+            if field in body:
+                ref = body.pop(field)
+                body[column] = await _resolve_id(client, kind, ref) if ref is not None else None
+
     @mcp.tool()
     async def products_create(
         items: Annotated[
@@ -1016,37 +1036,10 @@ def register_batch_tools(
         """
 
         async def _create(item: CreateProductItem) -> CreateOk:
-            loc_id = await _resolve_id(client, EntityType.LOCATION, item.location)
-            squ_id = await _resolve_id(client, EntityType.QUANTITY_UNIT, item.stock_qu)
-            pqu_id = (
-                await _resolve_id(client, EntityType.QUANTITY_UNIT, item.purchase_qu)
-                if item.purchase_qu is not None
-                else squ_id
-            )
-            cqu_id = (
-                await _resolve_id(client, EntityType.QUANTITY_UNIT, item.consume_qu)
-                if item.consume_qu is not None
-                else squ_id
-            )
-
-            body: dict[str, Any] = {
-                "name": item.name,
-                "location_id": loc_id,
-                "qu_id_stock": squ_id,
-                "qu_id_purchase": pqu_id,
-                "qu_id_consume": cqu_id,
-                "min_stock_amount": item.min_stock_amount,
-                "default_best_before_days": item.default_best_before_days,
-                "due_type": item.due_type,
-            }
-            for ref, key, entity_type in (
-                (item.parent_product, "parent_product_id", EntityType.PRODUCT),
-                (item.product_group, "product_group_id", EntityType.PRODUCT_GROUP),
-            ):
-                if ref is not None:
-                    body[key] = await _resolve_id(client, entity_type, ref)
-            _set_if_present(body, "description", item.description)
-
+            body = item.model_dump(exclude_none=True)
+            await _resolve_product_references(client, body)
+            body.setdefault("qu_id_purchase", body["qu_id_stock"])
+            body.setdefault("qu_id_consume", body["qu_id_stock"])
             return await _create_object(client, "/objects/products", body, describe=f"create product {item.name!r}")
 
         return await _ordered_batch(items, "items", _create, lambda _item, exc: CreateError(error=_format_exc(exc)))
@@ -1058,40 +1051,18 @@ def register_batch_tools(
     ) -> list[EditOk | CreateError]:
         """Partial update of one or more products.
 
-        Only the fields you set on each item change — the rest are
-        preserved. The server reads each product, merges your changes,
-        and writes back. To null out a nullable field (vs setting it to
-        a new value), name it in `clear_fields`. Failed items return
-        errors without aborting the others. See also `products_create`,
+        Grocy updates only the fields you supply. Name a nullable field in
+        `clear_fields` to clear it. Failed items return errors without
+        aborting the others. See also `products_create`,
         `product_delete`, `products_list`.
         """
 
         async def _edit(item: EditProductItem) -> EditOk:
             product_id = await _resolve_id(client, EntityType.PRODUCT, item.product)
-            r = await client.get(f"/objects/products/{product_id}")
-            r.raise_for_status()
-            current: dict[str, Any] = r.json()
-
-            body = {k: v for k, v in current.items() if k in PRODUCT_WRITABLE_FIELDS}
-            body.update(item.model_dump(include=PRODUCT_WRITABLE_FIELDS, exclude_unset=True, exclude_none=True))
-            for ref, key, entity_type in (
-                (item.stock_qu, "qu_id_stock", EntityType.QUANTITY_UNIT),
-                (item.location, "location_id", EntityType.LOCATION),
-                (item.purchase_qu, "qu_id_purchase", EntityType.QUANTITY_UNIT),
-                (item.consume_qu, "qu_id_consume", EntityType.QUANTITY_UNIT),
-                (item.parent_product, "parent_product_id", EntityType.PRODUCT),
-                (item.product_group, "product_group_id", EntityType.PRODUCT_GROUP),
-            ):
-                if ref is not None:
-                    body[key] = await _resolve_id(client, entity_type, ref)
-            for field, key in {
-                EditProductField.DESCRIPTION: "description",
-                EditProductField.PRODUCT_GROUP: "product_group_id",
-                EditProductField.PARENT_PRODUCT: "parent_product_id",
-                EditProductField.CALORIES: "calories",
-            }.items():
-                if field in (item.clear_fields or ()):
-                    body[key] = None
+            body = item.model_dump(exclude={"product", "clear_fields"}, exclude_unset=True, exclude_none=True)
+            for field in item.clear_fields or ():
+                body[field.value] = None
+            await _resolve_product_references(client, body)
 
             r = await client.put(f"/objects/products/{product_id}", json=body)
             r.raise_for_status()
@@ -1172,15 +1143,30 @@ def register_batch_tools(
         except Exception as e:
             return StockOpError(error=_format_exc(e))
 
-    async def _shopping_product_info(client: GrocyClient, product_id: Any) -> tuple[str | None, str | None]:
-        """Look up product name and stock QU name for a shopping-list item's product_id."""
-        if product_id is None:
-            return None, None
-        product = await client.get_entity(EntityType.PRODUCT, int(product_id))
-        if product is None:
-            return f"id={product_id}", None
-        qu_name = await client.entity_name(EntityType.QUANTITY_UNIT, int(product["qu_id_stock"]))
-        return str(product["name"]), qu_name
+    async def _shopping_products(client: GrocyClient, product_ids: set[int]) -> dict[int, tuple[str, str | None]]:
+        if not product_ids:
+            return {}
+        products = await client.entities_by_id(EntityType.PRODUCT)
+        matched = product_ids.intersection(products)
+        names: dict[int, tuple[str, str | None]] = {pid: (f"id={pid}", None) for pid in product_ids - matched}
+        if matched:
+            units = await client.entity_name_map(EntityType.QUANTITY_UNIT)
+            for pid in matched:
+                product = products[pid]
+                unit_id = int(product["qu_id_stock"])
+                names[pid] = str(product["name"]), units.get(unit_id, f"id={unit_id}")
+        return names
+
+    async def _shopping_receipt(client: GrocyClient, item_id: int, item: dict[str, Any]) -> ShoppingListItemOk:
+        product_id = item.get("product_id")
+        product, unit = await _shopping_product_and_unit(client, product_id)
+        unit_id = product.get("qu_id_stock")
+        return ShoppingListItemOk(
+            item_id=item_id,
+            amount=float(item.get("amount", 1)),
+            product_name=_row_name(product) or (f"id={product_id}" if product_id is not None else None),
+            qu_name=_row_name(unit) or (f"id={unit_id}" if unit_id is not None else None),
+        )
 
     async def _shopping_list_items(client: GrocyClient, list_id: int) -> list[dict[str, Any]]:
         r = await client.get("/objects/shopping_list")
@@ -1208,16 +1194,17 @@ def register_batch_tools(
 
         items = await _shopping_list_items(client, sl.id)
 
+        product_ids = [int(item["product_id"]) if item.get("product_id") is not None else None for item in items]
+        products = await _shopping_products(client, {pid for pid in product_ids if pid is not None})
         result_items = []
-        for item in items:
-            product_id = item.get("product_id")
-            product_name, qu_name = await _shopping_product_info(client, product_id)
+        for item, product_id in zip(items, product_ids, strict=True):
+            product_name, qu_name = products[product_id] if product_id is not None else (None, None)
 
             result_items.append(
                 {
                     "item_id": int(item["id"]),
                     "product_name": product_name,
-                    "product_id": int(product_id) if product_id is not None else None,
+                    "product_id": product_id,
                     "amount": float(item.get("amount", 1)),
                     "qu_name": qu_name,
                     "note": item.get("note"),
@@ -1253,12 +1240,8 @@ def register_batch_tools(
         async def _add(item: ShoppingItem) -> ShoppingListItemOk:
             list_id = await _resolve_id(client, EntityType.SHOPPING_LIST, item.shopping_list)
             body: dict[str, Any] = {"shopping_list_id": list_id, "amount": item.amount}
-            product_name = None
-            qu_name = None
             if item.product is not None:
-                product_id = await _resolve_id(client, EntityType.PRODUCT, item.product)
-                body["product_id"] = product_id
-                product_name, qu_name = await _shopping_product_info(client, product_id)
+                body["product_id"] = await _resolve_id(client, EntityType.PRODUCT, item.product)
             if item.note is not None:
                 body["note"] = item.note
 
@@ -1268,7 +1251,7 @@ def register_batch_tools(
                 return int(r.json().get("created_object_id", 0))
 
             item_id = await _retry_mutation(_do, describe=f"add item to shopping list {item.shopping_list!r}")
-            return ShoppingListItemOk(item_id=item_id, product_name=product_name, amount=item.amount, qu_name=qu_name)
+            return await _shopping_receipt(client, item_id, body)
 
         return await _ordered_batch(
             items, "items", _add, lambda _item, exc: ShoppingListItemError(error=_format_exc(exc))
@@ -1304,23 +1287,18 @@ def register_batch_tools(
             r.raise_for_status()
             current: dict[str, Any] = r.json()
 
-            # Filter to writable columns — Grocy may return extra fields on GET.
-            sl_writable = {"product_id", "amount", "note", "done", "shopping_list_id", "qu_id"}
-            body = {k: v for k, v in current.items() if k in sl_writable}
+            body: dict[str, Any] = {}
             _set_if_present(body, "amount", amount)
             _set_if_present(body, "note", note)
             _set_if_present(body, "done", int(done) if done is not None else None)
             if EditShoppingListField.NOTE in (clear_fields or ()):
                 body["note"] = None
 
-            r = await client.put(f"/objects/shopping_list/{item_id}", json=body)
-            r.raise_for_status()
+            if body:
+                r = await client.put(f"/objects/shopping_list/{item_id}", json=body)
+                r.raise_for_status()
 
-            product_name, qu_name = await _shopping_product_info(client, body.get("product_id"))
-
-            return ShoppingListItemOk(
-                item_id=item_id, product_name=product_name, amount=float(body.get("amount", 1)), qu_name=qu_name
-            )
+            return await _shopping_receipt(client, item_id, current | body)
         except Exception as e:
             return ShoppingListItemError(error=_format_exc(e))
 
@@ -1348,11 +1326,7 @@ def register_batch_tools(
             r = await client.delete(f"/objects/shopping_list/{item_id}")
             r.raise_for_status()
 
-            product_name, qu_name = await _shopping_product_info(client, item.get("product_id"))
-
-            return ShoppingListItemOk(
-                item_id=item_id, product_name=product_name, amount=float(item.get("amount", 1)), qu_name=qu_name
-            )
+            return await _shopping_receipt(client, item_id, item)
 
         return await _ordered_batch(
             item_ids, "item_ids", _remove, lambda _item, exc: ShoppingListItemError(error=_format_exc(exc))

@@ -78,9 +78,9 @@ search for `default_best_before_days_after_freezing`.
 
 ## File upstream Grocy PR for missing entity-schema properties
 
-`fix_openapi_spec.py::patch_product_schema` downstream-patches 12 writable
-product columns that Grocy's hand-maintained `grocy.openapi.json` has never
-picked up since migrations 0207/0210/0219 added them (2022–2023). Upstream
+[`patch_product_schema`](fix_openapi_spec.py) documents writable product columns
+missing from the pinned Grocy OpenAPI spec. The [container test](test_e2e.py)
+compares the MCP update schema with Grocy's product records. The upstream
 spec has similar gaps on `Location` (no `active`, no `is_freezer`),
 `QuantityUnit` (no `active`), `ShoppingListItem` (no `qu_id`, no `done`),
 and is missing `ShoppingList`, `ProductGroup`, `Recipe` entirely.

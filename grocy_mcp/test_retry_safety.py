@@ -8,6 +8,7 @@ These tests mock the httpx2 client via pytest-httpx2's RESPX router to verify:
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncGenerator
 
 import httpx
@@ -131,6 +132,70 @@ async def test_read_get_still_retried_on_timeout(mcp_client: tuple[Client, respx
     result = await client.call_tool("stock_get", {"products": [], "locations": []})
     assert unwrap_result(result) == []
     assert stock_route.calls.call_count == 2, "read GET should retry after a timeout"
+
+
+async def test_shopping_list_catalogs_are_read_once_per_report(mcp_client: tuple[Client, respx.Router]) -> None:
+    client, router = mcp_client
+    shopping_list = {"id": 1, "name": "Weekly"}
+    router.get("/objects/shopping_lists").respond(json=[shopping_list])
+    router.get("/objects/shopping_lists/1").respond(json=shopping_list)
+    items = router.get("/objects/shopping_list")
+    items.respond(json=[{"id": 10 + i, "product_id": p} for i, p in enumerate(["1", 1, 2, 3, None])])
+    products = router.get("/objects/products").respond(json=[*PRODUCTS, {"id": 2, "name": "Sugar", "qu_id_stock": 9}])
+    units = router.get("/objects/quantity_units").respond(json=QUS)
+
+    async def names() -> list[tuple[str | None, str | None]]:
+        report = unwrap_result(await client.call_tool("shopping_list_get", {"shopping_list": 1}))
+        return [(row["product_name"], row["qu_name"]) for row in report["items"]]
+
+    assert await names() == [
+        ("TestProduct", "pieces"),
+        ("TestProduct", "pieces"),
+        ("Sugar", "id=9"),
+        ("id=3", None),
+        (None, None),
+    ]
+    assert (products.calls.call_count, units.calls.call_count) == (1, 1)
+
+    products.respond(json=[])
+    assert await names() == [("id=1", None), ("id=1", None), ("id=2", None), ("id=3", None), (None, None)]
+    assert (products.calls.call_count, units.calls.call_count) == (2, 1)
+    items.respond(json=[{"id": 15, "note": "Look for coupons"}])
+    assert await names() == [(None, None)]
+    assert (products.calls.call_count, units.calls.call_count) == (2, 1)
+
+
+@pytest.mark.parametrize("tool", ["shopping_list_items_add", "shopping_list_item_edit", "shopping_list_items_remove"])
+async def test_shopping_write_survives_unavailable_names(tool: str, mcp_client: tuple[Client, respx.Router]) -> None:
+    client, router = mcp_client
+    path = "/objects/shopping_list/12"
+    router.get(path).respond(json={"id": 12, "product_id": "1", "amount": "3", "note": "Back shelf", "done": 0})
+    router.get("/objects/products/1").respond(json=PRODUCTS[0])
+    router.get("/objects/quantity_units/1").respond(status_code=503)
+    if tool == "shopping_list_items_add":
+        router.get("/objects/shopping_lists").respond(json=[{"id": 1, "name": "Weekly"}])
+        mutation = router.post("/objects/shopping_list").respond(json={"created_object_id": 12})
+        arguments: dict[str, object] = {"items": [{"shopping_list": 1, "product": 1, "amount": 3}]}
+    elif tool == "shopping_list_item_edit":
+        mutation = router.put(path).respond(status_code=204)
+        arguments = {"item_id": 12, "done": True}
+    else:
+        mutation = router.delete(path).respond(status_code=204)
+        arguments = {"item_ids": [12]}
+
+    result = unwrap_result(await client.call_tool(tool, arguments))
+    receipt = result[0] if isinstance(result, list) else result
+    assert mutation.calls.call_count == 1
+    if tool == "shopping_list_item_edit":
+        # Echoing the earlier snapshot would overwrite another client's note or quantity.
+        assert json.loads(mutation.calls.last.request.content) == {"done": 1}
+    assert receipt["kind"] == "ok", receipt
+    assert (receipt["item_id"], receipt["amount"], receipt["product_name"], receipt["qu_name"]) == (
+        12,
+        3,
+        "TestProduct",
+        "id=1",
+    )
 
 
 async def test_low_stock_report_survives_unavailable_locations(mcp_client: tuple[Client, respx.Router]) -> None:

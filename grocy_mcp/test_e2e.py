@@ -15,6 +15,7 @@ from collections.abc import AsyncGenerator
 from datetime import UTC, date, datetime, timedelta
 
 import httpx
+import httpx2
 import pytest
 import pytest_bazel
 from fastmcp.client import Client
@@ -32,15 +33,20 @@ tracer = trace.get_tracer(__name__)
 
 
 @pytest.fixture
-async def mcp_client(grocy_base_url: str) -> AsyncGenerator[Client]:
+async def grocy_http_client(grocy_base_url: str) -> AsyncGenerator[GrocyClient]:
+    async with GrocyClient(base_url=f"{grocy_base_url}/api", timeout=30.0) as client:
+        yield client
+
+
+@pytest.fixture
+async def mcp_client(grocy_base_url: str, grocy_http_client: GrocyClient) -> AsyncGenerator[Client]:
     """Function-scoped MCP client exercising the full MCP protocol in-process."""
-    async with GrocyClient(base_url=f"{grocy_base_url}/api", timeout=30.0) as http_client:
-        with tracer.start_as_current_span("build_mcp"):
-            mcp = build_mcp(
-                ServerSettings(grocy_url=grocy_base_url), client_provider=borrowed_http_client_provider(http_client)
-            )
-        async with Client(FastMCPTransport(mcp)) as client:
-            yield client
+    with tracer.start_as_current_span("build_mcp"):
+        mcp = build_mcp(
+            ServerSettings(grocy_url=grocy_base_url), client_provider=borrowed_http_client_provider(grocy_http_client)
+        )
+    async with Client(FastMCPTransport(mcp)) as client:
+        yield client
 
 
 @pytest.fixture
@@ -145,31 +151,28 @@ async def test_products_create_requires_default_best_before_days(mcp_client: Cli
         )
 
 
-async def test_products_edit_preserves_default_best_before_days_when_omitted(
-    mcp_client: Client, ref_data: RefData
+async def test_products_edit_preserves_concurrent_shelf_life_change(
+    mcp_client: Client, grocy_base_url: str, grocy_http_client: GrocyClient, ref_data: RefData
 ) -> None:
-    """`products_edit` omitting `default_best_before_days` leaves it unchanged.
+    product_id = ref_data.product_ids[0]
+    path = f"/objects/products/{product_id}"
+    async with httpx.AsyncClient(base_url=f"{grocy_base_url}/api") as other_writer:
 
-    Unlike `products_create` (which now requires the field explicitly),
-    omission on edit means "leave the existing value alone" — the two
-    endpoints must not share the same omission semantics.
-    """
-    product = ref_data.products[0]
+        async def change_shelf_life(request: httpx2.Request) -> None:
+            if request.method == "PUT" and request.url.path == f"/api{path}":
+                response = await other_writer.put(path, json={"default_best_before_days": 42})
+                response.raise_for_status()
 
-    edit = await call_tool(
-        mcp_client, "products_edit", {"items": [{"product": product, "default_best_before_days": 42}]}
-    )
-    assert edit[0]["kind"] == "ok", edit
-
-    # Edit an unrelated field, omitting default_best_before_days.
-    unrelated_edit = await call_tool(
-        mcp_client, "products_edit", {"items": [{"product": product, "description": "unrelated change"}]}
-    )
-    assert unrelated_edit[0]["kind"] == "ok", unrelated_edit
-
-    products = await call_tool(mcp_client, "products_list", {"detail": "full"})
-    our_product = next(p for p in products if p["name"] == product)
-    assert int(our_product["default_best_before_days"]) == 42
+        grocy_http_client.event_hooks["request"].append(change_shelf_life)
+        edit = await call_tool(
+            mcp_client, "products_edit", {"items": [{"product": product_id, "description": "New label"}]}
+        )
+        assert edit[0]["kind"] == "ok", edit
+        stored = await other_writer.get(path)
+        stored.raise_for_status()
+        product = stored.json()
+        assert product["description"] == "New label"
+        assert int(product["default_best_before_days"]) == 42
 
 
 async def test_products_edit_serializes_values_and_resolves_references(mcp_client: Client, ref_data: RefData) -> None:
@@ -219,6 +222,9 @@ async def test_products_edit_serializes_values_and_resolves_references(mcp_clien
     assert int(product["parent_product_id"]) == ref_data.product_ids[1]
     assert int(product["product_group_id"]) == int(product_group_id)
 
+    noop = await call_tool(mcp_client, "products_edit", {"items": [{"product": product_id}]})
+    assert noop == [{"kind": "ok", "object_id": product_id}]
+
     unrelated_edit = await call_tool(
         mcp_client,
         "products_edit",
@@ -265,61 +271,50 @@ async def test_products_edit_serializes_values_and_resolves_references(mcp_clien
     assert int(product["due_type"]) == 2
 
 
-async def test_entity_update_patch_semantics(mcp_client: Client, grocy_base_url: str, ref_data: RefData) -> None:
-    """Grocy's ``PUT /objects/{entity}/{objectId}`` is a partial update.
+async def test_entity_update_advertises_product_columns(mcp_client: Client, ref_data: RefData) -> None:
+    tool = next(tool for tool in await mcp_client.list_tools() if tool.name == "entity_update")
+    variants = tool.input_schema["properties"]["body"]["anyOf"]
+    product_schema = next(schema["properties"] for schema in variants if "qu_id_stock" in schema["properties"])
+    rows = await call_tool(
+        mcp_client, "entities_get", {"entity_type": "products", "object_ids": [ref_data.product_ids[0]]}
+    )
+    # The object API returns the product's columns and attaches userfields separately.
+    editable = rows[0]["data"].keys() - {"id", "row_created_timestamp", "userfields"}
+    assert editable <= product_schema.keys(), editable - product_schema.keys()
 
-    Locks in the three claims the ``entity_update`` tool description makes
-    to agents, so a future Grocy version that flipped the behavior (or a
-    misread of the server code) would break this test rather than silently
-    corrupting user data:
 
-      1. Omitted writable fields are preserved, not nulled.
-      2. Unknown / server-computed columns echoed back in the body are
-         silently dropped (no 400), so agents can safely round-trip
-         ``entities_get`` output.
-      3. Sending a nullable field with value ``null`` nulls it, without
-         affecting other omitted fields.
-    """
+async def test_entity_update_patch_semantics(mcp_client: Client, ref_data: RefData) -> None:
     product_id = ref_data.product_ids[0]
 
-    results = await call_tool(mcp_client, "entities_get", {"entity_type": "products", "object_ids": [product_id]})
-    before = results[0]["data"]
-    # Fixture populates name, description, min_stock_amount, location_id, qu_id_stock.
-    assert before["description"] == "Test product for e2e"
-    assert float(before["min_stock_amount"]) == 1
+    async def product() -> dict:
+        rows = await call_tool(mcp_client, "entities_get", {"entity_type": "products", "object_ids": [product_id]})
+        data = rows[0]["data"]
+        assert isinstance(data, dict)
+        return data
 
-    async with httpx.AsyncClient(base_url=f"{grocy_base_url}/api", timeout=30.0) as http:
-        # (1) Partial: only `description` in body.
-        new_desc = f"patched-{ref_data.suffix}"
-        r = await http.put(f"/objects/products/{product_id}", json={"description": new_desc})
-        assert r.status_code < 400, f"partial PUT failed: {r.status_code} {r.text!r}"
+    target = {"entity": "products", "objectId": product_id}
+    before = await product()
+    changes = {
+        "description": "New label",
+        "quick_open_amount": 2.5,
+        "disable_open": 1,
+        "default_purchase_price_type": 3,
+    }
+    await mcp_client.call_tool("entity_update", {**target, "body": changes})
+    after = await product()
+    assert after["description"] == "New label"
+    assert float(after["quick_open_amount"]) == 2.5
+    assert int(after["disable_open"]) == 1
+    assert int(after["default_purchase_price_type"]) == 3
+    assert after["min_stock_amount"] == before["min_stock_amount"]
 
-        results = await call_tool(mcp_client, "entities_get", {"entity_type": "products", "object_ids": [product_id]})
-        after = results[0]["data"]
-        assert after["description"] == new_desc
-        # Omitted writable fields preserved — the core PATCH claim.
-        assert after["name"] == before["name"]
-        assert float(after["min_stock_amount"]) == float(before["min_stock_amount"])
-        assert after["location_id"] == before["location_id"]
-        assert after["qu_id_stock"] == before["qu_id_stock"]
-
-        # (2) Echoing the full GET row back fails with 400: Grocy rejects
-        # server-computed columns (qu_factor_*, has_sub_products, etc.) on
-        # PUT. Agents must send only writable columns — this is why the
-        # docstring warns against blindly round-tripping `entities_get`.
-        echo_body = dict(after)
-        echo_body["description"] = f"echoed-{ref_data.suffix}"
-        r = await http.put(f"/objects/products/{product_id}", json=echo_body)
-        assert r.status_code == 400, f"Expected 400 when echoing computed columns back, got {r.status_code}: {r.text!r}"
-
-        # (3) Explicit null nulls the field; other omitted fields still preserved.
-        r = await http.put(f"/objects/products/{product_id}", json={"description": None})
-        assert r.status_code < 400, f"null PUT failed: {r.status_code} {r.text!r}"
-        results = await call_tool(mcp_client, "entities_get", {"entity_type": "products", "object_ids": [product_id]})
-        after3 = results[0]["data"]
-        assert after3["description"] in (None, "")  # Grocy normalizes null→"" on some columns
-        assert after3["name"] == before["name"]
-        assert float(after3["min_stock_amount"]) == float(before["min_stock_amount"])
+    rejected = await mcp_client.call_tool("entity_update", {**target, "body": after}, raise_on_error=False)
+    assert rejected.is_error
+    await mcp_client.call_tool("entity_update", {**target, "body": {"description": None}})
+    cleared = await product()
+    assert cleared["description"] in (None, "")
+    assert cleared["name"] == before["name"]
+    assert cleared["disable_open"] == after["disable_open"]
 
 
 async def test_stock_operations(mcp_client: Client, ref_data: RefData) -> None:
@@ -655,7 +650,7 @@ async def test_stock_add_applies_default_best_before_days(mcp_client: Client, re
     assert await _latest_bbd() == override.isoformat()
 
 
-async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData) -> None:
+async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData, grocy_base_url: str) -> None:
     """Add items (product-linked, note-only, product+note), get list, edit item, remove item."""
     product = ref_data.products[0]
 
@@ -681,6 +676,27 @@ async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData) -
     assert all(r["kind"] == "ok" for r in sl_results)
     sl_item_id = sl_results[0]["item_id"]
 
+    # Choose a shopping unit that contains six stock units, as a user can in Grocy.
+    cases = await call_tool(
+        mcp_client, "quantity_units_create", {"items": [{"name": f"Case-{ref_data.suffix}", "name_plural": "cases"}]}
+    )
+    case_id = cases[0]["created_object_id"]
+    async with httpx.AsyncClient(base_url=f"{grocy_base_url}/api") as http:
+        product_row = await http.get(f"/objects/products/{ref_data.product_ids[0]}")
+        product_row.raise_for_status()
+        conversion = await http.post(
+            "/objects/quantity_unit_conversions",
+            json={
+                "product_id": ref_data.product_ids[0],
+                "from_qu_id": case_id,
+                "to_qu_id": product_row.json()["qu_id_stock"],
+                "factor": 6,
+            },
+        )
+        conversion.raise_for_status()
+        updated = await http.put(f"/objects/shopping_list/{sl_item_id}", json={"qu_id": case_id, "amount": 12})
+        updated.raise_for_status()
+
     # Get shopping list — verify items present
     sl_data = await call_tool(mcp_client, "shopping_list_get", {"shopping_list": 1})
     assert "items" in sl_data
@@ -695,13 +711,20 @@ async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData) -
     assert exact[0]["entity_type"] == "shopping_list"
     assert exact[0]["object_id"] == sl_item_id
     assert int(exact[0]["data"]["id"]) == sl_item_id
-    assert float(exact[0]["data"]["amount"]) == 2
+    assert int(exact[0]["data"]["qu_id"]) == case_id
+    assert float(exact[0]["data"]["amount"]) == 12
+    assert exact[0]["shopping_item_names"]["unit_name"] == ref_data.qu
+    listed = next(item for item in our_items if item["item_id"] == sl_item_id)
+    assert (listed["amount"], listed["qu_name"]) == (12, ref_data.qu)
     assert exact[0]["shopping_item_names"]["product_name"] == product
     assert exact[0]["shopping_item_names"]["list_name"] == sl_data["name"]
 
     # Edit item — mark as done
     edit_sl = await call_tool(mcp_client, "shopping_list_item_edit", {"item_id": sl_item_id, "done": True})
-    assert edit_sl["kind"] == "ok"
+    assert (edit_sl["kind"], edit_sl["amount"], edit_sl["qu_name"]) == ("ok", 12, ref_data.qu)
+    edited = await call_tool(mcp_client, "entities_get", {"entity_type": "shopping_list", "object_ids": [sl_item_id]})
+    assert int(edited[0]["data"]["done"]) == 1
+    assert int(edited[0]["data"]["qu_id"]) == case_id
 
     # Remove item
     await call_tool(mcp_client, "shopping_list_items_remove", {"item_ids": [sl_item_id]})
