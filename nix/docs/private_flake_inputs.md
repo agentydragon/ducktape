@@ -1,62 +1,28 @@
-# Private Gaffer Artifacts
+# Private Gaffer artifacts
 
-`gaffer-private` is **not** a flake input. Ducktape never fetches its source
-code while evaluating or deploying this flake.
+Ducktape consumes `drivefs` and `drivectl` as pinned Nix store closures. The
+[producer workflow](https://github.com/agentydragon/gaffer-private/blob/main/.github/workflows/nix-attic-push.yml)
+pushes the closures to the restricted `gaffer` Attic cache before updating
+[`nix/gaffer-pins.json`](../gaffer-pins.json) on Ducktape's `devel` branch.
+Each pin records the store path, version, and source revision.
 
-Private binaries built by `gaffer-private` CI—currently `drivefs` and
-`drivectl`—are consumed as pinned Nix store closures from the private Attic
-cache:
+## Deploy and diagnose
 
-```text
-gaffer-private CI
-  -> cache.allegedly.works/gaffer
-  -> nix/gaffer-pins.json
-  -> nix/packages/gaffer.nix (builtins.fetchClosure)
-  -> nix/home/modules/google-drive.nix
-```
+- Opt in with `services.google-drive.enable = true` in the host's
+  [Home Manager configuration](../home/modules/google-drive.nix). Apply it using
+  the [normal host rebuild procedure](../README.md#usage).
+- [The Nix package adapter](../packages/gaffer.nix) uses `builtins.fetchClosure`
+  against the signed `gaffer` cache. Ducktape does not fetch Gaffer source. If
+  evaluating or building the enabled config fails, check the pin, then check
+  cache reachability, the trusted signing key and the host's `gaffer:r` scope.
+  See [Attic reader configuration](../../cluster/docs/nix_cache.md#pulling-machines-and-users)
+  for the separate daemon and per-user Nix credential paths.
+- A missing pin means that package is unavailable. The service requires
+  `drivefs`; `drivectl` is optional. Restore the closure and pin through the
+  producer workflow. See [cache isolation](../../cluster/docs/nix_cache.md#private-binary-isolation-drivefsdrivectl)
+  before changing publish targets.
 
-This keeps source-repository authentication, Git LFS, and CI checkout concerns
-on the producer side. Consumer hosts need only an authorized cache reader and
-the pinned closure paths.
-
-## Consumer contract
-
-- [`nix/gaffer-pins.json`](../gaffer-pins.json) is the checked-in record of
-  `store_path`, source revision, and version for each published artifact.
-- [`nix/packages/gaffer.nix`](../packages/gaffer.nix) turns those pins into
-  hermetic `builtins.fetchClosure` dependencies from
-  `https://cache.allegedly.works/gaffer`.
-- [`nix/nixos/modules/attic-substituter.nix`](../nixos/modules/attic-substituter.nix)
-  configures the daemon's cache URL, trusted signing key, and root-readable
-  rendering of a per-host reader JWT.
-- [`nix/home/modules/attic.nix`](../home/modules/attic.nix) configures the same
-  cache for user-side evaluation and renders the same per-host JWT into a
-  user-readable netrc. The token must permit `gaffer:r`.
-- [`nix/home/modules/google-drive.nix`](../home/modules/google-drive.nix) is
-  the only current consumer. A host opts in with
-  `services.google-drive.enable = true`.
-
-If a pin is absent, its package is absent; do not add a source flake input as a
-fallback. If the cache is unavailable, Nix cannot realize these private
-closures because Ducktape intentionally has neither their source nor a local
-build recipe.
-
-## Publishing and updating
-
-1. Build and push the artifact in `gaffer-private` CI to the `gaffer` cache.
-2. Update `nix/gaffer-pins.json` with the resulting store path, revision, and
-   version through the producer's pin-update workflow.
-3. Deploy the Ducktape configuration to a host with an enabled Attic
-   substituter and a `gaffer:r` reader token.
-
-Keep the private closures out of the `main` and `public` caches. The complete
-cache isolation and CI publishing contract is documented in
-[`cluster/docs/nix_cache.md`](../../cluster/docs/nix_cache.md).
-
-## Retired flake-input approach
-
-The previous `git+ssh://...?lfs=1` `gaffer-private` flake input was removed.
-Its failure modes—root lacking an SSH agent or `git-lfs`, and CI lacking a
-private-repository deploy key—no longer apply to consumers. The old
-SOPS-encrypted GitHub fetch PAT is unused; its eventual deletion remains
-tracked in the repository TODO list.
+The retired `git+ssh://…?lfs=1` flake input required consumer SSH, Git LFS,
+and a private repository deploy key in CI. The producer now owns source
+checkout. The unused fetch PAT is still tracked in the
+[repository TODO](../../TODO.md#build-system).
