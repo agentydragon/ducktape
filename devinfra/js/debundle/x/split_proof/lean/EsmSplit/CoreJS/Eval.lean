@@ -198,8 +198,8 @@ def derivedCtorCode (env : Env) (ctor : Option (List Stmt × Option (List Expr) 
   | some (before, args, body), _ => (.derivedBody before args body closed fields, body.length)
 
 /-- Only constructors with pre-super receiver captures allocate this extra cell. -/
-def capturesDerivedReceiver (before : List Stmt) (args : List Expr) : Bool :=
-  (freeStmts before ++ freeExprs args).contains derivedReceiverName
+def capturesDerivedReceiver (before : List Stmt) (args : Option (List Expr)) : Bool :=
+  (freeStmts before ++ freeSuperArgs args).contains derivedReceiverName
 
 def initCapturedReceiver (env : Env) (receiver : Val) (captured : Bool) : M W Unit :=
   if captured then initVar env derivedReceiverName receiver else pure ()
