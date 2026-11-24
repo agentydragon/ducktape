@@ -148,7 +148,7 @@ bbr test "$p:excalidraw_certified_scroll_browser_smoke" "$p:excalidraw_certified
 ```
 
 The baseline loads the pinned editor. The split test certifies the single move
-with `--structural-pivot 1337`, the `browser-page` profile and the live HTTP
+with `--structural`, the `browser-page` profile and the live HTTP
 origin. It repeats certification with `--check-output`. It runs the original
 and certified editor in separate Chromium contexts at the same origin, checks
 the served entry and provider bytes, draws a rectangle, waits for Undo to
@@ -157,9 +157,9 @@ checks the served `scroll.mjs` bytes and compares all 611 entry export names
 with the baseline.
 The startup replay extracts the 14 initialization units `#5` through `#18`
 into `packages/excalidraw/editor/startup.mjs`. These define the CommonJS
-wrappers used by the editor, including the React entry. `--structural-order`
-checks that the units run in the original order immediately after the five
-provider imports. The startup replay compares the same 611-name namespace and
+wrappers used by the editor, including the React entry. The checker selects
+the order-preserving proof and checks that the units run in the original
+order immediately after the five provider imports. The startup replay compares the same 611-name namespace and
 browser behavior while checking the new module's served bytes.
 [Smoke test](browser_smoke_test.py)
 

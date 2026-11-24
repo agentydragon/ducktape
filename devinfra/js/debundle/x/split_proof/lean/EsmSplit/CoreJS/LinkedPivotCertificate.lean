@@ -53,9 +53,13 @@ private theorem CheckedLink.unique {p : Program} {w : World} (a b : CheckedLink 
   subst units' state'
   rfl
 
-/-- Validate the finite witness once, then use it in all worlds. -/
-def checkStructuralSchedule (pivot : Option Nat) (source candidate : Program) :
-    Except String (PLift (NormalEquivalent source candidate ∧ SameExports source candidate)) := do
+inductive StructuralProof where
+  | preservedOrder
+  | singlePivot
+
+/-- Select the rule from the linked schedules, then validate the witness in all worlds. -/
+def checkStructuralSchedule (source candidate : Program) :
+    Except String (StructuralProof × PLift (NormalEquivalent source candidate ∧ SameExports source candidate)) := do
   let before ← (checkLink source).mapError ("original linker: " ++ ·)
   let after ← (checkLink candidate).mapError ("candidate linker: " ++ ·)
   let some ⟨initial⟩ := StateMatch.probe before.ready after.ready |
@@ -66,9 +70,11 @@ def checkStructuralSchedule (pivot : Option Nat) (source candidate : Program) :
   have sameExports : SameExports source candidate := sameExports_of_match fun w => by
     rw [exportsMatch_from_checked (before.forWorld w) (after.forWorld w)]
     exact exportsEqual
-  if let some ordinal := pivot then
-    let check ← checkPivot ordinal before after initial
-    return ⟨⟨normalEquivalent_of_checkedPivot (fun w =>
+  let sourceUnits := unitsOf before.linked
+  let candidateUnits := unitsOf after.linked
+  if sourceUnits.map (·.1) != candidateUnits.map (·.1) then
+    let check ← checkPivot before after initial
+    return (.singlePivot, ⟨⟨normalEquivalent_of_checkedPivot (fun w =>
       have hs := check.layout.sourceLink.unique before
       have hc := check.layout.candidateLink.unique after
       let layout : PivotLayout source candidate w := {
@@ -91,14 +97,14 @@ def checkStructuralSchedule (pivot : Option Nat) (source candidate : Program) :
         access := Access.linkState (hs ▸ check.access)
         localFlag := check.localFlag
         scope := check.scope
-      }), sameExports⟩⟩
-  let some ⟨schedule⟩ := sameUnits? (unitsOf before.linked) (unitsOf after.linked) |
+      }), sameExports⟩⟩)
+  let some ⟨schedule⟩ := sameUnits? sourceUnits candidateUnits |
     throw "the linked schedules differ in unit order, syntax, or scope"
   have equivalent : NormalEquivalent source candidate := normalEquivalent_of_bounded fun w n final => by
     rw [run_after_link n (before.forWorld w), run_after_link n (after.forWorld w)]
     change runUnits n (unitsOf before.linked) (linkState w before.ready) = .ok () final ↔
       runUnits n (unitsOf after.linked) (linkState w after.ready) = .ok () final
     rw [runUnits_same n schedule, congrArg (linkState w) initial]
-  return ⟨⟨equivalent, sameExports⟩⟩
+  return (.preservedOrder, ⟨⟨equivalent, sameExports⟩⟩)
 
 end CoreJS.LinkedBehavior

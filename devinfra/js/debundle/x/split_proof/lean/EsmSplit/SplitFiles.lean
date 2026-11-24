@@ -98,9 +98,9 @@ private def unitProgram (ast : Json) : Except String Json := do
   return .obj ((← ast.getObj?).insert "body" (.arr units))
 
 /-- Certify the exact program map handed to the printer or compared with an existing directory. -/
-def certifyOutput (providers : Json) (B : Bundle) (P : Plan)
+def certifyOutput {α : Type} (providers : Json) (B : Bundle) (P : Plan)
     (out work input : System.FilePath) (checkOnly timings : Bool) (asts : Array Json) (source : String)
-    (check : Json → IO Unit) : IO Unit := do
+    (check : Json → IO α) : IO α := do
   let dependencies := (← IO.ofExcept providers.getObj?).toList
   for (name, _) in dependencies do
     if (P.find name).isSome then throw (IO.userError s!"provider {name} collides with a planned output module")
@@ -120,7 +120,7 @@ def certifyOutput (providers : Json) (B : Bundle) (P : Plan)
         unless planned == observed do throw (IO.userError s!"output module {name} differs from its generated ESTree")
     check programs
   else
-    check programs
+    let certified ← check programs
     timePhase timings "output_publication" fun _ => do
       let manifest ← writeProgramManifest programs work
       let parent := out.parent.getD "."
@@ -137,5 +137,6 @@ def certifyOutput (providers : Json) (B : Bundle) (P : Plan)
         IO.FS.rename stage out
       finally
         if ← stage.pathExists then IO.FS.removeDirAll stage
+    return certified
 
 end EsmSplit.SplitFiles

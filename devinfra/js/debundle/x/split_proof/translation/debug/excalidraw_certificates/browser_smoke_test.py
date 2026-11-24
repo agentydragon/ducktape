@@ -50,7 +50,7 @@ def editor_source(runfiles: Runfiles) -> Path:
 
 
 def certify_editor_split(
-    runfiles: Runfiles, source: Path, origin: str, module: str, ordinals: tuple[int, ...], pivot: int | None
+    runfiles: Runfiles, source: Path, origin: str, module: str, ordinals: tuple[int, ...], expected_scope: str
 ) -> dict[str, Path]:
     authored = json.loads(resolve(runfiles, os.environ["EDITOR_LEAN_SPEC"]).read_text())
     assert authored["modules"][SCROLL] == ["#1337", "#1338"]
@@ -87,13 +87,8 @@ def certify_editor_split(
         profile,
         "--deployment-origin",
         origin,
+        "--structural",
     ]
-    if pivot is None:
-        scope = "linked-structural-order"
-        command.append("--structural-order")
-    else:
-        scope = "linked-structural-pivot"
-        command.extend(["--structural-pivot", str(pivot)])
     verdicts = []
     for stage, args in [("emit", []), ("check-output", ["--check-output"])]:
         run = subprocess.run([*command, *args], capture_output=True, text=True, check=False)
@@ -103,7 +98,7 @@ def certify_editor_split(
         assert verdict["status"] == "certified", verdict
         assert verdict["requested"] == "normal-completion", verdict
         assert verdict["guarantee"] == "normal-completion", verdict
-        assert verdict["scope"] == scope, verdict
+        assert verdict["scope"] == expected_scope, verdict
         assert verdict["hostProfile"] == "browser-page", verdict
         assert isinstance(verdict["assumptions"], list), verdict
         verdicts.append(verdict)
@@ -277,8 +272,11 @@ async def test_original_editor(
 
 
 @pytest.mark.parametrize(
-    ("module", "ordinals", "pivot"),
-    [pytest.param(SCROLL, (1337,), 1337, id="scroll"), pytest.param(STARTUP, tuple(range(5, 19)), None, id="startup")],
+    ("module", "ordinals", "expected_scope"),
+    [
+        pytest.param(SCROLL, (1337,), "linked-structural-pivot", id="scroll"),
+        pytest.param(STARTUP, tuple(range(5, 19)), "linked-structural-order", id="startup"),
+    ],
 )
 async def test_certified_editor_split(
     playwright_driver: Playwright,
@@ -288,10 +286,12 @@ async def test_certified_editor_split(
     editor_providers: list[str],
     module: str,
     ordinals: tuple[int, ...],
-    pivot: int | None,
+    expected_scope: str,
 ) -> None:
     async with serve_app_in_loop(editor_app) as origin:
-        files = await asyncio.to_thread(certify_editor_split, runfiles, editor_source, origin, module, ordinals, pivot)
+        files = await asyncio.to_thread(
+            certify_editor_split, runfiles, editor_source, origin, module, ordinals, expected_scope
+        )
         original = await smoke(playwright_driver, origin, editor_source, editor_providers)
         # The first browser context has closed. Switch only the certified routes on the running server.
         install_editor_overlay(editor_app, editor_source, files)

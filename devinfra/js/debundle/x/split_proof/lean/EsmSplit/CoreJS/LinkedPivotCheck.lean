@@ -151,15 +151,14 @@ structure CheckedPivot (source candidate : Program) (w : World) where
   scope : ∀ u ∈ layout.pre ++ layout.crossed, u.1 + 1 ≠ layout.pivot.1 + 1 ∧
     ∀ node ∈ (u.2.2.capture u.2.1.free).nodes, Unprotected (layout.pivot.1 + 1) (fun _ => False) node
 
-/-- Find and validate the intended single earlier move. The link equations and
+/-- Find and validate a single earlier move. The link equations and
 initial-state equality are already kernel-checked by the caller. -/
-def checkPivot {source candidate : Program} {w : World} (ordinal : Nat)
+def checkPivot {source candidate : Program} {w : World}
     (sourceLink : CheckedLink source w) (candidateLink : CheckedLink candidate w)
     (initial : sourceLink.ready = candidateLink.ready) : Except String (CheckedPivot source candidate w) := do
   let some layout := pivotLayout? sourceLink candidateLink initial |
     throw "the linked schedules do not differ by a single earlier move"
-  unless layout.pivot.1 == ordinal do
-    throw s!"expected to move unit {ordinal}; the linked pivot is {layout.pivot.1}"
+  let ordinal := layout.pivot.1
   let r := layout.pivot.1 + 1
   if localStep : localPivotOk layout.pivot = true then
     if accessible : accessOk layout.sourceLink.ready [] (outsideRegion r) = true then
