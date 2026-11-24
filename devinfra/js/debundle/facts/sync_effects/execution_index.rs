@@ -283,13 +283,6 @@ fn primitive_constant(expression: &Expr) -> bool {
     }
 }
 
-fn primitive_literal(expression: &Expr) -> bool {
-    matches!(
-        expression.unwrap_parens(),
-        Expr::Lit(Lit::Str(_) | Lit::Bool(_) | Lit::Null(_) | Lit::Num(_) | Lit::BigInt(_))
-    )
-}
-
 #[derive(Clone, Copy)]
 enum LiteralRecordPrimitive {
     BigInt,
@@ -2071,7 +2064,7 @@ fn set_from_primitive_array_aliases(expression: &Expr) -> Option<Vec<Id>> {
         if element.spread.is_some() {
             return None;
         }
-        if primitive_literal(&element.expr) {
+        if js_ast::is_primitive_literal(element.expr.unwrap_parens()) {
             continue;
         }
         let Expr::Ident(identifier) = element.expr.unwrap_parens() else {
@@ -2105,9 +2098,10 @@ fn set_from_set_spread_source(expression: &Expr) -> Option<(Id, Span, Span)> {
         && argument.spread.is_none()
         && first.spread.is_some()
         && rest.iter().all(|element| {
-            element
-                .as_ref()
-                .is_some_and(|element| element.spread.is_none() && primitive_literal(&element.expr))
+            element.as_ref().is_some_and(|element| {
+                element.spread.is_none()
+                    && js_ast::is_primitive_literal(element.expr.unwrap_parens())
+            })
         }))
     .then(|| {
         (
@@ -9579,7 +9573,7 @@ impl Visit for ExecutionIndex {
             let (name, primitive_value) = match property.as_ref() {
                 Prop::KeyValue(pair) => (
                     static_property_name(&pair.key),
-                    primitive_literal(&pair.value),
+                    js_ast::is_primitive_literal(pair.value.unwrap_parens()),
                 ),
                 Prop::Shorthand(ident) => (Some(ident.sym.to_string()), false),
                 Prop::Assign(assign) => (Some(assign.key.sym.to_string()), false),
@@ -10039,7 +10033,10 @@ impl Visit for ExecutionIndex {
                 .as_ref()
                 .is_some_and(|body| match body.stmts.as_slice() {
                     [] => true,
-                    [Stmt::Return(ret)] => ret.arg.as_deref().is_none_or(primitive_literal),
+                    [Stmt::Return(ret)] => ret
+                        .arg
+                        .as_deref()
+                        .is_none_or(|expr| js_ast::is_primitive_literal(expr.unwrap_parens())),
                     _ => false,
                 })
         {
@@ -10400,7 +10397,10 @@ impl Visit for ExecutionIndex {
             }
             if self.direct_top_level_const_declaration
                 && direct_top_level
-                && declarator.init.as_deref().is_some_and(primitive_literal)
+                && declarator
+                    .init
+                    .as_deref()
+                    .is_some_and(|expr| js_ast::is_primitive_literal(expr.unwrap_parens()))
             {
                 self.direct_primitive_const_bindings
                     .insert(binding.id.to_id());
@@ -10421,7 +10421,7 @@ impl Visit for ExecutionIndex {
                     primitive_literal_initializer: declarator
                         .init
                         .as_deref()
-                        .is_some_and(primitive_literal),
+                        .is_some_and(|expr| js_ast::is_primitive_literal(expr.unwrap_parens())),
                     set_from_primitive_array_aliases: declarator
                         .init
                         .as_deref()

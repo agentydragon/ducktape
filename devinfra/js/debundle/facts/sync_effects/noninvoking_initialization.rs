@@ -463,13 +463,6 @@ fn empty_native_constructor(expression: &Expr) -> Option<(Id, CallSite, NativeCo
     Some((callee, call_site, kind))
 }
 
-fn primitive_literal(expression: &Expr) -> bool {
-    matches!(
-        expression,
-        Expr::Lit(Lit::Str(_) | Lit::Num(_) | Lit::Bool(_) | Lit::Null(_) | Lit::BigInt(_))
-    )
-}
-
 fn set_primitive_array_constructor(
     expression: &Expr,
 ) -> Option<(Id, CallSite, NativeConstructorForm)> {
@@ -495,9 +488,9 @@ fn set_primitive_array_constructor(
         return None;
     };
     if !array.elems.iter().all(|element| {
-        element
-            .as_ref()
-            .is_some_and(|element| element.spread.is_none() && primitive_literal(&element.expr))
+        element.as_ref().is_some_and(|element| {
+            element.spread.is_none() && js_ast::is_primitive_literal(&element.expr)
+        })
     }) {
         return None;
     }
