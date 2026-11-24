@@ -120,24 +120,8 @@ class ActionMutation:
     rng_version: str | None = None
 
 
-# Mutators take an open Session + the server's `now_ms` and return an
-# ActionMutation. They read/write ORM rows directly; the run_server_action
-# wrapper handles the surrounding transaction, idempotency check, snapshot,
-# and ledger insert.
-ServerActionMutator = Callable[[Session, int], ActionMutation]
-
-
-def locked_balance(s: Session, username: str) -> BalanceRow:
-    """The user's balance row, locked FOR UPDATE for the enclosing transaction.
-
-    Single source of the row-locking strategy for every money mutation (both
-    SqlStore internals and app.py mutators). The row must already exist —
-    `SqlStore._lock_user_balance` seeds it at the top of every entry point.
-    """
-    balance = s.scalar(select(BalanceRow).where(BalanceRow.user_id == username).with_for_update())
-    if balance is None:
-        raise RuntimeError(f"balance row missing for {username=}; _lock_user_balance not called?")
-    return balance
+# The store locks the user's balance before checking the receipt or calling the mutator.
+ServerActionMutator = Callable[[Session, BalanceRow, int], ActionMutation]
 
 
 # Default prize catalog seeded for a user on first contact. Kept in store.py
@@ -247,11 +231,8 @@ class SqlStore:
             if snapshot_reason is not None:
                 s.add(self._snapshot_row(s, balance, snapshot_reason, now_ms, snapshot_note))
 
-            mutation = mutator(s, now_ms)
+            mutation = mutator(s, balance, now_ms)
 
-            # Re-read balance after mutation; mutator may have changed it.
-            s.flush()
-            s.refresh(balance)
             after_credits = balance.credits
             after_tokens = balance.tokens
 
@@ -303,16 +284,16 @@ class SqlStore:
 
         return mutation.result
 
-    def replace_state_for_import(self, s: Session, username: str, data: ImportData) -> None:
+    def replace_state_for_import(self, s: Session, balance: BalanceRow, data: ImportData) -> None:
         """Wipe sessions/prizes/prize_log + reset balance for `username`, then
         populate from the import payload. Must be called from within a
         `run_server_action` mutator (the surrounding transaction guarantees
         atomicity).
         """
+        username = balance.user_id
         s.execute(delete(SessionRow).where(SessionRow.user_id == username))
         s.execute(delete(PrizeRow).where(PrizeRow.user_id == username))
         s.execute(delete(PrizeLogRow).where(PrizeLogRow.user_id == username))
-        balance = locked_balance(s, username)
         # str() first — Decimal(float) would drag in binary-float artifacts.
         balance.credits = millis_from_credits(Decimal(str(data.credits)))
         balance.tokens = data.tokens
@@ -345,12 +326,12 @@ class SqlStore:
                 )
             )
 
-    def replace_state_for_reset(self, s: Session, username: str) -> None:
+    def replace_state_for_reset(self, s: Session, balance: BalanceRow) -> None:
         """Wipe sessions/prize_log for `username`, zero their balance and
         streak state, keep their prize catalog."""
+        username = balance.user_id
         s.execute(delete(SessionRow).where(SessionRow.user_id == username))
         s.execute(delete(PrizeLogRow).where(PrizeLogRow.user_id == username))
-        balance = locked_balance(s, username)
         balance.credits = 0
         balance.tokens = 0
         credit_state = get_or_create_credit_state(s, username)

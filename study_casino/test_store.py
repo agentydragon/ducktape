@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from study_casino.actions import ConvertResult, ImportData, ImportPrize, ImportResult, ResetResult
 from study_casino.models import Game, GameEventRow, GameEventSource, LedgerEventRow, StateSnapshotRow
 from study_casino.state import BalanceRead
-from study_casino.store import ActionMutation, ActionRejectedError, SqlStore, locked_balance
+from study_casino.store import ActionMutation, ActionRejectedError, SqlStore
 from util.alembic_upgrade import upgrade
 
 
@@ -144,8 +144,7 @@ def test_economy_rebalance_migration_preserves_progress(empty_postgres_url: str)
 
 
 def test_run_server_action_persists_balance_and_writes_ledger(store: SqlStore) -> None:
-    def grant_credits(s, _now_ms):
-        balance = locked_balance(s, _U)
+    def grant_credits(s, balance, _now_ms):
         balance.credits += 7000  # 7 credits, in millis
         return ActionMutation(result=ConvertResult(amount=7), details={"reason": "test"})
 
@@ -163,8 +162,7 @@ def test_run_server_action_persists_balance_and_writes_ledger(store: SqlStore) -
 
 
 def test_run_server_action_is_idempotent_on_retry(store: SqlStore) -> None:
-    def grant_credits(s, _now_ms):
-        balance = locked_balance(s, _U)
+    def grant_credits(s, balance, _now_ms):
         balance.credits += 5000
         return ActionMutation(result=ConvertResult(amount=5))
 
@@ -196,8 +194,7 @@ def test_overlapping_retry_returns_original_result(store: SqlStore, existing_use
     with ThreadPoolExecutor(max_workers=1) as pool:
         retries = []
 
-        def grant(s, _now_ms):
-            balance = locked_balance(s, _U)
+        def grant(s, balance, _now_ms):
             retry = pool.submit(run, unexpected_mutation)
             retries.append(retry)
             # Hold the original transaction open until PostgreSQL sees the retry waiting on it.
@@ -222,8 +219,7 @@ def test_overlapping_retry_returns_original_result(store: SqlStore, existing_use
 
 
 def test_action_rejected_rolls_back_mutator_changes(store: SqlStore) -> None:
-    def half_then_reject(s, _now_ms):
-        balance = locked_balance(s, _U)
+    def half_then_reject(s, balance, _now_ms):
         balance.credits += 99
         raise ActionRejectedError("nope", "no good")
 
@@ -238,10 +234,10 @@ def test_action_rejected_rolls_back_mutator_changes(store: SqlStore) -> None:
 
 
 def test_snapshot_reason_writes_state_snapshots_row(store: SqlStore) -> None:
-    def import_payload(s, _now_ms):
+    def import_payload(s, balance, _now_ms):
         store.replace_state_for_import(
             s,
-            _U,
+            balance,
             ImportData(
                 credits=11, tokens=22, sessions=[], prizes=[ImportPrize(id="p-only", name="Only", cost=5)], prize_log=[]
             ),
@@ -274,8 +270,7 @@ def test_snapshot_reason_writes_state_snapshots_row(store: SqlStore) -> None:
 
 
 def test_replace_state_for_reset_keeps_prizes(store: SqlStore) -> None:
-    def grant_then_reset(s, _now_ms):
-        balance = locked_balance(s, _U)
+    def grant_then_reset(s, balance, _now_ms):
         balance.credits = 50000
         balance.tokens = 30
         return ActionMutation(result=ConvertResult(amount=50))
@@ -287,8 +282,8 @@ def test_replace_state_for_reset_keeps_prizes(store: SqlStore) -> None:
     assert pre_reset.balance == BalanceRead(credits_millis=50000, tokens=30)
     prizes_before = pre_reset.prizes
 
-    def reset(s, _now_ms):
-        store.replace_state_for_reset(s, _U)
+    def reset(s, balance, _now_ms):
+        store.replace_state_for_reset(s, balance)
         return ActionMutation(result=ResetResult(reset=True))
 
     store.run_server_action(
@@ -309,8 +304,7 @@ def test_replace_state_for_reset_keeps_prizes(store: SqlStore) -> None:
 def test_db_check_constraint_rejects_negative_credits(store: SqlStore) -> None:
     """The CHECK constraint is the last line of defence if a buggy mutator misses a pre-flight check."""
 
-    def goes_negative(s, _now_ms):
-        balance = locked_balance(s, _U)
+    def goes_negative(s, balance, _now_ms):
         balance.credits = -1
         return ActionMutation(result=ConvertResult(amount=0))
 
@@ -321,8 +315,7 @@ def test_db_check_constraint_rejects_negative_credits(store: SqlStore) -> None:
 def test_state_persists_across_reopen(db_url: str) -> None:
     store_a = SqlStore(db_url)
 
-    def grant(s, _now_ms):
-        balance = locked_balance(s, _U)
+    def grant(s, balance, _now_ms):
         balance.credits = 13000
         return ActionMutation(result=ConvertResult(amount=13))
 
@@ -335,12 +328,12 @@ def test_state_persists_across_reopen(db_url: str) -> None:
 def test_two_users_share_db_without_collision(store: SqlStore) -> None:
     """Two users on the same store have independent balances, sessions, ledgers."""
 
-    def grant_alice(s, _now_ms):
-        locked_balance(s, "alice").credits += 10000
+    def grant_alice(s, balance, _now_ms):
+        balance.credits += 10000
         return ActionMutation(result=ConvertResult(amount=10))
 
-    def grant_bob(s, _now_ms):
-        locked_balance(s, "bob").credits += 99000
+    def grant_bob(s, balance, _now_ms):
+        balance.credits += 99000
         return ActionMutation(result=ConvertResult(amount=99))
 
     # Same client_action_id used for both — must NOT collide since the

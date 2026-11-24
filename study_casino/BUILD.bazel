@@ -310,6 +310,7 @@ py_test(
 
 py_test(
     name = "test_store",
+    size = "medium",
     srcs = ["test_store.py"],
     requires_docker = True,
     deps = [

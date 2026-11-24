@@ -6,11 +6,6 @@ These are not required, just nice-to-haves surfaced during the
 2026-05-16 SQLite→Postgres cutover and the server-authoritative casino cutover.
 Defer until there's a real need.
 
-- [ ] Push `username` into the `ServerActionMutator` signature instead of
-      passing via closure. Today every endpoint's mutator captures `username`
-      from the enclosing scope; making it an explicit parameter of the
-      mutator callable would surface the user-scoping dependency at every
-      ORM-row construction and helper invocation.
 - [ ] Reconsider whether the casino actually needs multi-tenancy. The
       shared-schema refactor was driven by symmetry with other CNPG apps
       in the cluster; if auragon stays the only user, the `user_id`
