@@ -383,19 +383,26 @@ private def leadingSuper? (stmt : Json) : Option (Json × Option Json) := do
   let fields ← stmt.getObj?.toOption
   return (call, some (.obj (fields.insert fieldName residual)))
 
-/-- Until super initializes the receiver, the evaluator can run expressions that neither
-read the receiver nor create code that could later observe its uninitialized binding. -/
-private partial def checkBeforeSuper (j : Json) : Except String Unit := do
+/-- Resolve lexical `this` in prefix and argument arrows to the constructor's
+receiver cell. Ordinary functions and classes introduce other receiver scopes. -/
+private partial def prepareBeforeSuper (j : Json) (allowArrow : Bool) (underArrow := false) : Except String Json := do
   match j with
   | .obj fields =>
     let kind := (field j "type").toOption.getD ""
-    if ["ThisExpression", "Super", "MetaProperty", "ArrowFunctionExpression", "FunctionExpression",
-        "ClassExpression"].contains kind then throw s!"unsupported {kind} before super"
+    if kind == "ThisExpression" && underArrow then
+      return Json.mkObj [("type", .str "CoreJSDerivedReceiver")]
+    if ["ThisExpression", "Super", "MetaProperty", "FunctionExpression", "FunctionDeclaration",
+        "ClassExpression", "ClassDeclaration"].contains kind ||
+        (kind == "ArrowFunctionExpression" && !allowArrow) then
+      throw s!"unsupported {kind} before super"
     if kind == "CallExpression" && (j.getObjVal? "callee" >>= identifier).toOption == some "eval" then
       throw "unsupported direct eval before super"
-    for (_, child) in fields.toList do checkBeforeSuper child
-  | .arr items => items.forM checkBeforeSuper
-  | _ => pure ()
+    let capturesReceiver := underArrow || kind == "ArrowFunctionExpression"
+    let entries ← fields.toList.mapM fun (key, value) => do
+      pure (key, ← prepareBeforeSuper value allowArrow capturesReceiver)
+    return Json.mkObj entries
+  | .arr items => return .arr (← items.mapM (prepareBeforeSuper · allowArrow underArrow))
+  | _ => return j
 
 /-- Each entry identifies the object field through which the walk reached the child. Arrays
 of statements and class members preserve their owning field. Check the nearest function boundary. -/
@@ -426,6 +433,7 @@ private partial def opaqueContext (checkPrivateNames wholeUnit moduleLocationChe
     let retainedMember := retainedSuperMembers && (match parents with
       | ("object", parent) :: _ => isSuperMember parent
       | _ => false)
+    kind == "CoreJSDerivedReceiver" ||
     (kind == "Super" && !retainedMember && !(wholeUnit && enclosedSuperCall parents)) ||
       (kind == "ImportExpression" && !moduleLocationChecked && !(checkedImports && (dynamicImportCaptures j).isSome)) ||
       (kind == "MetaProperty" && !(moduleLocationChecked &&
@@ -492,6 +500,7 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     literal key
   | "Identifier" => reference imports inFunction j profile
   | "ThisExpression" => return .this
+  | "CoreJSDerivedReceiver" => return .var derivedReceiverName
   | "MemberExpression" =>
     if ambientSymbolMember? j == some "iterator" then
       if profile == .browserPage then return .prim .iteratorSymbol []
@@ -773,7 +782,7 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
   for param in ← fn.getObjValAs? (Array Json) "params" do
     if (← field param "type") == "AssignmentPattern" then
       discard <| localBinding (← param.getObjVal? "left")
-      checkBeforeSuper (← param.getObjVal? "right")
+      discard <| prepareBeforeSuper (← param.getObjVal? "right") false
     else discard <| localBinding param
   let block ← fn.getObjVal? "body"
   let statements ← block.getObjValAs? (List Json) "body"
@@ -787,11 +796,9 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
       unless ["const", "let"].contains (← field stmt "kind") do throw "expected a lexical declaration before super"
       for d in ← stmt.getObjValAs? (Array Json) "declarations" do
         discard <| localBinding (← d.getObjVal? "id")
-        checkBeforeSuper (← d.getObjVal? "init")
-      before := before ++ (← linkedBlockDeclarations profile imports .function before.size stmt)
+      before := before ++ (← linkedBlockDeclarations profile imports .function before.size (← prepareBeforeSuper stmt true))
     | "ExpressionStatement" =>
-      let expr ← stmt.getObjVal? "expression"
-      checkBeforeSuper expr
+      let expr ← prepareBeforeSuper (← stmt.getObjVal? "expression") true
       before := before.push (.expr (← linkedExpr profile imports true "" expr))
     | other => throw s!"unsupported {other} before super"
   let rawArgs ← call.getObjValAs? (List Json) "arguments"
@@ -803,8 +810,7 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
   let args ← if forward && before.isEmpty && (← fn.getObjValAs? (Array Json) "params").isEmpty then
     pure none
   else some <$> rawArgs.mapM fun arg => do
-    checkBeforeSuper arg
-    linkedExpr profile imports true "" arg
+    linkedExpr profile imports true "" (← prepareBeforeSuper arg true)
   let stmts := rest.toList ++ tail
   let post := Json.obj ((← block.getObj?).insert "body" (.arr stmts.toArray))
   match ← linkedFunctionParts profile imports .classCtor name false (.obj ((← fn.getObj?).insert "body" post)) with

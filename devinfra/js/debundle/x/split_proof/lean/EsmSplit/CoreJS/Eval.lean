@@ -197,9 +197,20 @@ def derivedCtorCode (env : Env) (ctor : Option (List Stmt × Option (List Expr) 
   | none, _ => (.derivedFields closed fields, 0)
   | some (before, args, body), _ => (.derivedBody before args body closed fields, body.length)
 
-/-- The parameters and declarations are entered once for both parts of the constructor. -/
-def derivedScope (before : List Stmt) (body : Func) : Func :=
-  .mk body.name .classCtor false body.params (before ++ body.body)
+/-- Only constructors with pre-super receiver captures allocate this extra cell. -/
+def capturesDerivedReceiver (before : List Stmt) (args : List Expr) : Bool :=
+  (freeStmts before ++ freeExprs args).contains derivedReceiverName
+
+def initCapturedReceiver (env : Env) (receiver : Val) (captured : Bool) : M W Unit :=
+  if captured then initVar env derivedReceiverName receiver else pure ()
+
+/-- The two parts share parameters and declarations. Scope entry reserves the
+captured receiver cell in its dead zone, so a superclass cannot read it via an
+arrow before returning. The synthetic declaration is never executed. -/
+def derivedScope (before : List Stmt) (body : Func) (captured : Bool) : Func :=
+  let statements := before ++ body.body
+  .mk body.name .classCtor false body.params
+    (if captured then .decl .let_ derivedReceiverName .undef :: statements else statements)
 
 /-- Build the class after evaluating and checking its heritage. -/
 def finishDerived (runMembers : Env → Addr → Addr → List ClassMember → M W (List (Bool × PropertyKey)))
@@ -528,7 +539,8 @@ def constructTarget : Nat → Val → Val → List Val → M W Val
         initDerivedFields (evalFields n) closed receiver fields
         pure receiver
       | some (.derivedBody before superArgs body closed fields) => do
-        let env ← enterFunction (derivedScope before body) closed .undef args
+        let captured := capturesDerivedReceiver before superArgs
+        let env ← enterFunction (derivedScope before body captured) closed .undef args
         match ← execStmts n env before with
         | .normal => do
           let parent := (← getObj a).proto
@@ -537,6 +549,7 @@ def constructTarget : Nat → Val → Val → List Val → M W Val
           if (← getObj a).proto != parent then unknown "superclass changed while evaluating super arguments"
           else do
             let receiver ← constructParent (constructTarget n newTarget) parent argv
+            initCapturedReceiver env receiver captured
             initDerivedFields (evalFields n) closed receiver fields
             match ← execStmts n { env with this := receiver } body.body with
             | .ret (.obj r) => pure (.obj r)

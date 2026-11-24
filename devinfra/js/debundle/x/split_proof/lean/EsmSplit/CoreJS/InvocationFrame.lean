@@ -300,7 +300,8 @@ theorem constructTarget_reachFrame_of_steps {r R cells A n} (away : Away r R A)
         exact (reachFrame_initDerivedFields fields closed caps receiver hr fs).bind fun _ _ =>
           reachFrame_pure r R cells A receiver hr
       | derivedBody before superArgs body closed fs =>
-        apply (enter (derivedScope before body) closed .undef args caps (fun _ h => by cases h) safeArgs).bind
+        let captured := capturesDerivedReceiver before superArgs
+        apply (enter (derivedScope before body captured) closed .undef args caps (fun _ h => by cases h) safeArgs).bind
         intro env he
         apply (stmts env before he).bind
         intro initialFlow _
@@ -324,6 +325,14 @@ theorem constructTarget_reachFrame_of_steps {r R cells A n} (away : Away r R A)
           · exact reachFrame_unknown r R cells A _ _
           · apply (parentRun original safeObj argv hargv).bind
             intro receiver hr
+            have initializeReceiver : ReachFrame r R cells A (fun _ => True)
+                (initCapturedReceiver env receiver captured : M W Unit) := by
+              unfold initCapturedReceiver
+              split
+              · exact reachFrame_initVar away env derivedReceiverName receiver he hr
+              · exact reachFrame_pure r R cells A () trivial
+            apply initializeReceiver.bind
+            intro _ _
             apply (reachFrame_initDerivedFields fields closed caps receiver hr fs).bind
             intro _ _
             apply (stmts { env with this := receiver } body.body (Env.nodes_setThis he hr)).bind

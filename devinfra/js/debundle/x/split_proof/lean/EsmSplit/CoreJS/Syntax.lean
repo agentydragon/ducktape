@@ -338,6 +338,9 @@ def lexNames (ss : List Stmt) : List Name := (lexDecls ss).map (·.1)
 private def freeFunctionNames (params : List Name) (body : List Stmt) (names : List Name) : List Name :=
   names.filter fun x => !(params.contains x || (varNamesOf body).contains x || (lexNames body).contains x)
 
+/-- The receiver binding shared by pre-super arrows, outside the source identifier namespace. -/
+def derivedReceiverName : Name := ":derived-this"
+
 mutual
 
 def Expr.free : Expr → List Name
@@ -392,7 +395,7 @@ def freeSuperArgs : Option (List Expr) → List Name
 The prefix, super arguments and remaining body share the constructor's scope. -/
 def derivedCtorFree : Option (List Stmt × Option (List Expr) × Func) → List Name
   | some (before, args, .mk _ _ _ params body) | some (before, args, .withDefaults _ _ _ params _ body) =>
-    freeFunctionNames params (before ++ body) (freeStmts before ++ freeSuperArgs args ++ freeStmts body)
+    freeFunctionNames (derivedReceiverName :: params) (before ++ body) (freeStmts before ++ freeSuperArgs args ++ freeStmts body)
   | some (before, args, .opaque ..) => freeFunctionNames [] before (freeStmts before ++ freeSuperArgs args)
   | none => []
 

@@ -139,9 +139,37 @@ const conditional = sequentialSplit(
 );
 assertRejected(conditional, /expected a direct super call/);
 
+const captured = sequentialSplit(
+  "pre-super-arrow-receiver",
+  `const trace = { value: "" };
+   class Base {
+     constructor(read, value) {
+       try { trace.value += read(); }
+       catch (error) { trace.value += "uninitialized;"; }
+       return { read, value };
+     }
+   }
+   class Child extends Base {
+     field = 9;
+     constructor(prefix) {
+       const read = () => typeof this;
+       super(read, (() => () => prefix + this.field)());
+     }
+   }
+   const child = new Child("late:");
+   export const result = [trace.value, child.read(), child.value()];`,
+  { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3", "#4"] },
+  ["base.mjs"]
+);
+assertCertifiedResult(captured, ["uninitialized;", "object", "late:9"]);
+assert.deepEqual(
+  lower(captured.files.sourceFile, captured.files.specFile, captured.out, ["--check-output"]).verdict,
+  captured.verdict
+);
+
 for (const [name, body] of [
   ["nested-receiver", "const x = 1 + this.x; super(x);"],
-  ["captured-receiver", "const read = () => this.x; super(read);"],
+  ["captured-super", "const read = () => super.x; super(read);"],
   ["argument-receiver", "super(this.x);"],
 ]) {
   const refused = sequentialSplit(
