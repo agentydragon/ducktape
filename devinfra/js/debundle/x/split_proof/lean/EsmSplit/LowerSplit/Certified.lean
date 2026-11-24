@@ -1,4 +1,4 @@
-import EsmSplit.CoreJS.DeclarationArtifacts
+import EsmSplit.CoreJS.Declaration.Artifacts
 import EsmSplit.CoreJS.LinkedCertificate
 import EsmSplit.CoreJS.LinkedInput
 import EsmSplit.CoreJS.Move

@@ -1,4 +1,4 @@
-import EsmSplit.CoreJS.RequestFrame
+import EsmSplit.CoreJS.Request.Frame
 
 /-!
 # Reachability frames for host calls and global observations

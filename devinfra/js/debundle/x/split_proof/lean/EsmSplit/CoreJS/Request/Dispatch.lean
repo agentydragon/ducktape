@@ -1,5 +1,5 @@
 import EsmSplit.CoreJS.InvocationFrame
-import EsmSplit.CoreJS.RequestAllocation
+import EsmSplit.CoreJS.Request.Allocation
 
 /-! Frame the CoreJS primitive operations and every request the opaque world can issue. -/
 

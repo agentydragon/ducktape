@@ -1,4 +1,4 @@
-import EsmSplit.CoreJS.DeclarationCertificate
+import EsmSplit.CoreJS.Declaration.Certificate
 import EsmSplit.CoreJS.Decode
 import EsmSplit.CoreJS.FromESTree
 import EsmSplit.CoreJS.HeritageCertificate

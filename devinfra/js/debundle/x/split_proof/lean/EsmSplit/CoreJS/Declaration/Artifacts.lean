@@ -1,5 +1,5 @@
 import EsmSplit.CoreJS.ModuleInput
-import EsmSplit.CoreJS.DeclarationCertificate
+import EsmSplit.CoreJS.Declaration.Certificate
 
 /-! Decode the output ESTree of a closed declaration split. An output declaration gets its
 original allocation-region identity from the placement, after checking its position, name, kind

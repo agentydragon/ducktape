@@ -1,5 +1,5 @@
 import EsmSplit.CoreJS.InvocationFrame
-import EsmSplit.CoreJS.RequestAllocation
+import EsmSplit.CoreJS.Request.Allocation
 import EsmSplit.CoreJS.StatementFrame
 
 /-! Frame opaque closure allocation and entering opaque module statements. -/

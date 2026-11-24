@@ -1,4 +1,4 @@
-import EsmSplit.CoreJS.DeclarationGroup
+import EsmSplit.CoreJS.Declaration.Group
 import EsmSplit.CoreJS.FromESTree
 
 /-! Read declaration groups directly from an annotated ESTree module, before splitting.
