@@ -4,7 +4,7 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 use debundle_e2e_support::{
-    TreeFixture, debundler_path, process, run_tree_graph_fixture, tree_spec_args,
+    TreeFixture, debundler_path, process, read_tree, run_tree_graph_fixture, tree_spec_args,
 };
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -33,30 +33,6 @@ fn verify(directory: &Path) -> Output {
             .arg(directory),
     )
     .expect("verify snapshot")
-}
-
-fn app_files(root: &Path) -> std::collections::BTreeMap<std::path::PathBuf, Vec<u8>> {
-    fn collect(
-        root: &Path,
-        directory: &Path,
-        files: &mut std::collections::BTreeMap<std::path::PathBuf, Vec<u8>>,
-    ) {
-        for entry in fs::read_dir(directory).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
-                collect(root, &path, files);
-            } else {
-                files.insert(
-                    path.strip_prefix(root).unwrap().to_path_buf(),
-                    fs::read(path).unwrap(),
-                );
-            }
-        }
-    }
-
-    let mut files = std::collections::BTreeMap::new();
-    collect(root, root, &mut files);
-    files
 }
 
 #[test]
@@ -345,7 +321,7 @@ fn snapshot_replays_bundled_swap_with_existence_only_package_input() {
     )
     .unwrap();
     process::assert_success(&original);
-    let original_app = app_files(&fixture.out_root.join("app"));
+    let original_app = read_tree(&fixture.out_root.join("app"));
 
     let workers = TempDir::new().unwrap();
     let destination = workers.path().join("worker");
@@ -382,7 +358,7 @@ fn snapshot_replays_bundled_swap_with_existence_only_package_input() {
     .join("dist");
     assert!(snapshot_directory.is_dir());
     assert_eq!(fs::read_dir(&snapshot_directory).unwrap().count(), 0);
-    assert_eq!(original_app, app_files(&destination.join("output/app")));
+    assert_eq!(original_app, read_tree(&destination.join("output/app")));
 
     fs::remove_dir(&snapshot_directory).unwrap();
     fs::write(&snapshot_directory, b"directory replaced by a file").unwrap();

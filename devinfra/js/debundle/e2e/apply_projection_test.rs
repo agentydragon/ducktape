@@ -1,11 +1,10 @@
 //! Default apply caching must preserve emission, report notes, and native
 //! compatibility while full graphs retain exact authored input provenance.
 
-use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use apply_projection_wire_proto::debundle::apply::ApplyProjection;
 use debundle_e2e_support::saved_analysis::*;
@@ -144,26 +143,6 @@ fn combined_tree_projection_matches_standalone_with_distinct_output_roots() {
     );
 }
 
-// Unlike saved_analysis::tree, retain every provenance field and byte.
-fn exact_tree(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
-    fn visit(root: &Path, dir: &Path, files: &mut BTreeMap<PathBuf, Vec<u8>>) {
-        for entry in fs::read_dir(dir).unwrap() {
-            let entry = entry.unwrap().path();
-            if entry.is_dir() {
-                visit(root, &entry, files);
-            } else {
-                files.insert(
-                    entry.strip_prefix(root).unwrap().to_owned(),
-                    fs::read(entry).unwrap(),
-                );
-            }
-        }
-    }
-    let mut files = BTreeMap::new();
-    visit(root, root, &mut files);
-    files
-}
-
 fn assert_projected_parity(opts: FixtureOpts<'_>, extra: &[&str], expected_status: i32) {
     let (staged, _fixture) = staged(opts);
     let direct = staged.run_without_graphs(extra);
@@ -173,8 +152,8 @@ fn assert_projected_parity(opts: FixtureOpts<'_>, extra: &[&str], expected_statu
         "{}",
         direct.result.stderr
     );
-    let expected = exact_tree(&direct.output_root());
-    let expected_harness = direct.harness_root().map(exact_tree);
+    let expected = read_tree(&direct.output_root());
+    let expected_harness = direct.harness_root().map(read_tree);
     let spec = direct.invocation_spec().unwrap();
     let projection = staged.root().join("apply.json");
     project(spec, &projection);
@@ -202,8 +181,8 @@ fn assert_projected_parity(opts: FixtureOpts<'_>, extra: &[&str], expected_statu
         "{}",
         projected.stderr
     );
-    assert_eq!(exact_tree(&direct.output_root()), expected);
-    assert_eq!(direct.harness_root().map(exact_tree), expected_harness);
+    assert_eq!(read_tree(&direct.output_root()), expected);
+    assert_eq!(direct.harness_root().map(read_tree), expected_harness);
 }
 
 #[test]
@@ -565,7 +544,7 @@ fn projection_and_analysis_transfer_between_execution_roots() {
         fs::copy(file, relocated.join(file.file_name().unwrap())).unwrap();
     }
     for dir in [staged.root().join("snapshot"), staged.modules.clone()] {
-        for (relative, bytes) in exact_tree(&dir) {
+        for (relative, bytes) in read_tree(&dir) {
             let destination = relocated.join(dir.file_name().unwrap()).join(relative);
             fs::create_dir_all(destination.parent().unwrap()).unwrap();
             fs::write(destination, bytes).unwrap();
