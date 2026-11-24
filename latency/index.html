@@ -224,7 +224,7 @@
                 ${greenWithin("same_repo_open", 300)}, and at ten minutes
                 at${" "} ${greenWithin("same_repo_open", 600)}. The update
                 counts were${" "} ${greenWithin("same_repo_update", 300)}
-                and${" "} ${greenWithin("same_repo_update", 600)} respectively.
+                ${" and "}${greenWithin("same_repo_update", 600)} respectively.
                 Each compares the latest window with its raw historical stratum,
                 including cancellations. These arrival windows do not isolate a
                 rollout effect.<//
@@ -268,8 +268,8 @@
                 excluded 13 same-repo heads that merged onto a different base
                 and verified all 120 fork heads separately. The other historical
                 candidates are unaudited, so the earlier population weights and
-                weighted horizon comparisons are withdrawn.${" "} ${pr(19402)} ·
-                ${link("./evidence.json", "Per-head audit evidence")}<//
+                weighted horizon comparisons are withdrawn.${" "} ${pr(19402)}
+                ${" · "}${link("./evidence.json", "Per-head audit evidence")}<//
               >
               <${Text} my="sm" size="sm"
                 >The audited opening red median is 165 s from three head-visible

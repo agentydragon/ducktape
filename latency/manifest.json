@@ -5,6 +5,6 @@
   "published_at_utc": "2026-11-24T01:43:20.068723+00:00",
   "attribution": "Original run-time target audit, exact-source fork feedback, and public Nix cache recovery",
   "previous_report_commit": "fd9bcfd9bbc7165eacaee1ac4f8710c891de2df1",
-  "report_sha256": "8c02944cdaae6384edfeb28f63540f8b933b8124e17f3ec5888832b9aa2fb795",
+  "report_sha256": "33577c2243d992e5b635b35875a28c70ba1a2dd655fd501ae467c0776ab98507",
   "evidence_sha256": "8a882ee80a26fdc8dc7c44834350922b57a37d038adda146a799a2621d777578"
 }
