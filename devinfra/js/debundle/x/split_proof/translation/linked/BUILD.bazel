@@ -146,6 +146,15 @@ js_test(
 )
 
 js_test(
+    name = "spread_arguments_test",
+    size = "medium",
+    data = _TEST_DATA,
+    entry_point = "spread_arguments_test.mjs",
+    env = _TEST_ENV,
+    shard_count = 3,
+)
+
+js_test(
     name = "provider_programs_test",
     size = "medium",
     data = _TEST_DATA,
