@@ -1,0 +1,14 @@
+# Upstream owner: packages/excalidraw/random.ts (Excalidraw v0.18.1)
+source_matches:
+  - match: |
+      var DECLARATORS_BEFORE = null,
+        random = new Random(Date.now()),
+        testIdBase = 0,
+        randomInteger = () => Math.floor(random.next() * 2 ** 31),
+        randomId = () => isTestEnv() ? `id${testIdBase++}` : nanoid(),
+        DECLARATORS_AFTER = null;
+    bindings:
+      - random
+      - testIdBase
+      - randomInteger
+      - randomId

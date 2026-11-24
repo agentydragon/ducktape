@@ -1,0 +1,18 @@
+source_matches:
+  - match: |
+      var DEFAULT_ELEMENT_PROPS = {
+        strokeColor: COLOR_PALETTE.black,
+        backgroundColor: COLOR_PALETTE.transparent,
+        fillStyle: "solid",
+        strokeWidth: 2,
+        strokeStyle: "solid",
+        roughness: ROUGHNESS.artist,
+        opacity: 100,
+        locked: !1
+      };
+    bindings:
+      - DEFAULT_ELEMENT_PROPS
+  - match: |
+      var ORIG_ID = Symbol.for("__test__originalId__");
+    bindings:
+      - ORIG_ID
