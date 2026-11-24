@@ -147,17 +147,19 @@ p=//devinfra/js/debundle/x/split_proof/integration/excalidraw
 bbr test --config=ci "${p}:excalidraw_certified_editor_browser_smoke"
 ```
 
-The placement extracts 350 units from the pinned editor.
+The placement extracts 352 units from the pinned editor.
 
-| Module          | Source units |
-| --------------- | ------------ |
-| `startup.mjs`   | `#5–18`      |
-| `codecs.mjs`    | `#19–300`    |
-| `utilities.mjs` | `#301–353`   |
-| `scroll.mjs`    | `#1337`      |
+| Module            | Source units |
+| ----------------- | ------------ |
+| `startup.mjs`     | `#5–18`      |
+| `codecs.mjs`      | `#19–300`    |
+| `utilities.mjs`   | `#301–353`   |
+| `coordinates.mjs` | `#559–560`   |
+| `scroll.mjs`      | `#1337`      |
 
-The prefix keeps its execution order and the scroll helper moves ahead of
-the residual entry. The checker selects the single-move proof with
+The prefix keeps its execution order. The two coordinate helpers and the
+scroll helper move ahead of the residual entry. The checker selects the
+multiple-move proof with
 `--structural`, the `browser-page` profile and the live HTTP origin. The test
 repeats certification with `--check-output`, then runs the original and
 certified editor in separate Chromium contexts at the same origin. It checks the

@@ -206,6 +206,7 @@ private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work
       let scope := match proof with
         | .preservedOrder => "linked-structural-order"
         | .singlePivot => "linked-structural-pivot"
+        | .multiplePivots => "linked-structural-moves"
       let assumptions :=
         ["Retained source units use the same capability-closed opaque world in both layouts."] ++
         (deploymentOrigin.toList.flatMap fun origin => [

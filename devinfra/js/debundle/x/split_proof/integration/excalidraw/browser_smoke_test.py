@@ -27,6 +27,7 @@ from testing.frontend_visual.context import deterministic_browser_context
 pytest_plugins = ("testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
+COORDINATES = "packages/excalidraw/scene/coordinates.mjs"
 SCROLL = "packages/excalidraw/scene/scroll.mjs"
 STARTUP = "packages/excalidraw/editor/startup.mjs"
 STARTUP_UNITS = range(5, 19)
@@ -284,9 +285,10 @@ async def test_original_editor(
                 STARTUP: STARTUP_UNITS,
                 "packages/excalidraw/editor/codecs.mjs": range(19, 301),
                 "packages/excalidraw/editor/utilities.mjs": range(301, 354),
+                COORDINATES: (559, 560),
                 SCROLL: (1337,),
             },
-            "linked-structural-pivot",
+            "linked-structural-moves",
             id="editor",
         ),
     ],
