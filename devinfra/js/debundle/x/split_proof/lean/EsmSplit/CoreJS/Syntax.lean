@@ -48,16 +48,33 @@ inductive RegExpGetter where
   | source | flags | flag (letter : Char)
   deriving DecidableEq, Repr
 
+inductive WellKnownSymbol where
+  | iterator | toStringTag
+  deriving DecidableEq, Hashable, Repr
+
+def WellKnownSymbol.member : WellKnownSymbol → String
+  | .iterator => "iterator"
+  | .toStringTag => "toStringTag"
+
+def WellKnownSymbol.description (sym : WellKnownSymbol) : String := "Symbol." ++ sym.member
+
+def WellKnownSymbol.ofMember? : String → Option WellKnownSymbol
+  | "iterator" => some .iterator
+  | "toStringTag" => some .toStringTag
+  | _ => none
+
 /-- Primitive operations and opaque ambient references used by the interpreter. -/
 inductive Prim where
   | regExpGet (getter : RegExpGetter)
   | globalTypeof (binding : String)
   | globalRef (binding : String)
-  | iteratorSymbol
+  | wellKnownSymbol (sym : WellKnownSymbol)
   | freshSymbol
   | opaqueAmbientRef (binding : String)
   | opaqueConstructorRef (binding : String)
   | opaqueAmbientMemberRef (receiver member : String)
+  | forInKeys
+  | checkForInWrite
   | log | defineProperty | create | getPrototypeOf | setPrototypeOf
   deriving DecidableEq, Repr
 
@@ -85,11 +102,6 @@ inductive OpaqueRun where
   | closures (fns : List (String × Nat × Bool))
   deriving DecidableEq
 
-inductive ArrayElementKind where
-  | element
-  | spread
-  deriving DecidableEq
-
 mutual
 
 inductive Expr where
@@ -107,14 +119,16 @@ inductive Expr where
   | func (f : Func)
   | obj (props : List PropDef)
   | arr (elems : List Expr)
-  /-- The exact elements of an array literal containing spread. The interpreter stops if it reaches this expression. -/
-  | arrWithSpread (elems : List (ArrayElementKind × Expr))
+  /-- A spread operand in a call, construction or array element list. -/
+  | spreadArg (source : Expr)
   /-- `class name { … }`; `self` when the body sees the name. -/
   | cls (name : String) (self : Bool) (ctor : Func) (members : List ClassMember)
   /-- A derived class. An explicit constructor splits its body at the direct super call. -/
   | derived (name : String) (self : Bool) (parent : Expr) (members : List ClassMember)
       (ctor : Option (List Stmt × Option (List Expr) × Func))
   | get (o k : Expr)
+  /-- Read from the current prototype of the lexical home object, using the active receiver. -/
+  | getSuper (k : Expr)
   /-- `o?.[k]`: evaluate the receiver once and skip the key on a nullish value. -/
   | getOptional (o k : Expr)
   /-- `k in o`. -/
@@ -128,10 +142,11 @@ inductive Expr where
   | call (f : Expr) (args : List Expr)
   /-- `o[k](args)`: the callee is read from `o`, which is `this` in the call. -/
   | callMethod (o k : Expr) (args : List Expr)
+  | callSuper (k : Expr) (args : List Expr) (optional : Bool)
   /-- `o?.m(args)`: evaluate the receiver once, short circuit a nullish value, and keep the receiver as `this`. -/
   | callOptionalReceiver (o k : Expr) (args : List Expr)
-  /-- `o.m?.(args)`: look up the callee once and keep `o` as `this` if called. -/
-  | callOptionalCallee (o k : Expr) (args : List Expr)
+  /-- `o.m?.(args)`, optionally followed by a property read within the same chain. -/
+  | callOptionalCallee (o k : Expr) (args : List Expr) (property : Option Expr)
   | new (f : Expr) (args : List Expr)
   | prim (p : Prim) (args : List Expr)
   | unary (op : UnOp) (e : Expr)
@@ -148,6 +163,7 @@ inductive Target where
 
 inductive PropDef where
   | init (k v : Expr)
+  | method (k : Expr) (f : Func)
   | getter (k : Expr) (f : Func)
   | setter (k : Expr) (f : Func)
   /-- `__proto__: v`. -/
@@ -160,6 +176,7 @@ inductive ClassMember where
   | setter (static : Bool) (k : Expr) (f : Func)
   /-- A field: `init` runs with `this` the instance, or the class for a static one. -/
   | field (static : Bool) (k : Expr) (init : Expr)
+  | staticBlock (body : Func)
 
 /-- `self`: a named function expression, whose body sees its own name. -/
 inductive Func where
@@ -174,10 +191,20 @@ inductive Func where
   | opaque (name : String) (kind : FuncKind) (self : Bool) (length code part : Nat)
       (free : List Name) (refusal : Option String)
 
+/-- A binding pattern initializes cells in its enclosing scope. Object properties
+evaluate their keys and bind their values from left to right. -/
+inductive BindingPattern where
+  | name (x : Name)
+  | object (properties : List (Expr × BindingPattern))
+  /-- An absent entry is an elision. The optional trailing pattern receives a new array. -/
+  | array (elements : List (Option BindingPattern)) (rest : Option BindingPattern)
+  | defaultValue (pattern : BindingPattern) (fallback : Expr)
+
 inductive Stmt where
   | expr (e : Expr)
   /-- `var x = e`, `let x = e`, `const x = e`; `let x;` has `e = undefined`. -/
   | decl (kind : DeclKind) (x : Name) (init : Expr)
+  | bind (kind : DeclKind) (pattern : BindingPattern) (init : Expr)
   /-- `var x;` -/
   | varDecl (x : Name)
   | funDecl (f : Func)
@@ -185,7 +212,10 @@ inductive Stmt where
   | ite (c : Expr) (t e : Stmt)
   | block (ss : List Stmt)
   /-- `for (init; test; update) body`. -/
-  | loop (init : Stmt) (test update : Expr) (body : Stmt)
+  | loop (init : List Stmt) (test update : Expr) (body : Stmt)
+  /-- A switch boundary consumes an unlabeled break. Other completions leave the switch. -/
+  | breakScope (body : Stmt)
+  | forOf (kind : DeclKind) (pattern : BindingPattern) (source : Expr) (body : Stmt)
   | brk
   | cont
   | throw (e : Expr)
@@ -253,13 +283,34 @@ def Program.single (ss : List Stmt) : Program where
 /-! ## Hoisting: which names a scope declares -/
 
 mutual
+def BindingPattern.names : BindingPattern → List Name
+  | .name x => [x]
+  | .object ps => objectBindingNames ps
+  | .array elements rest =>
+    arrayBindingNames elements ++ (match rest with | none => [] | some target => target.names)
+  | .defaultValue pattern _ => pattern.names
+
+def objectBindingNames : List (Expr × BindingPattern) → List Name
+  | [] => []
+  | (_, pattern) :: rest => pattern.names ++ objectBindingNames rest
+
+def arrayBindingNames : List (Option BindingPattern) → List Name
+  | [] => []
+  | none :: rest => arrayBindingNames rest
+  | some pattern :: rest => pattern.names ++ arrayBindingNames rest
+end
+
+mutual
 /-- The `var` names of a statement: they belong to the enclosing function, through every block. -/
 def Stmt.varNames : Stmt → List Name
   | .decl .var x _ => [x]
+  | .bind .var pattern _ => pattern.names
   | .varDecl x => [x]
   | .ite _ t e => t.varNames ++ e.varNames
   | .block ss => varNamesOf ss
-  | .loop init _ _ body => init.varNames ++ body.varNames
+  | .loop init _ _ body => varNamesOf init ++ body.varNames
+  | .breakScope body => body.varNames
+  | .forOf kind pattern _ body => (if kind == .var then pattern.names else []) ++ body.varNames
   | .tryCatch body _ handler => body.varNames ++ handler.varNames
   | .tryFinally body finalizer => body.varNames ++ finalizer.varNames
   | .opaque _ decls _ _ _ => decls.filterMap fun (x, kind) => if kind == .var then some x else none
@@ -272,11 +323,13 @@ end
 
 /-- The lexical declarations of a statement list, each with whether it can be assigned. -/
 def lexDecls (ss : List Stmt) : List (Name × Bool) :=
-  ss.filterMap fun
-    | .decl .let_ x _ => some (x, true)
-    | .decl .const x _ => some (x, false)
-    | .funDecl f => some (f.name, true)
-    | _ => none
+  ss.flatMap fun
+    | .decl .let_ x _ => [(x, true)]
+    | .decl .const x _ => [(x, false)]
+    | .bind .let_ pattern _ => pattern.names.map (·, true)
+    | .bind .const pattern _ => pattern.names.map (·, false)
+    | .funDecl f => [(f.name, true)]
+    | _ => []
 
 /-- The function declarations of a statement list: bound and initialized when the scope is entered. -/
 def funDecls (ss : List Stmt) : List Func :=
@@ -290,10 +343,7 @@ def fieldInits : List ClassMember → List Expr
   | .field _ _ init :: ms => init :: fieldInits ms
   | _ :: ms => fieldInits ms
 
-def hasStaticField : List ClassMember → Bool
-  | [] => false
-  | .field true _ _ :: _ => true
-  | _ :: ms => hasStaticField ms
+
 
 /-! ## Free names: the names of the scope around it that a piece of code can mean
 
@@ -309,6 +359,9 @@ def lexNames (ss : List Stmt) : List Name := (lexDecls ss).map (·.1)
 private def freeFunctionNames (params : List Name) (body : List Stmt) (names : List Name) : List Name :=
   names.filter fun x => !(params.contains x || (varNamesOf body).contains x || (lexNames body).contains x)
 
+/-- The receiver binding shared by pre-super arrows, outside the source identifier namespace. -/
+def derivedReceiverName : Name := ":derived-this"
+
 mutual
 
 def Expr.free : Expr → List Name
@@ -317,11 +370,12 @@ def Expr.free : Expr → List Name
   | .func f => f.free
   | .obj props => freeProps props
   | .arr elems => freeExprs elems
-  | .arrWithSpread elems => freeArrayElements elems
+  | .spreadArg source => source.free
   | .cls name self ctor members => (ctor.free ++ freeMembers members).filter fun x => !(self && x == name)
   | .derived name self parent members ctor =>
     ((parent.free ++ freeMembers members) ++ derivedCtorFree ctor).filter fun x => !(self && x == name)
   | .get o k | .getOptional o k => o.free ++ k.free
+  | .getSuper k => k.free
   | .hasProp k o => k.free ++ o.free
   | .delete o k => o.free ++ k.free
   | .assign t rhs => t.free ++ rhs.free
@@ -329,8 +383,11 @@ def Expr.free : Expr → List Name
   | .assignLogical t _ rhs => t.free ++ rhs.free
   | .update t _ _ => t.free
   | .call f args => f.free ++ freeExprs args
-  | .callMethod o k args | .callOptionalReceiver o k args | .callOptionalCallee o k args =>
+  | .callMethod o k args | .callOptionalReceiver o k args | .callOptionalCallee o k args none =>
     o.free ++ (k.free ++ freeExprs args)
+  | .callOptionalCallee o k args (some property) =>
+    o.free ++ (k.free ++ (freeExprs args ++ property.free))
+  | .callSuper k args _ => k.free ++ freeExprs args
   | .new f args => f.free ++ freeExprs args
   | .prim _ args => freeExprs args
   | .unary _ e => e.free
@@ -345,12 +402,13 @@ def Target.free : Target → List Name
 
 def PropDef.free : PropDef → List Name
   | .init k v => k.free ++ v.free
-  | .getter k f | .setter k f => k.free ++ f.free
+  | .method k f | .getter k f | .setter k f => k.free ++ f.free
   | .proto v | .spread v => v.free
 
 def ClassMember.free : ClassMember → List Name
   | .method _ k f | .getter _ k f | .setter _ k f => k.free ++ f.free
   | .field _ k init => k.free ++ init.free
+  | .staticBlock body => body.free
 
 def freeSuperArgs : Option (List Expr) → List Name
   | some args => freeExprs args
@@ -360,7 +418,7 @@ def freeSuperArgs : Option (List Expr) → List Name
 The prefix, super arguments and remaining body share the constructor's scope. -/
 def derivedCtorFree : Option (List Stmt × Option (List Expr) × Func) → List Name
   | some (before, args, .mk _ _ _ params body) | some (before, args, .withDefaults _ _ _ params _ body) =>
-    freeFunctionNames params (before ++ body) (freeStmts before ++ freeSuperArgs args ++ freeStmts body)
+    freeFunctionNames (derivedReceiverName :: params) (before ++ body) (freeStmts before ++ freeSuperArgs args ++ freeStmts body)
   | some (before, args, .opaque ..) => freeFunctionNames [] before (freeStmts before ++ freeSuperArgs args)
   | none => []
 
@@ -370,15 +428,36 @@ def Func.free : Func → List Name
   | .mk name _ self params body | .withDefaults name _ self params _ body =>
     freeFunctionNames (if self then name :: params else params) body (freeStmts body)
 
+def BindingPattern.free : BindingPattern → List Name
+  | .name x => [x]
+  | .object ps => freeObjectBindings ps
+  | .array elements rest =>
+    freeArrayBindings elements ++ (match rest with | none => [] | some target => target.free)
+  | .defaultValue pattern e => pattern.free ++ e.free
+
+def freeObjectBindings : List (Expr × BindingPattern) → List Name
+  | [] => []
+  | (key, pattern) :: rest => key.free ++ pattern.free ++ freeObjectBindings rest
+
+def freeArrayBindings : List (Option BindingPattern) → List Name
+  | [] => []
+  | none :: rest => freeArrayBindings rest
+  | some pattern :: rest => pattern.free ++ freeArrayBindings rest
+
 def Stmt.free : Stmt → List Name
   | .expr e | .ret e | .throw e => e.free
   | .decl _ x e => x :: e.free
+  | .bind _ pattern e => pattern.free ++ e.free
   | .varDecl x => [x]
   | .funDecl f => f.name :: f.free
   | .ite c t e => c.free ++ (t.free ++ e.free)
   | .block ss => (freeStmts ss).filter fun x => !(lexNames ss).contains x
   | .loop init test update body =>
-    (init.free ++ (test.free ++ (update.free ++ body.free))).filter fun x => !(lexNames [init]).contains x
+    (freeStmts init ++ (test.free ++ (update.free ++ body.free))).filter fun x => !(lexNames init).contains x
+  | .breakScope body => body.free
+  | .forOf kind pattern source body =>
+    let own := if kind == .var then [] else pattern.names
+    (source.free ++ pattern.free ++ body.free).filter fun x => !own.contains x
   | .brk | .cont => []
   | .tryCatch body param handler => body.free ++ handler.free.filter fun x => !(param == some x)
   | .tryFinally body finalizer => body.free ++ finalizer.free
@@ -387,10 +466,6 @@ def Stmt.free : Stmt → List Name
 def freeExprs : List Expr → List Name
   | [] => []
   | e :: es => e.free ++ freeExprs es
-
-def freeArrayElements : List (ArrayElementKind × Expr) → List Name
-  | [] => []
-  | (_, e) :: es => e.free ++ freeArrayElements es
 
 def freeProps : List PropDef → List Name
   | [] => []
@@ -405,6 +480,15 @@ def freeStmts : List Stmt → List Name
   | s :: ss => s.free ++ freeStmts ss
 
 end
+
+/-- Evaluate the operand exactly once, then expand it if the source list requested iteration. -/
+def Expr.argument (e : Expr) : Bool × Expr :=
+  match e with
+  | .spreadArg source => (true, source)
+  | _ => (false, e)
+
+@[simp] theorem Expr.argument_free (e : Expr) : e.argument.2.free = e.free := by
+  cases e <;> rfl
 
 /-- The names a function's code can mean in the scope it is made in, its own name included: what it closes over. -/
 def Func.closes (f : Func) : List Name := if f.self then f.name :: f.free else f.free

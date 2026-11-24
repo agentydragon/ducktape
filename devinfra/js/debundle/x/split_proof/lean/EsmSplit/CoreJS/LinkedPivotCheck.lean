@@ -158,8 +158,9 @@ private def sameUnit? (u v : LinkedUnit) :
       simpa only [Bool.and_eq_true] using h
     some (PLift.up ((isModuleReceiver_eq both.1).trans (isModuleReceiver_eq both.2).symm))
     else none
+  let home ← if h : u.env.home == v.env.home then some (PLift.up (beq_iff_eq.1 h)) else none
   if names : u.stmt.free.all (fun x => u.env.vars.lookup x == v.env.vars.lookup x) then
-    return ⟨tag.down, st.down, ⟨receiver.down, fun x hx => beq_iff_eq.1 (List.all_eq_true.mp names x hx)⟩⟩
+    return ⟨tag.down, st.down, ⟨receiver.down, home.down, fun x hx => beq_iff_eq.1 (List.all_eq_true.mp names x hx)⟩⟩
   else none
 
 def sameUnits? : (u v : List LinkedUnit) → Option (PLift (SameUnits u v))

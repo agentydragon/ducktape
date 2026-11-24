@@ -112,6 +112,27 @@ so it can reduce any unary expression without unfolding the mutually recursive i
         lift (unop (← getState) op v)) := by
   cases op <;> cases a <;> rfl
 
+-- The generated equations for non-null objects and non-undefined defaults
+-- have negative premises, which the proof-producing evaluator cannot use.
+@[cbv_eval] private theorem bindPattern_object (n : Nat) (env : Env) (kind : DeclKind)
+    (props : List (Expr × BindingPattern)) (value : Val) :
+    (bindPattern (n + 1) env kind (.object props) value : M W Unit) =
+    (match value with
+    | .undef | .null => throwErr .type "cannot destructure undefined or null"
+    | _ => props.forM fun (key, field) => do
+        let key ← evalExpr n env key
+        let v ← getProp (callFn n) value key
+        bindPattern n env kind field v) := by
+  cases value <;> rfl
+
+@[cbv_eval] private theorem bindPattern_default (n : Nat) (env : Env) (kind : DeclKind)
+    (target : BindingPattern) (init : Expr) (value : Val) :
+    (bindPattern (n + 1) env kind (.defaultValue target init) value : M W Unit) =
+    (match value with
+    | .undef => evalExpr n env init >>= bindPattern n env kind target
+    | _ => bindPattern n env kind target value) := by
+  cases value <;> rfl
+
 /-- Resolve an own data prototype on a concrete class constructor directly. Using the
 checked lookup avoids expanding the nested interpreter calls in the non-null heritage path. -/
 @[cbv_eval] private theorem classParents_obj (call : Call W) (a : Addr) (s : State W) :

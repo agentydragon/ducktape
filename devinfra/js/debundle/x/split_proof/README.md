@@ -64,6 +64,17 @@ CoreJS allocates a fresh object for each regular-expression literal. It preserve
 
 The browser-page profile also allows deferred construction of selected ambient constructors (`Date`, `Error`, `RegExp`, `Set`, and `URL`). The linked model retains the constructor name and arguments. If initialization reaches that lookup, it reports an unknown result before evaluating the arguments, including inside a `try` block. Reading `Date.now` can certify under a stable-reference premise. Calling it during initialization requires a model of the clock. The caller is responsible for choosing a profile that holds in the deployment.
 
+Linked replay models `super.member` and `super[key]` reads, direct calls, and
+optional calls. It starts at the current prototype of the method's home object
+and passes the active receiver to getters and calls. An arrow retains both the
+home object and receiver of its enclosing scope. Async bodies can retain these
+references, but replay stops if it reaches an async invocation. Super-property
+writes and deletion remain outside the executable model.
+
+Class static blocks run in their own scope with the constructor as the
+receiver. The checker evaluates class member keys before it initializes
+fixed-name static fields and runs blocks in their source order.
+
 The command prints one JSON verdict. A successful split reports `status: "certified"` after Lean certifies the output module ASTs and the printer writes them to the requested directory. The default `normal-completion` request means that, for each modeled world and successful final state, the bundle reaches that state exactly when the split does. It does not say that either program completes normally; in the closed-declaration case, both may throw. The linked-program proof additionally establishes that both programs initialize normally. The checker reports the strongest available guarantee, so a default request may report `all-outcomes` for a supported order-preserving split. Pass `--require all-outcomes` to insist on that stronger guarantee. A rejected request exits nonzero with `status: "rejected"`, a null guarantee and a reason.
 
 To move an initializer such as `Math.PI / 12`, pass
@@ -163,11 +174,15 @@ Ordinary top-level function declarations initialize when the modules link. A cal
 
 Named parameters can have defaults such as `(x = 1, y = x) => y`. Missing and `undefined` arguments use the initializer. A `null` argument binds directly. Parameters initialize left to right and a read of the current or a later parameter before initialization throws, including inside `typeof`. Body lexical declarations are in a scope inside the parameter environment. The linked fragment refuses a body `var` whose name repeats a parameter or occurs free in an initializer. The function's `length` counts only parameters before the first default. CoreJS executes defaults on identifier parameters. It can retain other parameter patterns for deferred calls. Implicit `arguments` remains outside the linked fragment.
 
-Linked ordinary functions and arrows accept nonempty flat object patterns in parameters and local `var`, `let`, and `const` declarations. For example, `function read({x, label: name})` takes one argument and reads `x` before `label`. A local declaration evaluates its initializer once. Both forms use CoreJS property lookup, including the receiver for a getter, and stop at the first abrupt read. Keys may be identifiers or string literals. Module-level patterns, nested targets, defaults, rest, and computed keys are outside this lowering. An empty pattern still checks its argument for null or undefined and is also excluded.
+Module-level `var`, `let`, and `const` declarations can use object binding patterns, including nested object patterns, computed keys, and defaults. The module linker creates a cell for each bound name. The declaration evaluates its initializer once, then reads properties and initializes bindings in source order. A getter keeps its receiver, and a default runs only for `undefined`. It can read an earlier binding, while a read of a later lexical binding throws in the temporal dead zone. An empty pattern still checks that the source is neither `null` nor `undefined`. Object rest remains unsupported.
+
+Local declarations use the same object binding rules. Linked ordinary functions and arrows also accept nonempty flat object patterns with identifier or string keys in parameters. For example, `function read({x, label: name})` takes one argument and reads `x` before `label`.
+
+Array binding patterns and synchronous `for…of` loops take the source's iterator and cache its `next` method. Array patterns support elisions, defaults, nested bindings and a trailing rest binding. An elision advances the iterator without reading the iterator result's `value` property. A lexical loop head creates fresh cells for each iteration. An assignment head can write an identifier or a property. The iterator's `return` method runs if binding or the body exits abruptly, and when a finite array pattern leaves the iterator open. The native array path checks the iterator method and the array iterator prototype. String iteration, host iterator methods, and `for await…of` remain unsupported.
 
 In linked programs, conditional expressions and `if` statements inside functions evaluate the test once and run the selected branch with the state left by the test. Both branches must lower to CoreJS, including code that initialization never executes. Branch blocks have their own lexical scope, and `var` declarations in either branch belong to the enclosing function. A false test with no `else` continues to the following statement.
 
-Linked functions can also use `switch` cases ending in `return`, `throw`, or an unlabeled `break` before the next clause. The discriminant is evaluated once. Case tests run in source order and match by strict equality. A trailing `default` runs when no test matches. The checker refuses fallthrough, a nontrailing default, nested breaks, and lexical declarations shared by the clauses. Independently braced case bodies keep their own lexical scopes.
+Linked functions can use `switch` with a trailing `default` and case bodies that exit before the next clause. The discriminant is evaluated once, and case tests run in source order and match by strict equality. Empty labels share the following body. A break exits its nearest loop or switch. A continue inside a switch reaches the enclosing loop. Braced case bodies can declare their own lexical bindings.
 
 Linked sequence expressions evaluate their operands from left to right, stop at the first abrupt completion, and return the final operand's value. A sequence used as a call's callee supplies `undefined` as `this`, including when its last operand reads a member.
 
@@ -230,7 +245,7 @@ A logical expression in a static data property, such as `{mode: config.mode || "
 
 A linked `void` expression evaluates its operand and returns `undefined` on normal completion. Side effects and thrown exceptions from the operand are observable.
 
-Linked dense array literals evaluate their elements left to right. At module scope and inside functions, the checker records array spread elements and the bindings their operands reference. If initialization reaches such a literal, CoreJS stops with an unknown result because iterator behavior is outside the model. Array holes are rejected during lowering.
+Dense array literals, calls and constructors evaluate each ordinary or spread operand left to right. A spread operand consumes its synchronous iterator before evaluation proceeds to the next operand. The iterator model covers linked iterator methods and the native array iterator with its modeled next method. Array holes are rejected during lowering.
 
 Untagged template literals use their cooked text and evaluate substitutions from left to right. CoreJS converts each primitive substitution to a string before evaluating the next expression. A linked initialization that needs object-to-primitive conversion reaches an unknown result and cannot certify.
 

@@ -8,6 +8,7 @@ import {
   assertRejected,
   block,
   call,
+  caseShard,
   exportNamed,
   forcePreview,
   functionExpression,
@@ -25,6 +26,7 @@ import {
 
 const entry = "entry.mjs";
 const worker = "worker.mjs";
+const includesCase = caseShard();
 const load = (file) => import(pathToFileURL(file).href);
 
 function requireCertified({ verdict, log }) {
@@ -33,7 +35,7 @@ function requireCertified({ verdict, log }) {
 
 // The setter is deferred until after entry initialization. Its write must still
 // reach the same cell as the getter and the entry's live export.
-{
+if (includesCase("cell-owner")) {
   const source = `let current;
     function write(value) { return current = value; }
     function read() { return current; }
@@ -69,7 +71,7 @@ function requireCertified({ verdict, log }) {
 
 // The import aliases a mutable provider cell. Both trees must evaluate the RHS
 // once, catch the failed write, and retain the provider's value.
-{
+if (includesCase("imported-write")) {
   const source = `import { value as shared } from "./provider.mjs";
     let evaluations = 0;
     function write() { return shared = (evaluations = evaluations + 1, "wrong"); }
@@ -109,10 +111,11 @@ function requireCertified({ verdict, log }) {
 
 // Check the model's abrupt handling as well as the Node results. The attempted
 // writes to an uninitialized binding and a constant run their RHS first.
-assertCertifiedResult(
-  sequentialSplit(
-    "abrupt-and-once",
-    `const run = (input) => {
+if (includesCase("abrupt-and-once")) {
+  assertCertifiedResult(
+    sequentialSplit(
+      "abrupt-and-once",
+      `const run = (input) => {
     let current = "fallback";
     let step = "start";
     const read = () => {
@@ -136,12 +139,13 @@ assertCertifiedResult(
   };
   const result = [run(null), run({ property: { name: "value" } })];
   export { result };`
-  ),
-  [
-    ["fallback", "ready", true, "const"],
-    ["value", "ready", true, "const"],
-  ]
-);
+    ),
+    [
+      ["fallback", "ready", true, "const"],
+      ["value", "ready", true, "const"],
+    ]
+  );
+}
 
 const fn = functionExpression([], block([returns(literal(42))]));
 const anonArrow = arrow([], literal(42));
@@ -159,6 +163,7 @@ for (const [name, rhs, expected] of [
   ["named-function", { ...fn, id: id("original") }, "original"],
   ["sequence-rhs", { type: "SequenceExpression", expressions: [literal(0), anonArrow] }, ""],
 ]) {
+  if (!includesCase(name)) continue;
   const assign = { type: "AssignmentExpression", operator: "=", left: id("callback"), right: rhs };
   const observedName = readMember(id("assigned"), id("name"));
   const run = arrow(
@@ -182,7 +187,7 @@ for (const [name, rhs, expected] of [
 
 // A var binding already exists when the reader runs, so both orders complete.
 // Placing the read before the assignment changes the observed value.
-{
+if (includesCase("assignment-order")) {
   const source = `var current; current = "ready"; const result = typeof current; export { result };`;
   const reader = "reader.mjs";
   const modules = { [worker]: ["#0", "#1"], [reader]: ["#2"], [entry]: ["#3"] };

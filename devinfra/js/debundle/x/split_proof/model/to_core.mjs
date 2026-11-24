@@ -237,16 +237,16 @@ export function coreFromParsed(
   // These are host observations at execution time. A lexical or imported Symbol uses an ordinary lookup.
   const ambientSymbol = (node) =>
     node.type === "Identifier" && node.name === "Symbol" && !declared("Symbol") && !importsSymbol;
-  const iteratorMember = (node) =>
+  const wellKnownMember = (node) =>
     node.type === "MemberExpression" &&
     !node.computed &&
     !node.optional &&
     ambientSymbol(node.object) &&
     node.property.type === "Identifier" &&
-    node.property.name === "iterator";
+    ["iterator", "toStringTag"].includes(node.property.name);
   const methodKey = (node) => {
     if (!node.computed) return staticKey(node.key);
-    if (iteratorMember(node.key)) return "[Symbol.iterator]";
+    if (wellKnownMember(node.key)) return `[Symbol.${node.key.property.name}]`;
     return refuse(node, "a method named by a computed key");
   };
   const isAnonymousFunction = (node) =>
@@ -479,7 +479,7 @@ export function coreFromParsed(
         emit("arr", node.elements.length);
         break;
       case "MemberExpression":
-        if (iteratorMember(node)) emit("prim", "iteratorSymbol", 0);
+        if (wellKnownMember(node)) emit("prim", `${node.property.name}Symbol`, 0);
         else {
           member(node);
           emit("get");

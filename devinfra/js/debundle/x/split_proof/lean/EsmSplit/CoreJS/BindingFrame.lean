@@ -81,7 +81,7 @@ theorem reachFrame_declare {r R cells A} (away : Away r R A)
   rcases hn with ((⟨p, hp, rfl⟩ | ⟨p, hp, rfl⟩) | hn)
   · exact hf p hp
   · exact henv _ (List.mem_append_left _ (List.mem_map.mpr ⟨p, hp, rfl⟩))
-  · exact henv _ (List.mem_append_right _ hn)
+  · exact henv _ (List.mem_append_right _ (List.mem_append.mpr (hn.imp List.mem_map.mpr id)))
 
 
 theorem Env.nodes_lookup {A : HeapNode → Prop} {env : Env} (safe : ∀ n ∈ env.nodes, A n) {name : Name} {a : Addr}
@@ -103,14 +103,29 @@ theorem Env.nodes_capture {A : HeapNode → Prop} {env : Env} (safe : ∀ n ∈ 
   · exact safe _ (List.mem_append_right _ this)
 
 theorem Env.nodes_this {A : HeapNode → Prop} {env : Env} (safe : ∀ n ∈ env.nodes, A n) : SafeVal A env.this :=
-  fun node hn => safe node (List.mem_append_right _ hn)
+  fun node hn => safe node (List.mem_append_right _ (List.mem_append_right _ hn))
 
 theorem Env.nodes_setThis {A : HeapNode → Prop} {env : Env} (safe : ∀ n ∈ env.nodes, A n) {this : Val}
     (hs : SafeVal A this) : ∀ n ∈ ({ env with this } : Env).nodes, A n := by
   intro node h
   rcases List.mem_append.mp h with cells | recv
   · exact safe node (List.mem_append_left _ cells)
-  · exact hs node recv
+  · rcases List.mem_append.mp recv with home | recv
+    · exact safe node (List.mem_append_right _ (List.mem_append_left _ home))
+    · exact hs node recv
+
+theorem Env.nodes_home {A : HeapNode → Prop} {env : Env}
+    (safe : ∀ n ∈ env.nodes, A n) {home : Addr} (found : env.home = some home) : A (.obj home) :=
+  safe _ (by simp [Env.nodes, found])
+
+theorem Env.nodes_setHome {A : HeapNode → Prop} {env : Env} (safe : ∀ n ∈ env.nodes, A n)
+    (home : Option Addr) (hs : ∀ a ∈ home, A (.obj a)) : ∀ n ∈ ({ env with home } : Env).nodes, A n := by
+  intro node h
+  simp only [Env.nodes, List.mem_append, List.mem_map] at h ⊢
+  rcases h with cells | ⟨a, ha, rfl⟩ | recv
+  · exact safe _ (List.mem_append_left _ (List.mem_map.mpr cells))
+  · exact hs a (by simpa using ha)
+  · exact safe _ (List.mem_append_right _ (List.mem_append_right _ recv))
 
 theorem reachFrame_selfScope {r R cells A} (away : Away r R A)
     (outside : ∀ a, a.region ≠ r → A (.cell a)) (env : Env) (self : Bool) (name : Name)
@@ -323,7 +338,10 @@ theorem reachFrame_makeFunc {r R cells A} (away : Away r R A)
     simp [Obj.nodes, Property.nodes, Val.nodes, Code.nodes] at hn
     rcases hn with rfl | captures
     · exact functionRoot f
-    · exact Env.nodes_capture he f.closes node captures
+    · have closed := Env.nodes_capture he f.closes
+      split at captures
+      · exact Env.nodes_setHome closed none (by simp) node captures
+      · exact closed node captures
 
 private theorem ReachFrame.forM {r R cells A} {α : Type} {f : α → M W PUnit}
     (xs : List α) (step : ∀ x ∈ xs, ReachFrame r R cells A (fun _ => True) (f x)) :

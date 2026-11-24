@@ -59,10 +59,10 @@ assertRejected(
 );
 assertRejected(
   workerSplit(
-    "async-method-needs-home",
-    "class Box { async read() { return super.read(); } } export const value = Box;"
+    "reached-async-super-method",
+    "class Box { async read() { return super.read(); } } export const value = new Box().read();"
   ),
-  /async invocation/
+  /deferred function read: async invocation requires Promise semantics/
 );
 
 // An async declaration is callable before its declaration is evaluated. Reading

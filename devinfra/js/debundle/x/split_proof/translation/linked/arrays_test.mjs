@@ -92,27 +92,6 @@ function observedProgram(initializer, result) {
   }
 }
 
-// Even a catch around the spread cannot turn the model's unknown result into
-// a normal completion. Node accepts this iterable and runs the same source.
-{
-  const { files, out, verdict, log } = workerSplit(
-    "reached-array-spread",
-    `const worker = () => {
-      try {
-        return [...[1, 2]];
-      } catch {
-        return [];
-      }
-    };
-    const value = worker(); export { value as result };`,
-    entryUnits
-  );
-  assert.equal(verdict.status, "rejected", log);
-  assert.match(verdict.reason, /original reached an unknown result during linked initialization: array spread/);
-  assert(!existsSync(out));
-  assert.deepEqual(observe(files.sourceFile, "result"), { result: [1, 2] });
-}
-
 // Vary array lengths and compose literals, linked reads and calls in element positions.
 for (const width of [0, 1, 2, 5]) {
   const variants = [
@@ -204,12 +183,7 @@ for (const enabled of [true, false]) {
     `const worker = [1]; const value = ${enabled} ? [0, ...worker] : [42]; export { value as result };`,
     entryUnits
   );
-  if (enabled) {
-    assertRejected(replay, /original reached an unknown result during linked initialization: array spread/);
-    assert.deepEqual(observe(replay.files.sourceFile, "result"), { result: [0, 1] });
-  } else {
-    assertCertifiedResult(replay, [42]);
-  }
+  assertCertifiedResult(replay, enabled ? [0, 1] : [42]);
 }
 
 assertRejected(

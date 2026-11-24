@@ -21,17 +21,12 @@ theorem plainClassMembers_fieldInits {ms : List ClassMember} (h : plainClassMemb
   induction ms with
   | nil => rfl
   | cons m ms ih =>
-    cases m <;> rename_i static k f <;> cases k <;>
-      simp only [plainClassMembers, Bool.false_eq_true] at h
-    all_goals simpa only [fieldInits] using ih h
+    cases m <;> try simp only [plainClassMembers, Bool.false_eq_true] at h
+    all_goals
+      rename_i static k f
+      cases k <;> simp only [plainClassMembers, Bool.false_eq_true] at h
+      simpa only [fieldInits] using ih h
 
-theorem hasStaticField_false_of_fieldInits_nil {ms : List ClassMember} (h : fieldInits ms = []) :
-    hasStaticField ms = false := by
-  induction ms with
-  | nil => rfl
-  | cons m ms ih =>
-    cases m <;> simp only [fieldInits, List.cons_ne_nil] at h
-    all_goals exact ih h
 
 /-- Logical negation does not coerce objects to primitives. Numeric negation is safe here
 only on a syntactic number literal, whose conversion cannot call user code. -/
@@ -75,8 +70,13 @@ def allocOnlyAll : List Expr → Bool
 def allocOnlyProps : List PropDef → Bool
   | [] => true
   | .init (.str _) v :: ps => v.allocOnly && allocOnlyProps ps
+  | .method (.str _) _ :: ps => allocOnlyProps ps
   | _ :: _ => false
 end
+
+theorem Expr.argument_of_allocOnly {e : Expr} (h : e.allocOnly = true) : e.argument = (false, e) := by
+  cases e <;> first | rfl | simp [Expr.allocOnly] at h
+
 
 /-- Opaque method bodies stay deferred during plain class creation. -/
 theorem allocOnly_plainClass_opaqueMethod :
