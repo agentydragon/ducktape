@@ -101,36 +101,42 @@ private structure CheckedSchedule (ready : State World.probe) (source : List Pre
     runUnits n (source.map (·.unit)) (linkState w ready) = .ok () final ↔
       runUnits n units (linkState w ready) = .ok () final
 
-private def checkHiddenMove? (ready : State World.probe) (pre crossed suffix : List PreparedUnit) (pivot : PreparedUnit) :
-    Option (PLift (∀ w n (final : State w),
-      runUnits n (original (pre ++ crossed ++ [pivot] ++ suffix)) (linkState w ready) = .ok () final ↔
-        runUnits n (original (pre ++ [pivot] ++ crossed ++ suffix)) (linkState w ready) = .ok () final)) := do
-  let q ← observerRegion? ready (pivot.unit.1 + 1)
-  let masked := ready.put q #[] #[]
-  let ⟨hq, access, scope⟩ ← checkIsolated? masked q (pre ++ crossed ++ [pivot])
-  let ⟨checks⟩ ← (checkPivot masked pre crossed pivot.unit).toOption
-  return ⟨by
-    intro w n final
-    simp only [original, List.map_append, List.map_cons, List.map_nil] at scope ⊢
-    let H := ready.heap[q]?.getD #[]
-    let C := ready.cells[q]?.getD #[]
-    have restore : (linkState w masked).put q H C = linkState w ready := by
-      change linkState w ((ready.put q #[] #[]).put q H C) = _
-      rw [State.put_put]
-      simp only [State.put, H, C, set!_same rfl]
-    have reordered : ∀ u ∈ original pre ++ [pivot.unit] ++ original crossed, IsolatedUnit q u := by
-      intro u hu
-      apply scope
-      simpa only [List.mem_append, List.mem_singleton, or_assoc, or_left_comm, or_comm] using hu
-    rw [← restore, runUnits_restore hq n _ (original suffix) scope _ _ (Access.linkState access) H C,
-      runUnits_restore hq n _ (original suffix) reordered _ _ (Access.linkState access) H C]
-    apply exists_congr
-    intro t
-    apply and_congr_left
-    intro _
-    simpa only [List.append_nil] using runUnits_move (suffix := []) n t
-      (⟨Access.linkState checks.access, checks.localFlag, checks.scope⟩ :
-        CheckedPivot (linkState w masked) (original pre) (original crossed) pivot.unit)⟩
+private abbrev MoveEquivalent (ready : State World.probe) (pre crossed : List PreparedUnit) (pivot : PreparedUnit) :=
+  ∀ (suffix : List LinkedUnit) w n (final : State w),
+    runUnits n (original pre ++ original crossed ++ [pivot.unit] ++ suffix) (linkState w ready) = .ok () final ↔
+      runUnits n (original pre ++ [pivot.unit] ++ original crossed ++ suffix) (linkState w ready) = .ok () final
+
+/-- Peel observer rows in order, proving isolation in the current heap before
+recursing. Restore each entire row before the arbitrary suffix runs. -/
+private def checkMaskedMove? (ready : State World.probe) (pre crossed : List PreparedUnit) (pivot : PreparedUnit) :
+    List Nat → Option (PLift (MoveEquivalent ready pre crossed pivot))
+  | [] => do
+    let ⟨checks⟩ ← (checkPivot ready pre crossed pivot.unit).toOption
+    return ⟨fun _ w n final => runUnits_move n final (checks.forWorld w)⟩
+  | q :: rest => do
+    let masked := ready.put q #[] #[]
+    let ⟨hq, access, scope⟩ ← checkIsolated? masked q (pre ++ crossed ++ [pivot])
+    let ⟨inner⟩ ← checkMaskedMove? masked pre crossed pivot rest
+    return ⟨by
+      intro suffix w n final
+      simp only [List.map_append, List.map_cons, List.map_nil] at scope
+      let H := ready.heap[q]?.getD #[]
+      let C := ready.cells[q]?.getD #[]
+      have restore : (linkState w masked).put q H C = linkState w ready := by
+        change linkState w ((ready.put q #[] #[]).put q H C) = _
+        rw [State.put_put]
+        simp only [State.put, H, C, set!_same rfl]
+      have reordered : ∀ u ∈ original pre ++ [pivot.unit] ++ original crossed, IsolatedUnit q u := by
+        intro u hu
+        apply scope
+        simpa only [List.mem_append, List.mem_singleton, or_assoc, or_left_comm, or_comm] using hu
+      rw [← restore, runUnits_restore hq n _ suffix scope _ _ (Access.linkState access) H C,
+        runUnits_restore hq n _ suffix reordered _ _ (Access.linkState access) H C]
+      apply exists_congr
+      intro t
+      apply and_congr_left
+      intro _
+      simpa only [List.append_nil] using inner [] w n t⟩
 
 /-- Instantiation has already initialized hoisted functions in both links. For an
 inert body step, even a crossed unit that calls the function commutes with it.
@@ -154,8 +160,10 @@ private def checkMove (ready : State World.probe) (pre crossed suffix : List Pre
       simpa only [List.map_append, List.map_cons, List.map_nil] using
         runUnits_move (suffix := original suffix) n final (checks.forWorld w)⟩
   | .error why =>
-    let some proof := checkHiddenMove? ready pre crossed suffix pivot | throw why
-    return proof
+    let qs := observerRegions ready (pivot.unit.1 + 1)
+    if qs.isEmpty then throw why
+    let some ⟨move⟩ := checkMaskedMove? ready pre crossed pivot qs | throw why
+    return ⟨by simpa only [original, List.map_append, List.map_cons, List.map_nil] using move (original suffix)⟩
 
 /-- Match the requested order from left to right. Each move is checked against
 the prefix already placed, including units moved by previous steps. -/

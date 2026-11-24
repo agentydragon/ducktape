@@ -142,6 +142,42 @@ assert.equal(reached.status, "rejected", JSON.stringify(reached));
 assert.match(reached.reason, /linked state already exposes the region of unit 2/);
 assert(!existsSync(reachedObserver.out));
 
+// Both hoists capture the moved binding. A getter that calls either one
+// before the initializer can record "undefined" instead of "function".
+for (const called of [null, "first", "second"]) {
+  const two = fixture(
+    "two-hoisted-observers-" + (called ?? "isolated"),
+    `var seen = "";
+     const before = ${called ? `{ get value() { ${called}(); return 9; } }.value` : "new Uint8Array([9])[0]"};
+     var later = () => 7;
+     function first() { seen = typeof later; return seen; }
+     function second() { seen = typeof later; return seen; }
+     export { before, seen, later, first, second };`,
+    ["#2"],
+    ["#0", "#1", "#3", "#4", "#5"]
+  );
+  const source = await import(pathToFileURL(two.sourceFile));
+  assert.equal(source.seen, called ? "undefined" : "");
+  if (called) {
+    const verdict = two.run(refusalScope);
+    assert.equal(verdict.status, "rejected", JSON.stringify(verdict));
+    assert.match(verdict.reason, /linked state already exposes the region of unit 2/);
+    assert(!existsSync(two.out));
+  } else {
+    const verdict = two.run(pivotScope);
+    assert.equal(verdict.status, "certified", JSON.stringify(verdict));
+    assert.deepEqual(two.run(pivotScope, "--check-output"), verdict);
+    const emitted = await import(pathToFileURL(path.join(two.out, "entry.mjs")));
+    for (const ns of [source, emitted]) {
+      assert.equal(ns.seen, "");
+      assert.equal(ns.before, 9);
+      assert.equal(ns.first(), "function");
+      assert.equal(ns.second(), "function");
+      assert.equal(ns.later(), 7);
+    }
+  }
+}
+
 const earlyRead = fixture(
   "moved-region-in-initial-heap",
   `function callScroll() { return scroll({ amount: 1 }); }

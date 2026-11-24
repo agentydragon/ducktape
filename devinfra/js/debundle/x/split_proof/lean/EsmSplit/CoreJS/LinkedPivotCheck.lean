@@ -140,11 +140,11 @@ def checkPivot {w : World} (ready : State w)
     else throw s!"the linked state already exposes the region of unit {ordinal}"
   else throw s!"unit {ordinal} is not a local allocating declaration"
 
-/-- Find a single object region that references the pivot. This is only a
-candidate: both the isolated region and the pivot must pass the full checks. -/
-def observerRegion? {w} (ready : State w) (r : Nat) : Option Nat :=
-  (ready.heap.zipIdx.find? fun (row, q) =>
-    q != r && row.any (fun o => o.nodes.any (fun n => n.addr.region == r))).map Prod.snd
+/-- One candidate per object row with a direct edge into the pivot. The
+move checker must still prove that each candidate is isolated. -/
+def observerRegions {w} (ready : State w) (r : Nat) : List Nat :=
+  ready.heap.zipIdx.toList.filterMap fun (row, q) =>
+    if q != r && row.any (fun o => o.nodes.any (fun n => n.addr.region == r)) then some q else none
 
 def checkIsolated? {w} (s : State w) (q : Nat) (units : List PreparedUnit) :
     Option (PLift (q ≠ 0 ∧ Access [] (Unprotected q (fun _ => False)) s ∧
