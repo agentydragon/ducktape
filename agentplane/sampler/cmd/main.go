@@ -35,6 +35,8 @@ import (
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
+const samplerDatabaseURLEnv = "AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL"
+
 type startupFailure struct {
 	stage string
 	err   error
@@ -187,9 +189,16 @@ func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-	if handled, err := migrate.RunOnly(ctx, os.Args[1:], "AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL", migrations.Up); handled {
+	if handled, err := migrate.RunOnly(ctx, os.Args[1:], samplerDatabaseURLEnv, migrations.Up); handled {
 		if err != nil {
 			slog.Error("central sampler migration stopped", startupLogAttrs(atStartupStage("migration_only", err))...)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "compact-journal" {
+		if err := runCompactJournal(ctx, os.Args[2:]); err != nil {
+			slog.Error("central sampler journal compaction stopped", "error", err)
 			os.Exit(1)
 		}
 		return

@@ -1,0 +1,53 @@
+# Manual maintenance only; this file is not included in Flux.
+# Use an image containing compact-journal.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: sampler-journal-compaction-
+  namespace: agentplane-staging
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: central-sampler
+    spec:
+      serviceAccountName: central-sampler
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: compact-journal
+          image: git.allegedly.works/ducktape-ci/agentplane-central-sampler:replace-with-deployed-image
+          args:
+            - compact-journal
+            - --all
+            - --dry-run
+          env:
+            - name: AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-central-sampler
+                  key: uri
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
