@@ -66,6 +66,14 @@ private def structural (input : Json) : Except String Json := do
     | _ => throw "unexpected structural statement"
   return toJson [← inspect pair.1, ← inspect pair.2]
 
+private def constructorContexts (source : Json) : Except String Json := do
+  let #[cls] ← ESTreeUnits.nodes source | throw "expected one class"
+  let #[method] ← (← cls.getObjVal? "body").getObjValAs? (Array Json) "body" | throw "expected one constructor"
+  let body ← method.getObjVal? "value" >>= (·.getObjVal? "body")
+  return toJson [CoreJS.FromESTree.needsOpaqueContext cls,
+    CoreJS.FromESTree.needsOpaqueContext cls (wholeUnit := true),
+    CoreJS.FromESTree.needsOpaqueContext body (wholeUnit := true)]
+
 private def opaqueUnits (input : Json) : Except String Json := do
   let mut units := #[]
   for (j, i) in (← ESTreeUnits.nodes input).zipIdx do
@@ -91,6 +99,7 @@ private def fixtures (input : Json) : Except String Json := do
       | "location" => pure (location (← fixture.getObjVal? "input"))
       | "linked" => pure (check (← fixture.getObjVal? "input"))
       | "structural" => pure (structural (← fixture.getObjVal? "input"))
+      | "constructorContexts" => pure (constructorContexts (← fixture.getObjVal? "input"))
       | "opaque" => pure (opaqueUnits (← fixture.getObjVal? "input"))
       | kind => throw s!"unknown test case {kind}"
     return match result with

@@ -189,7 +189,29 @@ cases.push({
   ],
 });
 
+cases.push({
+  kind: "constructorContexts",
+  input: parse("class C extends Error { constructor() { super(); } }"),
+  expected: [true, false, true],
+});
+cases.push({
+  kind: "opaque",
+  input: parse(`const Parent = Error;
+    class ExportError extends Parent { constructor(message) { super(message); this.name = "ExportError"; } }
+    const Wrapped = class extends Parent { constructor(...args) { super(...args); } };`),
+  expected: [
+    [0, [["Parent", "const"]], [], [], "world"],
+    [1, [["ExportError", "let"]], [], ["Parent"], "world"],
+    [2, [["Wrapped", "const"]], [], ["Parent"], "world"],
+  ],
+});
 for (const [source, reason] of [
+  [
+    "class C extends Error { constructor() { const init = () => super(); init(); } }",
+    /source-module or method context/,
+  ],
+  ["class C extends Error { constructor() { super(new.target); } }", /source-module or method context/],
+  ['class C extends Error { constructor() { super(eval("a")); } }', /direct `eval`/],
   ["await ready;", /top-level `await`/],
   ['function read() { return eval("value"); }', /direct `eval`/],
   ['const later = () => import("./later.mjs");', /source-module or method context/],
