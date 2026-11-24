@@ -297,7 +297,7 @@ pub struct MaterializeSpecInputs<'a> {
 pub struct SelectedOwnershipPreflight {
     pub source_unit_modules: BTreeMap<String, Option<spec::ModulePath>>,
     pub emitted_owner_paths: BTreeSet<spec::ModulePath>,
-    pub source_unit_binding_exports: BTreeMap<String, Vec<SelectedBindingExport>>,
+    pub source_unit_binding_exports: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 /// Shared, source-bound inputs for several selected ownership preflights.
@@ -477,12 +477,9 @@ impl<'a> SelectedOwnershipPreflightSession<'a> {
                         let export_name = assignment_analysis.inputs().export_name_for(
                             &analysis::BindingId::new(finalized.chunk_id_interned, binding.clone()),
                         )?;
-                        Ok(SelectedBindingExport {
-                            binding: binding.0.to_string(),
-                            export_name: export_name.to_string(),
-                        })
+                        Ok((binding.0.to_string(), export_name.to_string()))
                     })
-                    .collect::<Result<Vec<_>>>()?;
+                    .collect::<Result<BTreeMap<_, _>>>()?;
             source_unit_binding_exports.insert(report_id, exports);
         }
         ensure!(
@@ -598,12 +595,6 @@ pub fn with_selected_ownership_preflight<R>(
         source_asts,
     };
     action(&mut session)
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SelectedBindingExport {
-    pub binding: String,
-    pub export_name: String,
 }
 
 pub fn materialize_logical_modules(

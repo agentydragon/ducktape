@@ -360,12 +360,9 @@ fn realize_change(
         let actual_exports = realized
             .source_unit_binding_exports
             .get(&unit)
-            .with_context(|| format!("selected-view preflight omitted source unit {unit:?}"))?
-            .iter()
-            .map(|binding| (binding.binding.clone(), binding.export_name.clone()))
-            .collect::<BTreeMap<_, _>>();
+            .with_context(|| format!("selected-view preflight omitted source unit {unit:?}"))?;
         ensure!(
-            actual_exports == expected_exports,
+            actual_exports == &expected_exports,
             "selected-view selectors changed retained binding exports in source unit {unit:?}"
         );
     }
