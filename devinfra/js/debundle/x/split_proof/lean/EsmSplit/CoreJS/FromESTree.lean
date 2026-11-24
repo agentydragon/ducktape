@@ -777,7 +777,7 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
       let name ← moduleExportName keyNode
       pure (name, Expr.str name)
     if tag == "PropertyDefinition" then
-      unless parent == .null do throw "unsupported derived class field"
+      if parent != .null && static then throw "unsupported derived static field"
       let init ← if value == .null then pure .undef else linkedExpr profile imports inFunction key value
       members := members.push (.field static keyExpr init)
     else
