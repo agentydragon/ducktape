@@ -30,6 +30,20 @@ With the `native-browser-record@1` deployment premise, the [reduced reader certi
 
 The [main replay with the preset](https://app.buildbuddy.io/invocation/5d282780-a1a3-46be-bbcc-5c9f43c4fecb) matched the same source digest and selected only renderer unit 1486 through the neutral resolver. Deployment checking passed unit 23 and stopped at unit 1379: `expected a relative module request`. No full main output was published.
 
+## The text-to-diagram request
+
+At ordinal 1379 in the [pinned main AST](https://app.buildbuddy.io/invocation/a397565d-7c20-41cd-b2b4-56062d10e7da), `TTDDialogBase` passes this initializer to React:
+
+```js
+useState({ loaded: false, api: import("@excalidraw/mermaid-to-excalidraw") });
+```
+
+The operand is a string literal with a bare package name. The containing component function is deferred at module initialization. On render, JavaScript evaluates the import while constructing the argument to `useState`; an effect subsequently awaits the promise. Esbuild explicitly leaves this package external. In the [original Chromium run](https://app.buildbuddy.io/invocation/21f9b802-4f6b-4f52-9ce1-1f9c4dc712bc) the page had no import map or corresponding startup rejection. Opening **More tools → Mermaid** produced unhandled `TypeError` rejections naming that specifier.
+
+The [changed-map control](https://app.buildbuddy.io/invocation/3100e26d-af5c-4ea5-a49c-e0c3e5db1f68) serves identical entry and target bytes at the same URLs. Without a map, two calls return distinct promises that reject without fetching the target. An unhandled call reports the actual promise and reason. With a mapping, both calls fulfill and the target evaluates once. Only the unmapped deployment is certified under `empty@1`.
+
+The [selected main replay](https://app.buildbuddy.io/invocation/f827354b-83ae-46d2-b84c-23a5b060ba7f) used both the native metadata preset and the empty-map premise. It selected only `strokeEllipseWithRotation` at unit 1486 against the same digest and original providers. Linked lowering then refused statement 1256: `unsupported opaque generator function declaration`. No full main output was available to reparse or replay.
+
 ## What a retained-reader rule must prove
 
 [ModuleLocation.check](../../lean/EsmSplit/CoreJS/ModuleLocation.lean) checks the reader's source ordinal,

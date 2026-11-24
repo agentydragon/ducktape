@@ -113,7 +113,7 @@ private structure CertifiedOptions where
   structural : Bool
   deploymentOrigin : Option String
   checkOnly : Bool
-  nativeRecord : Bool
+  browserOptions : CoreJS.ModuleLocation.BrowserOptions
   resolvedChunk : Option String
 
 private def parseCertifiedOptions (label : String) (args : List String) : IO (SplitPaths × CertifiedOptions) := do
@@ -143,17 +143,21 @@ private def parseCertifiedOptions (label : String) (args : List String) : IO (Sp
   let nativeRecord := preset == some CoreJS.NativeRecord.preset
   if preset.isSome && !(nativeRecord && deploymentOrigin.isSome && profile == .browserPage) then
     throw (IO.userError "native-browser-record@1 requires a browser-page profile and deployment origin")
+  let (mapProfile, args) := EsmSplit.takeFlag "--deployment-import-map" args
+  let emptyMap := mapProfile == some "empty@1"
+  if mapProfile.isSome && !(emptyMap && deploymentOrigin.isSome && profile == .browserPage) then
+    throw (IO.userError "empty@1 requires a browser-page profile and deployment origin")
   let (resolvedChunk, args) := EsmSplit.takeFlag "--resolved-placement" args
   let checkOnly := args.contains "--check-output"
   let args := args.filter (· != "--check-output")
-  let usage := IO.userError "usage: lowersplit <bundle.mjs|bundle.json> spec.json outdir [--require LEVEL] [--resolved-placement CHUNK] [--check-output] [--host-contract PROFILE.json] [--structural [--deployment-origin ORIGIN [--deployment-preset native-browser-record@1]]]; use --diagnostic for plan and preview options"
+  let usage := IO.userError "usage: lowersplit <bundle.mjs|bundle.json> spec.json outdir [--require LEVEL] [--resolved-placement CHUNK] [--check-output] [--host-contract PROFILE.json] [--structural [--deployment-origin ORIGIN [--deployment-preset native-browser-record@1] [--deployment-import-map empty@1]]]; use --diagnostic for plan and preview options"
   let [bundle, spec, out] := args | throw usage
   if args.any (·.startsWith "--") then throw usage
   let out ← IO.ofExcept (outputDirectory out)
-  return (⟨bundle, spec, out⟩, { request, profile, intrinsics, structural, deploymentOrigin, checkOnly, nativeRecord, resolvedChunk })
+  return (⟨bundle, spec, out⟩, { request, profile, intrinsics, structural, deploymentOrigin, checkOnly, browserOptions := { nativeRecord, emptyMap }, resolvedChunk })
 
 private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work : System.FilePath) : IO UInt32 := do
-  let { request, profile, intrinsics, structural, deploymentOrigin, checkOnly, nativeRecord, resolvedChunk } := options
+  let { request, profile, intrinsics, structural, deploymentOrigin, checkOnly, browserOptions, resolvedChunk } := options
   let { bundle := bundlePath, spec := specPath, out } := paths
   let timings := (← IO.getEnv "SPLIT_PROOF_TIMINGS") == some "1"
   let resolved ← resolvedChunk.mapM fun chunk => do
@@ -205,7 +209,7 @@ private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work
         throw (IO.userError "source placement or module linkage checks failed")
       let providers ← timePhase timings "provider_loading" fun _ => loadProviders program bundlePath work
       let deployment ← deploymentOrigin.mapM fun origin =>
-        timePhase timings "deployment_loading" fun _ => readDeployment program providers bundlePath work origin P nativeRecord
+        timePhase timings "deployment_loading" fun _ => readDeployment program providers bundlePath work origin P browserOptions
       let checked ← certifyOutput providers B P out work input checkOnly timings asts source fun files => do
         timePhase timings "structural_certificate" fun _ => do
           let result ← IO.lazyPure fun _ =>
@@ -221,7 +225,8 @@ private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work
         | .multiplePivots => "linked-structural-moves"
       let assumptions :=
         ["Retained source units use the same capability-closed opaque world in both layouts."] ++
-        (if nativeRecord then [s!"{CoreJS.NativeRecord.preset}: Initializing the retained entry's metadata is unobservable except for a fresh null-prototype object with only native writable, enumerable, configurable url and resolve data properties. Its per-record resolver uses the unchanged entry URL and static resolution context."] else []) ++
+        (if browserOptions.nativeRecord then [s!"{CoreJS.NativeRecord.preset}: Initializing the retained entry's metadata is unobservable except for a fresh null-prototype object with only native writable, enumerable, configurable url and resolve data properties. Its per-record resolver uses the unchanged entry URL and static resolution context."] else []) ++
+        (if browserOptions.emptyMap then ["empty@1: The browser's import map remains empty and the native module resolver is unchanged. Retained bare imports reject their promises on resolution failure, with ordinary browser promise scheduling and rejection reporting."] else []) ++
         used.map (·.assumption) ++
         (deploymentOrigin.toList.flatMap fun origin => [
           s!"The static deployment at {origin} overlays only the planned module paths.",

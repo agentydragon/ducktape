@@ -312,6 +312,94 @@ async def test_original_editor(
         await smoke(playwright_driver, origin, editor_source, editor_providers)
 
 
+async def test_bare_import(
+    playwright_driver: Playwright, runfiles: Runfiles, editor_app: Starlette, tmp_path: Path
+) -> None:
+    name = "@fixture/diagram"
+    entry = tmp_path / "entry.mjs"
+    entry.write_text(f"var load = () => import({json.dumps(name)}); var render = () => 42; export {{load, render}};")
+    worker = "render.mjs"
+    target = tmp_path / "target.mjs"
+    target.write_text("globalThis.evaluated++; export const value = 7;")
+    html = tmp_path / "probe.html"
+    html.write_text("<!doctype html>")
+    spec = tmp_path / "spec.json"
+    spec.write_text(json.dumps({"entry": entry.name, "modules": {entry.name: ["#0", "#2"], worker: ["#1"]}}))
+    profile = tmp_path / "profile.json"
+    profile.write_text(json.dumps({"profile": "browser-page"}))
+    out = tmp_path / "out"
+    for file in [html, entry, target]:
+        editor_app.router.routes.insert(0, serve_file(file.name, file))
+    async with serve_app_in_loop(editor_app) as origin:
+        command: list[Path | str] = [
+            resolve(runfiles, os.environ["LOWERSPLIT"]),
+            entry,
+            spec,
+            out,
+            "--structural",
+            "--host-contract",
+            profile,
+            "--deployment-origin",
+            origin,
+        ]
+        default = await asyncio.to_thread(subprocess.run, command, capture_output=True, text=True, check=False)
+        assert default.returncode == 1
+        assert "expected a relative module request" in json.loads(default.stdout)["reason"]
+        command += ["--deployment-import-map", "empty@1"]
+        for flags in [[], ["--check-output"]]:
+            run = await asyncio.to_thread(
+                subprocess.run, [*command, *flags], capture_output=True, text=True, check=False
+            )
+            assert run.returncode == 0, run.stdout + run.stderr
+            verdict = json.loads(run.stdout)
+            assert verdict["scope"] == "linked-structural-pivot"
+            assert any(s.startswith("empty@1:") for s in verdict["assumptions"])
+
+        for overlay, mapped in [(False, False), (False, True), (True, False)]:
+            if overlay:
+                install_editor_overlay(editor_app, entry, {n: out / n for n in [entry.name, worker]})
+            async with deterministic_browser_context(
+                playwright_driver, viewport={"width": 800, "height": 600}, frozen_now_ms=None
+            ) as context:
+                page = await context.new_page()
+                await page.goto(origin + "/" + html.name)
+                if mapped:
+                    await page.add_script_tag(type="importmap", content=json.dumps({"imports": {name: "./target.mjs"}}))
+                observed = await page.evaluate("""async () => {
+                  globalThis.evaluated = 0;
+                  const api = await import("./entry.mjs");
+                  const mark = globalThis.evaluated;
+                  const a = api.load(), b = api.load();
+                  const values = await Promise.allSettled([a,b]);
+                  const results = values.map(x => x.status === "fulfilled" ? x.value.value : x.reason.name);
+                  return [Object.keys(api), mark, a !== b, results, globalThis.evaluated];
+                }""")
+                assert observed == [
+                    ["load", "render"],
+                    0,
+                    True,
+                    [7, 7] if mapped else ["TypeError", "TypeError"],
+                    int(mapped),
+                ]
+                fetched = await page.evaluate(
+                    "url => performance.getEntriesByName(url, 'resource').length", origin + "/" + target.name
+                )
+                assert fetched == int(mapped)
+                if not mapped:
+                    # A caller that leaves the rejection unhandled exposes the reason
+                    # and the actual promise through the browser rejection event.
+                    event = await page.evaluate("""async () => {
+                      const {load} = await import("./entry.mjs");
+                      let pending;
+                      const report = new Promise(resolve => addEventListener("unhandledrejection", e => {
+                        e.preventDefault(); resolve([e.promise === pending, e.reason.name]);
+                      }, {once:true}));
+                      pending = load();
+                      return report;
+                    }""")
+                    assert event == [True, "TypeError"]
+
+
 async def test_native_metadata_preset(
     playwright_driver: Playwright, runfiles: Runfiles, editor_app: Starlette, tmp_path: Path
 ) -> None:

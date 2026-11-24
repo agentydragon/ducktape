@@ -11,7 +11,7 @@ open Lean (Json)
 
 structure Input where
   entry : String
-  nativeRecord : Bool := false
+  options : ModuleLocation.BrowserOptions := {}
   assets : Json
   before : Std.HashMap String ModuleLocation.Resource
 
@@ -32,7 +32,9 @@ private def checkSites (inputs : Input) (name : String) (linked : List String)
   let mut requirements : Std.HashMap Nat (List (String × Name)) := {}
   for (id, use) in sites do
     let bindings ← match use with
-      | .metaUrl | .metadata => pure []
+      -- Resolution fails before fetching or acquiring a namespace. The retained
+      -- opaque unit still performs ImportCall, including rejection and handlers.
+      | .rejectedImport _ | .metaUrl | .metadata => pure []
       | .dynamicImport _ target => do
         let boundary ← DynamicImports.check target linked inputs.assets resources resources
         pure <| boundary.requests.flatMap fun edge => edge.exports.map (edge.source, ·)
@@ -55,7 +57,7 @@ private def checkSites (inputs : Input) (name : String) (linked : List String)
 
 def check (inputs : Input) (source providers : Json) (plan : EsmSplit.Plan) : Except String Access := do
   let resources (name : String) := inputs.before[name]?
-  let sites ← ModuleLocation.check source inputs.entry plan resources resources inputs.nativeRecord
+  let sites ← ModuleLocation.check source inputs.entry plan resources resources inputs.options
   let files := (← providers.getObj?).toList
   let linked := plan.entry :: files.map Prod.fst
   let entryAccess ← checkSites inputs plan.entry linked sites
@@ -63,7 +65,7 @@ def check (inputs : Input) (source providers : Json) (plan : EsmSplit.Plan) : Ex
   for (name, file) in files do
     if (plan.find name).isSome then throw s!"provider overlaps emitted module: {name}"
     let some res := resources name | throw s!"missing provider resource: {name}"
-    let uses ← (ModuleLocation.providerUses file name res inputs.nativeRecord).mapError fun why => s!"{name}: {why}"
+    let uses ← (ModuleLocation.providerUses file name res inputs.options).mapError fun why => s!"{name}: {why}"
     let access ← (checkSites inputs name linked uses).mapError fun why => s!"{name}: {why}"
     others := others.insert name access
   return {entryAccess, providers := others}
