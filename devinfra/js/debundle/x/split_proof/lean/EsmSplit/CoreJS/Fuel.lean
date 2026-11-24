@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.Eval
+import EsmSplit.CoreJS.Iterator
 
 /-!
 # CoreJS: more fuel never changes a run that finished
@@ -170,6 +171,45 @@ private theorem evalStaticInitializers_le {eval eval' : Expr → M W Val} (h : �
   | cons step rest ih =>
     rcases step with ⟨key, init⟩
     exact M.le_bind (h init) fun _ => M.le_bind (M.le_refl _) fun _ => ih
+
+theorem getIterator_le {call call' : Call W} (h : Call.le call call') (v : Val) :
+    getIterator call v ⊑ getIterator call' v := by
+  unfold getIterator
+  repeat' first | exact getProp_le h _ _ | exact h _ _ _ | mono_step
+
+theorem iteratorStep_le {call call' : Call W} (h : Call.le call call') (cursor : IteratorCursor) (readValue : Bool) :
+    iteratorStep call cursor readValue ⊑ iteratorStep call' cursor readValue := by
+  cases cursor <;> simp only [iteratorStep] <;>
+    repeat' first | exact getProp_le h _ _ | exact h _ _ _ | mono_step
+
+theorem callIteratorReturn_le {call call' : Call W} (h : Call.le call call') (cursor : IteratorCursor) :
+    callIteratorReturn call cursor ⊑ callIteratorReturn call' cursor := by
+  cases cursor <;> simp only [callIteratorReturn] <;>
+    repeat' first | exact getProp_le h _ _ | exact h _ _ _ | mono_step
+
+theorem iteratorClose_le {α : Type} {call call' : Call W} (h : Call.le call call') (cursor : IteratorCursor)
+    (completion : Except Val α) :
+    iteratorClose call cursor completion ⊑ iteratorClose call' cursor completion := by
+  unfold iteratorClose
+  exact M.le_bind (attempt_le (callIteratorReturn_le h cursor)) (fun _ => M.le_refl _)
+
+theorem collectIterator_le {call call' : Call W} (h : Call.le call call') {n m : Nat} (hFuel : n ≤ m)
+    (cursor : IteratorCursor) : collectIterator call n cursor ⊑ collectIterator call' m cursor := by
+  induction n generalizing m cursor with
+  | zero => exact M.le_outOfFuel _
+  | succ n ih =>
+    cases m with
+    | zero => omega
+    | succ m =>
+      simp only [collectIterator]
+      refine M.le_bind (iteratorStep_le h cursor true) fun step => ?_
+      cases step with
+      | none => exact M.le_refl _
+      | some next => exact M.le_map _ (ih (by omega) next.2)
+
+theorem iteratorValues_le {call call' : Call W} (h : Call.le call call') {n m : Nat} (hFuel : n ≤ m)
+    (source : Val) : iteratorValues n call source ⊑ iteratorValues m call' source :=
+  M.le_bind (getIterator_le h source) (collectIterator_le h hFuel)
 
 /-- Every function of the interpreter with the bound `n`, against the same with the bound `m`. -/
 structure Mono (W : World) (n m : Nat) : Prop where
