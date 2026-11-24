@@ -1,9 +1,10 @@
-"""Typer options shared by the `gmail_archiver` commands, and the client they configure."""
+"""Shared Typer options, Gmail client setup, and confirmation of changes."""
 
 from pathlib import Path
 from typing import Annotated
 
 import typer
+from rich.console import Console
 
 from gmail_archiver.gmail_client import GmailClient
 
@@ -33,3 +34,14 @@ DryRunDefaultTrueOption = Annotated[
         help="Preview changes without modifying emails (default: dry-run, use --no-dry-run to actually apply)",
     ),
 ]
+
+
+def confirm_changes(dry_run: bool | None, description: str, console: Console) -> bool:
+    """Preview changes or obtain approval according to DryRunOption."""
+    if dry_run is True:
+        console.print(f"[yellow]DRY RUN:[/yellow] Would {description}")
+        return False
+    if dry_run is None and not typer.confirm(f"{description}?"):
+        console.print("[yellow]Cancelled[/yellow]")
+        return False
+    return True

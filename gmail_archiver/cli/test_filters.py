@@ -8,7 +8,13 @@ import pytest_bazel
 from typer.testing import CliRunner
 
 from gmail_archiver.cli import filters
-from gmail_archiver.gmail_api_models import CreateFilterRequest, FilterAction, FilterCriteria, GmailFilter
+from gmail_archiver.gmail_api_models import (
+    CreateFilterRequest,
+    FilterAction,
+    FilterCriteria,
+    GmailFilter,
+    GmailMessageWithHeaders,
+)
 from gmail_archiver.gmail_client import GmailClient
 
 
@@ -68,6 +74,47 @@ def test_filter_commands_preview_or_apply_expected_changes(
             )
         ),
     ]
+
+
+@pytest.mark.parametrize(
+    ("flags", "answer", "execute"),
+    [(["--dry-run"], None, False), ([], "n\n", False), (["--no-dry-run"], None, True), ([], "y\n", True)],
+)
+def test_apply_batches_only_changed_messages_after_approval(
+    flags: list[str], answer: str | None, execute: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client = Mock(spec=GmailClient)
+    client.list_labels_full.return_value = []
+    client.list_filters.return_value = [
+        GmailFilter(
+            id="F_archive",
+            criteria=FilterCriteria(subject="Receipt"),
+            action=FilterAction(add_label_ids=["L_receipt"], remove_label_ids=["INBOX"]),
+        )
+    ]
+    client.list_messages_by_query.return_value = ["m1", "m2", "m_already"]
+    client.get_messages_metadata_batch.return_value = (
+        [
+            GmailMessageWithHeaders(id="m1", label_ids=["INBOX"], internal_date="0"),
+            GmailMessageWithHeaders(id="m2", label_ids=["INBOX"], internal_date="0"),
+            GmailMessageWithHeaders(id="m_already", label_ids=["L_receipt"], internal_date="0"),
+        ],
+        [],
+    )
+    monkeypatch.setattr(filters, "get_client", lambda token_file: client)
+
+    result = CliRunner().invoke(filters.filters_app, ["apply", "F_archive", *flags], input=answer)
+
+    assert result.exit_code == 0, result.output
+    client.list_messages_by_query.assert_called_once_with("subject:(Receipt)")
+    client.get_messages_metadata_batch.assert_called_once_with(["m1", "m2", "m_already"], batch_size=50)
+    if execute:
+        client.modify_labels_batch.assert_called_once_with(
+            ["m1", "m2"], add_label_ids=frozenset({"L_receipt"}), remove_label_ids=frozenset({"INBOX"})
+        )
+    else:
+        client.modify_labels_batch.assert_not_called()
+        assert ("DRY RUN" if flags else "Cancelled") in result.output
 
 
 if __name__ == "__main__":
