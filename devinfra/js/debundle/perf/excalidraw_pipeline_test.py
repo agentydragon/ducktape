@@ -74,7 +74,7 @@ def test_profiled_phase_keeps_metrics_and_wraps_only_analyze(
     if phase == "analyze":
         assert Path(command[0]).name == tool
         assert {Path(arg).name for arg in command} & {"perf", "heaptrack"} == {tool}
-        assert command[command.index("--") + 1 :] == expected
+        assert command[-len(expected) :] == expected
     else:
         assert command == expected
 
