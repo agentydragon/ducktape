@@ -54,7 +54,7 @@ private def structural (input : Json) : Except String Json := do
     ⟨"lib/scroll.mjs", [3], [], [("scroll", binding)]⟩] }
   let pivot ← input.getObjValAs? Nat "pivot"
   let pair ← CoreJS.LinkedInput.decodeStructuralPair (← input.getObjVal? "source") (← input.getObjVal? "providers")
-    (← input.getObjVal? "files") plan (some pivot)
+    (← input.getObjVal? "files") plan [pivot]
   let inspect (p : CoreJS.Program) := (p.loaded.flatMap (·.body)).mapM fun (id, stmt) => do
     match stmt with
     | .decl _ name (.func f) =>

@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { lower, prepare, root } from "./linked_programs.mjs";
 
 const pivotScope = "linked-structural-pivot";
+const movesScope = "linked-structural-moves";
 const refusalScope = "linked-structural";
 
 function fixture(name, source, moved, kept, provider = "") {
@@ -25,7 +26,7 @@ function fixture(name, source, moved, kept, provider = "") {
 
 const typedArraySource = `import { seed } from "./provider.mjs";
    const bytes = new Uint8Array([seed, 17]);
-   function read(position) { return bytes[position]; }
+   const read = (position) => bytes[position];
    var scroll = ({ amount }) => amount + 1;
    const answer = read(1);
    export { scroll as Bg, bytes, answer };`;
@@ -50,15 +51,13 @@ const multipleMoves = fixture(
   ["#0", "#1", "#4", "#5"],
   "export const seed = 9;"
 );
-const reordered = multipleMoves.run(refusalScope);
-assert.equal(reordered.status, "rejected");
-assert.match(reordered.reason, /the linked schedules do not differ by a single earlier move/);
-assert(!existsSync(multipleMoves.out));
+const reordered = multipleMoves.run(movesScope);
+assert.equal(reordered.status, "certified", JSON.stringify(reordered));
+assert.equal(reordered.guarantee, "normal-completion");
+assert.deepEqual(multipleMoves.run(movesScope, "--check-output"), reordered);
 
-const entryFile = path.join(safe.out, "entry.mjs");
-const original = await import(pathToFileURL(safe.sourceFile));
-const emitted = await import(pathToFileURL(entryFile));
-for (const namespace of [original, emitted]) {
+for (const file of [safe.sourceFile, path.join(safe.out, "entry.mjs"), path.join(multipleMoves.out, "entry.mjs")]) {
+  const namespace = await import(pathToFileURL(file));
   assert.deepEqual(Object.keys(namespace), ["Bg", "answer", "bytes"]);
   assert.equal(namespace.answer, 17);
   assert.equal(namespace.Bg({ amount: 22 }), 23);
@@ -85,3 +84,18 @@ const refused = earlyRead.run(refusalScope);
 assert.equal(refused.status, "rejected", JSON.stringify(refused));
 assert.match(refused.reason, /linked state already exposes the region of unit 2/);
 assert(!existsSync(earlyRead.out));
+
+const laterCapture = fixture(
+  "previously-moved-closure-captures-next-region",
+  `const first = 1;
+   var observe = () => later;
+   const result = observe() + first;
+   var later = 7;
+   export { observe, result, later };`,
+  ["#1", "#3"],
+  ["#0", "#2", "#4"]
+);
+const capture = laterCapture.run(refusalScope);
+assert.equal(capture.status, "rejected", JSON.stringify(capture));
+assert.match(capture.reason, /unit 1 has access to the moved region of unit 3/);
+assert(!existsSync(laterCapture.out));

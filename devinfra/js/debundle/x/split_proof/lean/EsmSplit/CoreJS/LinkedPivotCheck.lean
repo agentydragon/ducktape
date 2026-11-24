@@ -2,7 +2,7 @@ import EsmSplit.CoreJS.LinkedPivot
 import EsmSplit.CoreJS.RequestAllocation
 import EsmSplit.CoreJS.SyntaxMatch
 
-/-! Check the actual linked schedule, its free-name cells, and the frame conditions
+/-! Compare linked units and check the frame conditions
 for moving one allocating unit earlier. The evaluator supplies the generic
 framing theorem separately. -/
 
@@ -112,66 +112,31 @@ def sameUnits? : (u v : List (Nat × Stmt × Env)) → Option (PLift (SameUnits 
     return ⟨.cons head.down tail.down⟩
   | _, _ => none
 
-/-- Recover the first differing unit, then verify that the candidate inserts
-that unit before one whole block. The checker compares both actual sequences,
-including every free-name cell in each unit's linked environment. -/
-private def pivotLayout? {source candidate : Program} {w : World}
-    (sourceLink : CheckedLink source w) (candidateLink : CheckedLink candidate w)
-    (initial : sourceLink.ready = candidateLink.ready) : Option (PivotLayout source candidate w) := do
-  let sourceUnits := unitsOf sourceLink.linked
-  let candidateUnits := unitsOf candidateLink.linked
-  let shared := ((sourceUnits.zip candidateUnits).takeWhile fun (a, b) => a.1 == b.1).length
-  let pre := sourceUnits.take shared
-  let originalTail := sourceUnits.drop shared
-  let moved ← (candidateUnits.drop shared).head?
-  let crossed := originalTail.takeWhile (fun u => u.1 != moved.1)
-  guard !crossed.isEmpty
-  let pivot :: suffix := originalTail.drop crossed.length | none
-  let sourceOrder ← sameUnits? sourceUnits (pre ++ crossed ++ [pivot] ++ suffix)
-  let candidateOrder ← sameUnits? candidateUnits (pre ++ [pivot] ++ crossed ++ suffix)
-  return {
-    sourceLink
-    candidateLink
-    initial
-    pre
-    crossed
-    pivot
-    suffix
-    sourceOrder := sourceOrder.down
-    candidateOrder := candidateOrder.down
-  }
+/-- The frame checks for moving a unit ahead of a block in the current
+schedule. The prefix must also preserve the frame from the initial linked state. -/
+structure CheckedPivot {w : World} (ready : State w)
+    (pre crossed : List (Nat × Stmt × Env)) (pivot : Nat × Stmt × Env) : Prop where
+  access : Access [] (Unprotected (pivot.1 + 1) (fun _ => False)) ready
+  localFlag : localPivotOk pivot = true
+  scope : ∀ u ∈ pre ++ crossed, u.1 + 1 ≠ pivot.1 + 1 ∧
+    ∀ node ∈ (u.2.2.capture u.2.1.free).nodes, Unprotected (pivot.1 + 1) (fun _ => False) node
 
-
-/-- The concrete checks needed by the normal-outcome theorem, independently of
-the proof that execution itself preserves the reachable heap. -/
-structure CheckedPivot (source candidate : Program) (w : World) where
-  layout : PivotLayout source candidate w
-  access : Access [] (Unprotected (layout.pivot.1 + 1) (fun _ => False)) layout.sourceLink.ready
-  localFlag : localPivotOk layout.pivot = true
-  scope : ∀ u ∈ layout.pre ++ layout.crossed, u.1 + 1 ≠ layout.pivot.1 + 1 ∧
-    ∀ node ∈ (u.2.2.capture u.2.1.free).nodes, Unprotected (layout.pivot.1 + 1) (fun _ => False) node
-
-/-- Find and validate a single earlier move. The link equations and
-initial-state equality are already kernel-checked by the caller. -/
-def checkPivot {source candidate : Program} {w : World}
-    (sourceLink : CheckedLink source w) (candidateLink : CheckedLink candidate w)
-    (initial : sourceLink.ready = candidateLink.ready) : Except String (CheckedPivot source candidate w) := do
-  let some layout := pivotLayout? sourceLink candidateLink initial |
-    throw "the linked schedules do not differ by a single earlier move"
-  let ordinal := layout.pivot.1
-  let r := layout.pivot.1 + 1
-  if localStep : localPivotOk layout.pivot = true then
-    if accessible : accessOk layout.sourceLink.ready [] (outsideRegion r) = true then
-      if unchanged : (layout.pre ++ layout.crossed).all (unitEnvOk r) = true then
-        return {
-          layout
+def checkPivot {w : World} (ready : State w)
+    (pre crossed : List (Nat × Stmt × Env)) (pivot : Nat × Stmt × Env) :
+    Except String (PLift (CheckedPivot ready pre crossed pivot)) := do
+  let ordinal := pivot.1
+  let r := ordinal + 1
+  if localStep : localPivotOk pivot = true then
+    if accessible : accessOk ready [] (outsideRegion r) = true then
+      if unchanged : (pre ++ crossed).all (unitEnvOk r) = true then
+        return ⟨{
           access := accessOk_outsideRegion accessible
           localFlag := localStep
           scope := fun u hu => unitEnvOk_sound (List.all_eq_true.mp unchanged u hu)
-        }
+        }⟩
       else
-        let offender := (layout.pre ++ layout.crossed).find? (fun u => !(unitEnvOk r u))
-        throw s!"unit {(offender.map (·.1)).getD ordinal} has access to the moved region"
+        let offender := (pre ++ crossed).find? (fun u => !(unitEnvOk r u))
+        throw s!"unit {(offender.map (·.1)).getD ordinal} has access to the moved region of unit {ordinal}"
     else throw s!"the linked state already exposes the region of unit {ordinal}"
   else throw s!"unit {ordinal} is not a local allocating declaration"
 
