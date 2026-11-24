@@ -307,10 +307,7 @@ fn flat_graph_unit_inspection_checks_source_without_module_tree_scope() {
     let source_root = root.join("snapshot");
     let source = source_root.join(format!("{}.js", fixture.chunk_id));
     let modules = root.join("modules/main");
-    let graph = fixture
-        .report_root
-        .join(&fixture.chunk_id)
-        .join("dependency_graph.json.gz");
+    let graph = fixture.dependency_graph_path();
     let unit = fixture
         .dependency_graph()
         .nodes

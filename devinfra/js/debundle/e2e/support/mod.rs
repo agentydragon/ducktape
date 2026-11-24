@@ -1168,7 +1168,8 @@ pub fn read_json<T: DeserializeOwned>(path: &Path) -> T {
 }
 
 pub fn read_gzip_json<T: DeserializeOwned>(path: &Path) -> T {
-    read_gzip_json_with_stderr(path, None)
+    report_io::read_json_gzip(path)
+        .unwrap_or_else(|err| panic!("parse gzip JSON report {}: {err}", path.display()))
 }
 
 fn read_json_with_stderr<T: DeserializeOwned>(path: &Path, stderr: Option<&str>) -> T {
@@ -1177,14 +1178,6 @@ fn read_json_with_stderr<T: DeserializeOwned>(path: &Path, stderr: Option<&str>)
         .unwrap_or_default();
     report_io::read_json(path)
         .unwrap_or_else(|err| panic!("parse JSON report {}: {err}{context}", path.display()))
-}
-
-fn read_gzip_json_with_stderr<T: DeserializeOwned>(path: &Path, stderr: Option<&str>) -> T {
-    let context = stderr
-        .map(|stderr| format!("\ndebundler stderr:\n{stderr}"))
-        .unwrap_or_default();
-    report_io::read_json_gzip(path)
-        .unwrap_or_else(|err| panic!("parse gzip JSON report {}: {err}{context}", path.display()))
 }
 
 pub fn debundler_path() -> PathBuf {
