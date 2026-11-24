@@ -41,7 +41,9 @@ use std::collections::BTreeSet;
 use std::sync::LazyLock;
 
 use rustc_hash::FxHashMap;
-use selector_candidate_index::{CandidateSet, SelectorFeature, top_level_features};
+use selector_candidate_index::{
+    CandidateSet, SelectorFeature, member_prop_label, top_level_features,
+};
 use swc_ecma_ast::*;
 
 /// Canonical identity of an alpha-equivalent subtree shape. Two subtrees share
@@ -352,7 +354,7 @@ impl SkeletonBuilder<'_> {
             }
             Expr::Member(member) => {
                 let obj = self.expr(&member.obj, depth + 1);
-                let prop = match member_prop_name(&member.prop) {
+                let prop = match member_prop_label(&member.prop) {
                     Some(name) => self.leaf(ShapeLeaf::Key(name)),
                     None => self.frontier(),
                 };
@@ -440,14 +442,6 @@ fn class_member_key(member: &ClassMember) -> Option<String> {
         ClassMember::ClassProp(prop) => prop_name_string(&prop.key),
         ClassMember::PrivateProp(prop) => Some(format!("#{}", prop.key.name)),
         _ => None,
-    }
-}
-
-fn member_prop_name(prop: &MemberProp) -> Option<String> {
-    match prop {
-        MemberProp::Ident(ident) => Some(ident.sym.to_string()),
-        MemberProp::PrivateName(private) => Some(format!("#{}", private.name)),
-        MemberProp::Computed(_) => None,
     }
 }
 
