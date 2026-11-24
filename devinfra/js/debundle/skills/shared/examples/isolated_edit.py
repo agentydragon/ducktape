@@ -17,7 +17,7 @@ import hashlib
 import json
 import subprocess
 from pathlib import Path
-from typing import TypedDict, cast
+from typing import NotRequired, TypedDict, cast
 
 
 class Snapshot(TypedDict):
@@ -26,6 +26,7 @@ class Snapshot(TypedDict):
     graph: str
     spec_root: str
     graph_source_root: str
+    graph_ownership_subset_root: NotRequired[str | None]
     graph_package_roots: dict[str, str]
     source_root: str
     tree_config: str
@@ -57,6 +58,8 @@ def graph_command(snapshot: Snapshot) -> list[str]:
         "--graph-source-root",
         snapshot["graph_source_root"],
     ]
+    if (root := snapshot.get("graph_ownership_subset_root")) is not None:
+        argv.extend(["--graph-ownership-subset-root", root])
     for name, root in snapshot["graph_package_roots"].items():
         argv.extend(["--graph-package-root", f"{name}={root}"])
     return argv

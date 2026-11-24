@@ -34,62 +34,56 @@ a missing path establishes.
 
 ## Delegating with an input snapshot
 
-Generate current analysis, then create a separate snapshot for each worker:
+Generate the graph, then create one snapshot per worker from a tree spec with
+relative source/vendor paths. Use a new destination under an existing directory:
 
 ```bash
 debundle snapshot create --graph output/reports/tree/main/dependency_graph.json.gz \
-  --destination /tmp/worker-one > /tmp/worker-one.json
-debundle snapshot verify /tmp/worker-one
+  --destination "$scratch/worker-one" > "$scratch/worker-one.json"
 ```
 
-`--graph` may also come from `DEBUNDLE_GRAPH`; an explicit flag wins. The
-returned JSON identifies the copied engine, graph (with the `program_graph.json.gz`
-it references), spec/source roots, complete
-modules tree, `graph_package_roots` map and a `regeneration_argv` array. For a
-graph-backed query or edit in the snapshot, pass each map entry as the global
-`--graph-package-root NAME=DIR` alongside `--spec-root` and
-`--graph-source-root`. The reserved `__packages_root__` entry relocates the
-shared `--packages-root` directory. Execute `regeneration_argv`
-directly. The replay uses only copied inputs and writes under that worker's
-`output/` directory. To display a shell command:
+After moving a snapshot, run `debundle snapshot verify "$scratch/worker-one"`
+and use its JSON for the new paths. For graph-backed operations, use the copied
+engine and these global options from the create/verify result:
+
+| Option                          | Result field                                                    |
+| ------------------------------- | --------------------------------------------------------------- |
+| `--spec-root`                   | `spec_root`                                                     |
+| `--graph-source-root`           | `graph_source_root`                                             |
+| `--graph-ownership-subset-root` | `graph_ownership_subset_root`, when present                     |
+| `--graph-package-root NAME=DIR` | Each `graph_package_roots` entry, including `__packages_root__` |
+
+The shipped [graph command helper](../skills/shared/examples/isolated_edit.py)
+assembles these options. Use the returned `graph`, `source_root`, `modules`
+and `tree_config` for the selected command. After editing, run
+`regeneration_argv` directly and use the new graph for further graph-backed
+edits. To display the command with shell quoting:
 
 ```bash
-jq -r '.regeneration_argv | @sh' /tmp/worker-one.json
+jq -r '.regeneration_argv | @sh' "$scratch/worker-one.json"
 ```
 
-Send the worker its snapshot directory, task, acceptance checks and permitted
-edit scope. It edits its own YAML tree and regenerates analysis there. The
-original saved graph and `snapshot.json` describe the starting state; the
-snapshot baseline check will fail after edits. Subsequent graph-backed edits
-use the newly generated graph and copied roots. Create another snapshot for
-each concurrent worker instead of sharing writable spec paths.
-
-Return the reviewed YAML patch or changed files/deletions, the starting
-snapshot manifest, and exact validation invocations/results. Before integrating,
-verify that the receiving spec still matches that baseline. Apply reviewed
-changes in an isolated integration checkout, regenerate the combined spec and
-run its full pipeline/runtime checks. Individually accepted edits can conflict
-when combined.
-
-Snapshot creation currently supports tree-shaped specs with relative embedded
-source/vendor-bundle paths. It refuses unrooted input dependencies and existing
-destinations. Relocation roots are supplied by the global `--spec-root` and
-`--graph-source-root` options when the original graph was generated elsewhere.
+`snapshot verify` checks the **starting** inputs. See the
+[snapshot contract](../SPEC.md#delegated-input-snapshots) for input and
+relocation guarantees, the [adapter contract](../skills/shared/workflow.md#adapter-contract)
+for the worker handoff and the [integration procedure](integration.md) for
+checking the combined edits.
 
 ## Common arguments and env vars
 
 Most commands take these paths, each as a flag or an env var; the flag wins if
 both are set.
 
-| Flag                            | Env var                      | Meaning                                                                                                                                                                                                    |
-| ------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--graph <path>`                | `DEBUNDLE_GRAPH`             | `dependency_graph.json.gz` for the chunk being inspected or edited. The graph path implies the chunk; multi-chunk callers point at different graphs per invocation.                                        |
-| `--modules <dir>`               | `DEBUNDLE_MODULES`           | Per-module YAML tree root (the directory under `spec/modules/`).                                                                                                                                           |
-| `--source-root <dir>`           | `DEBUNDLE_SOURCE_ROOT`       | Selector lookup root. It must contain the graph's verified physical input; an existing logical-path candidate must resolve to that same file. Missing alias paths use the captured chunk-to-input mapping. |
-| `--tree-config <file>`          | `DEBUNDLE_TREE_CONFIG`       | For graph-backed `modules` edits and queries, including `describe`, scope an app-level modules tree to the chunk named by `--graph`.                                                                       |
-| `--spec-root <dir>`             | `DEBUNDLE_SPEC_ROOT`         | Current common root of the tree config, vendor marks and modules after relocation. Global flag; the flag wins over the env var.                                                                            |
-| `--graph-source-root <dir>`     | `DEBUNDLE_GRAPH_SOURCE_ROOT` | Current root of the analyzed input files after relocation. Distinct from `--source-root`, which resolves selector source paths. Global flag; the flag wins.                                                |
-| `--graph-package-root NAME=DIR` | —                            | Current root for a package input in the saved graph after relocation. Repeat for each relocated package. Global flag.                                                                                      |
+| Flag                                  | Env var                                | Meaning                                                                                                                                                                                                    |
+| ------------------------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--graph <path>`                      | `DEBUNDLE_GRAPH`                       | `dependency_graph.json.gz` for the chunk being inspected or edited. The graph path implies the chunk; multi-chunk callers point at different graphs per invocation.                                        |
+| `--modules <dir>`                     | `DEBUNDLE_MODULES`                     | Per-module YAML tree root (the directory under `spec/modules/`).                                                                                                                                           |
+| `--source-root <dir>`                 | `DEBUNDLE_SOURCE_ROOT`                 | Selector lookup root. It must contain the graph's verified physical input; an existing logical-path candidate must resolve to that same file. Missing alias paths use the captured chunk-to-input mapping. |
+| `--tree-config <file>`                | `DEBUNDLE_TREE_CONFIG`                 | For graph-backed `modules` edits and queries, including `describe`, scope an app-level modules tree to the chunk named by `--graph`.                                                                       |
+| `--spec-root <dir>`                   | `DEBUNDLE_SPEC_ROOT`                   | Current common root of the tree config, vendor marks and modules after relocation. Global flag; the flag wins over the env var.                                                                            |
+| `--graph-source-root <dir>`           | `DEBUNDLE_GRAPH_SOURCE_ROOT`           | Current root of the analyzed input files after relocation. Distinct from `--source-root`, which resolves selector source paths. Global flag; the flag wins.                                                |
+| `--graph-ownership-subset-root <dir>` | `DEBUNDLE_GRAPH_OWNERSHIP_SUBSET_ROOT` | Root of the captured ownership selection after relocation. Global flag.                                                                                                                                    |
+| `--graph-package-root NAME=DIR`       | —                                      | Current root for a package input in the saved graph after relocation. Repeat for each relocated package. Global flag.                                                                                      |
 
 Graph-backed spec queries and edits compare the saved graph's engine and
 captured input bytes and YAML path membership with the current roots before

@@ -58,7 +58,7 @@ For each snapshot-backed lane worker, also supply:
   captured source, YAML and package inputs, engine digest verified against that
   provenance, and the spec tree/version they describe;
 - the copied engine path, copied graph and spec/source roots, tree config,
-  modules path, relocated graph package-root map, and the exact regeneration
+  modules path, [graph relocation options](../../docs/cli.md#delegating-with-an-input-snapshot), and the exact regeneration
   `argv`; record the working directory, environment entry command, and local or
   remote execution boundary for every preflight and regeneration command;
 - the worker's permitted YAML subtree and exact commands for the proposed
