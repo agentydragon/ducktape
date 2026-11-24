@@ -33,6 +33,7 @@ private def checkLean (work : System.FilePath) (args : Array String) : IO Unit :
       IO.Process.output { cmd := exe.toString, args }
     else do
       -- The native Lake executable is <project>/.lake/build/bin/lowersplit.
+      -- TODO: Consider resolving the project environment once per run (see split_proof/TODO.md).
       let mut project := exe
       for _ in [:4] do project := project.parent.getD "."
       IO.Process.output { cmd := "lake", args := #["env", "lean"] ++ args, cwd := some project }
