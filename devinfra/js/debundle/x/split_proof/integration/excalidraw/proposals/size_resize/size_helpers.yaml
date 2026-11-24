@@ -1,0 +1,45 @@
+# Excalidraw v0.18.1: packages/excalidraw/element/sizeHelpers.ts
+source_matches:
+  - match: |
+      var DECLARATORS_BEFORE = null,
+        isInvisiblySmallElement = e => isLinearElement(e) || isFreeDrawElement(e)
+          ? e.points.length < 2 : e.width === 0 && e.height === 0,
+        isElementInViewport = (e, width, height, view, map) => {
+          let [x1,y1,x2,y2] = getElementBounds(e,map),
+            tl = viewportCoordsToSceneCoords({clientX:view.offsetLeft,clientY:view.offsetTop},view),
+            br = viewportCoordsToSceneCoords({clientX:view.offsetLeft+width,clientY:view.offsetTop+height},view);
+          return tl.x <= x2 && tl.y <= y2 && br.x >= x1 && br.y >= y1;
+        },
+        isElementCompletelyInViewport = (elements,width,height,view,map,pad) => {
+          let [x1,y1,x2,y2] = getCommonBounds(elements,map),
+            tl = viewportCoordsToSceneCoords({clientX:view.offsetLeft+(pad?.left || 0),clientY:view.offsetTop+(pad?.top || 0)},view),
+            br = viewportCoordsToSceneCoords({clientX:view.offsetLeft+width-(pad?.right || 0),clientY:view.offsetTop+height-(pad?.bottom || 0)},view);
+          return x1 >= tl.x && y1 >= tl.y && x2 <= br.x && y2 <= br.y;
+        },
+        getPerfectElementSize = (type,width,height) => {
+          let aw = Math.abs(width), ah = Math.abs(height);
+          if (type === "line" || type === "arrow" || type === "freedraw") {
+            let angle = Math.round(Math.atan(ah / aw) / SHIFT_LOCKING_ANGLE) * SHIFT_LOCKING_ANGLE;
+            STMT_LIST;
+          } else type !== "selection" && (height = aw * Math.sign(height));
+          return {width:width,height:height};
+        },
+        getLockedLinearCursorAlignSize = (ox,oy,x,y) => {
+          let width=x-ox, height=y-oy, angle=Math.round(Math.atan(height/width)/SHIFT_LOCKING_ANGLE)*SHIFT_LOCKING_ANGLE;
+          STMT_LIST;
+          return {width:width,height:height};
+        },
+        getNormalizedDimensions = element => {
+          let ret={width:element.width,height:element.height,x:element.x,y:element.y};
+          if (element.width < 0) { STMT_LIST; }
+          if (element.height < 0) { STMT_LIST; }
+          return ret;
+        },
+        DECLARATORS_AFTER = null;
+    bindings:
+      - isInvisiblySmallElement
+      - isElementInViewport
+      - isElementCompletelyInViewport
+      - getPerfectElementSize
+      - getLockedLinearCursorAlignSize
+      - getNormalizedDimensions
