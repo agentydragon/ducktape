@@ -172,6 +172,8 @@ py_test(
 py_test(
     name = "excalidraw_certified_editor_browser_smoke",
     size = "medium",
+    # Both proofs and Chromium share the exact emitted tree and live deployment origin.
+    timeout = "long",
     srcs = [_EXCALIDRAW_BROWSER_PY],
     args = [
         "-k",
