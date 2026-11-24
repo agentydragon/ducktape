@@ -244,7 +244,6 @@ struct InferenceCells<Key, Fact> {
     free_cells: Vec<CellId>,
     facts: Vec<Option<Fact>>,
     free_facts: Vec<FactId>,
-    fact_count: usize,
 }
 
 impl<Key, Fact> Default for InferenceCells<Key, Fact> {
@@ -256,7 +255,6 @@ impl<Key, Fact> Default for InferenceCells<Key, Fact> {
             free_cells: Vec::new(),
             facts: Vec::new(),
             free_facts: Vec::new(),
-            fact_count: 0,
         }
     }
 }
@@ -326,7 +324,7 @@ impl<Key: Clone + Eq + Hash, Fact> InferenceCells<Key, Fact> {
 
     #[cfg(test)]
     fn len(&self) -> usize {
-        self.fact_count
+        self.facts.len() - self.free_facts.len()
     }
 
     #[cfg(test)]
@@ -357,7 +355,6 @@ impl<Key: Clone + Eq + Hash, Fact> InferenceCells<Key, Fact> {
             fact_id
         };
         self.cell_mut(id).fact = Some(fact_id);
-        self.fact_count += 1;
     }
 
     fn remove(&mut self, id: CellId) -> Option<Fact> {
@@ -366,7 +363,6 @@ impl<Key: Clone + Eq + Hash, Fact> InferenceCells<Key, Fact> {
             .take()
             .expect("present inference fact slot");
         self.free_facts.push(fact_id);
-        self.fact_count -= 1;
         Some(fact)
     }
 
