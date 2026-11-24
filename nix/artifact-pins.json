@@ -9,8 +9,8 @@
       "sha256": "+KGIkTID8jlhph8cXrZLDu9lzyTgAU7AdLVZivT7xoo="
     },
     "bbapi": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-a7717c00585a/bbapi",
-      "sha256": "p3F8AFhal6UYCuD0f8Ovwa2cvGDkqG6HEO305iCysdI="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/bbapi-a7a2f59087dd/bbapi",
+      "sha256": "p6L1kIfd6ltjp9v/b58lslGhTrb4PimiJ7j+jeLH68I="
     },
     "claude-statusline": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/claude-statusline-40ad2bd647a8/claude_statusline-0.1.0-py3-none-any.whl",
@@ -229,8 +229,8 @@
       "sha256": "ZOK1YXWZHuWDqm2IRbzwA9WL2fet3Es0CZSi1TgUlKI="
     },
     "skill-grafana": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-grafana-86dc1cfa1602/grafana.skill",
-      "sha256": "htwc+hYCf5nkTNVOBoLKoLIv4aCeSdFJ8OhF+ZQRcag="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-grafana-8c6f16425e42/grafana.skill",
+      "sha256": "jG8WQl5CIEUzGdKuISNJLyt4zh+GkBqRgRGPaekxzO0="
     },
     "ducktape-claude-api": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/ducktape-claude-api-2108ca52dd89/ducktape_claude_api-0.1.0-py3-none-any.whl",
