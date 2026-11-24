@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   assertCertifiedResult,
+  assertRejected,
   exportNamed,
   forcePreview,
   id,
@@ -79,8 +80,11 @@ for (const [name, source] of [
     class Base { constructor(a, b) { return { first: a, second: b }; } }
     class Child extends Base { constructor(x, y) { (super(y, x), this.label = label); } }
     const value = new Child("one", "two");
-    if (value.first !== "two" || value.second !== "one" || value.label !== "saved" || Child.length !== 2) throw 1;
-    export const result = true;`,
+    const checked = (() => {
+      if (value.first !== "two" || value.second !== "one" || value.label !== "saved" || Child.length !== 2) throw 1;
+      return true;
+    })();
+    export const result = checked;`,
   ],
   [
     "super-preserves-new-target",
@@ -88,8 +92,11 @@ for (const [name, source] of [
     class Middle extends Base { constructor(unused) { super(); } }
     class Leaf extends Middle { read() { return 3; } }
     const value = new Leaf("unused");
-    if (value.arg !== undefined || value.read() !== 3) throw 1;
-    export const result = true;`,
+    const checked = (() => {
+      if (value.arg !== undefined || value.read() !== 3) throw 1;
+      return true;
+    })();
+    export const result = checked;`,
   ],
   [
     "super-return-override",
@@ -97,14 +104,29 @@ for (const [name, source] of [
     class Child extends Base { constructor(x) { super(); return x; } }
     const other = {};
     const value = new Child(other);
-    if (value !== other) throw 1;
-    export const result = true;`,
+    const checked = (() => {
+      if (value !== other) throw 1;
+      return true;
+    })();
+    export const result = checked;`,
   ],
 ]) {
   const test = sequentialSplit(name, source, { "first.mjs": ["#0"], [entry]: ["#1", "#2", "#3", "#4", "#5"] }, [
     "first.mjs",
   ]);
   assertCertifiedResult(test, true);
+}
+
+for (const [name, base, body] of [
+  ["primitive-derived-return", "class Base {}", "super(); return 1;"],
+  ["throwing-super", "class Base { constructor() { null.missing; } }", "super(); return {};"],
+]) {
+  const source = `${base}
+    class Child extends Base { constructor() { ${body} } }
+    export const result = new Child();`;
+  const test = sequentialSplit(name, source, { "base.mjs": ["#0"], [entry]: ["#1", "#2"] }, ["base.mjs"]);
+  assertRejected(test, /original threw during linked initialization/);
+  assert.deepEqual(observe(test.files.sourceFile, "result"), { error: "TypeError" });
 }
 
 // A field initializer executes at class creation for static fields and at new
