@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import {
+  assertRejected,
   block,
   exportNamed,
   forcePreview,
@@ -16,6 +17,7 @@ import {
   returns,
   sequentialSplit,
   variable,
+  workerSplit,
 } from "./linked_programs.mjs";
 
 const entry = "entry.mjs";
@@ -86,4 +88,37 @@ for (const key of [1, 42]) {
       lazy ? { result: key } : { error: "ReferenceError" }
     );
   }
+}
+
+const computed = workerSplit(
+  "computed-data",
+  `const keys = { item: "slot", proto: "__proto__" };
+  let trace = "";
+  const mark = (step, value) => { trace = trace + step; return value; };
+  const obj = {
+    [mark("a", keys.item)]: mark("b", 1), ...{ slot: 2 },
+    [mark("c", keys.item)]: mark("d", 3), [keys.proto]: 4,
+    [1]: function named() { return 5; }
+  };
+  export const result = (() => {
+    if (trace !== "abcd" || obj.slot !== 3 || obj.__proto__ !== 4 ||
+        obj[1].name !== "named" || obj[1]() !== 5) throw "computed data";
+    return true;
+  })();`,
+  ["#1", "#2", "#3", "#4"]
+);
+assert.equal(computed.verdict.status, "certified", computed.log);
+for (const file of [computed.files.sourceFile, path.join(computed.out, entry)]) {
+  assert.deepEqual(observe(file, "result"), { result: true });
+}
+
+for (const [name, field] of [
+  ["arrow", "[k]: () => 1"],
+  ["method", "[k]() {}"],
+  ["getter", "get [k]() {}"],
+]) {
+  assertRejected(
+    workerSplit("computed-name-" + name, `const k = "x"; export const result = { ${field} };`),
+    /named by a computed key/
+  );
 }
