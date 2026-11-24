@@ -492,6 +492,7 @@ def environment(*, identity_catalog: bool) -> Environment:
         ),
         identity_catalog=identity_catalog,
         central_sampler=CentralSamplerProps(
+            event_block_writes=True,
             actions=ActionsConfig(
                 target=actions.service(STAGING_NAMESPACE).authority,
                 tls=TLS(
