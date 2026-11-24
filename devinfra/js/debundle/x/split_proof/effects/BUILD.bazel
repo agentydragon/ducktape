@@ -73,7 +73,7 @@ js_test(
         "20261121",
     ],
     data = _EFFECTS_CASES_DATA + [
-        "//devinfra/js/debundle/x/split_proof/translation/testing:program_generator",
+        "//devinfra/js/debundle/x/split_proof/translation/testing/gen:program_generator",
     ],
     entry_point = "run.mjs",
     env = _EFFECTS_CASES_ENV,
@@ -112,7 +112,7 @@ js_test(
 )
 
 _REFLECTIVE_RECEIVER_DATA = _EFFECTS_CASES_DATA + [
-    "//devinfra/js/debundle/x/split_proof/translation/testing:program_generator",
+    "//devinfra/js/debundle/x/split_proof/translation/testing/gen:program_generator",
     "reflective_receivers.mjs",
 ]
 

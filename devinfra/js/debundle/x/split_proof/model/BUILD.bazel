@@ -31,7 +31,7 @@ eslint_test(
 )
 
 _DIFFERENTIAL_DATA = [
-    "//devinfra/js/debundle/x/split_proof/translation/testing:program_generator",
+    "//devinfra/js/debundle/x/split_proof/translation/testing/gen:program_generator",
     "//devinfra/js/debundle/x/split_proof/translation:split_dump",
     "//devinfra/js/debundle/x/split_proof/lean:corejs",
     "//devinfra/js/debundle/x/split_proof/lean:evalorder",

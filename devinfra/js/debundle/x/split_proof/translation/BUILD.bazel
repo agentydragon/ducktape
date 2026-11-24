@@ -54,6 +54,7 @@ eslint_test(
         ":lint_sources",
         "//devinfra/js/debundle/x/split_proof/translation/debug/generator_findings:cases",
         "//devinfra/js/debundle/x/split_proof/translation/testing:lint_sources",
+        "//devinfra/js/debundle/x/split_proof/translation/testing/gen:program_generator",
     ],
 )
 
@@ -114,7 +115,7 @@ _FUZZ_SOURCES = [
     _SEEDED_RANDOM,
     "//devinfra/js/debundle/x/split_proof/translation/testing:ast_generator",
     ":node_modules/astring",
-    "//devinfra/js/debundle/x/split_proof/translation/testing:program_generator",
+    "//devinfra/js/debundle/x/split_proof/translation/testing/gen:program_generator",
 ]
 
 js_test(
@@ -549,7 +550,7 @@ js_test(
     data = [
         ":node_modules/acorn",
         ":syntax_inventory",
-        "//devinfra/js/debundle/x/split_proof/translation/testing:program_generator",
+        "//devinfra/js/debundle/x/split_proof/translation/testing/gen:program_generator",
     ],
     entry_point = "gen_validity_test.mjs",
 )
