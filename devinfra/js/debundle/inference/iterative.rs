@@ -426,6 +426,31 @@ struct WatchedRule<Rule> {
     changed: Option<FxHashSet<CellId>>,
 }
 
+impl<Rule: Ord + Clone> WatchedRule<Rule> {
+    /// Queue this rule at its earliest turn after the current evaluation.
+    /// Return false if it already has an equally early or earlier turn.
+    fn schedule_after(
+        &mut self,
+        round: usize,
+        current: &Rule,
+        pending: &mut BTreeSet<(usize, Rule)>,
+    ) -> bool {
+        let next = if &self.rule > current {
+            round
+        } else {
+            round.checked_add(1).expect("inference round overflow")
+        };
+        if self.scheduled.is_some_and(|scheduled| scheduled <= next) {
+            return false;
+        }
+        if let Some(previous) = self.scheduled.replace(next) {
+            pending.remove(&(previous, self.rule.clone()));
+        }
+        pending.insert((next, self.rule.clone()));
+        true
+    }
+}
+
 /// IDs address bookkeeping only. Evaluation order always compares `Rule`.
 struct ValueWatchers<Rule> {
     ids: FxHashMap<Rule, usize>,
@@ -659,14 +684,10 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
                 let key = facts.key(id);
                 let fact = facts.fact(id).expect("changed fact exists");
                 for producer in rules.producers_for(key, fact.value()) {
-                    let (producer_id, added) = watchers.register(producer.clone());
-                    if added {
-                        let next_round = if producer > rule {
-                            round
-                        } else {
-                            round.checked_add(1).expect("inference round overflow")
-                        };
-                        watchers.rules[producer_id].scheduled = Some(next_round);
+                    let (producer_id, added) = watchers.register(producer);
+                    if added
+                        && watchers.rules[producer_id].schedule_after(round, &rule, &mut pending)
+                    {
                         if let Some(metrics) = &mut metrics {
                             metrics.add(Operation::Schedule, 1);
                         }
@@ -674,7 +695,6 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
                         {
                             work.schedules += 1;
                         }
-                        pending.insert((next_round, producer));
                     }
                 }
                 for &dependent_id in &cell.readers {
@@ -692,25 +712,12 @@ impl<'input, R: IterativeRules> IterativeInference<'input, R> {
                             .get_or_insert_with(Default::default)
                             .insert(id);
                     }
-                    let dependent = &state.rule;
-                    let next_round = if dependent > &rule {
-                        round
-                    } else {
-                        round.checked_add(1).expect("inference round overflow")
-                    };
-                    if state
-                        .scheduled
-                        .is_some_and(|scheduled| scheduled <= next_round)
-                    {
+                    if !state.schedule_after(round, &rule, &mut pending) {
                         if let Some(metrics) = &mut metrics {
                             metrics.add(Operation::CoalescedWake, 1);
                         }
                         continue;
                     }
-                    if let Some(previous) = state.scheduled.replace(next_round) {
-                        pending.remove(&(previous, dependent.clone()));
-                    }
-                    pending.insert((next_round, dependent.clone()));
                     if let Some(metrics) = &mut metrics {
                         metrics.add(Operation::Schedule, 1);
                     }
