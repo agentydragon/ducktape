@@ -87,6 +87,7 @@ if (includesCase("optional-vendor-globals")) {
   const names = [
     "MozWebSocket",
     "__MOBX_DEVTOOLS_GLOBAL_HOOK__",
+    "__REACT_DEVTOOLS_GLOBAL_HOOK__",
     "__SENTRY_DEBUG__",
     "firebaseui",
     "regeneratorRuntime",
