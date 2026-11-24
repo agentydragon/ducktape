@@ -212,7 +212,7 @@ assert.equal(verdict.requested, "normal-completion");
 assert.equal(verdict.status, "rejected");
 assert.equal(verdict.guarantee, null);
 assert.equal(verdict.scope, "linked-programs", JSON.stringify(verdict));
-assert.equal(verdict.reason, "statement 354: unsupported linked expression ImportExpression");
+assert.equal(verdict.reason, "statement 354: dynamic import requires a checked deployment");
 assert(!existsSync(out), "a rejected trial published modules");
 
 // The pinned editor exposes its public names through an export list. Read the actual
