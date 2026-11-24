@@ -235,7 +235,7 @@ const hiddenCapture = fixture(
 );
 const exposed = hiddenCapture.run(refusalScope);
 assert.equal(exposed.status, "rejected");
-assert.match(exposed.reason, /entry exports resolve to different linked cells/);
+assert.match(exposed.reason, /extra 1: "hidden" \(candidate cell @1\.0\); missing 0; retargeted 0/);
 assert(!existsSync(hiddenCapture.out));
 
 // An entry-side assignment would write an immutable import after the split.

@@ -41,6 +41,7 @@ const orders = [
 ];
 const cases = [{ kind: "linked", input: linked(), expected: orders }];
 for (const [controls, reason] of [
+  [{ maker: "export const wrong = 0;" }, /original linker: the module providers\/maker\.mjs does not export build/],
   [{ glueBinding: "alternate" }, /unit 1: reference to extra resolves to a different linked cell/],
   [{ request: "./providers/maker.mjs" }, /entry requests for providers differ/],
   [{ entryExports: "export { deferred as changed };" }, /named exports differ/],
@@ -167,7 +168,7 @@ cases.push({ kind: "linked", input: linked({ exposesGlue: true }), expected: ord
 cases.push({
   kind: "linked",
   input: linked({ exposesGlue: true, glueBinding: "alternate" }),
-  expected: /entry exports resolve to different linked cells/,
+  expected: /extra 0; missing 0; retargeted 1: "readExtra" \(original cell @3\.0 -> candidate cell @4\.0\)/,
 });
 
 cases.push({

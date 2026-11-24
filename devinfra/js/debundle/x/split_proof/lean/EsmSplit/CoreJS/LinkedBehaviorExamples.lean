@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.LinkedCertificate
+import EsmSplit.CoreJS.LinkedPivotCertificate
 
 namespace CoreJS.LinkedBehaviorExamples
 
@@ -97,6 +98,18 @@ theorem orderedClosure :
   verify_ordered_linked_programs 16 sourceLink orderedLink premises
 
 #audit_linked_programs orderedClosure
+
+-- An artifact that omits an expected export can fail its syntax check first.
+-- Exercise the standalone structural checker on two successfully linked graphs:
+-- four distinct public aliases are gone, all pointing at the same original cell.
+private def publicAliases (names : List Name) : Program :=
+  ⟨"main", [{ entry with imports := [], body := [(0, .decl .const "item" .undef)],
+    exports := names.map fun name => (name, "item") }]⟩
+
+#guard match LinkedBehavior.checkStructuralSchedule (publicAliases ["a", "b", "c", "d"]) (publicAliases []) with
+  | .error reason => reason == "entry exports resolve to different linked cells; extra 0; missing 4: " ++
+      "\"a\" (original cell @1.0), \"b\" (original cell @1.0), \"c\" (original cell @1.0), …; retargeted 0"
+  | .ok _ => false
 
 -- Both graphs link two independent allocations and run them in opposite order.
 -- Reading the other allocation by its local binding makes the swap ineligible.

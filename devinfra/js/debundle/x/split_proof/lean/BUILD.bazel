@@ -234,6 +234,7 @@ lean_library(
         "EsmSplit/CoreJS/Declaration/Program.lean",
         "EsmSplit/CoreJS/DenseArray.lean",
         "EsmSplit/CoreJS/DynamicImports.lean",
+        "EsmSplit/CoreJS/EntryExports.lean",
         "EsmSplit/CoreJS/Frame.lean",
         "EsmSplit/CoreJS/FreshWrites.lean",
         "EsmSplit/CoreJS/Fuel.lean",

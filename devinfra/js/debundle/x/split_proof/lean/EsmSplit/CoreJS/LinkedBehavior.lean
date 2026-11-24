@@ -1,3 +1,4 @@
+import EsmSplit.CoreJS.EntryExports
 import EsmSplit.CoreJS.Fuel
 import EsmSplit.CoreJS.Scope
 
@@ -56,14 +57,9 @@ theorem different_probe_states_refute_equivalence {w : World} {source candidate 
     injection sameResult with _ stateEq
   exact different (sourceStateEq.trans candidateStateEq.symm)
 
-private def entryExports (entry : String) (linked : List (Module × Env)) :
-    Option (List (Name × Addr)) := do
-  let (md, env) ← linked.find? (fun (md, _) => md.name == entry)
-  md.exports.mapM fun (name, binding) => do return (name, ← env.vars.lookup binding)
-
 private def readExports (p : Program) (r : Res W (List (Module × Env))) : Option (List (Name × Addr)) :=
   match r with
-  | .ok linked _ => entryExports p.entry linked
+  | .ok linked _ => (EntryExports.resolve p.entry linked).toOption
   | _ => none
 
 /-- The entry's public names and the live cells the real linker binds them to. -/
@@ -106,7 +102,8 @@ structure CheckedLink (p : Program) (w : World) where
 /-- Match public names and live cells using previously checked linker output. -/
 def exportsMatchFrom {w : World} {source candidate : Program}
     (before : CheckedLink source w) (after : CheckedLink candidate w) : Bool :=
-  compareExports (entryExports source.entry before.linked) (entryExports candidate.entry after.linked)
+  compareExports (EntryExports.resolve source.entry before.linked).toOption
+    (EntryExports.resolve candidate.entry after.linked).toOption
 
 theorem exportsMatch_from_checked {w : World} {source candidate : Program}
     (before : CheckedLink source w) (after : CheckedLink candidate w) :
