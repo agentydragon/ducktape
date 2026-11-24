@@ -2,7 +2,7 @@ load("@aspect_bazel_lib//lib:run_binary.bzl", "run_binary")
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@rules_rust//rust:defs.bzl", "rust_test")
-load("//devinfra/js/debundle:pipeline.bzl", "debundle_analysis", "debundle_apply")
+load("//devinfra/js/debundle:pipeline.bzl", "debundle_analysis", "debundle_apply", "debundle_resolve_placement")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_testonly = True)
@@ -169,6 +169,27 @@ filegroup(
     output_group = "dependency_graphs",
     visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
 )
+
+# Both views resolve the full canonical spec. The smoke retains a named subset
+# of its claims. No Rust candidate or gate output is an input to either action.
+[
+    debundle_resolve_placement(
+        name = name,
+        chunk = "editor",
+        ownership_subset = subset,
+        package_roots = _PACKAGE_ROOTS,
+        spec_tree_inputs = [":spec"],
+        tree_config = "config.yaml",
+        tree_modules = "spec/modules",
+        tree_source_root = ":source",
+        tree_vendor_marks = "spec/vendor_marks.yaml",
+        visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
+    )
+    for name, subset in [
+        ("canonical_editor_placement", None),
+        ("selected_editor_placement", "editor_smoke_subset.json"),
+    ]
+]
 
 # A selected view of the same canonical selector solve. Only routing and
 # import priority change; the Rust and Lean emitters use the same unit owners.
