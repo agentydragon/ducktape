@@ -13,14 +13,18 @@ export function dumpParsed(parsed, options) {
   );
 }
 
-/** Reconstruct printer metadata for an unversioned dump from the source that produced it. */
-export function upgradeLowerDump(program, acorn, eslintScope, options) {
-  if (!program || typeof program.sourceText !== "string" || Object.hasOwn(program, "annotationVersion"))
-    throw new Error("expected an unversioned annotated ESTree Program with sourceText");
-  const parsed = parseModule(program.sourceText, acorn.parse, eslintScope);
+/** Validate a snapshot against its source before deriving the requested annotations. */
+export function loadSnapshot(snapshot, acorn, eslintScope, options) {
+  const legacy = snapshot == null || !Object.hasOwn(snapshot, "annotationVersion");
+  if (!legacy && snapshot.annotationVersion !== 2)
+    throw new Error(`unsupported annotationVersion: ${JSON.stringify(snapshot.annotationVersion)}`);
+  const mismatch = legacy
+    ? "legacy annotated ESTree disagrees with a fresh parse of sourceText"
+    : "input annotations differ from a fresh parse of sourceText";
+  if (typeof snapshot?.sourceText !== "string")
+    throw new Error(legacy ? "expected an unversioned annotated ESTree Program with sourceText" : mismatch);
+  const parsed = parseModule(snapshot.sourceText, acorn.parse, eslintScope);
   const meaning = resolveIdentifiers(parsed, () => true);
-  const legacy = annotateProgram(parsed, meaning, { legacy: true });
-  if (!isDeepStrictEqual(legacy, program))
-    throw new Error("legacy annotated ESTree disagrees with a fresh parse of sourceText");
+  if (!isDeepStrictEqual(annotateProgram(parsed, meaning, { legacy }), snapshot)) throw new Error(mismatch);
   return annotateProgram(parsed, meaning, options);
 }

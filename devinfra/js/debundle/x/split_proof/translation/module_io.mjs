@@ -6,7 +6,7 @@ import { isDeepStrictEqual } from "node:util";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
 import { literalKey, needsPrintRange } from "./scope_metadata.mjs";
-import { lowerDump, upgradeLowerDump } from "./annotated_estree.mjs";
+import { loadSnapshot, lowerDump } from "./annotated_estree.mjs";
 
 const linkedAnnotations = { includeOpaqueCaptures: true };
 
@@ -183,24 +183,7 @@ try {
     writeJson(output, program(input));
   } else if (mode === "--load-input") {
     const [input, output] = args;
-    const snapshot = readJson(input);
-    const hasVersion =
-      snapshot &&
-      typeof snapshot === "object" &&
-      !Array.isArray(snapshot) &&
-      Object.hasOwn(snapshot, "annotationVersion");
-    if (hasVersion) {
-      if (snapshot.annotationVersion !== 2)
-        throw new Error(`unsupported annotationVersion: ${JSON.stringify(snapshot.annotationVersion)}`);
-      if (
-        typeof snapshot.sourceText !== "string" ||
-        !isDeepStrictEqual(snapshot, lowerDump(snapshot.sourceText, acorn, eslintScope))
-      )
-        throw new Error("input annotations differ from a fresh parse of sourceText");
-      writeJson(output, lowerDump(snapshot.sourceText, acorn, eslintScope, linkedAnnotations));
-    } else {
-      writeJson(output, upgradeLowerDump(snapshot, acorn, eslintScope, linkedAnnotations));
-    }
+    writeJson(output, loadSnapshot(readJson(input), acorn, eslintScope, linkedAnnotations));
   } else if (mode === "--check-output") {
     const [manifestPath, originalSourcePath, providersManifestPath, dir, groupedPath] = args;
     checkOutput(manifestPath, originalSourcePath, providersManifestPath, dir, groupedPath);
