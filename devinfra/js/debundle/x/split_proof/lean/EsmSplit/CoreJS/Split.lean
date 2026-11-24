@@ -778,7 +778,7 @@ theorem split_units_agree {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.S
       (∀ x, cells.lookup x = if x ∈ md.imports.flatMap (·.2) then env0.vars.lookup x else none) →
       Agree s.free env0 { vars := (moduleOf ss B P md).scope frames ++ cells, this := .undef } := by
     intro md hmd i hi s hs cells hcells
-    refine ⟨rfl, fun x hx => ?_⟩
+    refine ⟨rfl, rfl, fun x hx => ?_⟩
     show env0.vars.lookup x = ((moduleOf ss B P md).scope frames ++ cells).lookup x
     rw [List.lookup_append (l₁ := (moduleOf ss B P md).scope frames)]
     by_cases hd : ∃ j ∈ md.stmts, x ∈ (B.stmt j).defs

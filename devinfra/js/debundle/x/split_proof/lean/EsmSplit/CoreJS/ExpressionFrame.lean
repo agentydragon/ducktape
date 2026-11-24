@@ -108,6 +108,24 @@ private theorem reachFrame_toNumber {r R cells A} (v : Val) :
     ReachFrame r R cells A (fun _ => True) (lift (toNumber v) : M W Float) :=
   reachFrame_lift _ (fun _ _ => trivial)
 
+private theorem reachFrame_getSuperProp {r R cells A} (away : Away r R A) (call : Call W)
+    (framed : CallFramed r R cells A call) (env : Env) (safe : ∀ node ∈ env.nodes, A node) (key : Val) :
+    ReachFrame r R cells A (SafeVal A) (getSuperProp call env.home env.this key) := by
+  unfold getSuperProp
+  split
+  · rename_i home found
+    apply (reachFrame_toKey r R cells A key).bind
+    intro k _
+    apply (reachFrame_getObj away (Env.nodes_home safe found)).bind
+    intro obj safeObj
+    cases hparent : obj.proto with
+    | some parent =>
+      have hp : A (.obj parent) := safeObj _ (by simp [Obj.nodes, hparent])
+      exact reachFrame_getFrom away call framed.getter hp env.this (Env.nodes_this safe) k
+    | none =>
+      exact reachFrame_typeError "cannot read properties of null super base"
+  · exact reachFrame_unknown r R cells A _ _
+
 theorem evalExpr_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env)
     (safe : ∀ node ∈ env.nodes, A node)
     (root : A (.obj objectProto))
@@ -156,6 +174,8 @@ theorem evalExpr_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env)
   | arrWithSpread _ => exact reachFrame_unknown r R cells A _ _
   | get o k =>
     exact (eval o).bind fun base hb => (eval k).bind fun key _ => get base key hb
+  | getSuper k =>
+    exact (eval k).bind fun key _ => reachFrame_getSuperProp away (callFn n) call env safe key
   | getOptional o k =>
     simp only [evalExpr]
     apply (eval o).bind
@@ -206,6 +226,20 @@ theorem evalExpr_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env)
       (eval k).bind fun key _ =>
         (get base key hb).bind fun f hf =>
           (args es).bind fun vs hvs => call f base vs hf hb hvs
+  | callSuper k es optional =>
+    simp only [evalExpr]
+    apply (eval k).bind
+    intro key _
+    apply (reachFrame_getSuperProp away (callFn n) call env safe key).bind
+    intro f hf
+    have invoke := (args es).bind fun vs hvs => call f env.this vs hf (Env.nodes_this safe) hvs
+    cases optional
+    · exact invoke
+    · apply (reachFrame_shortCircuits .nullish f).bind
+      intro present _
+      cases present
+      · exact undef
+      · exact invoke
   | callOptionalReceiver o k es =>
     simp only [evalExpr]
     apply (eval o).bind

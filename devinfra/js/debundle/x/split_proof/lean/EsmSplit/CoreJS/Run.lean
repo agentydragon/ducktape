@@ -271,8 +271,10 @@ def hostRefs (j : Json) : Except String (List (HostRef × String)) := do
     | .ok value => value.getBool?
     | .error _ => pure false
   let iteratorSymbol ← observed "iteratorSymbol"
+  let tag ← observed "toStringTagSymbol"
   let symbolConstructor ← observed "symbolConstructor"
   return (if iteratorSymbol then [(.property "Symbol" "iterator", "Symbol.iterator")] else []) ++
+    (if tag then [(.property "Symbol" "toStringTag", "Symbol.toStringTag")] else []) ++
     (if symbolConstructor then [(.binding "Symbol", "intrinsic.Symbol")] else [])
 
 end Decode
@@ -285,7 +287,7 @@ def describe {W : World} (s : State W) : Val → String
   | .bool b => if b then "boolean:true" else "boolean:false"
   | .num n => "number:" ++ Num.toString n
   | .str x => "string:" ++ x
-  | .iteratorSymbol => "symbol:Symbol(Symbol.iterator)"
+  | .wellKnownSymbol sym => s!"symbol:Symbol({sym.description})"
   | .symbol _ => "symbol"
   | .obj a => if isCallable s (.obj a) then "function" else "object"
   | .error .type _ => "TypeError"
@@ -304,7 +306,7 @@ def showVal : Val → String
   | .bool b => toString b
   | .num n => s!"#{n.toBits}"
   | .str x => (Json.str x).compress
-  | .iteratorSymbol => "Symbol.iterator"
+  | .wellKnownSymbol sym => sym.description
   | .symbol a => showSymbol a
   | .obj a => s!"@{a.region}.{a.index}"
   | .error kind msg => s!"error {reprStr kind} {msg}"
@@ -312,7 +314,7 @@ def showVal : Val → String
 
 private def showKey : PropertyKey → String
   | .str k => (Json.str k).compress
-  | .iteratorSymbol => "Symbol.iterator"
+  | .wellKnownSymbol sym => sym.description
   | .symbol a => showSymbol a
 
 def showAddr (a : Addr) : String := s!"@{a.region}.{a.index}"
@@ -326,7 +328,7 @@ def showCode : Code → String
   | .derivedFields env fields =>
     s!"derived fields {env.vars.map fun (x, a) => (x, showAddr a)} {fields.map fun (key, _) => showKey key}"
   | .derivedBody before args f env fields =>
-    let base := s!"derived {f.name} {f.params} {before.length} {args.length} {env.vars.map fun (x, a) => (x, showAddr a)}"
+    let base := s!"derived {f.name} {f.params} {before.length} {args.elim "forward" (toString ·.length)} {env.vars.map fun (x, a) => (x, showAddr a)}"
     if fields.isEmpty then base else s!"{base} {fields.map fun (key, _) => showKey key}"
   | .closure f env fields =>
     s!"closure {f.name} {f.params} {env.vars.map fun (x, a) => (x, showAddr a)} {showVal env.this} {fields.map fun (k, _) => showKey k}"
@@ -451,6 +453,7 @@ def main (args : List String) : IO UInt32 := do
         ("Object.prototype", strings ("__proto__" :: objectProtoNames)),
         ("Function.prototype", strings (["length", "name", "arguments", "caller"] ++ functionProtoNames)),
         ("Array.prototype", strings ("length" :: arrayProtoNames)),
+        ("ArrayIterator.prototype", ownStringNames arrayIteratorPrototype),
         ("Iterator.prototype", ownStringNames iteratorPrototype),
         ("Generator.prototype", ownStringNames generatorPrototype),
         ("AsyncIterator.prototype", ownStringNames asyncIteratorPrototype),

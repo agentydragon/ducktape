@@ -64,6 +64,17 @@ CoreJS allocates a fresh object for each regular-expression literal. It preserve
 
 The browser-page profile also allows deferred construction of selected ambient constructors (`Date`, `Error`, `RegExp`, `Set`, and `URL`). The linked model retains the constructor name and arguments. If initialization reaches that lookup, it reports an unknown result before evaluating the arguments, including inside a `try` block. Reading `Date.now` can certify under a stable-reference premise. Calling it during initialization requires a model of the clock. The caller is responsible for choosing a profile that holds in the deployment.
 
+Linked replay models `super.member` and `super[key]` reads, direct calls, and
+optional calls. It starts at the current prototype of the method's home object
+and passes the active receiver to getters and calls. An arrow retains both the
+home object and receiver of its enclosing scope. Async bodies can retain these
+references, but replay stops if it reaches an async invocation. Super-property
+writes and deletion remain outside the executable model.
+
+Class static blocks run in their own scope with the constructor as the
+receiver. The checker evaluates class member keys before it initializes
+fixed-name static fields and runs blocks in their source order.
+
 The command prints one JSON verdict. A successful split reports `status: "certified"` after Lean certifies the output module ASTs and the printer writes them to the requested directory. The default `normal-completion` request means that, for each modeled world and successful final state, the bundle reaches that state exactly when the split does. It does not say that either program completes normally; in the closed-declaration case, both may throw. The linked-program proof additionally establishes that both programs initialize normally. The checker reports the strongest available guarantee, so a default request may report `all-outcomes` for a supported order-preserving split. Pass `--require all-outcomes` to insist on that stronger guarantee. A rejected request exits nonzero with `status: "rejected"`, a null guarantee and a reason.
 
 To move an initializer such as `Math.PI / 12`, pass
@@ -163,7 +174,9 @@ Ordinary top-level function declarations initialize when the modules link. A cal
 
 Named parameters can have defaults such as `(x = 1, y = x) => y`. Missing and `undefined` arguments use the initializer. A `null` argument binds directly. Parameters initialize left to right and a read of the current or a later parameter before initialization throws, including inside `typeof`. Body lexical declarations are in a scope inside the parameter environment. The linked fragment refuses a body `var` whose name repeats a parameter or occurs free in an initializer. The function's `length` counts only parameters before the first default. CoreJS executes defaults on identifier parameters. It can retain other parameter patterns for deferred calls. Implicit `arguments` remains outside the linked fragment.
 
-Linked ordinary functions and arrows accept nonempty flat object patterns in parameters and local `var`, `let`, and `const` declarations. For example, `function read({x, label: name})` takes one argument and reads `x` before `label`. A local declaration evaluates its initializer once. Both forms use CoreJS property lookup, including the receiver for a getter, and stop at the first abrupt read. Keys may be identifiers or string literals. Module-level patterns, nested targets, defaults, rest, and computed keys are outside this lowering. An empty pattern still checks its argument for null or undefined and is also excluded.
+Module-level `var`, `let`, and `const` declarations can use object binding patterns, including nested object patterns, computed keys, and defaults. The module linker creates a cell for each bound name. The declaration evaluates its initializer once, then reads properties and initializes bindings in source order. A getter keeps its receiver, and a default runs only for `undefined`. It can read an earlier binding, while a read of a later lexical binding throws in the temporal dead zone. An empty pattern still checks that the source is neither `null` nor `undefined`. Array patterns and object rest remain unsupported.
+
+Linked ordinary functions and arrows accept nonempty flat object patterns with identifier or string keys in parameters and local `var`, `let`, and `const` declarations. For example, `function read({x, label: name})` takes one argument and reads `x` before `label`. Local declarations also accept defaults on the bound names.
 
 In linked programs, conditional expressions and `if` statements inside functions evaluate the test once and run the selected branch with the state left by the test. Both branches must lower to CoreJS, including code that initialization never executes. Branch blocks have their own lexical scope, and `var` declarations in either branch belong to the enclosing function. A false test with no `else` continues to the following statement.
 
@@ -238,7 +251,7 @@ Linked binary `+`, `-`, `*`, `/`, and `%` evaluate both operands in source order
 
 Linked `<`, `<=`, `>`, and `>=` evaluate operands in source order. CoreJS compares two strings by UTF-16 code unit and converts other primitive pairs to numbers. A numeric comparison with NaN is false. String literals, template text and property keys can contain supplementary Unicode characters. String length and indexed reads use UTF-16 code units. For example, `"A😀B".length` is 4 and `"A😀B"[3]` is `"B"`. A read that would return an isolated surrogate gives an unknown result. The lowerer rejects literal and template text containing an isolated surrogate. Reached object-to-primitive conversion remains unknown.
 
-Linked expressions support `typeof`, `===` and `!==` on modeled operands. Strict comparisons evaluate both operands in source order and compare without coercion. For `==` and `!=`, each operand must be a string literal or a `typeof` expression, so the comparison uses string contents. Looking up a host global still requires a model of that binding, including inside `typeof`.
+Linked expressions support `typeof`, `===` and `!==` on modeled operands. Strict comparisons evaluate both operands in source order and compare without coercion. Loose equality and inequality compare two strings by contents, compare ordinary objects by identity, and perform JavaScript numeric conversions for mixed string, number and boolean operands. A nullish comparison can finish without coercing an object. Reached comparisons requiring an object to produce a primitive or inspection of an opaque host value stop the checker. Looking up a host global still requires a model of that binding, including inside `typeof`.
 
 The linked fragment handles `try` inside function bodies with `catch`, `finally`, or both. A catch can bind one identifier or omit the binding. Inside functions, grouped `var`, `let` and `const` declarations with identifier binders initialize in source order. Each block has its own lexical scope, and an abrupt completion from `finally` takes precedence over a pending return or throw.
 The state includes the heap and captured bindings of exported closures. The checker

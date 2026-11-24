@@ -67,12 +67,49 @@ theorem loop_reachFrame_step {r R cells A n} (away : Away r R A)
     case ret value => exact reachFrame_pure r R cells A (Flow.ret value) hflow
     all_goals exact repeatLoop
 
+theorem bindPattern_reachFrame_step {r R cells A n} (away : Away r R A)
+    (env : Env) (safe : ∀ node ∈ env.nodes, A node)
+    (eval : ∀ e, ReachFrame r R cells A (SafeVal A) (evalExpr n env e : M W Val))
+    (get : ∀ base key, SafeVal A base → ReachFrame r R cells A (SafeVal A) (getProp (callFn n) base key : M W Val))
+    (step : ∀ kind p v, SafeVal A v →
+      ReachFrame r R cells A (fun _ => True) (bindPattern n env kind p v : M W Unit))
+    (kind : DeclKind) (p : BindingPattern) (v : Val) (hv : SafeVal A v) :
+    ReachFrame r R cells A (fun _ => True) (bindPattern (n + 1) env kind p v : M W Unit) := by
+  cases p with
+  | name x =>
+    cases kind
+    · exact reachFrame_writeVar away env x v safe hv
+    all_goals exact reachFrame_initVar away env x v safe hv
+  | defaultValue target fallback =>
+    cases v <;> simp only [bindPattern]
+    case undef => exact (eval fallback).bind fun value h => step kind target value h
+    all_goals exact step kind target _ hv
+  | object props =>
+    have fields : ∀ props : List (Expr × BindingPattern), ReachFrame r R cells A (fun _ => True)
+        (props.forM fun (key, target) => do
+          let key ← evalExpr n env key
+          let value ← getProp (callFn n) v key
+          bindPattern n env kind target value : M W Unit) := by
+      intro props
+      induction props with
+      | nil => exact reachFrame_pure r R cells A () trivial
+      | cons item rest ih =>
+        obtain ⟨key, target⟩ := item
+        exact ((eval key).bind fun k _ => (get v k hv).bind fun value h =>
+          step kind target value h).bind fun _ _ => ih
+    simp only [bindPattern]
+    split <;> first
+    | exact fields props
+    | exact reachFrame_errorValue (.error .type _) (by simp [SafeVal, Val.nodes])
+
 theorem execStmt_reachFrame_step {r R cells A n} (away : Away r R A)
     (outside : ∀ a, a.region ≠ r → A (.cell a))
     (eval : ∀ e env, (∀ node ∈ Env.nodes env, A node) →
       ReachFrame r R cells A (SafeVal A) (evalExpr n env e : M W Val))
     (step : ∀ env st, (∀ node ∈ Env.nodes env, A node) →
       ReachFrame r R cells A (FlowSafe A) (execStmt n env st : M W Flow))
+    (binding : ∀ env kind p v, (∀ node ∈ Env.nodes env, A node) → SafeVal A v →
+      ReachFrame r R cells A (fun _ => True) (bindPattern n env kind p v : M W Unit))
     (many : ∀ env ss, (∀ node ∈ Env.nodes env, A node) →
       ReachFrame r R cells A (FlowSafe A) (execStmts n env ss : M W Flow))
     (repeatLoop : ∀ env fresh test update body, (∀ node ∈ Env.nodes env, A node) →
@@ -96,6 +133,8 @@ theorem execStmt_reachFrame_step {r R cells A n} (away : Away r R A)
       apply (eval initial env h).bind <;> intro v hv
     · exact (reachFrame_writeVar away env name v h hv).bind fun _ _ => normal
     all_goals exact (reachFrame_initVar away env name v h hv).bind fun _ _ => normal
+  | bind kind p initial =>
+    exact (eval initial env h).bind fun v hv => (binding env kind p v h hv).bind fun _ _ => normal
   | varDecl _ | funDecl _ => exact normal
   | ret e =>
     exact (eval e env h).bind fun v hv => reachFrame_pure r R cells A (Flow.ret v) (FlowSafe.ret hv)
@@ -112,9 +151,9 @@ theorem execStmt_reachFrame_step {r R cells A n} (away : Away r R A)
     exact (enter env ss h).bind fun next hn => many next ss hn
   | loop init test update body =>
     simp only [execStmt]
-    apply (enter env [init] h).bind
+    apply (enter env init h).bind
     intro next hn
-    apply (step next init hn).bind
+    apply (many next init hn).bind
     intro _ _
     exact (reachFrame_copyBindings away outside next _ hn).bind fun iteration hi =>
       repeatLoop iteration _ test update body hi

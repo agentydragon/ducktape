@@ -193,13 +193,7 @@ for (const [name, source, expectedReason] of [
     "const B = class extends null { constructor() { super(); super(); } }; export const result = 1;",
     /super|derived constructor/i,
   ],
-  [
-    "derived-static-field",
-    "const B = class extends null { static value = true; }; export const result = 1;",
-    /derived static field/,
-  ],
   ["computed", "const B = class { ['x']() {} }; export const result = 1;", /computed class key/],
-  ["static-block", "const B = class { static {} }; export const result = 1;", /StaticBlock/],
 ]) {
   const test = sequentialSplit(name, source, { "class.mjs": ["#0"], [entry]: ["#1"] }, ["class.mjs"]);
   assert.equal(test.verdict.status, "rejected", test.log);

@@ -58,8 +58,10 @@ def addPrototype (a : Addr) (kind : FuncKind := .normal) : M W Unit := do
 /-- A function object for `f`, closed over the bindings of `env` that its code can mean. -/
 def makeFunc (env : Env) (f : Func) : M W Val := do
   let env ← selfScope env f.self f.name
+  let closed := env.capture f.closes
+  let closed := if f.kind == .normal then { closed with home := none } else closed
   let a ← alloc {
-    proto := some f.intrinsicProto, code := some (.closure f (env.capture f.closes) []),
+    proto := some f.intrinsicProto, code := some (.closure f closed []),
     props := [("length", .data (.num (Float.ofNat f.length)) false false true),
       ("name", .data (.str f.name) false false true)] }
   (if f.kind.hasOwnPrototype then addPrototype a f.kind else pure ())
@@ -185,7 +187,7 @@ def classParents (call : Call W) : Val → M W (Addr × Option Addr)
   | .null => pure (functionProto, none)
   | base => classParentsNonNull call base
 
-def derivedCtorCode (env : Env) (ctor : Option (List Stmt × List Expr × Func))
+def derivedCtorCode (env : Env) (ctor : Option (List Stmt × Option (List Expr) × Func))
     (fields : List (PropertyKey × Expr)) : Code × Nat :=
   let closed := env.capture (derivedCtorFree ctor ++ fields.flatMap (·.2.free))
   match ctor, fields with
@@ -193,16 +195,29 @@ def derivedCtorCode (env : Env) (ctor : Option (List Stmt × List Expr × Func))
   | none, _ => (.derivedFields closed fields, 0)
   | some (before, args, body), _ => (.derivedBody before args body closed fields, body.length)
 
-/-- The parameters and declarations are entered once for both parts of the constructor. -/
-def derivedScope (before : List Stmt) (body : Func) : Func :=
-  .mk body.name .classCtor false body.params (before ++ body.body)
+/-- Only constructors with pre-super receiver captures allocate this extra cell. -/
+def capturesDerivedReceiver (before : List Stmt) (args : Option (List Expr)) : Bool :=
+  (freeStmts before ++ freeSuperArgs args).contains derivedReceiverName
+
+def initCapturedReceiver (env : Env) (receiver : Val) (captured : Bool) : M W Unit :=
+  if captured then initVar env derivedReceiverName receiver else pure ()
+
+/-- The two parts share parameters and declarations. Scope entry reserves the
+captured receiver cell in its dead zone, so a superclass cannot read it via an
+arrow before returning. The synthetic declaration is never executed. -/
+def derivedScope (before : List Stmt) (body : Func) (captured : Bool) : Func :=
+  let statements := before ++ body.body
+  .mk body.name .classCtor false body.params
+    (if captured then .decl .let_ derivedReceiverName .undef :: statements else statements)
 
 /-- Build the class after evaluating and checking its heritage. -/
 def finishDerived (runMembers : Env → Addr → Addr → List ClassMember → M W (List (Bool × PropertyKey)))
     (env : Env) (name : Name) (self : Bool) (members : List ClassMember) (parents : Addr × Option Addr)
-    (ctor : Option (List Stmt × List Expr × Func) := none) : M W Val := do
+    (ctor : Option (List Stmt × Option (List Expr) × Func) := none)
+    (initStatic : Addr → List (Bool × PropertyKey) → M W Unit := fun _ _ => pure ()) : M W Val := do
   let proto ← alloc { proto := parents.2, props := [] }
-  let (code, arity) := derivedCtorCode env ctor []
+  let ctorEnv := { env with home := some proto }
+  let (code, arity) := derivedCtorCode ctorEnv ctor []
   let c ← alloc {
     proto := some parents.1, code := some code,
     props := [("length", .data (.num (Float.ofNat arity)) false false true),
@@ -211,10 +226,11 @@ def finishDerived (runMembers : Env → Addr → Addr → List ClassMember → M
   let keys ← runMembers env proto c members
   let fields := (keys.zip (fieldInits members)).filterMap fun ((static, k), init) =>
     if static then none else some (k, init)
-  unless fields.isEmpty do
-    modifyObj c fun o => { o with code := some (derivedCtorCode env ctor fields).1 }
-  initSelf env self name (.obj c)
-  pure (.obj c)
+  (if fields.isEmpty then pure () else
+    modifyObj c fun o => { o with code := some (derivedCtorCode ctorEnv ctor fields).1 }) >>= fun _ => do
+    initSelf env self name (.obj c)
+    initStatic c keys
+    pure (.obj c)
 
 /-- Check and invoke the superclass selected before evaluating the super arguments.
 The caller retains the original new target through every superclass dispatch. -/
@@ -238,6 +254,42 @@ def arrayObject (vs : List Val) : Obj :=
   let items := vs.zipIdx.map fun (v, i) => (PropertyKey.str (toString i), Property.data v true true true)
   { proto := some arrayProto, array := true,
     props := items ++ [(PropertyKey.str "length", Property.data (.num (Float.ofNat vs.length)) true false false)] }
+
+/-- A newly entered strict constructor has a fresh unmapped arguments object with dense own
+indices, length and the intrinsic array-values iterator. Only its iterator's next method is
+a mutable external lookup. Leave a changed descriptor to general iterator semantics. -/
+def forwardFreshArguments (args : List Val) : M W (List Val) := do
+  match (← getObj arrayIteratorProto).props.lookup (.str "next") with
+  | some (.data (.host "ArrayIterator.prototype.next") ..) => pure args
+  | _ => unknown "arguments spread uses a modified array iterator"
+
+/-- Start at the home object's current prototype. Any accessor uses the receiver retained by the reference. -/
+def getSuperProp (call : Call W) (home : Option Addr) (receiver key : Val) : M W Val := do
+  let some home := home | unknown "super property requires a home object"
+  let key ← toKey key
+  let obj ← getObj home
+  match obj.proto with
+  | some parent => getFrom call parent receiver key
+  | none => throwErr .type "cannot read properties of null super base"
+
+/-- Pair each field with its evaluated key. Blocks and fields share one source-order
+sequence. A block runs as a private arrow to give it its own var scope and inherit
+the class receiver and home object. No field key is consumed for a block. -/
+def staticInitializers : List ClassMember → List (Bool × PropertyKey) → List (Option PropertyKey × Expr)
+  | [], _ => []
+  | .field static _ init :: ms, (_, key) :: ks =>
+      (if static then [(some key, init)] else []) ++ staticInitializers ms ks
+  | .field .. :: ms, [] => staticInitializers ms []
+  | .staticBlock body :: ms, keys => (none, .call (.func body) []) :: staticInitializers ms keys
+  | _ :: ms, keys => staticInitializers ms keys
+
+def evalStaticInitializers (eval : Expr → M W Val) (target : Addr) :
+    List (Option PropertyKey × Expr) → M W Unit
+  | [] => pure ()
+  | (key, init) :: rest =>
+    eval init >>= fun value =>
+      (match key with | some key => createData target key value | none => pure ()) >>= fun _ =>
+        evalStaticInitializers eval target rest
 
 mutual
 
@@ -266,8 +318,8 @@ def evalExpr : Nat → Env → Expr → M W Val
     | .arrWithSpread _ => unknown "array spread requires iterator semantics"
     | .cls name self ctor members => do
       let env ← selfScope env self name
-      let closed := env.capture (ctor.free ++ freeMembers members)
       let proto ← alloc { proto := some objectProto, props := [] }
+      let closed := { env with home := some proto }.capture (ctor.free ++ freeMembers members)
       let c ← alloc {
         proto := some functionProto, code := some (.closure ctor closed []),
         props := [("length", .data (.num (Float.ofNat ctor.length)) false false true),
@@ -279,19 +331,22 @@ def evalExpr : Nat → Env → Expr → M W Val
       let perInstance := fields.filterMap fun ((static, k), init) => if static then none else some (k, init)
       modifyObj c fun o => { o with code := some (.closure ctor closed perInstance) }
       initSelf env self name (.obj c)
-      evalFields n { env with this := .obj c } c
-        (fields.filterMap fun ((static, k), init) => if static then some (k, init) else none)
+      evalStaticInitializers (evalExpr n { env with this := .obj c, home := some c }) c
+        (staticInitializers members keys)
       pure (.obj c)
     | .derived name self parent members ctor => do
-      if hasStaticField members then unknown "static fields on derived classes" else do
       let env ← selfScope env self name
       let base ← evalExpr n env parent
       let parents ← classParents (callFn n) base
-      finishDerived (evalMembers n) env name self members parents ctor
+      finishDerived (evalMembers n) env name self members parents ctor fun c keys =>
+        evalStaticInitializers (evalExpr n { env with this := .obj c, home := some c }) c
+          (staticInitializers members keys)
     | .get o k => do
       let base ← evalExpr n env o
       let key ← evalExpr n env k
       getProp (callFn n) base key
+    | .getSuper k => do
+      getSuperProp (callFn n) env.home env.this (← evalExpr n env k)
     | .getOptional o k => do
       let base ← evalExpr n env o
       if !(← lift (shortCircuits .nullish base)) then pure .undef else do
@@ -339,6 +394,11 @@ def evalExpr : Nat → Env → Expr → M W Val
       let key ← evalExpr n env k
       let callee ← getProp (callFn n) base key
       callFn n callee base (← evalArgs n env args)
+    | .callSuper k args optional => do
+      let callee ← getSuperProp (callFn n) env.home env.this (← evalExpr n env k)
+      if optional then
+        if !(← lift (shortCircuits .nullish callee)) then return .undef
+      callFn n callee env.this (← evalArgs n env args)
     | .callOptionalReceiver o k args => do
       let base ← evalExpr n env o
       if !(← lift (shortCircuits .nullish base)) then pure .undef else do
@@ -399,12 +459,15 @@ def evalProps : Nat → Env → Addr → List PropDef → M W Unit
     | .init k v =>
       let key ← toKey (← evalExpr n env k)
       createData a key (← evalExpr n env v)
+    | .method k f =>
+      let key ← toKey (← evalExpr n env k)
+      createData a key (← makeFunc { env with home := some a } f)
     | .getter k f =>
       let key ← toKey (← evalExpr n env k)
-      defineOwn a key { get := some (← makeFunc env f), enumerable := some true, configurable := some true }
+      defineOwn a key { get := some (← makeFunc { env with home := some a } f), enumerable := some true, configurable := some true }
     | .setter k f =>
       let key ← toKey (← evalExpr n env k)
-      defineOwn a key { set := some (← makeFunc env f), enumerable := some true, configurable := some true }
+      defineOwn a key { set := some (← makeFunc { env with home := some a } f), enumerable := some true, configurable := some true }
     | .spread source => copySpread (callFn n) a (← evalExpr n env source)
     | .proto v =>
       match ← evalExpr n env v with
@@ -425,17 +488,18 @@ def evalMembers : Nat → Env → Addr → Addr → List ClassMember → M W (Li
       | .method static k f => do
         let key ← toKey (← evalExpr n env k)
         defineOwn (home static) key
-          { value := some (← makeFunc env f), writable := some true, enumerable := some false, configurable := some true }
+          { value := some (← makeFunc { env with home := some (home static) } f), writable := some true, enumerable := some false, configurable := some true }
         pure none
       | .getter static k f => do
         let key ← toKey (← evalExpr n env k)
-        defineOwn (home static) key { get := some (← makeFunc env f), enumerable := some false, configurable := some true }
+        defineOwn (home static) key { get := some (← makeFunc { env with home := some (home static) } f), enumerable := some false, configurable := some true }
         pure none
       | .setter static k f => do
         let key ← toKey (← evalExpr n env k)
-        defineOwn (home static) key { set := some (← makeFunc env f), enumerable := some false, configurable := some true }
+        defineOwn (home static) key { set := some (← makeFunc { env with home := some (home static) } f), enumerable := some false, configurable := some true }
         pure none
       | .field static k _ => do pure (some (static, ← toKey (← evalExpr n env k)))
+      | .staticBlock _ => pure none
     pure (field.toList ++ (← evalMembers n env proto c ms))
 
 /-- Fields, in order, on the object at `a`: each initializer runs in `env`, whose `this` is that object. -/
@@ -488,15 +552,17 @@ def constructTarget : Nat → Val → Val → List Val → M W Val
         initDerivedFields (evalFields n) closed receiver fields
         pure receiver
       | some (.derivedBody before superArgs body closed fields) => do
-        let env ← enterFunction (derivedScope before body) closed .undef args
+        let captured := capturesDerivedReceiver before superArgs
+        let env ← enterFunction (derivedScope before body captured) closed .undef args
         match ← execStmts n env before with
         | .normal => do
           let parent := (← getObj a).proto
-          let argv ← evalArgs n env superArgs
+          let argv ← superArgs.elim (forwardFreshArguments args) (evalArgs n env)
           -- ECMA-262 selects the superclass before evaluating arguments. V8 can select it after.
           if (← getObj a).proto != parent then unknown "superclass changed while evaluating super arguments"
           else do
             let receiver ← constructParent (constructTarget n newTarget) parent argv
+            initCapturedReceiver env receiver captured
             initDerivedFields (evalFields n) closed receiver fields
             match ← execStmts n { env with this := receiver } body.body with
             | .ret (.obj r) => pure (.obj r)
@@ -538,6 +604,23 @@ def constructTarget : Nat → Val → Val → List Val → M W Val
     | .host name => unknown s!"host value {name} is constructed"
     | _ => throwErr .type "not a constructor"
 
+def bindPattern : Nat → Env → DeclKind → BindingPattern → Val → M W Unit
+  | 0, _, _, _, _ => outOfFuel
+  | _ + 1, env, kind, .name x, value => if kind == .var then writeVar env x value else initVar env x value
+  | n + 1, env, kind, .object props, value =>
+    -- RequireObjectCoercible runs before even the first computed key, including
+    -- when the pattern has no properties.
+    match value with
+    | .undef | .null => throwErr .type "cannot destructure undefined or null"
+    | _ =>
+      props.forM fun (key, field) => do
+        let key ← evalExpr n env key
+        let v ← getProp (callFn n) value key
+        bindPattern n env kind field v
+  | n + 1, env, kind, .defaultValue target init, value => do
+    let v ← if let .undef := value then evalExpr n env init else pure value
+    bindPattern n env kind target v
+
 def execStmt : Nat → Env → Stmt → M W Flow
   | 0, _, _ => outOfFuel
   | n + 1, env, s =>
@@ -551,15 +634,18 @@ def execStmt : Nat → Env → Stmt → M W Flow
     | .decl _ x e => do
       initVar env x (← evalExpr n env e)
       pure .normal
+    | .bind kind pattern e => do
+      bindPattern n env kind pattern (← evalExpr n env e)
+      pure .normal
     | .varDecl _ | .funDecl _ => pure .normal
     | .ret e => .ret <$> evalExpr n env e
     | .ite c t e => do
       if ← lift (toBoolean (← evalExpr n env c)) then execStmt n env t else execStmt n env e
     | .block ss => do execStmts n (← enterBlock env ss) ss
     | .loop init test update body => do
-      let env ← enterBlock env [init]
-      let _ ← execStmt n env init
-      let fresh := (lexDecls [init]).filterMap fun (x, mutable) => if mutable then some x else none
+      let env ← enterBlock env init
+      let _ ← execStmts n env init
+      let fresh := (lexDecls init).filterMap fun (x, mutable) => if mutable then some x else none
       loop n (← copyBindings env fresh) fresh test update body
     | .brk => pure .brk
     | .cont => pure .cont
