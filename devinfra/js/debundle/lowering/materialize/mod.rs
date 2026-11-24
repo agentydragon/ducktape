@@ -1089,7 +1089,7 @@ pub(super) fn finish_logical_chunk(
             gate::CandidatePreflight::prepare(&assignment_analysis, &placement_projection),
             &analysis.facts,
         )?;
-        let assessment = evaluation.candidate_assessment().report();
+        let assessment = evaluation.into_candidate_assessment();
         return Ok(FinishedLogicalChunk::Assessed {
             chunk_id: chunk_id.to_string(),
             assessment: Box::new(assessment),
@@ -1863,18 +1863,17 @@ fn emit_reports_and_resolve_gate<'a>(
                 full_graphs: graph_reports.enabled(),
             },
         )?;
-        let candidate_assessment = evaluation.candidate_assessment();
         write_chunk_report_json(
             report_out_dir,
             chunk_id,
             EFFECT_TRANSLATION_VALIDATION_REPORT,
-            &candidate_assessment.effect.report,
+            evaluation.effect_validation(),
         )?;
         write_chunk_report_json(
             report_out_dir,
             chunk_id,
             CANDIDATE_RELOCATION_ASSESSMENT_REPORT,
-            &candidate_assessment.report(),
+            evaluation.candidate_assessment(),
         )?;
         if graph_reports.enabled() {
             let mut dependency_graph_report = assignment_analysis.dependency_graph_report(

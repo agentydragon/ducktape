@@ -21,10 +21,10 @@ use crate::esm_schedule::{EsmImportSchedule, ImportScheduleError};
 use crate::realizability::CrossRebindEdge;
 use crate::realizability::{
     CandidateEmittedOrder, EffectConflictDiagnosticRow, EffectRelocationAssessment,
-    EffectTranslationValidationInputs, EffectTranslationValidationResult, RealizabilityVerdict,
-    SccRejection, TranslationValidationEvidenceReport, TranslationValidationReport,
-    TranslationValidationResult, check_realizability_with_schedule, effect_translation_assess,
-    translation_validate,
+    EffectTranslationValidationInputs, EffectTranslationValidationReport,
+    EffectTranslationValidationResult, RealizabilityVerdict, SccRejection,
+    TranslationValidationEvidenceReport, TranslationValidationReport, TranslationValidationResult,
+    check_realizability_with_schedule, effect_translation_assess, translation_validate,
 };
 use crate::validation::{
     AssignmentReport, AssignmentValidation, validate_assignment_with_priority,
@@ -209,17 +209,18 @@ impl<'a> CandidatePreflight<'a> {
                 )?
             }
         };
-        let candidate_assessment = CandidateRelocationAssessment {
-            placement: self.placement,
-            effect,
-        };
+        let candidate_assessment = CandidateRelocationAssessmentReport::new(
+            self.placement,
+            effect.assessment,
+            effect.report.legacy_gate_accepts,
+        );
         if let Some(audit) = audit {
             audit.finish(TvAuditRecord {
                 argv: std::env::args().collect(),
                 chunk_id: self.assignment_analysis.inputs.chunk_id(),
                 translation_validation: &translation_validation.report,
-                candidate: candidate_assessment.report(),
-                effect: &candidate_assessment.effect.report,
+                candidate: &candidate_assessment,
+                effect: &effect.report,
             });
         }
         Ok(CandidateEvaluation {
@@ -227,6 +228,7 @@ impl<'a> CandidatePreflight<'a> {
             legacy_validation: self.legacy_validation,
             translation_validation,
             candidate_assessment,
+            effect_validation: effect.report,
         })
     }
 }
@@ -240,7 +242,8 @@ pub struct CandidateEvaluation<'a> {
     assignment_analysis: &'a AssignmentAnalysis,
     legacy_validation: AssignmentValidation,
     translation_validation: TranslationValidationResult,
-    candidate_assessment: CandidateRelocationAssessment,
+    candidate_assessment: CandidateRelocationAssessmentReport,
+    effect_validation: EffectTranslationValidationReport,
 }
 
 impl<'a> CandidateEvaluation<'a> {
@@ -261,8 +264,16 @@ impl<'a> CandidateEvaluation<'a> {
         &self.translation_validation
     }
 
-    pub fn candidate_assessment(&self) -> &CandidateRelocationAssessment {
+    pub fn candidate_assessment(&self) -> &CandidateRelocationAssessmentReport {
         &self.candidate_assessment
+    }
+
+    pub fn into_candidate_assessment(self) -> CandidateRelocationAssessmentReport {
+        self.candidate_assessment
+    }
+
+    pub fn effect_validation(&self) -> &EffectTranslationValidationReport {
+        &self.effect_validation
     }
 
     pub fn into_validation(self) -> Result<ValidatedAssignment<'a>, RejectedAssignment<'a>> {
@@ -351,15 +362,6 @@ pub struct SemanticOrderSccObligation {
     pub dependency_edges: Vec<usize>,
 }
 
-/// A same-assignment candidate result. The effect assessment and its report
-/// are retained together from one sweep, beside typed structural placement
-/// obligations derived from the validation that admitted this exact analysis.
-#[derive(Debug, Clone)]
-pub struct CandidateRelocationAssessment {
-    pub placement: StructuralPlacementAssessment,
-    pub effect: EffectTranslationValidationResult,
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct CandidateRelocationAssessmentReport {
     #[serde(flatten)]
@@ -384,22 +386,26 @@ pub enum CandidateRelocationStatus {
     AcceptedWithinCheckedScope,
 }
 
-impl CandidateRelocationAssessment {
-    pub fn report(&self) -> CandidateRelocationAssessmentReport {
+impl CandidateRelocationAssessmentReport {
+    fn new(
+        placement: StructuralPlacementAssessment,
+        effect: EffectRelocationAssessment,
+        legacy_gate_accepts: bool,
+    ) -> Self {
         let effect_blocked = matches!(
-            self.effect.assessment.decision,
+            effect.decision,
             crate::realizability::EffectRelocationDecision::Conflict { .. }
         );
         let effect_accepted = matches!(
-            self.effect.assessment.decision,
+            effect.decision,
             crate::realizability::EffectRelocationDecision::Accepted { .. }
         );
         CandidateRelocationAssessmentReport {
-            status: candidate_relocation_status(effect_blocked, effect_accepted, &self.placement),
-            legacy_gate_accepts: self.effect.report.legacy_gate_accepts,
-            legacy_gate_ordering_veto: has_legacy_gate_ordering_veto(&self.placement),
-            effect: self.effect.assessment.clone(),
-            placement: self.placement.clone(),
+            status: candidate_relocation_status(effect_blocked, effect_accepted, &placement),
+            legacy_gate_accepts,
+            legacy_gate_ordering_veto: has_legacy_gate_ordering_veto(&placement),
+            effect,
+            placement,
         }
     }
 }
@@ -831,7 +837,7 @@ struct TvAuditRecord<'a> {
     argv: Vec<String>,
     chunk_id: &'a str,
     translation_validation: &'a TranslationValidationReport,
-    candidate: CandidateRelocationAssessmentReport,
+    candidate: &'a CandidateRelocationAssessmentReport,
     effect: &'a crate::realizability::EffectTranslationValidationReport,
 }
 
