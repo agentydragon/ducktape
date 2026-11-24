@@ -149,10 +149,14 @@ The [Rust ownership subset](../../../../excalidraw/editor_smoke_subset.json) lis
 the retained names. See the [recovery notes](recovery.md) for the candidate
 selection, remaining blockers and checked placements.
 To change the placement, edit the subset's module paths and readable member names.
-Rust resolves selectors in the full spec before applying the subset. Unselected
-units stay in the entry; selected owners retain their relative import priority.
-The Rust apply target can emit this split. Its graph output gives Lean the same
-unit owners and execution order through the same adapter as the full authored replay.
+Rust's `spec resolve-placement` solves selectors in the full spec before applying
+the subset. It exports the source hash, one requested owner per source unit,
+and the author's import priority. The browser test checks the source hash and
+compares each selected owner with the full resolution. Unselected units stay in
+the entry. Lean builds the module graph, derives its evaluation order and
+certifies the resulting JavaScript trees. The browser test does not consume a
+Rust safety verdict or a schedule from the Rust emitter. The authored replay
+above remains a separate comparison with the Rust emitter.
 
 ```sh
 p=//devinfra/js/debundle/x/split_proof/integration/excalidraw

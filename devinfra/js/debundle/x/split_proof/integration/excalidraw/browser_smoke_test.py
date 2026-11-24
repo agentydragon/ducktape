@@ -3,6 +3,7 @@
 # gazelle:include_dep //testing/frontend_visual:fixtures
 
 import asyncio
+import hashlib
 import json
 import os
 import subprocess
@@ -49,22 +50,24 @@ def editor_source(runfiles: Runfiles) -> Path:
 
 
 def certify_editor_split(runfiles: Runfiles, source: Path, origin: str) -> dict[str, Path]:
-    placement = json.loads(resolve(runfiles, os.environ["EDITOR_LEAN_SPEC"]).read_text())
-    # Use esbuild's public entry URL. Keep every Rust unit assignment and the
-    # validated execution order from the selected graph.
-    modules = placement["modules"]
-    canonical = json.loads(resolve(runfiles, os.environ["CANONICAL_EDITOR_SPEC"]).read_text())
-    assert placement["entry"] == canonical["entry"]
-    assert {unit for units in modules.values() for unit in units} == {
-        unit for units in canonical["modules"].values() for unit in units
-    }
-    for owner, units in modules.items():
-        if owner != placement["entry"]:
-            assert set(units) <= set(canonical["modules"][owner]), owner
-    assert source.name not in modules
-    assert source.read_bytes() == (bundled_file(runfiles, "EXCALIDRAW_INPUTS", "chunks") / "editor.js").read_bytes()
-    modules[source.name] = modules.pop(placement["entry"])
-    placement["entry"] = source.name
+    canonical = json.loads(resolve(runfiles, os.environ["CANONICAL_PLACEMENT"]).read_text())
+    selected = json.loads(resolve(runfiles, os.environ["SELECTED_PLACEMENT"]).read_text())
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    assert selected["chunk_id"] == canonical["chunk_id"] == "editor"
+    assert selected["source_sha256"] == canonical["source_sha256"] == digest
+
+    # Lean plans the links and evaluation order. Rust supplies only the
+    # requested source-unit ownership and the author's import priority.
+    paths = [owner + ".mjs" for owner in selected["import_order"]]
+    assert source.name not in paths
+    assert len(paths) == len(set(paths))
+    modules: dict[str, list[str]] = {name: [] for name in [source.name, *paths]}
+    for ordinal, (unit, full) in enumerate(zip(selected["units"], canonical["units"], strict=True)):
+        assert unit["ordinal"] == full["ordinal"] == ordinal
+        owner = unit["owner"]
+        assert owner is None or owner == full["owner"], (ordinal, owner, full["owner"])
+        modules[source.name if owner is None else owner + ".mjs"].append(f"#{ordinal}")
+    placement = {"entry": source.name, "modules": modules, "order": paths}
     artifacts = undeclared_outputs_dir()
     (artifacts / "browser-origin.txt").write_text(f"{origin}\n")
     spec = artifacts / "placement.json"

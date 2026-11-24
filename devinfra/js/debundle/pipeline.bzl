@@ -63,6 +63,23 @@ def _debundle_apply_impl(ctx):
         output_groups["dependency_graphs"] = depset([graphs_dir])
     return [DefaultInfo(files = depset([out_dir])), OutputGroupInfo(**output_groups)]
 
+def _resolve_placement_impl(ctx):
+    out = ctx.actions.declare_file(ctx.label.name + ".json")
+    plan = _spec_plan(ctx)
+    subset = ctx.file.ownership_subset
+    _run_debundler(
+        ctx,
+        inputs = depset(ctx.files.ownership_subset, transitive = [plan.inputs]),
+        outputs = [out],
+        args = ["spec", "resolve-placement"] +
+               _spec_args(ctx, plan, ctx.label.name + ".unused") + plan.package_args +
+               ["--chunk", shell.quote(ctx.attr.chunk), "--out", shell.quote(out.short_path)] +
+               (["--ownership-subset", _shell_source_path(subset.path)] if subset else []),
+        mnemonic = "DebundleResolvePlacement",
+        progress = "Resolving authored source-unit owners for %{label}",
+    )
+    return [DefaultInfo(files = depset([out]))]
+
 def _debundle_analysis_impl(ctx):
     if ctx.attr.analysis_threads < 0:
         fail("analysis_threads must be nonnegative, got {}".format(ctx.attr.analysis_threads))
@@ -370,6 +387,20 @@ _COMMON_ATTRS = {
         doc = "Vendor package roots: label of the package's `:dir` filegroup -> package name. The first file's dirname is passed as `--package-root <name>=<dir>`.",
     ),
 }
+
+debundle_resolve_placement = rule(
+    implementation = _resolve_placement_impl,
+    attrs = dict(_COMMON_ATTRS, **{
+        "chunk": attr.string(mandatory = True),
+        "debundler": attr.label(
+            executable = True,
+            cfg = "exec",
+            default = Label("//devinfra/js/debundle:debundler"),
+        ),
+        "ownership_subset": attr.label(allow_single_file = [".json"]),
+    }),
+    doc = "Export selector-resolved unit ownership for one chunk, before analysis, scheduling, gates or emission.",
+)
 
 debundle_analysis = rule(
     implementation = _debundle_analysis_impl,

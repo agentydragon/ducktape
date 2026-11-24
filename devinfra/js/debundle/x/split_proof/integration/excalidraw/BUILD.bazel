@@ -60,22 +60,9 @@ js_run_binary(
     tool = ":generate_excalidraw_lean_specs",
 )
 
-_SMOKE_GRAPHS = "//devinfra/js/debundle/excalidraw:editor_smoke_graphs"
+_SELECTED_PLACEMENT = "//devinfra/js/debundle/excalidraw:selected_editor_placement"
 
-_SMOKE_EDITOR_SPEC = "smoke_lean_spec/editor.json"
-
-js_run_binary(
-    name = "editor_smoke_placement",
-    testonly = True,
-    srcs = [_SMOKE_GRAPHS],
-    outs = [_SMOKE_EDITOR_SPEC],
-    args = [
-        "$(execpath " + _SMOKE_GRAPHS + ")",
-        "$(RULEDIR)/smoke_lean_spec",
-        "editor",
-    ],
-    tool = ":generate_excalidraw_lean_specs",
-)
+_CANONICAL_PLACEMENT = "//devinfra/js/debundle/excalidraw:canonical_editor_placement"
 
 js_test(
     name = "excalidraw_lean_specs_test",
@@ -191,15 +178,15 @@ py_test(
         "test_certified_editor_split",
     ],
     data = _EXCALIDRAW_BROWSER_DATA + [
-        ":" + _EXCALIDRAW_EDITOR_SPEC,
-        ":" + _SMOKE_EDITOR_SPEC,
+        _CANONICAL_PLACEMENT,
+        _SELECTED_PLACEMENT,
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
     ],
     env = dict(
         _EXCALIDRAW_BROWSER_ENV,
-        CANONICAL_EDITOR_SPEC = "$(rlocationpath :" + _EXCALIDRAW_EDITOR_SPEC + ")",
-        EDITOR_LEAN_SPEC = "$(rlocationpath :" + _SMOKE_EDITOR_SPEC + ")",
+        CANONICAL_PLACEMENT = "$(rlocationpath " + _CANONICAL_PLACEMENT + ")",
         LOWERSPLIT = "$(rlocationpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+        SELECTED_PLACEMENT = "$(rlocationpath " + _SELECTED_PLACEMENT + ")",
     ),
     main = _EXCALIDRAW_BROWSER_PY,
     deps = _EXCALIDRAW_BROWSER_DEPS,
