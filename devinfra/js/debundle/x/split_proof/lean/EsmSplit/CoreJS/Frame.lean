@@ -400,6 +400,8 @@ theorem allocOnly_keeps (n : Nat) :
     · cases e <;> try simp only [Expr.allocOnly, Bool.false_eq_true] at he
       all_goals try unfold evalExpr
       case undef | null | bool | num | str | host | this => exact (inert_pure _).keeps hb
+      case regexp data =>
+        exact keeps_bind (alloc_keeps (regexpObject data) hb) fun a _ _ h => (inert_pure (Val.obj a)).keeps h
       case var x => exact (inert_readVar env x).keeps hb
       case unary op operand =>
         simp only [Bool.and_eq_true] at he

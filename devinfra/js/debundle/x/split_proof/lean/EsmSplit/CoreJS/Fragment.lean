@@ -38,6 +38,9 @@ mutual
 /-- An expression that only allocates: a literal, a name, a function, an object literal of named data properties, an array literal of such expressions, a plain class, or a supported unary operation. -/
 def Expr.allocOnly : Expr → Bool
   | .undef | .null | .bool _ | .num _ | .str _ | .var _ | .host _ | .this | .func _ => true
+  -- The literal allocates with the realm's intrinsic prototype. It reads no
+  -- ambient constructor or prototype properties.
+  | .regexp _ => true
   | .unary op operand => localUnaryOperand op operand && operand.allocOnly
   | .obj props => allocOnlyProps props
   | .arr elems => allocOnlyAll elems
