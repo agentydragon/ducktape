@@ -92,4 +92,7 @@ const forwarded = sequentialSplit(
   { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3", "#4"] },
   ["base.mjs"]
 );
-assertCertifiedResult(forwarded, [[false, "empty", true], [true, 8, true]]);
+assertCertifiedResult(forwarded, [
+  [false, "empty", true],
+  [true, 8, true],
+]);
