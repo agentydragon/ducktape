@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use analysis::{DependencyGraphReport, ModuleDestinationKind, StatementKind};
-use anonymous_resolution::{resolve_source_claims, resolve_source_file};
+use anonymous_resolution::resolve_source_file;
 use anyhow::{Context, Result, anyhow, bail};
 use peel::assignment::{AssignmentProblem, SourceUnitAssignment, accepted};
 use spec::{LogicalModule, ModulePath, is_residual_namespace_path};
@@ -19,8 +19,7 @@ use crate::binding::{
 use crate::candidate_assessment::ResolvedCandidateEffectAssessment;
 use crate::edit_gate::{
     Gate, ProjectedBindingKind, SourceUnitClaimProjection, SourceUnitModuleAssignments,
-    post_edit_spec_from_docs, project_source_unit_claims, source_claim_sets_from_post_spec,
-    source_unit_module_assignments_from_projection,
+    post_edit_spec_from_docs, resolve_edit_claims, source_unit_module_assignments_from_projection,
 };
 use crate::outcome::{GateOutcome, MutationAction, MutationOutcome, MutationVerb};
 
@@ -144,21 +143,15 @@ pub fn run_source_unit_apply(
     }
     let mut docs = original_docs.clone();
     let initial_spec = post_edit_spec_from_docs(&original_docs, &BTreeSet::new())?;
-    let claim_sets = source_claim_sets_from_post_spec(&initial_spec);
-    let resolved = command_diagnostics::run(stderr, |diagnostics| {
-        resolve_source_claims(
-            anonymous_resolution::SourceClaimsContext {
-                graph: dependency_graph,
-                dependency_graph_path,
-                modules_root,
-                source_root: Some(source_root),
-                source_context,
-                diagnostics,
-            },
-            &claim_sets,
-        )
-    })?;
-    let claim_projection = project_source_unit_claims(&graph_input, &initial_spec, &resolved)?;
+    let (resolved, claim_projection) = resolve_edit_claims(
+        stderr,
+        &graph_input,
+        dependency_graph_path,
+        modules_root,
+        Some(source_root),
+        source_context,
+        &initial_spec,
+    )?;
     let current_source_unit_modules = source_unit_module_assignments_from_projection(
         dependency_graph,
         modules_root,
