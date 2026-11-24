@@ -24,21 +24,12 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class Resolved:
-    """A resolved entity reference: guaranteed-valid (id, name) pair."""
-
-    id: int
-    name: str
-
-
-@dataclass(frozen=True)
 class ResolvedQU:
     """A resolved QU reference with optional conversion to stock QU."""
 
-    id: int
     name: str
-    stock_qu_id: int
-    stock_qu_name: str
+    stock_qu_name: str | None
+    """Stock unit when the input unit differs, including one-to-one conversions."""
     conversion_factor: float
     """Factor to multiply input amount by to get stock QU amount.
     1.0 when the input QU is the stock QU."""
@@ -49,12 +40,12 @@ def _entity_name(by_id: dict[int, dict[str, Any]], entity_id: int) -> str:
     return str(row["name"]) if row else f"id={entity_id}"
 
 
-def resolve_entity_ref(entity_type: EntityType, ref: int | str, by_id: dict[int, dict[str, Any]]) -> Resolved:
+def resolve_entity_id(entity_type: EntityType, ref: int | str, by_id: dict[int, dict[str, Any]]) -> int:
     """Resolve against the supplied rows, using the same names and suggestions as the HTTP client."""
     entity_label = entity_type.name.lower().replace("_", " ")
     if isinstance(ref, int):
-        if (row := by_id.get(ref)) is not None:
-            return Resolved(id=int(row["id"]), name=str(row["name"]))
+        if ref in by_id:
+            return ref
         all_names = sorted({str(row["name"]) for row in by_id.values()})
         raise ValueError(f"No {entity_label} with id={ref}. Available: {all_names}")
 
@@ -66,8 +57,8 @@ def resolve_entity_ref(entity_type: EntityType, ref: int | str, by_id: dict[int,
                 "duplicate %s name %r (IDs: %d, %d)", entity_label, row["name"], by_name[name_lower]["id"], row["id"]
             )
         by_name[name_lower] = row
-    if (row := by_name.get(ref.lower())) is not None:
-        return Resolved(id=int(row["id"]), name=str(row["name"]))
+    if (match := by_name.get(ref.lower())) is not None:
+        return int(match["id"])
 
     close = get_close_matches(ref.lower(), list(by_name), n=5, cutoff=0.4)
     suggestions = [str(by_name[match]["name"]) for match in close]
@@ -77,12 +68,7 @@ def resolve_entity_ref(entity_type: EntityType, ref: int | str, by_id: dict[int,
 
 
 class GrocyClient(httpx2.AsyncClient):
-    """HTTP client plus Grocy-specific entity operations.
-
-    Entity methods use collision-safe names rather than a separate resolver
-    namespace: ``get_entity`` remains distinct from the inherited HTTP
-    ``get`` method, for example.
-    """
+    """HTTP client for Grocy entities, stock units, and conversions."""
 
     async def entities_by_id(self, entity_type: EntityType) -> dict[int, dict[str, Any]]:
         response = await self.get(f"/objects/{entity_type}")
@@ -90,18 +76,10 @@ class GrocyClient(httpx2.AsyncClient):
         rows: list[dict[str, Any]] = response.json()
         return {int(row["id"]): row for row in rows}
 
-    async def resolve_entity(self, entity_type: EntityType, ref: int | str) -> Resolved:
-        """Resolve an ID or name to a validated ``(id, name)`` pair."""
-        return resolve_entity_ref(entity_type, ref, await self.entities_by_id(entity_type))
-
-    async def entity_name(self, entity_type: EntityType, entity_id: int) -> str:
-        """Look up a name by ID, returning ``id=N`` when it is absent."""
-        return _entity_name(await self.entities_by_id(entity_type), entity_id)
-
-    async def get_entity(self, entity_type: EntityType, entity_id: int) -> dict[str, Any] | None:
-        """Return one raw entity row by ID."""
-        by_id = await self.entities_by_id(entity_type)
-        return by_id.get(entity_id)
+    async def resolve_entity(self, entity_type: EntityType, ref: int | str) -> dict[str, Any]:
+        """Return the full catalog row for an ID or case-insensitive name."""
+        rows = await self.entities_by_id(entity_type)
+        return rows[resolve_entity_id(entity_type, ref, rows)]
 
     async def entity_name_map(self, entity_type: EntityType) -> dict[int, str]:
         """Return ``{id: name}`` for an entity type."""
@@ -114,29 +92,21 @@ class GrocyClient(httpx2.AsyncClient):
         rows: list[dict[str, Any]] = response.json()
         return rows
 
-    async def resolve_qu_for_product(self, qu_ref: int | str, product_id: int) -> ResolvedQU:
+    async def resolve_qu_for_product(self, qu_ref: int | str | None, product: dict[str, Any]) -> ResolvedQU:
         """Resolve a QU and validate or convert it for a product's stock QU."""
         units = await self.entities_by_id(EntityType.QUANTITY_UNIT)
-        resolved = resolve_entity_ref(EntityType.QUANTITY_UNIT, qu_ref, units)
-        product = await self.get_entity(EntityType.PRODUCT, product_id)
-        if product is None:
-            raise ValueError(f"Product id={product_id} not found")
-
         stock_qu_id = int(product["qu_id_stock"])
         stock_qu_name = _entity_name(units, stock_qu_id)
-        if resolved.id == stock_qu_id:
-            return ResolvedQU(
-                id=resolved.id,
-                name=resolved.name,
-                stock_qu_id=stock_qu_id,
-                stock_qu_name=stock_qu_name,
-                conversion_factor=1.0,
-            )
+        unit_id = stock_qu_id if qu_ref is None else resolve_entity_id(EntityType.QUANTITY_UNIT, qu_ref, units)
+        if unit_id == stock_qu_id:
+            return ResolvedQU(name=stock_qu_name, stock_qu_name=None, conversion_factor=1.0)
 
+        unit_name = str(units[unit_id]["name"])
+        product_id = int(product["id"])
         conversions = await self._fetch_conversions()
         factor: float | None = None
         for conversion in conversions:
-            if int(conversion["from_qu_id"]) != resolved.id or int(conversion["to_qu_id"]) != stock_qu_id:
+            if int(conversion["from_qu_id"]) != unit_id or int(conversion["to_qu_id"]) != stock_qu_id:
                 continue
             conversion_product_id = conversion.get("product_id")
             if conversion_product_id is not None and int(conversion_product_id) == product_id:
@@ -146,13 +116,7 @@ class GrocyClient(httpx2.AsyncClient):
                 factor = float(conversion["factor"])
 
         if factor is not None:
-            return ResolvedQU(
-                id=resolved.id,
-                name=resolved.name,
-                stock_qu_id=stock_qu_id,
-                stock_qu_name=stock_qu_name,
-                conversion_factor=factor,
-            )
+            return ResolvedQU(name=unit_name, stock_qu_name=stock_qu_name, conversion_factor=factor)
 
         available_from_qus: set[str] = set()
         for conversion in conversions:
@@ -165,7 +129,7 @@ class GrocyClient(httpx2.AsyncClient):
 
         product_name = str(product["name"])
         raise ValueError(
-            f"No conversion from {resolved.name!r} to stock QU {stock_qu_name!r} "
+            f"No conversion from {unit_name!r} to stock QU {stock_qu_name!r} "
             f"for product {product_name!r}. "
             f"Use qu: {stock_qu_name!r} directly"
             + (f", or one of: {sorted(available_from_qus)}" if available_from_qus else "")
