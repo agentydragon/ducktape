@@ -263,11 +263,11 @@
               >
               <${Text} my="sm" size="sm"
                 >Exact tested merges show that all 16 heads used sparse checkout
-                and the Nix launcher. Fifteen installed
+                and the Nix launcher. Fifteen installed ${" "}
                 <${Code}>.#precommit<//>. Only the Rustfmt proposal's own check
                 installed <${Code}>.#precommit-ci<//>. Excluding that head
                 raises the opening-green median to 353 s. The direct installer
-                and the combined scanner proposal had yet to roll out.
+                and the combined scanner proposal had yet to roll out.${" "}
                 ${pr(19578)} · ${pr(19640)} · ${pr(19653)}<//
               >
               ${disclosure(
@@ -331,9 +331,9 @@
                 >Pre-commit finished a median of 173.5 s after the next gate on
                 those ten heads. Setup took a median of 368 s and hooks took 15
                 s. Nix installation took 3.79 s and the evaluation and
-                realization plan took 17.49 s. From the compiler copy
-                announcement to dependent Rustfmt or the stream error took a
-                median of 335.44 s. Rustfmt skipped on all ten heads.<//
+                realization plan took 17.49 s. The interval from the compiler
+                copy announcement to the dependent Rustfmt copy or stream error
+                was 335.44 s at the median. Rustfmt skipped on all ten heads.<//
               >
               ${table(
                 [
@@ -356,19 +356,19 @@
                 ordinary PR and independent full replay reported HTTP/2 framing
                 errors for the same pinned Rust compiler stream within 13 ms of
                 each other in the restart second. The memory measurements do not
-                identify which operations consumed that memory.
-                ${job(45299462842, 138128057878, "Ordinary pre-commit log")} ·
-                ${job(45299454803, 138128032136, "Full replay log")}<//
+                identify which operations consumed that memory.${" "}
+                ${job(45299462842, 138128057878, "Ordinary pre-commit log")}
+                ·${" "} ${job(45299454803, 138128032136, "Full replay log")}<//
               >
               <${Text} my="sm"
                 >After restart, four successful ordinary devel-targeting jobs
                 used the same full profile and pinned compiler. The median
-                interval to the dependent Rustfmt copy fell to
+                interval to the dependent Rustfmt copy fell to${" "}
                 ${recovery.transfer_median_s.toFixed(2)} s (10.34–16.79 s). The
                 entire pre-commit job took ${recovery.job_median_s} s at the
                 median. This targeted job-log read through 01:08 UTC measures
                 cache recovery. All-gates timing was not collected for those
-                heads.
+                heads.${" "}
                 ${job(45301879131, 138136133865, "Full-profile recovery log")}<//
               >
               <${Text} size="sm"
