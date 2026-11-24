@@ -33,7 +33,7 @@ func installSnapshotFixtureCompaction(t *testing.T, store *Store, owner Owner) {
 		t.Fatal(err)
 	}
 	replacement := responseContextForTest(t, []responses.Item{{Type: responses.ItemCompaction, EncryptedContent: "fixture-opaque-summary"}})
-	if err := store.FinishCompaction(t.Context(), owner, intentID, map[string]string{"status": "completed"}, source.Context(), replacement, nil); err != nil {
+	if err := store.FinishCompaction(t.Context(), owner, intentID, map[string]string{"status": "completed"}, source.Context(), replacement); err != nil {
 		t.Fatal(err)
 	}
 }

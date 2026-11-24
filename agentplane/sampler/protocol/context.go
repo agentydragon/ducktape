@@ -31,6 +31,9 @@ type Context interface {
 	AppendRecords([]json.RawMessage) error
 	AppendUser([]ContentPart) error
 	AppendNotice([]ContentPart) error
+	// AddEnvironment inserts current Session context in the native role and position.
+	// afterCompaction is true only for a newly validated replacement.
+	AddEnvironment(parts []ContentPart, afterCompaction bool) error
 	AppendToolResult(ToolInvocation, []ContentPart) error
 	ChangeEffort(string) error
 	PendingCalls() ([]ToolInvocation, error)

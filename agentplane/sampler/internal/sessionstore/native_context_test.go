@@ -175,7 +175,7 @@ func TestCompactionNotificationsRetainAnsweredCallProvenanceAfterReload(t *testi
 			if err := replacement.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: "compacted summary"}}); err != nil {
 				t.Fatal(err)
 			}
-			if err := store.FinishCompaction(ctx, owner, compaction, map[string]any{}, conversation.Context(), replacement, nil); err != nil {
+			if err := store.FinishCompaction(ctx, owner, compaction, map[string]any{}, conversation.Context(), replacement); err != nil {
 				t.Fatal(err)
 			}
 			if replacement.RecordCount() != 1 {

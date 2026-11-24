@@ -107,6 +107,10 @@ func (c *Context) AppendNotice(parts []protocol.ContentPart) error {
 	return c.appendText("system", parts)
 }
 
+func (c *Context) AddEnvironment(parts []protocol.ContentPart, _ bool) error {
+	return c.AppendNotice(parts)
+}
+
 func (c *Context) appendText(role string, parts []protocol.ContentPart) error {
 	text, err := textParts(parts)
 	if err != nil {

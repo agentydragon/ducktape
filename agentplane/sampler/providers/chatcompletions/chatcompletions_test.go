@@ -241,7 +241,7 @@ func TestCompactionKeepsRecentTurnsAndToolPairs(t *testing.T) {
 	if c.CanCompact(2) {
 		t.Fatal("two retained turns leave no older turn")
 	}
-	plan, err := c.PrepareCompaction(CompactionConfig{KeepRecentTurns: 1}, "current environment")
+	plan, err := c.PrepareCompaction(CompactionConfig{KeepRecentTurns: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,6 +269,9 @@ func TestCompactionKeepsRecentTurnsAndToolPairs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := result.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: "current environment"}}, true); err != nil {
+		t.Fatal(err)
+	}
 	if err := result.CheckSettled(); err != nil {
 		t.Fatal(err)
 	}
@@ -279,11 +282,12 @@ func TestCompactionKeepsRecentTurnsAndToolPairs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gotSuffix, err := result.RecordsFrom(2)
+	gotSuffix, err := result.RecordsFrom(1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.EqualFunc(wantSuffix, gotSuffix, func(a, b json.RawMessage) bool { return bytes.Equal(a, b) }) {
+	if len(gotSuffix) != len(wantSuffix)+1 ||
+		!slices.EqualFunc(wantSuffix, gotSuffix[:len(wantSuffix)], func(a, b json.RawMessage) bool { return bytes.Equal(a, b) }) {
 		t.Fatalf("retained turns changed: %s", gotSuffix)
 	}
 	wire, err := result.MarshalJSON()
@@ -293,6 +297,12 @@ func TestCompactionKeepsRecentTurnsAndToolPairs(t *testing.T) {
 	if strings.Contains(string(wire), "old data") || strings.Contains(string(wire), "private reasoning") ||
 		!strings.Contains(string(wire), "useful summary") || !strings.Contains(string(wire), "current environment") {
 		t.Fatalf("unexpected replacement: %s", wire)
+	}
+	if err := result.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: "next environment"}}, false); err != nil {
+		t.Fatal(err)
+	}
+	if result.CanCompact(1) {
+		t.Fatal("ordinary environment update counted as another user turn")
 	}
 	after, err := c.MarshalJSON()
 	if err != nil || !bytes.Equal(initial, after) {
@@ -315,7 +325,7 @@ func TestUserCompactionSummaryIsNotCountedAsAnAuthoredTurn(t *testing.T) {
 	if err := config.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	plan, err := state.PrepareCompaction(config, "")
+	plan, err := state.PrepareCompaction(config)
 	if err != nil {
 		t.Fatal(err)
 	}

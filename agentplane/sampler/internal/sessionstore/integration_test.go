@@ -1371,7 +1371,7 @@ func TestCompletedCompactionReleasesCommandBeforeNextInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	replacement := responseContextForTest(t, []responses.Item{{Type: responses.ItemCompaction, EncryptedContent: "test-opaque"}})
-	if err := store.FinishCompaction(t.Context(), owner, intent, map[string]any{"response": "completed"}, conversation.Context(), replacement, nil); err != nil {
+	if err := store.FinishCompaction(t.Context(), owner, intent, map[string]any{"response": "completed"}, conversation.Context(), replacement); err != nil {
 		t.Fatal(err)
 	}
 	// No FinishCommand call: the context and command outcome must commit together.

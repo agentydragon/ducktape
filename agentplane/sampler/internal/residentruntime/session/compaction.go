@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/agentydragon/ducktape/agentplane/sampler/internal/environmentcontext"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 )
@@ -45,11 +44,7 @@ func (r *Driver) compact(ctx context.Context, owner sessionstore.Owner, live *li
 	if adapter.API() != conversation.API {
 		return protocol.ErrPrecondition
 	}
-	environment, err := r.store.CurrentEnvironmentContext(session.Configuration, conversation.ExecutorShell)
-	if err != nil {
-		return err
-	}
-	plan, err := adapter.PrepareCompaction(conversation, session, metadata, environmentcontext.Update(nil, environment))
+	plan, err := adapter.PrepareCompaction(conversation, session, metadata)
 	if err != nil {
 		return err
 	}
@@ -81,12 +76,6 @@ func (r *Driver) compact(ctx context.Context, owner sessionstore.Owner, live *li
 		return r.providerFailure(ctx, owner, session, intentID, err)
 	}
 	return r.finishProvider(ctx, owner, intentID, func(writeCtx context.Context) error {
-		var replacementEnvironment *environmentcontext.Context
-		if conversation.API != protocol.APIStyleAnthropicMessages {
-			// These adapters render this environment into the replacement. If the
-			// executor shell changed during compaction, the next sample emits a diff.
-			replacementEnvironment = &environment
-		}
-		return r.store.FinishCompaction(writeCtx, owner, intentID, result.Audit, original, replacement, replacementEnvironment)
+		return r.store.FinishCompaction(writeCtx, owner, intentID, result.Audit, original, replacement)
 	})
 }

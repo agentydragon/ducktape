@@ -128,6 +128,12 @@ func (c *Context) AppendNotice(parts []protocol.ContentPart) error {
 	return c.AppendRecords([]json.RawMessage{record})
 }
 
+func (c *Context) AddEnvironment(parts []protocol.ContentPart, _ bool) error {
+	// Leave the signed summary and kept turns adjacent. Only authored user
+	// input may activate deferred effort restoration.
+	return c.AppendNotice(parts)
+}
+
 func (c *Context) AppendToolResult(call protocol.ToolInvocation, parts []protocol.ContentPart) error {
 	if c == nil {
 		return errors.New("nil Anthropic context")

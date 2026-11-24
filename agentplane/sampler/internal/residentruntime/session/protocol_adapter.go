@@ -80,7 +80,7 @@ type protocolAdapter interface {
 	Prepare(*sessionstore.Session, protocol.SessionAttribution) *providerrequest.Preparation
 	Sample(context.Context, *http.Client, samplersettings.ConnectionConfig, []byte, protocol.EvidenceSink, providerAttribution, bool, protocol.ProviderHooks) (*sampleResult, error)
 	AutoCompactTokens(*int, protocol.Context) *int
-	PrepareCompaction(*sessionstore.Conversation, *sessionstore.Session, protocol.SessionAttribution, string) (*compactionPlan, error)
+	PrepareCompaction(*sessionstore.Conversation, *sessionstore.Session, protocol.SessionAttribution) (*compactionPlan, error)
 }
 
 type (
@@ -168,16 +168,16 @@ func (a anthropicAdapter) AutoCompactTokens(_ *int, _ protocol.Context) *int {
 	return a.config.AnthropicMessages.Compaction.AutoCompactTokens
 }
 
-func (a responsesAdapter) PrepareCompaction(c *sessionstore.Conversation, s *sessionstore.Session, attribution protocol.SessionAttribution, environment string) (*compactionPlan, error) {
+func (a responsesAdapter) PrepareCompaction(c *sessionstore.Conversation, s *sessionstore.Session, attribution protocol.SessionAttribution) (*compactionPlan, error) {
 	return &compactionPlan{Preparation: &providerrequest.Preparation{
 		ModelConfig: a.config, SessionEffort: s.Effort,
 		SessionConfiguration: append([]byte(nil), s.Configuration...), Attribution: attribution, Compaction: true,
 	}, Apply: func(result *sampleResult) (protocol.Context, error) {
-		return responses.ValidateCompaction(c.Context().(*responses.Context), result.Records, result.Audit.(*responses.Audit), result.ResponsesEvents, environment)
+		return responses.ValidateCompaction(c.Context().(*responses.Context), result.Records, result.Audit.(*responses.Audit), result.ResponsesEvents)
 	}}, nil
 }
 
-func (a anthropicAdapter) PrepareCompaction(c *sessionstore.Conversation, s *sessionstore.Session, _ protocol.SessionAttribution, _ string) (*compactionPlan, error) {
+func (a anthropicAdapter) PrepareCompaction(c *sessionstore.Conversation, s *sessionstore.Session, _ protocol.SessionAttribution) (*compactionPlan, error) {
 	effort := s.Effort
 	if a.config.AnthropicMessages.PerMessageEffort {
 		launch := &sessionconfig.Configuration{}
@@ -233,12 +233,12 @@ func (a chatAdapter) AutoCompactTokens(_ *int, state protocol.Context) *int {
 	return nil
 }
 
-func (a chatAdapter) PrepareCompaction(c *sessionstore.Conversation, session *sessionstore.Session, _ protocol.SessionAttribution, environment string) (*compactionPlan, error) {
+func (a chatAdapter) PrepareCompaction(c *sessionstore.Conversation, session *sessionstore.Session, _ protocol.SessionAttribution) (*compactionPlan, error) {
 	config := a.config.ChatCompaction
 	if config == nil {
 		return nil, protocol.ErrPrecondition
 	}
-	plan, err := c.Context().(*chatcompletions.Context).PrepareCompaction(*config, environment)
+	plan, err := c.Context().(*chatcompletions.Context).PrepareCompaction(*config)
 	if err != nil {
 		return nil, err
 	}

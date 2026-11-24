@@ -12,7 +12,6 @@ import (
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/sampler/api/samplerpb"
-	"github.com/agentydragon/ducktape/agentplane/sampler/internal/environmentcontext"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/jsonwire"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/providerrequest"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
@@ -352,7 +351,7 @@ func (s *Store) beginCompaction(ctx context.Context, owner Owner, request Intent
 	return id, wire, nil
 }
 
-func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID string, audit any, original, replacement protocol.Context, environment *environmentcontext.Context) error {
+func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID string, audit any, original, replacement protocol.Context) error {
 	resultWire, err := marshal(audit)
 	if err != nil {
 		return err
@@ -398,9 +397,6 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 		if err := replacement.CheckSettled(); err != nil {
 			return err
 		}
-		if environment != nil {
-			conversation.EnvironmentContext = environment
-		}
 		// Persistence can retry the same validated replacement after an ambiguous
 		// commit. Keep any appended notifications private to this transaction.
 		conversation.ActiveContext = replacement.Clone()
@@ -408,6 +404,9 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 
 		conversation.ContextTokens = nil
 		conversation.Pending = nil
+		if err := s.recordEnvironmentContext(conversation, session, true); err != nil {
+			return err
+		}
 		if _, err := s.settleNotifications(ctx, tx, conversation, session, true); err != nil {
 			return err
 		}

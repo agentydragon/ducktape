@@ -431,7 +431,7 @@ The route can set `chat_compaction.summary_prompt_template` and
 `chat_compaction.replacement` in the sampler settings ConfigMap. These are Go text templates.
 The prompt receives `.KeepRecentTurns`. The replacement receives `.Summary` and
 `.KeepRecentTurns`, and must include the summary verbatim. Choose `assistant` or `user`
-for the replacement role. The environment notice and retained native turns follow it.
+for the replacement role. The retained native turns and then the current environment notice follow it.
 A replacement rendered as a user message does not count as an authored turn. With both
 settings omitted, the sampler uses its built-in handoff prompt and assistant-message wrapper.
 
@@ -481,9 +481,9 @@ It never inserts a control between the summary and kept turns. A result must con
 nonempty signed compaction block and shrink serialized active context. A single transaction swaps
 context and settles the command under the original-context/lease fence; original conversation and
 History survive. Summarized effort stops applying at the provider, so restoration is deferred until
-the first new user message after kept turns. Native compaction puts the summary first and does not
-prepend the Responses environment reinjection. Background compaction and dynamic definitions are
-deferred.
+the first new user message after kept turns. The signed summary comes first, followed directly
+by the retained turns. The current environment follows the retained turns without activating
+the deferred effort. Background compaction and dynamic definitions are deferred.
 
 Nested `exec_command` and `write_stdin` follow Codex 0.162.1 unified exec for one remote environment:
 upstream schemas and result objects (`chunk_id`, `wall_time_seconds`,
@@ -532,8 +532,8 @@ Responses Lite compaction sends the final `compaction_trigger` input item and th
 `x-codex-beta-features: remote_compaction_v2` header to the sampler's ordinary Responses endpoint.
 The completed stream must contain exactly one `compaction` item with nonempty opaque
 `encrypted_content`. The item must be smaller in serialized bytes than the old active context.
-The sampler preserves unknown fields, prepends current environment context and regenerates the
-execution-handle snapshot for the next sample. A rejected summary preserves the old context.
+The sampler preserves unknown fields and places current environment context before the opaque
+item. A rejected summary preserves the old context.
 The terminal event can omit `response.completed.output` when the item arrives through
 `response.output_item.done`. [Compaction validation](providers/responses/compaction.go)
 
@@ -622,9 +622,9 @@ cannot apply a frozen summary to a different suffix.
 
 Compaction takes a settled provider context. Yielded cells can keep using their existing host and
 finish nested tools under the lease that dispatched them. Compaction writes no cell or executor
-state. It applies the replacement alongside notifications queued during the summary request. The
-next sampling request injects a fresh execution-handle snapshot, including an empty snapshot if all
-handles have settled.
+state. One transaction installs the replacement with the environment current at commit and the
+notifications queued during the summary request. The next sampling request injects a fresh
+execution-handle snapshot, including an empty snapshot if all handles have settled.
 Other provider failures are permanent. Permanent failure or exhausted attempts atomically fails
 only the original command and turn, leaving the Session usable and known live cells/processes
 intact. Unresolved native effects prevent this settlement, except for effects that a live cell
@@ -803,13 +803,14 @@ request carries Codex's `gpt-6.1-sol` base instructions as Responses `instructio
 it does not replace the provider/harness base. Standing instructions are supported; remote
 AGENTS.md discovery, subagents, skills/MCP and approvals/hooks are deferred.
 
-The conversation carries Codex's `<environment_context>` user message: the Session cwd, the name of
+The conversation carries Codex's `<environment_context>` with the Session cwd, the name of
 the executor-reported shell that `exec_command` launches (omitted for an executor that reports none,
 although `exec_command` then falls back to `/bin/sh`) and the sampler's local date. The full context
 precedes the first input; afterwards an update is recorded before a turn's input, or before a
 sampling step after that step's queued `notify()` outputs, whenever a value changed (a date rollover
-renders only the date). Responses compaction re-injects the full context before the compaction item;
-Anthropic preserves its signed summary as the first message. Timezone and
+renders only the date). Responses and Anthropic encode the environment as user-role context.
+Chat Completions uses a system notice so environment updates do not count as authored turns.
+All three restore the full environment in the replacement. Timezone and
 Codex's network, filesystem, permission-profile and subagents sections are omitted; Agentplane owns
 those boundaries. **Deviation:** the executor connects lazily, so a shell first learned after the
 initial context renders an update; Codex resolves the shell before its first render.

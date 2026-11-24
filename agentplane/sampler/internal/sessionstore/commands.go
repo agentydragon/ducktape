@@ -61,7 +61,7 @@ func (s *Store) NextCommand(ctx context.Context, owner Owner, sessionID string) 
 				return &protocol.UnknownEffectError{Reason: "unresolved intent blocks queued input; automatic replay is unsafe"}
 			}
 			// Codex records environment updates before the turn's user input.
-			if err := s.recordEnvironmentContext(conversation, session); err != nil {
+			if err := s.recordEnvironmentContext(conversation, session, false); err != nil {
 				return err
 			}
 			text := payload.GetSubmitInput().GetText()

@@ -31,7 +31,7 @@ func (s *Store) PrepareSamplingContext(ctx context.Context, owner Owner, state *
 }
 
 func (s *Store) applySamplingContext(conversation *Conversation, session *Session, state *ExecutionState) error {
-	if err := s.recordEnvironmentContext(conversation, session); err != nil {
+	if err := s.recordEnvironmentContext(conversation, session, false); err != nil {
 		return err
 	}
 	return conversation.appendExecutionState(state.protocolState())

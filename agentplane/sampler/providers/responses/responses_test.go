@@ -411,7 +411,7 @@ func TestResponsesRequestBuildsReasoningAndAttribution(t *testing.T) {
 	}
 }
 
-func TestValidateCompactionPrependsCurrentEnvironment(t *testing.T) {
+func TestValidateCompactionPreservesOpaqueProviderRecord(t *testing.T) {
 	original := &Context{}
 	if err := original.AppendRecords([]json.RawMessage{
 		[]byte(`{"type":"message","role":"user","content":"a sufficiently long original context"}`),
@@ -420,14 +420,14 @@ func TestValidateCompactionPrependsCurrentEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	records := []json.RawMessage{[]byte(`{"type":"compaction","encrypted_content":"opaque","provider_number":9007199254740993}`)}
-	replacement, err := ValidateCompaction(original, records, &Audit{}, nil, "Current environment")
+	replacement, err := ValidateCompaction(original, records, &Audit{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(replacement.items) != 2 || replacement.items[0].Type != ItemMessage || replacement.items[0].Role != "user" || replacement.items[1].Type != ItemCompaction {
+	if len(replacement.items) != 1 || replacement.items[0].Type != ItemCompaction {
 		t.Fatalf("compacted context has unexpected boundary items: %+v", replacement.items)
 	}
-	if got := string(replacement.items[1].Raw); got != string(records[0]) {
+	if got := string(replacement.items[0].Raw); got != string(records[0]) {
 		t.Fatalf("opaque compaction record changed: %s", got)
 	}
 }
@@ -439,7 +439,7 @@ func TestValidateCompactionRejectsUnusableSummary(t *testing.T) {
 		{[]byte(`{"type":"message","role":"assistant","content":"not a compaction"}`)},
 		{[]byte(`{"type":"compaction"}`)},
 	} {
-		if _, err := ValidateCompaction(original, records, nil, nil, "environment"); err == nil {
+		if _, err := ValidateCompaction(original, records, nil, nil); err == nil {
 			t.Fatalf("accepted unusable summary %s", records)
 		}
 	}
@@ -452,7 +452,7 @@ func TestValidateCompactionFailureKeepsTransientEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	audit := &Audit{Response: &Terminal{Raw: json.RawMessage(`{"status":"completed","provider_terminal_marker":"fixture"}`)}}
-	_, err := ValidateCompaction(original, nil, audit, []Event{event}, "environment")
+	_, err := ValidateCompaction(original, nil, audit, []Event{event})
 	var known *protocol.KnownFailureError
 	if !errors.As(err, &known) {
 		t.Fatalf("invalid compaction error=%v; want a known rejection", err)

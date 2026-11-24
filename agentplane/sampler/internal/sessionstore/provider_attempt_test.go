@@ -399,7 +399,7 @@ func TestProviderFinishDoesNotCommitAfterDurableInterrupt(t *testing.T) {
 			if kind == PendingIntentSampling {
 				err = store.Finish(t.Context(), owner, intentID, map[string]any{"response": map[string]any{"status": "completed"}}, nil, nil)
 			} else {
-				err = store.FinishCompaction(t.Context(), owner, intentID, map[string]any{"response": map[string]any{"status": "completed"}}, original, original, nil)
+				err = store.FinishCompaction(t.Context(), owner, intentID, map[string]any{"response": map[string]any{"status": "completed"}}, original, original)
 			}
 			var interrupt InterruptPendingError
 			if !errors.As(err, &interrupt) {
