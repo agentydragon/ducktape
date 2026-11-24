@@ -40,6 +40,18 @@ assert.equal(certified.status, "certified", JSON.stringify(certified));
 assert.equal(certified.guarantee, "normal-completion");
 assert.deepEqual(safe.run("--check-output"), certified);
 
+const reorderedOut = path.join(root, "order-preserving-rejects-a-move");
+const reordered = lower(
+  safe.sourceFile,
+  safe.specFile,
+  reorderedOut,
+  ["--structural-order"],
+  "linked-structural-order"
+);
+assert.equal(reordered.verdict.status, "rejected");
+assert.match(reordered.verdict.reason, /the linked schedules differ/);
+assert(!existsSync(reorderedOut));
+
 const entryFile = path.join(safe.out, "entry.mjs");
 const original = await import(pathToFileURL(safe.sourceFile));
 const emitted = await import(pathToFileURL(entryFile));

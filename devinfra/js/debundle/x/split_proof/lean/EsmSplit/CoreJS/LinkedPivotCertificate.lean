@@ -54,42 +54,51 @@ private theorem CheckedLink.unique {p : Program} {w : World} (a b : CheckedLink 
   rfl
 
 /-- Validate the finite witness once, then use it in all worlds. -/
-def checkPivotAll (ordinal : Nat) (source candidate : Program) :
+def checkStructuralSchedule (pivot : Option Nat) (source candidate : Program) :
     Except String (PLift (NormalEquivalent source candidate ∧ SameExports source candidate)) := do
   let before ← (checkLink source).mapError ("original linker: " ++ ·)
   let after ← (checkLink candidate).mapError ("candidate linker: " ++ ·)
   let some ⟨initial⟩ := StateMatch.probe before.ready after.ready |
     throw "the linked initial states differ"
-  let check ← checkPivot ordinal before after initial
   let ⟨exportsEqual⟩ ←
     if checked : exportsMatchFrom before after = true then pure (PLift.up checked)
     else throw "the linked entry exports differ"
   have sameExports : SameExports source candidate := sameExports_of_match fun w => by
     rw [exportsMatch_from_checked (before.forWorld w) (after.forWorld w)]
     exact exportsEqual
-  return ⟨⟨normalEquivalent_of_checkedPivot (fun w =>
-    have hs := check.layout.sourceLink.unique before
-    have hc := check.layout.candidateLink.unique after
-    let layout : PivotLayout source candidate w := {
-      sourceLink := before.forWorld w
-      candidateLink := after.forWorld w
-      initial := congrArg (linkState w) initial
-      pre := check.layout.pre
-      crossed := check.layout.crossed
-      pivot := check.layout.pivot
-      suffix := check.layout.suffix
-      sourceOrder := by
-        change SameUnits (unitsOf before.linked) _
-        exact hs ▸ check.layout.sourceOrder
-      candidateOrder := by
-        change SameUnits (unitsOf after.linked) _
-        exact hc ▸ check.layout.candidateOrder
-    }
-    {
-      layout
-      access := Access.linkState (hs ▸ check.access)
-      localFlag := check.localFlag
-      scope := check.scope
-    }), sameExports⟩⟩
+  if let some ordinal := pivot then
+    let check ← checkPivot ordinal before after initial
+    return ⟨⟨normalEquivalent_of_checkedPivot (fun w =>
+      have hs := check.layout.sourceLink.unique before
+      have hc := check.layout.candidateLink.unique after
+      let layout : PivotLayout source candidate w := {
+        sourceLink := before.forWorld w
+        candidateLink := after.forWorld w
+        initial := congrArg (linkState w) initial
+        pre := check.layout.pre
+        crossed := check.layout.crossed
+        pivot := check.layout.pivot
+        suffix := check.layout.suffix
+        sourceOrder := by
+          change SameUnits (unitsOf before.linked) _
+          exact hs ▸ check.layout.sourceOrder
+        candidateOrder := by
+          change SameUnits (unitsOf after.linked) _
+          exact hc ▸ check.layout.candidateOrder
+      }
+      {
+        layout
+        access := Access.linkState (hs ▸ check.access)
+        localFlag := check.localFlag
+        scope := check.scope
+      }), sameExports⟩⟩
+  let some ⟨schedule⟩ := sameUnits? (unitsOf before.linked) (unitsOf after.linked) |
+    throw "the linked schedules differ in unit order, syntax, or scope"
+  have equivalent : NormalEquivalent source candidate := normalEquivalent_of_bounded fun w n final => by
+    rw [run_after_link n (before.forWorld w), run_after_link n (after.forWorld w)]
+    change runUnits n (unitsOf before.linked) (linkState w before.ready) = .ok () final ↔
+      runUnits n (unitsOf after.linked) (linkState w after.ready) = .ok () final
+    rw [runUnits_same n schedule, congrArg (linkState w) initial]
+  return ⟨⟨equivalent, sameExports⟩⟩
 
 end CoreJS.LinkedBehavior

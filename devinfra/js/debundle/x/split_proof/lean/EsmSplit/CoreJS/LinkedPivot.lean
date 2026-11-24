@@ -10,6 +10,17 @@ does not promise the candidate throws with an identical partial state. -/
 def NormalEquivalent (source candidate : Program) : Prop :=
   ∀ w (final : State w), Ends w source (.ok () final) ↔ Ends w candidate (.ok () final)
 
+theorem normalEquivalent_of_bounded {source candidate : Program}
+    (run : ∀ w n (final : State w),
+      runProgram w n source = .ok () final ↔ runProgram w n candidate = .ok () final) :
+    NormalEquivalent source candidate := by
+  intro w final
+  constructor
+  · rintro ⟨n, before, existsOutcome⟩
+    exact ⟨n, (run w n final).mp before, existsOutcome⟩
+  · rintro ⟨n, after, existsOutcome⟩
+    exact ⟨n, (run w n final).mpr after, existsOutcome⟩
+
 /-- The shape of a single earlier move, witnessed by the actual linked programs.
 The common schedule uses source scopes. Candidate scopes agree on exactly the
 names each retained statement means. -/
@@ -50,27 +61,21 @@ theorem normalEquivalent_of_pivot {source candidate : Program}
       (execStmt n (layout w).pivot.2.2 (layout w).pivot.2.1 : M w Flow))
     (unchanged : ∀ w n, FramedUnits w n (layout w).pivot.1 reads (allowed w)
       ((layout w).pre ++ (layout w).crossed)) : NormalEquivalent source candidate := by
-  intro w final
+  apply normalEquivalent_of_bounded
+  intro w n final
   let layout' := layout w
-  have run (n : Nat) :
-      runProgram w n source = .ok () final ↔ runProgram w n candidate = .ok () final := by
-    rw [run_after_link n layout'.sourceLink, run_after_link n layout'.candidateLink,
-      runUnits_same n layout'.sourceOrder, runUnits_same n layout'.candidateOrder, ← layout'.initial]
-    have beforeFrames : FramedUnits w n layout'.pivot.1 reads (allowed w) layout'.pre :=
-      fun u hu => unchanged w n u (List.mem_append_left _ hu)
-    have crossedFrames : FramedUnits w n layout'.pivot.1 reads (allowed w) layout'.crossed :=
-      fun u hu => unchanged w n u (List.mem_append_right _ hu)
-    have frame := runUnits_reachFrame_pivot n layout'.pivot.1 layout'.pivot.2.2 layout'.pivot.2.1 reads (allowed w)
-      layout'.pre layout'.crossed layout'.suffix layout'.sourceLink.ready final
-      (localPivot w n) (fun _ hs => Access.afterUnits beforeFrames (access w) hs)
-    apply (frame ?_).symm
-    intro unit hu
-    obtain ⟨different, frames⟩ := crossedFrames unit hu
-    exact ⟨Ne.symm different, frames⟩
-  constructor
-  · rintro ⟨n, before, existsOutcome⟩
-    exact ⟨n, (run n).mp before, existsOutcome⟩
-  · rintro ⟨n, after, existsOutcome⟩
-    exact ⟨n, (run n).mpr after, existsOutcome⟩
+  rw [run_after_link n layout'.sourceLink, run_after_link n layout'.candidateLink,
+    runUnits_same n layout'.sourceOrder, runUnits_same n layout'.candidateOrder, ← layout'.initial]
+  have beforeFrames : FramedUnits w n layout'.pivot.1 reads (allowed w) layout'.pre :=
+    fun u hu => unchanged w n u (List.mem_append_left _ hu)
+  have crossedFrames : FramedUnits w n layout'.pivot.1 reads (allowed w) layout'.crossed :=
+    fun u hu => unchanged w n u (List.mem_append_right _ hu)
+  have frame := runUnits_reachFrame_pivot n layout'.pivot.1 layout'.pivot.2.2 layout'.pivot.2.1 reads (allowed w)
+    layout'.pre layout'.crossed layout'.suffix layout'.sourceLink.ready final
+    (localPivot w n) (fun _ hs => Access.afterUnits beforeFrames (access w) hs)
+  apply (frame ?_).symm
+  intro unit hu
+  obtain ⟨different, frames⟩ := crossedFrames unit hu
+  exact ⟨Ne.symm different, frames⟩
 
 end CoreJS.LinkedBehavior

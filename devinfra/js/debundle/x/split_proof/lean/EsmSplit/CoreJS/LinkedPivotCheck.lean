@@ -104,7 +104,7 @@ private def sameUnit? (u v : Nat × Stmt × Env) :
     return ⟨tag.down, st.down, ⟨receiver.down, fun x hx => beq_iff_eq.1 (List.all_eq_true.mp names x hx)⟩⟩
   else none
 
-private def sameUnits? : (u v : List (Nat × Stmt × Env)) → Option (PLift (SameUnits u v))
+def sameUnits? : (u v : List (Nat × Stmt × Env)) → Option (PLift (SameUnits u v))
   | [], [] => some ⟨.nil⟩
   | x :: xs, y :: ys => do
     let head ← sameUnit? x y

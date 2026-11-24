@@ -19,7 +19,7 @@ import Std.Data.HashSet
 /-!
 # AST + spec in; modules, verdict and a kernel certificate out.
 
-    lowersplit <bundle.mjs|bundle.json> <spec.json> <outdir> [--require <all-outcomes|normal-completion>] [--check-output] [--host-contract PROFILE.json] [--structural-pivot ORDINAL [--deployment-origin ORIGIN]]
+    lowersplit <bundle.mjs|bundle.json> <spec.json> <outdir> [--require <all-outcomes|normal-completion>] [--check-output] [--host-contract PROFILE.json] [--structural-order | --structural-pivot ORDINAL] [--deployment-origin ORIGIN]
     lowersplit --diagnostic <bundle.mjs|bundle.json> <spec.json> <outdir> [--lean <Generated.lean> [--namespace NAME] [--variant SPEC]... [--control SPEC]...] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]
 
 JavaScript source and annotated ESTree dumps share the Acorn parser and scope/literal metadata.
@@ -443,7 +443,19 @@ private def profileVerdict (selected : CoreJS.HostProfile) (used : CoreJS.HostPr
   | .empty => []
   | .browserPage => [("hostProfile", toJson "browser-page"), ("assumptions", toJson used.assumptions)]
 
-private def runInDir (profile : CoreJS.HostProfile) (pivot : Option Nat) (deploymentOrigin : Option String) (work : System.FilePath) (required : Option Guarantee) (checkOnly : Bool) (args : List String) : IO UInt32 := do
+private inductive StructuralRequest where
+  | preserved
+  | pivot (ordinal : Nat)
+
+private def StructuralRequest.pivot? : StructuralRequest → Option Nat
+  | .preserved => none
+  | .pivot ordinal => some ordinal
+
+private def StructuralRequest.scope : StructuralRequest → String
+  | .preserved => "linked-structural-order"
+  | .pivot _ => "linked-structural-pivot"
+
+private def runInDir (profile : CoreJS.HostProfile) (structural : Option StructuralRequest) (deploymentOrigin : Option String) (work : System.FilePath) (required : Option Guarantee) (checkOnly : Bool) (args : List String) : IO UInt32 := do
   let (replicate?, args) := Effects.takeFlag "--replicate" args
   let (premPath?, args) := Effects.takeFlag "--premises" args
   let (fpPath?, args) := Effects.takeFlag "--footprints" args
@@ -550,7 +562,7 @@ private def runInDir (profile : CoreJS.HostProfile) (pivot : Option Nat) (deploy
   if let some request := required then
     let layoutOk ← timePhase timings "plan_checks" fun _ => checkLayout B P (some S) false
     -- Only the closed-declaration theorem needs the footprint-based order check.
-    let declaration := if pivot.isNone && layoutOk && !bad then declarations.bind (declarationProof? · B P) else none
+    let declaration := if structural.isNone && layoutOk && !bad then declarations.bind (declarationProof? · B P) else none
     if let some (level, ss) := declaration.filter (fun _ => decide (OrderOk B P)) then
       try
         if request == .allOutcomes && level != .allOutcomes then
@@ -560,20 +572,20 @@ private def runInDir (profile : CoreJS.HostProfile) (pivot : Option Nat) (deploy
             IO.ofExcept (CoreJS.DeclarationArtifacts.check program files ss B P)
         return ← emitVerdict request.label (.ok level) "closed-declarations" (profileVerdict profile {})
       catch e => return ← emitVerdict request.label (.error e.toString) "closed-declarations"
-    if let some ordinal := pivot then
-      let scope := "linked-structural-pivot"
+    if let some mode := structural then
+      let scope := mode.scope
       try
         unless request == .normalCompletion do
-          throw (IO.userError "the structural pivot certificate proves only normal-completion")
+          throw (IO.userError "the structural schedule certificate proves only normal-completion")
         unless layoutOk && !bad do
           throw (IO.userError "source placement or module linkage checks failed")
         let providers ← timePhase timings "provider_loading" fun _ => loadProviders program bundlePath work
         let deployment ← deploymentOrigin.mapM fun origin =>
           timePhase timings "deployment_loading" fun _ => readDeployment program providers bundlePath work origin P
         certifyOutput providers B P out work input checkOnly timings outputAsts source fun files =>
-          timePhase timings "structural_pivot" fun _ => do
+          timePhase timings (if mode.pivot?.isSome then "structural_pivot" else "structural_order") fun _ => do
             let result ← IO.lazyPure fun _ =>
-              CoreJS.LinkedBehavior.certifyStructuralASTs profile program providers files P ordinal deployment
+              CoreJS.LinkedBehavior.certifyStructuralASTs profile program providers files P mode.pivot? deployment
             IO.ofExcept (result.map fun _ => ())
         let assumptions :=
           ["Retained source units use the same capability-closed opaque world in both layouts."] ++
@@ -655,12 +667,12 @@ private def runInDir (profile : CoreJS.HostProfile) (pivot : Option Nat) (deploy
   if ok && !bad then return 0
   IO.eprintln (if force then "rejected; written anyway (--force)" else "rejected; nothing written"); return 1
 
-private def runSplitter (profile : CoreJS.HostProfile) (pivot : Option Nat) (deploymentOrigin : Option String) (required : Option Guarantee) (checkOnly : Bool) (args : List String) : IO UInt32 :=
-  IO.FS.withTempDir fun work => runInDir profile pivot deploymentOrigin work required checkOnly args
+private def runSplitter (profile : CoreJS.HostProfile) (structural : Option StructuralRequest) (deploymentOrigin : Option String) (required : Option Guarantee) (checkOnly : Bool) (args : List String) : IO UInt32 :=
+  IO.FS.withTempDir fun work => runInDir profile structural deploymentOrigin work required checkOnly args
 
 def EsmSplit.LowerSplit.main (args : List String) : IO UInt32 := do
   if let "--diagnostic" :: rest := args then
-    if rest.contains "--require" || rest.contains "--check-output" || rest.contains "--structural-pivot" || rest.contains "--deployment-origin" then
+    if rest.contains "--require" || rest.contains "--check-output" || rest.contains "--structural-pivot" || rest.contains "--structural-order" || rest.contains "--deployment-origin" then
       IO.eprintln "certification options cannot be combined with --diagnostic"
       return 1
     IO.println "Diagnostic run. Any emitted files are an uncertified preview."
@@ -683,12 +695,17 @@ def EsmSplit.LowerSplit.main (args : List String) : IO UInt32 := do
       match raw.toNat? with
       | some ordinal => pure ordinal
       | none => throw (IO.userError "--structural-pivot expects an original unit ordinal")
+    let orderPreserving := args.contains "--structural-order"
+    let args := args.filter (· != "--structural-order")
+    if orderPreserving && pivot.isSome then
+      throw (IO.userError "--structural-order and --structural-pivot are mutually exclusive")
+    let structural := if orderPreserving then some StructuralRequest.preserved else pivot.map StructuralRequest.pivot
     let (deploymentOrigin, args) := Effects.takeFlag "--deployment-origin" args
-    if deploymentOrigin.isSome && pivot.isNone then
-      throw (IO.userError "--deployment-origin requires --structural-pivot")
+    if deploymentOrigin.isSome && structural.isNone then
+      throw (IO.userError "--deployment-origin requires --structural-order or --structural-pivot")
     let checkOnly := args.contains "--check-output"
     let args := args.filter (· != "--check-output")
     unless args.length == 3 && !args.any (·.startsWith "--") do
-      throw (IO.userError "usage: lowersplit <bundle.mjs|bundle.json> spec.json outdir [--require LEVEL] [--check-output] [--host-contract PROFILE.json] [--structural-pivot ORDINAL [--deployment-origin ORIGIN]]; use --diagnostic for plan and preview options")
-    runSplitter profile pivot deploymentOrigin (some level) checkOnly args
+      throw (IO.userError "usage: lowersplit <bundle.mjs|bundle.json> spec.json outdir [--require LEVEL] [--check-output] [--host-contract PROFILE.json] [--structural-order | --structural-pivot ORDINAL] [--deployment-origin ORIGIN]; use --diagnostic for plan and preview options")
+    runSplitter profile structural deploymentOrigin (some level) checkOnly args
   catch e => emitVerdict label (.error e.toString)
