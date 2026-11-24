@@ -233,7 +233,7 @@ private def staticPropertyName (key : Json) : Except String Name := do
         return toString n
   moduleExportName key
 
-/-- Evaluate static-name elements in source order. Only a colon-form __proto__ initializer
+/-- Evaluate object elements in source order. Only a colon-form __proto__ initializer
 sets the prototype. Shorthand properties and methods with that name define own properties. -/
 private def linkedObject (lower : Name → Json → Except String Expr)
     (method : Name → Json → Except String Func) (j : Json) : Except String Expr := do
@@ -244,17 +244,27 @@ private def linkedObject (lower : Name → Json → Except String Expr)
     if propType == "SpreadElement" then
       props := props.push (.spread (← lower "" (← p.getObjVal? "argument")))
       continue
-    unless propType == "Property" do throw "expected a static data property or method"
-    if ← p.getObjValAs? Bool "computed" then throw "expected a static data property or method"
+    unless propType == "Property" do throw "expected an object property or spread"
+    let kind ← field p "kind"
+    let value ← p.getObjVal? "value"
+    if ← p.getObjValAs? Bool "computed" then
+      -- Methods, accessors and anonymous definitions get their name from the evaluated key.
+      if kind != "init" || (← p.getObjValAs? Bool "method") then
+        throw "unsupported method or accessor named by a computed key"
+      let anonymous ← match ← field value "type" with
+        | "ArrowFunctionExpression" => pure true
+        | "FunctionExpression" | "ClassExpression" => pure ((← value.getObjVal? "id") == .null)
+        | _ => pure false
+      if anonymous then throw "unsupported function or class named by a computed key"
+      props := props.push (.init (← lower "" (← p.getObjVal? "key")) (← lower "" value))
+      continue
     let key ← staticPropertyName (← p.getObjVal? "key")
     let keyExpr ← stringExpr key
-    let kind ← field p "kind"
     if let some previous := seen[key]? then
       unless (previous == "get" && kind == "set") || (previous == "set" && kind == "get") do
         throw "duplicate object property"
       seen := seen.insert key "pair"
     else seen := seen.insert key kind
-    let value ← p.getObjVal? "value"
     let prop ← match kind with
       | "get" => pure (.getter keyExpr (← method ("get " ++ key) value))
       | "set" => pure (.setter keyExpr (← method ("set " ++ key) value))
