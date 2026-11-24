@@ -9,10 +9,10 @@ function publicField(define, target, key, value) {
 
 class Parent {
   static get cache() {
-    assert.fail("an own data definition must not read the inherited accessor");
+    throw new Error("an own data definition must not read the inherited accessor");
   }
   static set cache(_) {
-    assert.fail("an own data definition must not invoke the inherited setter");
+    throw new Error("an own data definition must not invoke the inherited setter");
   }
 }
 
