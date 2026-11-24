@@ -9,30 +9,18 @@ stage dependencies. This file burns down as slices land and is deleted with the 
 
 ## Where the work is
 
-Draft [#14552](https://github.com/agentydragon/ducktape/pull/14552) is a
-**reference implementation, not a merge candidate**. It carries the whole flipped
-design as one squashed commit above `devel`: +113k/-21k lines across 231 files,
-with the effect-based relocation verdict authoritative from its first commit.
-Its hosted history: the best full-suite result was 201 passing / 51 failing test
-targets (run `42382520793`, 2026-11-07); the last run that reached tests was
-63 / 193 with a shared resolver assertion in 192 of the 193 failures (run
-`42510569601`); every later head, including `ee4eb4ab`, fails to build. No head
-of the branch has ever been green.
+Use `devel` as the base. The legacy realizability gate decides acceptance and the
+effect assessment is report-only. [Closed PR #14552](https://github.com/agentydragon/ducktape/pull/14552)
+is reference code for individual gaps. It flipped gate authority immediately
+and never passed the full suite. The wave inventory below identifies its
+test failures and the slices that can reuse its work. For reproducing the
+reference branch's failures, its best full run was `42382520793` (201 targets
+passed, 51 failed). Its last run to reach tests was `42510569601` (192 targets
+hit one resolver assertion). Subsequent heads through `ee4eb4ab` failed to build.
 
-`devel` is the integration branch. It is green, keeps the legacy realizability
-gate authoritative, computes the effect assessment as a report, and already holds
-roughly 160 slices peeled from this work during 2026-11-04 to 2026-11-08.
-
-Rules that follow from this:
-
-- Nothing else is squashed into #14552. New work branches from `devel` and
-  lands as its own PR. Candidate reference code is judged by the current gap
-  and the decision path it replaces; porting #14552 is not a prerequisite.
-- The flip (effect verdict decides, legacy gate becomes a diagnostic) is one
-  small PR near the end (<translation_validation_gate.md> § Migration step 3),
-  not the base of a stack.
-- Local `bbr`/`bazelisk` runs are the normal iteration loop. Hosted CI is the
-  landing check, not the only compiler.
+Branch each slice from `devel`. Run the gate-authority flip as its own PR after
+the [migration checks](translation_validation_gate.md). Iterate with `bbr` or
+`bazelisk` and use hosted CI for landing.
 
 ## Replan (2026-11-10)
 
@@ -287,9 +275,9 @@ when their disposition has landed on `devel`.
 | `roots/`                              | `execute_owner` as named phases: operands, body, assignment/export, owner finalization.                                     |
 | `legacy/`                             | Whatever is not yet deleted, each item with a `CLEANUP` tombstone naming its last caller.                                   |
 
-`execution_index.rs` stops nesting the interpreter module (AR4). Whether
-`kernel`/`world` become separate Bazel crates is decided after the moves, when the
-dependency direction is visible.
+AR4 tracks the remaining execution-index interface in [the work queue](../TODO.md#architecture-review-follow-ups).
+Decide on separate `kernel` and `world` Bazel crates once the dependency
+direction is visible.
 
 ## Dependency graph and waves
 
@@ -297,63 +285,22 @@ Slices are independent within a wave unless a `needs` is stated. `src` names
 the #14552 code to port by reference (tag `debundle-reference-14552`; the PR
 is closed, never merged).
 
-**Waves 0 and 1: landed** on `devel` 2026-11-09 as #15046 (ownership-edit
-assessment vocabulary), #15047 (typed completion), #15048 (explicit claims
-replace rebind folding; companion spec change gaffer-private#1070), #15049
-(e2e split by capability), #15050 (preflight and emission draft without
-authority change), #15051 (report-only final global resolution), #15052
-(own-property surface, descriptor heap, one native plan/commit path).
-Withdrawn: L0a (the reference head's `lowering/` is a half-applied refactor;
-Wave 3 is ordered from the hosted inventory below instead) and L1e (devel has
-no module-cell identities yet; the saved identities land with Wave 3 slice 6).
-Cleanups landed alongside: #15055,
-#15056, #15058, #15060, #15061, #15062, #15063, #15066, #15071, #15074.
+Waves 0–2 are on `devel`. The [synchronous execution kernel](../docs/design.md#the-synchronous-execution-kernel)
+owns the context traits, world state, observations and fork/join contracts.
+[kernel_design.md](kernel_design.md) tracks the remaining fork and provider work.
+The dependencies carried into the later waves are:
 
-**Wave 2: the kernel.** Large by nature. Its landed contracts (five context
-traits, returned observations, one `World`, forks and their join) are in
-<../docs/design.md> § The synchronous execution kernel; what the fork leaves
-out and the provider adapter remain in <kernel_design.md>.
-`World` is the per-prefix execution state the interpreter already carries
-(today one 44-field struct plus the strict provider's private copy), not a
-new analysis; precision stays bounded by the existing finite-height widening
-and budgets. Each Wave 2 slice adds a cost gate to its canonical-spec check:
-Tana Web (`//tana/re/web/78d928dca7:debundle_passing`) analysis wall time and
-peak RSS from the override build, branch versus base. The reference head's
-cold Tana analysis was about 320 seconds; a slice that regresses wall time or
-RSS by more than 10 percent is profiled with `perf` before it lands, and a
-persistent regression means the structure, not a budget knob, is wrong.
-
-- L2a. **Landed as #15069** (2026-11-09): `kernel/{context,continuation,
-driver,frame}.rs`, both adapters on the five traits, `local_transfer.rs`
-  deleted. Tana cost gate: +3.3 % wall, +0.4 % RSS. Kept with tombstones gated
-  on L2b: the cell-owning `BindingContext` methods, `settled_dependencies`,
-  closure creation, the effect sink; gated on L2c, now on L4e: `AllocationContext` and the
-  value bridge; the `invoke_with_cells` flat lane with its four gates
-  (`requires_keyed_collection_new` needs an application keyed-collection lane).
-  `Fork`/`ForkPolicy` landed with the conditional/logical IR slice (§ IR
-  growth).
-- L2b. **PR 1 landed as #15090**: `world/` (one `World` for both adapters,
-  no `Deref`, copy-on-write), the `RefCell` ledgers as the threaded
-  `Observations` struct, the L2a sink methods deleted. `World::join` landed
-  staged as #15091; `alternatives/` calls it since the conditional/logical
-  IR slice (§ IR growth). PR 2 closes L2a's L2b-gated
-  tombstones: lexical cells and closure creation are kernel rules
-  (`kernel/{cells,closure}.rs`; adapters supply `cell_policy`/`cell_effect`,
-  `capture_policy` and `admit_closure`), closures are
-  `AbstractValue::Closure(HeapAddress, CapturedContext)` in both adapters, and
-  the prefix prerequisites live in `World.prerequisites`. needs L2a.
-- L2c. **Landed** as #15116 (`adapters/application.rs`), the provider-adapter
-  move (`adapters/provider.rs`), #15125
-  (`execute_owner` as `roots/` phases) and the call-transfer PR, which split
-  `execute_call_transfer` by mode: the operands-supplied mode is in
-  `roots/call_operands.rs`, and the self-evaluating mode and the evaluator are
-  in `legacy/`. The `AllocationContext`/`LocalValueContext` tombstones now
-  wait for L4e, which deletes their last non-kernel implementor. Deleting
-  `complete: bool` moved to L4d (below): it is legacy-gate authority, and
-  swapping its readers is the authority flip.
-- L2d. **Landed as #15073** (2026-11-09): the six `#[path]` children of
-  `execution_index.rs` are sibling modules; `ExecutionIndex` fields the
-  interpreter reads are `pub(super)`; devel had no provider program registry.
+- Use the hosted coverage inventory below to order the remaining ports. The
+  reference head's partial `lowering/` refactor is unsuitable as a base.
+- Saved module-cell identities (withdrawn L1e) land with Wave 3 slice 6.
+- Keep `Outcome.complete` until L4d changes gate authority. The allocation
+  and local-value bridges lose their last non-kernel implementor at L4e.
+  The flat `invoke_with_cells` guards name the missing kernel operations in
+  `interpreter.rs`.
+- For the root-attempt cost gate, compare Tana Web
+  (`//tana/re/web/78d928dca7:debundle_passing`) analysis wall time and peak RSS
+  on the override build against its base. Profile a regression above 10%
+  with `perf`. A persistent regression requires a structural change.
 
 **IR growth.** Devel's ordered `LocalBody` IR covers fewer constructs than the
 reference's (no regions, `if`/`try`/`catch` bindings, argument spread,
@@ -365,11 +312,8 @@ Wave 3, ordered with the coverage producer that needs it: lowering in
 `local_operations.rs`, the kernel rule, the e2e positive with Node parity, and
 the deletion of whatever recognizer or flat-lane gate the construct retires.
 
-Landed: conditional (`?:`) and logical (`&&`, `||`, `??`) operators, the
-first fork producer, with `ForkPolicy`, `LocalSuspension::Fork` and
-`alternatives/`; the flat value lane's result-only conditional arm
-(`allocation_transfer`) is deleted. What the fork still leaves out is in
-<kernel_design.md> § Forks and joins: what is left.
+Conditional and logical operators already fork. See the [remaining join and
+root-admission work](kernel_design.md#forks-and-joins-what-is-left).
 
 **Wave 3: coverage producers.** Each one capability, each deleting its
 recognizer, each with a positive relocation, its opposing controls and the
@@ -405,7 +349,7 @@ touching the rule.
 |    11 | Non-invoking literal coverage                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |  unmeasured | measure in next audit  |
 |    12 | Call-effect coverage for callees with live captures (`(x) => out.push(x)` with `out` local gets open coverage today), which rows 2 and 3 need for callbacks                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |  unmeasured | forks                  |
 |    13 | **Landed**: field reads on element records inside a callback, as reads of prefix-tracked receivers (`entries.reduce((t, e) => t + e.size, 0)` seals; a store through another name rewinds)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |          11 | row 2, row 9 read rule |
-|    14 | Object spread inside a callback (`tools.map((tool) => ({ ...tool }))`): the other gate for record-element roots (<kernel_design.md> § Root admission)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |  unmeasured | row 2                  |
+|    14 | Object spread inside a callback (`tools.map((tool) => ({ ...tool }))`): the other gate for record-element roots ([root admission](#root-admission))                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |  unmeasured | row 2                  |
 
 **Order from here.** After resumption, use <analysis_consolidation.md> for analysis
 structure and rank coverage rows by the module boundaries they unblock. Each row

@@ -28,6 +28,7 @@ py_test(
     deps = [
         ":isolated_edit",
         "//:conftest",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
         "@rules_python//python/runfiles",

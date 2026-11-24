@@ -603,14 +603,9 @@ pub(super) fn prepare<'source>(
     }
 }
 
-/// Whether the root's one invocation is worth attempting as an
-/// `Array.prototype` iteration row (`native/array_iteration.rs`): a supported
-/// row over a module binding holding one dense literal array, with a local
-/// callback that has no live captures. A cheap filter with no side effects:
-/// the attempt runs through `body::execute`, which keeps the kernel
-/// execution only if it seals the owner and otherwise rewinds to the flat
-/// lane (`plans/kernel_design.md` § Root admission). The row itself proves
-/// the method, the receiver and every callback.
+/// Cheap admission filter for the attempted iteration lane. The row proves the
+/// method, receiver and callbacks. If the owner fails to seal, `body::execute`
+/// rewinds the attempt and runs the flat lane.
 fn root_array_iteration(executor: &Executor<'_, '_>, calls: &[Arc<Call>]) -> bool {
     let invocations: Vec<_> = calls
         .iter()

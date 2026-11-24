@@ -9,6 +9,7 @@ import sys
 import zipfile
 from pathlib import Path
 
+import pytest
 import pytest_bazel
 import yaml
 from python.runfiles import Runfiles
@@ -23,7 +24,10 @@ def entry_source_units(graph_path: Path) -> set[str]:
     return {node["id"] for node in graph["nodes"] if node["destination"] in entry_keys}
 
 
-def test_shipped_recipe_reduces_residual_and_emits_the_expected_behavior(runfiles: Runfiles, tmp_path: Path) -> None:
+@pytest.mark.parametrize("selected_view", [False, True], ids=["full-tree", "selected-view"])
+def test_shipped_recipe_reduces_residual_and_emits_the_expected_behavior(
+    runfiles: Runfiles, tmp_path: Path, selected_view: bool
+) -> None:
     files = runfiles.root()
     engine = str(files / os.environ["DEBUNDLE_PEEL_ENGINE"])
     node = str(files / os.environ["DEBUNDLE_PEEL_NODE"])
@@ -40,10 +44,16 @@ def test_shipped_recipe_reduces_residual_and_emits_the_expected_behavior(runfile
     records = tmp_path / "records"
     records.mkdir()
     output = tmp_path / "output"
+    subset = tmp_path / "selection.json"
+    subset_args = []
+    if selected_view:
+        subset.write_text(json.dumps({"modules": [{"chunk": "main", "module": "values"}]}))
+        subset_args = ["--ownership-subset", str(subset)]
     recorded_run(
         [
             engine,
             "run",
+            *subset_args,
             "--graphs",
             "--tree-config",
             str(original / "spec_config.yaml"),
@@ -72,6 +82,9 @@ def test_shipped_recipe_reduces_residual_and_emits_the_expected_behavior(runfile
         tmp_path,
         records / "snapshot",
     )
+    if selected_view:
+        subset.unlink()
+    shutil.rmtree(original)
     baseline_entry_units = entry_source_units(output / "reports/tree/main/dependency_graph.json.gz")
     snapshot_report = tmp_path / "snapshot_report.json"
     snapshot_report.write_text(snapshot_text)
