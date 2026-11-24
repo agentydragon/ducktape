@@ -100,10 +100,12 @@ const computed = workerSplit(
     [mark("c", keys.item)]: mark("d", 3), [keys.proto]: 4,
     [1]: function named() { return 5; }
   };
-  export const result = trace === "abcd" && obj.slot === 3 && obj.__proto__ === 4 &&
-    obj[1].name === "named" && obj[1]() === 5;
-  if (!result) throw "computed data";`,
-  ["#1", "#2", "#3", "#4", "#5"]
+  export const result = (() => {
+    if (trace !== "abcd" || obj.slot !== 3 || obj.__proto__ !== 4 ||
+        obj[1].name !== "named" || obj[1]() !== 5) throw "computed data";
+    return true;
+  })();`,
+  ["#1", "#2", "#3", "#4"]
 );
 assert.equal(computed.verdict.status, "certified", computed.log);
 for (const file of [computed.files.sourceFile, path.join(computed.out, entry)]) {
