@@ -56,6 +56,12 @@ pub struct ResolvePlacementArgs {
     /// Retain only these canonical modules, member names and anonymous indices.
     #[arg(long)]
     ownership_subset: Option<PathBuf>,
+    /// Append a source_matches-only fragment to OWNER in this chunk; repeat for multiple files.
+    #[arg(long, value_name = "OWNER=YAML")]
+    proposal_fragment: Vec<pipeline::ProposalFragment>,
+    /// Also write the unfiltered view of this solve.
+    #[arg(long, requires = "ownership_subset")]
+    canonical_out: Option<PathBuf>,
     /// Destination JSON file.
     #[arg(long)]
     out: PathBuf,
@@ -69,6 +75,8 @@ impl ResolvePlacementArgs {
                 &self.chunk,
                 self.ownership_subset.as_deref(),
                 &self.out,
+                &self.proposal_fragment,
+                self.canonical_out.as_deref(),
                 diagnostics,
             )
         })

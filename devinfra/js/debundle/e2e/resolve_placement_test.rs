@@ -129,3 +129,127 @@ fn ambiguous_source_selector_fails_instead_of_picking_the_first_match() {
     assert!(run.stderr.contains("two"), "{}", run.stderr);
     assert!(output.is_none());
 }
+
+/// Exercise the CLI with fragments and both output files, including refusals.
+fn resolve_fragments(
+    source: &str,
+    additions: &[(&str, &str)],
+    subset: Value,
+) -> (CommandResult, Option<Value>, Option<Value>) {
+    let opts = FixtureOpts::new(
+        source,
+        vec![logical_module("shared", &[Member::new("seed")])],
+    );
+    let fixture = write_validate_fixture_spec(opts);
+    let workspace = fixture.workspace();
+    let dir = workspace.path();
+    let full = dir.join("full.json");
+    let selected = dir.join("selected.json");
+    let view = dir.join("view.json");
+    fs::write(&view, subset.to_string()).unwrap();
+    let mut fragments = vec![];
+    for (i, (owner, yaml)) in additions.iter().enumerate() {
+        let file = dir.join(format!("fragment{i}.yaml"));
+        fs::write(&file, yaml).unwrap();
+        fragments.push(format!("{owner}={}", file.display()));
+    }
+    let mut args = vec![
+        "spec",
+        "resolve-placement",
+        "--spec",
+        fixture.spec_path.to_str().unwrap(),
+        "--chunk",
+        "static/app",
+        "--ownership-subset",
+        view.to_str().unwrap(),
+        "--canonical-out",
+        full.to_str().unwrap(),
+        "--out",
+        selected.to_str().unwrap(),
+    ];
+    for fragment in &fragments {
+        args.extend(["--proposal-fragment", fragment.as_str()]);
+    }
+    let run = command(&args);
+    let read = |p| {
+        fs::read(p)
+            .ok()
+            .map(|b| serde_json::from_slice(&b).unwrap())
+    };
+    (run, read(full), read(selected))
+}
+
+const EXTRA: &str = r#"source_matches:
+  - match: "const local = 7;"
+    bindings: [{ local: local, name: extra }]
+"#;
+const ARROW: &str = r#"source_matches:
+  - match: "const local = () => 1;"
+    bindings: [{ local: local, name: other }]
+"#;
+
+fn keep_extra() -> Value {
+    json!({"modules":[{"chunk":"static/app","module":"shared","bindings":["extra"]}]})
+}
+
+#[test]
+fn append_to_existing_and_new_modules_then_filter_the_joint_solve() {
+    let source = "const seed = 0; const value = 7; const second = () => 1;";
+    let (run, full, selected) =
+        resolve_fragments(source, &[("shared", EXTRA), ("new", ARROW)], keep_extra());
+    assert!(run.status.success(), "{}", run.stderr);
+    let full = full.unwrap();
+    let selected = selected.unwrap();
+    assert_eq!(full["source_sha256"], source_sha256(source));
+    assert_eq!(selected["source_sha256"], full["source_sha256"]);
+    assert_eq!(
+        full["units"],
+        json!([
+            {"ordinal":0,"owner":"shared","members":{"seed":"seed"}},
+            {"ordinal":1,"owner":"shared","members":{"value":"extra"}},
+            {"ordinal":2,"owner":"new","members":{"second":"other"}}
+        ])
+    );
+    assert_eq!(
+        selected["units"],
+        json!([
+            {"ordinal":0,"owner":null}, full["units"][1], {"ordinal":2,"owner":null}
+        ])
+    );
+    assert_eq!(full["import_order"], json!(["shared", "new"]));
+    assert_eq!(selected["import_order"], json!(["shared"]));
+}
+
+#[test]
+fn ambiguous_excluded_fragment_rejects_both_outputs() {
+    let (run, full, selected) = resolve_fragments(
+        "const seed = 0; const value = 7; const left = () => 1; const right = () => 1;",
+        &[("shared", EXTRA), ("new", ARROW)],
+        keep_extra(),
+    );
+    assert!(!run.status.success());
+    assert!(run.stderr.contains("other"), "{}", run.stderr);
+    assert!(full.is_none() && selected.is_none());
+}
+
+#[test]
+fn fragments_cannot_replace_metadata_duplicate_claims_or_alias_owner_paths() {
+    for (fragments, expected) in [
+        (
+            vec![("shared", "source_matches: []\nannotations: {}")],
+            "unknown field",
+        ),
+        (
+            vec![("shared", "source_matches: []")],
+            "empty selector fragment",
+        ),
+        (vec![("shared", EXTRA), ("shared", EXTRA)], "duplicate"),
+        (vec![("/shared", EXTRA)], "canonical proposal owner"),
+    ] {
+        let (run, full, selected) =
+            resolve_fragments("const seed = 0; const x = 7;", &fragments, keep_extra());
+        assert!(!run.status.success(), "should reject {expected}");
+        assert!(run.stderr.contains(expected), "{}", run.stderr);
+        assert!(full.is_none() && selected.is_none());
+    }
+}

@@ -1,0 +1,8 @@
+exports_files(
+    [
+        "packages/excalidraw/element/bounds.yaml",
+        "packages/excalidraw/scene/Shape.yaml",
+        "packages/utils/geometry/shape.yaml",
+    ],
+    visibility = ["//devinfra/js/debundle/excalidraw:__pkg__"],
+)
