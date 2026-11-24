@@ -100,6 +100,40 @@ assert.equal(capture.status, "rejected", JSON.stringify(capture));
 assert.match(capture.reason, /unit 1 has access to the moved region of unit 3/);
 assert(!existsSync(laterCapture.out));
 
+const deferredPair = fixture(
+  "adjacent-closure-and-captured-initializer",
+  `const bytes = new Uint8Array([17]);
+   var inspect = value => read(value);
+   var read = value => value + 1;
+   export { bytes, inspect, read };`,
+  ["#1", "#2"],
+  ["#0", "#3"]
+);
+const pair = deferredPair.run(movesScope);
+assert.equal(pair.status, "certified", JSON.stringify(pair));
+assert.deepEqual(deferredPair.run(movesScope, "--check-output"), pair);
+for (const file of [deferredPair.sourceFile, path.join(deferredPair.out, "entry.mjs")]) {
+  const { bytes, inspect } = await import(pathToFileURL(file));
+  assert.equal(inspect(bytes[0]), 18);
+}
+
+const reentry = fixture(
+  "getter-observes-captured-initializer",
+  `function peek() { return typeof read; }
+   const receiver = { get value() { return peek(); } };
+   const before = receiver.value;
+   var inspect = () => read();
+   var read = () => 7;
+   export { before, inspect, read };`,
+  ["#3", "#4"],
+  ["#0", "#1", "#2", "#5"]
+);
+assert.equal((await import(pathToFileURL(reentry.sourceFile))).before, "undefined");
+const observed = reentry.run(refusalScope);
+assert.equal(observed.status, "rejected", JSON.stringify(observed));
+assert.match(observed.reason, /linked state already exposes the region of unit 4/);
+assert(!existsSync(reentry.out));
+
 const hoist = fixture(
   "hoist-before-early-alias",
   `const saved = read;

@@ -46,6 +46,51 @@ private theorem Access.linkState {w cells A} {s : State World.probe} (access : A
 
 private abbrev LinkedUnit := Nat × Stmt × Env
 
+private theorem CheckedPivot.forWorld {ready pre crossed pivot}
+    (checks : CheckedPivot ready pre crossed pivot) (w : World) :
+    CheckedPivot (linkState w ready) pre crossed pivot :=
+  ⟨Access.linkState checks.access, checks.localFlag, checks.scope⟩
+
+private theorem swapLocal (n : Nat) (s final : State w) (pre suffix : List LinkedUnit) {a b : LinkedUnit}
+    (diff : a.1 ≠ b.1) (ha : localPivotOk a = true) (hb : localPivotOk b = true) :
+    runUnits n (pre ++ [a, b] ++ suffix) s = .ok () final ↔
+      runUnits n (pre ++ [b, a] ++ suffix) s = .ok () final := by
+  have swap := runUnits_pivot n pre [b] suffix a (fun _ => True) s final
+    (fun _ _ => trivial) (fun _ _ _ _ _ _ _ => trivial)
+  simp only [List.append_assoc, List.cons_append, List.nil_append] at swap ⊢
+  apply swap
+  intro u hu
+  obtain rfl := List.mem_singleton.mp hu
+  have aLocal := localPivotOk_sound (W := w) ha n
+  have bLocal := localPivotOk_sound (W := w) hb n
+  exact ⟨fun t _ => local_units_commute diff aLocal bLocal nofun nofun t,
+    fun t _ => local_units_commute diff.symm bLocal aLocal nofun nofun t⟩
+
+/-- Move adjacent declarations together when the first captures the second. In the
+proof schedule the second moves first, before the first can publish its capture.
+Both moves across arbitrary code still require the full linked heap frame. -/
+private theorem movePair (n : Nat) (final : State w) {ready : State w} {pre crossed suffix : List LinkedUnit}
+    {a b : LinkedUnit} (diff : a.1 ≠ b.1)
+    (second : CheckedPivot ready pre crossed b) (first : CheckedPivot ready (pre ++ [b]) crossed a) :
+    runUnits n (pre ++ crossed ++ [a, b] ++ suffix) ready = .ok () final ↔
+      runUnits n (pre ++ [a, b] ++ crossed ++ suffix) ready = .ok () final := by
+  have swapBefore := swapLocal n ready final (pre ++ crossed) suffix diff first.localFlag second.localFlag
+  have moveSecond := runUnits_move (suffix := a :: suffix) n final second
+  have moveFirst := runUnits_move (suffix := suffix) n final first
+  have swapAfter := swapLocal n ready final pre (crossed ++ suffix) diff first.localFlag second.localFlag
+  simp only [List.append_assoc, List.cons_append, List.nil_append] at *
+  exact swapBefore.trans (moveSecond.trans (moveFirst.trans swapAfter.symm))
+
+private def checkPair? (ready : State World.probe) (pre crossed : List LinkedUnit) (a b : LinkedUnit) :
+    Option (PLift (a.1 ≠ b.1 ∧ CheckedPivot ready pre crossed b ∧ CheckedPivot ready (pre ++ [b]) crossed a)) := do
+  -- Only try this proof order when a has a reference into b's region.
+  guard (a.2.1.free.any fun x => (a.2.2.vars.lookup x).any (fun cell => cell.region == b.1 + 1))
+  if diff : a.1 ≠ b.1 then
+    let ⟨second⟩ ← (checkPivot ready pre crossed b).toOption
+    let ⟨first⟩ ← (checkPivot ready (pre ++ [b]) crossed a).toOption
+    return ⟨diff, second, first⟩
+  else none
+
 private structure CheckedSchedule (ready : State World.probe) (source : List LinkedUnit) where
   units : List LinkedUnit
   moves : Nat
@@ -69,8 +114,7 @@ private def checkMove (ready : State World.probe) (pre crossed suffix : List Lin
       intro u _
       exact ⟨fun s _ => inert_commute inert s, fun s _ => commute_inert inert s⟩⟩
   let ⟨checks⟩ ← checkPivot ready pre crossed pivot
-  return ⟨fun _ n final => runUnits_move n final
-    ⟨Access.linkState checks.access, checks.localFlag, checks.scope⟩⟩
+  return ⟨fun w n final => runUnits_move n final (checks.forWorld w)⟩
 
 /-- Match the requested order from left to right. Each move is checked against
 the prefix already placed, including units moved by previous steps. -/
@@ -91,15 +135,28 @@ private def checkSchedule (ready : State World.probe) (prefixRev remaining : Lis
     match h : remaining.dropWhile (fun u => u.1 != id) with
     | [] => throw s!"unit {id} is missing from the remaining linked schedule"
     | pivot :: suffix =>
+      have split : remaining = crossed ++ pivot :: suffix := by
+        have joined := List.takeWhile_append_dropWhile (p := fun u : LinkedUnit => u.1 != id) (l := remaining)
+        rw [h] at joined
+        exact joined.symm
+      -- Try the reversed proof order only for an adjacent forward reference.
+      match rest, hs : suffix with
+      | nextId :: rest', b :: tail =>
+        if b.1 == nextId then
+          if let some ⟨diff, second, first⟩ := checkPair? ready prefixRev.reverse crossed pivot b then
+            let next ← checkSchedule ready (b :: pivot :: prefixRev) (crossed ++ tail) rest'
+            return ⟨next.units, next.moves + 2, by
+              intro w n final
+              have pair := movePair (suffix := tail) n final diff (second.forWorld w) (first.forWorld w)
+              have after := next.equivalent w n final
+              simp only [split, hs, List.reverse_cons, List.append_assoc, List.cons_append, List.nil_append]
+                at pair after ⊢
+              exact pair.trans after⟩
+      | _, _ => pure ()
       let ⟨move⟩ ← checkMove ready prefixRev.reverse crossed suffix pivot
       let next ← checkSchedule ready (pivot :: prefixRev) (crossed ++ suffix) rest
       return ⟨next.units, next.moves + 1, by
         intro w n final
-        have split : remaining = crossed ++ pivot :: suffix := by
-          have joined := List.takeWhile_append_dropWhile (p := fun u : LinkedUnit => u.1 != id)
-            (l := remaining)
-          rw [h] at joined
-          exact joined.symm
         rw [split]
         have step := move w n final
         have tail := next.equivalent w n final
