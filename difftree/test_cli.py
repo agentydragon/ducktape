@@ -106,17 +106,24 @@ def test_cli_no_changes(runner, temp_git_repo, run_git, monkeypatch):
 # CLI Integration Tests
 
 
-def test_cli_integration_basic(runner, temp_git_repo, run_git, monkeypatch):
-    create_file(temp_git_repo, "file.py", "line1\n")
+@pytest.mark.parametrize("color", ["never", "always"])
+def test_cli_reads_local_git_diff(runner, temp_git_repo, run_git, monkeypatch, color):
+    run_git("config", "color.diff", color)
+    create_file(temp_git_repo, "added.py", "line1\n")
+    create_file(temp_git_repo, "removed.py", "line1\nline2\n")
     git_add_commit(run_git)
-    create_file(temp_git_repo, "file.py", "line1\nline2\n")
+    create_file(temp_git_repo, "added.py", "line1\nline2\nline3\n")
+    create_file(temp_git_repo, "removed.py", "line1\n")
+    create_file(temp_git_repo, "untracked.py", "ignored by git diff\n")
 
     monkeypatch.chdir(temp_git_repo)
     result = runner.invoke(main, [])
 
-    assert result.exit_code == 0
-    assert "file.py" in result.output
-    assert "+1" in result.output
+    assert result.exit_code == 0, result.output
+    rows = result.stdout.splitlines()
+    assert any("added.py" in row and "+2" in row for row in rows)
+    assert any("removed.py" in row and "-1" in row for row in rows)
+    assert "untracked.py" not in result.stdout
 
 
 @pytest.fixture

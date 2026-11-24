@@ -2,6 +2,7 @@
 
 import os
 import stat
+import subprocess
 import sys
 
 import click
@@ -9,7 +10,7 @@ from rich.console import Console
 
 from difftree.config import Column, RenderConfig, SortMode, parse_columns
 from difftree.diff_tree import DiffTree
-from difftree.parser import parse_git_diff, parse_unified_diff
+from difftree.parser import parse_unified_diff
 from difftree.tree import build_tree
 
 
@@ -85,11 +86,16 @@ def main(
     difftree --columns tree
     """
     try:
-        if diff := _read_diff_from_stdin():
-            # Git can color the patch when difftree is its pager.
-            changes = parse_unified_diff(click.unstyle(diff))
-        else:
-            changes = parse_git_diff(["--cached", *diff_args] if cached else list(diff_args))
+        diff = _read_diff_from_stdin()
+        if not diff:
+            command = ["git", "diff"]
+            if cached:
+                command.append("--cached")
+            command.extend(diff_args)
+            diff = subprocess.run(command, capture_output=True, text=True, check=True).stdout
+
+        # Both a pager and `color.diff=always` can supply an ANSI-colored patch.
+        changes = parse_unified_diff(click.unstyle(diff))
 
         if not changes:
             console = Console(stderr=True)
