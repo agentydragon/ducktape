@@ -769,7 +769,7 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
         -- SetFunctionName wraps a symbol’s description in brackets.
         pure ("[Symbol.iterator]", Expr.prim .iteratorSymbol [])
       else if tag == "PropertyDefinition" && !static && (← field keyNode "type") == "Identifier" &&
-          ["L", "T", "V"].contains (← field keyNode "k") then
+          (field keyNode "k").toOption.any (["L", "T", "V"].contains ·) then
         if ← isAnonymousDefinition value then throw "unsupported function or class named by a computed field key"
         pure ("", ← reference imports inFunction keyNode profile)
       else throw "unsupported computed class key"
