@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  assertCertified,
   array,
   exportNamed,
   literal,
@@ -44,8 +45,7 @@ const dir = path.join(root, "dense-array-batch");
 const { sourceFile, specFile } = prepare(dir, { source, provider: "", spec });
 const out = path.join(dir, "out");
 const { verdict, log } = lower(sourceFile, specFile, out);
-assert.equal(verdict.status, "certified", log);
-assert.equal(verdict.guarantee, "normal-completion", log);
+assertCertified(verdict, log);
 assert.deepEqual(moduleEvaluationOrder(out, entry), [...order, entry]);
 assert.deepEqual(lower(sourceFile, specFile, out, ["--check-output"]).verdict, verdict);
 

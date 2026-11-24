@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import { parse } from "acorn";
 import path from "node:path";
 import {
+  assertCertified,
   arrow,
   assertCertifiedResult,
   binary,
@@ -75,8 +76,7 @@ for (const [scenario, values, initialFields] of [
     [worker]: ["#0"],
     [entry]: ["#1"],
   });
-  assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", log);
+  assertCertified(verdict, log);
   assert.deepEqual(moduleEvaluationOrder(out, entry), [worker, entry]);
   const ownerAST = parse(readFileSync(path.join(out, worker), "utf8"), { ecmaVersion: "latest", sourceType: "module" });
   assert(

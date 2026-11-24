@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import {
+  assertCertified,
   root,
   id,
   literal,
@@ -136,8 +137,7 @@ assertWorkerResult(
       candidate = path.join(dir, "preview");
       forcePreview(files, candidate);
     } else {
-      assert.equal(verdict.status, "certified", log);
-      assert.equal(verdict.guarantee, "normal-completion", log);
+      assertCertified(verdict, log);
     }
     assert.deepEqual(moduleEvaluationOrder(candidate, spec.entry), [...spec.order, spec.entry], log);
     assert.deepEqual(observe(files.sourceFile, "result"), { result: { value: "before" } }, log);

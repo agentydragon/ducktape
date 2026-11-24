@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import {
+  assertCertified,
   root,
   id,
   literal,
@@ -64,8 +65,7 @@ for (const [changed, first, second] of [
       candidate = path.join(dir, "preview");
       forcePreview(files, candidate);
     } else {
-      assert.equal(verdict.status, "certified", log);
-      assert.equal(verdict.guarantee, "normal-completion", log);
+      assertCertified(verdict, log);
     }
     assert.deepEqual(moduleEvaluationOrder(candidate, spec.entry), [...spec.order, spec.entry]);
     assert.deepEqual(observe(path.join(candidate, spec.entry), "result"), readsLeft ? tdz : normal);
@@ -136,8 +136,7 @@ for (const [observed, leftArg, rightArg] of [
       candidate = path.join(dir, "preview");
       forcePreview(files, candidate);
     } else {
-      assert.equal(verdict.status, "certified", log);
-      assert.equal(verdict.guarantee, "normal-completion", log);
+      assertCertified(verdict, log);
     }
     assert.deepEqual(moduleEvaluationOrder(candidate, spec.entry), [...spec.order, spec.entry], log);
     const expected = capturesCall && reversed ? dependentReversed : bundled;

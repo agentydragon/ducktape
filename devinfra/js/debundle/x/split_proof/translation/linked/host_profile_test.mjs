@@ -3,6 +3,7 @@ import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  assertCertified,
   arrow,
   block,
   call,
@@ -96,8 +97,7 @@ if (includesCase("deferred-ambient-symbol")) {
   });
   const out = path.join(dir, "out");
   const { verdict, log } = lower(files.sourceFile, files.specFile, out);
-  assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", log);
+  assertCertified(verdict, log);
   assert.equal(verdict.hostProfile, undefined);
   for (const file of [files.sourceFile, path.join(out, entry)]) {
     const namespace = await import(pathToFileURL(file).href);
@@ -145,8 +145,7 @@ if (includesCase("deferred-ambient-object")) {
   });
   const out = path.join(dir, "out");
   const { verdict, log } = lower(files.sourceFile, files.specFile, out);
-  assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", log);
+  assertCertified(verdict, log);
   assert.deepEqual(lower(files.sourceFile, files.specFile, out, ["--check-output"]).verdict, verdict);
   for (const file of [files.sourceFile, path.join(out, entry)]) {
     const { load } = await import(pathToFileURL(file).href);

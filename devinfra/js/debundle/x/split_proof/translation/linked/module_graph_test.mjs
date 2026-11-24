@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse } from "acorn";
-import { lower, moduleEvaluationOrder, observe, prepare, root } from "./harness.mjs";
+import { assertCertified, lower, moduleEvaluationOrder, observe, prepare, root } from "./harness.mjs";
 
 // Sixteen provider/reader pairs reach the staged linking threshold of 32 executable units.
 const count = process.argv.includes("--full-graph") ? 48 : 16;
@@ -31,8 +31,7 @@ const dir = path.join(root, "module-graph");
 const files = prepare(dir, { source, provider: "", spec: { entry, modules, order, sequential: true } });
 const out = path.join(dir, "out");
 const { verdict, log } = lower(files.sourceFile, files.specFile, out);
-assert.equal(verdict.status, "certified", log);
-assert.equal(verdict.guarantee, "normal-completion", log);
+assertCertified(verdict, log);
 assert.deepEqual(lower(files.sourceFile, files.specFile, out, ["--check-output"]).verdict, verdict);
 assert.deepEqual(moduleEvaluationOrder(out, entry), [...order, entry]);
 for (const file of [files.sourceFile, path.join(out, entry)]) {

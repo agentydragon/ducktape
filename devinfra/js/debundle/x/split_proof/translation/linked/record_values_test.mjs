@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import {
+  assertCertified,
   arrow,
   binary,
   block,
@@ -92,8 +93,7 @@ for (const [seed, operand] of [0, 1, "ready", null].entries()) {
   const out = path.join(dir, "out");
   for (const options of seed === 0 ? [[], ["--check-output"]] : [[]]) {
     const { verdict, log } = lower(files.sourceFile, files.specFile, out, options);
-    assert.equal(verdict.status, "certified", log);
-    assert.equal(verdict.guarantee, "normal-completion", log);
+    assertCertified(verdict, log);
   }
   for (const file of [files.sourceFile, path.join(out, entry)])
     assert.deepEqual(observe(file, "result"), { result: seed });

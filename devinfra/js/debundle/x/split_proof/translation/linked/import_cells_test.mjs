@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { exportNamed, importNamed, observe, program, runSplit } from "./harness.mjs";
+import { assertCertified, exportNamed, importNamed, observe, program, runSplit } from "./harness.mjs";
 
 const source = `
 import { publicValue } from "./provider.mjs";
@@ -22,8 +22,7 @@ function split(name, provider, extras) {
 
 function assertAccepted(test, expected) {
   const { files, out, verdict, log } = test;
-  assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", log);
+  assertCertified(verdict, log);
   for (const file of [files.sourceFile, path.join(out, "entry.mjs")]) {
     assert.deepEqual(observe(file, Object.keys(expected)), expected, file);
   }

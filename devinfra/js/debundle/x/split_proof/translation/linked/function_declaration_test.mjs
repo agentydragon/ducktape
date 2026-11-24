@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  assertCertified,
   block,
   call,
   conditional,
@@ -36,8 +37,7 @@ const entry = "entry.mjs";
     { "call.mjs": ["#0"], "declaration.mjs": ["#1"], [entry]: ["#2"] },
     order
   );
-  assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", log);
+  assertCertified(verdict, log);
   assert.deepEqual(moduleEvaluationOrder(out, entry), [...order, entry]);
   const original = await import(pathToFileURL(files.sourceFile).href);
   const emitted = await import(pathToFileURL(path.join(out, entry)).href);
@@ -112,8 +112,7 @@ for (const [seed, value] of ["initialized", 42].entries()) {
       candidate = path.join(dir, "preview");
       forcePreview(files, candidate);
     } else {
-      assert.equal(verdict.status, "certified", log);
-      assert.equal(verdict.guarantee, "normal-completion", log);
+      assertCertified(verdict, log);
     }
     assert.deepEqual(moduleEvaluationOrder(candidate, entry), [...order, entry]);
     assert.deepEqual(
@@ -131,8 +130,7 @@ for (const [seed, value] of ["initialized", 42].entries()) {
     { "read.mjs": ["#0", "#1"], [entry]: ["#2"] },
     ["read.mjs"]
   );
-  assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", log);
+  assertCertified(verdict, log);
   for (const file of [files.sourceFile, path.join(out, entry)]) {
     assert.deepEqual(observe(file, "read"), { read: 4 });
   }
