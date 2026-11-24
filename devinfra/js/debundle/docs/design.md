@@ -4100,32 +4100,20 @@ run in global scope as opaque calls (A1 and
 <../e2e/chunk_admission_test.rs>). A known global-property conflict rejects
 an asserted commutation (<../e2e/commuting_statements_gate_test.rs>).
 
-There has been an independent ordinary-gate soundness defect: a reader of
-another chunk's mutable state was classified as pure and could move before
-its writer with no author premise. The source printed `1 1`, and the emitted
-entry printed `1 0`. The [L4c discrepancy audit](../debug/2026_11_09_l4c_discrepancy_audit.md#unsafe-legacy-acceptance)
-records the mechanism and fix. The current gate refuses those unsafe splits;
-<../e2e/foreign_cell_read_order_test.rs> checks the refusal and uses
-`--emit-on-rejection` only to demonstrate the unsafe order. The
-<../e2e/foreign_state_node_differential_sweep_test.rs> checks accepted splits
-of mutable imported bindings, objects and collections against Node. A
-refused split's deliberately emitted divergent output is not a current
-accepted-gate failure. The statement-class counterexamples in
-<../debug/2026_11_10_statement_class_independent_audit.md> concern a
-report-only prototype, not the ordinary gate.
+For inferred dependencies, distinguish three kinds of evidence:
 
-The cyclic export-cell observation in
-<../debug/2026_11_14_cyclic_export_cells.md> is a **current** independent
-ordinary-gate defect. The direct named-import route was fenced by merged
-[PR #16539](https://github.com/agentydragon/ducktape/pull/16539), but an
-opaque `globalThis.inspect()` call can still observe an exported `var` before
-its initializer in a cyclic peer. On `devel` at `fc6336654b`, a neutral
-bundle/spec with no author premises was accepted: Node printed `undefined`
-from the source and `function` from the emitted entry. The existing direct-call
-CLI regression is <../e2e/callbacks/availability/publication_order.rs>; the debug note records
-the exact normal-mode probe and RBE invocation for the remaining global-call
-case. The repair remains tracked in
-<../TODO.md#cyclic-export-cell-observation-soundness>.
+- **Fixed ordinary-gate defect:** a reader of another chunk's mutable state
+  could move before its writer. The [L4c audit](../debug/2026_11_09_l4c_discrepancy_audit.md#unsafe-legacy-acceptance)
+  explains the fix. The [order regression](../e2e/foreign_cell_read_order_test.rs)
+  checks refusal and shows the divergent output with `--emit-on-rejection`;
+  the [Node differential sweep](../e2e/foreign_state_node_differential_sweep_test.rs)
+  compares accepted splits of imported bindings, objects and collections.
+- **Report-only prototype:** the [statement-class audit](../debug/summary_effects/2026_11_10_statement_class_independent_audit.md)
+  records counterexamples to the prototype's classifications.
+- **Open ordinary-gate defect:** an opaque call can observe a cyclic peer's
+  exported `var` before initialization. The [cyclic export-cell investigation](../debug/2026_11_14_cyclic_export_cells.md#partial-source-derived-repair)
+  records the direct-call repair and the remaining normal-mode reproduction;
+  the [repair tracker](../TODO.md#cyclic-export-cell-observation-soundness) tracks the missing proof.
 
 These fixtures prove their tested cases, not universal equivalence. A newly
 reproduced ordinary-gate acceptance that changes behavior is an engine defect
