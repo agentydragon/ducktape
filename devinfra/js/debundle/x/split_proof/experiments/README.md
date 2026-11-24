@@ -182,8 +182,16 @@ The idea: acorn's ESTree goes into Lean as data, and Lean computes the footprint
 same nodes, and the analysis that was my weakest trusted part (including the callback soundness hole in § 1) becomes Lean code that can be tested,
 and later proved.
 
-[`dump.mjs`](../lowering/dump.mjs) writes ESTree as JSON, with an independent oracle (`eslint-scope`) for each statement's free variables.
-A top-level `var`, `let` or `const` list of several declarators becomes one statement per declarator, so a spec can place them apart.
+[`dump_ast.mjs`](../translation/dump_ast.mjs) writes ESTree as JSON, with an independent oracle (`eslint-scope`) for each statement's free variables.
+Lean treats each declarator in a top-level `var`, `let` or `const` list as a separate unit, so a spec can place them apart.
+
+Run the dumper through Bazel from the repository root, or use Node after the [standalone translation setup](../translation/README.md#run-it).
+
+```sh
+bb run //devinfra/js/debundle/x/split_proof/translation:dump_ast -- /path/to/bundle.mjs > bundle.json
+node devinfra/js/debundle/x/split_proof/translation/dump_ast.mjs /path/to/bundle.mjs > bundle.json
+```
+
 [`Lower.lean`](../lean/EsmSplit/Lower.lean) (306 lines) reads it as `Lean.Json`, which is untyped, so **every** node type of JavaScript is representable.
 It scans what each statement declares, mentions and assigns. The scan is total and sound by construction:
 

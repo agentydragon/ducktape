@@ -39,14 +39,14 @@ These measurements predate the removal of the `check` executable and verbatim-ou
 
 ## Real bundles: lowering to ESTree and the Lean footprint analysis
 
-| Bundle          | Source | Top-level statements | `node dump.mjs` (acorn + eslint-scope + JSON) | Lean footprints (process start + JSON parse + analysis) |
-| --------------- | ------ | -------------------- | --------------------------------------------- | ------------------------------------------------------- |
-| lodash (subset) | 84 KB  | 670                  | 182 ms                                        | 79 ms                                                   |
-| acorn           | 199 KB | 447                  | 238 ms                                        | 92 ms                                                   |
-| semver (CJS)    | 72 KB  | 59                   | 154 ms                                        | 78 ms                                                   |
-| zod             | 744 KB | 1,072                | 465 ms                                        | 200 ms                                                  |
-| acorn, minified | 119 KB | 374                  | 202 ms                                        | 92 ms                                                   |
-| zod, minified   | 447 KB | 805                  | 531 ms                                        | 192 ms                                                  |
+| Bundle          | Source | Top-level statements | AST dump (Acorn + eslint-scope + JSON) | Lean footprints (process start + JSON parse + analysis) |
+| --------------- | ------ | -------------------- | -------------------------------------- | ------------------------------------------------------- |
+| lodash (subset) | 84 KB  | 670                  | 182 ms                                 | 79 ms                                                   |
+| acorn           | 199 KB | 447                  | 238 ms                                 | 92 ms                                                   |
+| semver (CJS)    | 72 KB  | 59                   | 154 ms                                 | 78 ms                                                   |
+| zod             | 744 KB | 1,072                | 465 ms                                 | 200 ms                                                  |
+| acorn, minified | 119 KB | 374                  | 202 ms                                 | 92 ms                                                   |
+| zod, minified   | 447 KB | 805                  | 531 ms                                 | 192 ms                                                  |
 
 Best of 2 (dump) and best of 3 (Lean). Inside one process the footprint stage alone took 3 ms (lodash, 670 statements), 6 ms (acorn, 447) and 35 ms (zod, minified, 805).
 
