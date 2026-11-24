@@ -374,6 +374,31 @@ async def test_stock_operations(mcp_client: Client, ref_data: RefData) -> None:
     assert float(entries[0]["entry"]["price"]) == 9.99
 
 
+async def test_editing_stock_price_preserves_purchase_store(
+    mcp_client: Client, grocy_http_client: GrocyClient, ref_data: RefData
+) -> None:
+    stores = await call_tool(
+        mcp_client,
+        "entities_create",
+        {"items": [{"entity_type": "shopping_locations", "body": {"name": ref_data.suffix}}]},
+    )
+    store_id = stores[0]["created_object_id"]
+    purchase = await grocy_http_client.post(
+        f"/stock/products/{ref_data.product_ids[0]}/add", json={"amount": 4, "shopping_location_id": store_id}
+    )
+    purchase.raise_for_status()
+    entries = await call_tool(mcp_client, "stock_entries_list", {"products": [ref_data.product_ids[0]]})
+    entry_id = entries[0]["entry"]["entry_id"]
+
+    receipt = await call_tool(mcp_client, "stock_entry_edit", {"items": [{"entry_id": entry_id, "price": 8.5}]})
+    assert receipt[0]["kind"] == "ok", receipt
+    stored = await grocy_http_client.get(f"/stock/entry/{entry_id}")
+    stored.raise_for_status()
+    row = stored.json()
+    assert row["price"] == 8.5
+    assert row["shopping_location_id"] == store_id
+
+
 async def test_stock_entry_edit_serializes_partial_updates(mcp_client: Client, ref_data: RefData) -> None:
     """Partial edits preserve stored values, serialize dates, and apply explicit clears last."""
     product = ref_data.products[0]

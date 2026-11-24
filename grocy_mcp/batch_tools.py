@@ -54,7 +54,6 @@ from grocy_mcp.mcp_types import (
     EditOk,
     EditProductItem,
     EditShoppingListField,
-    EditStockEntryField,
     EditStockEntryItem,
     FullLocation,
     FullProduct,
@@ -287,19 +286,23 @@ def register_batch_tools(
     ) -> dict[str, Any]:
         body: dict[str, Any] = {
             key: current.get(key)
-            for key in ("amount", "best_before_date", "purchased_date", "price", "location_id", "note")
+            # Grocy replaces all eight fields and journals the edit, including the purchase store.
+            for key in (
+                "amount",
+                "best_before_date",
+                "purchased_date",
+                "price",
+                "location_id",
+                "shopping_location_id",
+                "note",
+            )
         }
         body["open"] = current.get("open") in (True, 1, "1")
         body.update(item.model_dump(mode="json", include=set(body), exclude_unset=True, exclude_none=True))
         if item.location is not None:
             body["location_id"] = await _resolve_id(client, EntityType.LOCATION, item.location)
-        for field, key in {
-            EditStockEntryField.PRICE: "price",
-            EditStockEntryField.PURCHASED_DATE: "purchased_date",
-            EditStockEntryField.NOTE: "note",
-        }.items():
-            if field in (item.clear_fields or ()):
-                body[key] = None
+        for field in item.clear_fields or ():
+            body[field.value] = None
         return body
 
     async def _list_reference(
