@@ -53,3 +53,11 @@ A narrow rule could use a hidden capability for the metadata object:
 An implementation can then turn the retained-reader refusal into an emit/disk acceptance and repeat the
 full Rust-selected main placement in Chromium. An initialization certificate alone does not check later
 calls to exported functions; keep the getter and mutation observations as behavioral controls.
+
+## Receiver-cell experiment
+
+The [Lean prototype](../../lean/EsmSplit/CoreJS/MetadataCell.lean) checks a hidden immutable cell and its current heap object in both scopes. Given a common starting state, its certificate equates the results of the two captured reads for every world and fuel bound sufficient to reach the property expressions. Both reads dispatch through the ordinary evaluator: the outer getter can change state before the inner lookup. The fixture changes a getter's captured binding to a second object and observes its distinct address. A getter that reaches unsupported code produces `unknown` even when the receiver check succeeds.
+
+The remaining obligation is to **supply** the root. In `missing_linked_root`, the actual linker succeeds and leaves the hidden cell absent, even though a hoisted opaque function requests it. A loader extension needs a record-to-cell mapping shared across source and candidate, with an immutable binding to the metadata object and world-specific property state. It must account for initialization on first access and for any already reachable references. In particular, [link transport](../../lean/EsmSplit/CoreJS/LinkWorld.lean) currently reuses the probe's heap across worlds. Adding an arbitrary host-supplied metadata heap to the probe is not justified by that theorem. Until the producer and its transport are proved, the prototype does not participate in the splitter's verdict.
+
+The [neutral resolver replay](https://app.buildbuddy.io/invocation/7f4592ee-b421-463a-a1d4-9290aedd27f4) checked the canonical and selected owner maps against original `main.js` SHA-256 `226df77e1ed19405ba8bcdcf9172aa8b2050d25877e2fd472ebd3864f0cd33d9`. The selected owner contains only unit 1486. With the original providers, Lean still refused retained unit 23 before publication.
