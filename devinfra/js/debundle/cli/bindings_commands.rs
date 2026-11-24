@@ -258,15 +258,7 @@ fn run_bindings_rename_cmd(
     args: BindingsRenameArgs,
 ) -> Result<()> {
     if let Some(path) = &args.batch {
-        use std::io::Read;
-        let text = if path == "-" {
-            let mut text = String::new();
-            std::io::stdin().read_to_string(&mut text)?;
-            text
-        } else {
-            std::fs::read_to_string(path).with_context(|| format!("reading {path}"))?
-        };
-        let requests: Vec<Rename> = serde_json::from_str(&text)?;
+        let requests: Vec<Rename> = serde_json::from_str(&read_binding_batch(path)?)?;
         let out = rename_bindings(
             stderr,
             &args.modules_root,
@@ -324,6 +316,14 @@ fn run_bindings_rename_cmd(
     Ok(())
 }
 
+fn read_binding_batch(path: &str) -> Result<String> {
+    if path == "-" {
+        Ok(std::io::read_to_string(std::io::stdin())?)
+    } else {
+        std::fs::read_to_string(path).with_context(|| format!("reading {path}"))
+    }
+}
+
 fn run_bindings_assign_cmd(
     output: &mut dyn std::io::Write,
     stderr: &mut (dyn std::io::Write + Send),
@@ -331,20 +331,12 @@ fn run_bindings_assign_cmd(
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
 ) -> Result<()> {
-    use std::io::Read;
     let mut moves: Vec<Move> = Vec::new();
     for t in &args.triples {
         moves.push(parse_move_triple(t)?);
     }
     if let Some(path) = &args.batch {
-        let text = if path == "-" {
-            let mut buf = String::new();
-            std::io::stdin().read_to_string(&mut buf)?;
-            buf
-        } else {
-            std::fs::read_to_string(path).with_context(|| format!("reading {path}"))?
-        };
-        moves.extend(parse_batch_json(&text)?);
+        moves.extend(parse_batch_json(&read_binding_batch(path)?)?);
     }
     let candidate_context = args.effect_assessment.resolve_for_verified_write(
         &args.edit,
