@@ -31,24 +31,22 @@ def run(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(argv, cwd=cwd, capture_output=True, text=True, check=False)
 
 
-def run_tree(debundle: Path, fixture: Path, out_root: Path) -> subprocess.CompletedProcess[str]:
-    return run(
-        [
-            str(debundle),
-            "run",
-            "--tree-config",
-            str(fixture / "spec_config.yaml"),
-            "--tree-modules",
-            str(fixture / "modules"),
-            "--tree-vendor-marks",
-            str(fixture / "vendor_marks.yaml"),
-            "--tree-source-root",
-            str(fixture),
-            "--out-root",
-            str(out_root),
-        ],
-        fixture,
-    )
+def tree_run_argv(debundle: str | Path, fixture: Path, out_root: Path) -> list[str]:
+    """Run the examples' spec, source and module layout through the real CLI."""
+    return [
+        str(debundle),
+        "run",
+        "--tree-config",
+        str(fixture / "spec_config.yaml"),
+        "--tree-modules",
+        str(fixture / "modules"),
+        "--tree-vendor-marks",
+        str(fixture / "vendor_marks.yaml"),
+        "--tree-source-root",
+        str(fixture),
+        "--out-root",
+        str(out_root),
+    ]
 
 
 def _assert_conflict(out_root: Path, control: Control, result: subprocess.CompletedProcess[str]) -> None:
@@ -85,7 +83,7 @@ def _run_control(debundle: Path, node: Path, fixture: Path, out_root: Path, name
         shutil.copyfile(control_fixture / "source/controls" / control.source, control_fixture / "source/main.js")
         baseline = node_baseline(node, control_fixture, control.node_error)
         output = out_root / "controls" / name
-        transformed = run_tree(debundle, control_fixture, output)
+        transformed = run(tree_run_argv(debundle, control_fixture, output), control_fixture)
         if transformed.returncode == 0:
             raise AssertionError(f"debundle accepted unsupported control {name}")
         _assert_conflict(output, control, transformed)
@@ -104,7 +102,7 @@ def run_examples(debundle: Path, node: Path, fixtures: Path, out_root: Path) -> 
         baseline = node_baseline(node, fixture)
 
         output = out_root / name
-        transformed = run_tree(debundle, fixture, output)
+        transformed = run(tree_run_argv(debundle, fixture, output), fixture)
         if transformed.returncode != 0:
             raise RuntimeError(f"debundle rejected {name}:\n{transformed.stdout}\n{transformed.stderr}")
 

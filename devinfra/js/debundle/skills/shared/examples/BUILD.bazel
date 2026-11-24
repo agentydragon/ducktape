@@ -41,6 +41,7 @@ py_test(
     env = _TOOL_ENV,
     deps = [
         ":conftest",
+        ":contract_examples",
         ":isolated_edit",
         "//:conftest",
         "@pypi//pytest",
@@ -73,6 +74,7 @@ py_test(
     env = _TOOL_ENV,
     deps = [
         ":conftest",
+        ":contract_examples",
         ":isolated_edit",
         "//:conftest",
         "//devinfra/testing:undeclared_outputs",

@@ -12,6 +12,7 @@ import pytest
 import pytest_bazel
 import yaml
 
+from devinfra.js.debundle.skills.shared.examples.contract_examples import tree_run_argv
 from devinfra.js.debundle.skills.shared.examples.isolated_edit import recorded_run
 
 
@@ -40,26 +41,7 @@ def test_shipped_recipe_reduces_residual_and_emits_the_expected_behavior(
     if selected_view:
         subset.write_text(json.dumps({"modules": [{"chunk": "main", "module": "values"}]}))
         subset_args = ["--ownership-subset", str(subset)]
-    recorded_run(
-        [
-            engine,
-            "run",
-            *subset_args,
-            "--graphs",
-            "--tree-config",
-            str(original / "spec_config.yaml"),
-            "--tree-modules",
-            str(original / "modules"),
-            "--tree-vendor-marks",
-            str(original / "vendor_marks.yaml"),
-            "--tree-source-root",
-            str(original),
-            "--out-root",
-            str(output),
-        ],
-        tmp_path,
-        records / "initial",
-    )
+    recorded_run([*tree_run_argv(engine, original, output), "--graphs", *subset_args], tmp_path, records / "initial")
     snapshot_text = recorded_run(
         [
             engine,

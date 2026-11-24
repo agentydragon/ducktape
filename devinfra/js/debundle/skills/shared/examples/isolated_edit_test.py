@@ -11,6 +11,7 @@ import pytest
 import pytest_bazel
 import yaml
 
+from devinfra.js.debundle.skills.shared.examples.contract_examples import tree_run_argv
 from devinfra.js.debundle.skills.shared.examples.isolated_edit import Snapshot, graph_command, recorded_run
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
@@ -31,23 +32,7 @@ def test_worker_patch_is_integrated_only_after_baseline_verification(
     packages = tmp_path / "package inputs"
     packages.mkdir()
     recorded_run(
-        [
-            engine,
-            "run",
-            "--graphs",
-            "--tree-config",
-            str(original / "spec_config.yaml"),
-            "--tree-modules",
-            str(original / "modules"),
-            "--tree-vendor-marks",
-            str(original / "vendor_marks.yaml"),
-            "--tree-source-root",
-            str(original),
-            "--packages-root",
-            str(packages),
-            "--out-root",
-            str(output),
-        ],
+        [*tree_run_argv(engine, original, output), "--graphs", "--packages-root", str(packages)],
         tmp_path,
         evidence / "initial-run",
     )
