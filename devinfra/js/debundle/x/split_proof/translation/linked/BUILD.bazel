@@ -66,6 +66,7 @@ _LINKED_PROGRAMS_TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/
         "linked_object_spread_test",
         "linked_optional_callee_test",
         "linked_optional_chain_test",
+        "linked_pre_super_test",
         "linked_provider_programs_test",
         "linked_realm_constructors_test",
         "linked_record_values_test",

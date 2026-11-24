@@ -277,4 +277,30 @@ private def asyncMethodShape : M World.probe Bool := do
   | .ok result _ => result
   | _ => false
 
+private def changedSuperclass (inPrefix : Bool) : Program :=
+  let superclass (name marker : String) : Stmt :=
+    .decl .const name (.cls name false (.mk name .classCtor false []
+      [.expr (.prim .log [.str marker])]) [])
+  let change := Expr.prim .setPrototypeOf [.var "Child", .var "Alternate"]
+  let argument := Expr.prim .log [.str "argument"]
+  let before := if inPrefix then [Stmt.expr change] else []
+  let args := [if inPrefix then argument else Expr.seq change argument]
+  let tail := Func.mk "Child" .classCtor false [] []
+  .single [
+    superclass "Base" "base",
+    superclass "Alternate" "alternate",
+    .decl .const "Child" (.derived "Child" false (.var "Base") [] (some (before, args, tail))),
+    .expr (.new (.var "Child") [])
+  ]
+
+-- A superclass change during argument evaluation stops the checker before invoking either constructor.
+#guard match runProgram World.probe 96 (changedSuperclass false) with
+  | .unknown reason state =>
+    reason == "superclass changed while evaluating super arguments" && state.out == #["argument"]
+  | _ => false
+
+#guard match runProgram World.probe 96 (changedSuperclass true) with
+  | .ok _ state => state.out == #["argument", "alternate"]
+  | _ => false
+
 end CoreJS.LinkedBehaviorExamples
