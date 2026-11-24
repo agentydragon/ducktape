@@ -6,8 +6,6 @@ js_library(
     srcs = [
         "cases.mjs",
         "cases_general.mjs",
-        "debug/general_known_gaps/cases.mjs",
-        "debug/p1_known_gaps/cases.mjs",
         "targeted.mjs",
     ],
     deps = ["//devinfra/js/debundle/x/split_proof:seeded_random"],
@@ -22,7 +20,11 @@ js_library(
 
 eslint_test(
     name = "eslint_test",
-    srcs = [":lint_sources"],
+    srcs = [
+        ":lint_sources",
+        "//devinfra/js/debundle/x/split_proof/effects/debug/general_known_gaps:cases",
+        "//devinfra/js/debundle/x/split_proof/effects/debug/p1_known_gaps:cases",
+    ],
 )
 
 # The golden cases of the effect analysis: what each unit of a small bundle touches, and Node's verdict on reorders.
@@ -53,7 +55,11 @@ js_test(
     name = "effects_known_gaps_test",
     size = "medium",
     args = ["--known-gaps"],
-    data = _EFFECTS_CASES_DATA + ["//devinfra/js/debundle/x/split_proof/translation:generator_gap_cases"],
+    data = _EFFECTS_CASES_DATA + [
+        "//devinfra/js/debundle/x/split_proof/effects/debug/general_known_gaps:cases",
+        "//devinfra/js/debundle/x/split_proof/effects/debug/p1_known_gaps:cases",
+        "//devinfra/js/debundle/x/split_proof/translation/debug/generator_findings:cases",
+    ],
     entry_point = "run.mjs",
     env = _EFFECTS_CASES_ENV,
 )

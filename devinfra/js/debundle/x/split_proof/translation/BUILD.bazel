@@ -66,6 +66,7 @@ eslint_test(
     name = "eslint_test",
     srcs = [
         ":lint_sources",
+        "//devinfra/js/debundle/x/split_proof/translation/debug/generator_findings:cases",
         "//devinfra/js/debundle/x/split_proof/translation/testing:lint_sources",
     ],
 )
@@ -1224,10 +1225,4 @@ js_library(
 js_library(
     name = "generate_specs",
     srcs = ["generate_specs.mjs"],
-)
-
-js_library(
-    name = "generator_gap_cases",
-    srcs = ["debug/generator_findings/cases.mjs"],
-    visibility = ["//devinfra/js/debundle/x/split_proof/effects:__pkg__"],
 )
