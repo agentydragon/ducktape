@@ -352,6 +352,30 @@ pub struct LimitReport {
     pub sections: BTreeMap<&'static str, LimitSectionReport>,
 }
 
+impl LimitReport {
+    pub fn new(limit: usize) -> Self {
+        Self {
+            limit,
+            sections: BTreeMap::new(),
+        }
+    }
+
+    /// Truncate a section and record its original and emitted row counts.
+    pub fn apply<T>(&mut self, section: &'static str, records: &mut Vec<T>) {
+        let total = records.len();
+        apply_limit(records, self.limit);
+        let emitted = records.len();
+        self.sections.insert(
+            section,
+            LimitSectionReport {
+                total,
+                emitted,
+                truncated: emitted < total,
+            },
+        );
+    }
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct LimitSectionReport {
     pub total: usize,
@@ -489,12 +513,12 @@ pub fn run_patch_plan_report(
             .count(),
         unknown_binding_count: rows.iter().map(|row| row.unknown_binding_ids.len()).sum(),
     };
-    let mut sections = BTreeMap::new();
-    apply_limit_with_metadata(&mut rows, args.limit, &mut sections, "rows");
+    let mut limits = LimitReport::new(args.limit);
+    limits.apply("rows", &mut rows);
     Ok(PatchPlanReport {
         rows,
         summary,
-        limits: limit_report(args.limit, sections),
+        limits: (args.limit > 0).then_some(limits),
     })
 }
 
@@ -544,14 +568,6 @@ pub fn run_graph_summary_report(args: &GraphSummaryArgs) -> Result<GraphSummaryR
         module_edge_count: graph.quotient.edges.len(),
         largest_residual_atomic_groups,
     })
-}
-
-macro_rules! apply_limits {
-    ($limit:expr, $sections:expr, $(($vec:expr, $name:expr)),+ $(,)?) => {
-        $(
-            apply_limit_with_metadata(&mut $vec, $limit, &mut $sections, $name);
-        )+
-    };
 }
 
 /// One command's loaded graph and shared authoring lookups. This cache never
@@ -917,25 +933,27 @@ fn explain_from_graph(
         .filter(|witness| !witness.affected_roots.is_disjoint(&affected_roots))
         .cloned()
         .collect();
-    let mut sections = BTreeMap::new();
-    apply_limits!(
-        args.limit,
-        sections,
-        (native_integrity_witnesses, "native_integrity_witnesses"),
-        (native_prototype_mutations, "native_prototype_mutations"),
-        (limited_source_unit_ids, "source_unit_ids"),
-        (source_units, "source_units"),
-        (neighbor_source_units, "neighbor_source_units"),
-        (bindings, "bindings"),
-        (binding_homes, "binding_homes"),
-        (incoming_edges, "incoming_edges"),
-        (outgoing_edges, "outgoing_edges"),
-        (atomic_groups, "atomic_groups"),
-        (incoming_atomic_edges, "incoming_atomic_edges"),
-        (outgoing_atomic_edges, "outgoing_atomic_edges"),
-        (quotient_edges, "quotient_edges"),
-        (unknown_binding_ids, "unknown_binding_ids"),
+    let mut limits = LimitReport::new(args.limit);
+    limits.apply(
+        "native_integrity_witnesses",
+        &mut native_integrity_witnesses,
     );
+    limits.apply(
+        "native_prototype_mutations",
+        &mut native_prototype_mutations,
+    );
+    limits.apply("source_unit_ids", &mut limited_source_unit_ids);
+    limits.apply("source_units", &mut source_units);
+    limits.apply("neighbor_source_units", &mut neighbor_source_units);
+    limits.apply("bindings", &mut bindings);
+    limits.apply("binding_homes", &mut binding_homes);
+    limits.apply("incoming_edges", &mut incoming_edges);
+    limits.apply("outgoing_edges", &mut outgoing_edges);
+    limits.apply("atomic_groups", &mut atomic_groups);
+    limits.apply("incoming_atomic_edges", &mut incoming_atomic_edges);
+    limits.apply("outgoing_atomic_edges", &mut outgoing_atomic_edges);
+    limits.apply("quotient_edges", &mut quotient_edges);
+    limits.apply("unknown_binding_ids", &mut unknown_binding_ids);
 
     Ok(ExplainReport {
         native_integrity_witnesses,
@@ -954,10 +972,7 @@ fn explain_from_graph(
         outgoing_atomic_edges,
         quotient_edges,
         unknown_binding_ids,
-        limits: Some(LimitReport {
-            limit: args.limit,
-            sections,
-        }),
+        limits: Some(limits),
     })
 }
 
@@ -1071,37 +1086,10 @@ fn apply_limit<T>(records: &mut Vec<T>, limit: usize) {
     }
 }
 
-/// Truncate a report section and record the pre- and post-limit row counts.
-pub fn apply_limit_with_metadata<T>(
-    records: &mut Vec<T>,
-    limit: usize,
-    sections: &mut BTreeMap<&'static str, LimitSectionReport>,
-    section: &'static str,
-) {
-    let total = records.len();
-    apply_limit(records, limit);
-    let emitted = records.len();
-    sections.insert(
-        section,
-        LimitSectionReport {
-            total,
-            emitted,
-            truncated: emitted < total,
-        },
-    );
-}
-
 fn move_to_front<T>(records: &mut [T], mut matches: impl FnMut(&T) -> bool) {
     if let Some(index) = records.iter().position(&mut matches) {
         records[..=index].rotate_right(1);
     }
-}
-
-fn limit_report(
-    limit: usize,
-    sections: BTreeMap<&'static str, LimitSectionReport>,
-) -> Option<LimitReport> {
-    (limit > 0).then_some(LimitReport { limit, sections })
 }
 
 fn group_atomic_groups_by_destination(
