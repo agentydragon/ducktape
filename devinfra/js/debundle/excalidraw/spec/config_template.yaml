@@ -14,6 +14,7 @@ import_order:
     - packages/math/vector
     - packages/math/utils
     - packages/math/point
+    - packages/excalidraw/utils
     - packages/excalidraw/appstate
     - packages/excalidraw/change
     - packages/excalidraw/store

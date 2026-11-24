@@ -192,3 +192,13 @@ source_matches:
       - ARROW_TYPE
       - DEFAULT_REDUCED_GLOBAL_ALPHA
       - ELEMENT_LINK_KEY
+
+  - match: |
+      var getFontFamilyFallbacks = fontFamily => {
+        switch (fontFamily) {
+          case FONT_FAMILY.Excalifont: return [CJK_HAND_DRAWN_FALLBACK_FONT, WINDOWS_EMOJI_FALLBACK_FONT];
+          default: return [WINDOWS_EMOJI_FALLBACK_FONT];
+        }
+      };
+    bindings:
+      - getFontFamilyFallbacks

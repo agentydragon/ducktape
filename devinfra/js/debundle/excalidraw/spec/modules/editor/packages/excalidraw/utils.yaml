@@ -1,0 +1,391 @@
+# Upstream: packages/excalidraw/utils.ts in Excalidraw v0.18.1.
+source_matches:
+  - match: |
+      var getFontFamilyString = ({fontFamily: fontFamily}) => {
+        for (let [family, id] of Object.entries(FONT_FAMILY)) if (id === fontFamily) return EXPR;
+        return WINDOWS_EMOJI_FALLBACK_FONT;
+      };
+    bindings:
+      - getFontFamilyString
+
+  - match: |
+      var getFontString = ({fontSize: size, fontFamily: family}) =>
+        `${size}px ${getFontFamilyString({fontFamily: family})}`;
+    bindings:
+      - getFontString
+
+  - match: |
+      var debounce = (fn, timeout) => {
+        let timer = 0, lastArgs = null, debounced = (...args) => { STMT_LIST; };
+        return (debounced.flush = () => { STMT_LIST; }, debounced.cancel = () => { STMT_LIST; }, debounced);
+      };
+    bindings:
+      - debounce
+
+  - match: |
+      var throttleRAF = (fn, options) => {
+        let handle = null, lastArgs = null, trailingArgs = null,
+          schedule = args => { handle = window.requestAnimationFrame(EXPR); },
+          throttled = (...args) => { STMT_LIST; };
+        return (throttled.flush = () => { STMT_LIST; }, throttled.cancel = () => { STMT_LIST; }, throttled);
+      };
+    bindings:
+      - throttleRAF
+
+  - match: |
+      var easeOut = k => 1 - Math.pow(1 - k, 4);
+    bindings:
+      - easeOut
+
+  - match: |
+      var easeOutInterpolate = (from, to, progress) => (to - from) * easeOut(progress) + from;
+    bindings:
+      - easeOutInterpolate
+
+  - match: |
+      var easeToValuesRAF = ({
+        fromValues: from, toValues: to, onStep: step, duration: duration = 250,
+        interpolateValue: interpolate, onStart: start, onEnd: end, onCancel: cancel,
+      }) => { STMT_LIST; };
+    bindings:
+      - easeToValuesRAF
+
+  - match: |
+      var chunk = (array, size) => {
+        if (!array.length || size < 1) return [];
+        let index = 0, resIndex = 0, result = Array(Math.ceil(array.length / size));
+        for (; index < array.length;) result[resIndex++] = array.slice(index, index += size);
+        return result;
+      };
+    bindings:
+      - chunk
+
+  - match: |
+      var distance = (x, y) => Math.abs(x - y);
+    bindings:
+      - distance
+
+  - match: |
+      var updateActiveTool = (appState, tool) =>
+        tool.type === "custom"
+          ? {...appState.activeTool, type: "custom", customType: tool.customType,
+             locked: tool.locked ?? appState.activeTool.locked}
+          : EXPR;
+    bindings:
+      - updateActiveTool
+
+  - match: |
+      var getShortcutKey = shortcut => (EXPR,
+        isDarwin ? shortcut.replace(/\bCtrlOrCmd\b/gi, "Cmd").replace(/\bAlt\b/i, "Option")
+                 : shortcut.replace(/\bCtrlOrCmd\b/gi, "Ctrl"));
+    bindings:
+      - getShortcutKey
+
+  - match: |
+      var viewportCoordsToSceneCoords = (
+        {clientX: clientX, clientY: clientY},
+        {zoom: zoom, offsetLeft: left, offsetTop: top, scrollX: scrollX, scrollY: scrollY}
+      ) => {
+        let x = (clientX - left) / zoom.value - scrollX, y = (clientY - top) / zoom.value - scrollY;
+        return {x: x, y: y};
+      };
+    bindings:
+      - viewportCoordsToSceneCoords
+
+  - match: |
+      var sceneCoordsToViewportCoords = (
+        {sceneX: sceneX, sceneY: sceneY},
+        {zoom: zoom, offsetLeft: left, offsetTop: top, scrollX: scrollX, scrollY: scrollY}
+      ) => {
+        let x = (sceneX + scrollX) * zoom.value + left, y = (sceneY + scrollY) * zoom.value + top;
+        return {x: x, y: y};
+      };
+    bindings:
+      - sceneCoordsToViewportCoords
+
+  - match: |
+      var getGlobalCSSVariable = name => getComputedStyle(document.documentElement).getPropertyValue(`--${name}`);
+    bindings:
+      - getGlobalCSSVariable
+
+  - match: |
+      var tupleToCoors = tuple => { let [x, y] = tuple; return {x: x, y: y}; };
+    bindings:
+      - tupleToCoors
+
+  - match: |
+      var muteFSAbortError = error => {
+        if (error?.name === "AbortError") { console.warn(error); return; }
+        throw error;
+      };
+    bindings:
+      - muteFSAbortError
+
+  - match: |
+      var findIndex = (array, test, index = 0) => {
+        STMT_LIST;
+        let cursor = index - 1;
+        for (; ++cursor < array.length;) if (test(array[cursor], cursor, array)) return cursor;
+        return -1;
+      };
+    bindings:
+      - findIndex
+
+  - match: |
+      var findLastIndex = (array, test, index = array.length - 1) => {
+        STMT_LIST;
+        let cursor = index + 1;
+        for (; --cursor > -1;) if (test(array[cursor], cursor, array)) return cursor;
+        return -1;
+      };
+    bindings:
+      - findLastIndex
+
+  - match: |
+      var isTransparent = color => {
+        let short = color.length === 5 && color.substr(4, 1) === "0",
+          long = color.length === 9 && color.substr(7, 2) === "00";
+        return short || long || color === COLOR_PALETTE.transparent;
+      };
+    bindings:
+      - isTransparent
+
+  - match: |
+      var isBindingFallthroughEnabled = element => element.fillStyle !== "solid" || isTransparent(element.backgroundColor);
+    bindings:
+      - isBindingFallthroughEnabled
+
+  - match: |
+      var resolvablePromise = () => {
+        let resolve, reject, promise = new Promise((res, rej) => { resolve = res, reject = rej; });
+        return (promise.resolve = resolve, promise.reject = reject, promise);
+      };
+    bindings:
+      - resolvablePromise
+
+  - match: |
+      var getNearestScrollableContainer = element => {
+        let parent = element.parentElement;
+        for (; parent;) { STMT_LIST; }
+        return document;
+      };
+    bindings:
+      - getNearestScrollableContainer
+
+  - match: |
+      var focusNearestParent = element => {
+        let parent = element.parentElement;
+        for (; parent;) {
+          if (parent.tabIndex > -1) { parent.focus(); return; }
+          parent = parent.parentElement;
+        }
+      };
+    bindings:
+      - focusNearestParent
+
+  - match: |
+      var bytesToHexString = bytes => Array.from(bytes).map(byte => `0${byte.toString(16)}`.slice(-2)).join("");
+    bindings:
+      - bytesToHexString
+
+  - match: |
+      var getUpdatedTimestamp = () => isTestEnv() ? 1 : Date.now();
+    bindings:
+      - getUpdatedTimestamp
+
+  - match: |
+      var arrayToMap = items => items instanceof Map ? items
+        : items.reduce((map, item) => (map.set(typeof item == "string" ? item : item.id, item), map), new Map());
+    bindings:
+      - arrayToMap
+
+  - match: |
+      var arrayToMapWithIndex = items =>
+        items.reduce((map, item, index) => (map.set(item.id, [item, index]), map), new Map());
+    bindings:
+      - arrayToMapWithIndex
+
+  - match: |
+      var arrayToObject = (array, groupBy) =>
+        array.reduce((obj, value) => (obj[groupBy ? groupBy(value) : String(value)] = value, obj), {});
+    bindings:
+      - arrayToObject
+
+  - match: |
+      var arrayToList = array => array.reduce((nodes, item, index) => {
+        let node = {...item, prev: null, next: null};
+        STMT_LIST;
+        return (nodes.push(node), nodes);
+      }, []);
+    bindings:
+      - arrayToList
+
+  - match: |
+      var isTestEnv = () => EXPR.MODE === "test";
+    bindings:
+      - isTestEnv
+
+  - match: |
+      var isDevEnv = () => EXPR.MODE === "development";
+    bindings:
+      - isDevEnv
+
+  - match: |
+      var isServerEnv = () => typeof process < "u" && !0;
+    bindings:
+      - isServerEnv
+
+  - match: |
+      var wrapEvent = (name, nativeEvent) => new CustomEvent(name, {detail: {nativeEvent: nativeEvent}, cancelable: !0});
+    bindings:
+      - wrapEvent
+
+  - match: |
+      var updateObject = (obj, updates) => {
+        let changed = !1;
+        for (let key in updates) { STMT_LIST; }
+        return changed ? {...obj, ...updates} : obj;
+      };
+    bindings:
+      - updateObject
+
+  - match: |
+      var getFrame = () => {
+        try { return window.self === window.top ? "top" : "iframe"; } catch { return "iframe"; }
+      };
+    bindings:
+      - getFrame
+
+  - match: |
+      var isPromiseLike = value => !!value && typeof value == "object"
+        && "then" in value && "catch" in value && "finally" in value;
+    bindings:
+      - isPromiseLike
+
+  - match: |
+      var queryFocusableElements = container => {
+        let focusable = container?.querySelectorAll("button, a, input, select, textarea, div[tabindex], label[tabindex]");
+        return focusable ? Array.from(focusable).filter(el => el.tabIndex > -1 && !el.disabled) : [];
+      };
+    bindings:
+      - queryFocusableElements
+
+  - match: |
+      var _defaultIsShallowComparatorFallback = (a, b) =>
+        Array.isArray(a) && Array.isArray(b) && a.length === 0 && b.length === 0 ? !0 : a === b;
+    bindings:
+      - _defaultIsShallowComparatorFallback
+
+  - match: |
+      var isShallowEqual = (a, b, comparator, debug = !1) => {
+        let aKeys = Object.keys(a), bKeys = Object.keys(b);
+        STMT_LIST;
+        return aKeys.every(key => { STMT_LIST; });
+      };
+    bindings:
+      - isShallowEqual
+
+  - match: |
+      var composeEventHandlers = (original, handler, {checkForDefaultPrevented: check = !0} = {}) =>
+        function(event) {
+          if (original?.(event), !check || !event?.defaultPrevented) return handler?.(event);
+        };
+    bindings:
+      - composeEventHandlers
+
+  - match: |
+      var assertNever = (value, message, soft) => {
+        if (!message) return value;
+        if (soft) return (console.error(message), value);
+        throw new Error(message);
+      };
+    bindings:
+      - assertNever
+
+  - match: |
+      function invariant(condition, message) { if (!condition) throw new Error(message); }
+    bindings:
+      - invariant
+
+  - match: |
+      var memoize = fn => {
+        let lastArgs, lastResult, memoized = function(opts) { STMT_LIST; };
+        return (memoized.clear = () => { lastArgs = void 0, lastResult = void 0; }, memoized);
+      };
+    bindings:
+      - memoize
+
+  - match: |
+      var isMemberOf = (collection, value) =>
+        collection instanceof Set || collection instanceof Map ? collection.has(value) :
+        "includes" in collection ? collection.includes(value) : collection.hasOwnProperty(value);
+    bindings:
+      - isMemberOf
+
+  - match: |
+      var cloneJSON = obj => JSON.parse(JSON.stringify(obj));
+    bindings:
+      - cloneJSON
+
+  - match: |
+      var updateStable = (previous, next) => isShallowEqual(previous, next) ? previous : next;
+    bindings:
+      - updateStable
+
+  - match: |
+      function addEventListener(target, type, listener, options) {
+        return target ? (target?.addEventListener?.(type, listener, options),
+          () => { target?.removeEventListener?.(type, listener, options); }) : () => {};
+      }
+    bindings:
+      - addEventListener
+
+  - match: |
+      function getSvgPathFromStroke(points, closed = !0) {
+        let length = points.length;
+        if (length < 4) return "";
+        STMT_LIST;
+        return (closed && (path += "Z"), path);
+      }
+    bindings:
+      - getSvgPathFromStroke
+
+  - match: |
+      var normalizeEOL = str => str.replace(/\r?\n|\r/g, EXPR);
+    bindings:
+      - normalizeEOL
+
+  - match: |
+      var toBrandedType = value => value;
+    bindings:
+      - toBrandedType
+
+  - match: |
+      var promiseTry = async (fn, ...args) => new Promise(resolve => { resolve(fn(...args)); });
+    bindings:
+      - promiseTry
+
+  - match: |
+      var isAnyTrue = (...args) => Math.max(...args.map(arg => arg ? 1 : 0)) > 0;
+    bindings:
+      - isAnyTrue
+
+  - match: |
+      var PromisePool = class {
+        constructor(source, concurrency) {
+          initField(this, "pool"), initField(this, "entries", {}), this.pool = new Pool.default(source, concurrency);
+        }
+        all() { STMT_LIST; }
+      };
+    bindings:
+      - PromisePool
+
+  - match: |
+      var escapeDoubleQuotes = str => str.replace(/"/g, "&quot;");
+    bindings:
+      - escapeDoubleQuotes
+
+  - match: |
+      var castArray = value => Array.isArray(value) ? value : [value];
+    bindings:
+      - castArray
