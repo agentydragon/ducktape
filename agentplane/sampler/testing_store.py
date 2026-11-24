@@ -164,6 +164,8 @@ class Store:
     def _restore_record(self, api: str, content_id: str) -> dict[str, Any]:
         if api == "responses":
             return dict(self._content(content_id, "openai_item"))
+        if api == "chat_completions":
+            return dict(self._content(content_id, "chat_completions_message"))
         assert api == "anthropic_messages", f"unsupported sampler API {api}"
         return self._restore_anthropic_record(content_id)
 
