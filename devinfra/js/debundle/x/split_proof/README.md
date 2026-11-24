@@ -158,6 +158,12 @@ property names. A member call evaluates its receiver and key once, reads the cal
 evaluating arguments, and passes the receiver as `this`. Ordinary functions have the call's
 receiver and arrows capture the surrounding `this`. Access to private members and to `super.property` is unsupported.
 
+In the `browser-page` profile, a class can define a method or accessor at `[Symbol.iterator]`.
+When a read executes, the certificate records the premise that the ambient `Symbol.iterator`
+returns the well-known iterator symbol without observable effects. Its descriptor is distinct
+from one named `"Symbol.iterator"`. For example, `this.path[Symbol.iterator]()` looks up the
+method on the path’s prototype chain and calls it with the path as its receiver.
+
 A derived constructor with plain parameters can compute local values before a direct `super(...)` call.
 The prefix admits simple `let` and `const` bindings and expression statements. Prefixes and arguments
 that read `this` or define a nested callable are rejected. The parent receives the evaluated arguments
