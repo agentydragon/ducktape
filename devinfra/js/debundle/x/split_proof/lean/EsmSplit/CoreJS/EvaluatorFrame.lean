@@ -65,7 +65,7 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
   have enterCall (cells : List (Option Addr)) (f : Func) (env : Env) (this : Val) (args : List Val)
       (safe : ∀ node ∈ env.nodes, A node) (ht : SafeVal A this) (ha : ∀ arg ∈ args, SafeVal A arg) :
       ReachFrame r R cells A (fun env' => ∀ node ∈ env'.nodes, A node) (enterFunction f env this args : M W Env) :=
-    reachFrame_enterFunction away cell prototypeRoot intrinsicRoot (allocate cells) f env safe this ht args ha
+    reachFrame_enterFunction away cell prototypeRoot intrinsicRoot arrayRoot (allocate cells) f env safe this ht args ha
   induction n using Nat.strongRecOn with
   | ind n ih =>
     cases n with

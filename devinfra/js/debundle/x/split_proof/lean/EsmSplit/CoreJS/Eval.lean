@@ -137,9 +137,27 @@ def enterBlock (env : Env) (ss : List Stmt) : M W Env := do
   (funDecls ss).forM fun f => do initVar env f.name (← makeFunc env f)
   pure env
 
+/-- The descriptors of a freshly allocated dense array, in element order. -/
+def arrayObject (vs : List Val) : Obj :=
+  let items := vs.zipIdx.map fun (v, i) => (PropertyKey.str (toString i), Property.data v true true true)
+  { proto := some arrayProto, array := true,
+    props := items ++ [(PropertyKey.str "length", Property.data (.num (Float.ofNat vs.length)) true false false)] }
+
+def fixedParameterBindings (names : List Name) (args : List Val) : List (Name × Binding) :=
+  names.zipIdx.map fun (x, i) => (x, { value := some (args.getD i .undef), mutable := true })
+
+/-- Rest packs the arguments after the fixed prefix into a fresh dense array.
+Packing performs no iterator lookup and does not read the ambient Array binding. -/
+def parameterBindings (f : Func) (args : List Val) : M W (List (Name × Binding)) :=
+  match f with
+  | .withRest _ _ _ fixed rest _ => do
+    let packed ← alloc (arrayObject (args.drop fixed.length))
+    return fixedParameterBindings fixed args ++ [(rest, { value := some (.obj packed), mutable := true })]
+  | _ => pure (fixedParameterBindings f.params args)
+
 /-- Enter a function body: the parameters, the `var` names, then the scope of the body. An arrow keeps the `this` it closed over. -/
 def enterFunction (f : Func) (closed : Env) (this : Val) (args : List Val) : M W Env := do
-  let params := f.params.zipIdx.map fun (x, i) => (x, { value := some (args.getD i .undef), mutable := true : Binding })
+  let params ← parameterBindings f args
   let vars := ((varNamesOf f.body).eraseDups.filter (!f.params.contains ·)).map fun x =>
     (x, { value := some .undef, mutable := true : Binding })
   let env ← declare { closed with this := if f.kind == .arrow then closed.this else this } (params ++ vars)
@@ -207,8 +225,10 @@ captured receiver cell in its dead zone, so a superclass cannot read it via an
 arrow before returning. The synthetic declaration is never executed. -/
 def derivedScope (before : List Stmt) (body : Func) (captured : Bool) : Func :=
   let statements := before ++ body.body
-  .mk body.name .classCtor false body.params
-    (if captured then .decl .let_ derivedReceiverName .undef :: statements else statements)
+  let statements := if captured then .decl .let_ derivedReceiverName .undef :: statements else statements
+  match body with
+  | .withRest name _ _ fixed rest _ => .withRest name .classCtor false fixed rest statements
+  | _ => .mk body.name .classCtor false body.params statements
 
 /-- Build the class after evaluating and checking its heritage. -/
 def finishDerived (runMembers : Env → Addr → Addr → List ClassMember → M W (List (Bool × PropertyKey)))
@@ -248,12 +268,6 @@ def initDerivedFields (runFields : Env → Addr → List (PropertyKey × Expr) �
   match receiver with
   | .obj a => runFields { closed with this := receiver } a fields
   | _ => unknown "derived fields require a modeled superclass result object"
-
-/-- The descriptors of a freshly allocated dense array, in element order. -/
-def arrayObject (vs : List Val) : Obj :=
-  let items := vs.zipIdx.map fun (v, i) => (PropertyKey.str (toString i), Property.data v true true true)
-  { proto := some arrayProto, array := true,
-    props := items ++ [(PropertyKey.str "length", Property.data (.num (Float.ofNat vs.length)) true false false)] }
 
 /-- A newly entered strict constructor has a fresh unmapped arguments object with dense own
 indices, length and the intrinsic array-values iterator. Only its iterator's next method is

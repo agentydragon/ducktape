@@ -744,6 +744,7 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
     return .complete (← deferredFunction j .asyncFn name self arity "async invocation requires Promise semantics")
   let deferPattern := deferredFunction j kind name self arity (checkPrivateNames := true)
   let hasDefaults := tags.contains "AssignmentPattern"
+  let mut rest : Option Name := none
   let mut params : Array (Name × Option Expr) := #[]
   let mut bound : Array Name := #[]
   let mut bindings : Array Stmt := #[]
@@ -771,7 +772,15 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
       for (key, x) in fields do
         bound := bound.push x
         bindings := bindings.push (.decl .var x (.get (.var arg) (.str key)))
-    | "ArrayPattern" | "RestElement" => return .complete (← deferPattern s!"unsupported function parameter {tag}")
+    | "RestElement" =>
+      let target ← param.getObjVal? "argument"
+      unless i + 1 == parameters.size && tags.toList.all (fun t => t == "Identifier" || t == "RestElement") &&
+          (← field target "type") == "Identifier" do
+        return .complete (← deferPattern "rest requires a terminal identifier and fixed identifier parameters")
+      let x ← localBinding target
+      rest := some x
+      bound := bound.push x
+    | "ArrayPattern" => return .complete (← deferPattern s!"unsupported function parameter {tag}")
     | other => throw s!"unsupported function parameter {other}"
   unless bound.toList.Nodup do throw "duplicate function parameter"
   let body ← j.getObjVal? "body"
@@ -804,6 +813,7 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
   -- Static keys and identifier targets have no parameter expressions. The reads
   -- run before the body, using the same mutable cells as any body var redeclarations.
   let slots := params.toList.map Prod.fst
+  if let some restName := rest then return .complete (.withRest name kind self slots restName stmts)
   if bindings.isEmpty then return .complete (.mk name kind self slots stmts)
   return .objectBindings slots bindings.toList stmts
 
@@ -817,6 +827,8 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
       discard <| prepareBeforeSuper (← param.getObjVal? "right") false
     else if (← field param "type") == "ObjectPattern" then
       discard <| linkedObjectPattern param (linkedPatternIdentifier localBinding)
+    else if (← field param "type") == "RestElement" then
+      discard <| localBinding (← param.getObjVal? "argument")
     else discard <| localBinding param
   let block ← fn.getObjVal? "body"
   let statements ← block.getObjValAs? (List Json) "body"

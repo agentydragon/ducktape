@@ -182,6 +182,14 @@ partial def funcEq : MatchEq Func
     let ⟨a⟩ ← scalarEq arity arity'
     let ⟨b⟩ ← listEq stmtEq body body'
     return ⟨n ▸ k ▸ s ▸ p ▸ a ▸ b ▸ rfl⟩
+  | .withRest name kind self fixed rest body, .withRest name' kind' self' fixed' rest' body' => do
+    let ⟨n⟩ ← scalarEq name name'
+    let ⟨k⟩ ← scalarEq kind kind'
+    let ⟨s⟩ ← scalarEq self self'
+    let ⟨p⟩ ← scalarEq fixed fixed'
+    let ⟨r⟩ ← scalarEq rest rest'
+    let ⟨b⟩ ← listEq stmtEq body body'
+    return ⟨n ▸ k ▸ s ▸ p ▸ r ▸ b ▸ rfl⟩
   | .opaque name kind self arity code part free refusal,
       .opaque name' kind' self' arity' code' part' free' refusal' => do
     let ⟨n⟩ ← scalarEq name name'
