@@ -1199,13 +1199,8 @@ def register_batch_tools(
         `note`, and `done`. Add items with `shopping_list_items_add`; empty
         the list with `shopping_list_clear`.
         """
-        list_id = await _resolve_id(client, EntityType.SHOPPING_LIST, shopping_list)
-
-        r = await client.get(f"/objects/shopping_lists/{list_id}")
-        r.raise_for_status()
-        list_data: dict[str, Any] = r.json()
-
-        items = await _shopping_list_items(client, list_id)
+        list_data = await client.resolve_entity(EntityType.SHOPPING_LIST, shopping_list)
+        items = await _shopping_list_items(client, int(list_data["id"]))
 
         product_ids = [int(item["product_id"]) if item.get("product_id") is not None else None for item in items]
         products = await _shopping_products(client, {pid for pid in product_ids if pid is not None})

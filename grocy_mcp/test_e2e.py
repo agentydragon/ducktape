@@ -86,6 +86,8 @@ async def test_reference_data_crud(mcp_client: Client) -> None:
     assert list_results[0]["kind"] == "ok"
     shopping_lists = await call_tool(mcp_client, "shopping_lists_list", {"detail": "brief"})
     assert new_list_name in [sl["name"] for sl in shopping_lists]
+    shopping_list = await call_tool(mcp_client, "shopping_list_get", {"shopping_list": new_list_name.lower()})
+    assert shopping_list == {"name": new_list_name, "description": "e2e fixture list", "items": []}
 
     # Locations
     new_loc_name = f"TestLoc-{suffix}"
