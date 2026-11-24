@@ -660,6 +660,17 @@ describe("Action presentation slots", () => {
     ]);
   });
 
+  it.each([
+    [{ kind: "ok" }, "Shopping list emptied"],
+    [{ kind: "ok", cleared: 0 }, "0 items removed · Shopping list kept"],
+    [{ kind: "ok", cleared: 1 }, "1 item removed · Shopping list kept"],
+    [{ kind: "ok", cleared: 4 }, "4 items removed · Shopping list kept"],
+  ] as const)("displays the recorded shopping-list clear receipt %j", async (structuredContent, label) => {
+    const action = identity("grocy_sf", "shopping_list_clear");
+    const view = await drawDetailsResult(action, { content: [], isError: false, structuredContent });
+    expect(view.textContent).toContain(label);
+  });
+
   it("shows Grocy 204 acknowledgements only for successful empty receipts", async () => {
     const action = identity("grocy_sf", "transaction_undo");
     const empty: CallToolResult = { content: [], isError: false };

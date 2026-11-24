@@ -246,8 +246,8 @@ class TestActionPresentations(ActionPresentationCases):
             "grocy_sf",
             "shopping_list_clear",
             {"shopping_list": "Weekly groceries"},
-            {"kind": "ok", "cleared": 4},
-            "4 items removed · Shopping list kept",
+            {"kind": "ok"},
+            "Shopping list emptied",
         ),
         ActionExample(
             "grocy_sf",
