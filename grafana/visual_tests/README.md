@@ -1,11 +1,8 @@
-# Grafana dashboard PR visuals spike
+# Grafana dashboard PR visuals
 
-Each authored dashboard has a neighboring `grafana_dashboard_visual_test` Bazel
-target. Each `grafana_dashboard` declaration builds its SDK model as an independently
-cached, compact JSON artifact. Browser tests and cdk8s synthesis consume that same file;
-synthesis embeds its text directly in Kubernetes manifests. The JSON is not committed.
-The macro in `//grafana/visual_tests:visual_test.bzl` supplies the Docker,
-runfiles and visual-publication wiring and uses a shared scenario by default.
+Use the [dashboard build output](../skill/SKILL.md#dashboard-source-and-artifact)
+as the visual test input. The macro in `//grafana/visual_tests:visual_test.bzl`
+supplies the Docker, runfiles, and visual-publication wiring.
 
 Declare a target beside the dashboard and supply its fixture data:
 
@@ -95,15 +92,10 @@ Run a target on the remote Docker-capable executor, for example:
 bbr test //cluster/cdk8s/monitoring/dashboards:piraeus_dashboard_visual_test
 ```
 
-The collector selects outputs from successful terminal test attempts, so a failed or interrupted
-run cannot advance the review baseline. An initial run has
-no before image until the target has a published devel baseline. The publisher
-labels a fallback baseline when it cannot find one for the exact base commit.
-
-An explicitly invoked live-data preview could use a supplied metrics endpoint,
-but needs a separate design for authentication, network access and screenshot
-publication. Live data must not be sent automatically to the public PR visuals
-gallery. The production Grafana verifier and its credential-consent requirement
-remain separate.
+The PR visuals publisher owns
+[baseline selection and fallback labels](../../devinfra/pr_visuals/docs/publisher.md#baseline-resolution).
+For live datasource and browser checks, follow the
+[Grafana verifier and credential-consent instructions](../skill/SKILL.md#credential-consent).
+Keep production-derived screenshots out of the public PR visuals gallery.
 
 Open design and maintenance work is tracked in [grafana/TODO.md](../TODO.md).
