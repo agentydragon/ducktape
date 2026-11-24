@@ -8,6 +8,7 @@ These tests mock the httpx2 client via pytest-httpx2's RESPX router to verify:
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncGenerator
 
 import httpx
@@ -185,6 +186,9 @@ async def test_shopping_write_survives_unavailable_names(tool: str, mcp_client: 
     result = unwrap_result(await client.call_tool(tool, arguments))
     receipt = result[0] if isinstance(result, list) else result
     assert mutation.calls.call_count == 1
+    if tool == "shopping_list_item_edit":
+        # Echoing the earlier snapshot would overwrite another client's note or quantity.
+        assert json.loads(mutation.calls.last.request.content) == {"done": 1}
     assert receipt["kind"] == "ok", receipt
     assert (receipt["item_id"], receipt["amount"], receipt["product_name"], receipt["qu_name"]) == (
         12,

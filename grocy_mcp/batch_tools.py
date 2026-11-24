@@ -1324,19 +1324,18 @@ def register_batch_tools(
             r.raise_for_status()
             current: dict[str, Any] = r.json()
 
-            # Filter to writable columns — Grocy may return extra fields on GET.
-            sl_writable = {"product_id", "amount", "note", "done", "shopping_list_id", "qu_id"}
-            body = {k: v for k, v in current.items() if k in sl_writable}
+            body: dict[str, Any] = {}
             _set_if_present(body, "amount", amount)
             _set_if_present(body, "note", note)
             _set_if_present(body, "done", int(done) if done is not None else None)
             if EditShoppingListField.NOTE in (clear_fields or ()):
                 body["note"] = None
 
-            r = await client.put(f"/objects/shopping_list/{item_id}", json=body)
-            r.raise_for_status()
+            if body:
+                r = await client.put(f"/objects/shopping_list/{item_id}", json=body)
+                r.raise_for_status()
 
-            return await _shopping_receipt(client, item_id, body)
+            return await _shopping_receipt(client, item_id, current | body)
         except Exception as e:
             return ShoppingListItemError(error=_format_exc(e))
 

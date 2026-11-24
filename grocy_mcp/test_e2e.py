@@ -726,7 +726,10 @@ async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData, g
 
     # Edit item — mark as done
     edit_sl = await call_tool(mcp_client, "shopping_list_item_edit", {"item_id": sl_item_id, "done": True})
-    assert edit_sl["kind"] == "ok"
+    assert (edit_sl["kind"], edit_sl["amount"], edit_sl["qu_name"]) == ("ok", 12, ref_data.qu)
+    edited = await call_tool(mcp_client, "entities_get", {"entity_type": "shopping_list", "object_ids": [sl_item_id]})
+    assert int(edited[0]["data"]["done"]) == 1
+    assert int(edited[0]["data"]["qu_id"]) == case_id
 
     # Remove item
     await call_tool(mcp_client, "shopping_list_items_remove", {"item_ids": [sl_item_id]})
