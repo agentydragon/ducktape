@@ -117,20 +117,17 @@ It retains single-sample signal labels and omits multi-sample fields such as
 
 ## DATALOG waveforms
 
-Fetch the desired date directory, then use PyEDFlib with NumPy to read the signals
-and their sample frequencies.
+Fetch the desired date directory and use a Python environment with NumPy and PyEDFlib.
+From the skill directory, run the packaged waveform summary.
 
-```python
-from pyedflib import highlevel
-
-signals, signal_headers, header = highlevel.read_edf("/path/to/checkout/DATALOG/YYYYMMDD/file.edf")
-for signal, signal_header in zip(signals, signal_headers, strict=True):
-    print(f"{signal_header['label']}: {len(signal)} samples @ {signal_header['sample_frequency']} Hz")
+```bash
+python3 examples/read_waveforms.py "$cpap_archive/DATALOG/YYYYMMDD"
 ```
 
-Use the reader directly for now. The packaged `examples/read_waveforms.py` expects
-`Duration` and `file_duration` in the header dictionary. PyEDFlib's reader exposes
-[file duration separately](https://pyedflib.readthedocs.io/en/latest/ref/edfreader.html#pyedflib.EdfReader.getFileDuration).
+Pass an individual EDF path to summarize one file. The command reports each file's
+start time and duration and each signal's sample frequency, minimum, mean, maximum,
+and unit. Use [PyEDFlib's high-level reader](https://pyedflib.readthedocs.io/en/latest/ref/highlevel.html)
+when you need the sample arrays.
 
 ## Other tools
 
