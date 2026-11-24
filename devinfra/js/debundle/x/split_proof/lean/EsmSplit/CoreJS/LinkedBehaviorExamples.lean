@@ -103,8 +103,13 @@ theorem orderedClosure :
 -- Exercise the standalone structural checker on two successfully linked graphs:
 -- four distinct public aliases are gone, all pointing at the same original cell.
 private def publicAliases (names : List Name) : Program :=
-  ⟨"main", [{ entry with imports := [], body := [(0, .decl .const "item" .undef)],
-    exports := names.map fun name => (name, "item") }]⟩
+  let m : Module := {
+    name := "main"
+    imports := []
+    body := [(0, .decl .const "item" .undef)]
+    exports := names.map fun name => (name, "item")
+  }
+  ⟨m.name, [m]⟩
 
 #guard match LinkedBehavior.checkStructuralSchedule (publicAliases ["a", "b", "c", "d"]) (publicAliases []) with
   | .error reason => reason == "entry exports resolve to different linked cells; extra 0; missing 4: " ++
