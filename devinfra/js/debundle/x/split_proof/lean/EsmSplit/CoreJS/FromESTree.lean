@@ -849,7 +849,8 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
     Except String Stmt := do
   let kind ← field j "type"
   let nested := scope != .module
-  if nested || kind == "TryStatement" then
+  if nested || ["TryStatement", "ForStatement"].contains kind then
+    let blockScope := if nested then scope else LinkedScope.moduleBlock
     match kind with
     | "BlockStatement" => return ← linkedBlock profile imports scope j
     | "ClassDeclaration" =>
@@ -883,12 +884,11 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
       let test ← if test == .null then pure (.bool true) else lower test
       let update ← j.getObjVal? "update"
       let update ← if update == .null then pure .undef else lower update
-      return .loop initializer test update (← linkedStatement profile imports scope (← j.getObjVal? "body"))
+      return .loop initializer test update (← linkedStatement profile imports blockScope (← j.getObjVal? "body"))
     | "BreakStatement" | "ContinueStatement" =>
       unless (← j.getObjVal? "label") == .null do throw "unsupported labeled loop control"
       return if (← field j "type") == "BreakStatement" then .brk else .cont
     | "TryStatement" =>
-      let blockScope := if scope == .module then LinkedScope.moduleBlock else scope
       let body ← linkedBlock profile imports blockScope (← j.getObjVal? "block")
       let handler ← j.getObjVal? "handler"
       let finalizer ← j.getObjVal? "finalizer"
