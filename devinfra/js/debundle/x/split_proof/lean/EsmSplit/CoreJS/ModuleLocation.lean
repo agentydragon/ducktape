@@ -24,6 +24,7 @@ structure Resource where
 
 inductive Use where
   | metaUrl
+  | metadata
   | dynamicImport (request target : String)
   deriving Repr, BEq
 
@@ -33,8 +34,9 @@ private def importMeta (j : Json) : Bool :=
     (j.getObjVal? "property" >>= FromESTree.identifier).toOption == some "meta"
 
 /-- URL dependencies present in a parsed node, including nested function bodies. -/
-partial def uses (entry : String) (j : Json) : Except String (Array Use) := do
-  if Lower.typ j == "MemberExpression" && importMeta (Lower.fld j "object") then
+partial def uses (entry : String) (j : Json) (nativeRecord : Bool := false) : Except String (Array Use) := do
+  if nativeRecord && importMeta j then return #[.metadata]
+  if !nativeRecord && Lower.typ j == "MemberExpression" && importMeta (Lower.fld j "object") then
     unless (← j.getObjValAs? Bool "computed") == false &&
         (j.getObjVal? "property" >>= FromESTree.identifier).toOption == some "url" do
       throw "expected import.meta.url"
@@ -46,10 +48,10 @@ partial def uses (entry : String) (j : Json) : Except String (Array Use) := do
     let target ← ModuleInput.resolve entry request
     return #[.dynamicImport request target]
   let mut out := #[]
-  for child in Lower.children j do out := out ++ (← uses entry child)
+  for child in Lower.children j do out := out ++ (← uses entry child nativeRecord)
   return out
 
-private def checkedEntryUses (source : Json) (sourceEntry sourceText : String) :
+private def checkedEntryUses (source : Json) (sourceEntry sourceText : String) (nativeRecord : Bool) :
     Except String (Nat × Array (Nat × Use)) := do
   EsmSplit.validateModulePaths [sourceEntry]
   unless (← source.getObjValAs? String "sourceText") == sourceText do throw "parsed source differs from original resource"
@@ -57,21 +59,21 @@ private def checkedEntryUses (source : Json) (sourceEntry sourceText : String) :
   let mut sites := #[]
   for (node, id) in nodes.zipIdx do
     if let some why := Lower.outsideModel false node then throw s!"unit {id}: {why}"
-    for use in (← (uses sourceEntry node).mapError fun why => s!"unit {id}: {why}") do
+    for use in (← (uses sourceEntry node nativeRecord).mapError fun why => s!"unit {id}: {why}") do
       sites := sites.push (id, use)
   return (nodes.size, sites)
 
 /-- Discover the literal target paths to collect from the deployment, using the same checked
 source, ranges and ordinals as the full location check. -/
-def entryUses (source : Json) (sourceEntry sourceText : String) : Except String (Array (Nat × Use)) :=
-  Prod.snd <$> checkedEntryUses source sourceEntry sourceText
+def entryUses (source : Json) (sourceEntry sourceText : String) (nativeRecord : Bool := false) : Except String (Array (Nat × Use)) :=
+  Prod.snd <$> checkedEntryUses source sourceEntry sourceText nativeRecord
 
 /-- Check every URL-sensitive source ordinal against the placement, equal effective entry URLs,
 and the same effective target URL and source for every literal relative dynamic import. The plan
 must use fresh output paths. Import maps, custom loaders and context-dependent responses require
 a different deployment model. This is a location check, separate from the execution semantics. -/
 def check (source : Json) (sourceEntry : String) (P : EsmSplit.Plan)
-    (before after : String → Option Resource) : Except String (Array (Nat × Use)) := do
+    (before after : String → Option Resource) (nativeRecord : Bool := false) : Except String (Array (Nat × Use)) := do
   let names := P.mods.map (·.name)
   EsmSplit.validateModulePaths (sourceEntry :: P.entry :: names)
   unless sourceEntry == P.entry do throw "source entry path differs from emitted entry path"
@@ -82,7 +84,7 @@ def check (source : Json) (sourceEntry : String) (P : EsmSplit.Plan)
   unless !old.effectiveUrl.isEmpty && old.effectiveUrl == new.effectiveUrl do throw "effective entry URL changed"
   for name in names do
     if name != P.entry && (before name).isSome then throw s!"output path already exists: {name}"
-  let (count, sites) ← checkedEntryUses source sourceEntry old.source
+  let (count, sites) ← checkedEntryUses source sourceEntry old.source nativeRecord
   unless (P.mods.flatMap (·.stmts)).Perm (List.range count) do throw "placement must cover every original unit once"
   let retained := Std.HashSet.ofList entry.stmts
   for (id, use) in sites do
