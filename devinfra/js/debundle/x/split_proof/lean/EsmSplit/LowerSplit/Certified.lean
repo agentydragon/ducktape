@@ -113,6 +113,7 @@ private def profileVerdict (selected : CoreJS.HostProfile) (used : CoreJS.HostPr
 private structure CertifiedOptions where
   request : Guarantee
   profile : CoreJS.HostProfile
+  intrinsics : List CoreJS.StableIntrinsic
   structural : Bool
   deploymentOrigin : Option String
   checkOnly : Bool
@@ -123,12 +124,17 @@ private def parseCertifiedOptions (label : String) (args : List String) : IO (Sp
     | "normal-completion" => pure Guarantee.normalCompletion
     | _ => throw (IO.userError "--require expects all-outcomes or normal-completion")
   let (contract?, args) := Effects.takeFlag "--host-contract" args
-  let profile ← match contract? with
-    | none => pure CoreJS.HostProfile.empty
+  let (profile, intrinsics) ← match contract? with
+    | none => pure (CoreJS.HostProfile.empty, [])
     | some path => do
       let j ← IO.ofExcept (Json.parse (← IO.FS.readFile path))
-      IO.ofExcept (CoreJS.HostProfile.read j)
+      if j == Json.mkObj [("profile", toJson "browser-page"),
+          ("stableIntrinsicValues", toJson [CoreJS.StableIntrinsic.mathPI.id])] then
+        pure (.browserPage, [CoreJS.StableIntrinsic.mathPI])
+      else pure (← IO.ofExcept (CoreJS.HostProfile.read j), [])
   let structural := args.contains "--structural"
+  unless structural || intrinsics.isEmpty do
+    throw (IO.userError "stableIntrinsicValues requires --structural")
   let args := args.filter (· != "--structural")
   let (deploymentOrigin, args) := Effects.takeFlag "--deployment-origin" args
   if deploymentOrigin.isSome && !structural then
@@ -138,10 +144,10 @@ private def parseCertifiedOptions (label : String) (args : List String) : IO (Sp
   let usage := IO.userError "usage: lowersplit <bundle.mjs|bundle.json> spec.json outdir [--require LEVEL] [--check-output] [--host-contract PROFILE.json] [--structural [--deployment-origin ORIGIN]]; use --diagnostic for plan and preview options"
   let [bundle, spec, out] := args | throw usage
   if args.any (·.startsWith "--") then throw usage
-  return (⟨bundle, spec, out⟩, { request, profile, structural, deploymentOrigin, checkOnly })
+  return (⟨bundle, spec, out⟩, { request, profile, intrinsics, structural, deploymentOrigin, checkOnly })
 
 private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work : System.FilePath) : IO UInt32 := do
-  let { request, profile, structural, deploymentOrigin, checkOnly } := options
+  let { request, profile, intrinsics, structural, deploymentOrigin, checkOnly } := options
   let { bundle := bundlePath, spec := specPath, out } := paths
   let timings := (← IO.getEnv "SPLIT_PROOF_TIMINGS") == some "1"
   let ⟨program, source, input⟩ ← readBundle bundlePath work true timings
@@ -183,17 +189,18 @@ private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work
       let providers ← timePhase timings "provider_loading" fun _ => loadProviders program bundlePath work
       let deployment ← deploymentOrigin.mapM fun origin =>
         timePhase timings "deployment_loading" fun _ => readDeployment program providers bundlePath work origin P
-      let proof ← certifyOutput providers B P out work input checkOnly timings asts source fun files =>
+      let (used, proof) ← certifyOutput providers B P out work input checkOnly timings asts source fun files =>
         timePhase timings "structural_certificate" fun _ => do
           let result ← IO.lazyPure fun _ =>
-            CoreJS.LinkedBehavior.certifyStructuralASTs profile program providers files P deployment
-          IO.ofExcept (result.map Prod.fst)
+            CoreJS.LinkedBehavior.certifyStructuralASTs profile intrinsics program providers files P deployment
+          IO.ofExcept (result.map fun r => (r.1, r.2.1))
       let scope := match proof with
         | .preservedOrder => "linked-structural-order"
         | .singlePivot => "linked-structural-pivot"
         | .multiplePivots => "linked-structural-moves"
       let assumptions :=
         ["Retained source units use the same capability-closed opaque world in both layouts."] ++
+        used.map (·.assumption) ++
         (deploymentOrigin.toList.flatMap fun origin => [
           s!"The static deployment at {origin} overlays only the planned module paths.",
           "The native ESM loader uses one module record per effective URL and resolves dynamic dependencies through the checked live cells."

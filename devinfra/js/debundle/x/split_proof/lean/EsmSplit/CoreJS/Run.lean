@@ -148,7 +148,7 @@ def replay (calls : List Recorded) (scripts : Scripts := []) (iteratorSymbol : B
   init := { left := calls, scripts }
   talk := Replay.told
   hostRef ref st :=
-    if iteratorSymbol && ref == .property "Symbol" "iterator" then some ("Symbol.iterator", st) else none
+    if iteratorSymbol && ref == .property "Symbol" "iterator" then some (.identity "Symbol.iterator", st) else none
   step fn this args st :=
     let stop (why : String) : HostResult × Replay :=
       (.throw (.str "world: not the recorded call"), { st with left := [], problem := st.problem.or (some why) })

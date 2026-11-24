@@ -194,6 +194,17 @@ inductive HostRef where
   | property (receiver key : String)
   deriving DecidableEq, Repr
 
+/-- A direct host read can return an opaque identity or the exact bits of a Number.
+Neither result grants a handle to a CoreJS heap object. -/
+inductive HostValue where
+  | identity (name : String)
+  | number (bits : UInt64)
+  deriving DecidableEq
+
+def HostValue.val : HostValue → Val
+  | .identity name => .host name
+  | .number bits => .num (Float.ofBits bits)
+
 /-- **The world**: the host functions that work on primitives, without their definitions. It has a state of its own
 and one deterministic step: the host function `fn`, called with the receiver `this` and the arguments `args` in a
 state, ends as `step` says and leaves the next state. The model says which functions it asks the world about
@@ -206,7 +217,7 @@ structure World where
   /-- An ambient `typeof` observation may fail, throw, or change host state. -/
   globalTypeof : String → σ → Option (HostResult × σ) := fun _ _ => none
   /-- Read a host-owned identity and the resulting state. -/
-  hostRef : HostRef → σ → Option (String × σ) := fun _ _ => none
+  hostRef : HostRef → σ → Option (HostValue × σ) := fun _ _ => none
   /-- **Stage two**: opaque code, a conversation. Told what to run, or how its last request ended, the world makes its
   next request. It sees the program's objects only through what it was handed, and its own state. -/
   talk : Told → σ → Request × σ
@@ -778,7 +789,7 @@ def protoProp (call : Call W) (owner : String) (names : List String) (base : Val
 
 def readHostRef (ref : HostRef) : M W Val := fun s =>
   match W.hostRef ref s.world.state with
-  | some (identity, state) => .ok (.host identity) { s with world := { s.world with state } }
+  | some (value, state) => .ok value.val { s with world := { s.world with state } }
   | none =>
     let name := match ref with
       | .binding n => n
