@@ -25,6 +25,12 @@ js_test(
     env = {"LINKED_INPUT_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:linked_input_test_runner)"},
 )
 
+js_test(
+    name = "metadata_link_worlds_test",
+    entry_point = "metadata_link_worlds_test.mjs",
+    env = {"NODE_OPTIONS": "--experimental-vm-modules"},
+)
+
 _TEST_DATA = [
     ":harness",
     "//devinfra/js/debundle/x/split_proof/lean:lowersplit",

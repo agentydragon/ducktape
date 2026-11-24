@@ -126,7 +126,7 @@ theorem link_bind (P : Program) (k : List (Module × Env) → M W β) :
     link P >>= k = checkIdentities P.tops >>= fun _ => declareTops P.tops >>= fun frames =>
       lift (P.scopes frames P.loaded) >>= fun linked =>
         initFunctions ((unitsOf linked).mergeSort fun a b => decide (a.1 ≤ b.1)) >>= fun _ => k linked := by
-  unfold link
+  unfold link linkUsingScopes
   simp only [M.bind_assoc]
   rfl
 
