@@ -813,30 +813,29 @@ def register_batch_tools(
         nullable field's value (vs setting it to a new value), name it in
         `clear_fields`. See also `stock_entries_list` to discover IDs.
         """
-        _check_batch_size(items, "items")
 
-        async def _edit_one(item: EditStockEntryItem) -> StockEntryEditOk | StockEntryError:
-            try:
-                entry_r = await client.get(f"/stock/entry/{item.entry_id}")
-                entry_r.raise_for_status()
-                current: dict[str, Any] = entry_r.json()
-                body = await _merge_stock_entry(client, item, current)
-                changes = {
-                    field: {"old": current.get(field), "new": value}
-                    for field, value in body.items()
-                    if current.get(field) != value
-                }
-                r = await client.put(f"/stock/entry/{item.entry_id}", json=body)
-                r.raise_for_status()
-                updated_r = await client.get(f"/stock/entry/{item.entry_id}")
-                updated_r.raise_for_status()
-                updated = updated_r.json()
-                catalog = await _StockEntryCatalog.load(client)
-                return StockEntryEditOk(entry=catalog.describe(updated), changes=changes or None)
-            except Exception as e:
-                return StockEntryError(entry_id=item.entry_id, error=_format_exc(e))
+        async def _edit_one(item: EditStockEntryItem) -> StockEntryEditOk:
+            path = f"/stock/entry/{item.entry_id}"
+            current = (await _get_with_retry(client, path)).json()
+            body = await _merge_stock_entry(client, item, current)
+            changes = {
+                field: {"old": current.get(field), "new": value}
+                for field, value in body.items()
+                if current.get(field) != value
+            }
 
-        return await asyncio.gather(*[_edit_one(item) for item in items])
+            async def _put() -> None:
+                response = await client.put(path, json=body)
+                response.raise_for_status()
+
+            await _retry_mutation(_put, describe=f"edit stock entry {item.entry_id}")
+            updated = (await _get_with_retry(client, path)).json()
+            catalog = await _StockEntryCatalog.load(client)
+            return StockEntryEditOk(entry=catalog.describe(updated), changes=changes or None)
+
+        return await _ordered_batch(
+            items, "items", _edit_one, lambda item, exc: StockEntryError(entry_id=item.entry_id, error=_format_exc(exc))
+        )
 
     @mcp.tool()
     async def products_list(

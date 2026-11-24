@@ -103,6 +103,19 @@ async def test_add_stock_post_not_retried_on_server_error(mcp_client: tuple[Clie
     assert error_body["error_message"] in op["error"]
 
 
+async def test_stock_edit_lost_reply_reports_uncertain_outcome(mcp_client: tuple[Client, respx.Router]) -> None:
+    client, router = mcp_client
+    path = "/stock/entry/7"
+    router.get(path).respond(json={"id": 7, "product_id": 1, "amount": 2, "open": 0})
+    write = router.put(path).mock(side_effect=httpx2.ReadTimeout("reply lost"))
+    result = await client.call_tool("stock_entry_edit", {"items": [{"entry_id": 7, "price": 3}]})
+    receipt = unwrap_result(result)[0]
+    assert write.calls.call_count == 1
+    assert receipt["kind"] == "error"
+    assert receipt["entry_id"] == 7
+    assert "may or may not have been applied" in receipt["error"]
+
+
 async def test_mutating_post_not_retried_on_timeout(mcp_client: tuple[Client, respx.Router]) -> None:
     """A timeout on a mutating POST must NOT re-send — a re-POST would double-apply it."""
     client, router = mcp_client
