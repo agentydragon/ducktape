@@ -1069,6 +1069,30 @@ mod tests {
     }
 
     #[test]
+    fn modules_apply_requires_assignments_or_plan_before_dispatch() {
+        let error = super::cli_command()
+            .try_get_matches_from([
+                "debundle",
+                "modules",
+                "apply",
+                "--graph",
+                "graph.json.gz",
+                "--modules",
+                "modules",
+                "--source-root",
+                "source",
+                "--readable-names",
+                "names.json",
+            ])
+            .unwrap_err();
+        assert_eq!(
+            error.kind(),
+            clap::error::ErrorKind::MissingRequiredArgument
+        );
+        assert!(error.to_string().contains("--assignments"));
+    }
+
+    #[test]
     fn metrics_file_is_scoped_to_run_analyze_and_project_analysis() {
         let run = DebundleArgs::try_parse_from([
             "debundle",

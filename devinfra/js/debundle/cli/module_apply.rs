@@ -16,7 +16,6 @@ use crate::binding::load_module_docs;
 use crate::candidate_assessment::{
     CandidateEffectAssessmentExistingTreeArgs, EffectAssessmentUnavailable,
 };
-use crate::edit_gate::GraphEditArgs;
 use crate::outcome::{MutationVerb, emit_gate_rejection_json};
 use crate::source_unit_apply::{SourceUnitApplyOptions, run_source_unit_apply};
 
@@ -77,25 +76,8 @@ pub fn run_modules_apply(
     source_context: Option<&VerifiedGraphSourceContext>,
     analysis_engine_sha256: &'static str,
 ) -> Result<()> {
-    anyhow::ensure!(
-        args.readable_names.is_none() || args.assignments.is_some() || args.plan.is_some(),
-        "--readable-names requires --assignments or --plan"
-    );
-    anyhow::ensure!(
-        args.selector_overrides.is_none() || args.assignments.is_some() || args.plan.is_some(),
-        "--selector-overrides requires --assignments or --plan"
-    );
-    let edit = GraphEditArgs {
-        modules_root: args.modules_root.clone(),
-        dry_run: args.dry_run,
-        no_verify: false,
-        dependency_graph_path: Some(args.graph.clone()),
-        source_root: Some(args.source_root.clone()),
-        import_order: None,
-        format: args.format,
-    };
     let effect_context = args.effect_assessment.resolve_for_verified_write(
-        &edit,
+        &args.modules_root,
         source_context,
         args.tree_config.as_deref(),
         analysis_engine_sha256,
