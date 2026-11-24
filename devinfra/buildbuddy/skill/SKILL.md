@@ -237,7 +237,22 @@ bbapi target log <invocation-id> <target-substring>
 The `Bazel CI` workflow derives its test invocation ID from the Actions run ID
 and attempt before starting Bazel. Its `BuildBuddy / Bazel ordinary tests (live)` commit
 status links to that invocation while the native `Test & Build` job is still
-running. Set `invocation_id` from that link. If the task already has a scratch
+running. For an open Ducktape fork PR, use the PR number with existing authenticated
+`gh` and BuildBuddy access when GitHub's Checks tab omits the live status:
+
+```bash
+bbapi invocation pr-status 12345
+```
+
+The command resolves the latest trusted workflow attempt for the PR's current
+head and checks the tested merge's parents. It reports the existing live
+status for that attempt, or says the signal is pending or stale. If devel has
+advanced, it identifies the tested base alongside the current one. Use
+`bbapi --json invocation pr-status 12345` for automation. A successful command
+exit means a report was retrieved. The required `Test & Build` check remains
+the final verdict, including after a retry.
+
+Set `invocation_id` from that link. If the task already has a scratch
 directory, set `scratch` to it.
 
 ```bash

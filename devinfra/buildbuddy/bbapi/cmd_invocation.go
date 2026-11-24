@@ -79,6 +79,7 @@ func invocationCmd() *cobra.Command {
 	cmd.AddCommand(invocationStatSubCmd())
 	cmd.AddCommand(invocationWatchCmd())
 	cmd.AddCommand(invocationStatusCmd())
+	cmd.AddCommand(prStatusCmd())
 	cmd.AddCommand(invocationFirstFailureCmd())
 	cmd.AddCommand(invocationEventsCmd())
 	cmd.AddCommand(invocationExportCmd())
