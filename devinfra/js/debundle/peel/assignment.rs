@@ -1,6 +1,6 @@
 //! Complete assignment checks shared by residual discovery and explicit batches.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use analysis::assignment_assembly::detect_atomic_group_conflict;
 use analysis::{
@@ -77,7 +77,8 @@ pub struct AssignmentProblem<'a> {
 /// is a distinct identity, never a generated residual module or a path alias.
 pub(super) struct PlacementAssignment {
     pub assignment: ModuleAssignment,
-    pub modules: BTreeMap<ModuleId, ModulePath>,
+    /// Canonical path at each nonentry `ModuleId`.
+    pub modules: Vec<ModulePath>,
 }
 
 impl PlacementAssignment {
@@ -86,16 +87,19 @@ impl PlacementAssignment {
     }
 
     pub fn nodes(&self) -> BTreeSet<ModuleId> {
-        self.modules.keys().copied().chain([self.entry()]).collect()
+        (0..self.modules.len())
+            .map(ModuleId)
+            .chain([self.entry()])
+            .collect()
     }
 }
 
 impl<'a> AssignmentProblem<'a> {
     pub fn new(input: &'a DependencyGraphInput) -> Result<Self> {
         let mut problem = Self::prepare(input)?;
-        let placement = problem.canonical_assignment(&problem.baseline);
-        let (baseline, schedule) = problem
-            .validate_with_priority_and_schedule(&problem.baseline, &input.report().import_order)?;
+        let placement = problem.canonical_assignment(&problem.baseline)?;
+        let (baseline, schedule) =
+            problem.validate_placement(&placement, &input.report().import_order)?;
         ensure!(
             accepted(&baseline),
             "the current complete assignment is rejected: {:?}",
@@ -107,16 +111,24 @@ impl<'a> AssignmentProblem<'a> {
 
     pub fn prepare(input: &'a DependencyGraphInput) -> Result<Self> {
         let report = input.report();
-        let baseline = report
-            .nodes
-            .iter()
-            .map(|node| {
-                let module = report
-                    .module(&node.destination)
-                    .with_context(|| format!("source unit {} has no destination", node.id))?;
-                Ok((module.kind != ModuleDestinationKind::Entry).then(|| module.path.clone()))
-            })
-            .collect::<Result<Vec<_>>>()?;
+        let mut modules_by_key = HashMap::with_capacity(report.quotient.nodes.len());
+        for module in &report.quotient.nodes {
+            // Match the report's module lookup when duplicate keys appear.
+            modules_by_key.entry(&module.key).or_insert(module);
+        }
+        let mut baseline = Vec::with_capacity(report.nodes.len());
+        let mut residual_origins = Vec::with_capacity(report.nodes.len());
+        for node in &report.nodes {
+            let module = modules_by_key
+                .get(&node.destination)
+                .with_context(|| format!("source unit {} has no destination", node.id))?;
+            baseline
+                .push((module.kind != ModuleDestinationKind::Entry).then(|| module.path.clone()));
+            residual_origins.push(matches!(
+                module.kind,
+                ModuleDestinationKind::Entry | ModuleDestinationKind::Unassigned
+            ));
+        }
         let baseline_owners: BTreeSet<_> = baseline.iter().flatten().cloned().collect();
         let problem = Self {
             input,
@@ -139,11 +151,7 @@ impl<'a> AssignmentProblem<'a> {
                 .filter(|module| baseline_owners.contains(&module.path))
                 .map(|module| module.path.clone())
                 .collect(),
-            residual_origins: report
-                .nodes
-                .iter()
-                .map(|node| report.is_unassigned_or_entry(&node.destination))
-                .collect(),
+            residual_origins,
             residual_modules: report
                 .quotient
                 .nodes
@@ -208,16 +216,22 @@ impl<'a> AssignmentProblem<'a> {
         self.validate_with_priority(candidate, &self.input.report().import_order)
     }
 
-    fn canonical_assignment(&self, candidate: &[Option<ModulePath>]) -> PlacementAssignment {
-        let modules: BTreeMap<_, _> = self
-            .ordered_modules(candidate)
-            .into_iter()
+    fn canonical_assignment(
+        &self,
+        candidate: &[Option<ModulePath>],
+    ) -> Result<PlacementAssignment> {
+        ensure!(
+            candidate.len() == self.baseline.len(),
+            "candidate must assign every source unit"
+        );
+        let modules = self.ordered_modules(candidate);
+        let ids: BTreeMap<_, _> = modules
+            .iter()
             .enumerate()
-            .map(|(index, path)| (ModuleId(index), path))
+            .map(|(index, path)| (path, ModuleId(index)))
             .collect();
-        let ids: BTreeMap<_, _> = modules.iter().map(|(&id, path)| (path, id)).collect();
         let entry = ModuleId(modules.len());
-        PlacementAssignment {
+        Ok(PlacementAssignment {
             assignment: ModuleAssignment::from_assignments(
                 candidate
                     .iter()
@@ -226,7 +240,7 @@ impl<'a> AssignmentProblem<'a> {
                 EntryDestination::from_module_id(entry),
             ),
             modules,
-        }
+        })
     }
 
     /// Validate the complete assignment under exactly the supplied global
@@ -236,20 +250,16 @@ impl<'a> AssignmentProblem<'a> {
         candidate: &[Option<ModulePath>],
         import_order: &[ModulePath],
     ) -> Result<AssignmentValidation> {
-        self.validate_with_priority_and_schedule(candidate, import_order)
+        let placement = self.canonical_assignment(candidate)?;
+        self.validate_placement(&placement, import_order)
             .map(|(validation, _)| validation)
     }
 
-    pub fn validate_with_priority_and_schedule(
+    fn validate_placement(
         &self,
-        candidate: &[Option<ModulePath>],
+        canonical: &PlacementAssignment,
         import_order: &[ModulePath],
     ) -> Result<(AssignmentValidation, EsmImportSchedule)> {
-        ensure!(
-            candidate.len() == self.baseline.len(),
-            "candidate must assign every source unit"
-        );
-        let canonical = self.canonical_assignment(candidate);
         let assignment = &canonical.assignment;
         let residual = canonical.entry();
         let residual_path = ModulePath::parse("residual", "")?;
@@ -257,7 +267,7 @@ impl<'a> AssignmentProblem<'a> {
             if id == residual {
                 residual_path.clone()
             } else {
-                canonical.modules[&id].clone()
+                canonical.modules[id.0].clone()
             }
         };
         let (mut validation, schedule) = gate::validate_assignment_with_priority(
@@ -298,7 +308,7 @@ impl<'a> AssignmentProblem<'a> {
 
     /// Numeric module identities used by the full gate, in emitter order.
     /// The residual entry follows this list.
-    pub fn ordered_modules(&self, candidate: &[Option<ModulePath>]) -> Vec<ModulePath> {
+    fn ordered_modules(&self, candidate: &[Option<ModulePath>]) -> Vec<ModulePath> {
         // Retain empty authored modules, but omit generated/residual owners
         // drained by this candidate. The materializer emits those owners only
         // while at least one source unit remains assigned to them.
@@ -382,10 +392,9 @@ pub fn check_resolved_owners(
             .all(|module| emitted_modules.contains(module)),
         "resolved source-unit owner is absent from the emitted module universe"
     );
-    Ok((
-        problem.ordered_modules(&candidate),
-        problem.validate_with_priority(&candidate, import_order)?,
-    ))
+    let placement = problem.canonical_assignment(&candidate)?;
+    let (validation, _) = problem.validate_placement(&placement, import_order)?;
+    Ok((placement.modules, validation))
 }
 
 /// Compact surviving `per_atomic_group` owners after a whole group is claimed.
