@@ -63,7 +63,7 @@
       import { html, mount } from "../report.js";
 
       const evidenceSha =
-        "f804324badff4d5cb13d4bfacaa08caabf19c3c0aacf70b9548ec3ee8a2cf1dc";
+        "252e888dd45d0a2d78aa2fb592effc1647c167170e1745baf8f8d4ce309a24c1";
       const response = await fetch(`./evidence.json?v=${evidenceSha}`);
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const bytes = await response.arrayBuffer();
@@ -366,10 +366,13 @@
                 interval to the dependent Rustfmt copy fell to${" "}
                 ${recovery.transfer_median_s.toFixed(2)} s (10.34–16.79 s). The
                 entire pre-commit job took ${recovery.job_median_s} s at the
-                median. This targeted job-log read through 01:08 UTC measures
-                cache recovery. All-gates timing was not collected for those
-                heads.${" "}
-                ${job(45301879131, 138136133865, "Full-profile recovery log")}<//
+                median. This targeted comparison covers pre-commit through 01:08
+                UTC.${" "}
+                ${job(45301879131, 138136133865, "Full-profile recovery log")}
+                ${" "}A later full-profile job waited 508.52 s for the same
+                compiler and finished in 564 s, with Rustfmt skipped and no
+                further cache restart.${" "}
+                ${job(45302892989, 138139538129, "Later stall on #19662")}<//
               >
               <${Text} size="sm"
                 >Even with pre-commit finishing before both other gates on every

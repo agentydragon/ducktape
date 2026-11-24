@@ -4288,7 +4288,7 @@
       "slim_fetched_rustc": false
     }
   },
-  "prior_snapshot_commit": "7d3f886e27b8fb07a3299c51c1d3beb21f8410b4",
+  "prior_snapshot_commit": "5b09e34a5ca346e9b3a5a36b6f3b47b8ac742219",
   "public_cache_recovery": {
     "rustc": {
       "version": "stable-2026-11-12",
@@ -4373,6 +4373,20 @@
       }
     ],
     "transfer_median_s": 11.45,
-    "job_median_s": 62.5
+    "job_median_s": 62.5,
+    "later_example": {
+      "pr": 19662,
+      "head": "da6206a91455eeaca2b2873eee41d61236a76709",
+      "run": 45302892989,
+      "job": 138139538129,
+      "profile": "precommit",
+      "compiler_copy_utc": "2026-11-24T01:10:14.008Z",
+      "formatter_copy_utc": "2026-11-24T01:18:42.525Z",
+      "interval_s": 508.52,
+      "runtime_s": 564,
+      "rustfmt_hook": "Skipped",
+      "transfer_error": false,
+      "new_cache_restart": false
+    }
   }
 }
