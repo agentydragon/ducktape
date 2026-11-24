@@ -23,11 +23,11 @@ import (
 )
 
 func TestCompactionRecoveryRejectsChangedPolicy(t *testing.T) {
-	for _, field := range []string{"keep_recent_turns", "per_message_effort", "keep_recent_tokens", "replacement_template"} {
+	for _, field := range []string{"keep_recent_turns", "per_message_effort", "keep_recent_tokens", "replacement_template", "drop_retained_reasoning"} {
 		t.Run(field, func(t *testing.T) {
 			store := runtimetesting.NewStore(t, integrationDatabase)
 			api, effort := protocol.APIStyleAnthropicMessages, "high"
-			if field == "keep_recent_tokens" || field == "replacement_template" {
+			if field == "keep_recent_tokens" || field == "replacement_template" || field == "drop_retained_reasoning" {
 				api, effort = protocol.APIStyleChatCompletions, ""
 			}
 			session, err := runtimetesting.OpenStoreSession(t, store, &sessionconfig.Configuration{
@@ -101,6 +101,8 @@ func TestCompactionRecoveryRejectsChangedPolicy(t *testing.T) {
 				config.ChatCompaction.KeepRecentTokens = new(64)
 			case "replacement_template":
 				config.ChatCompaction.Replacement.Template = "<checkpoint>{{.Summary}}</checkpoint>"
+			case "drop_retained_reasoning":
+				config.ChatCompaction.DropRetainedReasoning = true
 			}
 			runtime := &Driver{store: store, settings: samplersettings.Settings{
 				Models:      map[string]samplersettings.ModelConfig{session.Model: config},

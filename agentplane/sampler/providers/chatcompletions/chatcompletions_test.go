@@ -251,7 +251,7 @@ func TestCompactionKeepsRecentMessagesAndToolBatches(t *testing.T) {
 	for _, m := range c.messages[cut-1:] {
 		budget += m.estimatedTokens()
 	}
-	plan, err := c.PrepareCompaction(CompactionConfig{KeepRecentTokens: &budget}, "current environment")
+	plan, err := c.PrepareCompaction(CompactionConfig{KeepRecentTokens: &budget, DropRetainedReasoning: true}, "current environment")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,6 +304,18 @@ func TestCompactionKeepsRecentMessagesAndToolBatches(t *testing.T) {
 	if strings.Contains(string(wire), "old data") || strings.Contains(string(wire), "private reasoning") ||
 		!strings.Contains(string(wire), "useful summary") || !strings.Contains(string(wire), "current environment") {
 		t.Fatalf("unexpected replacement: %s", wire)
+	}
+	keepPlan, err := c.PrepareCompaction(CompactionConfig{KeepRecentTokens: &budget}, "current environment")
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept, err := keepPlan.Apply([]json.RawMessage{json.RawMessage(`{"role":"assistant","content":"useful summary"}`)}, Audit{FinishReason: "stop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	keptWire, err := kept.MarshalJSON()
+	if err != nil || !strings.Contains(string(keptWire), `"reasoning_content":"latest reasoning"`) {
+		t.Fatalf("default policy lost retained reasoning: %s (%v)", keptWire, err)
 	}
 	after, err := c.MarshalJSON()
 	if err != nil || !bytes.Equal(initial, after) {

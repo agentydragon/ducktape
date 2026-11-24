@@ -918,9 +918,9 @@ async def test_unknown_json_function_call_returns_function_output(
     assert not failed_results[0].succeeded
 
 
-@pytest.mark.parametrize("compact", [False, True])
+@pytest.mark.parametrize(("compact", "drop_reasoning"), [(False, False), (True, False), (True, True)])
 async def test_chat_completions_tool_round_trip(
-    endpoint: Endpoint, config: Settings, store: Store, tmp_path: Path, compact: bool
+    endpoint: Endpoint, config: Settings, store: Store, tmp_path: Path, compact: bool, drop_reasoning: bool
 ) -> None:
     config.models["test-model"] = ModelConfig(
         connection="provider",
@@ -928,7 +928,9 @@ async def test_chat_completions_tool_round_trip(
         reasoning_efforts={"", "medium", "low"},
         api="chat_completions",
         exec_encoding="json",
-        chat_compaction=ChatCompactionConfig(max_tokens=1024, keep_recent_tokens=128, auto_compact_tokens=256)
+        chat_compaction=ChatCompactionConfig(
+            max_tokens=1024, keep_recent_tokens=128, auto_compact_tokens=256, drop_retained_reasoning=drop_reasoning
+        )
         if compact
         else None,
     )
@@ -1000,7 +1002,10 @@ async def test_chat_completions_tool_round_trip(
             assistant = next(m for m in continued["messages"] if m.get("tool_calls"))
             tool = next(m for m in continued["messages"] if m["role"] == "tool")
             if compact:
-                assert "reasoning_content" not in assistant
+                if drop_reasoning:
+                    assert "reasoning_content" not in assistant
+                else:
+                    assert assistant["reasoning_content"] == reasoning
                 assert all(m.get("content") != user_text for m in continued["messages"])
             else:
                 assert assistant["reasoning_content"] == reasoning

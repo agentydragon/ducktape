@@ -26,6 +26,7 @@ type CompactionConfig struct {
 	// CLEANUP(added 2026-11-24): Remove after staging has rolled out settings with keep_recent_tokens.
 	KeepRecentTurns       *int                   `json:"keep_recent_turns,omitempty"`
 	AutoCompactTokens     *int                   `json:"auto_compact_tokens,omitempty"`
+	DropRetainedReasoning bool                   `json:"drop_retained_reasoning,omitempty"`
 	SummaryPromptTemplate string                 `json:"summary_prompt_template,omitempty"`
 	Replacement           *CompactionReplacement `json:"replacement,omitempty"`
 }
@@ -102,7 +103,7 @@ func (c *CompactionConfig) Compatible(other *CompactionConfig) bool {
 	if c == nil || other == nil {
 		return c == other
 	}
-	if c.MaxTokens != other.MaxTokens || c.RecentTokenBudget() != other.RecentTokenBudget() || c.SummaryPromptTemplate != other.SummaryPromptTemplate {
+	if c.MaxTokens != other.MaxTokens || c.RecentTokenBudget() != other.RecentTokenBudget() || c.SummaryPromptTemplate != other.SummaryPromptTemplate || c.DropRetainedReasoning != other.DropRetainedReasoning {
 		return false
 	}
 	if (c.Replacement == nil) != (other.Replacement == nil) || c.Replacement != nil && *c.Replacement != *other.Replacement {
@@ -181,7 +182,9 @@ func (c *Context) PrepareCompaction(config CompactionConfig, environment string)
 		if m.isCompactionEnvironment() {
 			continue
 		}
-		m.Reasoning = ""
+		if config.DropRetainedReasoning {
+			m.Reasoning = ""
+		}
 		suffix = append(suffix, m)
 	}
 	return &CompactionPlan{prefix: slices.Clone(c.messages[:cut]), suffix: suffix, environment: environment, config: config}, nil
