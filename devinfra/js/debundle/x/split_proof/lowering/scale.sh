@@ -12,8 +12,6 @@ failed=0
 row() {
   local label=$1 bundle=$2 blocks=$3 copies=${4:-1}
   local dir dimensions statements modules status=0 verdict
-  local -a replicate=()
-  if [[ $# -eq 4 ]]; then replicate=(--replicate "$copies"); fi
   dir=$(mktemp -d "$work/row.XXXXXX")
   dimensions=$(
     node --input-type=module - "$bundle" "$blocks" "$copies" "$dir/spec.json" <<'JS'
@@ -31,12 +29,18 @@ JS
   )
   read -r statements modules <<<"$dimensions"
 
-  timeout 240 "$lowersplit" --diagnostic "$bundle" "$dir/spec.json" "$dir/out" "${replicate[@]}" >"$dir/log" 2>&1 || status=$?
+  local -a command=("$lowersplit" --diagnostic "$bundle" "$dir/spec.json" "$dir/out")
+  local rejection="rejected; nothing written"
+  if [[ $# -eq 4 ]]; then
+    command=("${REPLICATE_PLAN:-../lean/.lake/build/bin/replicate_plan}" "$bundle" "$dir/spec.json" "$copies")
+    rejection="planner rejected"
+  fi
+  timeout 240 "${command[@]}" >"$dir/log" 2>&1 || status=$?
   case "$status" in
     0) verdict=accepted ;;
     124) verdict="timed out" ;;
     *)
-      if [[ $status -eq 1 ]] && grep -Fxq 'rejected; nothing written' "$dir/log"; then
+      if [[ $status -eq 1 ]] && grep -Fxq "$rejection" "$dir/log"; then
         verdict=rejected
       else
         verdict="error (exit $status)"

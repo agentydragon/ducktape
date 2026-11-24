@@ -6,22 +6,12 @@ import EsmSplit.CoreJS.Move
 import EsmSplit.InstanceSource
 import EsmSplit.LowerSplit.Input
 import Std.Data.HashMap
-import Std.Data.HashSet
 
 /-! Report plan checks and model diagnostics and optionally emit an uncertified preview. -/
 
 namespace EsmSplit.LowerSplit
 
 open Lean EsmSplit.SplitFiles
-
-/-- Timing only: `K` copies of the bundle, each declaring its own renamed copy of every declared name.
-The statement text is not renamed, so the modules written from this are meaningless. -/
-private def replicateBundle (K : Nat) (B : Bundle) : Bundle :=
-  let declared : Std.HashSet String := Std.HashSet.ofList (B.flatMap (·.defs))
-  (List.range K).flatMap fun k =>
-    let r (n : String) := if declared.contains n then s!"{n}${k}" else n
-    B.map fun s => { s with defs := s.defs.map r, eager := s.eager.map r, lazy := s.lazy.map r,
-                            exports := s.exports.map fun (p, l) => (s!"{p}${k}", l.map r) }
 
 /-- The footprints `lower` printed for this bundle (one JSON object per statement). The analysis takes minutes on a
 large bundle and does not depend on the split, so a run of many splits computes it once. The scan of the statements is
@@ -207,14 +197,13 @@ the bundle without its outside `import`s
   total coverage check and do not conflict.
 - `CoreJS.moves_preserve_of_heritageMovesOk` moves a derived class across a block after checking an earlier
   class declaration establishes its superclass and intervening steps preserve it. -/
-private def modelDiagnostics (program : Json) (asts : Array Json) (B : Bundle) (S : Spec) (P : Plan) (checked : Bool) (replicated : Bool)
+private def modelDiagnostics (program : Json) (asts : Array Json) (B : Bundle) (S : Spec) (P : Plan) (checked : Bool)
     (model : Except String ModelBody) : List String :=
   let kept := "order kept (`CoreJS.valid_order_kept_preserves`)"
   let moves := "moves (`CoreJS.moves_preserve`)"
   let dynamicImport := asts.any (anyNode (Lower.typ · == "ImportExpression"))
   let metaUrl := asts.any (anyNode (Lower.typ · == "MetaProperty"))
   let covered : Except String (List String) := do
-    if replicated then throw "the bundle as it is, not `--replicate`"
     unless checked do throw "the split to pass the checks above"
     if let some i := asts.findIdx? readsMeta then
       throw s!"a bundle that does not read `import.meta`, which names the file a statement is in (statement {i}), other than in `new URL(\"/absolute\", import.meta.url)`"
@@ -282,7 +271,6 @@ private def modelDiagnostics (program : Json) (asts : Array Json) (B : Bundle) (
       else s!"  model diagnostic: none. {kept} and {moves} need {why}"]
 
 private structure DiagnosticOptions where
-  replicate : Option String
   prem : Effects.Premises
   footprintPath : Option String
   planPath : Option String
@@ -293,7 +281,6 @@ private structure DiagnosticOptions where
   leanOutput : Option (String × InstanceSource.Options)
 
 private def parseDiagnosticOptions (args : List String) : IO (SplitPaths × DiagnosticOptions) := do
-  let (replicate, args) := Effects.takeFlag "--replicate" args
   let (premPath, args) := Effects.takeFlag "--premises" args
   let (footprintPath, args) := Effects.takeFlag "--footprints" args
   let (planPath, args) := Effects.takeFlag "--plan" args
@@ -311,19 +298,14 @@ private def parseDiagnosticOptions (args : List String) : IO (SplitPaths × Diag
     | b :: s :: o :: "--lean" :: l :: options => do
       pure (⟨b, s, o⟩, some (l, ← InstanceSource.parseOptions {} options))
     | _ => do
-      IO.eprintln "usage: lowersplit --diagnostic <bundle.mjs|bundle.json> <spec.json> <outdir> [--lean <file> [--namespace NAME] [--variant SPEC]... [--control SPEC]...] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]"
+      IO.eprintln "usage: lowersplit --diagnostic <bundle.mjs|bundle.json> <spec.json> <outdir> [--lean <file> [--namespace NAME] [--variant SPEC]... [--control SPEC]...] [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]"
       throw (IO.userError "usage")
-  return (paths, { replicate, prem, footprintPath, planPath, corejsPath, moveReportPath, force, allConflicts, leanOutput })
+  return (paths, { prem, footprintPath, planPath, corejsPath, moveReportPath, force, allConflicts, leanOutput })
 
 private def runDiagnostic (paths : SplitPaths) (options : DiagnosticOptions) (work : System.FilePath) : IO UInt32 := do
   let tStart ← IO.monoMsNow
-  let lap (what : String) (t0 : Nat) : IO Nat := do
-    let t ← IO.monoMsNow
-    IO.println s!"  [time] {what}: {t - t0} ms"
-    (← IO.getStdout).flush
-    return t
   let ⟨program, source, input⟩ ← readBundle paths.bundle work false false
-  let t1 ← lap "read + parse JSON" tStart
+  let t1 ← reportElapsed "read + parse JSON" tStart
   let asts ← IO.ofExcept (ESTreeUnits.checkedNodes program source)
   if let some reason := asts.findSome? unsupportedStatement then
     IO.eprintln reason
@@ -337,7 +319,7 @@ private def runDiagnostic (paths : SplitPaths) (options : DiagnosticOptions) (wo
       let (fps, analysis) ← analyzeFootprints asts units options.prem false
       for line in Effects.premiseLines options.prem analysis do IO.println line
       pure fps
-  let t2 ← lap "footprints (Lean analysis)" t1
+  let t2 ← reportElapsed "footprints (Lean analysis)" t1
   -- The legacy standalone Lean instance embeds printable source for each unit.
   let texts ← if options.leanOutput.isSome then do
       let unitsFile := work / "units.json"
@@ -346,36 +328,26 @@ private def runDiagnostic (paths : SplitPaths) (options : DiagnosticOptions) (wo
       javascript #["--print-units"] #[unitsFile, input, reply]
       IO.ofExcept (fromJson? (α := Array String) (← readJson reply))
     else pure #[]
-  let B0 := bundleOfFootprints asts fps texts
-  let copies := options.replicate.bind String.toNat?
-  let B := match copies with
-    | some K => replicateBundle K B0
-    | none => B0
-  -- Timing mode repeats the source syntax alongside the synthetic bundle.
-  let outputAsts := match copies with
-    | none => asts
-    | some k => (Array.replicate k asts).flatten
+  let B := bundleOfFootprints asts fps texts
   let S ← loadSpec paths.spec
-  let t3 ← lap "load spec" t2
+  let t3 ← reportElapsed "load spec" t2
   IO.println s!"{B.length} statements; footprints computed in Lean; {(fps.filter (·.effect)).size} touch the world; {(fps.filter (·.fallback ≠ [])).size} with fallback nodes"
   let mut bad := false
-  -- Source placement refers to the original statements, so `--replicate` skips it.
-  if options.replicate.isNone then
-    for (ast, i) in asts.zipIdx do
-      if let some reason := entryPlacementProblem B S ast i then
-        IO.println s!"  FAIL  {reason}"
-        bad := true
+  for (ast, i) in asts.zipIdx do
+    if let some reason := entryPlacementProblem B S ast i then
+      IO.println s!"  FAIL  {reason}"
+      bad := true
   let P ← planSplit B S false
-  let t4 ← lap "mkPlan" t3
+  let t4 ← reportElapsed "mkPlan" t3
   let ok ← reportPlanChecks B S P
-  let t5 ← lap "all checks" t4
+  let t5 ← reportElapsed "all checks" t4
   let model ← modelBody asts options.corejsPath
   if let some path := options.moveReportPath then
     let report := model >>= moveReport asts B S P
     IO.FS.writeFile path ((match report with
       | .ok value => value
       | .error reason => Json.mkObj [("error", toJson reason)]).compress ++ "\n")
-  for line in modelDiagnostics program asts B S P (ok && !bad) options.replicate.isSome model do IO.println line
+  for line in modelDiagnostics program asts B S P (ok && !bad) model do IO.println line
   if let some (l, options) := options.leanOutput then
     if bad then
       IO.println "  skipped structural plan proof: source placement failed"
@@ -383,7 +355,7 @@ private def runDiagnostic (paths : SplitPaths) (options : DiagnosticOptions) (wo
       IO.FS.writeFile l (InstanceSource.render B S options)
       IO.println s!"  wrote structural plan proof source to {l}"
   if options.force || (ok && !bad) then
-    match ESTreeEmit.programs outputAsts B P source with
+    match ESTreeEmit.programs asts B P source with
     | .error message => IO.eprintln s!"cannot write output: {message}"; return 3
     | .ok programs => javascript #["--print"] #[← writeProgramManifest programs work, paths.out, input]
     if let some planPath := options.planPath then
@@ -397,7 +369,7 @@ private def runDiagnostic (paths : SplitPaths) (options : DiagnosticOptions) (wo
         ("order", Json.arr (P.evalOrder.toArray.map Json.str)),
         ("orderConflicts", Json.mkObj ([("count", toJson count), ("examples", Json.arr examples)] ++ pairs)),
         ("modules", Json.mkObj (P.mods.map fun m => (m.name, toJson m.stmts)))]).compress
-    let _ ← lap "render + write" t5
+    let _ ← reportElapsed "render + write" t5
     IO.println s!"  [time] total: {(← IO.monoMsNow) - tStart} ms"
   if ok && !bad then return 0
   IO.eprintln (if options.force then "rejected; written anyway (--force)" else "rejected; nothing written"); return 1
