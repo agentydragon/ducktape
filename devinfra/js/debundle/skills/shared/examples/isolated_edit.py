@@ -49,6 +49,13 @@ def recorded_run(argv: list[str], cwd: Path, evidence: Path) -> str:
     return result.stdout
 
 
+def verify_worker_snapshot(snapshot: Snapshot, evidence: Path) -> Snapshot:
+    """Record the baseline check and use the copied engine's verified paths."""
+    cwd = Path(snapshot["directory"])
+    report = recorded_run([snapshot["engine"], "snapshot", "verify", str(cwd)], cwd, evidence / "baseline")
+    return cast(Snapshot, json.loads(report))
+
+
 def graph_command(snapshot: Snapshot) -> list[str]:
     """Global relocation options, including every package root returned by the CLI."""
     argv = [
@@ -87,9 +94,8 @@ def merge_and_regenerate(
     evidence.mkdir(parents=True, exist_ok=False)
     import_order = evidence / "import_order.json"
     import_order.write_text(json.dumps(final_import_order, indent=2) + "\n")
+    snapshot = verify_worker_snapshot(snapshot, evidence)
     cwd = Path(snapshot["directory"])
-    verified = recorded_run([snapshot["engine"], "snapshot", "verify", str(cwd)], cwd, evidence / "baseline")
-    snapshot = cast(Snapshot, json.loads(verified))
     modules = (Path(snapshot["modules"]) / module_subdir).resolve()
     modules.relative_to(Path(snapshot["modules"]).resolve())
     merge = [

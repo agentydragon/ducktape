@@ -13,17 +13,14 @@ import json
 from pathlib import Path
 from typing import cast
 
-from isolated_edit import Snapshot, graph_command, recorded_run
+from isolated_edit import Snapshot, graph_command, recorded_run, verify_worker_snapshot
 
 
 def peel_more(snapshot: Snapshot, evidence: Path) -> None:
     evidence = evidence.resolve()
     evidence.mkdir(parents=True, exist_ok=False)
+    snapshot = verify_worker_snapshot(snapshot, evidence)
     cwd = Path(snapshot["directory"])
-    snapshot = cast(
-        Snapshot,
-        json.loads(recorded_run([snapshot["engine"], "snapshot", "verify", str(cwd)], cwd, evidence / "baseline")),
-    )
     common = [
         "--graph",
         snapshot["graph"],
