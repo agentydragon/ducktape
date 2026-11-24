@@ -28,7 +28,7 @@ exclude: |
     props/specimens/[^/]+/[^/]+/code/.*
   )$
 repos:
-  # All hook commands come from the flake-locked Nix precommit package.
+  # The repository flake pins both the bootstrap and the on-demand hook tools.
   # Keep upstream pre-commit-hooks metadata when changing their local definitions.
   - repo: local
     hooks:
