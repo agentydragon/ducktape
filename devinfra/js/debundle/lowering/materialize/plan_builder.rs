@@ -37,14 +37,6 @@ use std::collections::VecDeque;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use swc_ecma_ast::*;
 
-/// The module path of a `<chunk>::<path>` logical module id.
-fn logical_module_path(request_id: &str) -> String {
-    request_id
-        .split_once("::")
-        .map(|(_, path)| path.to_string())
-        .unwrap_or_else(|| panic!("logical module id {request_id:?} is not `<chunk>::<path>`"))
-}
-
 fn member_outcome(
     chunk_id: &str,
     request: &LogicalRequest,
@@ -798,7 +790,7 @@ impl ChunkPlanBuilder {
                 binding: binding.to_string(),
                 declaration,
                 claimed_by: EntityRef {
-                    logical_module: logical_module_path(&self.module_plans[plan_index].id),
+                    logical_module: self.module_plans[plan_index].target_path.clone(),
                     entity: export_name.map(Entity::Export),
                 },
             },

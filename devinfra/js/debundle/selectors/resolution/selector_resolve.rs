@@ -1126,8 +1126,6 @@ fn in_program_targets(
 
 /// One chunk's entities projected onto its places by [`Chunk::project`].
 pub struct Projection {
-    /// `<chunk>::<path>` per module: the module's id in the selector program.
-    ids: Vec<String>,
     program: SelectorProgram,
     /// Entities decided before the solve.
     outcomes: Vec<EntityOutcome>,
@@ -1304,7 +1302,6 @@ struct Resolve<'c, 'm> {
     frozen_module_count: usize,
     frozen_anchor_members: BTreeMap<(usize, usize), FrozenPlacementAnchor>,
     occupied_source_units: BTreeSet<SourceUnitId>,
-    ids: Vec<String>,
     builder: MemberSelectorProgramBuilder,
     outcomes: Vec<EntityOutcome>,
     members: BTreeMap<SelectorTargetId, (usize, usize)>,
@@ -1339,10 +1336,6 @@ impl<'c, 'm> Resolve<'c, 'm> {
             frozen_module_count,
             frozen_anchor_members,
             occupied_source_units,
-            ids: modules
-                .iter()
-                .map(|module| format!("{}::{}", chunk.name, module.path))
-                .collect(),
             builder,
             outcomes: Vec::new(),
             members: BTreeMap::new(),
@@ -1375,7 +1368,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                     selector if selector.is_import_specifier() => {}
                     MemberSelector::Authored(selector) => {
                         let target = self.builder.declare_member_target(
-                            &self.ids[module_index],
+                            &module.path,
                             &member.export_name,
                             selector,
                         )?;
@@ -1425,7 +1418,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 unreachable!("constrained members are authored selectors");
             };
             self.builder.lower_member_constraints(
-                &self.ids[module_index],
+                &self.modules[module_index].path,
                 &member.export_name,
                 selector,
             )?;
@@ -1442,7 +1435,6 @@ impl<'c, 'm> Resolve<'c, 'm> {
             }
         }
         Ok(Projection {
-            ids: self.ids,
             program,
             outcomes: self.outcomes,
             members: self.members,
@@ -1484,7 +1476,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
         let rows = self
             .chunk
             .matcher()
-            .anonymous_group_candidates(&self.ids[module_index], &statement.selector)
+            .anonymous_group_candidates(&self.modules[module_index].path, &statement.selector)
             .map_err(Rejection::matcher)?
             .into_iter()
             .map(|group| {
@@ -1552,7 +1544,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
     ) -> Result<(Vec<CollectedRow>, BTreeSet<String>), Rejection> {
         let places = self.chunk.places();
         let matcher = self.chunk.matcher();
-        let logical_module = &self.ids[module_index];
+        let logical_module = &self.modules[module_index].path;
         let declared_names = template
             .declared_binding_names()
             .into_iter()
@@ -1670,7 +1662,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
         let rows = self
             .chunk
             .matcher()
-            .member_candidates(&self.ids[module_index], parsed)
+            .member_candidates(&self.modules[module_index].path, parsed)
             .map_err(Rejection::matcher)?
             .into_iter()
             .map(|matched| {
@@ -1831,7 +1823,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
             else {
                 continue;
             };
-            let logical_module = self.ids[entity.module_index].clone();
+            let logical_module = &self.modules[entity.module_index].path;
             let targets = targets_by_collected[&index].clone();
             // A reference to a projected entity that survived is a column on
             // that entity's binding; one to a pin only narrowed the rows.
@@ -1850,7 +1842,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                         if !settled.contains_key(&(*collected_index, name.clone())) {
                             columns.push(
                                 self.builder
-                                    .projected_binding_variable(&self.ids[*module_index], name),
+                                    .projected_binding_variable(&modules[*module_index].path, name),
                             );
                             column_names.push(name.clone());
                         }
@@ -1872,7 +1864,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                     } => {
                         columns.push(
                             self.builder
-                                .relational_binding_variable(&self.ids[*module_index], name),
+                                .relational_binding_variable(&modules[*module_index].path, name),
                         );
                         column_names.push(name.clone());
                         target_by_member
@@ -2003,7 +1995,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                     let export_name =
                         &modules[entity.module_index].members[*member_index].export_name;
                     self.builder.lower_projected_source_match_candidates(
-                        &logical_module,
+                        logical_module,
                         export_name,
                         &columns,
                         table
@@ -2014,7 +2006,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 }
                 CollectedShape::Group(group) => {
                     self.builder.lower_projected_source_match_group_candidates(
-                        &logical_module,
+                        logical_module,
                         &group.exports_by_target,
                         &columns,
                         table
@@ -2027,7 +2019,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 }
                 CollectedShape::Anonymous(position) => {
                     self.builder.lower_projected_anonymous_statement_candidates(
-                        &logical_module,
+                        logical_module,
                         modules[entity.module_index].anonymous_statements[*position].index,
                         &columns,
                         table
@@ -2043,7 +2035,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
 
     /// Declares `entity`'s targets, in row-place order.
     fn declare_collected(&mut self, entity: &Collected) -> Result<Vec<SelectorTargetId>> {
-        let logical_module = self.ids[entity.module_index].clone();
+        let logical_module = &self.modules[entity.module_index].path;
         let module = &self.modules[entity.module_index];
         let mut targets = Vec::new();
         match &entity.shape {
@@ -2051,7 +2043,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 let member = &module.members[*member_index];
                 let target = self
                     .builder
-                    .declare_source_match_member_target(&logical_module, &member.export_name)?;
+                    .declare_source_match_member_target(logical_module, &member.export_name)?;
                 self.members
                     .insert(target, (entity.module_index, *member_index));
                 targets.push(target);
@@ -2059,10 +2051,9 @@ impl<'c, 'm> Resolve<'c, 'm> {
             CollectedShape::Group(group) => {
                 for member_index in group.members_by_target.values() {
                     let member = &module.members[*member_index];
-                    let target = self.builder.declare_binding_group_member_target(
-                        &logical_module,
-                        &member.export_name,
-                    )?;
+                    let target = self
+                        .builder
+                        .declare_binding_group_member_target(logical_module, &member.export_name)?;
                     self.members
                         .insert(target, (entity.module_index, *member_index));
                     targets.push(target);
@@ -2072,7 +2063,7 @@ impl<'c, 'm> Resolve<'c, 'm> {
                 let target = self
                     .builder
                     .declare_projected_anonymous_statement_target_in_module(
-                        &logical_module,
+                        logical_module,
                         module.anonymous_statements[*position].index,
                     );
                 self.anonymous
@@ -2180,7 +2171,6 @@ impl Projection {
         let resolved_by = self.resolved_by(result);
         let mut unsatisfiable = self.unsatisfiable_outcomes(chunk.module, result)?;
         let Self {
-            ids,
             mut outcomes,
             members,
             anonymous,
@@ -2202,9 +2192,10 @@ impl Projection {
                     .expect("every infeasible target has a group diagnostic"),
                 Some(outcome) => claim_outcome(module, outcome)?,
                 None => bail!(
-                    "logical_module {}: global selector solver returned no outcome for anonymous \
+                    "logical_module {}::{}: global selector solver returned no outcome for anonymous \
                      statement selector",
-                    ids[module_index],
+                    chunk.name,
+                    modules[module_index].path,
                 ),
             };
             outcomes.push(anonymous_entity_outcome(
@@ -2238,9 +2229,10 @@ impl Projection {
                     .expect("every infeasible target has a group diagnostic"),
                 Some(outcome) => claim_outcome(module, outcome)?,
                 None => bail!(
-                    "logical_module {}: global selector solver returned no outcome for selector \
+                    "logical_module {}::{}: global selector solver returned no outcome for selector \
                      member `{}`",
-                    ids[module_index],
+                    chunk.name,
+                    modules[module_index].path,
                     member.export_name,
                 ),
             };
@@ -2931,17 +2923,10 @@ fn claim_outcome(module: &Module, outcome: &ClaimOutcome) -> Result<Outcome> {
     })
 }
 
-/// The module path of a `<chunk>::<path>` logical module id.
-fn logical_module_path(id: &str) -> String {
-    id.split_once("::")
-        .map(|(_, path)| path.to_string())
-        .unwrap_or_else(|| panic!("logical module id {id:?} is not `<chunk>::<path>`"))
-}
-
 /// Names a solver target the way its own outcome names it.
 fn target_entity_ref(target: &selector_ir::SelectorTarget) -> EntityRef {
     EntityRef {
-        logical_module: logical_module_path(&target.logical_module),
+        logical_module: target.logical_module.clone(),
         entity: match &target.claim {
             selector_ir::ClaimKind::Binding {
                 export_name: Some(export_name),
