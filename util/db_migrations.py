@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
 
-from sqlalchemy import MetaData, create_engine, text
+from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
 from tenacity import Retrying, before_sleep_log, retry_if_exception_type, stop_after_delay, wait_exponential
 
@@ -25,17 +25,10 @@ CONNECT_BOUND = timedelta(minutes=2)
 
 @dataclass(frozen=True)
 class MigrationRunner:
-    """One history, its tables, and the lock two replicas starting at once contend for.
+    """An Alembic history and the lock that serializes its concurrent upgrades."""
 
-    `version_table` names this history's stamp table (`alembic_version` when unset). A database
-    already stamped under another name must keep it, and two histories in one database need distinct
-    names.
-    """
-
-    metadata: MetaData
     migrations_dir: Path
     lock_key: int
-    version_table: str | None = None
 
     def sync_url(self, database_url: str) -> str:
         return render_postgresql_url(database_url, "postgresql+psycopg")
@@ -54,6 +47,6 @@ class MigrationRunner:
             )(engine.connect)
             with first_connection as connection, connection.begin():
                 connection.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": self.lock_key})
-                upgrade(connection, self.migrations_dir, metadata=self.metadata)
+                upgrade(connection, self.migrations_dir)
         finally:
             engine.dispose()

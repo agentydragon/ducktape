@@ -30,7 +30,6 @@ py_library(
     name = "database_migrate",
     srcs = ["database_migrate.py"],
     data = ["//ai_session_archive/migrations:files"],
-    visibility = ["//ai_session_archive/migrations:__pkg__"],
     deps = [
         ":database",
         "//util:db_migrations",
