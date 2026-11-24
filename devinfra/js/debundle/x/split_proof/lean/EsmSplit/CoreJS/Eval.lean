@@ -1,4 +1,5 @@
 import Std.Data.HashMap.Lemmas
+import Std.Data.HashSet
 import EsmSplit.CoreJS.Iterator
 
 /-!
@@ -196,6 +197,7 @@ def classParentsNonNull (call : Call W) (base : Val) : M W (Addr × Option Addr)
     | .null => pure none
     | .obj a => pure (some a)
     | .host _ => unknown "host superclass prototype"
+    | .error (.native ..) _ => unknown "native Error is used as a superclass prototype"
     | _ => throwErr .type "superclass prototype is not an object or null"
   match base with
   | .obj a => pure (a, pp)
@@ -286,6 +288,13 @@ def getSuperProp (call : Call W) (home : Option Addr) (receiver key : Val) : M W
   match obj.proto with
   | some parent => getFrom call parent receiver key
   | none => throwErr .type "cannot read properties of null super base"
+
+/-- An object-valued prototype outside the heap cannot be used to allocate a modeled receiver. -/
+def constructorReceiver (prototype : Val) : M W Addr :=
+  match prototype with
+  | .obj p => alloc { proto := some p, props := [] }
+  | .error (.native ..) _ => unknown "native Error is used as a constructor prototype"
+  | _ => alloc { proto := some objectProto, props := [] }
 
 /-- Pair each field with its evaluated key. Blocks and fields share one source-order
 sequence. A block runs as a private arrow to give it its own var scope and inherit
@@ -536,6 +545,7 @@ def evalProps : Nat → Env → Addr → List PropDef → M W Unit
       | .obj parent => modifyObj a fun o => { o with proto := some parent }
       | .null => modifyObj a fun o => { o with proto := none }
       | .host name => unknown s!"host value {name} is inspected"
+      | .error (.native ..) _ => unknown "native Error is used as an object prototype"
       | _ => pure ()
     evalProps n env a ps
 
@@ -637,7 +647,7 @@ def constructTarget : Nat → Val → Val → List Val → M W Val
       | some (.closure f closed fields) =>
         if f.kind != .normal && f.kind != .classCtor then throwErr .type "not a constructor" else do
         let proto ← getProp (callFn n) newTarget (.str "prototype")
-        let this ← alloc { proto := some (match proto with | .obj p => p | _ => objectProto), props := [] }
+        let this ← constructorReceiver proto
         evalFields n { closed with this := .obj this } this fields
         let result ← match f.opaqueBody with
           | some (_, _, _, some reason) => unknown s!"deferred function {f.name}: {reason}"
@@ -657,12 +667,13 @@ def constructTarget : Nat → Val → Val → List Val → M W Val
       | some (.opaque _ _ _ false) => throwErr .type "not a constructor"
       | some (.opaque code part cells true) => do
         let proto ← getProp (callFn n) newTarget (.str "prototype")
-        let this ← alloc { proto := some (match proto with | .obj p => p | _ => objectProto), props := [] }
+        let this ← constructorReceiver proto
         match ← converse n code cells (.run code part (← toW callee) (← toW (.obj this)) (← args.mapM toW) true) with
         | .obj r => pure (.obj r)
         | _ => pure (.obj this)
       | some (.host name) => unknown s!"host function {name} is constructed"
       | none => throwErr .type "not a constructor"
+    | .host "window.Error" => constructNativeError newTarget args
     | .host name => unknown s!"host value {name} is constructed"
     | _ => throwErr .type "not a constructor"
 
@@ -1032,7 +1043,83 @@ def runUnits (fuel : Nat) : List LinkedUnit → M W Unit
     let _ ← runUnit fuel env id s
     runUnits fuel rest
 
+private def Val.isNativeError : Val → Bool
+  | .error (.native ..) _ => true
+  | _ => false
+
+private def Property.holdsNativeError : Property → Bool
+  | .data val .. => val.isNativeError
+  | .accessor get set .. => get.isNativeError || set.isNativeError
+
+private def Code.holdsNativeError : Code → Bool
+  | .closure _ env _ | .derivedFields env _ | .derivedBody _ _ _ env _ => env.this.isNativeError
+  | _ => false
+
+private def errorEscapeEdges (s : State W) : HeapNode → Except String (List HeapNode)
+  | .obj a => do
+    let some o := s.objAt a | return []
+    if o.props.any (fun (_, p) => p.holdsNativeError) || o.code.any Code.holdsNativeError then
+      throw "native Error escapes linked initialization with an unmodeled stack"
+    return o.nodes
+  | .cell a => do
+    let some b := s.cellAt a | return []
+    if b.value.any Val.isNativeError then
+      throw "native Error escapes linked initialization with an unmodeled stack"
+    return b.nodes
+
+/-- Walk bindings, closures, prototypes and properties, visiting each node only once. -/
+private def checkErrorNode (s : State W) : Nat → HeapNode → Std.HashSet HeapNode →
+    Except String (Std.HashSet HeapNode)
+  | 0, _, _ => .error "could not bound native Error escape checking"
+  | n + 1, node, seen => do
+    if seen.contains node then return seen
+    let edges ← errorEscapeEdges s node
+    edges.foldlM (fun known edge => checkErrorNode s n edge known) (seen.insert node)
+
+/-- The objects rooted in the modeled realm and the world's handles, and
+the module bindings already allocated at link time, survive initialization. -/
+def checkErrorEscape (ready s : State W) : Except String Unit := do
+  unless s.heap.any (·.any Obj.errorIdentity) do return
+  let realm := (List.range (ready.heap[0]?.getD #[]).size).map (fun i => HeapNode.obj ⟨0, i⟩)
+  let cells := ready.cells.toList.zipIdx.flatMap fun (row, r) =>
+    (List.range row.size).map fun i => HeapNode.cell ⟨r, i⟩
+  let roots := realm ++ s.world.handed.toList.map HeapNode.obj ++ cells
+  let bound := s.objectCount + s.cells.foldl (· + ·.size) 0 + 1
+  let _ ← roots.foldlM (fun seen root => checkErrorNode s bound root seen) {}
+  pure ()
+
+/-- An unknown stack may be ignored only when its Error is unreachable at the
+end of initialization, even if evaluation did not read it. -/
+def checkErrorResult (ready : State W) : Res W Unit → Res W Unit
+  | .ok () s => match checkErrorEscape ready s with
+    | .ok () => .ok () s
+    | .error why => .unknown why s
+  | r => r
+
+theorem checkErrorResult_ok {ready final : State W} {r : Res W Unit} :
+    checkErrorResult ready r = .ok () final ↔ r = .ok () final ∧ checkErrorEscape ready final = .ok () := by
+  cases r with
+  | ok value s =>
+    cases value
+    cases h : checkErrorEscape ready s with
+    | ok value =>
+      cases value
+      simp only [checkErrorResult, h, Res.ok.injEq, true_and]
+      constructor
+      · intro eq
+        exact ⟨eq, eq ▸ h⟩
+      · exact And.left
+    | error why =>
+      simp only [checkErrorResult, h, reduceCtorEq, Res.ok.injEq, true_and, false_iff]
+      rintro ⟨rfl, hc⟩
+      simp [h] at hc
+  | _ => simp [checkErrorResult]
+
+/-- Check the same escape condition on the result of each linked schedule. -/
+def runLinkedUnits (fuel : Nat) (units : List LinkedUnit) : M W Unit :=
+  fun ready => checkErrorResult ready (runUnits fuel units ready)
+
 def runProgram (W : World) (fuel : Nat) (P : Program) : Res W Unit :=
-  (do runUnits fuel (unitsOf (← link P))) (initialState W P.regions)
+  (link P >>= fun linked => runLinkedUnits fuel (unitsOf linked)) (initialState W P.regions)
 
 end CoreJS

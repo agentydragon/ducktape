@@ -184,7 +184,7 @@ theorem reachFrame_fromW (r R cells A) (v : WVal) :
     · rename_i a ha
       exact ⟨safeVal_obj.2 (hs.handed a (array_index_mem ha)), hs⟩
     · exact hs
-  | error => exact ⟨by simp [SafeVal, Val.nodes], hs⟩
+  | error kind _ => cases kind <;> first | exact ⟨by simp [SafeVal, Val.nodes], hs⟩ | exact hs
   | host => exact ⟨by simp [SafeVal, Val.nodes], hs⟩
 
 theorem reachFrame_toW (r R cells A) (v : Val) (hv : SafeVal A v) :
@@ -192,6 +192,7 @@ theorem reachFrame_toW (r R cells A) (v : Val) (hv : SafeVal A v) :
   apply ReachFrame.of_frames (frames_toW r R v)
   intro s hs hr
   cases v <;> try first | exact ⟨trivial, hs⟩ | exact hs
+  case error kind msg => cases kind <;> first | exact ⟨trivial, hs⟩ | exact hs
   case obj a =>
     simp only [toW]
     split

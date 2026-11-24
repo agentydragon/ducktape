@@ -41,7 +41,7 @@ evaluation steps through the groups in source order. -/
 def run (W : World) (fuel : Nat) (groups : List DeclarationGroup) : Res W Unit :=
   (do
     let frames ← declareGroups 0 groups
-    runGroups fuel (scope groups frames) 0 groups) (initialState W (declaratorCount groups))
+    fun ready => checkErrorResult ready (runGroups fuel (scope groups frames) 0 groups ready)) (initialState W (declaratorCount groups))
 
 private theorem statements_length (groups : List DeclarationGroup) :
     (statements groups).length = declaratorCount groups := by
@@ -100,7 +100,10 @@ theorem run_eq_single (W : World) (fuel : Nat) (groups : List DeclarationGroup) 
     exact List.pairwise_map.2 (zip_range_sorted (statements groups))
   rw [sorted_units sorted]
   dsimp only [attach]
-  rw [DeclarationGroup.initFunctions_compileGroups, M.pure_bind, DeclarationGroup.runGroups_eq]
+  rw [DeclarationGroup.initFunctions_compileGroups, M.pure_bind]
+  funext ready
+  unfold runLinkedUnits
+  rw [DeclarationGroup.runGroups_eq]
 
 #print axioms run_eq_single
 
