@@ -285,3 +285,14 @@ the later subtraction uses the initialized side threshold and epsilon. The
 [proof for numeric cell reads](https://github.com/agentydragon/ducktape/pull/19831)
 uses the existing deployment contract. The production selector spells the
 epsilon literal `1e-5`, as it appears in the pinned bundle.
+
+The [line and triangle replay](https://app.buildbuddy.io/invocation/54c5cb26-c7fa-437d-a36e-0c76a10e348f)
+adds three functions to that selection. Units 514 and 515 match the adjacent
+constructor and determinant-based intersection in upstream
+[line.ts](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/math/line.ts).
+The constructor alone also matches other pair constructors. Unit 540 matches
+the three signed-area comparisons in
+[triangle.ts](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/math/triangle.ts).
+The combined selection moves 330 of 1,787 editor units into 38 upstream modules.
+Lean certified normal completion at emission and from disk under the same
+browser contract, and Chromium compared the original and overlaid editor.
