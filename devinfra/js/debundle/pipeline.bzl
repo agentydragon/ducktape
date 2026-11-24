@@ -67,14 +67,29 @@ def _resolve_placement_impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name + ".json")
     plan = _spec_plan(ctx)
     subset = ctx.file.ownership_subset
+    canonical = ctx.outputs.canonical_out
+    if canonical and not subset:
+        fail("canonical_out requires ownership_subset")
+    fragment_files = []
+    extra_args = []
+    for target, owner in ctx.attr.proposal_fragments.items():
+        files = target[DefaultInfo].files.to_list()
+        if len(files) != 1:
+            fail("proposal fragment {} must supply exactly one file".format(target.label))
+        fragment_files.append(files[0])
+
+        # _run_debundler starts in the bin tree, not the execroot.
+        extra_args += ["--proposal-fragment", shell.quote(owner + "=") + '"${OLDPWD}"/' + shell.quote(files[0].path)]
+    if canonical:
+        extra_args += ["--canonical-out", shell.quote(canonical.short_path)]
     _run_debundler(
         ctx,
-        inputs = depset(ctx.files.ownership_subset, transitive = [plan.inputs]),
-        outputs = [out],
+        inputs = depset(ctx.files.ownership_subset + fragment_files, transitive = [plan.inputs]),
+        outputs = [out] + ([canonical] if canonical else []),
         args = ["spec", "resolve-placement"] +
                _spec_args(ctx, plan, ctx.label.name + ".unused") + plan.package_args +
                ["--chunk", shell.quote(ctx.attr.chunk), "--out", shell.quote(out.short_path)] +
-               (["--ownership-subset", _shell_source_path(subset.path)] if subset else []),
+               (["--ownership-subset", _shell_source_path(subset.path)] if subset else []) + extra_args,
         mnemonic = "DebundleResolvePlacement",
         progress = "Resolving authored source-unit owners for %{label}",
     )
@@ -391,6 +406,11 @@ _COMMON_ATTRS = {
 debundle_resolve_placement = rule(
     implementation = _resolve_placement_impl,
     attrs = dict(_COMMON_ATTRS, **{
+        "canonical_out": attr.output(doc = "Optional unfiltered JSON from the same solve as ownership_subset."),
+        "proposal_fragments": attr.label_keyed_string_dict(
+            allow_files = [".yaml"],
+            doc = "Selector-only YAML files mapped to canonical owners in chunk. New owners follow the shared priority.",
+        ),
         "chunk": attr.string(mandatory = True),
         "debundler": attr.label(
             executable = True,

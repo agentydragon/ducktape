@@ -170,26 +170,53 @@ filegroup(
     visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
 )
 
-# Both views resolve the full canonical spec. The smoke retains a named subset
-# of its claims. No Rust candidate or gate output is an input to either action.
-[
-    debundle_resolve_placement(
-        name = name,
-        chunk = "editor",
-        ownership_subset = subset,
-        package_roots = _PACKAGE_ROOTS,
-        spec_tree_inputs = [":spec"],
-        tree_config = "config.yaml",
-        tree_modules = "spec/modules",
-        tree_source_root = ":source",
-        tree_vendor_marks = "spec/vendor_marks.yaml",
-        visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
-    )
-    for name, subset in [
-        ("canonical_editor_placement", None),
-        ("selected_editor_placement", "editor_smoke_subset.json"),
-    ]
-]
+# One solve of the complete authored context, then two views of its claims.
+_PROPOSALS = "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/scroll:"
+
+debundle_resolve_placement(
+    name = "selected_editor_placement",
+    canonical_out = "canonical_editor_placement.json",
+    chunk = "editor",
+    ownership_subset = "editor_smoke_subset.json",
+    package_roots = _PACKAGE_ROOTS,
+    proposal_fragments = {
+        _PROPOSALS + "packages/excalidraw/element/bounds.yaml": "packages/excalidraw/element/bounds",
+        _PROPOSALS + "packages/excalidraw/scene/Shape.yaml": "packages/excalidraw/scene/shape",
+        _PROPOSALS + "packages/utils/geometry/shape.yaml": "packages/utils/geometry/shape",
+    },
+    spec_tree_inputs = [":spec"],
+    tree_config = "config.yaml",
+    tree_modules = "spec/modules",
+    tree_source_root = ":source",
+    tree_vendor_marks = "spec/vendor_marks.yaml",
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
+)
+
+filegroup(
+    name = "canonical_editor_placement",
+    srcs = ["canonical_editor_placement.json"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
+)
+
+py_test(
+    name = "test_proposal_fragments",
+    srcs = ["test_proposal_fragments.py"],
+    data = [
+        ":canonical_editor_placement",
+        ":inputs",
+        ":selected_editor_placement",
+    ],
+    env = {
+        "CANONICAL": "$(rlocationpath :canonical_editor_placement)",
+        "SELECTED": "$(rlocationpath :selected_editor_placement)",
+        "INPUTS": "$(rlocationpaths :inputs)",
+    },
+    deps = [
+        "//:conftest",
+        "@pypi//pytest_bazel",
+        "@rules_python//python/runfiles",
+    ],
+)
 
 # A selected view of the same canonical selector solve. Only routing and
 # import priority change; the Rust and Lean emitters use the same unit owners.

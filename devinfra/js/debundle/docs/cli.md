@@ -556,6 +556,24 @@ that adding or removing claims will pass, because that changes the destinations
 and their quotient. See [the design distinction](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/docs/design.md#two-classes-of-atom)
 for structural atoms, conservative effects, and the accepted lazy-cycle case.
 
+### Assemble selector proposals for an independent checker
+
+`spec resolve-placement --chunk CHUNK` accepts repeated
+`--proposal-fragment OWNER=FILE.yaml` arguments. Each file contains a nonempty
+`source_matches` list using the ordinary module-file syntax. Use a canonical,
+chunk-local owner path. Claims append to an existing module or create a new
+one; new owners without an explicit priority follow the shared tree's import
+priority in argument order. The priority is an input for a consumer to consider.
+
+With `--ownership-subset VIEW.json --out selected.json --canonical-out full.json`,
+both files come from one full-context solve. An excluded ambiguous claim still
+fails the solve. Both JSON files identify the same chunk bytes by SHA-256;
+filtering retains the original ordinals. When supplying fragments or requesting
+both views, use fresh output paths. In Bazel, pass the fragment labels and
+owners in `debundle_resolve_placement(proposal_fragments = {...})` and the
+unfiltered output filename in `canonical_out`. The normal Rust emitter uses its
+own authored tree and gate.
+
 ### Residual placement
 
 Use [`modules propose`](module_proposals.md) to construct a peel in its documented
