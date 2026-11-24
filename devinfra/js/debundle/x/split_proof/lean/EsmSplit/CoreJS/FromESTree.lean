@@ -1,4 +1,5 @@
 import Lean.Data.Json
+import EsmSplit.CoreJS.Fragment
 import EsmSplit.CoreJS.HostProfile
 import EsmSplit.CoreJS.Number
 
@@ -478,6 +479,21 @@ private def deferredFunction (j : Json) (kind : FuncKind) (name : Name) (self : 
   -- CoreJS does not allocate the enclosing function's implicit arguments cell.
   if captures.contains "arguments" then throw reason
   return .opaque name kind self arity code part captures (some reason)
+
+-- Every admitted body leaves the enumerated keys and prototype chain intact.
+-- A plain local assignment may bind a new object. Property writes must name a
+-- distinct ordinary destination and use a non-accessor descriptor.
+private def guardForInBody (source : Name) : Stmt → Except String Stmt
+  | stmt@(.expr (.assign (.member (.var target) (.var key)) value)) =>
+    if value.allocOnly then pure (.block [
+      .expr (.prim .checkForInWrite [.var source, .var target, .var key]), stmt])
+    else throw "for-in property initializer may run code"
+  | stmt@(.expr (.assign (.var _) value)) | stmt@(.expr value) | stmt@(.decl _ _ value) |
+    stmt@(.ret value) | stmt@(.throw value) =>
+    if value.allocOnly then pure stmt else throw "for-in body may run code that changes enumeration"
+  | stmt@(.brk) | stmt@(.cont) | stmt@(.varDecl _) => pure stmt
+  | .block body => .block <$> body.mapM (guardForInBody source)
+  | _ => throw "unsupported for-in body"
 
 private inductive LinkedScope where
   | module
@@ -1004,7 +1020,7 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
     Except String Stmt := do
   let kind ← field j "type"
   let nested := scope != .module
-  if nested || ["IfStatement", "TryStatement", "ForStatement", "ForOfStatement"].contains kind then
+  if nested || ["IfStatement", "TryStatement", "ForStatement", "ForOfStatement", "ForInStatement"].contains kind then
     let blockScope := if nested then scope else LinkedScope.moduleBlock
     match kind with
     | "BlockStatement" => return ← linkedBlock profile imports scope j
@@ -1026,6 +1042,36 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
     | "WhileStatement" =>
       let test ← linkedExpr profile imports true "" (← j.getObjVal? "test")
       return .loop [] test .undef (← linkedStatement profile imports scope (← j.getObjVal? "body"))
+    | "ForInStatement" =>
+      let declaration ← j.getObjVal? "left"
+      unless (← field declaration "type") == "VariableDeclaration" do
+        throw "for-in requires a declared binding"
+      let kindName ← field declaration "kind"
+      let kind ← match kindName with
+        | "var" => pure DeclKind.var
+        | "let" => pure .let_
+        | "const" => pure .const
+        | _ => throw "unsupported for-in declaration"
+      let #[d] ← declaration.getObjValAs? (Array Json) "declarations" | throw "expected one for-in binding"
+      unless (← field d "type") == "VariableDeclarator" && (← d.getObjVal? "init") == .null do
+        throw "expected an uninitialized for-in declarator"
+      let name ← d.getObjVal? "id" >>= scope.varBinder kindName
+      let value ← linkedExpr profile imports true "" (← j.getObjVal? "right")
+      let source := ":for-in:source"
+      let table := ":for-in:keys"
+      let index := ":for-in:index"
+      let body ← linkedStatement profile imports blockScope (← j.getObjVal? "body")
+      let body ← guardForInBody source body
+      -- The head for a lexical binding shadows its outer name during evaluation
+      -- of the RHS. Even a closure captured there retains the uninitialized cell.
+      let head : List Stmt := if kind == .var then [.decl .const source value] else
+        [.decl .let_ source .undef,
+          .breakScope (.block [.expr (.assign (.var source) value), .brk, .decl .let_ name .undef])]
+      return .block (head ++ [
+        .decl .const table (.prim .forInKeys [.var source]),
+        .decl .let_ index (.num 0),
+        .loop [] (.binary .lt (.var index) (.get (.var table) (.str "length"))) (.update (.var index) true false)
+          (.block [.decl kind name (.get (.var table) (.var index)), body])])
     | "ForStatement" =>
       let lower := linkedExpr profile imports true ""
       let init ← j.getObjVal? "init"

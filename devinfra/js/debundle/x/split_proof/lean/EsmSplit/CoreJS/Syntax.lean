@@ -61,6 +61,8 @@ inductive Prim where
   /-- A checked literal request retained in deferred code. The names are the
   linked cells its target can acquire through the static dependency graph. -/
   | dynamicImport (request : String) (captures : List Name)
+  | forInKeys
+  | checkForInWrite
   | log | defineProperty | create | getPrototypeOf | setPrototypeOf
   deriving DecidableEq, Repr
 

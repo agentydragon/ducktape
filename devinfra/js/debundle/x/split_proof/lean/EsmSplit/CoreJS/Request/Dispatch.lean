@@ -81,6 +81,67 @@ private theorem reachFrame_readRegExp {r R cells A} (away : Away r R A) (call : 
     exact (flags regexpFlagOrder).bind fun text _ =>
       reachFrame_pure r R cells A (P := SafeVal A) (Val.str text) (fun _ hn => by cases hn)
 
+private theorem reachFrame_forInLevels {r R cells A} (away : Away r R A) (n : Nat)
+    (a : Addr) (address : A (.obj a)) :
+    ReachFrame r R cells A (fun _ => True) (forInLevels n a : M W _) := by
+  induction n generalizing a with
+  | zero => exact reachFrame_unknown r R cells A _ _
+  | succ n ih =>
+    simp only [forInLevels]
+    apply (reachFrame_getObj away address).bind
+    intro obj safe
+    split
+    · exact reachFrame_unknown r R cells A _ _
+    · cases parent : obj.proto with
+      | none =>
+        simp only [M.pure_bind]
+        exact reachFrame_pure r R cells A _ trivial
+      | some b =>
+        have aParent : A (.obj b) := safe _ (by simp [Obj.nodes, parent])
+        exact (ih b aParent).bind fun _ _ => reachFrame_pure r R cells A _ trivial
+
+private theorem reachFrame_forInBaseLevels {r R cells A} (away : Away r R A) (base : Val) (safe : SafeVal A base) :
+    ReachFrame r R cells A (fun _ => True) (forInBaseLevels base : M W _) := by
+  cases base <;> first
+    | exact reachFrame_pure r R cells A [] trivial
+    | exact reachFrame_forInLevels away 32 _ (safeVal_obj.1 safe)
+    | exact reachFrame_unknown r R cells A _ _
+
+private theorem reachFrame_forInKeys {r R cells A} (away : Away r R A)
+    (objects : ∀ a : Addr, a.region ≠ r → A (.obj a)) (base : Val) (safe : SafeVal A base) :
+    ReachFrame r R cells A (SafeVal A) (forInKeys base : M W Val) := by
+  unfold forInKeys
+  apply (reachFrame_forInBaseLevels away base safe).bind
+  intro levels _
+  apply (reachFrame_alloc _ ?_ objects).bind
+    fun addr address => reachFrame_pure r R cells A (Val.obj addr) (safeVal_obj.2 address)
+  simp [forInKeyTable, Obj.nodes, Property.nodes, Val.nodes]
+  intro _ _ property _ _ _ _ equality member
+  subst property
+  simp at member
+
+private theorem reachFrame_checkForInWrite {r R cells A} (away : Away r R A)
+    (base target key : Val) (baseSafe : SafeVal A base) (targetSafe : SafeVal A target) :
+    ReachFrame r R cells A (SafeVal A) (checkForInWrite base target key : M W Val) := by
+  cases base <;> try exact reachFrame_unknown r R cells A _ _
+  case obj source =>
+    cases target <;> try exact reachFrame_unknown r R cells A _ _
+    case obj destination =>
+      unfold checkForInWrite
+      apply (reachFrame_forInLevels away 32 source (safeVal_obj.1 baseSafe)).bind
+      intro levels _
+      split
+      · exact reachFrame_unknown r R cells A _ _
+      · apply (reachFrame_forInLevels away 32 destination (safeVal_obj.1 targetSafe)).bind
+        intro _ _
+        apply (reachFrame_toKey r R cells A key).bind
+        intro k _
+        apply (reachFrame_lookupProp away (safeVal_obj.1 targetSafe) k).bind
+        intro property _
+        split
+        · exact reachFrame_unknown r R cells A _ _
+        · exact reachFrame_pure r R cells A Val.undef (by simp [SafeVal, Val.nodes])
+
 theorem reachFrame_prim {r R cells A} (away : Away r R A) (call : Call W) (hf : CallFramed r R cells A call)
     (objects : ∀ a : Addr, a.region ≠ r → A (.obj a)) (root : A (.obj objectProto))
     (p : Prim) (args : List Val) (safe : ∀ x ∈ args, SafeVal A x) :
@@ -110,6 +171,9 @@ theorem reachFrame_prim {r R cells A} (away : Away r R A) (call : Call W) (hf : 
   | opaqueAmbientRef name | opaqueConstructorRef name => exact reachFrame_unknown r R cells A _ _
   | opaqueAmbientMemberRef receiver member => exact reachFrame_unknown r R cells A _ _
   | dynamicImport request captures => exact reachFrame_unknown r R cells A _ _
+  | forInKeys => exact reachFrame_forInKeys away objects _ (safe_arg safe 0)
+  | checkForInWrite =>
+    exact reachFrame_checkForInWrite away _ _ _ (safe_arg safe 0) (safe_arg safe 1)
   | log => exact reachFrame_prim_log call args
   | create => exact reachFrame_create call args (safe_arg safe 0) objects
   | getPrototypeOf => exact reachFrame_prim_getPrototypeOf away call args safe

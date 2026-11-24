@@ -1043,6 +1043,76 @@ def readRegExp (call : Call W) (getter : RegExpGetter) (receiver : Val) : M W Va
   | .flag c => regexpSlot a (← getObj a).regexp (some c)
   | .flags => .str <$> regexpFlags call receiver regexpFlagOrder
 
+/-- An ECMAScript array-index property name: canonical decimal spelling, excluding `2^32 - 1`. -/
+def arrayIndex? (key : String) : Option Nat := do
+  let index ← key.toNat?
+  if index < 4294967295 ∧ toString index = key then some index else none
+
+/-- Own keys in order: array indices numerically, other strings in insertion order, then symbols. -/
+def ownPropertyKeys (props : List (PropertyKey × Property)) : List PropertyKey :=
+  let indexed : List (Nat × PropertyKey) := props.filterMap fun (key, _) =>
+    (key.string? >>= arrayIndex?).map (·, key)
+  (indexed.mergeSort fun a b => decide (a.1 ≤ b.1)).map (·.2) ++
+    props.filterMap (fun (key, _) =>
+      if key.string?.any (fun name => (arrayIndex? name).isNone) then some key else none) ++
+    props.filterMap fun (key, _) => if key.string?.isNone then some key else none
+
+private def ordinaryForIn (o : Obj) : Bool :=
+  !o.array && o.code.isNone && o.regexp.isNone && !o.errorIdentity
+
+/-- Own string keys in order, with enumerability retained for inherited shadowing. -/
+def forInLevels : Nat → Addr → M W (List (Addr × List (String × Bool)))
+  | 0, _ => unknown "for-in prototype chain exceeds the supported depth"
+  | n + 1, a => do
+    let obj ← getObj a
+    if !ordinaryForIn obj then unknown "for-in requires an ordinary object and prototype chain" else do
+      let keys := (ownPropertyKeys obj.props).filterMap fun k => do
+        let name ← k.string?
+        let property ← obj.props.lookup k
+        return (name, property.enumerable)
+      let tail ← match obj.proto with
+        | some parent => forInLevels n parent
+        | none => pure []
+      pure ((a, keys) :: tail)
+
+private def enumerableNames (levels : List (Addr × List (String × Bool))) : List String := Id.run do
+  let mut visited := []
+  let mut names := []
+  for (_, keys) in levels do
+    for (name, enumerable) in keys do
+      unless visited.contains name do
+        visited := name :: visited
+        if enumerable then names := name :: names
+  return names.reverse
+
+/-- A private table for the generated loop. Its numeric entries and length are own data. -/
+def forInKeyTable (names : List String) : Obj :=
+  { proto := none, props := ("length", .data (.num (Float.ofNat names.length)) false false false) ::
+      names.zipIdx.map (fun (name, index) => (toString index, .data (.str name) false false false)) }
+
+def forInBaseLevels : Val → M W (List (Addr × List (String × Bool)))
+  | .undef | .null => pure []
+  | .obj addr => forInLevels 32 addr
+  | _ => unknown "for-in requires a modeled ordinary object"
+
+def forInKeys (base : Val) : M W Val := do
+  let levels ← forInBaseLevels base
+  .obj <$> alloc (forInKeyTable (enumerableNames levels))
+
+/-- An admitted body can allocate or write to an unrelated ordinary record.
+Check that a property assignment cannot mutate the enumerated prototype chain
+or reach an accessor. Reached checks execute before the side-effect-free RHS. -/
+def checkForInWrite (base target key : Val) : M W Val := do
+  let .obj source := base | unknown "unsupported for-in write source"
+  let .obj destination := target | unknown "for-in write requires an ordinary object"
+  let levels ← forInLevels 32 source
+  if levels.any (fun level => level.1 == destination) then unknown "for-in body writes to an enumerated object" else do
+    let _ ← forInLevels 32 destination
+    let property ← lookupProp destination (← toKey key)
+    if property.any (fun p => p matches .accessor ..) then
+      unknown "for-in body writes through an accessor"
+    else pure .undef
+
 def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
   let arg (i : Nat) : Val := args.getD i .undef
   match p with
@@ -1064,6 +1134,8 @@ def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
   | .opaqueConstructorRef name => unknown s!"ambient constructor {name} is reached"
   | .opaqueAmbientMemberRef receiver member => unknown s!"ambient member {receiver}.{member} is reached"
   | .dynamicImport request _ => unknown s!"dynamic import {request.quote} is reached"
+  | .forInKeys => forInKeys (arg 0)
+  | .checkForInWrite => checkForInWrite (arg 0) (arg 1) (arg 2)
   | .log =>
     match args with
     | .str format :: _ :: _ => if format.contains '%' then unknown "console.log with a format string" else pure ()
@@ -1189,20 +1261,6 @@ def writeCell (a : Addr) (v : Val) : M W Unit := do
   | some { value := some _, mutable := true } => setCell a v
   | some { value := some _, mutable := false } => throwErr .type "assignment to constant variable"
   | _ => throwErr .reference "cannot access a binding before initialization"
-
-/-- An ECMAScript array-index property name: canonical decimal spelling, excluding `2^32 - 1`. -/
-def arrayIndex? (key : String) : Option Nat := do
-  let index ← key.toNat?
-  if index < 4294967295 ∧ toString index = key then some index else none
-
-/-- Own keys in order: array indices numerically, other strings in insertion order, then symbols. -/
-def ownPropertyKeys (props : List (PropertyKey × Property)) : List PropertyKey :=
-  let indexed : List (Nat × PropertyKey) := props.filterMap fun (key, _) =>
-    (key.string? >>= arrayIndex?).map (·, key)
-  (indexed.mergeSort fun a b => decide (a.1 ≤ b.1)).map (·.2) ++
-    props.filterMap (fun (key, _) =>
-      if key.string?.any (fun name => (arrayIndex? name).isNone) then some key else none) ++
-    props.filterMap fun (key, _) => if key.string?.isNone then some key else none
 
 /-- The names of the own properties of an object, in ECMAScript enumeration order. -/
 def ownKeys (v : Val) : M W (List PropertyKey) :=
