@@ -16,7 +16,7 @@ use artifact::paths::{
     relative_module_path,
 };
 use frontend_elaboration::source_ast::{RuntimeImportFacts, RuntimeImportInfo, RuntimeImportKind};
-use js_ast::{import_decl_module_item, set_str_value, str_value};
+use js_ast::{import_decl_module_item, is_dotted_import_meta_property, set_str_value, str_value};
 use std::collections::BTreeMap;
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
@@ -141,7 +141,7 @@ impl VisitMut for SourceChunkLoaderCallRewriter<'_, '_> {
     fn visit_mut_call_expr(&mut self, call: &mut CallExpr) {
         call.visit_mut_children_with(self);
         if self.error.is_some()
-            || !matches!(&call.callee, Callee::Expr(callee) if is_import_meta_require(callee))
+            || !matches!(&call.callee, Callee::Expr(callee) if is_dotted_import_meta_property(callee, "require"))
         {
             return;
         }
@@ -172,23 +172,6 @@ impl VisitMut for SourceChunkLoaderCallRewriter<'_, '_> {
             Err(error) => self.error = Some(error),
         }
     }
-}
-
-fn is_import_meta_require(expr: &Expr) -> bool {
-    matches!(
-        expr,
-        Expr::Member(MemberExpr {
-            obj,
-            prop: MemberProp::Ident(prop),
-            ..
-        }) if matches!(
-            &**obj,
-            Expr::MetaProp(MetaPropExpr {
-                kind: MetaPropKind::ImportMeta,
-                ..
-            })
-        ) && prop.sym == *"require"
-    )
 }
 
 pub(crate) fn source_chunk_import_for_target(

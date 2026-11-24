@@ -341,11 +341,7 @@ pub fn top_level_binding_name_strings(item: &ModuleItem) -> Vec<String> {
         ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => import
             .specifiers
             .iter()
-            .map(|specifier| match specifier {
-                ImportSpecifier::Default(default) => default.local.sym.to_string(),
-                ImportSpecifier::Namespace(namespace) => namespace.local.sym.to_string(),
-                ImportSpecifier::Named(named) => named.local.sym.to_string(),
-            })
+            .map(|specifier| specifier.local().sym.to_string())
             .collect(),
         _ => Vec::new(),
     }

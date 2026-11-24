@@ -5,7 +5,9 @@
 
 use artifact::paths::join_module_path;
 use artifact::runtime_resources::{RuntimeResourceDestinations, RuntimeResourceKind};
-use js_ast::{new_url_expr, set_str_value, str_value};
+use js_ast::{
+    is_dotted_import_meta_property, is_worker_constructor, new_url_expr, set_str_value, str_value,
+};
 use swc_ecma_ast::*;
 use swc_ecma_visit::{VisitMut, VisitMutWith};
 
@@ -24,7 +26,7 @@ pub(super) fn rewrite_runtime_sources_for_target(
     }
 }
 
-pub(super) struct RuntimeSourceRewriter<'a> {
+struct RuntimeSourceRewriter<'a> {
     destinations: &'a RuntimeResourceDestinations,
     target_file: String,
 }
@@ -59,10 +61,7 @@ impl VisitMut for RuntimeSourceRewriter<'_> {
             set_str_value(source, rewritten);
             return;
         }
-        let Expr::Ident(callee) = &*new_expr.callee else {
-            return;
-        };
-        if callee.sym != *"Worker" && callee.sym != *"SharedWorker" {
+        if !is_worker_constructor(new_expr) {
             return;
         }
         let Some(args) = new_expr.args.as_mut() else {
@@ -78,7 +77,7 @@ impl VisitMut for RuntimeSourceRewriter<'_> {
     }
 }
 
-pub(super) fn new_url_import_meta_str_mut(node: &mut NewExpr) -> Option<&mut Str> {
+fn new_url_import_meta_str_mut(node: &mut NewExpr) -> Option<&mut Str> {
     let Expr::Ident(callee) = &*node.callee else {
         return None;
     };
@@ -88,7 +87,10 @@ pub(super) fn new_url_import_meta_str_mut(node: &mut NewExpr) -> Option<&mut Str
     let args = node.args.as_mut()?;
     let (first, rest) = args.split_first_mut()?;
     let second = rest.first()?;
-    if first.spread.is_some() || second.spread.is_some() || !is_import_meta_url_expr(&second.expr) {
+    if first.spread.is_some()
+        || second.spread.is_some()
+        || !is_dotted_import_meta_property(&second.expr, "url")
+    {
         return None;
     }
     if let Expr::Lit(Lit::Str(source)) = &mut *first.expr {
@@ -96,21 +98,4 @@ pub(super) fn new_url_import_meta_str_mut(node: &mut NewExpr) -> Option<&mut Str
     } else {
         None
     }
-}
-
-pub(super) fn is_import_meta_url_expr(expr: &Expr) -> bool {
-    matches!(
-        expr,
-        Expr::Member(MemberExpr {
-            obj,
-            prop: MemberProp::Ident(prop),
-            ..
-        }) if matches!(
-            &**obj,
-            Expr::MetaProp(MetaPropExpr {
-                kind: MetaPropKind::ImportMeta,
-                ..
-            })
-        ) && prop.sym == *"url"
-    )
 }

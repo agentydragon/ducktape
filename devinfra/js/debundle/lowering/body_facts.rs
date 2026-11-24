@@ -111,11 +111,7 @@ pub(super) fn collect_module_body_facts(body: &[ModuleItem]) -> ModuleBodyFacts 
             .extend(top_level_declaration_ids(item));
         if let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item {
             for specifier in &import.specifiers {
-                let local = match specifier {
-                    ImportSpecifier::Named(named) => named.local.to_id(),
-                    ImportSpecifier::Default(default) => default.local.to_id(),
-                    ImportSpecifier::Namespace(namespace) => namespace.local.to_id(),
-                };
+                let local = specifier.local().to_id();
                 facts.imported_locals.insert(local.clone());
                 facts.provided_locals.insert(local);
             }

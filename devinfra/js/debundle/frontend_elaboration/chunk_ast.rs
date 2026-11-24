@@ -292,14 +292,10 @@ pub fn binding_declaration(
                     let ModuleItem::ModuleDecl(ModuleDecl::Import(import)) = item else {
                         return false;
                     };
-                    import.specifiers.iter().any(|specifier| {
-                        let local = match specifier {
-                            ImportSpecifier::Named(named) => &named.local,
-                            ImportSpecifier::Default(default) => &default.local,
-                            ImportSpecifier::Namespace(namespace) => &namespace.local,
-                        };
-                        local.to_id() == *binding
-                    })
+                    import
+                        .specifiers
+                        .iter()
+                        .any(|specifier| specifier.local().to_id() == *binding)
                 })
                 .with_context(|| format!("no top-level statement declares `{}`", binding.0))?,
         ),
