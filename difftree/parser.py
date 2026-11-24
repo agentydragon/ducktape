@@ -1,6 +1,5 @@
 """Parse git diff output to extract file change statistics."""
 
-import subprocess
 from dataclasses import dataclass
 
 from unidiff import PatchSet
@@ -39,12 +38,3 @@ def parse_unified_diff(diff_output: str) -> list[FileChange]:
         )
         for patched_file in PatchSet(diff_output)
     ]
-
-
-def parse_git_diff(diff_args: list[str] | None = None) -> list[FileChange]:
-    """Run git diff and parse the output."""
-    cmd = ["git", "diff"]
-    if diff_args:
-        cmd.extend(diff_args)
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    return parse_unified_diff(result.stdout)
