@@ -144,8 +144,8 @@ Run these opt-in targets on RBE:
 
 ```sh
 p=//devinfra/js/debundle/x/split_proof/integration/excalidraw
-bbr test "$p:excalidraw_original_editor_browser_smoke"
-bbr test "$p:excalidraw_certified_scroll_browser_smoke" "$p:excalidraw_certified_startup_browser_smoke"
+bbr test "${p}:excalidraw_original_editor_browser_smoke"
+bbr test "${p}:excalidraw_certified_scroll_browser_smoke" "${p}:excalidraw_certified_startup_browser_smoke"
 ```
 
 The baseline loads the pinned editor. The split test certifies the single move
