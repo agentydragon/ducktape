@@ -797,14 +797,19 @@ def initFunctions : List LinkedUnit → M W Unit
 def checkIdentities (tops : List (Nat × Stmt)) : M W Unit :=
   if (tops.map (·.1)).Nodup then pure () else unknown "model: two statements have one identity"
 
-/-- Link the program: the loaded modules with their scopes, in the order they run. -/
-def link (P : Program) : M W (List (Module × Env)) := do
+/-- Install scopes after declarations have cells but before hoisted functions capture them. -/
+def linkUsingScopes (P : Program)
+    (scopes : List (Nat × List (Name × Addr)) → M W (List (Module × Env))) : M W (List (Module × Env)) := do
   let tops := P.tops
   checkIdentities tops
   let frames ← declareTops tops
-  let linked ← lift (P.scopes frames P.loaded)
+  let linked ← scopes frames
   initFunctions ((unitsOf linked).mergeSort fun a b => decide (a.id ≤ b.id))
   pure linked
+
+/-- Link the program: the loaded modules with their scopes, in the order they run. -/
+def link (P : Program) : M W (List (Module × Env)) :=
+  linkUsingScopes P fun frames => lift (P.scopes frames P.loaded)
 
 /-- Run a top-level statement in its region. -/
 def runUnit (fuel : Nat) (env : Env) (id : Nat) (s : Stmt) : M W Flow := inRegion id (execStmt fuel env s)

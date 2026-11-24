@@ -166,7 +166,7 @@ private theorem wi_declareTops (w : World) (units : List (Nat × Stmt)) :
 
 private theorem wi_link (w : World) (p : Program) :
     WorldIndependent w (link p) (link p) := by
-  unfold link
+  unfold link linkUsingScopes
   have ids : WorldIndependent w (checkIdentities p.tops) (checkIdentities p.tops) := by
     unfold checkIdentities
     split <;> (intro s; rfl)
