@@ -511,19 +511,28 @@
     {
       "chunk": "editor",
       "module": "packages/math/segment",
-      "bindings": ["lineSegment"],
+      "bindings": ["lineSegment", "pointOnLineSegment", "distanceToLineSegment", "lineSegmentIntersectionPoints"],
       "anonymous_statements": []
     },
     {
       "chunk": "editor",
       "module": "packages/math/rectangle",
-      "bindings": ["rectangle"],
+      "bindings": ["rectangle", "rectangleIntersectLineSegment"],
       "anonymous_statements": []
     },
     {
       "chunk": "editor",
       "module": "packages/math/curve",
-      "bindings": ["curve", "gradient", "solve", "curveBounds"],
+      "bindings": [
+        "curve",
+        "gradient",
+        "solve",
+        "curveBounds",
+        "bezierEquation",
+        "curveIntersectLineSegment",
+        "curveClosestPoint",
+        "curvePointDistance"
+      ],
       "anonymous_statements": []
     },
     {
