@@ -310,6 +310,7 @@ lean_library(
         "EsmSplit/CoreJS/BindingFrame.lean",
         "EsmSplit/CoreJS/EvaluatorFrame.lean",
         "EsmSplit/CoreJS/ExpressionFrame.lean",
+        "EsmSplit/CoreJS/HiddenRegion.lean",
         "EsmSplit/CoreJS/HostFrame.lean",
         "EsmSplit/CoreJS/InvocationFrame.lean",
         "EsmSplit/CoreJS/LinkWorld.lean",

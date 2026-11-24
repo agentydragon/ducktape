@@ -140,4 +140,19 @@ def checkPivot {w : World} (ready : State w)
     else throw s!"the linked state already exposes the region of unit {ordinal}"
   else throw s!"unit {ordinal} is not a local allocating declaration"
 
+/-- Find a single object region that references the pivot. This is only a
+candidate: both the isolated region and the pivot must pass the full checks. -/
+def observerRegion? {w} (ready : State w) (r : Nat) : Option Nat :=
+  (ready.heap.zipIdx.find? fun (row, q) =>
+    q != r && row.any (fun o => o.nodes.any (fun n => n.addr.region == r))).map Prod.snd
+
+def checkIsolated? {w} (s : State w) (q : Nat) (units : List (Nat × Stmt × Env)) :
+    Option (PLift (q ≠ 0 ∧ Access [] (Unprotected q (fun _ => False)) s ∧
+      ∀ u ∈ units, u.1 + 1 ≠ q ∧ ∀ node ∈ (u.2.2.capture u.2.1.free).nodes, Unprotected q (fun _ => False) node)) := do
+  if hq : q ≠ 0 then
+    if access : accessOk s [] (outsideRegion q) = true then
+      if scopes : units.all (unitEnvOk q) = true then
+        return ⟨hq, accessOk_outsideRegion access, fun u hu => unitEnvOk_sound (List.all_eq_true.mp scopes u hu)⟩
+  none
+
 end CoreJS.LinkedBehavior
