@@ -2,12 +2,13 @@
 
 use debundle_e2e_graph_support::{FixtureGraphExt, GraphFixture, program_graph_path};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use debundle_e2e_support::{
-    FixtureOpts, TreeFixture, assert_node_output, debundler_path, process, read_tree,
-    run_fixture_with_graphs, run_tree_graph_fixture, tree_spec_args,
+    FixtureOpts, TreeFixture, TreeRun, assert_node_output, debundler_path, parse_stdout_json,
+    process, read_tree, run_fixture_with_graphs, run_tree_graph_fixture, tree_spec_args,
+    write_tree_fixture,
 };
 use tempfile::TempDir;
 
@@ -31,61 +32,43 @@ fn assert_mismatch(fixture: &GraphFixture, expected: &str) -> serde_json::Value 
 }
 
 struct AliasGraphFixture {
-    _root: TempDir,
-    source_root: std::path::PathBuf,
-    source_file: std::path::PathBuf,
-    modules: std::path::PathBuf,
-    graph: std::path::PathBuf,
+    run: TreeRun,
+    source_root: PathBuf,
+    source_file: PathBuf,
+    modules: PathBuf,
+    graph: PathBuf,
 }
 
 impl AliasGraphFixture {
     fn new() -> Self {
-        let root = TempDir::new().unwrap();
-        let source_root = root.path().join("snapshot");
-        let source_file = source_root.join("provider.js");
-        fs::create_dir_all(&source_root).unwrap();
-        fs::write(&source_file, "const value = 42;\nconsole.log(value);\n").unwrap();
+        let workspace = write_tree_fixture(&TreeFixture {
+            chunks: &[("provider", "const value = 42;\nconsole.log(value);\n")],
+            module_roots: &[("provider", "provider")],
+            modules: &[(
+                "provider/provider.yaml",
+                "source_matches:\n  - match: 'const value = 42;'\n    bindings: [value]\n",
+            )],
+        });
         fs::write(
-            root.path().join("js-files.txt"),
+            workspace.root().join("js-files.txt"),
             "provider.js\tvirtual/chunk.js\n",
         )
         .unwrap();
 
-        let modules = root.path().join("modules/provider");
-        fs::create_dir_all(&modules).unwrap();
-        fs::write(
-            modules.join("provider.yaml"),
-            "source_matches:\n  - match: 'const value = 42;'\n    bindings: [value]\n",
-        )
-        .unwrap();
-
-        let config = root.path().join("spec_config.yaml");
-        fs::write(
-            &config,
-            "main_chunk_id: provider\nmodule_roots:\n  provider: provider\ninputs:\n  root: snapshot\n  js_list_path: js-files.txt\nwrite_js_tree: true\nunassigned_mode:\n  provider: { kind: inline_in_entry }\nimport_order:\n  provider: [provider]\n",
-        )
-        .unwrap();
-        let vendor_marks = root.path().join("vendor_marks.yaml");
-        fs::write(&vendor_marks, "vendor_marks: []\n").unwrap();
-        let out_root = root.path().join("out");
-        let output = debundle_e2e_support::process::debundle_output(
-            Command::new(debundler_path())
-                .arg("run")
-                .arg("--graphs")
-                .args(tree_spec_args(root.path()))
-                .arg("--out-root")
-                .arg(&out_root),
-        )
-        .unwrap();
-        process::assert_success(&output);
-
+        let run = workspace.run(&["--graphs"]);
+        assert!(run.result.status.success(), "{}", run.result.stderr);
+        let source_root = run.root().join("snapshot");
         Self {
-            graph: out_root.join("reports/tree/provider/dependency_graph.json.gz"),
-            _root: root,
+            source_file: source_root.join("provider.js"),
             source_root,
-            source_file,
-            modules,
+            modules: run.root().join("modules/provider"),
+            graph: run.report_root.join("provider/dependency_graph.json.gz"),
+            run,
         }
+    }
+
+    fn root(&self) -> &Path {
+        self.run.root()
     }
 
     fn command(
@@ -111,7 +94,7 @@ impl AliasGraphFixture {
         if args.starts_with(&["modules", "propose"]) {
             command
                 .arg("--tree-config")
-                .arg(self._root.path().join("spec_config.yaml"));
+                .arg(self.root().join("spec_config.yaml"));
         }
         debundle_e2e_support::process::debundle_output(&mut command)
             .unwrap_or_else(|err| panic!("{err}"))
@@ -120,7 +103,29 @@ impl AliasGraphFixture {
 
 fn query_json(output: &std::process::Output) -> serde_json::Value {
     process::assert_success(output);
-    serde_json::from_slice(&output.stdout).unwrap()
+    parse_stdout_json(output)
+}
+
+#[track_caller]
+fn assert_coverage_requests_value(output: &std::process::Output) {
+    let report = query_json(output);
+    assert_eq!(
+        report["rows"][0]["requested_binding_ids"],
+        serde_json::json!(["value"])
+    );
+}
+
+#[track_caller]
+fn assert_inspects_value(output: &std::process::Output) {
+    let report = query_json(output);
+    assert!(
+        report["files"][0]["statements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|statement| statement["source"].as_str().unwrap().contains("value = 42")),
+        "{report:#}"
+    );
 }
 
 #[test]
@@ -132,11 +137,7 @@ fn aliased_chunk_sources_use_the_verified_physical_input_for_queries() {
         fixture.command(&["coverage"], None, None),
         fixture.command(&["coverage"], Some(&fixture.source_root), None),
     ] {
-        let report = query_json(&output);
-        assert_eq!(
-            report["rows"][0]["requested_binding_ids"],
-            serde_json::json!(["value"])
-        );
+        assert_coverage_requests_value(&output);
     }
     let proposal =
         query_json(&fixture.command(&["modules", "propose"], Some(&fixture.source_root), None));
@@ -146,18 +147,11 @@ fn aliased_chunk_sources_use_the_verified_physical_input_for_queries() {
     let describe =
         query_json(&fixture.command(&["describe", "value"], Some(&fixture.source_root), None));
     assert_eq!(describe["source_unit_ids"], serde_json::json!(["unit:0"]));
-    let inspected = query_json(&fixture.command(&["inspect-source", "--id", "unit:0"], None, None));
-    assert!(
-        inspected["files"][0]["statements"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|statement| statement["source"].as_str().unwrap().contains("value = 42"))
-    );
+    assert_inspects_value(&fixture.command(&["inspect-source", "--id", "unit:0"], None, None));
 
-    let plan = fixture._root.path().join("peel.json");
+    let plan = fixture.root().join("peel.json");
     fs::write(&plan, serde_json::to_vec(&proposal["plan"]).unwrap()).unwrap();
-    let config = fixture._root.path().join("spec_config.yaml");
+    let config = fixture.root().join("spec_config.yaml");
     let before = read_tree(&fixture.modules);
     let config_before = fs::read(&config).unwrap();
     for mut args in [
@@ -186,11 +180,11 @@ fn aliased_chunk_sources_use_the_verified_physical_input_for_queries() {
         Some(&fixture.source_root),
         None,
     ));
-    let out_root = fixture._root.path().join("after-peel");
+    let out_root = fixture.root().join("after-peel");
     let materialized = debundle_e2e_support::process::debundle_output(
         Command::new(debundler_path())
             .arg("run")
-            .args(tree_spec_args(fixture._root.path()))
+            .args(tree_spec_args(fixture.root()))
             .arg("--out-root")
             .arg(&out_root),
     )
@@ -202,7 +196,7 @@ fn aliased_chunk_sources_use_the_verified_physical_input_for_queries() {
 #[test]
 fn aliased_source_match_remains_resolvable_by_the_graph_edit_gate() {
     let fixture = AliasGraphFixture::new();
-    let import_order = fixture._root.path().join("import-order.json");
+    let import_order = fixture.root().join("import-order.json");
     fs::write(&import_order, serde_json::to_vec(&["next"]).unwrap()).unwrap();
     let import_order = import_order.to_str().unwrap();
     let output = fixture.command(
@@ -265,7 +259,7 @@ fn aliased_chunk_sources_keep_root_and_shadow_guards_during_relocation() {
     );
     fs::remove_file(fallback_shadow).unwrap();
 
-    let relocated_root = fixture._root.path().join("relocated-source");
+    let relocated_root = fixture.root().join("relocated-source");
     fs::create_dir_all(relocated_root.join("snapshot")).unwrap();
     fs::copy(
         &fixture.source_file,
@@ -273,39 +267,24 @@ fn aliased_chunk_sources_keep_root_and_shadow_guards_during_relocation() {
     )
     .unwrap();
     fs::copy(
-        fixture._root.path().join("js-files.txt"),
+        fixture.root().join("js-files.txt"),
         relocated_root.join("js-files.txt"),
     )
     .unwrap();
     fs::remove_file(&fixture.source_file).unwrap();
-    let relocated_coverage =
-        query_json(&fixture.command(&["coverage"], None, Some(&relocated_root)));
-    assert_eq!(
-        relocated_coverage["rows"][0]["requested_binding_ids"],
-        serde_json::json!(["value"])
-    );
     let relocated_selector_root = relocated_root.join("snapshot");
-    let relocated_inspection = query_json(&fixture.command(
+    for selector_root in [None, Some(relocated_selector_root.as_path())] {
+        assert_coverage_requests_value(&fixture.command(
+            &["coverage"],
+            selector_root,
+            Some(&relocated_root),
+        ));
+    }
+    assert_inspects_value(&fixture.command(
         &["inspect-source", "--id", "unit:0"],
         Some(&relocated_selector_root),
         Some(&relocated_root),
     ));
-    assert!(
-        relocated_inspection["files"][0]["statements"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|statement| statement["source"].as_str().unwrap().contains("value = 42"))
-    );
-    let relocated_coverage_with_selector_root = query_json(&fixture.command(
-        &["coverage"],
-        Some(&relocated_selector_root),
-        Some(&relocated_root),
-    ));
-    assert_eq!(
-        relocated_coverage_with_selector_root["rows"][0]["requested_binding_ids"],
-        serde_json::json!(["value"])
-    );
 
     fs::write(
         relocated_root.join("snapshot/provider.js"),
