@@ -205,6 +205,16 @@ private def linkedPatternIdentifier (binder : Json → Except String Name) (targ
   unless (← field target "type") == "Identifier" do throw "expected an identifier in object pattern"
   binder target
 
+private def linkedParameterBinding (j : Json) : Except String (Name × Option Json) := do
+  let binder := linkedPatternIdentifier localBinding
+  if (← field j "type") != "AssignmentPattern" then return (← binder j, none)
+  return (← j.getObjVal? "left" >>= binder, some (← j.getObjVal? "right"))
+
+private def hasObjectParameterDefault (param : Json) : Bool :=
+  (field param "type").toOption == some "ObjectPattern" &&
+    ((param.getObjValAs? (List Json) "properties").toOption.getD []).any fun prop =>
+      (prop.getObjVal? "value" >>= (field · "type")).toOption == some "AssignmentPattern"
+
 /-- A default reads a saved value. An undefined value triggers the initializer. -/
 private def withBindingDefault (name : Name) (fallback : Option Expr) : Expr :=
   match fallback with
@@ -743,35 +753,47 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
     -- callable enters the ordinary function evaluator.
     return .complete (← deferredFunction j .asyncFn name self arity "async invocation requires Promise semantics")
   let deferPattern := deferredFunction j kind name self arity (checkPrivateNames := true)
-  let hasDefaults := tags.contains "AssignmentPattern"
+  let hasNamedDefaults := tags.contains "AssignmentPattern"
+  let hasDefaults := hasNamedDefaults || parameters.any hasObjectParameterDefault
   let mut rest : Option Name := none
-  let mut params : Array (Name × Option Expr) := #[]
+  let mut slots : Array Name := #[]
   let mut bound : Array Name := #[]
-  let mut bindings : Array Stmt := #[]
+  let mut initializers : Array Stmt := #[]
   for ((param, tag), i) in (parameters.zip tags).zipIdx do
+    let slot := s!":parameter:{i}"
     match tag with
     | "Identifier" =>
       let x ← localBinding param
-      params := params.push (x, none)
+      slots := slots.push (if hasDefaults then slot else x)
       bound := bound.push x
+      if hasDefaults then initializers := initializers.push (.decl .let_ x (.var slot))
     | "AssignmentPattern" =>
       let target ← param.getObjVal? "left"
       unless (← field target "type") == "Identifier" do
         return .complete (← deferPattern "expected an identifier in a default parameter")
       let x ← localBinding target
       let value ← linkedExpr profile imports true x (← param.getObjVal? "right")
-      params := params.push (x, some value)
+      slots := slots.push slot
       bound := bound.push x
+      initializers := initializers.push (.decl .let_ x (withBindingDefault slot (some value)))
     | "ObjectPattern" =>
-      if hasDefaults then return .complete (← deferPattern "unsupported object pattern alongside default parameters")
-      let fields ← match linkedObjectPattern param (linkedPatternIdentifier localBinding) with
+      if hasNamedDefaults then return .complete (← deferPattern "unsupported object pattern alongside default parameters")
+      let fields ← match linkedObjectPattern param linkedParameterBinding with
         | .ok fields => pure fields
         | .error reason => return .complete (← deferPattern reason)
-      let arg := s!":parameter:{i}"
-      params := params.push (arg, none)
-      for (key, x) in fields do
-        bound := bound.push x
-        bindings := bindings.push (.decl .var x (.get (.var arg) (.str key)))
+      slots := slots.push slot
+      bound := bound ++ (fields.map (·.2.1)).toArray
+      if hasDefaults then
+        let props ← fields.mapM fun (key, x, fallback) => do
+          let bind := BindingPattern.name x
+          let pattern ← match fallback with
+            | none => pure bind
+            | some e => .defaultValue bind <$> linkedExpr profile imports true x e
+          pure (Expr.str key, pattern)
+        initializers := initializers.push (.bind .let_ (.object props) (.var slot))
+      else
+        for (key, x, _) in fields do
+          initializers := initializers.push (.decl .var x (.get (.var slot) (.str key)))
     | "RestElement" =>
       let target ← param.getObjVal? "argument"
       unless i + 1 == parameters.size && tags.toList.all (fun t => t == "Identifier" || t == "RestElement") &&
@@ -801,21 +823,17 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
   if functions.any (fun x => bound.contains x || bodyVars.contains x) then
     throw "local function declaration overlaps a parameter or var binding"
   if hasDefaults then
-    let defaultReads := params.toList.flatMap fun p => p.2.toList.flatMap Expr.free
     -- The evaluator hoists body vars at entry. Only admit that hoisting when
     -- it cannot shadow a reference in a default or merge a body's var with the parameter cell.
-    if bodyVars.any (fun x => bound.contains x || defaultReads.contains x) then
-      throw "body var overlaps named default parameters or their references"
-    let slots := params.zipIdx.toList.map fun (_, i) => s!":parameter:{i}"
-    let initializers := (params.toList.zip slots).map fun ((x, defaultValue), slot) =>
-      Stmt.decl .let_ x (withBindingDefault slot defaultValue)
-    return .defaults slots arity initializers stmts
+    let reads := freeStmts initializers.toList
+    if bodyVars.any reads.contains then
+      throw "body var overlaps default parameters or their references"
+    return .defaults slots.toList arity initializers.toList stmts
   -- Static keys and identifier targets have no parameter expressions. The reads
   -- run before the body, using the same mutable cells as any body var redeclarations.
-  let slots := params.toList.map Prod.fst
-  if let some restName := rest then return .complete (.withRest name kind self slots restName stmts)
-  if bindings.isEmpty then return .complete (.mk name kind self slots stmts)
-  return .objectBindings slots bindings.toList stmts
+  if let some restName := rest then return .complete (.withRest name kind self slots.toList restName stmts)
+  if initializers.isEmpty then return .complete (.mk name kind self slots.toList stmts)
+  return .objectBindings slots.toList initializers.toList stmts
 
 /-- Split a derived constructor at its direct super call, including a call among
 comma operands. All three parts run with the same parameter and local cells. -/
@@ -826,7 +844,8 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
       discard <| localBinding (← param.getObjVal? "left")
       discard <| prepareBeforeSuper (← param.getObjVal? "right") false
     else if (← field param "type") == "ObjectPattern" then
-      discard <| linkedObjectPattern param (linkedPatternIdentifier localBinding)
+      for (_, _, fallback) in ← linkedObjectPattern param linkedParameterBinding do
+        if let some e := fallback then discard <| prepareBeforeSuper e false
     else if (← field param "type") == "RestElement" then
       discard <| localBinding (← param.getObjVal? "argument")
     else discard <| localBinding param
