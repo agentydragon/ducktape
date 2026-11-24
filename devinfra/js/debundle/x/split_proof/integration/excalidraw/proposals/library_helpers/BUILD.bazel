@@ -2,6 +2,7 @@ exports_files(
     [
         "average.yaml",
         "default_font_family.yaml",
+        "numeric_thresholds.yaml",
         "rtl_strings.yaml",
         "shift_locking_angle.yaml",
         "utils_prefix.yaml",
