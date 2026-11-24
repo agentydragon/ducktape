@@ -3,7 +3,7 @@ import { strict as assert } from "node:assert";
 import { spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { lowerDump } from "../lowering/dump_core.mjs";
+import { lowerDump } from "./annotated_estree.mjs";
 import { topLevelStatements } from "./scope_metadata.mjs";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";

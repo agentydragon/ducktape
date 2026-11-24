@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
 import { topLevelStatements } from "../translation/scope_metadata.mjs";
-import { lowerDump } from "./dump_core.mjs";
+import { lowerDump } from "../translation/annotated_estree.mjs";
 
 const [file, n] = process.argv.slice(2);
 const program = JSON.parse(readFileSync(file, "utf8"));

@@ -5,7 +5,7 @@ import { isDeepStrictEqual } from "node:util";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
 import { literalKey, needsPrintRange } from "./scope_metadata.mjs";
-import { lowerDump, upgradeLowerDump } from "../lowering/dump_core.mjs";
+import { lowerDump, upgradeLowerDump } from "./annotated_estree.mjs";
 
 const linkedAnnotations = { includeOpaqueCaptures: true };
 

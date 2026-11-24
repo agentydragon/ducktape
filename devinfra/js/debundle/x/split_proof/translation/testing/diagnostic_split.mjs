@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
-import { lowerDump } from "../../lowering/dump_core.mjs";
+import { lowerDump } from "../annotated_estree.mjs";
 
 export const run = (binary, args) => spawnSync(binary, args, { encoding: "utf8" });
 

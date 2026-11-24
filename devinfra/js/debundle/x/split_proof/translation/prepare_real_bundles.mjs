@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
-import { lowerDump } from "../lowering/dump_core.mjs";
+import { lowerDump } from "./annotated_estree.mjs";
 
 const [output, ...requested] = process.argv.slice(2);
 if (!output) throw new Error("usage: prepare_real_bundles <output dir> [bundle ...]");

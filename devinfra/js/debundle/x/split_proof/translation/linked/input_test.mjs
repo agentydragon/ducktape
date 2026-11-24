@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
-import { lowerDump } from "../../lowering/dump_core.mjs";
+import { lowerDump } from "../annotated_estree.mjs";
 
 const parse = (source) => lowerDump(source, acorn, eslintScope);
 const provider = `

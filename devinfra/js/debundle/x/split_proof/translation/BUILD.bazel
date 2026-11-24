@@ -24,15 +24,27 @@ js_library(
     ],
 )
 
+js_library(
+    name = "annotated_estree",
+    srcs = ["annotated_estree.mjs"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:__pkg__",
+    ],
+    deps = [":scope_metadata"],
+)
+
 js_binary(
     name = "module_io",
     data = [
+        ":annotated_estree",
         ":node_modules/acorn",
         ":node_modules/astring",
         ":node_modules/eslint-scope",
         ":print",
         ":scope_metadata",
-        "//devinfra/js/debundle/x/split_proof/lowering:dump_core",
     ],
     entry_point = "module_io.mjs",
     visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
@@ -61,13 +73,13 @@ eslint_test(
 _SEEDED_RANDOM = "//devinfra/js/debundle/x/split_proof:seeded_random"
 
 _SHIFT_FUZZ_DATA = [
+    ":annotated_estree",
     ":node_modules/acorn",
     ":node_modules/eslint-scope",
     "shift_fuzz_worker.mjs",
     ":shift_candidate",
     ":syntax_inventory",
     ":scope_metadata",
-    "//devinfra/js/debundle/x/split_proof/lowering:dump_core",
     "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
 ]
 
@@ -135,8 +147,8 @@ js_test(
     name = "identity_emission_test",
     data = _CHECKER_RUNFILES + [
         "fixtures/local_identity/bundle.js",
+        ":annotated_estree",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
-        "//devinfra/js/debundle/x/split_proof/lowering:dump_core",
         "//devinfra/js/debundle/x/split_proof/translation/testing:check_translation",
         "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
     ],
@@ -148,10 +160,10 @@ js_test(
 )
 
 _LOWER_CALLBACK_FUZZ_DATA = [
+    ":annotated_estree",
     ":scope_metadata",
     ":node_modules/acorn",
     ":node_modules/eslint-scope",
-    "//devinfra/js/debundle/x/split_proof/lowering:dump_core",
     "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
 ]
 
@@ -595,6 +607,7 @@ js_test(
 js_test(
     name = "corejs_ast_lowering_test",
     data = [
+        ":annotated_estree",
         ":frontend",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
@@ -602,7 +615,6 @@ js_test(
         ":split_dump",
         "//devinfra/js/debundle/x/split_proof/lean:corejs",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
-        "//devinfra/js/debundle/x/split_proof/lowering:dump_core",
         "//devinfra/js/debundle/x/split_proof/model:to_core",
     ],
     entry_point = "corejs_ast_lowering_test.mjs",
@@ -625,10 +637,10 @@ js_binary(
 js_binary(
     name = "dump_ast",
     data = [
+        ":annotated_estree",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
         ":scope_metadata",
-        "//devinfra/js/debundle/x/split_proof/lowering:dump_core",
     ],
     entry_point = "dump_ast.mjs",
     visibility = ["//devinfra/js/debundle/x/split_proof:__pkg__"],
@@ -637,6 +649,7 @@ js_binary(
 js_binary(
     name = "prepare_real_bundles",
     data = [
+        ":annotated_estree",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
         ":node_modules/lodash-es",
@@ -644,7 +657,6 @@ js_binary(
         ":node_modules/zod",
         ":scope_metadata",
         "//:node_modules/esbuild",
-        "//devinfra/js/debundle/x/split_proof/lowering:dump_core",
         "//devinfra/js/debundle/x/split_proof/lowering/entries:real_bundle_entries",
     ],
     entry_point = "prepare_real_bundles.mjs",
@@ -742,10 +754,10 @@ js_library(
     name = "analysis_inventory",
     srcs = ["analysis_inventory.mjs"],
     deps = [
+        ":annotated_estree",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
         ":syntax_inventory",
-        "//devinfra/js/debundle/x/split_proof/lowering:dump_core",
     ],
 )
 
@@ -805,10 +817,10 @@ js_library(
         "//devinfra/js/debundle/x/split_proof/model:__pkg__",
     ],
     deps = [
+        ":annotated_estree",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
         ":scope_metadata",
-        "//devinfra/js/debundle/x/split_proof/lowering:dump_core",
         "//devinfra/js/debundle/x/split_proof/model:to_core",
     ],
 )

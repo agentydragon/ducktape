@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-import { annotateProgram, parseModule, resolveIdentifiers } from "../translation/scope_metadata.mjs";
+import { annotateProgram, parseModule, resolveIdentifiers } from "./scope_metadata.mjs";
 
 export function lowerDump(code, acorn, eslintScope, options) {
   return dumpParsed(parseModule(code, acorn.parse, eslintScope), options);

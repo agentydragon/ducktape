@@ -5,7 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
-import { lowerDump } from "../../lowering/dump_core.mjs";
+import { lowerDump } from "../annotated_estree.mjs";
 
 const root = process.env.TEST_TMPDIR;
 const input = path.join(root, "input.json");

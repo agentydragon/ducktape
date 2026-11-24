@@ -30,7 +30,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { acorn, eslintScope } from "../translation/bazel_parser.mjs";
 import { parse as parseYaml } from "yaml";
-import { dumpParsed } from "../lowering/dump_core.mjs";
+import { dumpParsed } from "../translation/annotated_estree.mjs";
 import { parseModule, topLevelStatements } from "../translation/scope_metadata.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));

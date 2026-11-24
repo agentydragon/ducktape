@@ -7,7 +7,7 @@ import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
 import { bundleFromParsed, frontBundle } from "./frontend.mjs";
 import { annotateProgram, parseModule, resolveIdentifiers } from "./scope_metadata.mjs";
-import { dumpParsed, lowerDump, upgradeLowerDump } from "../lowering/dump_core.mjs";
+import { dumpParsed, lowerDump, upgradeLowerDump } from "./annotated_estree.mjs";
 import { checkTranslation } from "./testing/check_translation.mjs";
 import { lowerDiagnostic, prepareSideSplit, run } from "./testing/diagnostic_split.mjs";
 

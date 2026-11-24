@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
-import { lowerDump } from "../lowering/dump_core.mjs";
+import { lowerDump } from "./annotated_estree.mjs";
 import { FORMS } from "./syntax_inventory.mjs";
 
 export function readAnalysisInventory(
