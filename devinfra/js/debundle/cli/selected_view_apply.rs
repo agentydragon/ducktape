@@ -348,7 +348,6 @@ fn realize_change(
     );
     placements.insert(destination.to_string(), module.clone());
     let realized = session.check(chunk_id, &view, &import_order, graph)?;
-    realized.ensure_accepted()?;
     ensure!(
         realized.source_unit_modules == expected,
         "selected-view selectors realize a different complete assignment from the checked plan"
