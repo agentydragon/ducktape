@@ -47,9 +47,10 @@ private def hoisted (j : Json) : Except String OpaqueHoist := do
 
 /-- Lower executable module-body units. Static import and export syntax belongs to the module linker.
 The traversal includes references from deferred code, even when the initial world step never calls it. -/
-def unit (origin : Nat) (j : Json) : Except String Stmt := do
+def unit (origin : Nat) (j : Json) (loaderNames : Option (List Name) := none) : Except String Stmt := do
   if let some why := Lower.outsideModel false j then throw why
-  if FromESTree.needsOpaqueContext j then throw "opaque unit requires source-module or method context"
+  if FromESTree.needsOpaqueContext j (wholeUnit := true) (moduleLocationChecked := loaderNames.isSome) then
+    throw "opaque unit requires source-module or method context"
   let kind ← j.getObjValAs? String "type"
   unless ["VariableDeclaration", "FunctionDeclaration", "ClassDeclaration", "ExpressionStatement",
       "BlockStatement", "TryStatement", "IfStatement", "ForStatement", "ForInStatement", "ForOfStatement",
@@ -59,7 +60,8 @@ def unit (origin : Nat) (j : Json) : Except String Stmt := do
   let declared := (Lower.topDefs j).eraseDups
   unless declared.Perm scope.declared.toList do throw "opaque declarations differ from module scope annotations"
   -- Request slots must be stable across reparsing and JSON object-field order.
-  let free := (scope.references.toList.filter fun x => !scope.declared.contains x).mergeSort
+  let lexical := (scope.references.toList.filter fun x => !scope.declared.contains x).mergeSort
+  let free := lexical ++ loaderNames.getD []
   if kind == "FunctionDeclaration" then
     return .opaque origin [] [← hoisted j] free (.closures [])
   let declKind ← if kind == "VariableDeclaration" then

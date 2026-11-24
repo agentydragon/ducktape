@@ -59,7 +59,7 @@ private theorem reachFrame_initClosures {r R cells A} (away : Away r R A)
       exact write.bind fun _ _ => ih restFns (part + 1)
 
 private theorem opaqueCells_nodes {A : HeapNode → Prop} {env : Env} (safe : ∀ node ∈ env.nodes, A node)
-    (decls : List (Name × DeclKind)) (funs : List (Name × Nat × Bool)) (free : List Name) :
+    (decls : List (Name × DeclKind)) (funs : List OpaqueHoist) (free : List Name) :
     ∀ a, some a ∈ opaqueCells env decls funs free → A (.cell a) := by
   intro a ha
   obtain ⟨name, _, h⟩ := List.mem_map.mp ha
@@ -70,7 +70,7 @@ theorem execOpaque_reachFrame_step {r R cells A n} (away : Away r R A)
     (objectRoot : A (.obj objectProto)) (functionRoot : A (.obj functionProto))
     (conversation : ∀ code inner told, (∀ a, some a ∈ inner → A (.cell a)) →
       ReachFrame r R inner A (SafeVal A) (converse n code inner told : M W Val))
-    (env : Env) (code : Nat) (decls : List (Name × DeclKind)) (funs : List (Name × Nat × Bool))
+    (env : Env) (code : Nat) (decls : List (Name × DeclKind)) (funs : List OpaqueHoist)
     (free : List Name) (action : OpaqueRun) (safe : ∀ node ∈ env.nodes, A node) :
     ReachFrame r R cells A (FlowSafe A) (execStmt (n + 1) env (.opaque code decls funs free action) : M W Flow) := by
   have roots := opaqueCells_nodes safe decls funs free

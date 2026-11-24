@@ -112,9 +112,9 @@ private theorem wi_makeFunc (w : World) (env : Env) (f : Func) :
   exact init.bind fun _ => wi_pure _ _
 
 private theorem wi_makeOpaque (w : World) (code part : Nat) (cells : List (Option Addr)) (name : String)
-    (length : Nat) (constructor : Bool) :
-    WorldIndependent w (makeOpaque code part cells name length constructor)
-      (makeOpaque code part cells name length constructor) := by
+    (length : Nat) (constructor : Bool) (proto : Addr) :
+    WorldIndependent w (makeOpaque code part cells name length constructor proto)
+      (makeOpaque code part cells name length constructor proto) := by
   unfold makeOpaque
   apply (wi_alloc w _).bind
   intro a
@@ -126,14 +126,19 @@ private theorem wi_makeOpaque (w : World) (code part : Nat) (cells : List (Optio
   exact prototype.bind fun _ => wi_pure _ _
 
 private theorem wi_initOpaque (w : World) (code : Nat) (cells : List (Option Addr)) (env : Env)
-    (funs : List (Name × Nat × Bool)) (part : Nat) :
+    (funs : List OpaqueHoist) (part : Nat) :
     WorldIndependent w (initOpaque code cells env funs part) (initOpaque code cells env funs part) := by
   induction funs generalizing part with
   | nil => exact wi_pure _ _
   | cons fn rest ih =>
-    obtain ⟨name, length, constructor⟩ := fn
-    exact (wi_makeOpaque w code part cells name length constructor).bind fun value =>
-      (wi_initVar w env name value).bind fun _ => ih (part + 1)
+    obtain ⟨name, length, kind⟩ := fn
+    cases kind with
+    | ordinary constructor =>
+      exact (wi_makeOpaque w code part cells name length constructor functionProto).bind fun value =>
+        (wi_initVar w env name value).bind fun _ => ih (part + 1)
+    | asyncFn =>
+      exact (wi_makeOpaque w code part cells name length false asyncFunctionProto).bind fun value =>
+        (wi_initVar w env name value).bind fun _ => ih (part + 1)
 
 private theorem wi_initFunctions (w : World) (units : List (Nat × Stmt × Env)) :
     WorldIndependent w (initFunctions units) (initFunctions units) := by

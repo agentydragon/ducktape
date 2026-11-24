@@ -82,7 +82,11 @@ def certify_scroll(runfiles: Runfiles, source: Path, *, deployment_origin: str |
         "normal-completion",
         "--host-contract",
         profile,
+        "--structural-pivot",
+        "1337",
     ]
+    if deployment_origin is not None:
+        command.extend(["--deployment-origin", deployment_origin])
     verdicts = []
     for stage, args in [("emit", []), ("check-output", ["--check-output"])]:
         run = subprocess.run([*command, *args], capture_output=True, text=True, check=False)
@@ -91,8 +95,8 @@ def certify_scroll(runfiles: Runfiles, source: Path, *, deployment_origin: str |
         verdict = json.loads(run.stdout.strip().splitlines()[-1])
         assert verdict["status"] == "certified", verdict
         assert verdict["requested"] == "normal-completion", verdict
-        assert verdict["guarantee"] in ("normal-completion", "all-outcomes"), verdict
-        assert verdict["scope"] == "linked-programs", verdict
+        assert verdict["guarantee"] == "normal-completion", verdict
+        assert verdict["scope"] == "linked-structural-pivot", verdict
         assert verdict["hostProfile"] == "browser-page", verdict
         assert isinstance(verdict["assumptions"], list), verdict
         verdicts.append(verdict)

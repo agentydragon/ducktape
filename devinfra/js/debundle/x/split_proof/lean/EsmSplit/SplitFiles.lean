@@ -57,6 +57,13 @@ def writeProgramManifest (programs : Json) (work : System.FilePath) : IO System.
   IO.FS.writeFile manifest programs.compress
   return manifest
 
+def readModules (bundlePath work : System.FilePath) (requests : Array String) : IO Json := do
+  let names := work / "requests.json"
+  let output := work / "providers.json"
+  IO.FS.writeFile names (toJson requests).compress
+  javascript #["--read-modules"] #[bundlePath, names, output]
+  readJson output
+
 /-- Read the actual provider graph. Lean resolves each edge from the parsed import declaration;
 the shared JavaScript frontend reads only the next batch of filenames. -/
 partial def loadProviders (source : Json) (bundlePath work : System.FilePath) : IO Json := do
@@ -77,11 +84,7 @@ partial def loadProviders (source : Json) (bundlePath work : System.FilePath) : 
     if requests.isEmpty then break
     unless bundlePath.extension == some "mjs" || bundlePath.extension == some "js" do
       throw (IO.userError "supply the original JavaScript file to resolve its relative imports")
-    let names := work / "requests.json"
-    let output := work / "providers.json"
-    IO.FS.writeFile names (toJson requests).compress
-    javascript #["--read-modules"] #[bundlePath, names, output]
-    let parsed ← readJson output
+    let parsed ← readModules bundlePath work requests
     frontier := #[]
     for name in requests do
       let ast ← IO.ofExcept (parsed.getObjVal? name)
