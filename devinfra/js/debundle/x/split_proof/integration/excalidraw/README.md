@@ -155,7 +155,7 @@ the existing local host-binding proof.
 
 ### Browser smoke
 
-The smoke extracts **225 bindings into 27 upstream modules** from the canonical
+The smoke extracts **279 bindings into 28 upstream modules** from the canonical
 [Excalidraw editor spec](../../../../excalidraw/spec/modules/editor/packages).
 The [Rust ownership subset](../../../../excalidraw/editor_smoke_subset.json) lists
 the retained names. See the [recovery notes](recovery.md) for the candidate
