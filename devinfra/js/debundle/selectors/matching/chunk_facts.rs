@@ -20,11 +20,11 @@ use js_ast::source_unit_ordinal_for_statement;
 use source_identity::{SourceUnitOrdinal, StatementId};
 use swc_ecma_ast::{
     ArrayPat, ArrowFunctionBody, AssignTarget, AssignTargetPat, BlockStmt, Callee, Class,
-    ClassMember, Decl, DefaultDecl, Expr, ExprOrSpread, ForHead, Function, FunctionBody,
-    ImportSpecifier, Lit, MemberExpr, MemberProp, MetaPropKind, MethodKind, Module, ModuleDecl,
-    ModuleItem, ObjectPat, ObjectPatProp, OptChainBase, ParamOrTsParamProp, Pat, PrivateName, Prop,
-    PropName, PropOrSpread, SimpleAssignTarget, Stmt, SuperProp, Tpl, UsingDecl, VarDecl,
-    VarDeclOrExpr, VarDeclarator,
+    ClassMember, Decl, DefaultDecl, Expr, ExprOrSpread, ForHead, Function, FunctionBody, Lit,
+    MemberExpr, MemberProp, MetaPropKind, MethodKind, Module, ModuleDecl, ModuleItem, ObjectPat,
+    ObjectPatProp, OptChainBase, ParamOrTsParamProp, Pat, PrivateName, Prop, PropName,
+    PropOrSpread, SimpleAssignTarget, Stmt, SuperProp, Tpl, UsingDecl, VarDecl, VarDeclOrExpr,
+    VarDeclarator,
 };
 
 pub type NodeId = u32;
@@ -258,11 +258,7 @@ impl Extractor {
                     .push((src, js_ast::str_value(&import.src)));
                 self.facts.child.push((id, 0, src));
                 for (index, spec) in import.specifiers.iter().enumerate() {
-                    let local = match spec {
-                        ImportSpecifier::Named(named) => &named.local,
-                        ImportSpecifier::Default(default) => &default.local,
-                        ImportSpecifier::Namespace(namespace) => &namespace.local,
-                    };
+                    let local = spec.local();
                     let spec_id = self.node(NodeKind::ImportSpecifier);
                     self.facts.ident_name.push((spec_id, local.sym.to_string()));
                     self.facts.child.push((id, (index + 1) as u32, spec_id));
@@ -1564,16 +1560,10 @@ fn module_top_level_binds_object(module: &Module) -> bool {
     module.body.iter().any(|item| match item {
         ModuleItem::Stmt(Stmt::Decl(decl)) => decl_binds_object(decl),
         ModuleItem::ModuleDecl(ModuleDecl::ExportDecl(export)) => decl_binds_object(&export.decl),
-        ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => {
-            import.specifiers.iter().any(|spec| {
-                let local = match spec {
-                    ImportSpecifier::Named(named) => &named.local.sym,
-                    ImportSpecifier::Default(default) => &default.local.sym,
-                    ImportSpecifier::Namespace(namespace) => &namespace.local.sym,
-                };
-                local.as_ref() == "Object"
-            })
-        }
+        ModuleItem::ModuleDecl(ModuleDecl::Import(import)) => import
+            .specifiers
+            .iter()
+            .any(|spec| spec.local().sym == "Object"),
         // A bare `Object = ...` assignment (reassignment of the global) shadows the
         // intrinsic identity just as a declaration does; treat it as binding.
         ModuleItem::Stmt(stmt) => stmt_reassigns_object(stmt),

@@ -78,12 +78,7 @@ fn collect_import_locals(module: &Module) -> BTreeSet<String> {
             continue;
         };
         for spec in &import.specifiers {
-            let local = match spec {
-                ImportSpecifier::Named(n) => &n.local,
-                ImportSpecifier::Default(d) => &d.local,
-                ImportSpecifier::Namespace(ns) => &ns.local,
-            };
-            locals.insert(local.sym.to_string());
+            locals.insert(spec.local().sym.to_string());
         }
     }
     locals

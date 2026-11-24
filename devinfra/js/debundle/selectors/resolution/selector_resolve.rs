@@ -38,7 +38,7 @@ use source_identity::SourceUnitId;
 use source_match::chunk_resolver::ChunkResolver;
 use source_match::{ParsedSourceMatchSelector, template_free_identifiers};
 use spec::{AnonymousStatementSelector, BindingSelector, BindingSourceKind, MemberSelectorSpec};
-use swc_ecma_ast::{ImportSpecifier, Module, ModuleDecl, ModuleItem};
+use swc_ecma_ast::{Module, ModuleDecl, ModuleItem};
 
 /// One parsed chunk, analysed once and resolved against any number of entity
 /// sets.
@@ -2988,13 +2988,8 @@ fn import_bindings(module: &Module) -> HashMap<String, ImportBinding> {
         .flat_map(|import| {
             let source = js_ast::str_value(&import.src);
             import.specifiers.iter().map(move |specifier| {
-                let local = match specifier {
-                    ImportSpecifier::Named(named) => &named.local,
-                    ImportSpecifier::Default(default) => &default.local,
-                    ImportSpecifier::Namespace(namespace) => &namespace.local,
-                };
                 (
-                    local.sym.to_string(),
+                    specifier.local().sym.to_string(),
                     ImportBinding {
                         source: source.clone(),
                     },
