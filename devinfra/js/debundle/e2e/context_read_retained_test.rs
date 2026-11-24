@@ -1,6 +1,6 @@
 //! Context-read return pooling must preserve distinct runtime receivers.
 
-use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged as stage};
+use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, staged as stage};
 use debundle_e2e_support::*;
 
 fn assert_context_read_cut(write: bool, wrapper_alias: bool) {
@@ -59,7 +59,7 @@ fn assert_context_read_cut(write: bool, wrapper_alias: bool) {
     );
     assert_node_output(&staged.root().join("snapshot/static/app.js"), "42 7\n", "");
     let direct = staged.run(&[]);
-    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    let saved = staged.run_saved(&[]);
     eprintln!(
         "context-read case write={write} wrapper_alias={wrapper_alias}: original=42 7 direct={:?} saved={:?}",
         direct.result.status.code(),
@@ -130,7 +130,7 @@ fn context_read_alias_to_original_callback_keeps_an_unsafe_cut_rejected() {
     );
     assert_node_output(&staged.root().join("snapshot/static/app.js"), "0 42\n", "");
     let direct = staged.run(&["--emit-on-rejection"]);
-    let saved = staged.run(&["--emit-on-rejection", "--analysis", path(&staged.artifact)]);
+    let saved = staged.run_saved(&["--emit-on-rejection"]);
     eprintln!(
         "original-callback context alias: original=0 42 direct={:?} saved={:?}",
         direct.result.status.code(),
@@ -193,7 +193,7 @@ fn sequence_prefix_keeps_call_effects_with_a_static_property_result() {
         "",
     );
     let direct = staged.run(&[]);
-    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    let saved = staged.run_saved(&[]);
     for invocation in [&direct, &saved] {
         assert!(
             invocation.result.status.success(),

@@ -940,7 +940,7 @@ fn checked_record_factory_purity_keeps_captured_prototype_census_dependencies() 
 
 #[test]
 fn recursive_imported_purity_retains_evidence_with_fresh_and_saved_analysis() {
-    use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged};
+    use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, staged};
 
     let provider = "var captured = globalThis.runtimeSettings.state;\nObject.assign(captured, { ready: true });\nexport function first(stop) { return stop ? null : second(true); }\nexport function second(stop) { const collection = new Set(['ready']); return stop ? collection : first(true); }\n";
     let source = "import './opaque.js';\nimport { first } from './peer.js';\nconst result = first(false);\nconsole.log(result.size);\nexport { result };\n";
@@ -957,7 +957,7 @@ fn recursive_imported_purity_retains_evidence_with_fresh_and_saved_analysis() {
     let (staged, _fixture) = staged(opts());
     assert_node_output(&staged.root().join("snapshot/static/app.js"), "1\n", "");
     let direct = staged.run(&[]);
-    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    let saved = staged.run_saved(&[]);
     for invocation in [&direct, &saved] {
         assert!(
             invocation.result.status.success(),

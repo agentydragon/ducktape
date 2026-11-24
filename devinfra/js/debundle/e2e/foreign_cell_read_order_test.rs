@@ -4,7 +4,7 @@
 //! other effect.
 
 use debundle_e2e_graph_support::effect_validation::*;
-use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged};
+use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, staged};
 use debundle_e2e_support::*;
 
 const COUNTER: &str = "let count = 0;\n\
@@ -313,7 +313,7 @@ fn assert_alias_copy_split(source: &str, original: &str, emitted: &str, exit: i3
     let (staged, _fixture) = staged(second_first(source, ALIAS_AND_COPY_PEERS));
     assert_node_output(&staged.root().join("snapshot/static/app.js"), original, "");
     let direct = staged.run(&["--emit-on-rejection"]);
-    let saved = staged.run(&["--emit-on-rejection", "--analysis", path(&staged.artifact)]);
+    let saved = staged.run_saved(&["--emit-on-rejection"]);
     for invocation in [&direct, &saved] {
         assert_eq!(
             invocation.result.status.code(),

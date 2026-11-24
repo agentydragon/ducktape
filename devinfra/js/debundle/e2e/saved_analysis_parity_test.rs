@@ -43,10 +43,7 @@ fn unresolved_target_capture_refusal_matches_direct_and_saved_analysis() {
 
     let invocations = [
         ("direct", staged.run(&[])),
-        (
-            "saved analysis",
-            staged.run(&["--analysis", path(&staged.artifact)]),
-        ),
+        ("saved analysis", staged.run_saved(&[])),
     ];
     for (_, invocation) in &invocations {
         if invocation.result.status.success() {
@@ -119,7 +116,7 @@ export { first, second };
 
     let direct = staged.run(&[]);
     assert_ok(&direct.result, "direct run of shared imported impure calls");
-    let loaded = staged.run(&["--analysis", path(&staged.artifact)]);
+    let loaded = staged.run_saved(&[]);
     assert_ok(
         &loaded.result,
         "run shared imported impure calls from analysis",
@@ -338,7 +335,7 @@ fn captured_value_bindings_survive_saved_program_summary() {
     );
     let direct = staged.run(&[]);
     assert_ok(&direct.result, "direct captured-value run");
-    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    let saved = staged.run_saved(&[]);
     assert_ok(&saved.result, "saved captured-value run");
     assert_same_invocation_trees(&direct, &saved);
     assert_node_output(
@@ -386,7 +383,7 @@ fn assert_reexported_value_input_provider_is_in_saved_summary(bridge: &str) {
 
     let direct = staged.run(&[]);
     assert_ok(&direct.result, "direct re-exported captured-value run");
-    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    let saved = staged.run_saved(&[]);
     assert_ok(&saved.result, "saved re-exported captured-value run");
     assert_same_invocation_trees(&direct, &saved);
 
@@ -459,7 +456,7 @@ fn assert_unproved_reexported_primitive_refusal_matches_saved(provider: &str) {
     );
     let artifact = fs::read(&staged.artifact).unwrap();
     let direct = staged.run(&[]);
-    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    let saved = staged.run_saved(&[]);
 
     for (invocation, label) in [(&direct, "direct"), (&saved, "saved")] {
         assert_eq!(
@@ -546,7 +543,7 @@ export { read };\n",
     );
     let direct = staged.run(&[]);
     assert_ok(&direct.result, "direct global-resolution run");
-    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    let saved = staged.run_saved(&[]);
     assert_ok(&saved.result, "saved global-resolution run");
     assert_same_invocation_trees(&direct, &saved);
     for invocation in [&direct, &saved] {
@@ -654,7 +651,7 @@ fn destructuring_split_refusal_matches_with_saved_facts() {
         .push(serde_yaml::Value::String("right_module".into()));
     fs::write(&staged.spec, serde_yaml::to_string(&spec).unwrap()).unwrap();
     let direct = staged.run(&[]);
-    let from_artifact = staged.run(&["--analysis", path(&staged.artifact)]);
+    let from_artifact = staged.run_saved(&[]);
 
     assert!(
         !direct.result.status.success(),
@@ -727,7 +724,7 @@ console.log(left, right);\nexport { left, right };\n";
     fs::write(&staged.spec, serde_yaml::to_string(&spec).unwrap()).unwrap();
 
     let direct = staged.run(&[]);
-    let from_artifact = staged.run(&["--analysis", path(&staged.artifact)]);
+    let from_artifact = staged.run_saved(&[]);
 
     assert!(
         !direct.result.status.success(),
@@ -770,7 +767,7 @@ fn inferred_set_spread_bindings_survive_saved_analysis() {
     let (staged, _fixture) = staged(opts);
     let direct = staged.run(&[]);
     assert_ok(&direct.result, "direct Set spread run");
-    let loaded = staged.run(&["--analysis", path(&staged.artifact)]);
+    let loaded = staged.run_saved(&[]);
     assert_ok(&loaded.result, "Set spread run from saved analysis");
     assert_same_invocation_trees(&direct, &loaded);
     for invocation in [&direct, &loaded] {

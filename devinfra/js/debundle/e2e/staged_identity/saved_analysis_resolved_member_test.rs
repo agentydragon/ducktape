@@ -152,7 +152,7 @@ fn resolved_member_layout_edits_keep_analysis_identity() {
         fs::read(&staged.projection).unwrap() == fs::read(&edited).unwrap(),
         "renaming the module and public member changed the analysis projection"
     );
-    let reused = staged.run(&["--analysis", path(&staged.artifact)]);
+    let reused = staged.run_saved(&[]);
     assert_ok(&reused.result, "reuse native member analysis");
     let graph: Value = read_gzip_json(
         &reused
@@ -208,7 +208,7 @@ fn native_source_match_notes_keep_analysis_identity() {
         fs::read(&staged.projection).unwrap() == fs::read(edited).unwrap(),
         "selector rationale changed analysis identity"
     );
-    let reused = staged.run(&["--analysis", path(&staged.artifact)]);
+    let reused = staged.run_saved(&[]);
     assert_ok(&reused.result, "reuse analysis after selector note edit");
     let direct = staged.run(&[]);
     assert_ok(&direct.result, "direct run after selector note edit");
@@ -264,7 +264,7 @@ fn resolved_member_retargeting_refuses_saved_analysis() {
         fs::read(&staged.projection).unwrap(),
         fs::read(&edited).unwrap()
     );
-    let refused = staged.run(&["--analysis", path(&staged.artifact)]);
+    let refused = staged.run_saved(&[]);
     assert!(
         !refused.result.status.success(),
         "retargeted native premise reused old facts"
@@ -277,7 +277,7 @@ fn resolved_member_retargeting_refuses_saved_analysis() {
     fs::copy(edited, &staged.projection).unwrap();
     assert_ok(&staged.analyze(), "analyze retargeted native member");
     assert_ok(
-        &staged.run(&["--analysis", path(&staged.artifact)]).result,
+        &staged.run_saved(&[]).result,
         "run retargeted native member",
     );
 }
@@ -295,7 +295,7 @@ fn resolved_member_premise_edits_refuse_saved_analysis() {
         spec["chunk_analysis_options"]["static/app"]["native_operation_inputs"][0][field] =
             value.into();
         write_yaml_file(&staged.spec, &spec);
-        let refused = staged.run(&["--analysis", path(&staged.artifact)]);
+        let refused = staged.run_saved(&[]);
         assert!(
             !refused.result.status.success(),
             "changed {field} reused old facts"

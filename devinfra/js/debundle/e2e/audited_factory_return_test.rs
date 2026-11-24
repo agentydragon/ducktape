@@ -1,6 +1,6 @@
 //! Declared fresh factories refine direct result identity, preserving captures.
 
-use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged as stage};
+use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, staged as stage};
 use debundle_e2e_support::*;
 
 #[derive(Clone, Copy, Debug)]
@@ -98,7 +98,7 @@ fn assert_factory_cut(
     );
     assert_node_output(&staged.root().join("snapshot/static/app.js"), "42 7\n", "");
     let direct = staged.run(&[]);
-    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    let saved = staged.run_saved(&[]);
     for invocation in [&direct, &saved] {
         eprintln!(
             "factory cut shape={shape:?} always_fresh={always_fresh} mutate_second={mutate_second}: original=42 7 status={:?}",
@@ -234,7 +234,7 @@ fn assert_named_factory_cut(conditional_identity_helper: bool, write_second_meta
     );
     assert_node_output(&staged.root().join("snapshot/static/app.js"), "42 7\n", "");
     let direct = staged.run(&[]);
-    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    let saved = staged.run_saved(&[]);
     for invocation in [&direct, &saved] {
         assert!(
             invocation.result.status.success(),
@@ -287,7 +287,7 @@ fn assert_unsafe_cut(source: &str, provider: &str, members: &[&'static str], set
     );
     assert_node_output(&staged.root().join("snapshot/static/app.js"), "0 42\n", "");
     let direct = staged.run(&["--emit-on-rejection"]);
-    let saved = staged.run(&["--emit-on-rejection", "--analysis", path(&staged.artifact)]);
+    let saved = staged.run_saved(&["--emit-on-rejection"]);
     for invocation in [&direct, &saved] {
         eprintln!(
             "unsafe factory cut: original=0 42 status={:?}",
@@ -409,7 +409,7 @@ fn namespace_alias_mutation_keeps_an_unsafe_factory_cut_rejected() {
     assert_node_output(&staged.root().join("snapshot/static/app.js"), "0 42\n", "");
 
     let direct = staged.run(&["--emit-on-rejection"]);
-    let saved = staged.run(&["--emit-on-rejection", "--analysis", path(&staged.artifact)]);
+    let saved = staged.run_saved(&["--emit-on-rejection"]);
     for invocation in [&direct, &saved] {
         assert_eq!(
             invocation.result.status.code(),

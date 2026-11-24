@@ -362,7 +362,7 @@ export { table, readLater };\n",
                 "source-only annotations must leave raw source facts and receipts unchanged"
             );
             let direct = staged.run(&[]);
-            let loaded = staged.run(&["--analysis", path(&staged.artifact)]);
+            let loaded = staged.run_saved(&[]);
             assert_ok(&direct.result, "direct source-only materialization");
             assert_ok(&loaded.result, "loaded source-only materialization");
             assert_same_invocation_trees(&direct, &loaded);
@@ -542,7 +542,7 @@ fn initializer_source_only_uses_resolved_binding_and_keeps_comma_siblings_raw() 
             fs::read(edited).unwrap()
         );
         let direct = staged.run(&[]);
-        let loaded = staged.run(&["--analysis", path(&staged.artifact)]);
+        let loaded = staged.run_saved(&[]);
         assert_ok(&direct.result, "direct comma-list annotation");
         assert_ok(&loaded.result, "loaded comma-list annotation");
         assert_same_invocation_trees(&direct, &loaded);
@@ -866,7 +866,7 @@ fn private_metadata_contract_replays_raw_analysis_for_comma_declarators_and_chun
             "private-metadata annotation must leave raw facts and receipts unchanged"
         );
         let direct = staged.run(&[]);
-        let loaded = staged.run(&["--analysis", path(&staged.artifact)]);
+        let loaded = staged.run_saved(&[]);
         assert_ok(&direct.result, "direct private-metadata materialization");
         assert_ok(&loaded.result, "loaded private-metadata materialization");
         assert_same_invocation_trees(&direct, &loaded);

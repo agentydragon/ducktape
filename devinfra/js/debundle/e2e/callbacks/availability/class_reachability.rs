@@ -1,6 +1,6 @@
 //! Opaque calls may invoke methods reached through a class prototype.
 
-use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged};
+use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, staged};
 use debundle_e2e_support::*;
 
 #[test]
@@ -239,7 +239,7 @@ console.log(first, second);
     );
     assert_node_output(&staged.root().join("snapshot/static/app.js"), "1 2\n", "");
     let direct = staged.run(&[]);
-    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    let saved = staged.run_saved(&[]);
     assert_same_invocation_trees(&direct, &saved);
     for invocation in [&direct, &saved] {
         assert!(

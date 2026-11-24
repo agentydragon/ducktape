@@ -137,6 +137,12 @@ impl Staged {
         self.run_with_graphs(true, extra)
     }
 
+    pub fn run_saved(&self, extra: &[&str]) -> StagedInvocation {
+        let mut args = extra.to_vec();
+        args.extend(["--analysis", path(&self.artifact)]);
+        self.run(&args)
+    }
+
     pub fn run_without_graphs(&self, extra: &[&str]) -> StagedInvocation {
         self.run_with_graphs(false, extra)
     }
@@ -752,10 +758,7 @@ pub fn assert_staged_run_matches(opts: FixtureOpts<'_>, run_args: &[&str]) {
             "explicit stream must exist before staged comparison"
         );
     }
-    let artifact = path(&staged.artifact).to_owned();
-    let mut staged_args = run_args.to_vec();
-    staged_args.extend(["--analysis", artifact.as_str()]);
-    let from_artifact = staged.run(&staged_args);
+    let from_artifact = staged.run_saved(run_args);
     assert_eq!(
         direct.result.status.code(),
         from_artifact.result.status.code()
@@ -769,7 +772,7 @@ pub fn assert_staged_entry_output(opts: FixtureOpts<'_>, expected: &str) {
     let (staged, _fixture) = staged(opts);
     assert_node_output(&staged.root().join("snapshot/static/app.js"), expected, "");
     let fresh = staged.run(&[]);
-    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    let saved = staged.run_saved(&[]);
     for invocation in [&fresh, &saved] {
         assert_ok(&invocation.result, "fresh/saved run");
         assert_node_output(
