@@ -122,7 +122,11 @@ private def checkMove (intrinsics : List StableIntrinsic) (ready : State World.p
   | .error why =>
     let qs := observerRegions ready (pivot.unit.id + 1)
     if qs.isEmpty then throw why
-    let some ⟨move⟩ := checkMaskedMove? intrinsics ready pre crossed pivot localStep qs | throw why
+    let masked := checkMaskedMove? intrinsics ready pre crossed pivot localStep
+    let some ⟨move⟩ := masked qs <|> (do
+      let outer ← observerClosure? ready (pivot.unit.id + 1)
+      guard (outer != qs)
+      masked outer) | throw why
     return ⟨by simpa only [original, List.map_append, List.map_cons, List.map_nil] using move (original suffix)⟩
 
 /-- Move an ordered run across the same crossed code one declaration at a time.
