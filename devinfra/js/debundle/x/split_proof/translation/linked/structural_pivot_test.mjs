@@ -99,3 +99,66 @@ const capture = laterCapture.run(refusalScope);
 assert.equal(capture.status, "rejected", JSON.stringify(capture));
 assert.match(capture.reason, /unit 1 has access to the moved region of unit 3/);
 assert(!existsSync(laterCapture.out));
+
+const hoist = fixture(
+  "hoist-before-early-alias",
+  `const saved = read;
+   const scale = 3;
+   function read(value) { return value * scale; }
+   export { saved, read as convert, scale };`,
+  ["#2"],
+  ["#0", "#1", "#3"]
+);
+const hoisted = hoist.run(pivotScope);
+assert.equal(hoisted.status, "certified");
+assert.deepEqual(hoist.run(pivotScope, "--check-output"), hoisted);
+for (const file of [hoist.sourceFile, path.join(hoist.out, "entry.mjs")]) {
+  const exports = await import(pathToFileURL(file));
+  assert.deepEqual(Object.keys(exports), ["convert", "saved", "scale"]);
+  assert.equal(exports.saved, exports.convert);
+  assert.equal(exports.convert(5), 15);
+}
+
+// Importing a private capture from the entry would add it to the entry's namespace.
+const hiddenCapture = fixture(
+  "private-entry-capture",
+  `const hidden = 3;
+   function read() { return hidden; }
+   export { read };`,
+  ["#1"],
+  ["#0", "#2"]
+);
+const exposed = hiddenCapture.run(refusalScope);
+assert.equal(exposed.status, "rejected");
+assert.match(exposed.reason, /entry exports resolve to different linked cells/);
+assert(!existsSync(hiddenCapture.out));
+
+// An entry-side assignment would write an immutable import after the split.
+const reassigned = fixture(
+  "reassigned-function",
+  `const saved = read;
+   function read() { return 1; }
+   read = () => 2;
+   export { saved, read };`,
+  ["#1"],
+  ["#0", "#2", "#3"]
+);
+const immutable = reassigned.run(refusalScope);
+assert.equal(immutable.status, "rejected");
+assert.match(immutable.reason, /placement or module linkage/);
+assert(!existsSync(reassigned.out));
+
+// The function can move, but moving its caller would read a captured const in its TDZ.
+const tdz = fixture(
+  "hoist-and-call",
+  `const scale = 3;
+   function read() { return scale; }
+   const value = read();
+   export { scale, value };`,
+  ["#1", "#2"],
+  ["#0", "#3"]
+);
+const call = tdz.run(refusalScope);
+assert.equal(call.status, "rejected");
+assert.match(call.reason, /unit 2 is not a local allocating declaration/);
+assert(!existsSync(tdz.out));
