@@ -22,6 +22,8 @@ DEFAULT_BUILDBUDDY_URL = "https://app.buildbuddy.io"
 DEFAULT_GITHUB_API_URL = "https://api.github.com"
 DEFAULT_GITHUB_SERVER_URL = "https://github.com"
 STATUS_CONTEXT = "BuildBuddy / Bazel ordinary tests (live)"
+BUILD_FAILURE_PREFIX = "Bazel attempt failed to build: "
+BUILD_FAILURE_POLL_INTERVAL = 8
 STOP = Event()
 
 
@@ -29,11 +31,13 @@ class APIError(Exception):
     """A BuildBuddy or GitHub API request failed."""
 
 
-def _json_request(url: str, *, headers: dict[str, str], body: dict[str, Any] | None = None) -> dict[str, Any]:
+def _json_request(
+    url: str, *, headers: dict[str, str], body: dict[str, Any] | None = None, timeout: float = 10
+) -> dict[str, Any]:
     data = json.dumps(body).encode() if body is not None else None
     request = urllib.request.Request(url, data=data, headers=headers, method="POST" if body is not None else "GET")
     try:
-        with urllib.request.urlopen(request, timeout=10) as response:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
             return cast(dict[str, Any], json.loads(response.read()))
     except (urllib.error.URLError, TimeoutError, ValueError) as error:
         raise APIError(f"{url.split('?', maxsplit=1)[0]}: {error}") from error
@@ -58,6 +62,25 @@ def _first_failed_test(api_key: str, invocation_id: str, base_url: str) -> str |
     except (cli.CLIError, ValueError) as error:
         raise APIError(str(error)) from error
     return response.get("label") or None
+
+
+def _first_failed_build(api_key: str, invocation_id: str, base_url: str) -> str | None:
+    # Use the same target index as bbapi's first-failure query. Request just
+    # failed build targets so the response omits artifacts and test results.
+    response = _json_request(
+        f"{base_url.rstrip('/')}/rpc/BuildBuddyService/GetTarget",
+        headers={"x-buildbuddy-api-key": api_key, "Content-Type": "application/json"},
+        body={"invocationId": invocation_id, "status": "FAILED_TO_BUILD"},
+        timeout=3,
+    )
+    for group in response.get("targetGroups", []):
+        if group.get("status") != "FAILED_TO_BUILD":
+            continue
+        for target in group.get("targets", []):
+            label = target.get("metadata", {}).get("label")
+            if isinstance(label, str) and label:
+                return label
+    return None
 
 
 def _target_url(invocation_id: str, base_url: str) -> str:
@@ -109,7 +132,7 @@ def _publish_status(
     target_url: str | None = None,
     github_api_url: str = DEFAULT_GITHUB_API_URL,
     buildbuddy_url: str = DEFAULT_BUILDBUDDY_URL,
-) -> None:
+) -> bool:
     url = (
         f"{github_api_url.rstrip('/')}/repos/{urllib.parse.quote(repo, safe='/')}"
         f"/statuses/{urllib.parse.quote(sha, safe='')}"
@@ -135,8 +158,9 @@ def _publish_status(
         # This status is additional feedback. The normal Test & Build job remains
         # authoritative, so an API hiccup should not interrupt CI.
         print(f"::warning::Could not publish live BuildBuddy status: {error}", file=sys.stderr, flush=True)
-    else:
-        _write_state(state_path, state, body["description"])
+        return False
+    _write_state(state_path, state, body["description"])
+    return True
 
 
 def _credentials() -> tuple[str, str, str]:
@@ -162,6 +186,8 @@ def _watch(args: argparse.Namespace) -> None:
     target_url = _target_url(args.invocation_id, args.buildbuddy_url)
     print(f"::notice::Watching BuildBuddy ordinary test invocation {args.invocation_id}: {target_url}", flush=True)
     announced_disconnect = False
+    announced_build_failure = False
+    next_build_poll = 0.0
     while not STOP.is_set():
         try:
             invocation = _invocation(api_key, args.invocation_id, args.buildbuddy_url)
@@ -182,6 +208,10 @@ def _watch(args: argparse.Namespace) -> None:
                     return
                 status = invocation.get("invocationStatus")
                 if status == "COMPLETE_INVOCATION_STATUS":
+                    if announced_build_failure:
+                        # The driver can retry the initial test invocation. Let
+                        # finish publish the outcome of the entire Bazel step.
+                        return
                     success = bool(invocation.get("success"))
                     _publish_status(
                         repo=repo,
@@ -213,6 +243,26 @@ def _watch(args: argparse.Namespace) -> None:
                         buildbuddy_url=args.buildbuddy_url,
                     )
                     announced_disconnect = True
+                    announced_build_failure = False
+                if (
+                    status == "PARTIAL_INVOCATION_STATUS"
+                    and not announced_build_failure
+                    and time.monotonic() >= next_build_poll
+                ):
+                    next_build_poll = time.monotonic() + BUILD_FAILURE_POLL_INTERVAL
+                    failed_build = _first_failed_build(api_key, args.invocation_id, args.buildbuddy_url)
+                    if failed_build and not STOP.is_set():
+                        announced_build_failure = _publish_status(
+                            repo=repo,
+                            sha=args.sha,
+                            token=token,
+                            invocation_id=args.invocation_id,
+                            state="pending",
+                            description=f"{BUILD_FAILURE_PREFIX}{failed_build}",
+                            state_path=args.state_file,
+                            github_api_url=args.github_api_url,
+                            buildbuddy_url=args.buildbuddy_url,
+                        )
         except APIError as error:
             print(f"::warning::Live BuildBuddy test watcher will retry: {error}", file=sys.stderr, flush=True)
         STOP.wait(args.poll_interval)
@@ -249,6 +299,27 @@ def _finish(args: argparse.Namespace) -> None:
     _stop_watcher(args.pid_file)
     api_key, token, repo = _credentials()
     previous = _read_state(args.state_file)
+    if previous and previous["state"] == "pending" and previous.get("description", "").startswith(BUILD_FAILURE_PREFIX):
+        # The initial invocation may have failed before a retry, or the job may
+        # have been cancelled before it could deliver a final result.
+        outcome = args.remote_outcome
+        state, description = {
+            "success": ("success", "Bazel CI passed; initial attempt failed to build"),
+            "failure": ("failure", previous["description"]),
+        }.get(outcome, ("error", f"Bazel CI ended ({outcome}); see Test & Build job"))
+        _publish_status(
+            repo=repo,
+            sha=args.sha,
+            token=token,
+            invocation_id=args.invocation_id,
+            state=state,
+            description=description,
+            state_path=args.state_file,
+            target_url=_workflow_run_url(repo) if outcome != "failure" else None,
+            github_api_url=args.github_api_url,
+            buildbuddy_url=args.buildbuddy_url,
+        )
+        return
     invocation = None
     api_failed = False
     deadline = time.monotonic() + (20 if args.remote_outcome == "success" else 0)

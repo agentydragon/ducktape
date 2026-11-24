@@ -70,6 +70,93 @@ def test_watch_keeps_pending_when_invocation_disconnects(
     assert [call.kwargs["state"] for call in publish_status.call_args_list] == ["pending", "success"]
 
 
+def test_first_failed_build_queries_the_exact_invocation(monkeypatch: pytest.MonkeyPatch) -> None:
+    request = Mock(
+        return_value={
+            "targetGroups": [
+                {"status": "FAILED", "targets": [{"metadata": {"label": "//pkg:unrelated_test"}}]},
+                {"status": "FAILED_TO_BUILD", "targets": [{"metadata": {"label": "//pkg:compile_target"}}]},
+            ]
+        }
+    )
+    monkeypatch.setattr(live_test_status, "_json_request", request)
+
+    assert live_test_status._first_failed_build("key", "exact-invocation", "https://buildbuddy.example/") == (
+        "//pkg:compile_target"
+    )
+    request.assert_called_once_with(
+        "https://buildbuddy.example/rpc/BuildBuddyService/GetTarget",
+        headers={"x-buildbuddy-api-key": "key", "Content-Type": "application/json"},
+        body={"invocationId": "exact-invocation", "status": "FAILED_TO_BUILD"},
+        timeout=3,
+    )
+
+
+def test_watch_keeps_build_failure_pending_until_final_job(
+    monkeypatch: pytest.MonkeyPatch, status_args: Namespace
+) -> None:
+    publish_status = Mock(return_value=True)
+    failed_build = Mock(return_value="//pkg:compile_target")
+    statuses = iter(["PARTIAL_INVOCATION_STATUS", "PARTIAL_INVOCATION_STATUS", "COMPLETE_INVOCATION_STATUS"])
+    monkeypatch.setattr(live_test_status, "_invocation", lambda *_args: {"invocationStatus": next(statuses)})
+    monkeypatch.setattr(live_test_status, "_first_failed_test", lambda *_args: None)
+    monkeypatch.setattr(live_test_status, "_first_failed_build", failed_build)
+    monkeypatch.setattr(live_test_status, "_publish_status", publish_status)
+
+    live_test_status._watch(status_args)
+
+    failed_build.assert_called_once()
+    publish_status.assert_called_once()
+    assert publish_status.call_args.kwargs["state"] == "pending"
+    assert publish_status.call_args.kwargs["description"] == "Bazel attempt failed to build: //pkg:compile_target"
+    assert publish_status.call_args.kwargs["invocation_id"] == status_args.invocation_id
+
+
+@pytest.mark.parametrize(
+    ("outcome", "expected_state", "expected_description", "expected_url"),
+    [
+        (
+            "success",
+            "success",
+            "Bazel CI passed; initial attempt failed to build",
+            "https://github.com/owner/repo/actions/runs/123/attempts/2",
+        ),
+        ("failure", "failure", "Bazel attempt failed to build: //pkg:target", None),
+        (
+            "cancelled",
+            "error",
+            "Bazel CI ended (cancelled); see Test & Build job",
+            "https://github.com/owner/repo/actions/runs/123/attempts/2",
+        ),
+    ],
+)
+def test_finish_supersedes_pending_build_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    status_args: Namespace,
+    outcome: str,
+    expected_state: str,
+    expected_description: str,
+    expected_url: str | None,
+) -> None:
+    monkeypatch.setenv("GITHUB_SERVER_URL", "https://github.com")
+    monkeypatch.setenv("GITHUB_RUN_ID", "123")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
+    monkeypatch.setattr(
+        live_test_status, "_invocation", Mock(side_effect=AssertionError("unexpected invocation lookup"))
+    )
+    publish_status = Mock()
+    monkeypatch.setattr(live_test_status, "_publish_status", publish_status)
+    live_test_status._write_state(status_args.state_file, "pending", "Bazel attempt failed to build: //pkg:target")
+    status_args.remote_outcome = outcome
+
+    live_test_status._finish(status_args)
+
+    publish_status.assert_called_once()
+    assert publish_status.call_args.kwargs["state"] == expected_state
+    assert publish_status.call_args.kwargs["description"] == expected_description
+    assert publish_status.call_args.kwargs["target_url"] == expected_url
+
+
 def _api_error(*_args: object) -> None:
     raise live_test_status.APIError("HTTP Error 500: Internal Server Error")
 
