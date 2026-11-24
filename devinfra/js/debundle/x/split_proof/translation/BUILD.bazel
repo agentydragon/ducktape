@@ -592,8 +592,6 @@ js_test(
     entry_point = "footprint_reduce_test.mjs",
 )
 
-_MODEL = "//devinfra/js/debundle/x/split_proof/model"
-
 js_test(
     name = "corejs_ast_lowering_test",
     data = [
@@ -602,11 +600,10 @@ js_test(
         ":node_modules/eslint-scope",
         ":scope_metadata",
         ":split_dump",
-        _MODEL + ":sources",
-        "//:node_modules/acorn",
         "//devinfra/js/debundle/x/split_proof/lean:corejs",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
         "//devinfra/js/debundle/x/split_proof/lowering:dump_core",
+        "//devinfra/js/debundle/x/split_proof/model:to_core",
     ],
     entry_point = "corejs_ast_lowering_test.mjs",
     env = {
@@ -812,6 +809,6 @@ js_library(
         ":node_modules/eslint-scope",
         ":scope_metadata",
         "//devinfra/js/debundle/x/split_proof/lowering:dump_core",
-        "//devinfra/js/debundle/x/split_proof/model:sources",
+        "//devinfra/js/debundle/x/split_proof/model:to_core",
     ],
 )

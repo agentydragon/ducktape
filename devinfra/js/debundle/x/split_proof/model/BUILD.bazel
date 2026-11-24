@@ -2,18 +2,11 @@ load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
 load("//devinfra/lint:linters.bzl", "eslint_test")
 
 js_library(
-    name = "sources",
-    srcs = [
-        "cases.mjs",
-        "generate.mjs",
-        "module_cases.mjs",
-        "opaque_cases.mjs",
-        "to_core.mjs",
-    ],
+    name = "to_core",
+    srcs = ["to_core.mjs"],
     visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
     deps = [
         "//:node_modules/acorn",
-        "//devinfra/js/debundle/x/split_proof:seeded_random",
         "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
     ],
 )
@@ -31,6 +24,12 @@ eslint_test(
 )
 
 _DIFFERENTIAL_DATA = [
+    "cases.mjs",
+    "generate.mjs",
+    "module_cases.mjs",
+    "opaque_cases.mjs",
+    ":to_core",
+    "//devinfra/js/debundle/x/split_proof:seeded_random",
     "//devinfra/js/debundle/x/split_proof/translation/testing/gen:program_generator",
     "//devinfra/js/debundle/x/split_proof/translation:split_dump",
     "//devinfra/js/debundle/x/split_proof/lean:corejs",
