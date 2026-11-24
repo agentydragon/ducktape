@@ -17,6 +17,12 @@ private abbrev Fields := List (String × String)
 def literalField (pair : String × String) : PropDef :=
   .init (.str pair.1) (.str pair.2)
 
+theorem freeProps_literalFields (fields : List (String × String)) : freeProps (fields.map literalField) = [] := by
+  induction fields with
+  | nil => rfl
+  | cons head tail ih =>
+    simpa only [List.map_cons, freeProps, literalField, PropDef.free, Expr.free, List.nil_append] using ih
+
 /-- The descriptor created by an ordinary string data property. -/
 def literalDataProperty (value : String) : Property :=
   .data (.str value) true true true

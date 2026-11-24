@@ -41,6 +41,13 @@ for (const length of [1, 3, 7]) {
   assertAccepted(split(`chain-${length}`, aliases[0], extras), { result: "ok", live: 31 });
 }
 
+// Both graphs use the same provider cell and schedule, and both throw.
+// The ordered certificate still promises that initialization completes normally.
+const throwing = split("same-order-throw", "export const publicValue = 0;", {});
+assert.equal(throwing.verdict.status, "rejected", throwing.log);
+assert.equal(throwing.verdict.reason_code, "probe_throw", throwing.log);
+assert(!existsSync(throwing.out));
+
 // Resolving provider/publicValue visits provider again at a different export.
 const cycleProvider = `
 import { back as forwarded } from "./relay.mjs";
