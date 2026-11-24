@@ -14,8 +14,9 @@ use crate::paths::{
     join_module_path, module_path_child_of, module_path_directory_ancestors, module_path_dirname,
     module_path_first_segment, module_path_is_within,
 };
-use crate::reports::{ChunkDecompositionOutput, ModuleRef, SelectedModuleLowering, write_json};
+use crate::reports::{ChunkDecompositionOutput, ModuleRef, SelectedModuleLowering};
 use output_layout::{report_path_for_directory, report_path_for_file};
+use report_io::write_json;
 use source_identity::ChunkId;
 
 #[derive(Debug, Clone, Serialize)]

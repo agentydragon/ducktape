@@ -7,9 +7,10 @@ use serde::Serialize;
 
 use artifact::metrics::OutputMetrics;
 use artifact::paths::module_path_from_path;
-use artifact::reports::{ArtifactChunkRecord, ChunkDecompositionOutput, write_json};
+use artifact::reports::{ArtifactChunkRecord, ChunkDecompositionOutput};
 use output_layout::DebundleOutputLayout;
 use reconstruction::{EmittablePlan, ValidatedPlan};
+use report_io::write_json;
 use source_identity::ChunkId;
 use write_tree::{materialize_accepted_scripts, write_common_emission_reports};
 

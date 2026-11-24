@@ -1408,7 +1408,7 @@ fn run_prepared_transform(
     {
         fs::create_dir_all(report_dir)
             .with_context(|| format!("create report directory {}", report_dir.display()))?;
-        artifact::reports::write_json(
+        report_io::write_json(
             report_dir.join(GLOBAL_RESOLUTION_REPORT),
             validated_plan.global_resolution(),
         )?;
