@@ -17,7 +17,7 @@ from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from typing import Annotated, Any, Self
+from typing import Annotated, Any, Literal, Self
 
 import httpx2
 from fastmcp import FastMCP
@@ -296,6 +296,20 @@ def register_batch_tools(
 
     async def _retry_mutation[T](fn: Callable[[], Awaitable[T]], *, describe: str) -> T:
         return await _retry(fn, mutation=True, describe=describe)
+
+    async def _write_no_content(
+        client: GrocyClient,
+        method: Literal["POST", "PUT", "DELETE"],
+        path: str,
+        *,
+        body: dict[str, Any] | None = None,
+        describe: str | None = None,
+    ) -> None:
+        async def send() -> None:
+            response = await client.request(method, path, json=body)
+            response.raise_for_status()
+
+        await _retry_mutation(send, describe=describe or f"{method} {path}")
 
     async def _ordered_batch[T, R](
         items: list[T], label: str, worker: Callable[[T], Awaitable[R]], error: Callable[[T, Exception], R]
@@ -1078,8 +1092,7 @@ def register_batch_tools(
                 body[field.value] = None
             await _resolve_product_references(client, body)
 
-            r = await client.put(f"/objects/products/{product_id}", json=body)
-            r.raise_for_status()
+            await _write_no_content(client, "PUT", f"/objects/products/{product_id}", body=body)
             return EditOk(object_id=product_id)
 
         return await _ordered_batch(items, "items", _edit, lambda _item, exc: CreateError(error=_format_exc(exc)))
@@ -1092,8 +1105,7 @@ def register_batch_tools(
         """Delete a product. Also removes every stock entry for the product — irreversible."""
         try:
             product_id = await _resolve_id(client, EntityType.PRODUCT, product)
-            r = await client.delete(f"/objects/products/{product_id}")
-            r.raise_for_status()
+            await _write_no_content(client, "DELETE", f"/objects/products/{product_id}")
             return EditOk(object_id=product_id)
         except Exception as e:
             return CreateError(error=_format_exc(e))
@@ -1303,8 +1315,7 @@ def register_batch_tools(
                 body["note"] = None
 
             if body:
-                r = await client.put(f"/objects/shopping_list/{item_id}", json=body)
-                r.raise_for_status()
+                await _write_no_content(client, "PUT", f"/objects/shopping_list/{item_id}", body=body)
 
             return await _shopping_receipt(client, item_id, current | body)
         except Exception as e:
@@ -1331,8 +1342,7 @@ def register_batch_tools(
             r.raise_for_status()
             item: dict[str, Any] = r.json()
 
-            r = await client.delete(f"/objects/shopping_list/{item_id}")
-            r.raise_for_status()
+            await _write_no_content(client, "DELETE", f"/objects/shopping_list/{item_id}")
 
             return await _shopping_receipt(client, item_id, item)
 

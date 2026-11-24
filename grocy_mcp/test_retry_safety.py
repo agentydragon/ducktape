@@ -337,6 +337,35 @@ async def test_shopping_write_survives_unavailable_names(tool: str, mcp_client: 
     )
 
 
+@pytest.mark.parametrize(
+    ("tool", "method", "path", "args"),
+    [
+        ("products_edit", "PUT", "/objects/products/1", {"items": [{"product": 1, "description": "Updated"}]}),
+        ("product_delete", "DELETE", "/objects/products/1", {"product": 1}),
+        ("shopping_list_item_edit", "PUT", "/objects/shopping_list/12", {"item_id": 12, "done": True}),
+        ("shopping_list_items_remove", "DELETE", "/objects/shopping_list/12", {"item_ids": [12]}),
+    ],
+)
+async def test_object_writes_retry_only_before_delivery(
+    mcp_client: tuple[Client, respx.Router], tool: str, method: str, path: str, args: dict
+) -> None:
+    client, router = mcp_client
+    router.get("/objects/shopping_list/12").respond(json={"id": 12, "amount": 1})
+    write = router.put(path) if method == "PUT" else router.delete(path)
+    write.mock(side_effect=[httpx2.ConnectTimeout("connection not established"), httpx.Response(204)])
+
+    result = unwrap_result(await client.call_tool(tool, args))
+    assert write.calls.call_count == 2, result
+    assert (result[0] if isinstance(result, list) else result)["kind"] == "ok", result
+
+    write.mock(side_effect=httpx2.ReadTimeout("lost reply"))
+    result = unwrap_result(await client.call_tool(tool, args))
+    receipt = result[0] if isinstance(result, list) else result
+    assert receipt["kind"] == "error", receipt
+    assert "may or may not have been applied" in receipt["error"]
+    assert write.calls.call_count == 3
+
+
 async def test_low_stock_report_survives_unavailable_locations(mcp_client: tuple[Client, respx.Router]) -> None:
     client, router = mcp_client
     router.get("/stock/volatile").respond(
