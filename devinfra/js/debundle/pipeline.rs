@@ -1881,17 +1881,6 @@ mod tests {
     }
 
     #[derive(Serialize)]
-    struct AssetSummaryFixture<'a> {
-        #[serde(rename = "entryPoints")]
-        entry_points: AssetSummaryEntryPoints<'a>,
-    }
-
-    #[derive(Serialize)]
-    struct AssetSummaryEntryPoints<'a> {
-        html: &'a str,
-    }
-
-    #[derive(Serialize)]
     struct PipelineSpecFixture<'a> {
         inputs: PipelineSpecInputs<'a>,
         emit_browser_harness: EmitBrowserHarnessFixture<'a>,
@@ -1945,9 +1934,7 @@ mod tests {
         let asset_summary_path = extracted.join("asset-summary.json");
         fs::write(
             &asset_summary_path,
-            serde_json::to_string(&AssetSummaryFixture {
-                entry_points: AssetSummaryEntryPoints { html: "index.html" },
-            })?,
+            r#"{"entryPoints":{"html":"index.html"}}"#,
         )?;
 
         let mut spec = empty_transform_spec();
@@ -2018,9 +2005,7 @@ mod tests {
             let asset_summary_path = extracted.join("asset-summary.json");
             fs::write(
                 &asset_summary_path,
-                serde_json::to_string(&AssetSummaryFixture {
-                    entry_points: AssetSummaryEntryPoints { html: "index.html" },
-                })?,
+                r#"{"entryPoints":{"html":"index.html"}}"#,
             )?;
             let spec_path = root.join("transform-spec.yaml");
             fs::write(
