@@ -27,50 +27,24 @@ pub struct PackageManifest {
     pub module_type: &'static str,
 }
 
-/// Per-chunk report serialized to `reports/tree/<chunk>/chunk.json` at write time.
-/// The analysis report is flattened so the serialized shape is the
-/// analysis fields followed by the decomposition/metrics fields —
-/// identical to the previous field-by-field copy.
-#[derive(Debug, Clone, Serialize)]
-pub struct ChunkManifest {
+/// Per-chunk view serialized to `reports/tree/<chunk>/chunk.json`.
+#[derive(Serialize)]
+pub struct ChunkManifest<'a> {
     #[serde(flatten)]
-    pub analysis: ChunkAnalysisReport,
-    pub validation: ChunkValidationSummary,
+    pub analysis: &'a ChunkAnalysisReport,
+    pub validation: &'a ChunkValidationSummary,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub logical_modules: Option<ChunkLogicalModulesSummary>,
-    pub selected_module_lowerings: Vec<SelectedModuleLowering>,
+    pub logical_modules: Option<&'a ChunkLogicalModulesSummary>,
+    pub selected_module_lowerings: &'a [SelectedModuleLowering],
     pub output_metrics: OutputMetrics,
 }
 
-impl ChunkManifest {
-    pub fn from_analysis(
-        analysis: &ChunkAnalysisReport,
-        decomposition: Option<&ChunkDecompositionOutput>,
-        output_metrics: OutputMetrics,
-    ) -> Self {
-        Self {
-            analysis: analysis.clone(),
-            validation: decomposition.map_or_else(
-                || ChunkValidationSummary {
-                    linker_order: Vec::new(),
-                },
-                |d| d.validation.clone(),
-            ),
-            logical_modules: decomposition.map(|d| d.logical_modules.clone()),
-            selected_module_lowerings: decomposition
-                .map(|d| d.selected_module_lowerings.clone())
-                .unwrap_or_default(),
-            output_metrics,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ArtifactManifest {
-    pub counts: ArtifactCounts,
-    pub chunks: Vec<ArtifactChunkRecord>,
+#[derive(Serialize)]
+pub struct ArtifactManifest<'a> {
+    pub counts: &'a ArtifactCounts,
+    pub chunks: &'a [ArtifactChunkRecord],
     pub logical_modules: RootLogicalModulesSummary,
-    pub selected_module_lowerings: Vec<SelectedModuleLowering>,
+    pub selected_module_lowerings: &'a [SelectedModuleLowering],
     pub output_metrics: OutputMetrics,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub decomposition_metrics: Option<DecompositionMetrics>,

@@ -11,7 +11,9 @@ use swc_common::GLOBALS;
 
 use artifact::metrics::{OutputFileMetric, OutputMetrics, OutputRole, write_tree_reports};
 use artifact::paths::{join_module_path, path_from_module_path};
-use artifact::reports::{ChunkDecompositionOutput, ChunkManifest, SelectedModuleLowering};
+use artifact::reports::{
+    ChunkDecompositionOutput, ChunkManifest, ChunkValidationSummary, SelectedModuleLowering,
+};
 use artifact::{ChunkBundle, EmissionFiles, FileRole, JsChunk, list_chunk_file_paths};
 use output_layout::CHUNK_REPORT;
 use report_io::write_json;
@@ -108,8 +110,17 @@ fn materialize_chunk_scripts(
             .map(|metric| chunk_relative_metric(&chunk_name, metric)),
     );
     let decomposition = decomposition_by_chunk.get(&chunk_id);
-    let written =
-        ChunkManifest::from_analysis(&chunk_artifact.analysis, decomposition, metrics_output);
+    let empty_validation = ChunkValidationSummary {
+        linker_order: Vec::new(),
+    };
+    let written = ChunkManifest {
+        analysis: &chunk_artifact.analysis,
+        validation: decomposition.map_or(&empty_validation, |d| &d.validation),
+        logical_modules: decomposition.map(|d| &d.logical_modules),
+        selected_module_lowerings: decomposition
+            .map_or(&[], |d| d.selected_module_lowerings.as_slice()),
+        output_metrics: metrics_output,
+    };
     write_json(
         report_tree_root
             .join(path_from_module_path(&chunk_name))
