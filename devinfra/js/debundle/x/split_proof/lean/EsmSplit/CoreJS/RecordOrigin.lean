@@ -123,5 +123,67 @@ theorem literalVar_origin {n id : Nat} {env : Env} {x : Name} {fs : List (String
       · intro k hk
         exact lookup_record ys k (hkeys.symm ▸ hk)
 
+/-- Literal keys must be distinct own data entries. This specialization
+retains the actual Number, rather than just the existence of a descriptor. -/
+def numericField (field : String × Float) : PropDef := .init (.str field.1) (.num field.2)
+def numberValues (fields : List (String × Float)) := fields.map fun (k, x) => (k, Val.num x)
+
+private theorem numericFields_origin (n : Nat) (env : Env) (fields : List (String × Float)) (previous : List (String × Val))
+    {s t : State W} (ho : s.objAt a = some (record previous))
+    (fresh : (fields.map Prod.fst).Nodup) (sep : ∀ f ∈ fields, f.1 ∉ previous.map Prod.fst)
+    (run : evalProps n env a (fields.map numericField) s = .ok () t) :
+    t.objAt a = some (record (previous ++ numberValues fields)) := by
+  induction n generalizing fields previous s t with
+  | zero => cases run
+  | succ n ih =>
+    cases fields with
+    | nil => cases run; simpa [numberValues] using ho
+    | cons f fs =>
+      obtain ⟨k, x⟩ := f
+      cases n with
+      | zero => cases run
+      | succ n =>
+        change (createData a (.str k) (.num x) >>= fun _ =>
+          evalProps (n + 1) env a (fs.map numericField)) s = .ok () t at run
+        obtain ⟨_, u, write, rest⟩ := bind_ok run
+        simp only [List.map_cons, List.nodup_cons] at fresh
+        have next := add_fresh ho (sep _ List.mem_cons_self) write
+        have result := ih fs (previous ++ [(k, .num x)]) next fresh.2 (by
+          intro f hf
+          simp only [List.map_append, List.map_cons, List.map_nil, List.mem_append, List.mem_singleton, not_or]
+          exact ⟨sep f (List.mem_cons_of_mem _ hf), fun eq => fresh.1 (List.mem_map.mpr ⟨f, hf, eq⟩)⟩) rest
+        simpa [numberValues, List.append_assoc] using result
+
+private theorem lookupNumber (fs : List (String × Float)) (k : String) :
+    (record (numberValues fs)).props.lookup (PropertyKey.str k) =
+      (fs.lookup k).map (fun x => Property.data (.num x) true true true) := by
+  induction fs with
+  | nil => rfl
+  | cons f fs ih =>
+    obtain ⟨key, x⟩ := f
+    by_cases h : k = key
+    · subst key; simp [record, dataProps, numberValues]
+    · simpa only [record, dataProps, numberValues, List.map_cons, List.lookup_cons, PropertyKey.str_beq,
+        beq_eq_false_iff_ne.mpr h] using ih
+
+/-- Successful evaluation of the ordinary object expression establishes the
+witness about the actual allocated address. No assumption about the incoming
+heap or host is required. -/
+theorem numericRecord_origin (fs : List (String × Float)) (fresh : (fs.map Prod.fst).Nodup)
+    {s t : State W} (run : evalExpr n env (.obj (fs.map numericField)) s = .ok v t) :
+    ∃ a o, v = .obj a ∧ t.objAt a = some o ∧
+      ∀ k x, fs.lookup k = some x → o.props.lookup (.str k) = some (.data (.num x) true true true) := by
+  cases n with
+  | zero => cases run
+  | succ n =>
+    unfold evalExpr at run
+    obtain ⟨a, s1, allocates, run⟩ := bind_ok run
+    obtain ⟨_, s2, fields, result⟩ := bind_ok run
+    cases result
+    have complete := numericFields_origin n env fs [] (alloc_objAt allocates) fresh (by simp) fields
+    refine ⟨a, record (numberValues fs), rfl, complete, ?_⟩
+    intro k x found
+    rw [lookupNumber, found]; rfl
+
 end RecordOrigin
 end CoreJS

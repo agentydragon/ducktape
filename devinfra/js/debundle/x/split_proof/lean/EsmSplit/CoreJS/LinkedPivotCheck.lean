@@ -64,6 +64,19 @@ the selected descriptor's own proof. Both feed the same declaration step. -/
 private def pureInitializer? (intrinsics : List StableIntrinsic) (e : Expr) :
     Option (PLift (∀ w, StableIntrinsic.Worlds intrinsics w → ∀ fuel env,
       (evalExpr fuel env e : M w Val) = outOfFuel ∨ ∃ v, evalExpr (W := w) fuel env e = pure v)) := do
+  -- A checked own numeric read uses this two-level expression to preserve fuel.
+  match h : e with
+  | .seq .undef (.num x) =>
+    return ⟨by
+      intro w _ fuel env
+      rw [h]
+      cases fuel with
+      | zero => exact Or.inl rfl
+      | succ n =>
+        cases n with
+        | zero => exact Or.inl rfl
+        | succ => exact Or.inr ⟨.num x, rfl⟩⟩
+  | _ => pure ()
   if let some a := stringInitializer? (fun _ => none) e then return ⟨fun w _ => a.closed w⟩
   intrinsics.attach.findSome? fun ⟨d, hd⟩ => do
     let ⟨evaluate⟩ ← d.evalValue? e
