@@ -5,6 +5,7 @@ import {
   assertCertified,
   array,
   arrow,
+  caseShard,
   exportNamed,
   forcePreview,
   id,
@@ -97,54 +98,66 @@ const spec = {
   sequential: true,
 };
 const dir = path.join(root, "dense-lookup-arrays");
-const { sourceFile, specFile } = prepare(dir, { source: tableProgram(literal("ready")), provider: "", spec });
+const files = prepare(dir, { source: tableProgram(literal("ready")), provider: "", spec });
+const { sourceFile, specFile } = files;
 const out = path.join(dir, "out");
-const { verdict, log } = lower(sourceFile, specFile, out);
-assertCertified(verdict, log);
-assert.deepEqual(moduleEvaluationOrder(out, entry), [...order, entry]);
-assert.deepEqual(lower(sourceFile, specFile, out, ["--check-output"]).verdict, verdict);
+const runCase = caseShard();
+const emit = runCase("certified emission and runtime");
+if (emit) {
+  const { verdict, log } = lower(sourceFile, specFile, out);
+  assertCertified(verdict, log);
+  assert.deepEqual(moduleEvaluationOrder(out, entry), [...order, entry]);
 
-const expectedRows = Array.from({ length: rowCount }, (_, index) => [
-  `item-${index}`,
-  undefined,
-  value(index),
-  [],
-  offsets.map((offset) => value(index + offset)),
-]);
-for (const file of [sourceFile, path.join(out, entry)]) {
-  const namespace = await import(pathToFileURL(file).href);
-  assert.deepEqual(Object.keys(namespace), [...exportNames].sort());
-  assert.deepEqual(Object.entries(namespace.table), fields);
-  assert.deepEqual(namespace.quick, [0, 1, 2].map(value));
-  assert.deepEqual(namespace.rows, expectedRows);
-  assert.equal(new Set(namespace.rows.map((row) => row[3])).size, rowCount);
-  for (const { name, fields } of options) assert.deepEqual(Object.entries(namespace[name]), fields);
-  assert.deepEqual(namespace.left, ["option-0-0"]);
-  assert.deepEqual(namespace.right, ["option-1-0", "option-1-1"]);
-  assert.equal(namespace.marker, "ready");
-  assert.equal(namespace.getMarker(), "ready");
+  const expectedRows = Array.from({ length: rowCount }, (_, index) => [
+    `item-${index}`,
+    undefined,
+    value(index),
+    [],
+    offsets.map((offset) => value(index + offset)),
+  ]);
+  for (const file of [sourceFile, path.join(out, entry)]) {
+    const namespace = await import(pathToFileURL(file).href);
+    assert.deepEqual(Object.keys(namespace), [...exportNames].sort());
+    assert.deepEqual(Object.entries(namespace.table), fields);
+    assert.deepEqual(namespace.quick, [0, 1, 2].map(value));
+    assert.deepEqual(namespace.rows, expectedRows);
+    assert.equal(new Set(namespace.rows.map((row) => row[3])).size, rowCount);
+    for (const { name, fields } of options) assert.deepEqual(Object.entries(namespace[name]), fields);
+    assert.deepEqual(namespace.left, ["option-0-0"]);
+    assert.deepEqual(namespace.right, ["option-1-0", "option-1-1"]);
+    assert.equal(namespace.marker, "ready");
+    assert.equal(namespace.getMarker(), "ready");
+  }
 }
 
-// Keep the placement and the marker value, but write the field captured in the first row.
-const changedMarker = {
-  type: "SequenceExpression",
-  expressions: [
-    { type: "AssignmentExpression", operator: "=", left: read(0), right: literal("changed") },
-    literal("ready"),
-  ],
-};
-const control = prepare(path.join(dir, "control"), { source: tableProgram(changedMarker), provider: "", spec });
-const preview = path.join(dir, "preview");
-forcePreview(control, preview);
-const before = await import(pathToFileURL(control.sourceFile).href);
-const after = await import(pathToFileURL(path.join(preview, entry)).href);
-assert.deepEqual(moduleEvaluationOrder(preview, entry), [...order, entry]);
-assert.equal(before.rows[0][2], value(0));
-assert.equal(after.rows[0][2], "changed");
-for (const result of [
-  lower(control.sourceFile, control.specFile, path.join(dir, "refused")),
-  lower(control.sourceFile, control.specFile, preview, ["--check-output"]),
-]) {
-  assert.equal(result.verdict.status, "rejected", result.log);
-  assert.match(result.verdict.reason, /different final states/);
+if (runCase("exact disk verification")) {
+  if (!emit) forcePreview(files, out);
+  const { verdict, log } = lower(sourceFile, specFile, out, ["--check-output"]);
+  assertCertified(verdict, log);
+}
+
+if (runCase("reject changed schedule")) {
+  // Keep the placement and marker value while writing the field captured in the first row.
+  const changedMarker = {
+    type: "SequenceExpression",
+    expressions: [
+      { type: "AssignmentExpression", operator: "=", left: read(0), right: literal("changed") },
+      literal("ready"),
+    ],
+  };
+  const control = prepare(path.join(dir, "control"), { source: tableProgram(changedMarker), provider: "", spec });
+  const preview = path.join(dir, "preview");
+  forcePreview(control, preview);
+  const before = await import(pathToFileURL(control.sourceFile).href);
+  const after = await import(pathToFileURL(path.join(preview, entry)).href);
+  assert.deepEqual(moduleEvaluationOrder(preview, entry), [...order, entry]);
+  assert.equal(before.rows[0][2], value(0));
+  assert.equal(after.rows[0][2], "changed");
+  for (const result of [
+    lower(control.sourceFile, control.specFile, path.join(dir, "refused")),
+    lower(control.sourceFile, control.specFile, preview, ["--check-output"]),
+  ]) {
+    assert.equal(result.verdict.status, "rejected", result.log);
+    assert.match(result.verdict.reason, /different final states/);
+  }
 }
