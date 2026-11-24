@@ -41,7 +41,7 @@ inductive Val where
   | bool (b : Bool)
   | num (n : Float)
   | str (s : String)
-  | iteratorSymbol
+  | wellKnownSymbol (sym : WellKnownSymbol)
   /-- An uninspectable identity reserved by the object allocator. -/
   | symbol (identity : Addr)
   | obj (a : Addr)
@@ -51,7 +51,7 @@ inductive Val where
 
 inductive PropertyKey where
   | str (name : String)
-  | iteratorSymbol
+  | wellKnownSymbol (sym : WellKnownSymbol)
   | symbol (identity : Addr)
   deriving DecidableEq, Hashable, Repr
 
@@ -63,12 +63,12 @@ instance : Coe String PropertyKey := ⟨.str⟩
 
 def PropertyKey.string? : PropertyKey → Option String
   | .str name => some name
-  | .iteratorSymbol | .symbol _ => none
+  | .wellKnownSymbol _ | .symbol _ => none
 
 instance : ToString PropertyKey where
   toString
     | .str name => name
-    | .iteratorSymbol => "Symbol.iterator"
+    | .wellKnownSymbol sym => sym.description
     | .symbol _ => "symbol"
 
 inductive Property where
@@ -179,7 +179,7 @@ def Val.primitive? : Val → Option Primitive
   | .bool b => some (.bool b)
   | .num n => some (.num n)
   | .str s => some (.str s)
-  | .iteratorSymbol | .symbol _ | .obj _ | .error .. | .host _ => none
+  | .wellKnownSymbol _ | .symbol _ | .obj _ | .error .. | .host _ => none
 
 /-- What the world holds of a value: an object only as its position in the list of the objects it was handed
 (`Host.handed`), so the world can name no other object. -/
@@ -442,31 +442,41 @@ private def hostAccessor (owner k : String) : PropertyKey × Property :=
   (.str k, .accessor (.host s!"get {owner}.{k}") (.host s!"set {owner}.{k}") false true)
 
 private def hostIterator (name : String) : PropertyKey × Property :=
-  (.iteratorSymbol, .data (.host name) true false true)
+  (.wellKnownSymbol .iterator, .data (.host name) true false true)
 
-/-- String-keyed own properties of %AsyncFunction.prototype%. -/
+private def stringTag (name : String) : PropertyKey × Property :=
+  (.wellKnownSymbol .toStringTag, .data (.str name) false false true)
+
+/-- Own properties of %AsyncFunction.prototype%. -/
 def asyncFunctionPrototype : Obj :=
-  { proto := some functionProto, props := [("constructor", .data (.host "AsyncFunction") false false true)] }
+  { proto := some functionProto, props := [("constructor", .data (.host "AsyncFunction") false false true),
+      stringTag "AsyncFunction"] }
+
+private def hostTagAccessor : PropertyKey × Property :=
+  (.wellKnownSymbol .toStringTag,
+    .accessor (.host "get Iterator.prototype[Symbol.toStringTag]")
+      (.host "set Iterator.prototype[Symbol.toStringTag]") false true)
 
 /-- The modeled properties on the synchronous generator prototype chain. -/
 def iteratorPrototype : Obj :=
   { proto := some objectProto, props := [hostAccessor "Iterator.prototype" "constructor"] ++
       hostMembers "Iterator.prototype" ["reduce", "toArray", "forEach", "some", "every", "find", "map",
-        "filter", "take", "drop", "flatMap"] ++ [hostIterator "Iterator.prototype[Symbol.iterator]"] }
+        "filter", "take", "drop", "flatMap"] ++
+      [hostIterator "Iterator.prototype[Symbol.iterator]", hostTagAccessor] }
 
-private def generatorBase (parent fn : Addr) (name : String) : Obj :=
+private def generatorBase (parent fn : Addr) (brand : String) : Obj :=
   { proto := some parent,
     props := [(PropertyKey.str "constructor", Property.data (.obj fn) false false true)] ++
-      hostMembers name ["next", "return", "throw"] }
+      hostMembers (brand ++ ".prototype") ["next", "return", "throw"] ++ [stringTag brand] }
 
 private def generatorFunctionBase (parent : Addr) (name : String) : Obj :=
   { proto := some functionProto, props := [("prototype", .data (.obj parent) false false true),
-      ("constructor", .data (.host name) false false true)] }
+      ("constructor", .data (.host name) false false true), stringTag name] }
 
-def generatorPrototype := generatorBase iteratorProto generatorFunctionProto "Generator.prototype"
+def generatorPrototype := generatorBase iteratorProto generatorFunctionProto "Generator"
 def generatorFunctionPrototype := generatorFunctionBase generatorProto "GeneratorFunction"
 def asyncIteratorPrototype : Obj := { proto := some objectProto, props := [] }
-def asyncGeneratorPrototype := generatorBase asyncIteratorProto asyncGeneratorFunctionProto "AsyncGenerator.prototype"
+def asyncGeneratorPrototype := generatorBase asyncIteratorProto asyncGeneratorFunctionProto "AsyncGenerator"
 def asyncGeneratorFunctionPrototype := generatorFunctionBase asyncGeneratorProto "AsyncGeneratorFunction"
 
 /-- Getters in the string-key order of the modeled realm. Their function objects
@@ -479,7 +489,7 @@ def regexpGetters : List (String × RegExpGetter) := [
 def arrayIteratorProto : Addr := ⟨0, regexpProto.index + 1 + regexpGetters.length⟩
 
 def arrayIteratorPrototype : Obj :=
-  { proto := some iteratorProto, props := hostMembers "ArrayIterator.prototype" ["next"] }
+  { proto := some iteratorProto, props := hostMembers "ArrayIterator.prototype" ["next"] ++ [stringTag "Array Iterator"] }
 
 def regexpPrototype : Obj :=
   let getters := regexpGetters.zipIdx.map fun ((name, _), i) =>
@@ -592,7 +602,7 @@ def toBoolean : Val → Except Abort Bool
   | .bool b => pure b
   | .num n => pure (!(n == 0.0 || n.isNaN))
   | .str s => pure (!s.isEmpty)
-  | .iteratorSymbol | .symbol _ | .obj _ | .error .. => pure true
+  | .wellKnownSymbol _ | .symbol _ | .obj _ | .error .. => pure true
   | .host name => inspectsHost name
 
 def toNumber : Val → Except Abort Float
@@ -601,7 +611,7 @@ def toNumber : Val → Except Abort Float
   | .bool b => pure (if b then 1.0 else 0.0)
   | .num n => pure n
   | .str s => pure (Num.ofString s)
-  | .iteratorSymbol | .symbol _ => .error (.error .type "cannot convert a symbol to a number")
+  | .wellKnownSymbol _ | .symbol _ => .error (.error .type "cannot convert a symbol to a number")
   | .obj _ | .error .. => needsPrimitive
   | .host name => inspectsHost name
 
@@ -611,7 +621,7 @@ def toStr : Val → Except Abort String
   | .bool b => pure (if b then "true" else "false")
   | .num n => pure (Num.toString n)
   | .str s => pure s
-  | .iteratorSymbol | .symbol _ => .error (.error .type "cannot convert a symbol to a string")
+  | .wellKnownSymbol _ | .symbol _ => .error (.error .type "cannot convert a symbol to a string")
   | .obj _ | .error .. => needsPrimitive
   | .host name => inspectsHost name
 
@@ -625,7 +635,7 @@ def typeOf (s : State W) : Val → Except Abort String
   | .bool _ => pure "boolean"
   | .num _ => pure "number"
   | .str _ => pure "string"
-  | .iteratorSymbol | .symbol _ => pure "symbol"
+  | .wellKnownSymbol _ | .symbol _ => pure "symbol"
   | .obj a => pure (if isCallable s (.obj a) then "function" else "object")
   | .error .. => pure "object"
   | .host name => inspectsHost name
@@ -635,7 +645,8 @@ def strictEq : Val → Val → Except Abort Bool
   | .host name, _ | _, .host name => inspectsHost name
   | .error (.native a _) _, .error (.native b _) _ => pure (a == b)
   | .error .., .error .. => .error (.unknown "two engine errors are compared")
-  | .undef, .undef | .null, .null | .iteratorSymbol, .iteratorSymbol => pure true
+  | .undef, .undef | .null, .null => pure true
+  | .wellKnownSymbol a, .wellKnownSymbol b => pure (a == b)
   | .bool a, .bool b => pure (a == b)
   | .num a, .num b => pure (a == b)
   | .str a, .str b => pure (a == b)
@@ -660,14 +671,14 @@ def looseEq (a b : Val) : Except Abort Bool :=
   | .error (.native a _) _, .error (.native b _) _ => pure (a == b)
   | .error .., .error .. => .error (.unknown "two engine errors are compared")
   | .str x, .str y => pure (x == y)
-  | .iteratorSymbol, .iteratorSymbol => pure true
+  | .wellKnownSymbol a, .wellKnownSymbol b => pure (a == b)
   | .symbol x, .symbol y => pure (x == y)
   | _, _ =>
     if isNullish a || isNullish b then pure (isNullish a && isNullish b) else
     match a, b with
     | .obj _, .error .. | .error .., .obj _ => pure false
     | .obj _, _ | _, .obj _ | .error .., _ | _, .error .. => needsPrimitive
-    | .iteratorSymbol, _ | _, .iteratorSymbol | .symbol _, _ | _, .symbol _ => pure false
+    | .wellKnownSymbol _, _ | _, .wellKnownSymbol _ | .symbol _, _ | _, .symbol _ => pure false
     | _, _ => do pure ((← toNumber a) == (← toNumber b))
 
 private def utf16CodeUnits (s : String) : List Nat :=
@@ -681,9 +692,9 @@ private def utf16CodeUnits (s : String) : List Nat :=
 primitive operands to numbers. IEEE comparisons all return false for an unordered pair. -/
 def relational (num : Float → Float → Bool) (str : Ordering → Bool) : Val → Val → Except Abort Bool
   | .str a, .str b => pure (str (compare (utf16CodeUnits a) (utf16CodeUnits b)))
-  | .iteratorSymbol, .obj _ | .iteratorSymbol, .error ..
+  | .wellKnownSymbol _, .obj _ | .wellKnownSymbol _, .error ..
   | .symbol _, .obj _ | .symbol _, .error .. => needsPrimitive
-  | .iteratorSymbol, .host name | .symbol _, .host name => inspectsHost name
+  | .wellKnownSymbol _, .host name | .symbol _, .host name => inspectsHost name
   | a, b => do pure (num (← toNumber a) (← toNumber b))
 
 /-- An int32 as its 32 bits, and back. -/
@@ -703,7 +714,7 @@ def binop (op : BinOp) (a b : Val) : Except Abort Val :=
   | .add =>
     match a, b with
     | .obj _, _ | _, .obj _ | .error .., _ | _, .error .. => needsPrimitive
-    | .iteratorSymbol, .host name | .symbol _, .host name => inspectsHost name
+    | .wellKnownSymbol _, .host name | .symbol _, .host name => inspectsHost name
     | .str x, _ => do pure (.str (x ++ (← toStr b)))
     | _, .str y => do pure (.str ((← toStr a) ++ y))
     | _, _ => arith (· + ·)
@@ -780,7 +791,7 @@ def lookupProp (a : Addr) (k : PropertyKey) : M W (Option Property) := do
 /-- Preserve symbol identities. Other supported keys use `ToString`. -/
 def toKey (k : Val) : M W PropertyKey :=
   lift (match k with
-    | .iteratorSymbol => .ok .iteratorSymbol
+    | .wellKnownSymbol sym => .ok (.wellKnownSymbol sym)
     | .symbol identity => .ok (.symbol identity)
     | k => .str <$> toStr k)
 
@@ -840,7 +851,7 @@ abbrev Call (W : World) := Val → Val → List Val → M W Val
 /-- String own properties are `length` and canonical indices into its UTF-16 code units.
 An indexed property exists even when its value is an isolated surrogate. -/
 def stringOwn (s : String) : PropertyKey → Option (Except Abort Val)
-  | .iteratorSymbol | .symbol _ => none
+  | .wellKnownSymbol _ | .symbol _ => none
   | .str k =>
     if k == "length" then some (.ok (.num (Float.ofNat (utf16CodeUnits s).length))) else do
       let i ← k.toNat?.filter (toString · == k)
@@ -861,9 +872,9 @@ def getFrom (call : Call W) (a : Addr) (base : Val) (k : PropertyKey) : M W Val 
 the host, or else what `Object.prototype` has. -/
 def protoProp (call : Call W) (owner : String) (names : List String) (base : Val) : PropertyKey → M W Val
   | .str k => if names.contains k then pure (.host s!"{owner}.{k}") else getFrom call objectProto base (.str k)
-  | .iteratorSymbol =>
-    if owner == "String.prototype" then unknown "String.prototype[Symbol.iterator] is a host method"
-    else getFrom call objectProto base .iteratorSymbol
+  | .wellKnownSymbol sym =>
+    if sym == .iterator && owner == "String.prototype" then unknown "String.prototype[Symbol.iterator] is a host method"
+    else getFrom call objectProto base (.wellKnownSymbol sym)
   | .symbol identity => getFrom call objectProto base (.symbol identity)
 
 def readHostRef (ref : HostRef) : M W Val := fun s =>
@@ -907,13 +918,13 @@ def getProp (call : Call W) (base key : Val) : M W Val := do
     | none => protoProp call "String.prototype" stringProtoNames base k
   | .num _ => protoProp call "Number.prototype" numberProtoNames base (← toKey key)
   | .bool _ => protoProp call "Boolean.prototype" booleanProtoNames base (← toKey key)
-  | .iteratorSymbol | .symbol _ => unknown "a property of a symbol primitive"
+  | .wellKnownSymbol _ | .symbol _ => unknown "a property of a symbol primitive"
   | .error (.native _ hasMessage) message => getNativeErrorProp hasMessage message (← toKey key)
   | .error .. => unknown "a property of an engine error"
   | .host name =>
     match ← toKey key with
     | .str k => hostMember name k
-    | .iteratorSymbol | .symbol _ => unknown s!"a symbol property of host value {name}"
+    | .wellKnownSymbol _ | .symbol _ => unknown s!"a symbol property of host value {name}"
 
 /-- `base[key] = v` in strict code. A setter runs with `base` as `this`. -/
 def setProp (call : Call W) (base key v : Val) : M W Unit := do
@@ -933,7 +944,7 @@ def setProp (call : Call W) (base key v : Val) : M W Unit := do
     let k ← toKey key
     if (stringOwn s k).isSome then throwErr .type s!"cannot assign to read only property {k}"
     else unknown "a property is set on a primitive"
-  | .num _ | .bool _ | .iteratorSymbol | .symbol _ => unknown "a property is set on a primitive"
+  | .num _ | .bool _ | .wellKnownSymbol _ | .symbol _ => unknown "a property is set on a primitive"
   | .error .. => unknown "a property of an engine error"
   | .host name => unknown s!"a property of host value {name}"
 
@@ -954,7 +965,7 @@ def deleteProp (base key : Val) : M W Val := do
     let k ← toKey key
     if (stringOwn s k).isSome then throwErr .type s!"cannot delete property {k}"
     else pure (.bool true)
-  | .num _ | .bool _ | .iteratorSymbol | .symbol _ => unknown "a property of a primitive is deleted"
+  | .num _ | .bool _ | .wellKnownSymbol _ | .symbol _ => unknown "a property of a primitive is deleted"
   | .error .. => unknown "a property of an engine error"
   | .host name => unknown s!"a property of host value {name}"
 
@@ -1001,7 +1012,7 @@ def toDesc (call : Call W) (v : Val) : M W Desc := do
 /-- How `console.log` writes a primitive. An object is written by the host. -/
 def logArg : Val → Except Abort String
   | .num n => pure (if Num.isNegZero n then "-0" else Num.toString n)
-  | .iteratorSymbol | .symbol _ => .error (.unknown "console.log writes a symbol")
+  | .wellKnownSymbol _ | .symbol _ => .error (.unknown "console.log writes a symbol")
   | .obj _ | .error .. => .error (.unknown "console.log writes an object")
   | v => toStr v
 
@@ -1119,10 +1130,10 @@ def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
   | .regExpGet getter => readRegExp call getter (arg 0)
   | .globalTypeof name => observeGlobalTypeof name
   | .globalRef name => readHostRef (.binding name)
-  | .iteratorSymbol =>
-    match ← readHostRef (.property "Symbol" "iterator") with
-    | .host "Symbol.iterator" => pure .iteratorSymbol
-    | _ => unknown "ambient Symbol.iterator has an unsupported identity"
+  | .wellKnownSymbol sym =>
+    let value ← readHostRef (.property "Symbol" sym.member)
+    if value == .host sym.description then pure (.wellKnownSymbol sym)
+    else unknown s!"ambient {sym.description} has an unsupported identity"
   | .freshSymbol =>
     match ← readHostRef (.binding "Symbol") with
     | .host "intrinsic.Symbol" =>
@@ -1215,7 +1226,7 @@ def toW (v : Val) : M W WVal :=
   | .bool b => pure (.prim (.bool b))
   | .num n => pure (.prim (.num n))
   | .str x => pure (.prim (.str x))
-  | .iteratorSymbol => unknown "Symbol.iterator crosses the opaque host boundary"
+  | .wellKnownSymbol sym => unknown s!"{sym.description} crosses the opaque host boundary"
   | .symbol _ => unknown "a fresh symbol crosses the opaque host boundary"
 
 /-- The value the world names. -/
@@ -1281,7 +1292,7 @@ def copySpreadKeys (call : Call W) (target source : Addr) : List PropertyKey →
 def copySpread (call : Call W) (target : Addr) : Val → M W Unit
   | .obj source => do
     copySpreadKeys call target source (← ownKeys (.obj source))
-  | .undef | .null | .num _ | .bool _ | .iteratorSymbol | .symbol _ => pure ()
+  | .undef | .null | .num _ | .bool _ | .wellKnownSymbol _ | .symbol _ => pure ()
   | .str s => do
     unless s.toList.all (·.toNat ≤ 0xffff) do
       unknown "object spread would copy an isolated UTF-16 surrogate"

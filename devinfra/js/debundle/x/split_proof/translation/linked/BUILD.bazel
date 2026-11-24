@@ -100,6 +100,7 @@ _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean
         "switch_test",
         "symbol_brand_test",
         "symbol_iterator_test",
+        "symbol_tag_test",
         "templates_test",
         "weakmap_constructor_test",
         "wide_records_test",

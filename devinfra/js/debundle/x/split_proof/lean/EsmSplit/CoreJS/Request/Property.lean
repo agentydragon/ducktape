@@ -316,7 +316,7 @@ private theorem reachFrame_hostMember {r R cells A} (name key : String) :
 
 private theorem stringOwn_safe {A s key v} (h : stringOwn s key = some (.ok v)) : SafeVal A v := by
   cases key with
-  | iteratorSymbol | symbol _ => cases h
+  | wellKnownSymbol _ | symbol _ => cases h
   | str key =>
     simp only [stringOwn] at h
     split at h
@@ -372,7 +372,7 @@ theorem reachFrame_getProp {r R cells A} (away : Away r R A) (call : Call W)
     intro k _
     cases k with
     | str k => exact reachFrame_hostMember name k
-    | iteratorSymbol | symbol _ => exact reachFrame_unknown r R cells A _ _
+    | wellKnownSymbol _ | symbol _ => exact reachFrame_unknown r R cells A _ _
 
 /-- Reading a property preserves reachability when calls to retrieved getters do. -/
 theorem perform_get {r R cells A} (away : Away r R A) (call : Call W)

@@ -48,12 +48,27 @@ inductive RegExpGetter where
   | source | flags | flag (letter : Char)
   deriving DecidableEq, Repr
 
+inductive WellKnownSymbol where
+  | iterator | toStringTag
+  deriving DecidableEq, Hashable, Repr
+
+def WellKnownSymbol.member : WellKnownSymbol → String
+  | .iterator => "iterator"
+  | .toStringTag => "toStringTag"
+
+def WellKnownSymbol.description (sym : WellKnownSymbol) : String := "Symbol." ++ sym.member
+
+def WellKnownSymbol.ofMember? : String → Option WellKnownSymbol
+  | "iterator" => some .iterator
+  | "toStringTag" => some .toStringTag
+  | _ => none
+
 /-- Primitive operations and opaque ambient references used by the interpreter. -/
 inductive Prim where
   | regExpGet (getter : RegExpGetter)
   | globalTypeof (binding : String)
   | globalRef (binding : String)
-  | iteratorSymbol
+  | wellKnownSymbol (sym : WellKnownSymbol)
   | freshSymbol
   | opaqueAmbientRef (binding : String)
   | opaqueConstructorRef (binding : String)

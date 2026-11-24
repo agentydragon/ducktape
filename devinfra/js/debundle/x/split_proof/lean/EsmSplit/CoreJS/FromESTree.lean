@@ -535,9 +535,9 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
   | "ThisExpression" => return .this
   | "CoreJSDerivedReceiver" => return .var derivedReceiverName
   | "MemberExpression" =>
-    if ambientSymbolMember? j == some "iterator" then
-      if profile == .browserPage then return .prim .iteratorSymbol []
-      if inFunction then return .prim (.opaqueAmbientMemberRef "Symbol" "iterator") []
+    if let some sym := (ambientSymbolMember? j).bind WellKnownSymbol.ofMember? then
+      if profile == .browserPage then return .prim (.wellKnownSymbol sym) []
+      if inFunction then return .prim (.opaqueAmbientMemberRef "Symbol" sym.member) []
     let lower := linkedExpr profile imports inFunction ""
     if isSuperMember j then return .getSuper (← memberKey lower j)
     let (base, key) ← linkedMember lower j
@@ -892,9 +892,10 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
     let static ← member.getObjValAs? Bool "static"
     let value ← member.getObjVal? "value"
     let (key, keyExpr) ← if ← member.getObjValAs? Bool "computed" then do
-      if tag == "MethodDefinition" && profile == .browserPage && ambientSymbolMember? keyNode == some "iterator" then
+      if let some sym := (ambientSymbolMember? keyNode).bind WellKnownSymbol.ofMember? then
+        unless tag == "MethodDefinition" && profile == .browserPage do throw "unsupported computed class key"
         -- SetFunctionName wraps a symbol’s description in brackets.
-        pure ("[Symbol.iterator]", Expr.prim .iteratorSymbol [])
+        pure (s!"[{sym.description}]", Expr.prim (.wellKnownSymbol sym) [])
       else if tag == "PropertyDefinition" && !static && (← field keyNode "type") == "Identifier" &&
           (field keyNode "k").toOption.any (["L", "T", "V"].contains ·) then
         if ← isAnonymousDefinition value then throw "unsupported function or class named by a computed field key"

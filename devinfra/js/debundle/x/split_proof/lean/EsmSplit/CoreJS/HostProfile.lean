@@ -50,9 +50,9 @@ def identity (profile : HostProfile) : HostRef → Option String
   | .property "window" name => do
     guard (profile == .browserPage)
     profile.bindingIdentity name
-  | .property "Symbol" "iterator" => do
+  | .property "Symbol" member => do
     guard (profile == .browserPage)
-    return "Symbol.iterator"
+    return (← WellKnownSymbol.ofMember? member).description
   | .property receiver key => do
     guard (profile == .browserPage)
     let owner ← receiver.dropPrefix? "window."
@@ -93,6 +93,8 @@ def assumptions (p : HostPremises) : List String :=
       | .nativeErrorConstructor => "the native Error constructor observation"
     let result := if ref == .property "Symbol" "iterator" && identity == "Symbol.iterator" then
       "the well-known iterator symbol"
+    else if ref == .property "Symbol" "toStringTag" && identity == "Symbol.toStringTag" then
+      "the well-known toStringTag symbol"
     else if identity == "intrinsic.Symbol" then "the intrinsic Symbol function"
     else if identity == "window" then "the same page object" else s!"the stable host reference {identity}"
     s!"{read} returns {result} without observable effects throughout initialization")
