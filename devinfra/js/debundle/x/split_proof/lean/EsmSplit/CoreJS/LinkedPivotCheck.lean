@@ -56,7 +56,7 @@ abbrev PivotLocal (w : World) (n : Nat) (u : Nat × Stmt × Env) :=
   Local (u.1 + 1) (fun _ => False) (execStmt n u.2.2 u.2.1 : M w Flow)
 
 abbrev PivotLocalFor (intrinsics : List StableIntrinsic) (u : Nat × Stmt × Env) :=
-  ∀ w, (∀ d ∈ intrinsics, d.Satisfied w) → ∀ n, PivotLocal w n u
+  ∀ w, StableIntrinsic.Worlds intrinsics w → ∀ n, PivotLocal w n u
 
 /-- Existing local evaluations need no host observations. An opted-in
 descriptor can also prove an actual Number read independent of host state. -/
@@ -79,6 +79,7 @@ def checkedLocal? (intrinsics : List StableIntrinsic) (pivot : Nat × Stmt × En
             rcases evaluate w (hw d hd) n env with exhausted | ⟨x, value⟩
             · rw [exhausted]; exact local_outOfFuel
             · rw [value]; exact local_pure _
+          change Local (id + 1) (fun _ => False) (execStmt (n + 1) env (.decl kind name e) : M w Flow)
           cases kind <;> unfold execStmt
           case var => exact expr.bind' fun v => (local_writeVar hx v).bind' fun _ => local_pure _
           all_goals exact expr.bind' fun v => (local_initVar hx v).bind' fun _ => local_pure _⟩

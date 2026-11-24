@@ -19,8 +19,10 @@ def mathPI : StableIntrinsic := ⟨"Math.PI@1", "Math", "window.Math", "PI", .nu
 /-- Neither observation changes host state. The binding must keep returning the
 same receiver throughout initialization, including across retained units. -/
 def Satisfied (d : StableIntrinsic) (w : World) : Prop :=
-  (∀ s, w.hostRef (.binding d.binding) s = some (.identity d.owner, s)) ∧
-  (∀ s, w.hostRef (.property d.owner d.key) s = some (d.value, s))
+  w.StableRead (.binding d.binding) (.identity d.owner) ∧
+  w.StableRead (.property d.owner d.key) d.value
+
+abbrev Worlds (ds : List StableIntrinsic) (w : World) : Prop := ∀ d ∈ ds, d.Satisfied w
 
 def assumption (d : StableIntrinsic) : String :=
   let result := match d.value with
@@ -38,7 +40,7 @@ def dispatched (d : StableIntrinsic) : Bool :=
     (d.owner == "window" || d.owner.startsWith "window.")
 
 private theorem pureRead {w : World} {ref value}
-    (h : ∀ s, w.hostRef ref s = some (value, s)) :
+    (h : w.StableRead ref value) :
     (readHostRef ref : M w Val) = pure value.val := by
   funext s
   simp only [readHostRef, h]

@@ -46,7 +46,6 @@ private theorem Access.linkState {w cells A} {s : State World.probe} (access : A
 
 private abbrev LinkedUnit := Nat × Stmt × Env
 
-private abbrev Worlds (intrinsics : List StableIntrinsic) (w : World) := ∀ d ∈ intrinsics, d.Satisfied w
 
 private theorem CheckedPivot.forWorld {ready pre crossed pivot}
     (checks : CheckedPivot ready pre crossed pivot) (w : World) :
@@ -104,12 +103,12 @@ private def checkPair? (intrinsics : List StableIntrinsic) (ready : State World.
 private structure CheckedSchedule (intrinsics : List StableIntrinsic) (ready : State World.probe) (source : List PreparedUnit) where
   units : List LinkedUnit
   moves : Nat
-  equivalent : ∀ w, Worlds intrinsics w → ∀ n (final : State w),
+  equivalent : ∀ w, StableIntrinsic.Worlds intrinsics w → ∀ n (final : State w),
     runUnits n (source.map (·.unit)) (linkState w ready) = .ok () final ↔
       runUnits n units (linkState w ready) = .ok () final
 
 private abbrev MoveEquivalent (intrinsics : List StableIntrinsic) (ready : State World.probe) (pre crossed : List PreparedUnit) (pivot : PreparedUnit) :=
-  ∀ (suffix : List LinkedUnit) w, Worlds intrinsics w → ∀ n (final : State w),
+  ∀ (suffix : List LinkedUnit) w, StableIntrinsic.Worlds intrinsics w → ∀ n (final : State w),
     runUnits n (original pre ++ original crossed ++ [pivot.unit] ++ suffix) (linkState w ready) = .ok () final ↔
       runUnits n (original pre ++ [pivot.unit] ++ original crossed ++ suffix) (linkState w ready) = .ok () final
 
@@ -150,7 +149,7 @@ private def checkMaskedMove? (intrinsics : List StableIntrinsic) (ready : State 
 inert body step, even a crossed unit that calls the function commutes with it.
 An allocating initializer still needs the region and capture checks. -/
 private def checkMove (intrinsics : List StableIntrinsic) (ready : State World.probe) (pre crossed suffix : List PreparedUnit) (pivot : PreparedUnit) :
-    Except String (PLift (∀ w, Worlds intrinsics w → ∀ n (final : State w),
+    Except String (PLift (∀ w, StableIntrinsic.Worlds intrinsics w → ∀ n (final : State w),
       runUnits n ((pre ++ crossed ++ [pivot] ++ suffix).map (·.unit)) (linkState w ready) = .ok () final ↔
         runUnits n ((pre ++ [pivot] ++ crossed ++ suffix).map (·.unit)) (linkState w ready) = .ok () final)) := do
   if inert : pivot.unit.2.1.inert = true then
@@ -229,7 +228,7 @@ inductive StructuralProof where
 
 /-- Select the rule from the linked schedules, then validate the witness in all worlds. -/
 def checkStructuralSchedule (intrinsics : List StableIntrinsic) (source candidate : Program) :
-    Except String (StructuralProof × PLift (NormalEquivalent (Worlds intrinsics) source candidate ∧ SameExports source candidate)) := do
+    Except String (StructuralProof × PLift (NormalEquivalent (StableIntrinsic.Worlds intrinsics) source candidate ∧ SameExports source candidate)) := do
   let before ← (checkLink source).mapError ("original linker: " ++ ·)
   let after ← (checkLink candidate).mapError ("candidate linker: " ++ ·)
   let some ⟨initial⟩ := StateMatch.probe before.ready after.ready |
@@ -245,7 +244,7 @@ def checkStructuralSchedule (intrinsics : List StableIntrinsic) (source candidat
   let schedule ← checkSchedule intrinsics before.ready [] (sourceUnits.map PreparedUnit.ofUnit) (candidateUnits.map (·.1))
   let some ⟨same⟩ := sameUnits? schedule.units candidateUnits |
     throw "the linked schedules differ in unit order, syntax, or scope"
-  have equivalent : NormalEquivalent (Worlds intrinsics) source candidate := normalEquivalent_of_bounded fun w hw n final => by
+  have equivalent : NormalEquivalent (StableIntrinsic.Worlds intrinsics) source candidate := normalEquivalent_of_bounded fun w hw n final => by
     rw [run_after_link n (before.forWorld w), run_after_link n (after.forWorld w)]
     change runUnits n sourceUnits (linkState w before.ready) = .ok () final ↔
       runUnits n candidateUnits (linkState w after.ready) = .ok () final

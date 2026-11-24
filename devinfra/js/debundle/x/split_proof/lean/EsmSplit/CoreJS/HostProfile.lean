@@ -52,6 +52,11 @@ def opaqueConstructor : HostProfile → String → Bool
 
 end HostProfile
 
+/-- In any host state, this read returns exactly the indicated result and leaves
+the state intact. Identity and Number-bits results are distinct constructors. -/
+abbrev World.StableRead (w : World) (ref : HostRef) (value : HostValue) : Prop :=
+  ∀ s, w.hostRef ref s = some (value, s)
+
 /-- The observations used by a certificate, independent of the selected decoding profile. -/
 structure HostPremises where
   typeofBindings : List (String × String) := []
@@ -90,7 +95,7 @@ def observations (profile : HostProfile) : World where
 def Satisfied (p : HostPremises) (w : World) : Prop :=
   (∀ name value, p.typeofBindings.lookup name = some value →
     ∀ s, w.globalTypeof name s = some (.ret (.str value), s)) ∧
-  (∀ ref identity, p.refs.lookup ref = some identity → ∀ s, w.hostRef ref s = some (.identity identity, s))
+  (∀ ref identity, p.refs.lookup ref = some identity → w.StableRead ref (.identity identity))
 
 def specialize (p : HostPremises) (w : World) : World :=
   { w with

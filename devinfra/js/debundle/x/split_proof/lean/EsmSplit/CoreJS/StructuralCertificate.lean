@@ -29,7 +29,7 @@ def StructuralASTEquivalent (profile : HostProfile) (offered used : List StableI
     (deployment : Option LinkedDeployment.Input) : Prop :=
   used ⊆ offered ∧ ∃ pivots original candidate,
     LinkedInput.decodeStructuralPair source providers files plan pivots profile deployment = .ok (original, candidate) ∧
-    NormalEquivalent (fun w => ∀ d ∈ used, d.Satisfied w) original candidate ∧ SameExports original candidate
+    NormalEquivalent (StableIntrinsic.Worlds used) original candidate ∧ SameExports original candidate
 
 /-- Compute the certificate directly with the executable, proof-carrying
 checks. The proof relates the same concrete ASTs later sent to the printer. -/
@@ -42,7 +42,7 @@ def certifyStructuralASTs (profile : HostProfile) (offered : List StableIntrinsi
   match decoded : LinkedInput.decodeStructuralPair source providers files plan pivots profile deployment with
   | .error reason => throw reason
   | .ok (original, candidate) =>
-    -- Only concrete declarations can need a Number premise. Retained whole
+    -- Only concrete declarations can need a host premise. Retained whole
     -- units (including all providers) remain opaque under this decoder.
     let used := offered.filter fun d => original.modules.any fun m => m.body.any fun u =>
       match u.2 with
