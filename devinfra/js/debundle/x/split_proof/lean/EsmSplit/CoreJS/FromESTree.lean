@@ -518,6 +518,7 @@ private def linkedArgument (lower : Json → Except String Expr) (j : Json) : Ex
 Ordinary functions then enter a body block; derived constructors run their prefix before super. -/
 private inductive LinkedFunctionParts where
   | complete (fn : Func)
+  | objectBindings (slots : List Name) (initializers body : List Stmt)
   | defaults (slots : List Name) (arity : Nat) (initializers body : List Stmt)
 
 mutual
@@ -743,6 +744,8 @@ private partial def linkedFunction (profile : HostProfile) (imports : List Name)
     (j : Json) : Except String Func := do
   match ← linkedFunctionParts profile imports kind name self j with
   | .complete fn => return fn
+  | .objectBindings slots initializers body =>
+    return .mk name kind self slots (initializers ++ body)
   | .defaults slots arity initializers body =>
     return .withDefaults name kind self slots arity (initializers ++ [.block body])
 
@@ -821,7 +824,9 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
     return .defaults slots arity initializers stmts
   -- Static keys and identifier targets have no parameter expressions. The reads
   -- run before the body, using the same mutable cells as any body var redeclarations.
-  return .complete (.mk name kind self (params.toList.map Prod.fst) (bindings.toList ++ stmts))
+  let slots := params.toList.map Prod.fst
+  if bindings.isEmpty then return .complete (.mk name kind self slots stmts)
+  return .objectBindings slots bindings.toList stmts
 
 /-- Split a derived constructor at its direct super call, including a call among
 comma operands. All three parts run with the same parameter and local cells. -/
@@ -831,6 +836,8 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
     if (← field param "type") == "AssignmentPattern" then
       discard <| localBinding (← param.getObjVal? "left")
       discard <| prepareBeforeSuper (← param.getObjVal? "right") false
+    else if (← field param "type") == "ObjectPattern" then
+      discard <| linkedObjectPattern param (linkedPatternIdentifier localBinding)
     else discard <| localBinding param
   let block ← fn.getObjVal? "body"
   let statements ← block.getObjValAs? (List Json) "body"
@@ -866,6 +873,11 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
       throw "local function declaration overlaps a var binding before super"
     else pure ()
   match ← linkedFunctionParts profile imports .classCtor name false (.obj ((← fn.getObj?).insert "body" post)) with
+  | .objectBindings slots initializers body =>
+    -- The argument slots are already bound. A getter or coercion can throw before
+    -- any constructor statement, superclass call or instance-field initializer runs.
+    checkFunctionOverlap body
+    return (initializers ++ before.toList, args, .mk name .classCtor false slots body)
   | .complete body =>
     -- An opaque body may depend on the derived constructor's home object or new.target.
     if let some (_, _, _, why) := body.opaqueBody then throw (why.getD "unsupported derived constructor body")
