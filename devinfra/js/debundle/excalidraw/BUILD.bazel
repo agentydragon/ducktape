@@ -170,6 +170,55 @@ filegroup(
     visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
 )
 
+# A selected view of the same canonical selector solve. Only routing and
+# import priority change; the Rust and Lean emitters use the same unit owners.
+py_binary(
+    name = "subset_config_bin",
+    main_module = "devinfra.js.debundle.excalidraw.subset_config",
+    deps = [":subset_config"],
+)
+
+py_library(
+    name = "subset_config",
+    srcs = ["subset_config.py"],
+    deps = ["@pypi//pyyaml"],
+)
+
+run_binary(
+    name = "editor_smoke_config",
+    srcs = [
+        "config.yaml",
+        "editor_smoke_subset.json",
+    ],
+    outs = ["editor_smoke_config.yaml"],
+    args = [
+        "$(execpath config.yaml)",
+        "$(execpath editor_smoke_subset.json)",
+        "$(execpath editor_smoke_config.yaml)",
+    ],
+    tool = ":subset_config_bin",
+)
+
+debundle_apply(
+    name = "editor_smoke_debundle",
+    analysis = ":analysis",
+    ownership_subset = "editor_smoke_subset.json",
+    package_roots = _PACKAGE_ROOTS,
+    spec_tree_inputs = [":spec"],
+    split_dependency_graphs = True,
+    tree_config = "editor_smoke_config.yaml",
+    tree_modules = "spec/modules",
+    tree_source_root = ":source",
+    tree_vendor_marks = "spec/vendor_marks.yaml",
+)
+
+filegroup(
+    name = "editor_smoke_graphs",
+    srcs = [":editor_smoke_debundle"],
+    output_group = "dependency_graphs",
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
+)
+
 py_test(
     name = "test_debundle_tree",
     srcs = ["test_debundle_tree.py"],

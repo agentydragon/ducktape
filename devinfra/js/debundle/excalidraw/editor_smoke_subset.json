@@ -1,0 +1,10 @@
+{
+  "modules": [
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/scene/scroll",
+      "bindings": ["centerScrollOn"],
+      "anonymous_statements": []
+    }
+  ]
+}

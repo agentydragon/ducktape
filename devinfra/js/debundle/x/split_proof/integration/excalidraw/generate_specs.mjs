@@ -65,12 +65,12 @@ export function leanSpec(graph, emittedOrder) {
 }
 
 if (import.meta.main) {
-  const args = process.argv.slice(2);
-  assert.equal(args.length, 2, "usage: generate_specs.mjs <spec-graphs> <output-directory>");
+  const [graphsArg, outArg, ...chunks] = process.argv.slice(2);
+  assert(chunks.length > 0, "usage: generate_specs.mjs <spec-graphs> <output-directory> <chunk>...");
   const execRoot = process.env.JS_BINARY__EXECROOT ?? process.cwd();
-  const [graphs, out] = args.map((arg) => path.resolve(execRoot, arg));
+  const [graphs, out] = [graphsArg, outArg].map((arg) => path.resolve(execRoot, arg));
   mkdirSync(out, { recursive: true });
-  for (const chunk of ["editor", "main"]) {
+  for (const chunk of chunks) {
     const reports = path.join(graphs, "reports/tree", chunk);
     const graph = JSON.parse(gunzipSync(readFileSync(path.join(reports, "dependency_graph.json.gz"))));
     assert.equal(graph.chunk_id, chunk);

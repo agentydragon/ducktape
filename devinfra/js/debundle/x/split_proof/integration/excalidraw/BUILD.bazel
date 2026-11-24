@@ -54,6 +54,25 @@ js_run_binary(
     args = [
         "$(execpath " + _EXCALIDRAW_GRAPHS + ")",
         "$(RULEDIR)/" + _EXCALIDRAW_SPEC_DIR,
+        "editor",
+        "main",
+    ],
+    tool = ":generate_excalidraw_lean_specs",
+)
+
+_SMOKE_GRAPHS = "//devinfra/js/debundle/excalidraw:editor_smoke_graphs"
+
+_SMOKE_EDITOR_SPEC = "smoke_lean_spec/editor.json"
+
+js_run_binary(
+    name = "editor_smoke_placement",
+    testonly = True,
+    srcs = [_SMOKE_GRAPHS],
+    outs = [_SMOKE_EDITOR_SPEC],
+    args = [
+        "$(execpath " + _SMOKE_GRAPHS + ")",
+        "$(RULEDIR)/smoke_lean_spec",
+        "editor",
     ],
     tool = ":generate_excalidraw_lean_specs",
 )
@@ -163,32 +182,59 @@ py_test(
     deps = _EXCALIDRAW_BROWSER_DEPS,
 )
 
+js_binary(
+    name = "generate_synthetic_stress",
+    entry_point = "synthetic_stress.mjs",
+)
+
+js_run_binary(
+    name = "synthetic_stress_specs",
+    testonly = True,
+    srcs = [":" + _EXCALIDRAW_EDITOR_SPEC],
+    outs = [
+        "synthetic_startup.json",
+        "synthetic_wide.json",
+    ],
+    args = [
+        "$(execpath :" + _EXCALIDRAW_EDITOR_SPEC + ")",
+        "$(RULEDIR)/synthetic_startup.json",
+        "$(RULEDIR)/synthetic_wide.json",
+    ],
+    tool = ":generate_synthetic_stress",
+)
+
 [
     py_test(
-        name = "excalidraw_certified_" + placement + "_browser_smoke",
+        name = name,
         size = "medium",
         srcs = [_EXCALIDRAW_BROWSER_PY],
         args = [
             "-k",
-            "test_certified_editor_split[" + placement + "]",
+            "test_certified_editor_split",
         ],
         data = _EXCALIDRAW_BROWSER_DATA + [
-            ":" + _EXCALIDRAW_EDITOR_SPEC,
+            ":" + spec,
             "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
         ],
         env = dict(
             _EXCALIDRAW_BROWSER_ENV,
-            EDITOR_LEAN_SPEC = "$(rlocationpath :" + _EXCALIDRAW_EDITOR_SPEC + ")",
+            EDITOR_LEAN_SPEC = "$(rlocationpath :" + spec + ")",
+            EXPECTED_SCOPE = scope,
             LOWERSPLIT = "$(rlocationpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
         ),
         main = _EXCALIDRAW_BROWSER_PY,
-        tags = [] if placement == "editor" else ["manual"],
+        tags = tags,
         deps = _EXCALIDRAW_BROWSER_DEPS,
     )
-    for placement in [
-        "editor",
-        "scroll",
-        "startup",
+    for name, spec, scope, tags in [
+        ("excalidraw_certified_editor_browser_smoke", _SMOKE_EDITOR_SPEC, "linked-structural-pivot", []),
+        ("excalidraw_synthetic_editor_stress", "synthetic_wide.json", "linked-structural-moves", []),
+        (
+            "excalidraw_synthetic_startup_stress",
+            "synthetic_startup.json",
+            "linked-structural-order",
+            ["manual"],
+        ),
     ]
 ]
 
