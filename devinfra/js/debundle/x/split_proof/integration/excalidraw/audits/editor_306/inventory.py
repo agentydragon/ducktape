@@ -12,7 +12,10 @@ def read_pinned(path: Path, digest: str) -> dict:
     data = path.read_bytes()
     if hashlib.sha256(data).hexdigest() != digest:
         raise ValueError(f"{path}: digest does not match the measured export")
-    return json.loads(data)
+    export = json.loads(data)
+    if not isinstance(export, dict):
+        raise ValueError(f"{path}: expected a placement object")
+    return export
 
 
 def main() -> None:
