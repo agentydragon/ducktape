@@ -111,7 +111,7 @@ private def publicAliases (names : List Name) : Program :=
   }
   ⟨m.name, [m]⟩
 
-#guard match LinkedBehavior.checkStructuralSchedule (publicAliases ["a", "b", "c", "d"]) (publicAliases []) with
+#guard match LinkedBehavior.checkStructuralSchedule [] (publicAliases ["a", "b", "c", "d"]) (publicAliases []) with
   | .error reason => reason == "entry exports resolve to different linked cells; extra 0; missing 4: " ++
       "\"a\" (original cell @1.0), \"b\" (original cell @1.0), \"c\" (original cell @1.0), …; retargeted 0"
   | .ok _ => false
