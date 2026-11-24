@@ -313,20 +313,19 @@ private theorem reachFrame_hostMember {r R cells A} (name key : String) :
     · exact reachFrame_readHostRef r R cells A (.property name key)
     · exact reachFrame_unknown r R cells A _ _
 
-private theorem stringOwn_safe {A s key v} (h : stringOwn s key = some v) : SafeVal A v := by
+private theorem stringOwn_safe {A s key v} (h : stringOwn s key = some (.ok v)) : SafeVal A v := by
   unfold stringOwn at h
   split at h
   · cases h
     simp [SafeVal, Val.nodes]
-  · cases hindex : key.toNat?.filter (toString · == key) with
-    | none => rw [hindex] at h; cases h
-    | some i =>
-      cases hvalue : s.toList[i]? with
-      | none => rw [hindex, Option.bind_some, hvalue] at h; cases h
-      | some c =>
-        rw [hindex, Option.bind_some, hvalue] at h
-        simp only [Option.map_some, Option.some.injEq] at h
-        subst v
+  · simp only [bind, Option.bind, pure] at h
+    split at h
+    · cases h
+    · dsimp only at h
+      split at h
+      · cases h
+      · dsimp only at h
+        split at h <;> cases h
         simp [SafeVal, Val.nodes]
 
 theorem reachFrame_getProp {r R cells A} (away : Away r R A) (call : Call W)
@@ -346,7 +345,8 @@ theorem reachFrame_getProp {r R cells A} (away : Away r R A) (call : Call W)
     intro k _
     cases h : stringOwn s k with
     | none => exact reachFrame_protoProp away call framed root _ _ _ hb k
-    | some value => exact reachFrame_pure r R cells A value (stringOwn_safe h)
+    | some value =>
+      exact reachFrame_lift value (fun v hv => stringOwn_safe (hv ▸ h))
   case num =>
     exact (reachFrame_toKey r R cells A key).bind fun k _ =>
       reachFrame_protoProp away call framed root _ _ _ hb k
@@ -400,6 +400,12 @@ theorem reachFrame_deleteProp {r R cells A} (away : Away r R A) (base key : Val)
       · exact (reachFrame_modifyObj away a ha _ (fun o n h => Or.inl (deleteProps_keeps_edges o k n h))).bind
           (fun _ _ => ok)
       · exact reachFrame_throwErr r R cells A _ _ _
+  case str =>
+    apply (reachFrame_toKey r R cells A key).bind
+    intro k _
+    split
+    · exact reachFrame_throwErr r R cells A _ _ _
+    · exact reachFrame_pure r R cells A _ (by simp [SafeVal, Val.nodes])
 
 /-- Deleting an own property removes edges from the reachable object. -/
 theorem perform_delete {r R cells A} (away : Away r R A) (call : Call W)
@@ -554,6 +560,12 @@ theorem reachFrame_setProp {r R cells A} (away : Away r R A) (call : Call W)
         case undef => exact reachFrame_throwErr r R cells A _ _ _
         all_goals exact (framed _ _ _ hs safeBase safeValue).bind fun _ _ =>
           reachFrame_pure r R cells A () trivial
+  case str =>
+    apply (reachFrame_toKey r R cells A key).bind
+    intro k _
+    split
+    · exact reachFrame_throwErr r R cells A _ _ _
+    · exact reachFrame_unknown r R cells A _ _
 
 /-- Setting a property keeps reachable edges local, provided invoking an accessible setter does. -/
 theorem perform_set {r R cells A} (away : Away r R A) (call : Call W)
