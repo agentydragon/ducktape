@@ -94,9 +94,11 @@ theorem run_ok_of_moved_link {source candidate : Program} {w : World} {start wid
     (schedule : moveUnitEarlier? start width (captureUnits (unitsOf sourceLink.linked)) =
       some (captureUnits (unitsOf candidateLink.linked))) {final : State w}
     (sourceRun : runProgram w fuel source = .ok () final) : runProgram w fuel candidate = .ok () final := by
-  rw [run_after_link fuel sourceLink, ← runUnits_capture fuel (unitsOf sourceLink.linked), ready] at sourceRun
-  rw [run_after_link fuel candidateLink, ← runUnits_capture fuel (unitsOf candidateLink.linked)]
-  exact (moveUnitEarlier_ok schedule fuel candidateLink.ready final).mp sourceRun
+  rw [run_after_link fuel sourceLink, runLinkedUnits, ← runUnits_capture fuel (unitsOf sourceLink.linked),
+    ready, checkErrorResult_ok] at sourceRun
+  rw [run_after_link fuel candidateLink, runLinkedUnits, ← runUnits_capture fuel (unitsOf candidateLink.linked),
+    checkErrorResult_ok]
+  exact ⟨(moveUnitEarlier_ok schedule fuel candidateLink.ready final).mp sourceRun.1, sourceRun.2⟩
 
 /-- Select an earlier move on the concrete probe link. This is a producer hint.
 The generated theorem repeats the schedule and commutation checks for every world. -/

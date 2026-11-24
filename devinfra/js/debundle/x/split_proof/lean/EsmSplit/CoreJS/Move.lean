@@ -1094,8 +1094,8 @@ theorem moves_preserve_run_of_order {W : World} {ss : List Stmt} {B : EsmSplit.B
   rw [hL, hL']
   intro b s'
   change (initFunctions ((unitsOf [(bundleModule ss, bundleEnv ss frames)]).mergeSort fun a b => decide (a.1 ≤ b.1))
-      >>= fun _ => runUnits n (unitsOf [(bundleModule ss, bundleEnv ss frames)])) t1 = .ok b s' ↔
-    (initFunctions ((unitsOf L').mergeSort fun a b => decide (a.1 ≤ b.1)) >>= fun _ => runUnits n (unitsOf L')) t1 =
+      >>= fun _ => runLinkedUnits n (unitsOf [(bundleModule ss, bundleEnv ss frames)])) t1 = .ok b s' ↔
+    (initFunctions ((unitsOf L').mergeSort fun a b => decide (a.1 ≤ b.1)) >>= fun _ => runLinkedUnits n (unitsOf L')) t1 =
       .ok b s'
   have hkeys0 : (unitsOf [(bundleModule ss, bundleEnv ss frames)]).map (fun u => (u.1, u.2.1)) =
       (List.range ss.length).zip ss := by
@@ -1135,10 +1135,10 @@ theorem moves_preserve_run_of_order {W : World} {ss : List Stmt} {B : EsmSplit.B
       exact hagree u' hu'
   rw [sorted_units hsorted0, ← initFunctions_same hinit, initFunctions_same hbundle]
   refine bind_ok_congr (fun a t2 hfunctions b s' => ?_) b s'
-  rw [runUnits_same n hbundle, ← runUnits_same n hsplit]
   cases a
   cases b
-  exact horder frames t t1 t2 (single_tops ss ▸ hframes) hfunctions s'
+  simp only [runLinkedUnits, checkErrorResult_ok, runUnits_same n hbundle, ← runUnits_same n hsplit,
+    horder frames t t1 t2 (single_tops ss ▸ hframes) hfunctions s']
 
 /-- **A split that moves only units that commute ends well as its bundle does.** For a plan that `Valid` accepts,
 in which every pair of statements that runs out of the bundle's order is certified by a sound move relation, the split ends well in a

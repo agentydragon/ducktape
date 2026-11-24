@@ -113,7 +113,7 @@ theorem exportsMatch_from_checked {w : World} {source candidate : Program}
   rfl
 
 theorem run_after_link {p : Program} {w : World} (fuel : Nat) (checked : CheckedLink p w) :
-    runProgram w fuel p = runUnits fuel (unitsOf checked.linked) checked.ready := by
+    runProgram w fuel p = runLinkedUnits fuel (unitsOf checked.linked) checked.ready := by
   unfold runProgram
   rw [M.bind_apply, checked.equation]
 
@@ -137,7 +137,8 @@ theorem run_eq_of_ordered_links {source candidate : Program} {w : World}
     (ready : sourceLink.ready = candidateLink.ready)
     (schedule : captureUnits (unitsOf sourceLink.linked) = captureUnits (unitsOf candidateLink.linked)) :
     runProgram w fuel source = runProgram w fuel candidate := by
-  rw [run_after_link fuel sourceLink, run_after_link fuel candidateLink, ready,
-    ← runUnits_capture fuel (unitsOf sourceLink.linked), schedule, runUnits_capture]
+  rw [run_after_link fuel sourceLink, run_after_link fuel candidateLink, ready]
+  unfold runLinkedUnits
+  rw [← runUnits_capture fuel (unitsOf sourceLink.linked), schedule, runUnits_capture]
 
 end CoreJS.LinkedBehavior

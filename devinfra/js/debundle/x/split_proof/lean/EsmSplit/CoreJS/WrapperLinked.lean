@@ -48,7 +48,7 @@ private theorem sort_three (swap : Bool) (a b c : α) :
 /-- Compute the linker on both module orders, including the export and import aliases. -/
 private theorem run_linked (W : World) (fuel : Nat) (swap : Bool) (returned callback moved : Func) :
     runProgram W fuel (program swap returned callback moved) =
-      runUnits fuel (units swap returned callback moved) (linkedState W) := by
+      runLinkedUnits fuel (units swap returned callback moved) (linkedState W) := by
   let p := program swap returned callback moved
   let tops := [(0, providerStmt returned), (1, callerStmt callback), (2, movedStmt moved)]
   let modules := p.loaded.zip [providerEnv, consumerEnv swap]
@@ -86,6 +86,8 @@ theorem normal_iff (W : World) (fuel : Nat) (returned callback moved : Func) (t 
     runProgram W fuel (program false returned callback moved) = .ok () t ↔
     runProgram W fuel (program true returned callback moved) = .ok () t := by
   rw [run_linked, run_linked]
+  simp only [runLinkedUnits, checkErrorResult_ok]
+  apply and_congr_left'
   simp only [units, Bool.false_eq_true, ↓reduceIte, runUnits]
   rw [runUnit_agree (s := movedStmt moved) (consumer_agree _) fuel 2,
       runUnit_agree (s := callerStmt callback) (consumer_agree _) fuel 1]

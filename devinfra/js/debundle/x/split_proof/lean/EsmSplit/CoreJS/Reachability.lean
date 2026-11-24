@@ -13,37 +13,6 @@ namespace CoreJS
 
 variable {W : World}
 
-inductive HeapNode where
-  | obj (addr : Addr)
-  | cell (addr : Addr)
-  deriving DecidableEq, Repr
-
-def HeapNode.addr : HeapNode → Addr
-  | .obj a | .cell a => a
-
-/-- Only object values grant access to heap records. Symbol addresses carry identity only. -/
-def Val.nodes : Val → List HeapNode
-  | .obj a => [.obj a]
-  | _ => []
-
-def Env.nodes (env : Env) : List HeapNode :=
-  env.vars.map (fun p => .cell p.2) ++ (env.home.toList.map .obj ++ env.this.nodes)
-
-def Code.nodes : Code → List HeapNode
-  | .derived => []
-  | .closure _ env _ | .derivedFields env _ | .derivedBody _ _ _ env _ => env.nodes
-  | .opaque _ _ cells _ => cells.filterMap (fun a => a.map HeapNode.cell)
-  | .host _ => []
-
-def Property.nodes : Property → List HeapNode
-  | .data v _ _ _ => v.nodes
-  | .accessor get set _ _ => get.nodes ++ set.nodes
-
-def Obj.nodes (o : Obj) : List HeapNode :=
-  o.proto.toList.map HeapNode.obj ++ o.props.flatMap (fun p => p.2.nodes) ++ o.code.toList.flatMap Code.nodes
-
-def Binding.nodes (b : Binding) : List HeapNode := b.value.toList.flatMap Val.nodes
-
 inductive Edge (s : State W) : HeapNode → HeapNode → Prop where
   | obj {a o node} : s.objAt a = some o → node ∈ o.nodes → Edge s (.obj a) node
   | cell {a b node} : s.cellAt a = some b → node ∈ b.nodes → Edge s (.cell a) node

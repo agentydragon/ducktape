@@ -147,6 +147,8 @@ theorem evalProps_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env
       case null =>
         exact (reachFrame_directProto away ha none (fun _ h => by cases h)).bind fun _ _ => rest tail
       case host name => exact reachFrame_unknown r R cells A _ _
+      case error kind msg =>
+        cases kind <;> first | exact rest tail | exact reachFrame_unknown r R cells A _ _
       all_goals exact rest tail
 
 theorem evalMembers_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env) {proto c : Addr}
@@ -331,12 +333,15 @@ private theorem reachFrame_classParentsNonNull {r R cells A} (away : Away r R A)
       | .null => pure none
       | .obj a => pure (some a)
       | .host _ => unknown "host superclass prototype"
+      | .error (.native ..) _ => unknown "native Error is used as a superclass prototype"
       | _ => throwErr .type "superclass prototype is not an object or null"
     have parent : ReachFrame r R cells A (fun p => ∀ a ∈ p, A (.obj a)) (coerceParent proto) := by
       cases proto
       case null => exact reachFrame_pure r R cells A none (fun _ hn => by cases hn)
       case obj a => exact reachFrame_pure r R cells A (some a) (fun _ hm => by cases hm; exact safeVal_obj.1 hproto)
       case host name => exact reachFrame_unknown r R cells A _ _
+      case error kind msg =>
+        cases kind <;> first | exact reachFrame_typeError _ | exact reachFrame_unknown r R cells A _ _
       all_goals exact reachFrame_typeError _
     let finish (pp : Option Addr) : M W (Addr × Option Addr) :=
       match base with
@@ -347,7 +352,8 @@ private theorem reachFrame_classParentsNonNull {r R cells A} (away : Away r R A)
       cases base
       case obj a => exact reachFrame_pure r R cells A (a, pp) ⟨safeVal_obj.1 safe, hp⟩
       all_goals exact reachFrame_unknown r R cells A _ _
-    cases proto <;> cases base <;> exact parent.bind finishFrame
+    cases proto <;> try (cases base <;> exact parent.bind finishFrame)
+    case error kind msg => cases kind <;> cases base <;> exact parent.bind finishFrame
 
 private theorem reachFrame_classParents {r R cells A} (away : Away r R A) (call : Call W)
     (framed : CallFramed r R cells A call) (objectRoot : A (.obj objectProto)) (functionRoot : A (.obj functionProto))

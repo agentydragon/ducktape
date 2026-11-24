@@ -104,11 +104,6 @@ for (const deferred of [false, true]) {
 }
 
 for (const [name, body, reason] of [
-  [
-    "construct-page-error",
-    "try { return new self.Error(); } catch { return 17; }",
-    /host value window.Error is constructed/,
-  ],
   ["reached-global", "try { return global; } catch { return 17; }", /ambient binding global is reached/],
   ["alias-property", "return self.document.title;", /unsupported host reference window.document.title/],
   ["volatile", "return innerWidth;", /ambient binding innerWidth is reached/],

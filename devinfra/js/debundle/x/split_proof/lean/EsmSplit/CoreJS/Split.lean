@@ -148,9 +148,13 @@ theorem run_same {P P' : Program} (hregions : P.regions = P'.regions) (htops : P
     rw [sameUnit_ids hsame] at h
     exact List.pairwise_map.1 h
   rw [hL, hL']
-  show (initFunctions ((unitsOf L).mergeSort fun a b => decide (a.1 ≤ b.1)) >>= fun _ => runUnits n (unitsOf L)) s' =
-    (initFunctions ((unitsOf L').mergeSort fun a b => decide (a.1 ≤ b.1)) >>= fun _ => runUnits n (unitsOf L')) s'
-  rw [sorted_units hsorted, sorted_units hsorted', initFunctions_same hsame, runUnits_same n hsame]
+  show (initFunctions ((unitsOf L).mergeSort fun a b => decide (a.1 ≤ b.1)) >>= fun _ => runLinkedUnits n (unitsOf L)) s' =
+    (initFunctions ((unitsOf L').mergeSort fun a b => decide (a.1 ≤ b.1)) >>= fun _ => runLinkedUnits n (unitsOf L')) s'
+  have runSame : (runLinkedUnits n (unitsOf L) : M W Unit) = runLinkedUnits n (unitsOf L') := by
+    funext ready
+    unfold runLinkedUnits
+    rw [runUnits_same n hsame]
+  rw [sorted_units hsorted, sorted_units hsorted', initFunctions_same hsame, runSame]
 
 /-- **A split that keeps the order ends as the bundle does.** Two programs that have the same statements under the
 same identities (`htops`, with `hregions`) and whose scopes agree end the same way: each ends with `r` exactly when
