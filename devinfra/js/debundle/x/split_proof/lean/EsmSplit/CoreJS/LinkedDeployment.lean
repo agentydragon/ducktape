@@ -18,6 +18,7 @@ structure Input where
 structure ModuleAccess where
   unitNames : Std.HashMap Nat (List Name) := {}
   imports : List Import := []
+  dynamicImportUnits : Std.HashSet Nat := {}
   nativeUrl : Option String := none
 
 structure Access where
@@ -26,18 +27,20 @@ structure Access where
 
 /-- Check lazy targets from one referrer, including every static edge back to
 a linked module. The extra cells belong to this referrer's scope. -/
-private def checkSites (inputs : Input) (name : String) (linked : List String)
+private def checkSites (inputs : Input) (plan : EsmSplit.Plan) (name : String) (linked : List String)
     (sites : Array (Nat × ModuleLocation.Use)) : Except String ModuleAccess := do
   let resources (path : String) := inputs.before[path]?
   let mut requirements : Std.HashMap Nat (List (String × Name)) := {}
+  let mut access : ModuleAccess := {}
   for (id, use) in sites do
     let bindings ← match use with
       | .metaUrl | .metadata => pure []
       | .dynamicImport _ target => do
+        if (plan.find target).isSome then throw s!"dynamic target is an output module: {target}"
         let boundary ← DynamicImports.check target linked inputs.assets resources resources
+        access := { access with dynamicImportUnits := access.dynamicImportUnits.insert id }
         pure <| boundary.requests.flatMap fun edge => edge.exports.map (edge.source, ·)
     requirements := requirements.insert id ((requirements[id]?.getD [] ++ bindings).eraseDups)
-  let mut access : ModuleAccess := {}
   for (id, requests) in requirements.toArray.qsort (fun a b => a.1 < b.1) do
     let mut names := []
     for ((source, exported), index) in requests.zipIdx do
@@ -58,13 +61,13 @@ def check (inputs : Input) (source providers : Json) (plan : EsmSplit.Plan) : Ex
   let sites ← ModuleLocation.check source inputs.entry plan resources resources inputs.nativeRecord
   let files := (← providers.getObj?).toList
   let linked := plan.entry :: files.map Prod.fst
-  let entryAccess ← checkSites inputs plan.entry linked sites
+  let entryAccess ← checkSites inputs plan plan.entry linked sites
   let mut others := ∅
   for (name, file) in files do
     if (plan.find name).isSome then throw s!"provider overlaps emitted module: {name}"
     let some res := resources name | throw s!"missing provider resource: {name}"
     let uses ← (ModuleLocation.providerUses file name res inputs.nativeRecord).mapError fun why => s!"{name}: {why}"
-    let access ← (checkSites inputs name linked uses).mapError fun why => s!"{name}: {why}"
+    let access ← (checkSites inputs plan name linked uses).mapError fun why => s!"{name}: {why}"
     others := others.insert name access
   return {entryAccess, providers := others}
 

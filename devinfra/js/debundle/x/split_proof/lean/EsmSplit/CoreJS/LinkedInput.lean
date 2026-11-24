@@ -30,19 +30,29 @@ private partial def unitSyntax : Json → Json
   | j => j
 
 /-- Give each callable a stable part number within its original unit. The order
-comes from the unchanged syntax tree, independent of on-disk byte offsets. -/
-private partial def numberFunctions (unit : Nat) : Json → StateM Nat Json
+comes from the unchanged syntax tree, independent of on-disk byte offsets.
+Replace any incoming dynamic-import annotation with checked loader captures. -/
+private partial def numberFunctions (unit : Nat) (imports : Option (List Name)) :
+    Json → StateM Nat (Json × Bool)
   | .obj fields => do
-    let site ← if (fields.get? "opaqueCaptures").isSome then do
+    let callable := (fields.get? "opaqueCaptures").isSome
+    let site ← if callable then do
       let part ← get
       modify (· + 1)
       pure [(":opaque-unit", Lean.toJson unit), (":opaque-part", Lean.toJson part)]
     else pure []
-    let children ← fields.toList.mapM fun (key, child) => do
-      pure (key, ← numberFunctions unit child)
-    return Json.mkObj (children ++ site)
-  | .arr children => return .arr (← children.mapM (numberFunctions unit))
-  | j => pure j
+    let children ← (fields.toList.filter (·.1 != ":dynamic-import-captures")).mapM fun (key, child) => do
+      pure (key, ← numberFunctions unit imports child)
+    let dynamic := (fields.get? "type") == some (.str "ImportExpression")
+    let hasImport := dynamic || children.any (·.2.2)
+    let checked := if dynamic || (callable && hasImport) then
+        imports.toList.map fun names => (":dynamic-import-captures", Lean.toJson names)
+      else []
+    return (Json.mkObj (children.map (fun (key, child, _) => (key, child)) ++ site ++ checked), hasImport)
+  | .arr children => do
+    let numbered ← children.mapM (numberFunctions unit imports)
+    return (.arr (numbered.map Prod.fst), numbered.any Prod.snd)
+  | j => pure (j, false)
 
 private structure Parsed where
   imports : List Import
@@ -52,12 +62,18 @@ private structure Parsed where
 /-- Structural proofs can lower selected source units concretely and interpret the remaining whole units
 through their lexical capability lists. The ordinary linked checker lowers every unit concretely. -/
 private inductive BodyFormat where
-  | linked
+  | linked (location : LinkedDeployment.Access)
   | structural (pivots : Std.HashSet Nat) (location : LinkedDeployment.Access)
+
+private def BodyFormat.location : BodyFormat → LinkedDeployment.Access
+  | .linked location | .structural _ location => location
 
 private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (imports : List Name)
     (origin : Nat) (providerSite : Option (String × Nat)) (j : Json) (exported : Bool) : Except String (Stmt × List Name) := do
-  if let .structural pivots location := format then
+  let (access, site) := match providerSite with
+    | none => (format.location.entryAccess, origin)
+    | some (name, ordinal) => (format.location.providers[name]?.getD {}, ordinal)
+  if let .structural pivots _ := format then
     unless pivots.contains origin do
       -- A whole-unit opaque hoist represents ordinary and async functions.
       -- Generator declarations need their own intrinsic and fresh prototype.
@@ -65,12 +81,10 @@ private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (impo
       if Lower.typ j == "FunctionDeclaration" && Lower.flag j "generator" then
         if let some why := Lower.outsideModel false j then throw why
       else
-        let names := match providerSite with
-          | none => location.entryAccess.unitNames[origin]?
-          | some (name, ordinal) => location.providers[name]?.bind fun a => a.unitNames[ordinal]?
-        let s ← OpaqueInput.unit origin j names
+        let s ← OpaqueInput.unit origin j access.unitNames[site]?
         return (s, if exported then (Lower.topDefs j).eraseDups else [])
-  let ast := ((numberFunctions origin j).run 1).1
+  let checkedImports := if access.dynamicImportUnits.contains site then access.unitNames[site]? else none
+  let ast := ((numberFunctions origin checkedImports j).run 1).1.1
   if exported then
     let (bindings, s) ← FromESTree.linkedDeclaration imports ast profile
     return (s, bindings)
@@ -221,10 +235,8 @@ private def decode (format : BodyFormat) (source providers files : Json) (P : Es
   let split ← P.mods.mapM fun m =>
     (readSplit format profile files P providerNames original originalSyntax m).mapError fun why => s!"{m.name}: {why}"
   let after : Program := { entry := P.entry, modules := split ++ shared }
-  let (before, after) ← match format with
-    | .linked => pure (before, after)
-    | .structural _ location =>
-      pure (← location.attach before, ← location.attach after)
+  let before ← format.location.attach before
+  let after ← format.location.attach after
   checkScopes before after
   return (before, after)
 
@@ -232,8 +244,10 @@ private def decode (format : BodyFormat) (source providers files : Json) (P : Es
 relative filenames in that same root, with no overlap. Plan ordinals refer to the full
 source unit array, including imports and export lists. The two programs share the
 providers, whose stable identities start after that array. -/
-def decodePair (source providers files : Json) (P : EsmSplit.Plan) (profile : HostProfile := .empty) :
-    Except String (Program × Program) := decode .linked source providers files P profile
+def decodePair (source providers files : Json) (P : EsmSplit.Plan) (profile : HostProfile := .empty)
+    (deployment : Option LinkedDeployment.Input := none) : Except String (Program × Program) := do
+  let location ← deployment.mapM (LinkedDeployment.check · source providers P)
+  decode (.linked (location.getD {})) source providers files P profile
 
 /-- Experimental input for a structural schedule proof. The body of each returned module retains the
 original source ordinals, including when an emitted module has different positions. Providers use

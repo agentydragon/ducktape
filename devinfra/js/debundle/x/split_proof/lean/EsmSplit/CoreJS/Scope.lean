@@ -567,6 +567,13 @@ theorem Same.expr_succ (env env' : Env) (e : Expr) (hN : Agree e.free env env') 
     unfold evalExpr
     refine ih.assign_like hN (by free_mem) fun r hr => ?_
     same ih hN
+  | prim p args =>
+    unfold evalExpr
+    apply M.bind_congr _ (fun _ => rfl)
+    apply ih.args _ _ _
+    apply hN.mono
+    intro x hx
+    cases p <;> simp only [Expr.free] <;> first | exact hx | exact List.mem_append_right _ hx
   | cls name self ctor members => exact ih.cls_succ env env' name self ctor members hN
   | derived name self parent members ctor => exact ih.derived_succ env env' name self parent members ctor hN
   | unary op a =>

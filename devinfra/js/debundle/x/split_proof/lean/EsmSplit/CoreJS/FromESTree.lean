@@ -448,7 +448,12 @@ private def enclosedSuperCall (parents : List (String × Json)) : Bool := Id.run
     ["ClassExpression", "ClassDeclaration"].contains ((field cls "type").toOption.getD "") &&
     (cls.getObjVal? "superClass").toOption.any (· != .null)
 
-private partial def opaqueContext (checkPrivateNames wholeUnit moduleLocationChecked retainedSuperMembers : Bool) (parents : List (String × Json)) (j : Json) : Bool :=
+/-- Attach linked deployment capabilities only after the checked program decoder has
+validated the importer, target and external static graph. -/
+def dynamicImportCaptures (j : Json) : Option (List Name) :=
+  (j.getObjValAs? (List Name) ":dynamic-import-captures").toOption
+
+private partial def opaqueContext (checkPrivateNames wholeUnit moduleLocationChecked retainedSuperMembers checkedImports : Bool) (parents : List (String × Json)) (j : Json) : Bool :=
   match j with
   | .obj fields =>
     let kind := (field j "type").toOption.getD ""
@@ -457,22 +462,22 @@ private partial def opaqueContext (checkPrivateNames wholeUnit moduleLocationChe
       | _ => false)
     kind == "CoreJSDerivedReceiver" ||
     (kind == "Super" && !retainedMember && !(wholeUnit && enclosedSuperCall parents)) ||
-      (kind == "ImportExpression" && !moduleLocationChecked) ||
+      (kind == "ImportExpression" && !moduleLocationChecked && !(checkedImports && (dynamicImportCaptures j).isSome)) ||
       (kind == "MetaProperty" && !(moduleLocationChecked &&
         (j.getObjVal? "meta" >>= identifier).toOption == some "import" &&
         (j.getObjVal? "property" >>= identifier).toOption == some "meta")) || (checkPrivateNames && kind == "PrivateIdentifier") ||
       (kind == "CallExpression" && (j.getObjVal? "callee" >>= identifier).toOption == some "eval") ||
-      fields.toList.any (fun (key, child) => opaqueContext checkPrivateNames wholeUnit moduleLocationChecked retainedSuperMembers
+      fields.toList.any (fun (key, child) => opaqueContext checkPrivateNames wholeUnit moduleLocationChecked retainedSuperMembers checkedImports
         (if wholeUnit || retainedSuperMembers then (key, j) :: parents else []) child)
-  | .arr items => items.any (opaqueContext checkPrivateNames wholeUnit moduleLocationChecked retainedSuperMembers parents)
+  | .arr items => items.any (opaqueContext checkPrivateNames wholeUnit moduleLocationChecked retainedSuperMembers checkedImports parents)
   | _ => false
 
 /-- Detached bodies require their source module and method context. When the entire statement is
 retained, a direct super call within the body of its own derived constructor retains its class.
 Direct eval can refer to cells absent from the static capture list in either case. -/
 def needsOpaqueContext (j : Json) (checkPrivateNames wholeUnit moduleLocationChecked : Bool := false) : Bool :=
-  opaqueContext checkPrivateNames false false false [] j &&
-    (!wholeUnit || opaqueContext checkPrivateNames true moduleLocationChecked false [] j)
+  opaqueContext checkPrivateNames false false false false [] j &&
+    (!wholeUnit || opaqueContext checkPrivateNames true moduleLocationChecked false false [] j)
 
 /-- LinkedInput numbers each callable by its original unit and lexical site and checks emitted syntax.
 The scope resolver supplies references to cells outside the retained callable. -/
@@ -480,8 +485,10 @@ private def deferredFunction (j : Json) (kind : FuncKind) (name : Name) (self : 
     (arity : Nat) (reason : String) (checkPrivateNames := true) : Except String Func := do
   -- Linked lowering retains the entire parsed method and its lexical arrows. The
   -- closure keeps its home object, and invocation with a refusal always stops replay.
-  if opaqueContext checkPrivateNames false false true [] j then throw reason
+  let importCaptures := dynamicImportCaptures j
+  if opaqueContext checkPrivateNames false false true importCaptures.isSome [] j then throw reason
   let .ok captures := j.getObjValAs? (List Name) "opaqueCaptures" | throw reason
+  let captures := captures ++ importCaptures.getD []
   let .ok code := j.getObjValAs? Nat ":opaque-unit" | throw reason
   let .ok part := j.getObjValAs? Nat ":opaque-part" | throw reason
   -- CoreJS does not allocate the enclosing function's implicit arguments cell.
@@ -685,6 +692,11 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     let lower := linkedExpr profile imports inFunction ""
     return sequenceTree (← lower first) (← (second :: rest).mapM lower)
   | "ClassExpression" => linkedClass profile imports inFunction nameHint j
+  | "ImportExpression" =>
+    let some captures := dynamicImportCaptures j | throw "dynamic import requires a checked deployment"
+    unless (j.getObjVal? "options").toOption.getD .null == .null do throw "unsupported dynamic import options"
+    let request ← j.getObjVal? "source" >>= stringLiteral
+    return .prim (.dynamicImport request captures) []
   | "NewExpression" =>
     let lower := linkedExpr profile imports inFunction ""
     let args ← j.getObjValAs? (List Json) "arguments"

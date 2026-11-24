@@ -103,8 +103,16 @@ private def emitRefusal (requested : String) (refusal : CertificationRefusal)
 private def profileFields (profile : CoreJS.HostProfile) : List (String × Json) :=
   if profile == .empty then [] else [("hostProfile", toJson profile.label)]
 
-private def profileVerdict (selected : CoreJS.HostProfile) (used : CoreJS.HostPremises) : List (String × Json) :=
-  if selected == .empty then [] else profileFields selected ++ [("assumptions", toJson used.assumptions)]
+private def profileVerdict (selected : CoreJS.HostProfile) (used : CoreJS.HostPremises)
+    (extra : List String := []) : List (String × Json) :=
+  if selected == .empty && extra.isEmpty then []
+  else profileFields selected ++ [("assumptions", toJson (used.assumptions ++ extra))]
+
+private def deploymentAssumptions (origin : Option String) : List String :=
+  origin.toList.flatMap fun url => [
+    s!"The static deployment at {url} overlays only the planned module paths.",
+    "The native ESM loader uses one module record per effective URL and resolves dynamic dependencies through the checked live cells."
+  ]
 
 private structure CertifiedOptions where
   request : Guarantee
@@ -137,16 +145,14 @@ private def parseCertifiedOptions (label : String) (args : List String) : IO (Sp
     throw (IO.userError "stableIntrinsicValues requires --structural")
   let args := args.filter (· != "--structural")
   let (deploymentOrigin, args) := EsmSplit.takeFlag "--deployment-origin" args
-  if deploymentOrigin.isSome && !structural then
-    throw (IO.userError "--deployment-origin requires --structural")
   let (preset, args) := EsmSplit.takeFlag "--deployment-preset" args
   let nativeRecord := preset == some CoreJS.NativeRecord.preset
-  if preset.isSome && !(nativeRecord && deploymentOrigin.isSome && profile == .browserPage) then
-    throw (IO.userError "native-browser-record@1 requires a browser-page profile and deployment origin")
+  if preset.isSome && !(structural && nativeRecord && deploymentOrigin.isSome && profile == .browserPage) then
+    throw (IO.userError "native-browser-record@1 requires --structural, a browser-page profile and deployment origin")
   let (resolvedChunk, args) := EsmSplit.takeFlag "--resolved-placement" args
   let checkOnly := args.contains "--check-output"
   let args := args.filter (· != "--check-output")
-  let usage := IO.userError "usage: lowersplit <bundle.mjs|bundle.json> spec.json outdir [--require LEVEL] [--resolved-placement CHUNK] [--check-output] [--host-contract PROFILE.json] [--structural [--deployment-origin ORIGIN [--deployment-preset native-browser-record@1]]]; use --diagnostic for plan and preview options"
+  let usage := IO.userError "usage: lowersplit <bundle.mjs|bundle.json> spec.json outdir [--require LEVEL] [--resolved-placement CHUNK] [--check-output] [--host-contract PROFILE.json] [--structural] [--deployment-origin ORIGIN [--deployment-preset native-browser-record@1]]; use --diagnostic for plan and preview options"
   let [bundle, spec, out] := args | throw usage
   if args.any (·.startsWith "--") then throw usage
   return (⟨bundle, spec, out⟩, { request, profile, intrinsics, structural, deploymentOrigin, checkOnly, nativeRecord, resolvedChunk })
@@ -180,7 +186,7 @@ private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work
   for (ast, i) in asts.zipIdx do
     if let some reason := entryPlacementProblem B S ast i then throw (IO.userError reason)
   let P ← planSplit B S timings
-  let declaration := if structural then none else declarations.bind fun groups =>
+  let declaration := if structural || deploymentOrigin.isSome then none else declarations.bind fun groups =>
     CoreJS.DeclarationArtifacts.prepare? program (CoreJS.DeclarationProgram.statements groups) B S P
   if let some prepared := declaration then
     let level := prepared.level
@@ -221,11 +227,7 @@ private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work
       let assumptions :=
         ["Retained source units use the same capability-closed opaque world in both layouts."] ++
         (if nativeRecord then [s!"{CoreJS.NativeRecord.preset}: Initializing the retained entry's metadata is unobservable except for a fresh null-prototype object with only native writable, enumerable, configurable url and resolve data properties. Its per-record resolver uses the unchanged entry URL and static resolution context."] else []) ++
-        used.map (·.assumption) ++
-        (deploymentOrigin.toList.flatMap fun origin => [
-          s!"The static deployment at {origin} overlays only the planned module paths.",
-          "The native ESM loader uses one module record per effective URL and resolves dynamic dependencies through the checked live cells."
-        ])
+        used.map (·.assumption) ++ deploymentAssumptions deploymentOrigin
       return ← emitVerdict request.label (.ok .normalCompletion) scope
         (profileFields profile ++ [("assumptions", toJson assumptions)])
     catch e => return ← emitVerdict request.label (.error e.toString) "linked-structural"
@@ -233,9 +235,11 @@ private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work
     unless layoutOk do throw (IO.userError "source placement or module linkage checks failed")
     let providers ← timePhase timings "provider_loading" fun _ => do
       loadProviders program bundlePath work
+    let deployment ← deploymentOrigin.mapM fun origin =>
+      timePhase timings "deployment_loading" fun _ => readDeployment program providers bundlePath work origin P
     let checked ← certifyOutput providers B P out work input checkOnly timings asts source fun files => do
       let decoded ← timePhase timings "linked_lowering" fun _ =>
-        IO.lazyPure fun _ => CoreJS.LinkedInput.decodePair program providers files P profile
+        IO.lazyPure fun _ => CoreJS.LinkedInput.decodePair program providers files P profile deployment
       match decoded with
       | .error reason => pure (.error ({ reason, reasonCode := some "linked_input" } : CertificationRefusal))
       | .ok (original, candidate) => do
@@ -246,7 +250,7 @@ private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work
               (CoreJS.LinkedBehavior.Certificate × Lean.NameMap Lean.ImportArtifacts) ←
             timePhase timings "certificate_preparation" fun _ => do
             let result ← IO.lazyPure fun _ =>
-              CoreJS.LinkedBehavior.certificate profile program providers files P original candidate
+              CoreJS.LinkedBehavior.certificate profile program providers files P original candidate deployment
             match result with
             | .error refusal =>
               pure (.error ({
@@ -268,7 +272,7 @@ private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work
             let used ← verifyExecution timings work cert dataArts
             pure (.ok used)
     match checked with
-    | .ok active => return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs" (profileVerdict profile active)
+    | .ok active => return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs" (profileVerdict profile active (deploymentAssumptions deploymentOrigin))
     | .error refusal => return ← emitRefusal request.label refusal "linked-programs"
   catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs"
 
