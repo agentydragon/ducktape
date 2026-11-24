@@ -31,7 +31,7 @@ private def linkedState (W : World) : State W :=
   let frame : Array Binding := #[⟨some .undef, true⟩]
   { initialState W 3 with cells := #[#[], frame, frame, frame] }
 
-private def units (swap : Bool) (returned callback moved : Func) : List (Nat × Stmt × Env) :=
+private def units (swap : Bool) (returned callback moved : Func) : List LinkedUnit :=
   let a := (1, callerStmt callback, consumerEnv swap)
   let b := (2, movedStmt moved, consumerEnv swap)
   (0, providerStmt returned, providerEnv) :: (if swap then [b, a] else [a, b])

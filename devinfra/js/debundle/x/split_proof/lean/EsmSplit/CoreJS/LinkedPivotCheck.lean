@@ -19,16 +19,16 @@ private theorem inRegion_owns {region env name} (h : inRegion region env name = 
 /-- A declaration can be the pivot if its initializer only allocates and its
 writes and currently read cells lie in its own region. A retained opaque
 closure declaration has the same property when its written cells are local. -/
-def localPivotOk (pivot : Nat × Stmt × Env) : Bool :=
-  let owns := inRegion (pivot.1 + 1) pivot.2.2
-  match pivot.2.1 with
+def localPivotOk (pivot : LinkedUnit) : Bool :=
+  let owns := inRegion (pivot.id + 1) pivot.env
+  match pivot.stmt with
   | .decl _ name e => e.allocOnly && owns name && e.readsNow.all owns
   | .opaque _ decls _ _ (.closures _) => decls.all (owns ·.1)
   | _ => false
 
-theorem localPivotOk_sound {W : World} {pivot : Nat × Stmt × Env} (ok : localPivotOk pivot = true)
+theorem localPivotOk_sound {W : World} {pivot : LinkedUnit} (ok : localPivotOk pivot = true)
     (fuel : Nat) :
-    Local (pivot.1 + 1) (fun _ => False) (execStmt fuel pivot.2.2 pivot.2.1 : M W Flow) := by
+    Local (pivot.id + 1) (fun _ => False) (execStmt fuel pivot.env pivot.stmt : M W Flow) := by
   obtain ⟨id, stmt, env⟩ := pivot
   cases stmt <;> simp only [localPivotOk] at ok
   case decl kind name initial =>
@@ -49,18 +49,18 @@ theorem localPivotOk_sound {W : World} {pivot : Nat × Stmt × Env} (ok : localP
 
 abbrev Outside (q : Nat) := Unprotected q (fun _ => False)
 
-def IsolatedUnit (q : Nat) (u : Nat × Stmt × Env) : Prop :=
-  u.1 + 1 ≠ q ∧ ∀ node ∈ (u.2.2.capture u.2.1.free).nodes, Outside q node
+def IsolatedUnit (q : Nat) (u : LinkedUnit) : Prop :=
+  u.id + 1 ≠ q ∧ ∀ node ∈ (u.env.capture u.stmt.free).nodes, Outside q node
 
-abbrev PivotLocal (w : World) (n : Nat) (u : Nat × Stmt × Env) :=
-  Local (u.1 + 1) (fun _ => False) (execStmt n u.2.2 u.2.1 : M w Flow)
+abbrev PivotLocal (w : World) (n : Nat) (u : LinkedUnit) :=
+  Local (u.id + 1) (fun _ => False) (execStmt n u.env u.stmt : M w Flow)
 
-abbrev PivotLocalFor (intrinsics : List StableIntrinsic) (u : Nat × Stmt × Env) :=
+abbrev PivotLocalFor (intrinsics : List StableIntrinsic) (u : LinkedUnit) :=
   ∀ w, StableIntrinsic.Worlds intrinsics w → ∀ n, PivotLocal w n u
 
 /-- Existing local evaluations need no host observations. An opted-in
 descriptor can also prove an actual Number read independent of host state. -/
-def checkedLocal? (intrinsics : List StableIntrinsic) (pivot : Nat × Stmt × Env) :
+def checkedLocal? (intrinsics : List StableIntrinsic) (pivot : LinkedUnit) :
     Option (PLift (PivotLocalFor intrinsics pivot)) := do
   if h : localPivotOk pivot = true then return ⟨fun _ _ => localPivotOk_sound h⟩
   match hp : pivot with
@@ -95,15 +95,15 @@ private theorem outsideRegion_iff (r : Nat) (node : HeapNode) :
 A unit never crossed by an allocating pivot need not resolve its free names.
 The original unit (including its full scope) still runs in the certificate. -/
 structure PreparedUnit where
-  unit : Nat × Stmt × Env
+  unit : LinkedUnit
   nodes : Thunk (List HeapNode)
-  exactNodes : nodes.get = (unit.2.2.capture unit.2.1.free).nodes
+  exactNodes : nodes.get = (unit.env.capture unit.stmt.free).nodes
 
-def PreparedUnit.ofUnit (u : Nat × Stmt × Env) : PreparedUnit :=
-  ⟨u, Thunk.mk (fun _ => (u.2.2.capture u.2.1.free).nodes), rfl⟩
+def PreparedUnit.ofUnit (u : LinkedUnit) : PreparedUnit :=
+  ⟨u, Thunk.mk (fun _ => (u.env.capture u.stmt.free).nodes), rfl⟩
 
 private def unitEnvOk (r : Nat) (u : PreparedUnit) : Bool :=
-  u.unit.1 + 1 != r && u.nodes.get.all (outsideRegion r)
+  u.unit.id + 1 != r && u.nodes.get.all (outsideRegion r)
 
 private theorem isolatedUnits_of_check {r} {units : List PreparedUnit}
     (ok : units.all (unitEnvOk r) = true) : ∀ u ∈ units.map PreparedUnit.unit, IsolatedUnit r u := by
@@ -126,20 +126,20 @@ private def isModuleReceiver : Val → Bool
 private theorem isModuleReceiver_eq {v : Val} (h : isModuleReceiver v = true) : v = .undef := by
   cases v <;> first | rfl | contradiction
 
-private def sameUnit? (u v : Nat × Stmt × Env) :
+private def sameUnit? (u v : LinkedUnit) :
     Option (PLift (SameUnit u v)) := do
-  let tag ← if h : u.1 = v.1 then some (PLift.up h) else none
-  let st ← SyntaxMatch.stmtEq u.2.1 v.2.1
-  let receiver ← if h : isModuleReceiver u.2.2.this && isModuleReceiver v.2.2.this then
-    have both : isModuleReceiver u.2.2.this = true ∧ isModuleReceiver v.2.2.this = true := by
+  let tag ← if h : u.id = v.id then some (PLift.up h) else none
+  let st ← SyntaxMatch.stmtEq u.stmt v.stmt
+  let receiver ← if h : isModuleReceiver u.env.this && isModuleReceiver v.env.this then
+    have both : isModuleReceiver u.env.this = true ∧ isModuleReceiver v.env.this = true := by
       simpa only [Bool.and_eq_true] using h
     some (PLift.up ((isModuleReceiver_eq both.1).trans (isModuleReceiver_eq both.2).symm))
     else none
-  if names : u.2.1.free.all (fun x => u.2.2.vars.lookup x == v.2.2.vars.lookup x) then
+  if names : u.stmt.free.all (fun x => u.env.vars.lookup x == v.env.vars.lookup x) then
     return ⟨tag.down, st.down, ⟨receiver.down, fun x hx => beq_iff_eq.1 (List.all_eq_true.mp names x hx)⟩⟩
   else none
 
-def sameUnits? : (u v : List (Nat × Stmt × Env)) → Option (PLift (SameUnits u v))
+def sameUnits? : (u v : List LinkedUnit) → Option (PLift (SameUnits u v))
   | [], [] => some ⟨.nil⟩
   | x :: xs, y :: ys => do
     let head ← sameUnit? x y
@@ -150,14 +150,14 @@ def sameUnits? : (u v : List (Nat × Stmt × Env)) → Option (PLift (SameUnits 
 /-- The frame checks for moving a unit ahead of a block in the current
 schedule. The prefix must also preserve the frame from the initial linked state. -/
 structure CheckedPivot {w : World} (ready : State w)
-    (pre crossed : List (Nat × Stmt × Env)) (pivot : Nat × Stmt × Env) : Prop where
-  access : Access [] (Unprotected (pivot.1 + 1) (fun _ => False)) ready
-  scope : ∀ u ∈ pre ++ crossed, IsolatedUnit (pivot.1 + 1) u
+    (pre crossed : List LinkedUnit) (pivot : LinkedUnit) : Prop where
+  access : Access [] (Unprotected (pivot.id + 1) (fun _ => False)) ready
+  scope : ∀ u ∈ pre ++ crossed, IsolatedUnit (pivot.id + 1) u
 
 def checkPivot {w : World} (ready : State w)
-    (pre crossed : List PreparedUnit) (pivot : Nat × Stmt × Env) :
+    (pre crossed : List PreparedUnit) (pivot : LinkedUnit) :
     Except String (PLift (CheckedPivot ready (pre.map (·.unit)) (crossed.map (·.unit)) pivot)) := do
-  let ordinal := pivot.1
+  let ordinal := pivot.id
   let r := ordinal + 1
   if accessible : accessOk ready [] (outsideRegion r) = true then
     if unchanged : (pre ++ crossed).all (unitEnvOk r) = true then
@@ -167,7 +167,7 @@ def checkPivot {w : World} (ready : State w)
       }⟩
     else
       let offender := (pre ++ crossed).find? (fun u => !(unitEnvOk r u))
-      throw s!"unit {(offender.map (·.unit.1)).getD ordinal} has access to the moved region of unit {ordinal}"
+      throw s!"unit {(offender.map (·.unit.id)).getD ordinal} has access to the moved region of unit {ordinal}"
   else throw s!"the linked state already exposes the region of unit {ordinal}"
 
 /-- One candidate per object row with a direct edge into the pivot. The

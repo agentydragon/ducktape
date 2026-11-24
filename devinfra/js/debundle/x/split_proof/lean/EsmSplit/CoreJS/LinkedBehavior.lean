@@ -118,10 +118,10 @@ theorem run_after_link {p : Program} {w : World} (fuel : Nat) (checked : Checked
   rw [M.bind_apply, checked.equation]
 
 /-- Keep the unit identity, complete statement, receiver and bindings the statement uses. -/
-def captureUnits (us : List (Nat × Stmt × Env)) : List (Nat × Stmt × Env) :=
+def captureUnits (us : List LinkedUnit) : List LinkedUnit :=
   us.map fun (id, stmt, env) => (id, stmt, env.capture stmt.free)
 
-theorem runUnits_capture (fuel : Nat) (us : List (Nat × Stmt × Env)) :
+theorem runUnits_capture (fuel : Nat) (us : List LinkedUnit) :
     (runUnits fuel (captureUnits us) : M w Unit) = runUnits fuel us := by
   induction us with
   | nil => rfl

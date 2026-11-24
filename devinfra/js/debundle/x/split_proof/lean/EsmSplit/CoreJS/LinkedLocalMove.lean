@@ -13,20 +13,19 @@ theorem literalAllocs (xs : List (String × String)) : allocOnlyProps (xs.map li
   induction xs with
   | nil => rfl
   | cons x xs ih => simpa only [List.map_cons, allocOnlyProps, literalField, Expr.allocOnly, Bool.true_and] using ih
-private abbrev LinkedUnit := Nat × Stmt × Env
 
 /-- The declaration initializes a cell in its own region and cannot read a cell
 in the other unit's region, even through another local name for the same cell. -/
 private def localAway (u : LinkedUnit) (other : Nat) : Bool :=
-  match u.2.1 with
+  match u.stmt with
   | .decl _ x e => e.allocOnly &&
-      (u.2.2.vars.lookup x).all (fun a => a.region == u.1 + 1) &&
-      e.readsNow.all (fun y => (u.2.2.vars.lookup y).all (fun a => a.region != other + 1))
+      (u.env.vars.lookup x).all (fun a => a.region == u.id + 1) &&
+      e.readsNow.all (fun y => (u.env.vars.lookup y).all (fun a => a.region != other + 1))
   | _ => false
 
 private theorem localAway_sound {u : LinkedUnit} {other : Nat} (ok : localAway u other = true)
-    (fuel : Nat) : Local (u.1 + 1) (fun a => a.region ≠ other + 1)
-      (execStmt fuel u.2.2 u.2.1 : M w Flow) := by
+    (fuel : Nat) : Local (u.id + 1) (fun a => a.region ≠ other + 1)
+      (execStmt fuel u.env u.stmt : M w Flow) := by
   obtain ⟨id, stmt, env⟩ := u
   cases stmt <;> simp only [localAway] at ok
   case decl kind name initial =>
@@ -39,7 +38,7 @@ private theorem localAway_sound {u : LinkedUnit} {other : Nat} (ok : localAway u
   all_goals contradiction
 
 private def commutes (a b : LinkedUnit) : Bool :=
-  a.2.1.inert || b.2.1.inert || (a.1 != b.1 && localAway a b.1 && localAway b a.1)
+  a.stmt.inert || b.stmt.inert || (a.id != b.id && localAway a b.id && localAway b a.id)
 
 private theorem commutes_sound {a b : LinkedUnit} (ok : commutes a b = true) (fuel : Nat) :
     Commute (unitStep fuel a : M w Flow) (unitStep fuel b) ∧

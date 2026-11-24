@@ -888,9 +888,9 @@ theorem img_comm {α β : Type} {A : M W α} {B : M W β} (hab : Commute A B) (h
     Img B (Img A X) = Img A (Img B X) :=
   img_comm_on (P := fun _ => True) (fun _ _ => trivial) (fun s _ => hab s) (fun s _ => hba s)
 
-def unitStep (n : Nat) (u : Nat × Stmt × Env) : M W Flow := runUnit n u.2.2 u.1 u.2.1
+def unitStep (n : Nat) (u : LinkedUnit) : M W Flow := runUnit n u.env u.id u.stmt
 
-theorem runUnits_img (n : Nat) : ∀ (us : List (Nat × Stmt × Env)) (X : State W → Prop) (s' : State W),
+theorem runUnits_img (n : Nat) : ∀ (us : List LinkedUnit) (X : State W → Prop) (s' : State W),
     (∃ s, X s ∧ runUnits n us s = .ok () s') ↔ us.foldl (fun X u => Img (unitStep n u) X) X s'
   | [], X, s' => by
     simp only [List.foldl]
@@ -913,7 +913,7 @@ theorem runUnits_img (n : Nat) : ∀ (us : List (Nat × Stmt × Env)) (X : State
       exact h
 
 /-- A unit can cross a block after a prefix establishes the condition for each successive swap. -/
-theorem runUnits_pivot (n : Nat) (pre crossed suffix : List (Nat × Stmt × Env)) (pivot : Nat × Stmt × Env)
+theorem runUnits_pivot (n : Nat) (pre crossed suffix : List LinkedUnit) (pivot : LinkedUnit)
     (P : State W → Prop) (s s' : State W)
     (hprefix : ∀ t, runUnits n pre s = .ok () t → P t)
     (hkeep : ∀ u ∈ crossed, ∀ t t' f, P t → unitStep n u t = .ok f t' → P t')
@@ -921,8 +921,8 @@ theorem runUnits_pivot (n : Nat) (pre crossed suffix : List (Nat × Stmt × Env)
       CommuteOn P (unitStep n u) (unitStep n pivot)) :
     runUnits n (pre ++ [pivot] ++ crossed ++ suffix) s = .ok () s' ↔
       runUnits n (pre ++ crossed ++ [pivot] ++ suffix) s = .ok () s' := by
-  let step (X : State W → Prop) (u : Nat × Stmt × Env) := Img (unitStep n u) X
-  have hfold : ∀ (us : List (Nat × Stmt × Env)) (X : State W → Prop),
+  let step (X : State W → Prop) (u : LinkedUnit) := Img (unitStep n u) X
+  have hfold : ∀ (us : List LinkedUnit) (X : State W → Prop),
       (∀ t, X t → P t) →
       (∀ u ∈ us, ∀ t t' f, P t → unitStep n u t = .ok f t' → P t') →
       (∀ u ∈ us, CommuteOn P (unitStep n pivot) (unitStep n u) ∧
@@ -940,7 +940,7 @@ theorem runUnits_pivot (n : Nat) (pre crossed suffix : List (Nat × Stmt × Env)
         hc v (List.mem_cons_of_mem u hv)
       rintro t' ⟨t, f, ht, hrun⟩
       exact hk u List.mem_cons_self t t' f (hX t ht) hrun
-  have hrun (us : List (Nat × Stmt × Env)) (t : State W) :
+  have hrun (us : List LinkedUnit) (t : State W) :
       runUnits n us s = .ok () t ↔ us.foldl step (· = s) t := by
     rw [← runUnits_img]
     exact ⟨fun h => ⟨s, rfl, h⟩, fun ⟨_, rfl, h⟩ => h⟩
@@ -949,7 +949,7 @@ theorem runUnits_pivot (n : Nat) (pre crossed suffix : List (Nat × Stmt × Env)
   rw [hfold crossed _ (fun t ht => hprefix t ((hrun pre t).2 ht)) hkeep hcomm]
 
 /-- The unit of the bundle with identity `j`. -/
-def bundleUnit (ss : List Stmt) (frames : List (Nat × List (Name × Addr))) (j : Nat) : Nat × Stmt × Env :=
+def bundleUnit (ss : List Stmt) (frames : List (Nat × List (Name × Addr))) (j : Nat) : LinkedUnit :=
   (j, (ss[j]?).getD .brk, bundleEnv ss frames)
 
 /-- A proposed move relation is sound when each allowed pair commutes in both directions in every linked scope.
@@ -998,7 +998,7 @@ theorem mayMove_sound {ss : List Stmt} {B : EsmSplit.Bundle}
 
 /-- Reordering needs semantic commutation, independently of the procedure that certifies allowed pairs.
 As with `Commute`, the conclusion concerns successful executions; it does not identify abrupt outcomes. -/
-theorem reorder_units_of_commute (n : Nat) (units : Nat → Nat × Stmt × Env) (allows : Nat → Nat → Bool)
+theorem reorder_units_of_commute (n : Nat) (units : Nat → LinkedUnit) (allows : Nat → Nat → Bool)
     (hcomm : ∀ i j, i ≠ j → allows i j = true →
       Commute (unitStep n (units i) : M W Flow) (unitStep n (units j)) ∧
       Commute (unitStep n (units j) : M W Flow) (unitStep n (units i)))
@@ -1087,7 +1087,7 @@ theorem moves_preserve_run_of_order {W : World} {ss : List Stmt} {B : EsmSplit.B
   have hsorted0 : (unitsOf [(bundleModule ss, bundleEnv ss frames)]).Pairwise fun a b => a.1 ≤ b.1 := by
     have h := zip_range_sorted ss
     rw [← hkeys0] at h
-    exact (List.pairwise_map (R := fun a b => a.1 ≤ b.1) (f := fun u : Nat × Stmt × Env => (u.1, u.2.1))).1 h
+    exact (List.pairwise_map (R := fun a b => a.1 ≤ b.1) (f := fun u : LinkedUnit => (u.1, u.2.1))).1 h
   have henv0 : ∀ u ∈ unitsOf [(bundleModule ss, bundleEnv ss frames)], u.2.2 = bundleEnv ss frames := by
     intro u hu
     obtain ⟨p, hp, _, he⟩ := mem_unitsOf hu
@@ -1098,7 +1098,7 @@ theorem moves_preserve_run_of_order {W : World} {ss : List Stmt} {B : EsmSplit.B
   have hinit : SameUnits (unitsOf [(bundleModule ss, bundleEnv ss frames)])
       ((unitsOf L').mergeSort fun a b => decide (a.1 ≤ b.1)) := by
     refine sameUnits_of ?_ fun u hu u' hu' _ h2 => ?_
-    · rw [hkeys0, List.map_mergeSort (f := fun u : Nat × Stmt × Env => (u.1, u.2.1))
+    · rw [hkeys0, List.map_mergeSort (f := fun u : LinkedUnit => (u.1, u.2.1))
         (s := fun a b : Nat × Stmt => decide (a.1 ≤ b.1)) (fun _ _ _ _ => rfl), hkeys,
         mergeSort_numbered ss hperm]
     · rw [henv0 u hu, h2]
