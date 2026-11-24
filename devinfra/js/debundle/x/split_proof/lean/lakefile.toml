@@ -4,6 +4,9 @@ defaultTargets = ["EsmSplit", "render"]
 [[lean_lib]]
 name = "EsmSplit"
 
+[[lean_lib]]
+name = "FixtureRender"
+
 [[lean_exe]]
 name = "render"
 root = "Main"
