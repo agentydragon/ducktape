@@ -162,6 +162,15 @@ theorem classParents_le {call call' : Call W} (h : Call.le call call') (base : V
     | exact getProp_le h _ _
     | mono_step
 
+private theorem evalStaticInitializers_le {eval eval' : Expr → M W Val} (h : ∀ e, eval e ⊑ eval' e)
+    (target : Addr) (plan : List (Option PropertyKey × Expr)) :
+    evalStaticInitializers eval target plan ⊑ evalStaticInitializers eval' target plan := by
+  induction plan with
+  | nil => exact M.le_refl _
+  | cons step rest ih =>
+    rcases step with ⟨key, init⟩
+    exact M.le_bind (h init) fun _ => M.le_bind (M.le_refl _) fun _ => ih
+
 /-- Every function of the interpreter with the bound `n`, against the same with the bound `m`. -/
 structure Mono (W : World) (n m : Nat) : Prop where
   expr : ∀ env e, (evalExpr n env e : M W _) ⊑ evalExpr m env e
@@ -200,6 +209,7 @@ macro_rules
     | with_reducible exact attempt_le (perform_le ($h).callLe (fun f args => ($h).construct f f args) _ _ _)
     | with_reducible exact copySpread_le ($h).callLe _ _
     | with_reducible exact classParents_le ($h).callLe _
+    | with_reducible exact evalStaticInitializers_le (fun e => ($h).expr _ e) _ _
     | with_reducible exact getProp_le ($h).callLe _ _
     | with_reducible exact getSuperProp_le ($h).callLe _ _ _
     | with_reducible exact setProp_le ($h).callLe _ _ _

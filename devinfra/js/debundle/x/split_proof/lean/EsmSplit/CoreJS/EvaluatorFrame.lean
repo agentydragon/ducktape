@@ -115,7 +115,7 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
           (fun f es sf sa => prev.construct cells f f es sf sf sa) (make cells env safe)
           regexpRoot (allocate cells) (createObject cells env safe)
         · exact evalArray_reachFrame_step env arrayRoot (fun es => prev.args cells env es safe) (allocate cells)
-        · exact evalClass_reachFrame_step away object cell objectRoot functionRoot env safe (prev.members cells) (prev.fields cells)
+        · exact evalClass_reachFrame_step away object cell objectRoot functionRoot env safe (prev.members cells) (prev.expr cells)
         · exact evalDerived_reachFrame_step away object cell objectRoot functionRoot env safe (prev.call cells)
             (prev.expr cells) (prev.members cells)
       · intro cells env es safe

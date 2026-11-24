@@ -198,6 +198,9 @@ partial def funcEq : MatchEq Func
   | _, _ => none
 
 private partial def classMemberEq : MatchEq ClassMember
+  | .staticBlock body, .staticBlock body' => do
+    let ⟨eq⟩ ← funcEq body body'
+    return ⟨eq ▸ rfl⟩
   | .field s k v, .field s' k' v' => do
     let ⟨st⟩ ← scalarEq s s'
     let ⟨key⟩ ← exprEq k k'

@@ -215,7 +215,8 @@ def derivedScope (before : List Stmt) (body : Func) (captured : Bool) : Func :=
 /-- Build the class after evaluating and checking its heritage. -/
 def finishDerived (runMembers : Env → Addr → Addr → List ClassMember → M W (List (Bool × PropertyKey)))
     (env : Env) (name : Name) (self : Bool) (members : List ClassMember) (parents : Addr × Option Addr)
-    (ctor : Option (List Stmt × Option (List Expr) × Func) := none) : M W Val := do
+    (ctor : Option (List Stmt × Option (List Expr) × Func) := none)
+    (initStatic : Addr → List (Bool × PropertyKey) → M W Unit := fun _ _ => pure ()) : M W Val := do
   let proto ← alloc { proto := parents.2, props := [] }
   let ctorEnv := { env with home := some proto }
   let (code, arity) := derivedCtorCode ctorEnv ctor []
@@ -227,10 +228,11 @@ def finishDerived (runMembers : Env → Addr → Addr → List ClassMember → M
   let keys ← runMembers env proto c members
   let fields := (keys.zip (fieldInits members)).filterMap fun ((static, k), init) =>
     if static then none else some (k, init)
-  unless fields.isEmpty do
-    modifyObj c fun o => { o with code := some (derivedCtorCode ctorEnv ctor fields).1 }
-  initSelf env self name (.obj c)
-  pure (.obj c)
+  (if fields.isEmpty then pure () else
+    modifyObj c fun o => { o with code := some (derivedCtorCode ctorEnv ctor fields).1 }) >>= fun _ => do
+    initSelf env self name (.obj c)
+    initStatic c keys
+    pure (.obj c)
 
 /-- Check and invoke the superclass selected before evaluating the super arguments.
 The caller retains the original new target through every superclass dispatch. -/
@@ -279,6 +281,25 @@ def constructorReceiver (prototype : Val) : M W Addr :=
   | .error (.native ..) _ => unknown "native Error is used as a constructor prototype"
   | _ => alloc { proto := some objectProto, props := [] }
 
+/-- Pair each field with its evaluated key. Blocks and fields share one source-order
+sequence. A block runs as a private arrow to give it its own var scope and inherit
+the class receiver and home object. No field key is consumed for a block. -/
+def staticInitializers : List ClassMember → List (Bool × PropertyKey) → List (Option PropertyKey × Expr)
+  | [], _ => []
+  | .field static _ init :: ms, (_, key) :: ks =>
+      (if static then [(some key, init)] else []) ++ staticInitializers ms ks
+  | .field .. :: ms, [] => staticInitializers ms []
+  | .staticBlock body :: ms, keys => (none, .call (.func body) []) :: staticInitializers ms keys
+  | _ :: ms, keys => staticInitializers ms keys
+
+def evalStaticInitializers (eval : Expr → M W Val) (target : Addr) :
+    List (Option PropertyKey × Expr) → M W Unit
+  | [] => pure ()
+  | (key, init) :: rest =>
+    eval init >>= fun value =>
+      (match key with | some key => createData target key value | none => pure ()) >>= fun _ =>
+        evalStaticInitializers eval target rest
+
 mutual
 
 def evalExpr : Nat → Env → Expr → M W Val
@@ -319,15 +340,16 @@ def evalExpr : Nat → Env → Expr → M W Val
       let perInstance := fields.filterMap fun ((static, k), init) => if static then none else some (k, init)
       modifyObj c fun o => { o with code := some (.closure ctor closed perInstance) }
       initSelf env self name (.obj c)
-      evalFields n { env with this := .obj c, home := some c } c
-        (fields.filterMap fun ((static, k), init) => if static then some (k, init) else none)
+      evalStaticInitializers (evalExpr n { env with this := .obj c, home := some c }) c
+        (staticInitializers members keys)
       pure (.obj c)
     | .derived name self parent members ctor => do
-      if hasStaticField members then unknown "static fields on derived classes" else do
       let env ← selfScope env self name
       let base ← evalExpr n env parent
       let parents ← classParents (callFn n) base
-      finishDerived (evalMembers n) env name self members parents ctor
+      finishDerived (evalMembers n) env name self members parents ctor fun c keys =>
+        evalStaticInitializers (evalExpr n { env with this := .obj c, home := some c }) c
+          (staticInitializers members keys)
     | .get o k => do
       let base ← evalExpr n env o
       let key ← evalExpr n env k
@@ -487,6 +509,7 @@ def evalMembers : Nat → Env → Addr → Addr → List ClassMember → M W (Li
         defineOwn (home static) key { set := some (← makeFunc { env with home := some (home static) } f), enumerable := some false, configurable := some true }
         pure none
       | .field static k _ => do pure (some (static, ← toKey (← evalExpr n env k)))
+      | .staticBlock _ => pure none
     pure (field.toList ++ (← evalMembers n env proto c ms))
 
 /-- Fields, in order, on the object at `a`: each initializer runs in `env`, whose `this` is that object. -/

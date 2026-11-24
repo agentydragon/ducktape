@@ -73,6 +73,10 @@ home object and receiver of its enclosing scope. Async bodies can retain these
 references, but replay stops if it reaches an async invocation. Super-property
 writes and deletion remain outside the executable model.
 
+Class static blocks run in their own scope with the constructor as the
+receiver. The checker evaluates class member keys before it initializes
+fixed-name static fields and runs blocks in their source order.
+
 The command prints one JSON verdict. A successful split reports `status: "certified"` after Lean certifies the output module ASTs and the printer writes them to the requested directory. The default `normal-completion` request means that, for each modeled world and successful final state, the bundle reaches that state exactly when the split does. It does not say that either program completes normally; in the closed-declaration case, both may throw. The linked-program proof additionally establishes that both programs initialize normally. The checker reports the strongest available guarantee, so a default request may report `all-outcomes` for a supported order-preserving split. Pass `--require all-outcomes` to insist on that stronger guarantee. A rejected request exits nonzero with `status: "rejected"`, a null guarantee and a reason.
 
 To move an initializer such as `Math.PI / 12`, pass

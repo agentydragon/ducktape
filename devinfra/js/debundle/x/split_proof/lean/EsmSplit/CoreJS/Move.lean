@@ -390,8 +390,10 @@ theorem local_evalMembers_plain (n : Nat) (env : Env) (proto c : Addr) (ms : Lis
     cases ms with
     | nil => exact local_pure _
     | cons m ms =>
-      cases m <;> rename_i static k f <;> cases k <;>
-        simp only [plainClassMembers, Bool.false_eq_true] at h
+      cases m <;> try simp only [plainClassMembers, Bool.false_eq_true] at h
+      all_goals
+        rename_i static k f
+        cases k <;> simp only [plainClassMembers, Bool.false_eq_true] at h
       all_goals
         unfold evalMembers
         refine (local_evalExpr_str n env _).bind' fun key => ?_
@@ -476,13 +478,8 @@ theorem allocOnly_local (r : Nat) (R : Addr → Prop) (n : Nat) :
             obtain ⟨cell, hl, hr⟩ := selfScope_lookup h1
             exact local_initVar (fun cell' hl' => by rw [hl] at hl'; cases hl'; exact hr.trans hr1) _
           · exact local_pure _
-        · rw [plainClassMembers_fieldInits he]
-          have hz : keys.zip ([] : List Expr) = [] := by cases keys <;> rfl
-          rw [hz]
-          simp only [List.filterMap_nil]
-          cases n with
-          | zero => exact local_outOfFuel.bind' fun _ => local_pure _
-          | succ n => exact (local_pure _).bind' fun _ => local_pure _
+        · rw [staticInitializers_plain he]
+          exact (local_pure _).bind' fun _ => local_pure _
       case arr elems =>
         exact (ihA env elems he (by simpa [Expr.readsNow] using hw)).bind' fun _ =>
           (local_alloc _).bind' fun _ => local_pure _

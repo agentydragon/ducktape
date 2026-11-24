@@ -167,6 +167,7 @@ inductive ClassMember where
   | setter (static : Bool) (k : Expr) (f : Func)
   /-- A field: `init` runs with `this` the instance, or the class for a static one. -/
   | field (static : Bool) (k : Expr) (init : Expr)
+  | staticBlock (body : Func)
 
 /-- `self`: a named function expression, whose body sees its own name. -/
 inductive Func where
@@ -319,10 +320,7 @@ def fieldInits : List ClassMember → List Expr
   | .field _ _ init :: ms => init :: fieldInits ms
   | _ :: ms => fieldInits ms
 
-def hasStaticField : List ClassMember → Bool
-  | [] => false
-  | .field true _ _ :: _ => true
-  | _ :: ms => hasStaticField ms
+
 
 /-! ## Free names: the names of the scope around it that a piece of code can mean
 
@@ -386,6 +384,7 @@ def PropDef.free : PropDef → List Name
 def ClassMember.free : ClassMember → List Name
   | .method _ k f | .getter _ k f | .setter _ k f => k.free ++ f.free
   | .field _ k init => k.free ++ init.free
+  | .staticBlock body => body.free
 
 def freeSuperArgs : Option (List Expr) → List Name
   | some args => freeExprs args

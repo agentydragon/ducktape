@@ -347,8 +347,10 @@ theorem evalMembers_plain_keeps (n : Nat) (env : Env) (proto c : Addr) (ms : Lis
     cases ms with
     | nil => exact (inert_pure _).keeps hb
     | cons m ms =>
-      cases m <;> rename_i static k f <;> cases k <;>
-        simp only [plainClassMembers, Bool.false_eq_true] at h
+      cases m <;> try simp only [plainClassMembers, Bool.false_eq_true] at h
+      all_goals
+        rename_i static k f
+        cases k <;> simp only [plainClassMembers, Bool.false_eq_true] at h
       all_goals
         unfold evalMembers
         refine keeps_bind ((evalExpr_str_inert n env _).keeps hb) fun key s1 _ hb1 => ?_
@@ -359,10 +361,21 @@ theorem evalMembers_plain_keeps (n : Nat) (env : Env) (proto c : Addr) (ms : Lis
         · refine keeps_bind ((inert_pure _).keeps hb4) fun field s5 _ hb5 => ?_
           exact keeps_bind (ih ms h hb5) fun _ s6 _ hb6 => (inert_pure _).keeps hb6
 
+theorem staticInitializers_plain {members : List ClassMember} (h : plainClassMembers members = true)
+    (keys : List (Bool × PropertyKey)) : staticInitializers members keys = [] := by
+  induction members with
+  | nil => rfl
+  | cons m ms ih =>
+    cases m <;> try simp only [plainClassMembers, Bool.false_eq_true] at h
+    all_goals
+      rename_i static k f
+      cases k <;> simp only [plainClassMembers, Bool.false_eq_true] at h
+      exact ih h
+
 /-- With fixed prototype parents, an anonymous class with plain members preserves the existing state. -/
 theorem finishDerived_plain_keeps (n : Nat) (env : Env) (name : Name) (members : List ClassMember)
     (parents : Addr × Option Addr) (h : plainClassMembers members = true) {base s : State W} (hb : Extends base s) :
-    (finishDerived (evalMembers n) env name false members parents none s).Keeps base := by
+    ((finishDerived (evalMembers n) env name false members parents none) s).Keeps base := by
   unfold finishDerived
   simp only [plainClassMembers_fieldInits h, List.zip_nil_right, List.filterMap_nil, List.isEmpty_nil]
   refine keeps_bind (alloc_keeps _ hb) fun proto s1 h1 hb1 => ?_
@@ -451,13 +464,8 @@ theorem allocOnly_keeps (n : Nat) :
         refine keeps_bind (evalMembers_plain_keeps n env1 proto c members he hb4 hp hc) fun keys s5 _ hb5 => ?_
         refine keeps_bind (modifyObj_keeps c _ hb5 hc) fun _ s6 _ hb6 => ?_
         refine keeps_bind (initSelf_keeps _ h1 hb hb6) fun _ s7 _ hb7 => ?_
-        rw [plainClassMembers_fieldInits he]
-        have hz : keys.zip ([] : List Expr) = [] := by cases keys <;> rfl
-        rw [hz]
-        simp only [List.filterMap_nil]
-        cases n with
-        | zero => unfold evalFields; trivial
-        | succ n => exact keeps_bind ((inert_pure _).keeps hb7) fun _ s8 _ hb8 => (inert_pure _).keeps hb8
+        rw [staticInitializers_plain he]
+        exact keeps_bind ((inert_pure _).keeps hb7) fun _ s8 _ hb8 => (inert_pure _).keeps hb8
       case arr elems =>
         refine keeps_bind (ihA env elems base s he hb) fun vs s1 _ hb1 => ?_
         refine keeps_bind (alloc_keeps _ hb1) fun a s2 _ hb2 => ?_

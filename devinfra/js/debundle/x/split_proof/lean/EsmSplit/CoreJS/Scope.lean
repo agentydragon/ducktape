@@ -397,9 +397,46 @@ theorem fieldInits_free : ∀ (ms : List ClassMember), ∀ init ∈ fieldInits m
       rcases List.mem_cons.1 hinit with rfl | hinit
       · exact List.mem_append_left _ (by simp [ClassMember.free, hx])
       · exact List.mem_append_right _ (fieldInits_free ms init hinit x hx)
-    | method | getter | setter =>
+    | method | getter | setter | staticBlock =>
       unfold fieldInits at hinit
       exact List.mem_append_right _ (fieldInits_free ms init hinit x hx)
+
+private theorem staticInitializers_free (ms : List ClassMember) (keys : List (Bool × PropertyKey))
+    (step : Option PropertyKey × Expr) (hstep : step ∈ staticInitializers ms keys) :
+    ∀ x ∈ step.2.free, x ∈ freeMembers ms := by
+  induction ms generalizing keys with
+  | nil => simp [staticInitializers] at hstep
+  | cons m ms ih =>
+    intro x hx
+    have tail (k : List (Bool × PropertyKey)) (h : step ∈ staticInitializers ms k) :=
+      List.mem_append_right m.free (ih k h x hx)
+    change x ∈ m.free ++ freeMembers ms
+    cases m with
+    | method | getter | setter => exact tail keys hstep
+    | staticBlock f =>
+      rcases List.mem_cons.mp hstep with rfl | h
+      · exact List.mem_append_left _ (by simpa [ClassMember.free, Expr.free, freeExprs] using hx)
+      · exact tail keys h
+    | field static key init =>
+      cases keys with
+      | nil => exact tail [] hstep
+      | cons k ks =>
+        rcases k with ⟨_, name⟩
+        cases static
+        · exact tail ks hstep
+        · rcases List.mem_cons.mp hstep with rfl | h
+          · exact List.mem_append_left _ (List.mem_append_right key.free hx)
+          · exact tail ks h
+
+private theorem evalStaticInitializers_eq {eval eval' : Expr → M W Val} (target : Addr)
+    (plan : List (Option PropertyKey × Expr)) (h : ∀ step ∈ plan, eval step.2 = eval' step.2) :
+    evalStaticInitializers eval target plan = evalStaticInitializers eval' target plan := by
+  induction plan with
+  | nil => rfl
+  | cons step steps ih =>
+    rcases step with ⟨key, init⟩
+    unfold evalStaticInitializers
+    rw [h _ List.mem_cons_self, ih (fun step hstep => h step (List.mem_cons_of_mem _ hstep))]
 
 /-- `typeof` of a name: a name that does not resolve gives "undefined". -/
 theorem evalExpr_typeof_var (n : Nat) (env : Env) (x : Name) :
@@ -443,12 +480,10 @@ theorem Same.cls_succ (env env' : Env) (name : String) (self : Bool) (ctor : Fun
     refine M.bind_congr (ih.members _ _ _ _ _ (h2.mono fun x hx => List.mem_append_right _ hx)) fun keys => ?_
     refine M.bind_congr rfl fun _ => M.bind_congr ?_ fun _ => M.bind_congr ?_ fun _ => rfl
     · exact initSelf_agree self (.obj c) fun hs => h1.vars name (by simp [hs])
-    · refine ih.fields _ _ _ _ (((h2.withThis (.obj c)).withHome (some c)).mono fun x hx => ?_)
-      obtain ⟨⟨k, init⟩, hmem, hx⟩ := List.mem_flatMap.1 hx
-      obtain ⟨⟨⟨static, k'⟩, init'⟩, hzip, hsome⟩ := List.mem_filterMap.1 hmem
-      cases static <;> simp at hsome
-      obtain ⟨rfl, rfl⟩ := hsome
-      exact List.mem_append_right _ (fieldInits_free members _ (List.of_mem_zip hzip).2 x hx)
+    · apply evalStaticInitializers_eq
+      intro step hstep
+      exact ih.expr _ _ _ (((h2.withThis (.obj c)).withHome (some c)).mono fun x hx =>
+        List.mem_append_right _ (staticInitializers_free members keys step hstep x hx))
 
 theorem Same.derived_succ (env env' : Env) (name : String) (self : Bool) (parent : Expr) (members : List ClassMember)
     (ctor : Option (List Stmt × Option (List Expr) × Func))
@@ -456,51 +491,54 @@ theorem Same.derived_succ (env env' : Env) (name : String) (self : Bool) (parent
     (evalExpr (n + 1) env (.derived name self parent members ctor) : M W _) =
       evalExpr (n + 1) env' (.derived name self parent members ctor) := by
   simp only [evalExpr]
-  split
-  · rfl
-  · refine selfScope_congr (N' := (if self then [name] else []) ++ ((parent.free ++ freeMembers members) ++ derivedCtorFree ctor)) self name hN
-      (fun x hx => ?_) fun env1 env1' h1 => ?_
-    · rcases List.mem_append.1 hx with hx | hx
-      · cases self <;> simp at hx
-        exact Or.inr ⟨rfl, hx⟩
-      · by_cases hc : (self && x == name) = true
-        · simp only [Bool.and_eq_true, beq_iff_eq] at hc
-          exact Or.inr hc
-        · exact Or.inl (by
-            simp only [Expr.free, List.mem_filter]
-            exact ⟨hx, by cases h : (self && x == name) <;> simp_all⟩)
-    · have both : Agree ((parent.free ++ freeMembers members) ++ derivedCtorFree ctor) env1 env1' :=
-        h1.mono fun x hx => List.mem_append_right _ hx
-      have h2 := both.mono fun x (hx : x ∈ parent.free ++ freeMembers members) => List.mem_append_left _ hx
-      refine M.bind_congr (ih.expr _ _ _ (h2.mono fun x hx => List.mem_append_left _ hx)) fun base => ?_
-      refine M.bind_congr rfl fun parents => ?_
-      unfold finishDerived
-      have sameCode (proto : Addr) (fields : List (PropertyKey × Expr))
-          (hfree : ∀ x ∈ fields.flatMap (·.2.free), x ∈ freeMembers members) :
-          derivedCtorCode { env1 with home := some proto } ctor fields =
-            derivedCtorCode { env1' with home := some proto } ctor fields := by
-        have agree : Agree (derivedCtorFree ctor ++ fields.flatMap (·.2.free)) env1 env1' :=
-          both.mono fun x hx => by
-            rcases List.mem_append.1 hx with hc | hf
-            · exact List.mem_append_right _ hc
-            · exact List.mem_append_left _ (List.mem_append_right _ (hfree x hf))
-        unfold derivedCtorCode
-        rw [capture_agree (agree.withHome (some proto))]
-      refine M.bind_congr rfl fun proto => ?_
-      dsimp only
-      rw [sameCode proto [] (by simp)]
-      refine M.bind_congr rfl fun c => M.bind_congr rfl fun _ => ?_
-      refine M.bind_congr (ih.members _ _ _ _ _ (h2.mono fun x hx => List.mem_append_right _ hx)) fun keys => ?_
-      let fields := (keys.zip (fieldInits members)).filterMap fun ((static, k), init) =>
-        if static then none else some (k, init)
-      have hcode := sameCode proto fields fun x hx => by
-        obtain ⟨⟨k, init⟩, hmem, hx⟩ := List.mem_flatMap.1 hx
-        obtain ⟨⟨⟨static, k'⟩, init'⟩, hzip, hsome⟩ := List.mem_filterMap.1 hmem
-        cases static <;> simp at hsome
-        obtain ⟨rfl, rfl⟩ := hsome
-        exact fieldInits_free members _ (List.of_mem_zip hzip).2 x hx
-      have hself := initSelf_agree (W := W) self (.obj c) fun hs => h1.vars name (by simp [hs])
-      rw [hcode, hself]
+  refine selfScope_congr (N' := (if self then [name] else []) ++ ((parent.free ++ freeMembers members) ++ derivedCtorFree ctor)) self name hN
+    (fun x hx => ?_) fun env1 env1' h1 => ?_
+  · rcases List.mem_append.1 hx with hx | hx
+    · cases self <;> simp at hx
+      exact Or.inr ⟨rfl, hx⟩
+    · by_cases hc : (self && x == name) = true
+      · simp only [Bool.and_eq_true, beq_iff_eq] at hc
+        exact Or.inr hc
+      · exact Or.inl (by
+          simp only [Expr.free, List.mem_filter]
+          exact ⟨hx, by cases h : (self && x == name) <;> simp_all⟩)
+  · have both : Agree ((parent.free ++ freeMembers members) ++ derivedCtorFree ctor) env1 env1' :=
+      h1.mono fun x hx => List.mem_append_right _ hx
+    have h2 := both.mono fun x (hx : x ∈ parent.free ++ freeMembers members) => List.mem_append_left _ hx
+    refine M.bind_congr (ih.expr _ _ _ (h2.mono fun x hx => List.mem_append_left _ hx)) fun base => ?_
+    refine M.bind_congr rfl fun parents => ?_
+    unfold finishDerived
+    have sameCode (proto : Addr) (fields : List (PropertyKey × Expr))
+        (hfree : ∀ x ∈ fields.flatMap (·.2.free), x ∈ freeMembers members) :
+        derivedCtorCode { env1 with home := some proto } ctor fields =
+          derivedCtorCode { env1' with home := some proto } ctor fields := by
+      have agree : Agree (derivedCtorFree ctor ++ fields.flatMap (·.2.free)) env1 env1' :=
+        both.mono fun x hx => by
+          rcases List.mem_append.1 hx with hc | hf
+          · exact List.mem_append_right _ hc
+          · exact List.mem_append_left _ (List.mem_append_right _ (hfree x hf))
+      unfold derivedCtorCode
+      rw [capture_agree (agree.withHome (some proto))]
+    refine M.bind_congr rfl fun proto => ?_
+    dsimp only
+    rw [sameCode proto [] (by simp)]
+    refine M.bind_congr rfl fun c => M.bind_congr rfl fun _ => ?_
+    refine M.bind_congr (ih.members _ _ _ _ _ (h2.mono fun x hx => List.mem_append_right _ hx)) fun keys => ?_
+    let fields := (keys.zip (fieldInits members)).filterMap fun ((static, k), init) =>
+      if static then none else some (k, init)
+    have hcode := sameCode proto fields fun x hx => by
+      obtain ⟨⟨k, init⟩, hmem, hx⟩ := List.mem_flatMap.1 hx
+      obtain ⟨⟨⟨static, k'⟩, init'⟩, hzip, hsome⟩ := List.mem_filterMap.1 hmem
+      cases static <;> simp at hsome
+      obtain ⟨rfl, rfl⟩ := hsome
+      exact fieldInits_free members _ (List.of_mem_zip hzip).2 x hx
+    have hself := initSelf_agree (W := W) self (.obj c) fun hs => h1.vars name (by simp [hs])
+    rw [hcode, hself]
+    refine M.bind_congr rfl fun _ => M.bind_congr rfl fun _ => M.bind_congr ?_ fun _ => rfl
+    apply evalStaticInitializers_eq
+    intro step hstep
+    exact ih.expr _ _ _ (((h2.withThis (.obj c)).withHome (some c)).mono fun x hx =>
+      List.mem_append_right _ (staticInitializers_free members keys step hstep x hx))
 
 set_option maxHeartbeats 1000000 in
 theorem Same.expr_succ (env env' : Env) (e : Expr) (hN : Agree e.free env env') :

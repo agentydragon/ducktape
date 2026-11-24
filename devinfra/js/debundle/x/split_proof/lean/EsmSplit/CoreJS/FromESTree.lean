@@ -839,6 +839,10 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
   let mut members := #[]
   for member in ← body.getObjValAs? (Array Json) "body" do
     let tag ← field member "type"
+    if tag == "StaticBlock" then
+      let body ← linkedBlockBody profile imports .function member
+      members := members.push (.staticBlock (.mk "" .arrow false [] body))
+      continue
     unless tag == "MethodDefinition" || tag == "PropertyDefinition" do throw s!"unsupported class element {tag}"
     let keyNode ← member.getObjVal? "key"
     let static ← member.getObjValAs? Bool "static"
@@ -856,7 +860,6 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
       let name ← moduleExportName keyNode
       pure (name, Expr.str name)
     if tag == "PropertyDefinition" then
-      if parent != .null && static then throw "unsupported derived static field"
       let init ← if value == .null then pure .undef else linkedExpr profile imports inFunction key value
       members := members.push (.field static keyExpr init)
     else
