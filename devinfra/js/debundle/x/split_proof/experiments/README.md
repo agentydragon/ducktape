@@ -336,10 +336,10 @@ I found no formalization of JavaScript or of ESTree in Lean. A search for one re
 [`autoform`](https://github.com/mbhatt1/autoform), which maps source code onto a generic interpreter through Joern's code property graph.
 That is a different approach, not a semantics of JavaScript.
 
-Elsewhere (from my earlier searches, not rechecked): JSCert (Coq, ES5, with an executable reference interpreter), ESMeta (an executable IR
-extracted from the specification text, not a proof-assistant model), KJS, λJS/S5 and JaVerT (all ES5-era). ES5 has no modules, so none of them covers the
+Elsewhere (from my earlier searches, not rechecked): JSCert (Coq, ES5, with an executable reference interpreter), KJS, λJS/S5 and JaVerT (all ES5-era). ES5 has no modules, so none of them covers the
 feature this experiment depends on. A port would cost months and would still need a theory of footprints on top.
 The footprint abstraction is what avoids it: the proof never looks inside a statement.
+A separate [ESMeta probe](esmeta.md) tested whether its executable ECMAScript semantics could run the emitted module graph.
 
 Used here:
 
