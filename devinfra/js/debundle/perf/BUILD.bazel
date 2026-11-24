@@ -8,6 +8,12 @@ _INPUT_RUNFILES = {
     "DEBUNDLE_BENCH_SPEC_MARKER": "//devinfra/js/debundle/excalidraw:spec/vendor_marks.yaml",
 }
 
+_BENCH_BINARIES = {
+    "DEBUNDLE_BENCH_CANDIDATE_ANALYZER": "//devinfra/js/debundle:debundle_analyze",
+    "DEBUNDLE_BENCH_CANDIDATE_DEBUNDLER": "//devinfra/js/debundle:debundle",
+    "DEBUNDLE_BENCH_CANDIDATE_PROJECTOR": "//devinfra/js/debundle:debundle_project_analysis",
+}
+
 _INPUT_DATA = _INPUT_RUNFILES.values() + [
     "//devinfra/js/debundle/excalidraw:source",
     "//devinfra/js/debundle/excalidraw:spec",
@@ -61,15 +67,10 @@ py_test(
     name = "excalidraw_pipeline_bench",
     size = "large",
     timeout = "eternal",
-    data = _INPUT_DATA + [
-        "//devinfra/js/debundle",
-        "//devinfra/js/debundle:debundle_analyze",
-        "//devinfra/js/debundle:debundle_project_analysis",
-    ],
+    data = _INPUT_DATA + _BENCH_BINARIES.values(),
     env = _INPUT_ENV | {
-        "DEBUNDLE_BENCH_CANDIDATE_ANALYZER": "$(rlocationpath //devinfra/js/debundle:debundle_analyze)",
-        "DEBUNDLE_BENCH_CANDIDATE_DEBUNDLER": "$(rlocationpath //devinfra/js/debundle:debundle)",
-        "DEBUNDLE_BENCH_CANDIDATE_PROJECTOR": "$(rlocationpath //devinfra/js/debundle:debundle_project_analysis)",
+        variable: "$(rlocationpath {})".format(label)
+        for variable, label in _BENCH_BINARIES.items()
     },
     env_inherit = ["PATH"],
     exec_properties = _BENCH_EXEC_PROPERTIES | {
