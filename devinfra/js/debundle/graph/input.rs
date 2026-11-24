@@ -60,7 +60,7 @@ impl DependencyGraphInput {
         let mut facts_by_ordinal = HashMap::with_capacity(facts.len());
         for fact in facts {
             anyhow::ensure!(
-                facts_by_ordinal.insert(fact.ordinal, fact).is_none(),
+                facts_by_ordinal.insert(fact.ordinal, Some(fact)).is_none(),
                 "source declaration census repeats source-unit ordinal {}",
                 fact.ordinal
             );
@@ -73,19 +73,20 @@ impl DependencyGraphInput {
             self.report.nodes.len()
         );
 
-        let mut report_ordinals = std::collections::HashSet::with_capacity(self.report.nodes.len());
         let mut declarations_by_report_row = Vec::with_capacity(self.report.nodes.len());
         for node in &self.report.nodes {
-            anyhow::ensure!(
-                report_ordinals.insert(node.statement_ordinal),
-                "dependency graph report repeats source-unit ordinal {}",
-                node.statement_ordinal
-            );
             let fact = facts_by_ordinal
-                .get(&node.statement_ordinal)
+                .get_mut(&node.statement_ordinal)
                 .with_context(|| {
                     format!(
                         "source declaration census is missing report ordinal {}",
+                        node.statement_ordinal
+                    )
+                })?
+                .take()
+                .with_context(|| {
+                    format!(
+                        "dependency graph report repeats source-unit ordinal {}",
                         node.statement_ordinal
                     )
                 })?;
