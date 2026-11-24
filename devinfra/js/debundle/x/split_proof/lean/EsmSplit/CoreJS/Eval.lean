@@ -658,6 +658,10 @@ def execStmt : Nat → Env → Stmt → M W Flow
       let _ ← execStmts n env init
       let fresh := (lexDecls init).filterMap fun (x, mutable) => if mutable then some x else none
       loop n (← copyBindings env fresh) fresh test update body
+    | .breakScope body => do
+      match ← execStmt n env body with
+      | .brk => pure .normal
+      | result => pure result
     | .brk => pure .brk
     | .cont => pure .cont
     | .throw e => do throwVal (← evalExpr n env e)

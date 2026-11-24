@@ -157,6 +157,11 @@ theorem execStmt_reachFrame_step {r R cells A n} (away : Away r R A)
     intro _ _
     exact (reachFrame_copyBindings away outside next _ hn).bind fun iteration hi =>
       repeatLoop iteration _ test update body hi
+  | breakScope body =>
+    simp only [execStmt]
+    apply (step env body h).bind
+    intro flow safe
+    cases flow <;> exact reachFrame_pure r R cells A _ (by first | exact safe | intro _ eq; cases eq)
   | brk | cont =>
     exact reachFrame_pure r R cells A _ (fun _ eq => by cases eq)
   | «throw» e =>
