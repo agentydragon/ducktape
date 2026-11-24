@@ -80,8 +80,9 @@ bbr test //devinfra/js/debundle/x/split_proof/integration/excalidraw:excalidraw_
 bbr test //devinfra/js/debundle/x/split_proof/integration/excalidraw:excalidraw_scroll_single_certificate
 ```
 
-The generated editor spec assigns `#1337` and `#1338` to
-`packages/excalidraw/scene/scroll.mjs`. CI checks the pair in strict mode. The
+The generated editor spec assigns `isOutsideViewPort` (unit 1336) and the two
+exported helpers (1337 and 1338) to `packages/excalidraw/scene/scroll.mjs`.
+CI keeps the two exported helpers as the strict namespace-refusal replay. The
 on-demand single trial moves only `#1337`. Each keeps the other units in source
 order in `chunk-PN7KOLDJ.js`. The replay resolves the stable `editor.js` alias
 via the generated JS roster and runs the normal splitter on that original
@@ -109,7 +110,7 @@ Lean's structural checker; it is diagnostic evidence only.
 
 | Units moved                         | Entry names added    | Entry names lost | Inverted conflicts | Failed check |
 | ----------------------------------- | -------------------- | ---------------: | -----------------: | ------------ |
-| Authored scroll pair, 1337 and 1338 | `Eb$1`, `Lm`, `qb$1` |                0 |                518 | `OrderOk`    |
+| Exported scroll pair, 1337 and 1338 | `Eb$1`, `Lm`, `qb$1` |                0 |                518 | `OrderOk`    |
 | 1337 only                           | none                 |                0 |                259 | `OrderOk`    |
 
 Unit 1337 creates the arrow `Jb`. Its body reads no module bindings. The other arrow, `Qb`,
