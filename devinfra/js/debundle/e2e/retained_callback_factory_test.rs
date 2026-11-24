@@ -13,9 +13,7 @@ fn gate_diagnose_json(
     extra: &[&str],
 ) -> serde_json::Value {
     let graph = fixture
-        .report_root
-        .join(&fixture.chunk_id)
-        .join("dependency_graph.json.gz")
+        .dependency_graph_path()
         .to_string_lossy()
         .into_owned();
     let modules = fixture.modules_root.to_string_lossy().into_owned();
