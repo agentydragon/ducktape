@@ -88,19 +88,12 @@ it is an example of that edit flow, not a generic adapter framework. Supply the
 complete final nonentry priority as a JSON array with `--import-order`; the
 recipe saves it in the evidence directory and passes it to `modules merge`.
 
-For residual extraction from an accepted partial spec, use
-[exact residual placement](../../docs/module_proposals.md) and the
-shipped [`examples/peel_more.py`](examples/peel_more.py) recipe. It saves one
-snapshot-bound plan, checks its graph/program identity, previews and applies the
-same ownership and import-priority changes, then regenerates. It derives a
-baseline-preserving entry-residual group for one fresh owner; there is no
-partition search or implicit scheduler. A completed negative covers only that
-family, and interruption is inconclusive. Begin with unseeded discovery; use `modules propose --graphs`
-with the configured module tree for a corpus, or `--graph` for one chunk. Corpus
-rows retain separate chunk-local plans and unsupported/incomplete outcomes. Review discovered
-ownership and source meaning before selector application, and retain separate
-adapter behavioral evidence. Keep the complete jointly checked plan in one worker
-packet; its atoms and destinations are not independently accepted subplans.
+For residual extraction, use [unseeded placement](../../docs/module_proposals.md)
+and the shipped [peel-more recipe](examples/peel_more.py). Keep the complete
+snapshot-bound plan together through check, preview, apply and regeneration.
+Review source and destination before applying it and retain the adapter's
+behavioral evidence. In corpus mode keep each chunk's outcome and limits.
+
 These shared Python recipes import sibling helpers. Include their `examples`
 directory on `PYTHONPATH` when using an isolated interpreter that omits the
 script directory from its import path; the archive test supplies that scaffold.

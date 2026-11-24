@@ -16,21 +16,11 @@ Choose the operation-specific recipe from the [task chooser](references/README.m
 Those guides own input compatibility, atomic coverage, dry-run review, selector
 proof, graph refresh, and validation order.
 
-For an explicit source-unit batch, check it with `modules check --batch`, preview
-with `modules apply --assignments --dry-run`, then apply the same assignments.
-This supports residual declarations, anonymous units and existing claims together.
-Default checks require the matching source root and tree config and preflight
-the writer before returning a plan. `--graph-only` returns no plan. Review
-synthesized selectors and preserved metadata; graph acceptance alone does not
-establish selector realization. Refresh the graph and run the adapter gate,
-regeneration and relevant emitted behavior after the edit.
-
-Prefer the snapshot-bound `.plan` from discovery or `modules check`:
-use `modules check --plan` and `modules apply --plan` so reused IDs in a refreshed
-graph cannot retarget the edit. Keep all jointly required moves together; do not
-apply only a chosen subset of a checked plan. The shipped
-[peel-more recipe](references/skills/shared/examples/peel_more.py) executes the
-checked discovery/application/regeneration loop in a verified snapshot.
+For an explicit batch, follow [apply a reviewed source-unit assignment](references/docs/spec_editing.md#workflow-applying-a-reviewed-source-unit-assignment).
+Review the synthesized selectors and metadata, then preview and apply the whole
+snapshot-bound plan. The shipped [peel-more recipe](references/skills/shared/examples/peel_more.py)
+runs discovery through regeneration for a residual extraction. Run the
+adapter's emitted behavior checks on the result.
 
 Return one reviewable relative YAML delta and the
 [execution evidence](references/skills/shared/workflow.md#execution-evidence),
