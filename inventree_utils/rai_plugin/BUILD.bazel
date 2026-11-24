@@ -3,7 +3,8 @@
 
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_python//python:packaging.bzl", "py_wheel")
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/oci:defs.bzl", "oci_layout_py")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
     name = "plugin",
@@ -19,7 +20,6 @@ py_wheel(
     },
     # Strip inventree_utils/ so wheel contains rai_plugin/plugin.py etc.
     strip_path_prefixes = ["inventree_utils/"],
-    # InvenTree stable runs Python 3.11; keep this pure-Python plugin installable there.
     tags = ["manual"],
     version = "1.0.0",
     deps = [
@@ -28,16 +28,17 @@ py_wheel(
     ],
 )
 
-# A .whl is a zip whose contents map directly to site-packages.
-# InvenTree stable uses Python 3.11 with a virtualenv at /home/inventree/venv/.
-# To verify/update the path: docker run --rm inventree/inventree:stable python3 -c "import site; print(site.getsitepackages())"
+# Put both the pure-Python package and its entry-point metadata on sys.path.
+# The directory lives in the image outside InvenTree's data volume.
+_PLUGIN_DIR = "/opt/inventree-rai-plugin"
+
 genrule(
     name = "rai_plugin_layer",
     srcs = [":rai_plugin_wheel"],
     outs = ["rai_plugin_layer.tar"],
     cmd = """
         DEST=$$(mktemp -d)
-        SITE="$$DEST/home/inventree/venv/lib/python3.11/site-packages"
+        SITE="$$DEST%s"
         mkdir -p "$$SITE"
         python3 -c "
 import zipfile, sys
@@ -46,12 +47,13 @@ with zipfile.ZipFile(sys.argv[1]) as zf:
 " $(location :rai_plugin_wheel) "$$SITE"
         tar -C "$$DEST" -cf "$@" .
         rm -rf "$$DEST"
-    """,
+    """ % _PLUGIN_DIR,
 )
 
 oci_image(
     name = "image",
     base = "@inventree_stable_linux_amd64",
+    env = {"PYTHONPATH": _PLUGIN_DIR},
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [":rai_plugin_layer"],
     visibility = ["//visibility:public"],
@@ -62,4 +64,23 @@ oci_load(
     image = ":image",
     repo_tags = ["inventree-custom:latest"],
     visibility = ["//visibility:public"],
+)
+
+oci_layout_py(
+    name = "test_image_layout",
+    testonly = True,
+    image = ":image",
+)
+
+py_test(
+    name = "test_image",
+    size = "medium",
+    srcs = ["test_image.py"],
+    requires_docker = True,
+    tags = ["manual"],
+    deps = [
+        ":test_image_layout",
+        "//devinfra/oci",
+        "@pypi//pytest_bazel",
+    ],
 )
