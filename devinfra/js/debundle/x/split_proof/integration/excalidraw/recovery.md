@@ -90,6 +90,40 @@ refused it. This is an ordinary Rust gate result. The
 record the checker's own refusals for the full closure and a certified
 236-unit placement for smaller upstream groups.
 
+## Follow-up on the scroll and utility blockers
+
+The [279-binding editor run](https://app.buildbuddy.io/invocation/caefdcf8-0751-4145-bd72-5ab8a61e78a6)
+adds 52 bindings in upstream `utils.ts`, the font-family fallback helper in
+`constants.ts`, and `isOutsideViewPort` from `scene/scroll.ts`. The
+[larger proposal replay](https://app.buildbuddy.io/invocation/42f75333-d929-48d0-b051-bab21229909f)
+certified 292 bindings in 30 owners using the same import planner. It also
+selected scroll/geometry proposals, `math/utils::average` and its SVG consumer,
+and `SHIFT_LOCKING_ANGLE` under the explicit `Math.PI@1` browser contract.
+
+- **Wrong public surface:** requesting `calculateScrollCenter` plus its
+  direct private dependencies exposed the class alias `pb$1` at cell
+  `@1250.0`. Including the original bounds class, alias, cache write and
+  geometry helpers exposed a separate ordering refusal: unit 1338 can access
+  the moved region of 1745. The independent result comes from Lean on a
+  resolved placement; the Rust emitter's atomic-group report is a separate
+  observation. [Placement trials](https://app.buildbuddy.io/invocation/906e8fb4-91cd-410f-85ed-0c0d9896379c).
+- **Class cache initialization:** the bundle creates `ElementBounds` (1247),
+  allocates a WeakMap and installs it on that class (1248), then aliases the
+  class (1249). Moving the write as a local allocation fails because it also
+  modifies the earlier class object. Leaving the write in entry fails on the
+  alias's binding read; moving just the class exposes a forward capture.
+  [Four reduced placements](https://app.buildbuddy.io/invocation/72e03088-de3b-42ae-bcaf-2ace949a10df).
+  A proof needs both fresh constructor semantics and a frame that permits
+  writing an owned receiver allocated by another unit. The
+  [off-region write lemma and runtime controls](https://app.buildbuddy.io/invocation/69da0a60-6026-44e4-b789-c3bea9ca5e79)
+  distinguish replacement constructors, reentry and an observable saved
+  property-definition hook.
+- **Regular expression construction:** the two directionality strings can
+  move together in their upstream utilities module. The constructor that
+  consumes them and `isRTL` remain in entry. A regex literal allocation
+  theorem does not justify invoking a mutable ambient `RegExp` constructor.
+  [Partial placement, disk check and Chromium](https://app.buildbuddy.io/invocation/ab384ba5-99e2-429a-a35f-15076d354d23).
+
 ## What limited the candidate set
 
 To select a trial, join the canonical Rust graph to the scope-annotated original
