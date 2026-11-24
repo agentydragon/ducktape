@@ -725,22 +725,37 @@ func (s *Store) retireExecutorSession(ctx context.Context, tx *sql.Tx, conversat
 	conversation.ExecutorSession = nil
 	conversation.ExecutorShell = nil
 	// The session can be retired while the model's outer exec call is still pending.
-	// Queue the notice against that call so it is appended after its tool result. This
-	// preserves Anthropic's tool_result ordering while keeping the notice durable in the
-	// same transaction as session retirement. With no pending call, append it directly.
+	// Queue the notice against that call so it follows the tool result.
 	pendingCalls, err := conversation.Transcript.PendingCalls()
 	if err != nil {
 		return err
 	}
 	if len(pendingCalls) > 0 {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_notification(conversation_id,call_id,cell_id,text) VALUES($1,$2,'',$3)`,
-			conversation.ID, pendingCalls[0].CallID, notice); err != nil {
+		if err := queueNotification(ctx, tx, conversation.ID, pendingCalls[0].CallID, "", notice); err != nil {
 			return err
 		}
-	} else if err := conversation.apply(func(state protocol.Context) error {
-		return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: notice}})
-	}); err != nil {
-		return err
+	} else {
+		// A yielded cell can continue using the executor while the provider summarizes.
+		// Leave the source context untouched during compaction and any frozen retry.
+		frozen := pendingMatches(conversation.Pending, "", PendingIntentCompaction)
+		if !frozen && session.ActiveCommand != nil {
+			if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM sampler_intent i
+				WHERE i.conversation_id=$1 AND i.provider_command_id=$2 AND i.provider_retry_not_before IS NOT NULL
+				AND i.request->>'kind'='compaction'
+				AND NOT EXISTS(SELECT 1 FROM sampler_intent n WHERE n.previous_provider_intent_id=i.id))`,
+				conversation.ID, *session.ActiveCommand).Scan(&frozen); err != nil {
+				return err
+			}
+		}
+		if frozen {
+			if err := queueNotification(ctx, tx, conversation.ID, "", "", notice); err != nil {
+				return err
+			}
+		} else if err := conversation.apply(func(state protocol.Context) error {
+			return state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: notice}})
+		}); err != nil {
+			return err
+		}
 	}
 	return updateConversation(ctx, tx, conversation)
 }

@@ -241,7 +241,7 @@ func TestCompactionKeepsRecentTurnsAndToolPairs(t *testing.T) {
 	if c.CanCompact(2) {
 		t.Fatal("two retained turns leave no older turn")
 	}
-	plan, err := c.PrepareCompaction(CompactionConfig{KeepRecentTurns: 1}, "current environment")
+	plan, err := c.PrepareCompaction(CompactionConfig{KeepRecentTurns: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,6 +269,9 @@ func TestCompactionKeepsRecentTurnsAndToolPairs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := result.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: "current environment"}}, true); err != nil {
+		t.Fatal(err)
+	}
 	if err := result.CheckSettled(); err != nil {
 		t.Fatal(err)
 	}
@@ -279,12 +282,24 @@ func TestCompactionKeepsRecentTurnsAndToolPairs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gotSuffix, err := result.RecordsFrom(2)
+	gotSuffix, err := result.RecordsFrom(1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.EqualFunc(wantSuffix, gotSuffix, func(a, b json.RawMessage) bool { return bytes.Equal(a, b) }) {
+	if len(gotSuffix) != len(wantSuffix)+1 ||
+		!slices.EqualFunc(wantSuffix, gotSuffix[:len(wantSuffix)], func(a, b json.RawMessage) bool { return bytes.Equal(a, b) }) {
 		t.Fatalf("retained turns changed: %s", gotSuffix)
+	}
+	const storedMarker = "sampler_compaction_summary"
+	projected, err := result.ProjectRecords(result.RecordCount() - 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(gotSuffix[len(gotSuffix)-1], []byte(storedMarker)) ||
+		bytes.Contains(projected[0], []byte(storedMarker)) ||
+		!bytes.Contains(projected[0], []byte("current environment")) {
+		t.Fatalf("environment marker leaked into the wire or was omitted from storage: stored=%s projected=%s",
+			gotSuffix[len(gotSuffix)-1], projected[0])
 	}
 	wire, err := result.MarshalJSON()
 	if err != nil {
@@ -293,6 +308,12 @@ func TestCompactionKeepsRecentTurnsAndToolPairs(t *testing.T) {
 	if strings.Contains(string(wire), "old data") || strings.Contains(string(wire), "private reasoning") ||
 		!strings.Contains(string(wire), "useful summary") || !strings.Contains(string(wire), "current environment") {
 		t.Fatalf("unexpected replacement: %s", wire)
+	}
+	if err := result.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: "next environment"}}, false); err != nil {
+		t.Fatal(err)
+	}
+	if result.CanCompact(1) {
+		t.Fatal("ordinary environment update counted as another user turn")
 	}
 	after, err := c.MarshalJSON()
 	if err != nil || !bytes.Equal(initial, after) {
@@ -315,7 +336,7 @@ func TestUserCompactionSummaryIsNotCountedAsAnAuthoredTurn(t *testing.T) {
 	if err := config.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	plan, err := state.PrepareCompaction(config, "")
+	plan, err := state.PrepareCompaction(config)
 	if err != nil {
 		t.Fatal(err)
 	}

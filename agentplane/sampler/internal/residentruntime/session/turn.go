@@ -107,7 +107,7 @@ func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *li
 		return "", err
 	}
 	if frontier != nil && frontier.Kind == sessionstore.PendingIntentCompaction {
-		if err := r.compact(ctx, owner, session.Model); err != nil {
+		if err := r.compact(ctx, owner, live, session.Model); err != nil {
 			return "", err
 		}
 		return sessionstore.TurnCompact, nil
@@ -234,8 +234,8 @@ func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *li
 	}
 	threshold := adapter.AutoCompactTokens(r.settings.AutoCompactTokens, conversation.Context())
 
-	if frontier == nil && threshold != nil && conversation.ContextTokens != nil && *conversation.ContextTokens >= *threshold && len(state.Cells) == 0 {
-		if err := r.compact(ctx, owner, session.Model); err != nil {
+	if frontier == nil && threshold != nil && conversation.ContextTokens != nil && *conversation.ContextTokens >= *threshold {
+		if err := r.compact(ctx, owner, live, session.Model); err != nil {
 			return "", err
 		}
 		return sessionstore.TurnCompact, nil

@@ -301,19 +301,18 @@ func (s *Store) beginCompaction(ctx context.Context, owner Owner, request Intent
 		if !sameNativeContext(conversation.Context(), original) {
 			return protocol.ErrPrecondition
 		}
-		liveCell, err := hasLiveCell(ctx, tx, conversation.ID)
+		if err := conversation.Transcript.CheckSettled(); err != nil {
+			return err
+		}
+		if err := conversation.Context().CheckSettled(); err != nil {
+			return err
+		}
+		blocking, err := hasCompactionBlockingWork(ctx, tx, owner)
 		if err != nil {
 			return err
 		}
-		if liveCell {
-			return &protocol.UnknownEffectError{Reason: "cannot compact over live JavaScript cells"}
-		}
-		unresolved, err := hasUnresolvedIntent(ctx, tx, conversation.ID, "")
-		if err != nil {
-			return err
-		}
-		if unresolved {
-			return &protocol.UnknownEffectError{Reason: "unresolved nested intent; cannot compact"}
+		if blocking {
+			return &protocol.UnknownEffectError{Reason: "unresolved execution work blocks compaction"}
 		}
 		if request.ProviderRequest != nil {
 			if prepare == nil || request.API != conversation.API {
@@ -398,16 +397,19 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 		if err := replacement.CheckSettled(); err != nil {
 			return err
 		}
-		environment, err := s.environmentContext(conversation, session)
-		if err != nil {
-			return err
-		}
-		conversation.EnvironmentContext = &environment
-		conversation.ActiveContext = replacement
+		// Persistence can retry the same validated replacement after an ambiguous
+		// commit. Keep any appended notifications private to this transaction.
+		conversation.ActiveContext = replacement.Clone()
 		conversation.activeContextID = ""
 
 		conversation.ContextTokens = nil
 		conversation.Pending = nil
+		if err := s.recordEnvironmentContext(conversation, session, true); err != nil {
+			return err
+		}
+		if _, err := s.settleNotifications(ctx, tx, conversation, session, true); err != nil {
+			return err
+		}
 		if err := updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}
@@ -473,7 +475,13 @@ func (s *Store) RecordNested(ctx context.Context, owner Owner, kind IntentKind, 
 			}
 		}
 		if pendingMatches(conversation.Pending, "", PendingIntentCompaction) {
-			return &protocol.UnknownEffectError{Reason: "cannot start a nested effect during compaction"}
+			live, err := hasLiveCell(ctx, tx, owner.ConversationID)
+			if err != nil {
+				return err
+			}
+			if kind == IntentInterruptProcess || !live {
+				return &protocol.UnknownEffectError{Reason: "cannot start this nested effect during compaction"}
+			}
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_intent(id,conversation_id,generation,request,result) VALUES($1,$2,$3,$4,NULL)`, id, owner.ConversationID, owner.Generation, requestWire); err != nil {
 			return err
@@ -600,6 +608,19 @@ func hasUnresolvedIntent(ctx context.Context, tx *sql.Tx, conversationID, except
 	var found bool
 	err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM sampler_intent WHERE conversation_id=$1 AND result IS NULL AND ($2='' OR id<>$2::uuid))`, conversationID, exceptID).Scan(&found)
 	return found, err
+}
+
+func hasCompactionBlockingWork(ctx context.Context, tx *sql.Tx, owner Owner) (bool, error) {
+	// A live cell under this owner can finish its tool and executor intents
+	// independently of the provider request. Older work may have lost its host.
+	var blocking bool
+	err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM sampler_cell
+		WHERE conversation_id=$1 AND generation<>$2 AND status='live')
+		OR EXISTS(SELECT 1 FROM sampler_intent WHERE conversation_id=$1 AND result IS NULL
+			AND (generation<>$2 OR COALESCE(request->>'kind','') NOT IN ('tool','executor')
+				OR NOT EXISTS (SELECT 1 FROM sampler_cell WHERE conversation_id=$1 AND generation=$2 AND status='live')))`,
+		owner.ConversationID, owner.Generation).Scan(&blocking)
+	return blocking, err
 }
 
 func settlePendingCalls(conversation *Conversation, message func(protocol.ToolInvocation) string) ([]map[string]any, error) {

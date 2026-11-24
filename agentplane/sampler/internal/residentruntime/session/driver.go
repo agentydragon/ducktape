@@ -487,7 +487,7 @@ func (r *Driver) execute(ctx context.Context, sessionID string, owner sessionsto
 			} else if conversation.Stopped && conversation.Pending == nil {
 				result = sessionstore.TurnInterrupted
 			} else {
-				err = r.compact(turnCtx, owner, session.Model)
+				err = r.compact(turnCtx, owner, live, session.Model)
 				result = sessionstore.TurnCompact
 			}
 		} else {

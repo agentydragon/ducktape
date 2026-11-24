@@ -83,33 +83,27 @@ func (s *Store) SetExecutorSession(ctx context.Context, owner Owner, sessionID s
 	})
 }
 
-func (s *Store) environmentContext(conversation *Conversation, session *Session) (environmentcontext.Context, error) {
-	return s.CurrentEnvironmentContext(session.Configuration, conversation.ExecutorShell)
-}
-
-// CurrentEnvironmentContext renders the model-visible environment baseline for the stored
-// session launch configuration and executor shell.
-func (s *Store) CurrentEnvironmentContext(configuration []byte, shell *string) (environmentcontext.Context, error) {
+// recordEnvironmentContext advances the environment baseline. A replacement
+// receives the full current environment while the transcript receives any diff.
+func (s *Store) recordEnvironmentContext(conversation *Conversation, session *Session, refreshCompacted bool) error {
 	request := &sessionconfig.Configuration{}
-	if err := proto.Unmarshal(configuration, request); err != nil {
-		return environmentcontext.Context{}, err
-	}
-	return environmentcontext.Current(request.GetSpec().GetCwd(), shell, s.now()), nil
-}
-
-// recordEnvironmentContext appends the update from the conversation's baseline to the Session's
-// current environment, then advances the baseline. The caller persists the conversation.
-func (s *Store) recordEnvironmentContext(conversation *Conversation, session *Session) error {
-	current, err := s.environmentContext(conversation, session)
-	if err != nil {
+	if err := proto.Unmarshal(session.Configuration, request); err != nil {
 		return err
 	}
-	if update := environmentcontext.Update(conversation.EnvironmentContext, current); update != "" {
-		if err := conversation.apply(func(state protocol.Context) error {
-			return state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: update}})
-		}); err != nil {
-			return err
+	current := environmentcontext.Current(request.GetSpec().GetCwd(), conversation.ExecutorShell, s.now())
+	if err := conversation.apply(func(state protocol.Context) error {
+		afterCompaction := refreshCompacted && state == conversation.ActiveContext
+		previous := conversation.EnvironmentContext
+		if afterCompaction {
+			previous = nil
 		}
+		update := environmentcontext.Update(previous, current)
+		if update == "" {
+			return nil
+		}
+		return state.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: update}}, afterCompaction)
+	}); err != nil {
+		return err
 	}
 	conversation.EnvironmentContext = &current
 	return nil

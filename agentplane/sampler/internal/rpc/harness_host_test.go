@@ -513,7 +513,7 @@ func TestChatGPTResponsesModelChangeContinuesRetainedConversation(t *testing.T) 
 				if err != nil {
 					t.Fatal(err)
 				}
-				compacted, err := responses.ValidateCompaction(conversation.Context().(*responses.Context), []json.RawMessage{compactionItem}, nil, nil, "Fixture environment context")
+				compacted, err := responses.ValidateCompaction(conversation.Context().(*responses.Context), []json.RawMessage{compactionItem}, nil, nil)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -587,7 +587,7 @@ func TestChatGPTResponsesModelChangeContinuesRetainedConversation(t *testing.T) 
 				if strings.Contains(input.String(), "fixture-opaque-reasoning") {
 					t.Fatalf("continuation sent the full transcript instead of the active context: %s", body)
 				}
-				fragments = []string{"Fixture environment context", "fixture-summary", "Continue on the replacement."}
+				fragments = []string{"environment_context", "fixture-summary", "Continue on the replacement."}
 				conversation, err := store.Read(ctx, owner)
 				if err != nil {
 					t.Fatal(err)

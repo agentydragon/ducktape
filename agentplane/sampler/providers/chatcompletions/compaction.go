@@ -64,7 +64,7 @@ func (c CompactionConfig) replacementMessage(summary string) (message, error) {
 	if !strings.Contains(text, summary) {
 		return message{}, errors.New("compaction replacement template must include the summary verbatim")
 	}
-	return message{Role: config.Role, Content: text, CompactionSummary: config.Role == "user"}, nil
+	return message{Role: config.Role, Content: text, CompactionGenerated: true}, nil
 }
 
 func renderTemplate(name, source string, data any) (string, error) {
@@ -99,10 +99,9 @@ func (c *CompactionConfig) Compatible(other *CompactionConfig) bool {
 }
 
 type CompactionPlan struct {
-	prefix      []message
-	suffix      []message
-	environment string
-	config      CompactionConfig
+	prefix []message
+	suffix []message
+	config CompactionConfig
 }
 
 // compactablePrefix cuts only at the start of a user turn, after all preceding tool results.
@@ -110,7 +109,7 @@ type CompactionPlan struct {
 func (c *Context) compactablePrefix(keep int) int {
 	cut := 0
 	for i := len(c.messages) - 1; i >= 0; i-- {
-		if c.messages[i].Role != "user" || c.messages[i].CompactionSummary {
+		if c.messages[i].Role != "user" || c.messages[i].CompactionGenerated {
 			continue
 		}
 		if keep == 0 {
@@ -128,7 +127,7 @@ func (c *Context) CanCompact(keepRecentTurns int) bool {
 	return c.compactablePrefix(keepRecentTurns) > 0
 }
 
-func (c *Context) PrepareCompaction(config CompactionConfig, environment string) (*CompactionPlan, error) {
+func (c *Context) PrepareCompaction(config CompactionConfig) (*CompactionPlan, error) {
 	cut := c.compactablePrefix(config.KeepRecentTurns)
 	if cut == 0 {
 		return nil, rejectCompaction("no older turn remains after keeping recent turns")
@@ -136,7 +135,7 @@ func (c *Context) PrepareCompaction(config CompactionConfig, environment string)
 	if err := c.CheckSettled(); err != nil {
 		return nil, err
 	}
-	return &CompactionPlan{prefix: slices.Clone(c.messages[:cut]), suffix: slices.Clone(c.messages[cut:]), environment: environment, config: config}, nil
+	return &CompactionPlan{prefix: slices.Clone(c.messages[:cut]), suffix: slices.Clone(c.messages[cut:]), config: config}, nil
 }
 
 func (p *CompactionPlan) Apply(records []json.RawMessage, audit Audit) (*Context, error) {
@@ -150,9 +149,6 @@ func (p *CompactionPlan) Apply(records []json.RawMessage, audit Audit) (*Context
 		return nil, rejectCompaction(err.Error())
 	}
 	replacement := []message{prefix}
-	if p.environment != "" {
-		replacement = append(replacement, message{Role: "system", Content: p.environment})
-	}
 	newPrefix, err := json.Marshal(replacement)
 	if err != nil {
 		return nil, err
