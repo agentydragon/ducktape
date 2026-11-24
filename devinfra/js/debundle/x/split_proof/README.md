@@ -173,8 +173,13 @@ method on the path’s prototype chain and calls it with the path as its receive
 
 A browser-profile call to the ambient `Symbol()` or `Symbol("description")` creates a fresh
 symbol under an explicit premise that the binding holds the intrinsic Symbol function.
-A base class can use a lexical identifier as a computed instance field key. Class definition
+A class can use a lexical identifier as a computed instance field key. Class definition
 captures the key once, and each construction creates an own data property for that key.
+
+A derived class initializes its public instance fields in declaration order on the object returned
+by its superclass. Its default constructor forwards the original arguments. An explicit constructor
+initializes the fields after `super(...)` succeeds and before its next expression. Initializers
+resolve lexical names in the class definition scope. Derived static fields remain unsupported.
 
 A derived constructor with plain parameters can compute local values before a direct `super(...)` call.
 The prefix admits simple `let` and `const` bindings and expression statements. Prefixes and arguments
