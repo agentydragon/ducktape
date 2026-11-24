@@ -150,14 +150,12 @@ pub enum TransformSpecSource {
 /// Only module-level `note` is unused by the transform pipeline.
 #[derive(Debug)]
 struct ApplyProjection {
-    format_version: u32,
     source: TransformSpecSource,
     spec: TransformSpec,
     module_roots_by_chunk: BTreeMap<String, Vec<PathBuf>>,
     rooted_paths: BTreeSet<ApplyPath>,
 }
 
-const APPLY_PROJECTION_FORMAT_VERSION: u32 = 3;
 const APPLY_OUTPUT_ROOT: &str = "__debundle_apply_output_root__";
 
 /// Tree compilation creates these paths from `out_root`. Keep their suffixes
@@ -308,7 +306,6 @@ fn project_apply_from_spec(
     fs::write(
         out,
         ApplyProjection {
-            format_version: APPLY_PROJECTION_FORMAT_VERSION,
             source,
             spec,
             module_roots_by_chunk,

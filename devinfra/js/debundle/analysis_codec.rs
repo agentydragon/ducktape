@@ -39,20 +39,24 @@ impl ContextOrdinals {
     pub fn snapshot_binding(&self, binding: &Id) -> Result<SavedBinding> {
         Ok(SavedBinding {
             symbol: binding.0.clone(),
-            context_ordinal: self
-                .ordinal(binding.1.as_u32())
+            context_ordinal: *self
+                .ordinals
+                .get(&binding.1)
                 .context("binding context is outside the analyzed modules")?,
         })
     }
 
     pub fn restore_binding(&self, binding: SavedBinding) -> Result<Id> {
-        let context = self.context(binding.context_ordinal).with_context(|| {
-            format!(
-                "unknown binding context ordinal {}",
-                binding.context_ordinal
-            )
-        })?;
-        Ok((binding.symbol, SyntaxContext::from_u32(context)))
+        let context = self
+            .contexts
+            .get(binding.context_ordinal as usize)
+            .with_context(|| {
+                format!(
+                    "unknown binding context ordinal {}",
+                    binding.context_ordinal
+                )
+            })?;
+        Ok((binding.symbol, *context))
     }
 
     /// Numbers contexts across `modules`; callers use the same modules in the
@@ -66,16 +70,6 @@ impl ContextOrdinals {
             module.visit_with(&mut collector);
         }
         collector
-    }
-
-    fn ordinal(&self, raw: u32) -> Option<u32> {
-        self.ordinals.get(&SyntaxContext::from_u32(raw)).copied()
-    }
-
-    fn context(&self, ordinal: u32) -> Option<u32> {
-        self.contexts
-            .get(ordinal as usize)
-            .map(|context| context.as_u32())
     }
 }
 
