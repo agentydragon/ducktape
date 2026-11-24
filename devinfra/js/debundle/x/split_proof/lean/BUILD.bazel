@@ -599,6 +599,7 @@ lean_axiom_test(
         "CoreJS.split_units_agree",
         "CoreJS.valid_order_kept_preserves",
         "CoreJS.local_units_commute",
+        "CoreJS.not_local_of_foreign_object_change",
         "CoreJS.ParentAt.after_derived",
         "CoreJS.derived_var_commutes_at",
         "CoreJS.moves_preserve_of_heritageMovesOk",
