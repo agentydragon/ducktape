@@ -22,6 +22,7 @@ from typing import Any, get_args
 
 from pydantic import TypeAdapter
 from sqlalchemy import create_engine, delete, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -119,24 +120,8 @@ class ActionMutation:
     rng_version: str | None = None
 
 
-# Mutators take an open Session + the server's `now_ms` and return an
-# ActionMutation. They read/write ORM rows directly; the run_server_action
-# wrapper handles the surrounding transaction, idempotency check, snapshot,
-# and ledger insert.
-ServerActionMutator = Callable[[Session, int], ActionMutation]
-
-
-def locked_balance(s: Session, username: str) -> BalanceRow:
-    """The user's balance row, locked FOR UPDATE for the enclosing transaction.
-
-    Single source of the row-locking strategy for every money mutation (both
-    SqlStore internals and app.py mutators). The row must already exist —
-    `SqlStore._ensure_user` seeds it at the top of every entry point.
-    """
-    balance = s.scalar(select(BalanceRow).where(BalanceRow.user_id == username).with_for_update())
-    if balance is None:
-        raise RuntimeError(f"balance row missing for {username=}; _ensure_user not called?")
-    return balance
+# The store locks the user's balance before checking the receipt or calling the mutator.
+ServerActionMutator = Callable[[Session, BalanceRow, int], ActionMutation]
 
 
 # Default prize catalog seeded for a user on first contact. Kept in store.py
@@ -150,6 +135,10 @@ _DEFAULT_PRIZES: list[tuple[str, str, int]] = [
     ("p5", "Buy a new game", 720),
     ("p6", "Weekend getaway", 2160),
 ]
+
+
+def _add_default_prizes(s: Session, username: str) -> None:
+    s.add_all(PrizeRow(user_id=username, id=prize_id, name=name, cost=cost) for prize_id, name, cost in _DEFAULT_PRIZES)
 
 
 class SqlStore:
@@ -168,8 +157,8 @@ class SqlStore:
         `state_snapshots.decoded_json`. The frontend's `GET /state`
         returns this verbatim. Lazily seeds the user on first call."""
         with self._Session() as s, s.begin():
-            self._ensure_user(s, username)
-            return self._state_dump(s, username)
+            balance = self._lock_user_balance(s, username)
+            return self._state_dump(s, balance)
 
     def list_known_users(self) -> list[str]:
         """All usernames the store has ever seeded (one balance row apiece)."""
@@ -226,7 +215,7 @@ class SqlStore:
         row commit in one transaction; either all land or none do.
         """
         with self._Session() as s, s.begin():
-            self._ensure_user(s, username)
+            balance = self._lock_user_balance(s, username)
             existing = s.scalar(
                 select(LedgerEventRow).where(
                     LedgerEventRow.user_id == username, LedgerEventRow.client_action_id == client_action_id
@@ -236,18 +225,14 @@ class SqlStore:
                 return _ACTION_RESULT_ADAPTER.validate_json(existing.result_json)
 
             now_ms = int(time.time() * 1000)
-            balance = locked_balance(s, username)
             before_credits = balance.credits
             before_tokens = balance.tokens
 
             if snapshot_reason is not None:
-                s.add(self._snapshot_row(s, username, snapshot_reason, now_ms, snapshot_note))
+                s.add(self._snapshot_row(s, balance, snapshot_reason, now_ms, snapshot_note))
 
-            mutation = mutator(s, now_ms)
+            mutation = mutator(s, balance, now_ms)
 
-            # Re-read balance after mutation; mutator may have changed it.
-            s.flush()
-            s.refresh(balance)
             after_credits = balance.credits
             after_tokens = balance.tokens
 
@@ -299,16 +284,16 @@ class SqlStore:
 
         return mutation.result
 
-    def replace_state_for_import(self, s: Session, username: str, data: ImportData) -> None:
+    def replace_state_for_import(self, s: Session, balance: BalanceRow, data: ImportData) -> None:
         """Wipe sessions/prizes/prize_log + reset balance for `username`, then
         populate from the import payload. Must be called from within a
         `run_server_action` mutator (the surrounding transaction guarantees
         atomicity).
         """
+        username = balance.user_id
         s.execute(delete(SessionRow).where(SessionRow.user_id == username))
         s.execute(delete(PrizeRow).where(PrizeRow.user_id == username))
         s.execute(delete(PrizeLogRow).where(PrizeLogRow.user_id == username))
-        balance = locked_balance(s, username)
         # str() first — Decimal(float) would drag in binary-float artifacts.
         balance.credits = millis_from_credits(Decimal(str(data.credits)))
         balance.tokens = data.tokens
@@ -325,8 +310,7 @@ class SqlStore:
             )
 
         if data.prizes is None:
-            for prize_id, name, cost in _DEFAULT_PRIZES:
-                s.add(PrizeRow(id=prize_id, user_id=username, name=name, cost=cost))
+            _add_default_prizes(s, username)
         else:
             for prize in data.prizes:
                 s.add(PrizeRow(id=prize.id or f"p-{uuid.uuid4()}", user_id=username, name=prize.name, cost=prize.cost))
@@ -342,12 +326,12 @@ class SqlStore:
                 )
             )
 
-    def replace_state_for_reset(self, s: Session, username: str) -> None:
+    def replace_state_for_reset(self, s: Session, balance: BalanceRow) -> None:
         """Wipe sessions/prize_log for `username`, zero their balance and
         streak state, keep their prize catalog."""
+        username = balance.user_id
         s.execute(delete(SessionRow).where(SessionRow.user_id == username))
         s.execute(delete(PrizeLogRow).where(PrizeLogRow.user_id == username))
-        balance = locked_balance(s, username)
         balance.credits = 0
         balance.tokens = 0
         credit_state = get_or_create_credit_state(s, username)
@@ -356,24 +340,29 @@ class SqlStore:
         credit_state.rest_days_used = 0
         credit_state.last_first_bonus_date = None
 
-    def _ensure_user(self, s: Session, username: str) -> None:
-        """Idempotently seed a balance row and the default prize catalog for `username`.
+    def _lock_user_balance(self, s: Session, username: str) -> BalanceRow:
+        """Serialize this user's state reads and actions, including concurrent first use."""
+        balance = s.get(BalanceRow, username, with_for_update=True)
+        if balance is not None:
+            return balance
 
-        Called from the top of every read/write entry point so a brand-new
-        user gets a usable starting state without any explicit signup step.
-        Composite `(user_id, id)` PKs on `prizes` mean two users can both
-        own a prize with `id="p1"` without colliding.
-        """
-        if s.get(BalanceRow, username) is not None:
-            return
-        s.add(BalanceRow(user_id=username, credits=0, tokens=0))
+        created = s.scalars(
+            insert(BalanceRow)
+            .values(user_id=username, credits=0, tokens=0)
+            .on_conflict_do_nothing(index_elements=[BalanceRow.user_id])
+            .returning(BalanceRow)
+        ).one_or_none()
+        if created is None:
+            # The other transaction seeded the catalog. Lock its committed balance before reading the ledger.
+            return s.get_one(BalanceRow, username, with_for_update=True)
+
         s.add(CreditStateRow(user_id=username, streak_days=0, rest_days_used=0))
-        for prize_id, name, cost in _DEFAULT_PRIZES:
-            s.add(PrizeRow(user_id=username, id=prize_id, name=name, cost=cost))
+        _add_default_prizes(s, username)
         s.flush()
+        return created
 
-    def _state_dump(self, s: Session, username: str) -> StateDump:
-        balance = locked_balance(s, username)
+    def _state_dump(self, s: Session, balance: BalanceRow) -> StateDump:
+        username = balance.user_id
         credit_state = get_or_create_credit_state(s, username)
         changelog_ack = get_or_create_ack(s, username)
         today = pacific_date(int(time.time() * 1000))
@@ -406,12 +395,14 @@ class SqlStore:
             prize_log=[PrizeLogRead(id=row.id, name=row.name, cost=row.cost, at_ms=row.at_ms) for row in prize_log],
         )
 
-    def _snapshot_row(self, s: Session, username: str, reason: str, now_ms: int, note: str | None) -> StateSnapshotRow:
+    def _snapshot_row(
+        self, s: Session, balance: BalanceRow, reason: str, now_ms: int, note: str | None
+    ) -> StateSnapshotRow:
         return StateSnapshotRow(
-            user_id=username,
+            user_id=balance.user_id,
             server_at_ms=now_ms,
             reason=reason,
-            decoded_json=self._state_dump(s, username).model_dump_json(),
+            decoded_json=self._state_dump(s, balance).model_dump_json(),
             note=note,
         )
 
