@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { parse } from "acorn";
 import { structuralFixture } from "./harness.mjs";
 
 const pivotScope = "linked-structural-pivot";
@@ -85,6 +86,56 @@ assert.deepEqual(deferredPair.run(movesScope, "--check-output"), pair);
 for (const file of [deferredPair.sourceFile, path.join(deferredPair.out, "entry.mjs")]) {
   const { bytes, inspect } = await import(pathToFileURL(file));
   assert.equal(inspect(bytes[0]), 18);
+}
+
+// The helper and its two interleaved declarations are assigned together.
+const interleaved = structuralFixture(
+  "ordered-forward-capture",
+  `const bytes = new Uint8Array([7]);
+   var inspect = x => read(x);
+   var offset = () => 2;
+   var scale = x => offset() * x;
+   var read = x => x + 1;
+   export { bytes, inspect, offset, scale, read };`,
+  ["#1", "#2", "#3", "#4"],
+  ["#0", "#5"]
+);
+const group = interleaved.run(movesScope);
+assert.equal(group.status, "certified", JSON.stringify(group));
+assert.deepEqual(interleaved.run(movesScope, "--check-output"), group);
+const emittedGroup = parse(readFileSync(path.join(interleaved.out, "scroll.mjs"), "utf8"), {
+  sourceType: "module",
+  ecmaVersion: "latest",
+});
+assert.deepEqual(
+  emittedGroup.body.flatMap((node) => (node.declaration ?? node).declarations?.map((d) => d.id.name) ?? []),
+  ["inspect", "offset", "scale", "read"]
+);
+for (const file of [interleaved.sourceFile, path.join(interleaved.out, "entry.mjs")]) {
+  const { bytes, inspect, scale } = await import(pathToFileURL(file));
+  assert.equal(inspect(scale(bytes[0])), 15);
+}
+
+// An actual read by a hoisted function during the crossing is observable,
+// whether entered directly or by property access. Neither permits the group.
+for (const access of ["peek()", "receiver.value"]) {
+  const active = structuralFixture(
+    access === "peek()" ? "group-crosses-call" : "group-crosses-getter",
+    `function peek() { return typeof read; }
+     const receiver = { get value() { return peek(); } };
+     const before = ${access};
+     var inspect = () => read();
+     var independent = () => 3;
+     var read = () => 7;
+     export { before, inspect, independent, read };`,
+    ["#3", "#4", "#5"],
+    ["#0", "#1", "#2", "#6"]
+  );
+  assert.equal((await import(pathToFileURL(active.sourceFile))).before, "undefined");
+  const refused = active.run(refusalScope);
+  assert.equal(refused.status, "rejected", JSON.stringify(refused));
+  assert.match(refused.reason, /linked state already exposes the region of unit 5/);
+  assert(!existsSync(active.out));
 }
 
 const reentry = structuralFixture(
