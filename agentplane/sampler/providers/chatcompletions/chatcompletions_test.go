@@ -233,10 +233,10 @@ func TestCompactionKeepsRecentMessagesAndToolBatches(t *testing.T) {
 		json.RawMessage(`{"role":"user","content":"` + strings.Repeat("old data ", 100) + `"}`),
 		json.RawMessage(`{"role":"assistant","content":"old answer"}`),
 		json.RawMessage(`{"role":"user","content":"recent task"}`),
-		json.RawMessage(`{"role":"assistant","tool_calls":[{"id":"earlier-a","type":"function","function":{"name":"exec","arguments":"{}"}},{"id":"earlier-b","type":"function","function":{"name":"exec","arguments":"{}"}}]}`),
+		json.RawMessage(`{"role":"assistant","reasoning_content":"older reasoning","tool_calls":[{"id":"earlier-a","type":"function","function":{"name":"exec","arguments":"{}"}},{"id":"earlier-b","type":"function","function":{"name":"exec","arguments":"{}"}}]}`),
 		json.RawMessage(`{"role":"tool","content":"` + strings.Repeat("large result ", 100) + `","tool_call_id":"earlier-a"}`),
 		json.RawMessage(`{"role":"tool","content":"small result","tool_call_id":"earlier-b"}`),
-		json.RawMessage(`{"role":"assistant","tool_calls":[{"id":"latest-a","type":"function","function":{"name":"exec","arguments":"{}"}},{"id":"latest-b","type":"function","function":{"name":"exec","arguments":"{}"}}]}`),
+		json.RawMessage(`{"role":"assistant","content":"Verbatim public progress","reasoning_content":"latest reasoning","tool_calls":[{"id":"latest-a","type":"function","function":{"name":"exec","arguments":"{}"}},{"id":"latest-b","type":"function","function":{"name":"exec","arguments":"{}"}}]}`),
 		json.RawMessage(`{"role":"tool","content":"recent result","tool_call_id":"latest-a"}`),
 		json.RawMessage(`{"role":"tool","content":"other recent result","tool_call_id":"latest-b"}`),
 	}); err != nil {
@@ -289,12 +289,13 @@ func TestCompactionKeepsRecentMessagesAndToolBatches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	wantSuffix[0] = bytes.Replace(wantSuffix[0], []byte(`"reasoning_content":"latest reasoning",`), nil, 1)
 	gotSuffix, err := result.RecordsFrom(2)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !slices.EqualFunc(wantSuffix, gotSuffix, func(a, b json.RawMessage) bool { return bytes.Equal(a, b) }) {
-		t.Fatalf("retained messages changed: %s", gotSuffix)
+		t.Fatalf("retained messages changed beyond omitting reasoning: %s", gotSuffix)
 	}
 	wire, err := result.MarshalJSON()
 	if err != nil {

@@ -146,6 +146,7 @@ func (c *Context) compactablePrefix(tokens int) int {
 }
 
 func (m message) estimatedTokens() int {
+	// Count the original message so reasoning-heavy history remains eligible for compaction.
 	// Use the same four-byte heuristic as exec output, plus message and call framing.
 	size := len(m.Role) + len(m.Content) + len(m.Reasoning) + len(m.ToolID)
 	for _, call := range m.ToolCalls {
@@ -166,7 +167,11 @@ func (c *Context) PrepareCompaction(config CompactionConfig, environment string)
 	if cut == 0 {
 		return nil, rejectCompaction("no older messages remain outside the recent token budget")
 	}
-	return &CompactionPlan{prefix: slices.Clone(c.messages[:cut]), suffix: slices.Clone(c.messages[cut:]), environment: environment, config: config}, nil
+	suffix := slices.Clone(c.messages[cut:])
+	for i := range suffix {
+		suffix[i].Reasoning = ""
+	}
+	return &CompactionPlan{prefix: slices.Clone(c.messages[:cut]), suffix: suffix, environment: environment, config: config}, nil
 }
 
 func (p *CompactionPlan) Apply(records []json.RawMessage, audit Audit) (*Context, error) {

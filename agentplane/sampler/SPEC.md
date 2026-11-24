@@ -417,16 +417,22 @@ A Chat Completions route with `chat_compaction` supports manual compaction. Set
 `auto_compact_tokens` to trigger from the last streamed usage total. Newly appended input and tool
 results can exceed provider limits before another usage report. The sampler keeps the longest
 contiguous tail that fits the estimated `keep_recent_tokens` budget, using four UTF-8 bytes per
-token plus framing for content, reasoning and tool fields. The cut can fall within a user turn.
-An assistant tool-call batch and every result on that batch stay together. A message or batch that
-exceeds the budget goes into the summary source in full, even if that leaves an empty tail.
+token plus framing for content, reasoning and tool fields in the original messages. Counting the
+original reasoning keeps a reasoning-heavy context eligible for compaction. The cut can fall
+within a user turn. An assistant tool-call batch and every result on that batch stay together.
+A message or batch that exceeds the budget goes into the summary source in full, even if that
+leaves an empty tail.
 
 The summary request reuses the system message and tool definitions, sends only the prefix being
 replaced, and appends a user message requesting a handoff. It sets `tool_choice: "none"` and
 `max_tokens` for summary output. The prefix includes any previous handoff. A complete nonempty
 text summary replaces the active prefix only if it reduces serialized context. An upstream context
-limit or incomplete summary leaves the original active context intact. The full transcript remains
-available in History.
+limit or incomplete summary leaves the original active context intact. After a successful
+compaction, the retained tail keeps assistant text, tool calls and results, and omits
+`reasoning_content`. The summary source, normal sampling and the append-only transcript retain
+the provider's reasoning. Enable compaction on routes that accept retained assistant messages
+without reasoning, including messages with tool calls.
+[Staging TabbyAPI replay evidence](../../cluster/cdk8s/litellm/README.md#tabbyapi-reasoning-replay).
 
 The sampler freezes the request body before dispatch and reuses it on retry. Changes to the tail
 budget or replacement settings prevent an in-flight summary from being applied under the new
