@@ -42,7 +42,13 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
   have object (a : Addr) (h : a.region ≠ r) : A (.obj a) := h
   have objectRoot : A (.obj objectProto) := Ne.symm hr
   have functionRoot : A (.obj functionProto) := Ne.symm hr
-  have asyncRoot : A (.obj asyncFunctionProto) := Ne.symm hr
+  have prototypeRoot (generator : Bool) : A (.obj (if generator then generatorProto else objectProto)) := by
+    cases generator <;> exact Ne.symm hr
+  have intrinsicRoot (f : Func) : A (.obj f.intrinsicProto) := by
+    unfold Func.intrinsicProto
+    split
+    · exact Ne.symm hr
+    · split <;> exact Ne.symm hr
   have arrayRoot : A (.obj arrayProto) := Ne.symm hr
   have regexpRoot : A (.obj regexpProto) := Ne.symm hr
   have allocate (cells : List (Option Addr)) (o : Obj) (ho : ∀ node ∈ o.nodes, A node) :
@@ -50,14 +56,14 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
     reachFrame_alloc o ho object
   have make (cells : List (Option Addr)) (env : Env) (safe : ∀ node ∈ env.nodes, A node) (f : Func) :
       ReachFrame r R cells A (SafeVal A) (makeFunc env f : M W Val) :=
-    reachFrame_makeFunc away cell objectRoot functionRoot asyncRoot (allocate cells) env safe f
+    reachFrame_makeFunc away cell prototypeRoot intrinsicRoot (allocate cells) env safe f
   have enter (cells : List (Option Addr)) (env : Env) (ss : List Stmt) (safe : ∀ node ∈ env.nodes, A node) :
       ReachFrame r R cells A (fun env' => ∀ node ∈ env'.nodes, A node) (enterBlock env ss : M W Env) :=
-    reachFrame_enterBlock away cell objectRoot functionRoot asyncRoot (allocate cells) env safe ss
+    reachFrame_enterBlock away cell prototypeRoot intrinsicRoot (allocate cells) env safe ss
   have enterCall (cells : List (Option Addr)) (f : Func) (env : Env) (this : Val) (args : List Val)
       (safe : ∀ node ∈ env.nodes, A node) (ht : SafeVal A this) (ha : ∀ arg ∈ args, SafeVal A arg) :
       ReachFrame r R cells A (fun env' => ∀ node ∈ env'.nodes, A node) (enterFunction f env this args : M W Env) :=
-    reachFrame_enterFunction away cell objectRoot functionRoot asyncRoot (allocate cells) f env safe this ht args ha
+    reachFrame_enterFunction away cell prototypeRoot intrinsicRoot (allocate cells) f env safe this ht args ha
   induction n using Nat.strongRecOn with
   | ind n ih =>
     cases n with

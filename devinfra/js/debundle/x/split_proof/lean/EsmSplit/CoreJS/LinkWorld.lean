@@ -74,8 +74,8 @@ private theorem wi_alloc (w : World) (o : Obj) :
   simp only [alloc, linkState]
   split <;> rfl
 
-private theorem wi_addPrototype (w : World) (a : Addr) :
-    WorldIndependent w (addPrototype a) (addPrototype a) := by
+private theorem wi_addPrototype (w : World) (a : Addr) (generator : Bool) :
+    WorldIndependent w (addPrototype a generator) (addPrototype a generator) := by
   unfold addPrototype
   exact (wi_alloc w _).bind fun _ _ => rfl
 
@@ -97,10 +97,11 @@ private theorem wi_makeFunc (w : World) (env : Env) (f : Func) :
   intro closed
   apply (wi_alloc w _).bind
   intro a
-  have prototype : WorldIndependent w (if f.kind == .normal then addPrototype a else pure ())
-      (if f.kind == .normal then addPrototype a else pure ()) := by
+  have prototype : WorldIndependent w
+      (if f.kind == .normal || f.kind == .generator then addPrototype a (f.kind == .generator) else pure ())
+      (if f.kind == .normal || f.kind == .generator then addPrototype a (f.kind == .generator) else pure ()) := by
     split
-    · exact wi_addPrototype _ _
+    · exact wi_addPrototype _ _ _
     · exact wi_pure _ _
   apply prototype.bind
   intro _
@@ -121,7 +122,7 @@ private theorem wi_makeOpaque (w : World) (code part : Nat) (cells : List (Optio
   have prototype : WorldIndependent w (if constructor then addPrototype a else pure ())
       (if constructor then addPrototype a else pure ()) := by
     split
-    · exact wi_addPrototype _ _
+    · exact wi_addPrototype _ _ _
     · exact wi_pure _ _
   exact prototype.bind fun _ => wi_pure _ _
 
