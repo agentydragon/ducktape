@@ -9,7 +9,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 )
 
-func (r *Driver) compact(ctx context.Context, owner sessionstore.Owner, model string) error {
+func (r *Driver) compact(ctx context.Context, owner sessionstore.Owner, live *liveHost, model string) error {
 	session, err := r.store.GetSessionForConversation(ctx, owner)
 	if err != nil {
 		return err
@@ -21,12 +21,8 @@ func (r *Driver) compact(ctx context.Context, owner sessionstore.Owner, model st
 	if frontier != nil && frontier.Kind != sessionstore.PendingIntentCompaction {
 		return protocol.ErrPrecondition
 	}
-	state, err := r.store.ExecutionState(ctx, owner)
-	if err != nil {
+	if err := r.store.CheckLiveCells(ctx, owner, live != nil && live.code.Err() == nil); err != nil {
 		return err
-	}
-	if len(state.Cells) != 0 {
-		return &protocol.UnknownEffectError{Reason: "cannot compact over live JavaScript cells"}
 	}
 	conversation, err := r.store.Read(ctx, owner)
 	if err != nil {
@@ -85,6 +81,12 @@ func (r *Driver) compact(ctx context.Context, owner sessionstore.Owner, model st
 		return r.providerFailure(ctx, owner, session, intentID, err)
 	}
 	return r.finishProvider(ctx, owner, intentID, func(writeCtx context.Context) error {
-		return r.store.FinishCompaction(writeCtx, owner, intentID, result.Audit, original, replacement)
+		var replacementEnvironment *environmentcontext.Context
+		if conversation.API != protocol.APIStyleAnthropicMessages {
+			// These adapters render this environment into the replacement. If the
+			// executor shell changed during compaction, the next sample emits a diff.
+			replacementEnvironment = &environment
+		}
+		return r.store.FinishCompaction(writeCtx, owner, intentID, result.Audit, original, replacement, replacementEnvironment)
 	})
 }

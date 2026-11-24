@@ -116,7 +116,14 @@ func TestCompactionReinjectsFullEnvironmentContextBeforeCompactionItem(t *testin
 		originalItems[0],
 		{Type: responses.ItemCompaction, EncryptedContent: "fixture-opaque"},
 	})
-	if err := store.FinishCompaction(t.Context(), owner, intentID, map[string]any{"response": "complete"}, conversation.Context(), replacement); err != nil {
+	if err := store.RetireLostExecutorSession(t.Context(), owner, "fixture-executor-session", ""); err != nil {
+		t.Fatal(err)
+	}
+	zsh := "zsh"
+	if err := store.SetExecutorSession(t.Context(), owner, "replacement-executor-session", &zsh); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.FinishCompaction(t.Context(), owner, intentID, map[string]any{"response": "complete"}, conversation.Context(), replacement, conversation.EnvironmentContext); err != nil {
 		t.Fatal(err)
 	}
 	compacted, err := store.Read(t.Context(), owner)
@@ -124,11 +131,19 @@ func TestCompactionReinjectsFullEnvironmentContextBeforeCompactionItem(t *testin
 		t.Fatal(err)
 	}
 	items := testsupport.ResponsesItems(t, compacted.Context())
-	if len(items) != 2 || items[1].EncryptedContent != "fixture-opaque" {
+	if len(items) != 3 || items[1].EncryptedContent != "fixture-opaque" || messageText(t, items[2]) != lostExecutorSessionNotice {
 		t.Fatalf("compacted context=%+v", items)
 	}
 	want := "<environment_context>\n  <cwd>/fixture</cwd>\n  <shell>bash</shell>\n  <current_date>2026-01-02</current_date>\n</environment_context>"
 	if got := messageText(t, items[0]); got != want {
 		t.Fatalf("reinjected context=%q, want %q", got, want)
+	}
+	sampling, err := store.PrepareSamplingContext(t.Context(), owner, &ExecutionState{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items = testsupport.ResponsesItems(t, sampling.Context())
+	if len(items) != 5 || !strings.Contains(messageText(t, items[3]), "<shell>zsh</shell>") {
+		t.Fatalf("next sampling context lacks the changed shell: %+v", items)
 	}
 }

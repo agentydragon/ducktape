@@ -399,7 +399,7 @@ func TestProviderFinishDoesNotCommitAfterDurableInterrupt(t *testing.T) {
 			if kind == PendingIntentSampling {
 				err = store.Finish(t.Context(), owner, intentID, map[string]any{"response": map[string]any{"status": "completed"}}, nil, nil)
 			} else {
-				err = store.FinishCompaction(t.Context(), owner, intentID, map[string]any{"response": map[string]any{"status": "completed"}}, original, original)
+				err = store.FinishCompaction(t.Context(), owner, intentID, map[string]any{"response": map[string]any{"status": "completed"}}, original, original, nil)
 			}
 			var interrupt InterruptPendingError
 			if !errors.As(err, &interrupt) {
@@ -503,6 +503,51 @@ func TestFailProviderCommandPreservesUnrelatedLiveCell(t *testing.T) {
 	var retryDue bool
 	if err := store.DB().QueryRowContext(t.Context(), `SELECT provider_retry_not_before IS NOT NULL FROM sampler_intent WHERE id=$1`, intentID).Scan(&retryDue); err != nil || retryDue {
 		t.Fatalf("provider retry due remained after command failure: due=%v err=%v", retryDue, err)
+	}
+}
+
+func TestFailedCompactionPreservesInFlightCellEffect(t *testing.T) {
+	store, session, owner := claimedSession(t)
+	ctx := t.Context()
+	const commandID = "failed-compaction"
+	admitProviderCommand(t, store, owner, session.ID, commandID, false)
+	original, err := store.Read(ctx, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CellResult(ctx, owner, "live-cell", executionstate.CellLive); err != nil {
+		t.Fatal(err)
+	}
+	request, prepare := providerAttemptTestRequest(PendingIntentCompaction)
+	compaction, _, err := store.beginCompaction(ctx, owner, request, original.Context(), prepare, providerAttemptTestPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	nested, err := store.RecordNested(ctx, owner, IntentTool, map[string]any{"cell_id": "live-cell"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AbandonProviderAttempt(ctx, owner, compaction, ProviderAttemptFailure{
+		Class: ProviderAttemptPermanent, Reason: "provider rejected compaction",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.FailProviderCommand(ctx, owner, session.ID, commandID, compaction, "provider rejected compaction"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.FinishNested(ctx, owner, nested, map[string]any{"complete": true}); err != nil {
+		t.Fatal(err)
+	}
+	current, err := store.Read(ctx, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Pending != nil || current.Stopped || !sameNativeContext(original.Context(), current.Context()) {
+		t.Fatalf("failed compaction changed the prior provider context: %+v", current)
+	}
+	state, err := store.ExecutionState(ctx, owner)
+	if err != nil || len(state.Cells) != 1 || state.Cells[0].ID != "live-cell" {
+		t.Fatalf("failed compaction lost a live cell: state=%+v err=%v", state, err)
 	}
 }
 

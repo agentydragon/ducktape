@@ -1,12 +1,16 @@
 package sessionstore
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"testing"
 
+	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -100,6 +104,121 @@ func TestToolResultsResolveTranscriptProvenanceInCompactedContext(t *testing.T) 
 						t.Fatalf("Responses result has wrong native type: %s (type %q, err %v)", records[len(records)-1], itemType, err)
 					}
 				}
+			}
+		})
+	}
+}
+
+func TestCompactionNotificationsRetainAnsweredCallProvenanceAfterReload(t *testing.T) {
+	for api, modelCall := range map[protocol.APIStyle]json.RawMessage{
+		protocol.APIStyleResponses:         json.RawMessage(`{"type":"function_call","call_id":"async-call","name":"exec","arguments":"{\"code\":\"text(1)\"}"}`),
+		protocol.APIStyleAnthropicMessages: json.RawMessage(`{"id":"msg_async","role":"assistant","content":[{"type":"tool_use","id":"async-call","name":"exec","input":{"code":"text(1)"}}],"stop_reason":"tool_use"}`),
+		protocol.APIStyleChatCompletions:   json.RawMessage(`{"role":"assistant","tool_calls":[{"id":"async-call","type":"function","function":{"name":"exec","arguments":"{\"code\":\"text(1)\"}"}}]}`),
+	} {
+		t.Run(string(api), func(t *testing.T) {
+			ctx := t.Context()
+			store, dsn := newTestStoreWithDSN(t)
+			request := &sessionconfig.Configuration{SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Model: "fixture-model", Cwd: "/fixture"}}
+			session, err := openStoreSession(t, store, request, "fixture-account", api)
+			if err != nil {
+				t.Fatal(err)
+			}
+			owner := claim(t, store, session)
+			admitInput(t, store, session.ID, "turn", "run the cell")
+			if _, err := store.NextCommand(ctx, owner, session.ID); err != nil {
+				t.Fatal(err)
+			}
+			sampling, _, err := store.Begin(ctx, owner, IntentPayload{Kind: PendingIntentSampling}, nil, providerAttemptTestPolicyPointer())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Finish(ctx, owner, sampling, map[string]any{}, []json.RawMessage{modelCall}, nil); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.QueueNotification(ctx, owner, "async-call", "live-cell", "before summary started"); err != nil {
+				t.Fatal(err)
+			}
+			if drained, err := store.DrainNotifications(ctx, owner); err == nil || drained {
+				t.Fatalf("drain with unanswered tool: drained=%v err=%v", drained, err)
+			}
+			conversation, err := store.Read(ctx, owner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			call, err := conversation.Transcript.FindCall("async-call")
+			if err != nil {
+				t.Fatal(err)
+			}
+			cell, _, err := store.Begin(ctx, owner, IntentPayload{Kind: PendingIntentCell, Call: &call}, nil, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.FinishTool(ctx, owner, cell, map[string]any{}, call, []protocol.ContentPart{{Type: "input_text", Text: "yielded live-cell"}}); err != nil {
+				t.Fatal(err)
+			}
+			conversation, err = store.Read(ctx, owner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			compaction, _, err := store.BeginCompaction(ctx, owner, IntentPayload{Kind: PendingIntentCompaction}, conversation.Context(), nil, providerAttemptTestPolicy())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.QueueNotification(ctx, owner, "async-call", "live-cell", "while summary ran"); err != nil {
+				t.Fatal(err)
+			}
+			store = New(postgres.Open(t, dsn), store.operationTimeout, nil)
+			replacement, err := newNativeContext(api)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := replacement.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: "compacted summary"}}); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.FinishCompaction(ctx, owner, compaction, map[string]any{}, conversation.Context(), replacement, nil); err != nil {
+				t.Fatal(err)
+			}
+			if replacement.RecordCount() != 1 {
+				t.Fatal("persistence mutated the replacement that a retry would reuse")
+			}
+			if err := store.QueueNotification(ctx, owner, "async-call", "live-cell", "after replacement committed"); err != nil {
+				t.Fatal(err)
+			}
+			if drained, err := store.DrainNotifications(ctx, owner); err != nil || !drained {
+				t.Fatalf("drain after compaction: drained=%v err=%v", drained, err)
+			}
+			if drained, err := store.DrainNotifications(ctx, owner); err != nil || drained {
+				t.Fatalf("second drain: drained=%v err=%v", drained, err)
+			}
+			conversation, err = store.Read(ctx, owner)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, err := conversation.Transcript.FindCall("async-call"); err != nil || got != call {
+				t.Fatalf("originating transcript call changed: call=%+v err=%v", got, err)
+			}
+			if _, err := conversation.Context().FindCall("async-call"); !errors.Is(err, protocol.ErrMissing) {
+				t.Fatalf("compacted context should have a notice without a tool call: %v", err)
+			}
+			for _, native := range []protocol.Context{conversation.Transcript, conversation.Context()} {
+				if err := native.CheckSettled(); err != nil {
+					t.Fatal(err)
+				}
+				wire, err := json.Marshal(native)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, marker := range []string{"before summary started", "while summary ran", "after replacement committed"} {
+					if count := bytes.Count(wire, []byte(marker)); count != 1 {
+						t.Fatalf("%q occurred %d times in context %s", marker, count, wire)
+					}
+				}
+			}
+			if err := store.QueueNotification(ctx, owner, "unknown-call", "live-cell", "untrusted origin"); err != nil {
+				t.Fatal(err)
+			}
+			if drained, err := store.DrainNotifications(ctx, owner); drained || !errors.Is(err, protocol.ErrMissing) {
+				t.Fatalf("notification with unknown transcript origin: drained=%v err=%v", drained, err)
 			}
 		})
 	}

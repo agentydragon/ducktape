@@ -310,10 +310,13 @@ process-termination request.
 
 `notify(value)` follows Codex: the host's `notification/delivered` acknowledgement is sent only after
 the text is durably queued for the active turn; without one it is rejected as "no active turn", and
-blank text is a no-op. Queued outputs become extra `custom_tool_call_output` items for the emitting
-`exec` call, after the current step's own tool outputs and before the next provider request, with
-Codex's 12,000-token middle truncation. Outputs queued after the last step are appended when the
-turn completes; an interrupted or effect-uncertain turn discards them, as Codex does on abort.
+blank text is a no-op. Queued outputs follow the current step's tool outputs and precede the next
+provider request, with Codex's 12,000-token middle truncation. Responses records them as extra
+`custom_tool_call_output` items for the emitting freeform `exec` call. If compaction removed the
+answered call from the active context, the sampler adds a notice there with the call and cell IDs
+and retains the provider's normal asynchronous output in the full transcript. Outputs queued
+after the last step are appended when the turn completes. An interrupted or effect-uncertain
+turn discards them, as Codex does on abort.
 **Deviation:** a failed turn also discards them, because its unresolved intent must precede any
 later output. Boundary evidence records each output as `recorded` or `discarded`.
 
@@ -616,10 +619,17 @@ and the frozen prepared body; steering input and notifications wait until that s
 Changed routing or parser profiles fail the command rather than silently rerouting its request.
 Compaction also pins its kept-suffix and effort-restoration policy, so a configuration change
 cannot apply a frozen summary to a different suffix.
+
+Compaction takes a settled provider context. Yielded cells can keep using their existing host and
+finish nested tools under the lease that dispatched them. Compaction writes no cell or executor
+state. It applies the replacement alongside notifications queued during the summary request. The
+next sampling request injects a fresh execution-handle snapshot, including an empty snapshot if all
+handles have settled.
 Other provider failures are permanent. Permanent failure or exhausted attempts atomically fails
 only the original command and turn, leaving the Session usable and known live cells/processes
-intact. Unresolved native effects still prevent this settlement. No partial response dispatches
-a model tool call. Explicit interruption suppresses the remaining retry chain.
+intact. Unresolved native effects prevent this settlement, except for effects that a live cell
+can still settle independently of a failed compaction. No partial response dispatches a model
+tool call. Explicit interruption suppresses the remaining retry chain.
 Confirmed input retains its effected receipt in History; the failed turn records the later
 provider failure. A failed explicit compaction receives a command-failure observation.
 
