@@ -118,6 +118,7 @@ class HistoryService(Construct):
             sampler_service_actor=CENTRAL_SAMPLER_URI,
             settle_deltas=env.settle_deltas,
             compact_deltas=env.compact_deltas,
+            compact_execution_evidence=env.compact_execution_evidence,
         )
         service_delegation = (
             ServiceDelegationSettings(actors=(ServiceDelegator(spiffe_id=ACTIONS_URI),), methods=_HISTORY_READ_METHODS)

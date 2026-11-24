@@ -46,6 +46,12 @@ class IngressSettings(BaseModel):
         description="Pack native frames and streamed deltas into bounded compressed blocks before completion. "
         "Preserves all original events and cursors. Disabling affects new writes only.",
     )
+    compact_execution_evidence: bool = Field(
+        default=False,
+        exclude_if=lambda value: not value,
+        description="Pack BoundaryRecord and ExecutionProgress events into blocks. Enable only after all "
+        "History readers support these block kinds.",
+    )
 
     @field_serializer("writer_namespaces")
     def sorted_writer_namespaces(self, value: frozenset[str]) -> list[str]:

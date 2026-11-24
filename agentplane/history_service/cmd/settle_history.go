@@ -14,9 +14,10 @@ import (
 )
 
 type historyMaintenanceOptions struct {
-	session uuid.UUID
-	all     bool
-	apply   bool
+	session                  uuid.UUID
+	all                      bool
+	apply                    bool
+	includeExecutionEvidence bool
 }
 
 func parseHistoryMaintenanceOptions(command string, args []string) (historyMaintenanceOptions, error) {
@@ -25,13 +26,18 @@ func parseHistoryMaintenanceOptions(command string, args []string) (historyMaint
 	all := flags.Bool("all", false, "scan every retained Session")
 	apply := flags.Bool("apply", false, "commit changes")
 	dryRun := flags.Bool("dry-run", false, "preview without writes")
+	var includeExecutionEvidence bool
+	if command == "compact-history" {
+		flags.BoolVar(&includeExecutionEvidence, "include-execution-evidence", false,
+			"also pack BoundaryRecord and ExecutionProgress events; use only after all readers support these blocks")
+	}
 	if err := flags.Parse(args); err != nil {
 		return historyMaintenanceOptions{}, err
 	}
 	if flags.NArg() != 0 || *apply == *dryRun || *all == (*session != "") {
 		return historyMaintenanceOptions{}, errors.New("use exactly one of --session UUID / --all and --dry-run / --apply")
 	}
-	options := historyMaintenanceOptions{all: *all, apply: *apply}
+	options := historyMaintenanceOptions{all: *all, apply: *apply, includeExecutionEvidence: includeExecutionEvidence}
 	if !*all {
 		id, err := uuid.Parse(*session)
 		if err != nil || id == uuid.Nil {

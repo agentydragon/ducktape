@@ -31,7 +31,7 @@ func (s *Store) CompactHistory(ctx context.Context, sessionID uuid.UUID, apply b
 	if err := s.db.QueryRowContext(ctx, "SELECT last_cursor FROM session_history WHERE id=$1", sessionID).Scan(&through); err != nil {
 		return result, err
 	}
-	for _, kind := range compactKinds {
+	for _, kind := range historicalCompactionKinds(s.options) {
 		for after := uint64(0); after < through; {
 			batchCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			batch, next, err := s.compactHistoryBatch(batchCtx, sessionID, kind, after, through, apply)

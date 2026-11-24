@@ -194,6 +194,7 @@ func serve(ctx context.Context, c config, rpcListener net.Listener) error {
 	session_ingresspb.RegisterSessionJournalIngressServer(server, &ingress.Service{
 		History: storage.NewStore(ingressDB, storage.Options{
 			SettleDeltas: c.Ingress.SettleDeltas, CompactDeltas: c.Ingress.CompactDeltas,
+			CompactExecutionEvidence: c.Ingress.CompactExecutionEvidence,
 		}),
 		SamplerServiceActor: c.Ingress.SamplerServiceActor,
 		Timing:              ingress.Timing{IdleAck: ingressIdleAck, SilenceLimit: ingressSilenceLimit},

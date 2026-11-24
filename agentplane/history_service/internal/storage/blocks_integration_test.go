@@ -25,6 +25,78 @@ func packedRows(t *testing.T, store *Store, sessionID uuid.UUID) (int, int) {
 	return raw, blocks
 }
 
+func executionEvidenceEntry(cursor uint64, boundary bool) *eventlogpb.EventEntry {
+	entry := entry(cursor)
+	if boundary {
+		entry.Event.Observation = &eventpb.Event_BoundaryRecord{BoundaryRecord: &eventpb.BoundaryRecord{
+			Boundary: "provider", Direction: "response", Payload: []byte{0, 0xff, byte(cursor)},
+			MediaType: "application/octet-stream", CorrelationId: "intent", RecordId: "record",
+			FragmentIndex: uint32(cursor % 3), FragmentCount: 3,
+		}}
+		return entry
+	}
+	entry.Event.Observation = &eventpb.Event_ExecutionProgress{ExecutionProgress: &eventpb.ExecutionProgress{
+		OperationId: "operation", Kind: eventpb.ExecutionProgress_KIND_PROVIDER,
+		Phase: eventpb.ExecutionProgress_PHASE_RECEIVED,
+	}}
+	return entry
+}
+
+func TestExecutionEvidenceBlocksAreGatedForMixedVersionRollout(t *testing.T) {
+	store := NewStore(testDB(t), Options{CompactDeltas: true, CompactExecutionEvidence: true})
+	sessionID := opened(t, store)
+	var original []*eventlogpb.EventEntry
+	appendEvidence := func(count int) {
+		var batch []*eventlogpb.EventEntry
+		for index := range count {
+			batch = append(batch, executionEvidenceEntry(uint64(len(original)+len(batch)+1), index%2 == 0))
+			batch = append(batch, executionEvidenceEntry(uint64(len(original)+len(batch)+1), index%2 != 0))
+		}
+		if len(original) == 0 {
+			batch[5].ProtoReflect().SetUnknown([]byte{0xa0, 0x06, 0x01})
+		}
+		original = append(original, batch...)
+		appendEntries(t, store, sessionID, batch...)
+	}
+	appendEvidence(20)
+	if raw, blocks := packedRows(t, store, sessionID); raw != 40 || blocks != 0 {
+		t.Fatalf("small evidence tails should remain ordinary: %d raw, %d blocks", raw, blocks)
+	}
+	store.options.CompactExecutionEvidence = false
+	appendEvidence(20)
+	if raw, blocks := packedRows(t, store, sessionID); raw != 80 || blocks != 0 {
+		t.Fatalf("disabled evidence gate packed a mixed-version tail: %d raw, %d blocks", raw, blocks)
+	}
+	store.options.CompactExecutionEvidence = true
+	appendEvidence(50)
+	if raw, blocks := packedRows(t, store, sessionID); raw != 40 || blocks < 2 {
+		t.Fatalf("enabled evidence gate did not pack both kinds: %d raw, %d blocks", raw, blocks)
+	}
+	reader := NewStore(store.db, Options{})
+	page := readPage(t, reader, sessionID, 0, len(original))
+	assertEntries(t, page.Entries, original...)
+	filtered := followPage(t, reader, sessionID, 0, historypb.EventKind_EVENT_KIND_BOUNDARY_RECORD)
+	if len(filtered.Entries) != 90 {
+		t.Fatalf("boundary follow returned %d entries, want 90", len(filtered.Entries))
+	}
+	sequences, err := reader.ReadSequences(t.Context(), sessionID, []uint64{1, 2, 38, 39, 100, 120, 180}, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, sequence := range []uint64{1, 2, 38, 39, 100, 120, 180} {
+		read := sequences.Reads[index]
+		if read.Unstored || read.NextEntry == nil || !proto.Equal(read.NextEntry, original[sequence-1]) {
+			t.Fatalf("sequence %d read: %+v", sequence, read)
+		}
+	}
+	appendEntries(t, reader, sessionID, page.Entries[50:55]...)
+	changed := proto.Clone(page.Entries[51]).(*eventlogpb.EventEntry)
+	changed.Event.Observation = &eventpb.Event_BoundaryRecord{BoundaryRecord: &eventpb.BoundaryRecord{Boundary: "changed"}}
+	if _, err := reader.Append(t.Context(), sessionID, []*eventlogpb.EventEntry{changed}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("changed packed replay: %v", err)
+	}
+}
+
 func TestCompactionBeforeCompletionPreservesAllReadContracts(t *testing.T) {
 	store := NewStore(testDB(t), Options{CompactDeltas: true})
 	sessionID := opened(t, store)

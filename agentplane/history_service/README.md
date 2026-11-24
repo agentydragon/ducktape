@@ -192,7 +192,13 @@ one to an unassociated legacy Session. Configured platform readers can still rea
 compressed blocks during ingress, before an item completes. The default is false. Original events,
 native JSON, cursors and evidence references are reconstructed by every reader, including after the
 flag is disabled. Existing completion-based settlement applies independently to both storage forms.
-The [read contract](api/history/README.md) defines pagination, replay, atomicity and rollout requirements.
+
+`ingress.compact_execution_evidence: true` separately packs BoundaryRecord and ExecutionProgress
+events. It defaults to false so this reader support can roll out to every History replica first;
+older versions cannot read those block kinds. Keep the gate off during mixed-version deployment.
+Historical compaction includes them only with `--include-execution-evidence`, after all readers have
+been updated. Disabling the gate does not unpack existing blocks. The [read contract](api/history/README.md)
+defines pagination, replay, atomicity and rollout requirements.
 
 This packs retained events; it does not share bodies across raw history and projection tables or
 backfill old Sessions. Ordinary insertion/deletion still generates WAL.
@@ -211,8 +217,10 @@ its original protobuf before commit. Event identities, projection state and ackn
 stay unchanged, so there are no settlement/removal notifications or projection write leases.
 
 Existing blocks remain intact and bound each candidate span, preserving the per-kind non-overlap
-invariant. Ordinary entries inside an existing block's span (possible after flag toggles) stay ordinary
-and are reported as `skipped_inside_blocks`. Oversized entries and small tails also stay ordinary.
+invariant. By default the command packs native frames and streamed deltas; pass
+`--include-execution-evidence` to also pack BoundaryRecord and ExecutionProgress events after the
+reader rollout. Ordinary entries inside an existing block's span (possible after flag toggles) stay
+ordinary and are reported as `skipped_inside_blocks`. Oversized entries and small tails also stay ordinary.
 Dry runs are read-only and report logical protobuf bytes and encoded block bytes, excluding physical
 row/index costs. Rerunning is safe; cancellation preserves already committed blocks.
 

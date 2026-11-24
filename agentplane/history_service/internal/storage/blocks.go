@@ -24,11 +24,48 @@ const (
 
 // Blocks retain original entries, including unknown protobuf fields and native JSON bytes. Kind and
 // cursor/size arrays are the bounded read index; gzip-compressed Entries is private to this store.
-var compactKinds = []historypb.EventKind{
+// compactDeltaKinds are the kinds controlled by the original compact_deltas rollout flag.
+var compactDeltaKinds = []historypb.EventKind{
 	historypb.EventKind_EVENT_KIND_NATIVE,
 	historypb.EventKind_EVENT_KIND_TEXT_DELTA,
 	historypb.EventKind_EVENT_KIND_TOOL_ARGUMENTS_DELTA,
 	historypb.EventKind_EVENT_KIND_TOOL_OUTPUT_DELTA,
+}
+
+// Execution evidence has a separate rollout gate because older replicas cannot read its blocks.
+var executionEvidenceKinds = []historypb.EventKind{
+	historypb.EventKind_EVENT_KIND_BOUNDARY_RECORD,
+	historypb.EventKind_EVENT_KIND_EXECUTION_PROGRESS,
+}
+
+// compactKinds is the complete set of block kinds understood by readers.
+var compactKinds = slices.Concat(compactDeltaKinds, executionEvidenceKinds)
+
+func liveCompactionEnabled(options Options, kind historypb.EventKind) bool {
+	if slices.Contains(compactDeltaKinds, kind) {
+		return options.CompactDeltas
+	}
+	return slices.Contains(executionEvidenceKinds, kind) && options.CompactExecutionEvidence
+}
+
+func liveCompactionKinds(options Options) []historypb.EventKind {
+	switch {
+	case options.CompactDeltas && options.CompactExecutionEvidence:
+		return compactKinds
+	case options.CompactDeltas:
+		return compactDeltaKinds
+	case options.CompactExecutionEvidence:
+		return executionEvidenceKinds
+	default:
+		return nil
+	}
+}
+
+func historicalCompactionKinds(options Options) []historypb.EventKind {
+	if options.CompactExecutionEvidence {
+		return compactKinds
+	}
+	return compactDeltaKinds
 }
 
 type eventReference struct {
@@ -105,8 +142,8 @@ func insertBlock(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, entries [
 
 // compactEvents seeks only the partial index of eligible new writes. Oversized frames and entries
 // written with compaction disabled cannot make each append rescan an ever-growing retained prefix.
-func compactEvents(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID) error {
-	for _, kind := range compactKinds {
+func compactEvents(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, options Options) error {
+	for _, kind := range liveCompactionKinds(options) {
 		for {
 			rows, err := tx.QueryContext(ctx, `SELECT payload FROM session_event
 				WHERE session_id=$1 AND kind=$2 AND compactable
@@ -157,7 +194,7 @@ func compactEvents(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID) error {
 	return nil
 }
 
-// eventReferences merges the singleton index and the four packed-kind indexes. Each seek is bounded
+// eventReferences merges the singleton index and the packed-kind indexes. Each seek is bounded
 // by the requested event count, independent of the length of an excluded or already-read prefix.
 func eventReferences(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, after, through uint64, kinds []historypb.EventKind, limit int, reverse bool) ([]eventReference, error) {
 	kinds = slices.Clone(kinds)
