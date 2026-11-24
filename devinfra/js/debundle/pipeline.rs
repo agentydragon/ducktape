@@ -1265,7 +1265,6 @@ fn run_prepared_transform(
     // wire-facing resolutions are projections of the plan.
     vendor_report.full = vendor_plan.full_swap_resolutions();
 
-    let mut selected_lowerings: Vec<artifact::reports::SelectedModuleLowering> = Vec::new();
     let mut decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput> = HashMap::new();
     // Spec member claims whose `binding.name` did not resolve to a
     // top-level declaration in the source chunk. Collected across
@@ -1339,7 +1338,6 @@ fn run_prepared_transform(
                 bail!("assessment-only materialization unexpectedly lowered chunks");
             }
         };
-        selected_lowerings = materialize_result.selected_lowerings;
         unmatched_spec_claims = materialize_result.unmatched_spec_claims;
         gate_rejections = materialize_result.gate_rejections;
         decomposition_by_chunk = materialize_result.decomposition_by_chunk;
@@ -1350,7 +1348,7 @@ fn run_prepared_transform(
 
     // The draft runs naturalization, vendor emission rewrites, and both
     // prune passes in their fixed order; its finalized files are immutable.
-    let candidate = candidate_draft.finalize()?;
+    let (candidate, selected_lowerings) = candidate_draft.finalize()?;
     (vendor_report.partial, vendor_report.bundled_partial) =
         build_partial_swap_resolutions(&vendor_plan, candidate.references_by_symbol())?;
 
