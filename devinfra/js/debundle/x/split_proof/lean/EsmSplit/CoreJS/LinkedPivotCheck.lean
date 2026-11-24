@@ -52,30 +52,23 @@ private theorem outsideRegion_iff (r : Nat) (node : HeapNode) :
     outsideRegion r node = true ↔ Unprotected r (fun _ => False) node := by
   cases node <;> simp [outsideRegion, HeapNode.addr, Unprotected]
 
-/-- Check only the scope retained by execution of this statement. The full
-module environment may contain a binding that belongs to the moved unit. -/
-private def unitEnvOk (r : Nat) (u : Nat × Stmt × Env) : Bool :=
-  u.1 + 1 != r &&
-  u.2.2.this.nodes.all (outsideRegion r) &&
-  u.2.1.free.all (fun name => (u.2.2.vars.lookup name).all (fun a => outsideRegion r (.cell a)))
+/-- The schedule reuses this exact capture for every pivot crossing the unit.
+A unit never crossed by an allocating pivot need not resolve its free names.
+The original unit (including its full scope) still runs in the certificate. -/
+structure PreparedUnit where
+  unit : Nat × Stmt × Env
+  nodes : Thunk (List HeapNode)
+  exactNodes : nodes.get = (unit.2.2.capture unit.2.1.free).nodes
 
-private theorem unitEnvOk_sound {r} {u : Nat × Stmt × Env} (ok : unitEnvOk r u = true) :
-    u.1 + 1 ≠ r ∧ ∀ node ∈ (u.2.2.capture u.2.1.free).nodes, Unprotected r (fun _ => False) node := by
-  simp only [unitEnvOk, Bool.and_eq_true, List.all_eq_true] at ok
-  refine ⟨by simpa using ok.1.1, ?_⟩
-  intro node h
-  apply (outsideRegion_iff r node).mp
-  rcases List.mem_append.mp h with captures | recv
-  · obtain ⟨p, hp, rfl⟩ := List.mem_map.mp captures
-    obtain ⟨name, named, found⟩ := List.mem_filterMap.mp hp
-    have free := List.mem_eraseDups.mp named
-    cases lookup : u.2.2.vars.lookup name with
-    | none => simp [lookup] at found
-    | some a =>
-      simp only [lookup, Option.map_some, Option.some.injEq] at found
-      subst p
-      simpa [lookup] using ok.2 name free
-  · exact ok.1.2 node recv
+def PreparedUnit.ofUnit (u : Nat × Stmt × Env) : PreparedUnit :=
+  ⟨u, Thunk.mk (fun _ => (u.2.2.capture u.2.1.free).nodes), rfl⟩
+
+private def unitEnvOk (r : Nat) (u : PreparedUnit) : Bool :=
+  u.unit.1 + 1 != r && u.nodes.get.all (outsideRegion r)
+
+private theorem unitEnvOk_sound {r} {u : PreparedUnit} (ok : unitEnvOk r u = true) :
+    u.unit.1 + 1 ≠ r ∧ ∀ node ∈ (u.unit.2.2.capture u.unit.2.1.free).nodes, Unprotected r (fun _ => False) node := by
+  simpa only [unitEnvOk, Bool.and_eq_true, bne_iff_ne, u.exactNodes, List.all_eq_true, outsideRegion_iff] using ok
 
 private theorem accessOk_outsideRegion {r : Nat} {W : World} {s : State W} {cells : List (Option Addr)}
     (ok : accessOk s cells (outsideRegion r) = true) : Access cells (Unprotected r (fun _ => False)) s := by
@@ -122,8 +115,8 @@ structure CheckedPivot {w : World} (ready : State w)
     ∀ node ∈ (u.2.2.capture u.2.1.free).nodes, Unprotected (pivot.1 + 1) (fun _ => False) node
 
 def checkPivot {w : World} (ready : State w)
-    (pre crossed : List (Nat × Stmt × Env)) (pivot : Nat × Stmt × Env) :
-    Except String (PLift (CheckedPivot ready pre crossed pivot)) := do
+    (pre crossed : List PreparedUnit) (pivot : Nat × Stmt × Env) :
+    Except String (PLift (CheckedPivot ready (pre.map (·.unit)) (crossed.map (·.unit)) pivot)) := do
   let ordinal := pivot.1
   let r := ordinal + 1
   if localStep : localPivotOk pivot = true then
@@ -132,11 +125,15 @@ def checkPivot {w : World} (ready : State w)
         return ⟨{
           access := accessOk_outsideRegion accessible
           localFlag := localStep
-          scope := fun u hu => unitEnvOk_sound (List.all_eq_true.mp unchanged u hu)
+          scope := by
+            intro u hu
+            rw [← List.map_append] at hu
+            obtain ⟨v, hv, rfl⟩ := List.mem_map.mp hu
+            exact unitEnvOk_sound (List.all_eq_true.mp unchanged v hv)
         }⟩
       else
         let offender := (pre ++ crossed).find? (fun u => !(unitEnvOk r u))
-        throw s!"unit {(offender.map (·.1)).getD ordinal} has access to the moved region of unit {ordinal}"
+        throw s!"unit {(offender.map (·.unit.1)).getD ordinal} has access to the moved region of unit {ordinal}"
     else throw s!"the linked state already exposes the region of unit {ordinal}"
   else throw s!"unit {ordinal} is not a local allocating declaration"
 
@@ -146,13 +143,16 @@ def observerRegion? {w} (ready : State w) (r : Nat) : Option Nat :=
   (ready.heap.zipIdx.find? fun (row, q) =>
     q != r && row.any (fun o => o.nodes.any (fun n => n.addr.region == r))).map Prod.snd
 
-def checkIsolated? {w} (s : State w) (q : Nat) (units : List (Nat × Stmt × Env)) :
+def checkIsolated? {w} (s : State w) (q : Nat) (units : List PreparedUnit) :
     Option (PLift (q ≠ 0 ∧ Access [] (Unprotected q (fun _ => False)) s ∧
-      ∀ u ∈ units, u.1 + 1 ≠ q ∧ ∀ node ∈ (u.2.2.capture u.2.1.free).nodes, Unprotected q (fun _ => False) node)) := do
+      ∀ u ∈ units.map (·.unit), u.1 + 1 ≠ q ∧ ∀ node ∈ (u.2.2.capture u.2.1.free).nodes, Unprotected q (fun _ => False) node)) := do
   if hq : q ≠ 0 then
     if access : accessOk s [] (outsideRegion q) = true then
       if scopes : units.all (unitEnvOk q) = true then
-        return ⟨hq, accessOk_outsideRegion access, fun u hu => unitEnvOk_sound (List.all_eq_true.mp scopes u hu)⟩
+        return ⟨hq, accessOk_outsideRegion access, by
+          intro u hu
+          obtain ⟨v, hv, rfl⟩ := List.mem_map.mp hu
+          exact unitEnvOk_sound (List.all_eq_true.mp scopes v hv)⟩
   none
 
 end CoreJS.LinkedBehavior

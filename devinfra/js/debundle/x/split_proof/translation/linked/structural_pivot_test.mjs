@@ -308,3 +308,25 @@ for (const [name, patch, value] of [
   assert.match(denied.reason, /unit 1 is not a local allocating declaration/);
   assert(!existsSync(effect.out));
 }
+
+// The same retained closure is harmless to the first pivot but can read the
+// second. Its linked capture stays fixed; the region to exclude changes.
+const retainedReader = `var observe = () => later;
+   const before = observe();
+   var independent = 1;
+   var later = 2;
+   export { before, independent, later };`;
+const one = fixture("retained-capture-one-pivot", retainedReader, ["#2"], ["#0", "#1", "#3", "#4"]);
+const oneVerdict = one.run(pivotScope);
+assert.equal(oneVerdict.status, "certified", JSON.stringify(oneVerdict));
+assert.deepEqual(one.run(pivotScope, "--check-output"), oneVerdict);
+for (const file of [one.sourceFile, path.join(one.out, "entry.mjs")]) {
+  const values = await import(pathToFileURL(file));
+  assert.equal(values.before, undefined);
+  assert.equal(values.later, 2);
+}
+const two = fixture("retained-capture-two-pivots", retainedReader, ["#2", "#3"], ["#0", "#1", "#4"]);
+const twoVerdict = two.run(refusalScope);
+assert.equal(twoVerdict.status, "rejected", JSON.stringify(twoVerdict));
+assert.match(twoVerdict.reason, /unit 0 has access to the moved region of unit 3/);
+assert(!existsSync(two.out));

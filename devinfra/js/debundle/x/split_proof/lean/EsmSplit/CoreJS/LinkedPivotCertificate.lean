@@ -81,108 +81,117 @@ private theorem movePair (n : Nat) (final : State w) {ready : State w} {pre cros
   simp only [List.append_assoc, List.cons_append, List.nil_append] at *
   exact swapBefore.trans (moveSecond.trans (moveFirst.trans swapAfter.symm))
 
-private def checkPair? (ready : State World.probe) (pre crossed : List LinkedUnit) (a b : LinkedUnit) :
-    Option (PLift (a.1 ≠ b.1 ∧ CheckedPivot ready pre crossed b ∧ CheckedPivot ready (pre ++ [b]) crossed a)) := do
+private abbrev original (units : List PreparedUnit) := units.map PreparedUnit.unit
+
+private def checkPair? (ready : State World.probe) (pre crossed : List PreparedUnit) (a b : PreparedUnit) :
+    Option (PLift (a.unit.1 ≠ b.unit.1 ∧ CheckedPivot ready (original pre) (original crossed) b.unit ∧
+      CheckedPivot ready (original pre ++ [b.unit]) (original crossed) a.unit)) := do
   -- Only try this proof order when a has a reference into b's region.
-  guard (a.2.1.free.any fun x => (a.2.2.vars.lookup x).any (fun cell => cell.region == b.1 + 1))
-  if diff : a.1 ≠ b.1 then
-    let ⟨second⟩ ← (checkPivot ready pre crossed b).toOption
-    let ⟨first⟩ ← (checkPivot ready (pre ++ [b]) crossed a).toOption
-    return ⟨diff, second, first⟩
+  guard (a.unit.2.1.free.any fun x => (a.unit.2.2.vars.lookup x).any (fun cell => cell.region == b.unit.1 + 1))
+  if diff : a.unit.1 ≠ b.unit.1 then
+    let ⟨second⟩ ← (checkPivot ready pre crossed b.unit).toOption
+    let ⟨first⟩ ← (checkPivot ready (pre ++ [b]) crossed a.unit).toOption
+    return ⟨diff, second, by simpa [original] using first⟩
   else none
 
-private structure CheckedSchedule (ready : State World.probe) (source : List LinkedUnit) where
+private structure CheckedSchedule (ready : State World.probe) (source : List PreparedUnit) where
   units : List LinkedUnit
   moves : Nat
   equivalent : ∀ w n (final : State w),
-    runUnits n source (linkState w ready) = .ok () final ↔
+    runUnits n (source.map (·.unit)) (linkState w ready) = .ok () final ↔
       runUnits n units (linkState w ready) = .ok () final
 
-private def checkHiddenMove? (ready : State World.probe) (pre crossed suffix : List LinkedUnit) (pivot : LinkedUnit) :
+private def checkHiddenMove? (ready : State World.probe) (pre crossed suffix : List PreparedUnit) (pivot : PreparedUnit) :
     Option (PLift (∀ w n (final : State w),
-      runUnits n (pre ++ crossed ++ [pivot] ++ suffix) (linkState w ready) = .ok () final ↔
-        runUnits n (pre ++ [pivot] ++ crossed ++ suffix) (linkState w ready) = .ok () final)) := do
-  let q ← observerRegion? ready (pivot.1 + 1)
+      runUnits n (original (pre ++ crossed ++ [pivot] ++ suffix)) (linkState w ready) = .ok () final ↔
+        runUnits n (original (pre ++ [pivot] ++ crossed ++ suffix)) (linkState w ready) = .ok () final)) := do
+  let q ← observerRegion? ready (pivot.unit.1 + 1)
   let masked := ready.put q #[] #[]
   let ⟨hq, access, scope⟩ ← checkIsolated? masked q (pre ++ crossed ++ [pivot])
-  let ⟨checks⟩ ← (checkPivot masked pre crossed pivot).toOption
+  let ⟨checks⟩ ← (checkPivot masked pre crossed pivot.unit).toOption
   return ⟨by
     intro w n final
+    simp only [original, List.map_append, List.map_cons, List.map_nil] at scope ⊢
     let H := ready.heap[q]?.getD #[]
     let C := ready.cells[q]?.getD #[]
     have restore : (linkState w masked).put q H C = linkState w ready := by
       change linkState w ((ready.put q #[] #[]).put q H C) = _
       rw [State.put_put]
       simp only [State.put, H, C, set!_same rfl]
-    have reordered : ∀ u ∈ pre ++ [pivot] ++ crossed, IsolatedUnit q u := by
+    have reordered : ∀ u ∈ original pre ++ [pivot.unit] ++ original crossed, IsolatedUnit q u := by
       intro u hu
       apply scope
       simpa only [List.mem_append, List.mem_singleton, or_assoc, or_left_comm, or_comm] using hu
-    rw [← restore, runUnits_restore hq n _ suffix scope _ _ (Access.linkState access) H C,
-      runUnits_restore hq n _ suffix reordered _ _ (Access.linkState access) H C]
+    rw [← restore, runUnits_restore hq n _ (original suffix) scope _ _ (Access.linkState access) H C,
+      runUnits_restore hq n _ (original suffix) reordered _ _ (Access.linkState access) H C]
     apply exists_congr
     intro t
     apply and_congr_left
     intro _
     simpa only [List.append_nil] using runUnits_move (suffix := []) n t
       (⟨Access.linkState checks.access, checks.localFlag, checks.scope⟩ :
-        CheckedPivot (linkState w masked) pre crossed pivot)⟩
+        CheckedPivot (linkState w masked) (original pre) (original crossed) pivot.unit)⟩
 
 /-- Instantiation has already initialized hoisted functions in both links. For an
 inert body step, even a crossed unit that calls the function commutes with it.
 An allocating initializer still needs the region and capture checks. -/
-private def checkMove (ready : State World.probe) (pre crossed suffix : List LinkedUnit) (pivot : LinkedUnit) :
+private def checkMove (ready : State World.probe) (pre crossed suffix : List PreparedUnit) (pivot : PreparedUnit) :
     Except String (PLift (∀ w n (final : State w),
-      runUnits n (pre ++ crossed ++ [pivot] ++ suffix) (linkState w ready) = .ok () final ↔
-        runUnits n (pre ++ [pivot] ++ crossed ++ suffix) (linkState w ready) = .ok () final)) := do
-  if inert : pivot.2.1.inert = true then
+      runUnits n ((pre ++ crossed ++ [pivot] ++ suffix).map (·.unit)) (linkState w ready) = .ok () final ↔
+        runUnits n ((pre ++ [pivot] ++ crossed ++ suffix).map (·.unit)) (linkState w ready) = .ok () final)) := do
+  if inert : pivot.unit.2.1.inert = true then
     return ⟨by
       intro w n final
+      simp only [List.map_append, List.map_cons, List.map_nil]
       apply Iff.symm
-      apply runUnits_pivot n pre crossed suffix pivot (fun _ => True) _ _
+      apply runUnits_pivot n _ _ _ pivot.unit (fun _ => True) _ _
         (fun _ _ => trivial) (fun _ _ _ _ _ _ _ => trivial)
       intro u _
       exact ⟨fun s _ => inert_commute inert s, fun s _ => commute_inert inert s⟩⟩
-  match checkPivot ready pre crossed pivot with
-  | .ok ⟨checks⟩ => return ⟨fun w n final => runUnits_move n final (checks.forWorld w)⟩
+  match checkPivot ready pre crossed pivot.unit with
+  | .ok ⟨checks⟩ => return ⟨by
+      intro w n final
+      simpa only [List.map_append, List.map_cons, List.map_nil] using
+        runUnits_move (suffix := original suffix) n final (checks.forWorld w)⟩
   | .error why =>
     let some proof := checkHiddenMove? ready pre crossed suffix pivot | throw why
     return proof
 
 /-- Match the requested order from left to right. Each move is checked against
 the prefix already placed, including units moved by previous steps. -/
-private def checkSchedule (ready : State World.probe) (prefixRev remaining : List LinkedUnit) :
+private def checkSchedule (ready : State World.probe) (prefixRev remaining : List PreparedUnit) :
     List Nat → Except String (CheckedSchedule ready (prefixRev.reverse ++ remaining))
   | [] => do
     unless remaining.isEmpty do throw "the candidate schedule omits linked units"
-    return ⟨prefixRev.reverse ++ remaining, 0, fun _ _ _ => Iff.rfl⟩
+    return ⟨original (prefixRev.reverse ++ remaining), 0, fun _ _ _ => Iff.rfl⟩
   | id :: rest => do
     match h : remaining with
     | u :: tail =>
-      if u.1 == id then
+      if u.unit.1 == id then
         let next ← checkSchedule ready (u :: prefixRev) tail rest
         return ⟨next.units, next.moves, by
           simpa only [h, List.reverse_cons, List.append_assoc, List.singleton_append] using next.equivalent⟩
     | [] => pure ()
-    let crossed := remaining.takeWhile (fun u => u.1 != id)
-    match h : remaining.dropWhile (fun u => u.1 != id) with
+    let crossed := remaining.takeWhile (fun u => u.unit.1 != id)
+    match h : remaining.dropWhile (fun u => u.unit.1 != id) with
     | [] => throw s!"unit {id} is missing from the remaining linked schedule"
     | pivot :: suffix =>
       have split : remaining = crossed ++ pivot :: suffix := by
-        have joined := List.takeWhile_append_dropWhile (p := fun u : LinkedUnit => u.1 != id) (l := remaining)
+        have joined := List.takeWhile_append_dropWhile (p := fun u : PreparedUnit => u.unit.1 != id) (l := remaining)
         rw [h] at joined
         exact joined.symm
       -- Try the reversed proof order only for an adjacent forward reference.
       match rest, hs : suffix with
       | nextId :: rest', b :: tail =>
-        if b.1 == nextId then
+        if b.unit.1 == nextId then
           if let some ⟨diff, second, first⟩ := checkPair? ready prefixRev.reverse crossed pivot b then
             let next ← checkSchedule ready (b :: pivot :: prefixRev) (crossed ++ tail) rest'
             return ⟨next.units, next.moves + 2, by
               intro w n final
-              have pair := movePair (suffix := tail) n final diff (second.forWorld w) (first.forWorld w)
+              have pair := movePair (suffix := original tail) n final diff (second.forWorld w) (first.forWorld w)
               have after := next.equivalent w n final
-              simp only [split, hs, List.reverse_cons, List.append_assoc, List.cons_append, List.nil_append]
+              simp only [original, List.map_append, List.map_cons, split, hs, List.reverse_cons,
+                List.append_assoc, List.cons_append, List.nil_append]
                 at pair after ⊢
               exact pair.trans after⟩
       | _, _ => pure ()
@@ -216,7 +225,7 @@ def checkStructuralSchedule (source candidate : Program) :
     exact exportsEqual
   let sourceUnits := unitsOf before.linked
   let candidateUnits := unitsOf after.linked
-  let schedule ← checkSchedule before.ready [] sourceUnits (candidateUnits.map (·.1))
+  let schedule ← checkSchedule before.ready [] (sourceUnits.map PreparedUnit.ofUnit) (candidateUnits.map (·.1))
   let some ⟨same⟩ := sameUnits? schedule.units candidateUnits |
     throw "the linked schedules differ in unit order, syntax, or scope"
   have equivalent : NormalEquivalent source candidate := normalEquivalent_of_bounded fun w n final => by
@@ -224,7 +233,7 @@ def checkStructuralSchedule (source candidate : Program) :
     change runUnits n sourceUnits (linkState w before.ready) = .ok () final ↔
       runUnits n candidateUnits (linkState w after.ready) = .ok () final
     rw [← runUnits_same n same, ← congrArg (linkState w) initial]
-    exact schedule.equivalent w n final
+    simpa [List.map_map, Function.comp_def, PreparedUnit.ofUnit] using schedule.equivalent w n final
   let method := match schedule.moves with
     | 0 => .preservedOrder
     | 1 => .singlePivot
