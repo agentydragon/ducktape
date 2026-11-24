@@ -843,6 +843,32 @@ async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData, g
     await call_tool(mcp_client, "shopping_list_items_remove", {"item_ids": [sl_item_id]})
 
 
+async def test_clear_shopping_list_keeps_list_and_other_lists_items(
+    mcp_client: Client, grocy_http_client: GrocyClient
+) -> None:
+    list_name = f"Clear-{uuid.uuid4().hex[:8]}"
+    [created] = await call_tool(mcp_client, "shopping_lists_create", {"items": [{"name": list_name}]})
+    list_id = created["created_object_id"]
+    for done in (0, 1):
+        response = await grocy_http_client.post(
+            "/objects/shopping_list", json={"shopping_list_id": list_id, "note": f"Done={done}", "done": done}
+        )
+        response.raise_for_status()
+    control = await grocy_http_client.post("/objects/shopping_list", json={"shopping_list_id": 1, "note": list_name})
+    control.raise_for_status()
+    control_id = control.json()["created_object_id"]
+
+    for ref in (list_name.lower(), list_id):
+        assert await call_tool(mcp_client, "shopping_list_clear", {"shopping_list": ref}) == {"kind": "ok"}
+        kept = await call_tool(mcp_client, "shopping_list_get", {"shopping_list": list_id})
+        assert kept["name"] == list_name
+        assert kept["items"] == []
+
+    untouched = await grocy_http_client.get(f"/objects/shopping_list/{control_id}")
+    untouched.raise_for_status()
+    assert untouched.json()["note"] == list_name
+
+
 async def _add_dated_stock(client: Client, ref_data: RefData, products: dict[str, date]) -> None:
     items = [
         {

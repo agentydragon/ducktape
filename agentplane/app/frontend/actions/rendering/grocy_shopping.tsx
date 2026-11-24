@@ -310,9 +310,11 @@ const removeShoppingItemsCall = defineReceiptPreview(removeItems, itemOutcomes, 
     </Stack>
   );
 });
-const cleared = defineResultPreview(z.strictObject({ kind: z.literal("ok"), cleared: id }), ({ result }) => (
+const cleared = defineResultPreview(z.strictObject({ kind: z.literal("ok"), cleared: id.optional() }), ({ result }) => (
   <Line>
-    {result.cleared} {result.cleared === 1 ? "item" : "items"} removed · Shopping list kept
+    {result.cleared === undefined
+      ? "Shopping list emptied"
+      : `${result.cleared} ${result.cleared === 1 ? "item" : "items"} removed · Shopping list kept`}
   </Line>
 ));
 
