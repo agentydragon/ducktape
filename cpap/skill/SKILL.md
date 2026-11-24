@@ -32,9 +32,11 @@ PASSWORD=$(kubectl -n claude-sandbox get secret cpap-data-git-read -o jsonpath='
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.extraHeader
 export GIT_CONFIG_VALUE_0="Authorization: Basic $(printf '%s:%s' "$USERNAME" "$PASSWORD" | base64 -w0)"
 
-# Full archive is multi-GB; for just the daily summary, partial-clone + checkout one file:
-git clone --filter=blob:none --no-checkout https://git.allegedly.works/cpap-data/cpap-data.git /tmp/cpap-data
-git -C /tmp/cpap-data checkout main -- STR.EDF
+# Fetch only the daily summary's blob from the multi-GB archive.
+cpap_archive=/tmp/agents/YYYY_MM_DD/cpap-analysis/checkout
+mkdir -p "$(dirname "$cpap_archive")"
+git clone --filter=blob:none --no-checkout https://git.allegedly.works/cpap-data/cpap-data.git "$cpap_archive"
+git -C "$cpap_archive" checkout main -- STR.EDF
 ```
 
 Checking out `DATALOG/<date>/` directories the same way fetches only those
@@ -99,28 +101,38 @@ The `Date` signal stores days since Unix epoch (1970-01-01). Key signals:
 | Compliance | ≥4h on ≥70% nights | —     | —        | <4h or <70% |
 | Leak 95th  | <24 L/min          | 24-36 | >36      | —           |
 
-## Python libraries
+## Daily summary
 
-### stdlib parsing (no dependencies)
-
-For `STR.EDF` parsing, stdlib `struct` + `xml.etree.ElementTree` is sufficient.
-See `examples/parse_str_edf.py` for a complete implementation.
-
-### pyedflib (recommended for waveforms)
+Use a Python environment with NumPy and pandas. From the directory containing
+this skill's `SKILL.md`, run the packaged parser against the checked-out file.
 
 ```bash
-pip install pyedflib  # depends on numpy only
+python3 examples/parse_str_edf.py "$cpap_archive/STR.EDF" --days 14
 ```
+
+The report prints JSON records for the last 14 nights with positive usage, sorted by date.
+It retains single-sample signal labels and omits multi-sample fields such as
+`MaskOn` and `MaskOff`. The repository's parser test generates its own synthetic
+`STR.EDF`.
+
+## DATALOG waveforms
+
+Fetch the desired date directory, then use PyEDFlib with NumPy to read the signals
+and their sample frequencies.
 
 ```python
 from pyedflib import highlevel
 
-signals, signal_headers, header = highlevel.read_edf("DATALOG/20260418/file.edf")
-for i, sh in enumerate(signal_headers):
-    print(f"{sh['label']}: {len(signals[i])} samples @ {sh['sample_frequency']} Hz")
+signals, signal_headers, header = highlevel.read_edf("/path/to/checkout/DATALOG/YYYYMMDD/file.edf")
+for signal, signal_header in zip(signals, signal_headers, strict=True):
+    print(f"{signal_header['label']}: {len(signal)} samples @ {signal_header['sample_frequency']} Hz")
 ```
 
-### Other tools
+Use the reader directly for now. The packaged `examples/read_waveforms.py` expects
+`Duration` and `file_duration` in the header dictionary. PyEDFlib's reader exposes
+[file duration separately](https://pyedflib.readthedocs.io/en/latest/ref/edfreader.html#pyedflib.EdfReader.getFileDuration).
+
+## Other tools
 
 - **OSCAR** (Open Source CPAP Analysis Reporter): Desktop GUI for ResMed data analysis.
   The gold standard for CPAP data visualization. https://www.sleepfiles.com/OSCAR/
@@ -130,37 +142,3 @@ for i, sh in enumerate(signal_headers):
 - **edf-importer** (https://github.com/tedpearson/edf-importer): Imports ResMed
   AirSense 11 EDF files to InfluxDB/VictoriaMetrics for Grafana dashboards.
 - **edfio** (`pip install edfio`): Modern pure-Python EDF reader, alternative to pyedflib.
-
-## Recipes
-
-### Parse STR.EDF daily summary
-
-See `examples/parse_str_edf.py`. This is a standalone stdlib-only script that reads
-`STR.EDF` and outputs a nightly summary table with AHI, usage, pressure, leaks,
-respiratory rate, and compliance stats.
-
-Usage:
-
-```bash
-# Grab STR.EDF from the partial clone (see "Data access") and analyze last 14 days
-git -C /tmp/cpap-data checkout main -- STR.EDF
-python3 examples/parse_str_edf.py /tmp/cpap-data/STR.EDF --days 14
-```
-
-### Read DATALOG waveforms with pyedflib
-
-See `examples/read_waveforms.py`. Reads a DATALOG session's BRP/PLD/EVE files and
-prints signal summaries (min, max, mean, duration).
-
-### Scaffolding for tests
-
-All recipes assume:
-
-- Python 3.11+
-- `pyedflib` available (for waveform recipes only; STR.EDF parsing is stdlib-only)
-- EDF files accessible locally (checked out from the cpap-data repo or passed as arguments)
-
-Test fixtures use the public EDF test file from
-https://www.teuniz.net/edf_bdf_testfiles/test_generator_2_edfplus.zip (2.7 MB,
-12 signals, 600 records at 1s duration). This validates format parsing without
-requiring real CPAP data.
