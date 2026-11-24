@@ -98,6 +98,24 @@ private structure CheckedSchedule (ready : State World.probe) (source : List Lin
     runUnits n source (linkState w ready) = .ok () final ↔
       runUnits n units (linkState w ready) = .ok () final
 
+/-- Instantiation has already initialized hoisted functions in both links. For an
+inert body step, even a crossed unit that calls the function commutes with it.
+An allocating initializer still needs the region and capture checks. -/
+private def checkMove (ready : State World.probe) (pre crossed suffix : List LinkedUnit) (pivot : LinkedUnit) :
+    Except String (PLift (∀ w n (final : State w),
+      runUnits n (pre ++ crossed ++ [pivot] ++ suffix) (linkState w ready) = .ok () final ↔
+        runUnits n (pre ++ [pivot] ++ crossed ++ suffix) (linkState w ready) = .ok () final)) := do
+  if inert : pivot.2.1.inert = true then
+    return ⟨by
+      intro w n final
+      apply Iff.symm
+      apply runUnits_pivot n pre crossed suffix pivot (fun _ => True) _ _
+        (fun _ _ => trivial) (fun _ _ _ _ _ _ _ => trivial)
+      intro u _
+      exact ⟨fun s _ => inert_commute inert s, fun s _ => commute_inert inert s⟩⟩
+  let ⟨checks⟩ ← checkPivot ready pre crossed pivot
+  return ⟨fun w n final => runUnits_move n final (checks.forWorld w)⟩
+
 /-- Match the requested order from left to right. Each move is checked against
 the prefix already placed, including units moved by previous steps. -/
 private def checkSchedule (ready : State World.probe) (prefixRev remaining : List LinkedUnit) :
@@ -135,12 +153,12 @@ private def checkSchedule (ready : State World.probe) (prefixRev remaining : Lis
                 at pair after ⊢
               exact pair.trans after⟩
       | _, _ => pure ()
-      let ⟨checks⟩ ← checkPivot ready prefixRev.reverse crossed pivot
+      let ⟨move⟩ ← checkMove ready prefixRev.reverse crossed suffix pivot
       let next ← checkSchedule ready (pivot :: prefixRev) (crossed ++ suffix) rest
       return ⟨next.units, next.moves + 1, by
         intro w n final
         rw [split]
-        have step := runUnits_move (suffix := suffix) n final (checks.forWorld w)
+        have step := move w n final
         have tail := next.equivalent w n final
         simp only [List.reverse_cons, List.append_assoc, List.singleton_append] at step tail ⊢
         exact step.trans tail⟩
