@@ -237,6 +237,21 @@ async def smoke(
                 }""",
                 f"/{editor}",
             )
+            geometry = await page.evaluate(
+                """async () => {
+                  const {al: line, K8: intersect} = await import("/packages/math/line.mjs");
+                  const {ci: contains} = await import("/packages/math/triangle.mjs");
+                  const horizontal = line([0, 2], [1, 2]);
+                  const triangle = [[0, 0], [4, 0], [0, 4]];
+                  return {
+                    crossing: intersect(horizontal, line([3, 0], [3, 1])),
+                    parallel: intersect(horizontal, line([0, 3], [1, 3])),
+                    inside: contains(triangle, [1, 1]),
+                    outside: contains(triangle, [3, 3]),
+                  };
+                }"""
+            )
+            assert geometry == {"crossing": [3, 2], "parallel": None, "inside": True, "outside": False}
         return list(namespace["names"])
 
 
