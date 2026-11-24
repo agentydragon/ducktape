@@ -1,0 +1,9 @@
+exports_files(
+    [
+        "packages/excalidraw/colors.yaml",
+        "packages/excalidraw/constants.yaml",
+        "packages/excalidraw/groups.yaml",
+        "packages/excalidraw/random.yaml",
+    ],
+    visibility = ["//devinfra/js/debundle/excalidraw:__pkg__"],
+)

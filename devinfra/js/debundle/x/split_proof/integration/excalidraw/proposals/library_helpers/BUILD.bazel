@@ -1,0 +1,9 @@
+exports_files(
+    [
+        "average.yaml",
+        "rtl_strings.yaml",
+        "shift_locking_angle.yaml",
+        "utils_prefix.yaml",
+    ],
+    visibility = ["//devinfra/js/debundle/excalidraw:__pkg__"],
+)

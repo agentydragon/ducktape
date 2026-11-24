@@ -51,35 +51,29 @@ def editor_source(runfiles: Runfiles) -> Path:
 
 def certify_editor_split(runfiles: Runfiles, source: Path, origin: str) -> dict[str, Path]:
     canonical = json.loads(resolve(runfiles, os.environ["CANONICAL_PLACEMENT"]).read_text())
-    selected = json.loads(resolve(runfiles, os.environ["SELECTED_PLACEMENT"]).read_text())
+    resolved = resolve(runfiles, os.environ["SELECTED_PLACEMENT"])
+    selected = json.loads(resolved.read_text())
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
     assert selected["chunk_id"] == canonical["chunk_id"] == "editor"
     assert selected["source_sha256"] == canonical["source_sha256"] == digest
 
-    # Lean plans the links and evaluation order. Rust supplies only the
-    # requested source-unit ownership and the author's import priority.
-    paths = [owner + ".mjs" for owner in selected["import_order"]]
-    assert source.name not in paths
-    assert len(paths) == len(set(paths))
-    modules: dict[str, list[str]] = {name: [] for name in [source.name, *paths]}
     for ordinal, (unit, full) in enumerate(zip(selected["units"], canonical["units"], strict=True)):
         assert unit["ordinal"] == full["ordinal"] == ordinal
-        owner = unit["owner"]
-        assert owner is None or owner == full["owner"], (ordinal, owner, full["owner"])
-        modules[source.name if owner is None else owner + ".mjs"].append(f"#{ordinal}")
-    placement = {"entry": source.name, "modules": modules, "order": paths}
+        assert unit["owner"] is None or unit["owner"] == full["owner"], (ordinal, unit, full)
+    files = [source.name, *(owner + ".mjs" for owner in selected["import_order"])]
     artifacts = undeclared_outputs_dir()
     (artifacts / "browser-origin.txt").write_text(f"{origin}\n")
-    spec = artifacts / "placement.json"
-    spec.write_text(json.dumps(placement))
+    (artifacts / "placement.json").write_bytes(resolved.read_bytes())
     profile = artifacts / "host.json"
-    profile.write_text(json.dumps({"profile": "browser-page"}))
+    profile.write_text(json.dumps({"profile": "browser-page", "stableIntrinsicValues": ["Math.PI@1"]}))
     out = artifacts / "certified-editor"
     command: list[str | Path] = [
         resolve(runfiles, os.environ["LOWERSPLIT"]),
         source,
-        spec,
+        resolved,
         out,
+        "--resolved-placement",
+        "editor",
         "--require",
         "normal-completion",
         "--host-contract",
@@ -99,10 +93,10 @@ def certify_editor_split(runfiles: Runfiles, source: Path, origin: str) -> dict[
         assert verdict["guarantee"] == "normal-completion", verdict
         assert verdict["scope"] == "linked-structural-moves", verdict
         assert verdict["hostProfile"] == "browser-page", verdict
-        assert isinstance(verdict["assumptions"], list), verdict
+        assert any(premise.startswith("Math.PI@1:") for premise in verdict["assumptions"]), verdict
         verdicts.append(verdict)
     assert verdicts[0] == verdicts[1]
-    return {name: out / name for name in modules}
+    return {name: out / name for name in files}
 
 
 def serve_file(url: str, file: Path) -> Route:
