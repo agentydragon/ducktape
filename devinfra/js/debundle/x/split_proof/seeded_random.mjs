@@ -17,3 +17,22 @@ export function lcg32(seed) {
     return state;
   };
 }
+
+export function seededRandom(seed) {
+  const float = mulberry32(seed);
+  const int = (n) => Math.floor(float() * n);
+  return {
+    float,
+    int,
+    chance: (p) => float() < p,
+    pick: (xs) => xs[int(xs.length)],
+    shuffle: (xs) => {
+      const out = [...xs];
+      for (let i = out.length - 1; i > 0; i--) {
+        const j = int(i + 1);
+        [out[i], out[j]] = [out[j], out[i]];
+      }
+      return out;
+    },
+  };
+}

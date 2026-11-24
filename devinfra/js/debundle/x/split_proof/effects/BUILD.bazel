@@ -32,6 +32,7 @@ _TRANSLATE = "//devinfra/js/debundle/x/split_proof/lean:translate"
 
 _EFFECTS_CASES_DATA = [
     ":cases",
+    "//devinfra/js/debundle/x/split_proof:seeded_random",
     "//devinfra/js/debundle/x/split_proof/translation:pair",
     _TRANSLATE,
     "//devinfra/js/debundle/x/split_proof/lean:lower",

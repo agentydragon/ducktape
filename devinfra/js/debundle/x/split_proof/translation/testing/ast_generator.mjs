@@ -1,11 +1,6 @@
 // Bounded scope-aware AST generation. No source fragments participate in generation.
 import { generate } from "astring";
-import { mulberry32 } from "../../seeded_random.mjs";
-
-function random(seed) {
-  const next = mulberry32(seed);
-  return (n) => Math.floor(next() * n);
-}
+import { seededRandom } from "../../seeded_random.mjs";
 
 const id = (name, binding) => ({ type: "Identifier", name, binding });
 const num = (value) => ({ type: "Literal", value });
@@ -91,9 +86,9 @@ function walk(node, visit, depth = 0) {
 /** Produce one program. Global references use only initialized bindings, locals
  * have lexical environments, and recursive calls to a function being built are excluded. */
 export function generateAstBundle(seed, round) {
-  const pick = random((seed * 100003 + round) >>> 0);
-  const unaryPick = random((seed * 100043 + round) >>> 0);
-  const callbackPick = random((seed * 100019 + round + 17) >>> 0);
+  const pick = seededRandom((seed * 100003 + round) >>> 0).int;
+  const unaryPick = seededRandom((seed * 100043 + round) >>> 0).int;
+  const callbackPick = seededRandom((seed * 100019 + round + 17) >>> 0).int;
   let next = 0;
   const fresh = () => `v${next++}`;
   // Deferred closures may capture these reserved bindings before their declarations.
