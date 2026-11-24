@@ -10,6 +10,7 @@ unassigned_mode:
     kind: coarse_atomic_groups
 import_order:
   editor:
+    - packages/excalidraw/constants
     - packages/math/vector
     - packages/math/utils
     - packages/math/point

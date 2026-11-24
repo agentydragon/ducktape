@@ -25,6 +25,19 @@ The two remaining hoists, `deconstructRectanguloidElement` and
 `deconstructDiamondElement`, depend on private entry bindings.
 [Restoring both changed the entry exports](https://app.buildbuddy.io/invocation/45f6d119-2f0f-4d2d-9d9b-3d1fae522121).
 
+## Restoring an upstream dependency
+
+The canonical selectors for [constants.ts](../../../../excalidraw/spec/modules/editor/packages/excalidraw/constants.yaml)
+place 73 additional bindings in their [pinned upstream module](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/excalidraw/constants.ts).
+Moving `ELEMENT_READY_TO_ERASE_OPACITY` into that module lets the renderer
+import it there. The checker can now certify `getRenderOpacity` without exposing
+its former private dependency from the editor entry.
+
+Three further trials on the hoist baseline identified separate proof limits:
+the linked state exposed [`vectorNormalize`](https://app.buildbuddy.io/invocation/b18c0ffd-ecaf-4e0f-b7db-bf9daae50835);
+an earlier unit accessed the moved region of [`hitElementBoundText`](https://app.buildbuddy.io/invocation/1eed0d13-c6ec-46ac-8c67-6ef04cf9b895)
+and of [`loadFromBlob`](https://app.buildbuddy.io/invocation/7ad47e3f-24cd-4140-801c-4911859cee5b).
+
 ## What limited the candidate set
 
 To select a trial, join the canonical Rust graph to the scope-annotated original
@@ -48,3 +61,18 @@ The following blockers came from those runs:
 | `resizeImageFile`                                            | The helper contains relative dynamic imports. The deployment check rejected moving it away from the original editor URL. [Lean refusal](https://app.buildbuddy.io/invocation/b76a3d3e-7ede-4690-ba11-978fcaafaede)                                                                                                                                                      |
 | `COMMON`, `EMOJI`                                            | These text-wrapping regex tables did not pass the local-allocation check. [COMMON refusal](https://app.buildbuddy.io/invocation/70798918-ca88-4af1-8320-ebf95a3d2839) · [EMOJI refusal](https://app.buildbuddy.io/invocation/736a4877-db12-4d6d-b756-c220a4883473)                                                                                                      |
 | `isLinearElement`                                            | Its region is already reachable in the initial linked state. A function declaration later in source order captures this binding, so checking earlier source references alone did not screen it out. [Lean refusal](https://app.buildbuddy.io/invocation/4c804fb2-54b2-4118-a811-f5f29bf3261d)                                                                           |
+
+### Why an object allocation and a later property read cannot simply move as a group
+
+`DEFAULT_FONT_FAMILY = FONT_FAMILY.Excalifont` needs a fact about the object at
+the instant of the read. Consider `const table = {value: 1}; const alias = table;
+alias.value = 2; const chosen = table.value;`. Moving the first and last
+declarations together changes `chosen` from 2 to 1 even though both final
+tables contain 2. Replacing the write with a read makes the same placement benign.
+[Neutral runtime comparison and checker refusals](https://app.buildbuddy.io/invocation/1dede4aa-a7ef-4e91-b0ac-9d064006de79).
+
+The current frame rule can equate cells holding an external address without
+equating its property values. A proof for the benign case must establish an own
+data descriptor and value after the common prefix, then show that the crossed
+code preserves that lookup through every alias. Merely selecting the allocator
+in the same module does not establish either condition.
