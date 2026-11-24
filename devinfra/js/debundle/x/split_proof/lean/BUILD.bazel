@@ -223,6 +223,7 @@ lean_library(
         "EsmSplit/CoreJS/LinkedBehavior.lean",
         "EsmSplit/CoreJS/LinkedCells.lean",
         "EsmSplit/CoreJS/LinkedDeployment.lean",
+        "EsmSplit/CoreJS/LinkedLocalMove.lean",
         "EsmSplit/CoreJS/LiteralRecord.lean",
         "EsmSplit/CoreJS/ModuleInput.lean",
         "EsmSplit/CoreJS/ModuleLocation.lean",
