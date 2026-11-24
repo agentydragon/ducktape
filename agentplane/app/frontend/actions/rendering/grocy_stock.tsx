@@ -307,15 +307,29 @@ const productStock = defineResultPreview(
 );
 
 const volatilityFields = { product_id: id, product_name: z.string(), amount: z.number(), qu_name: z.string() };
-const expirationFields = { ...volatilityFields, location_name: z.string(), best_before_date: date };
+const expirationFields = {
+  ...volatilityFields,
+  entry_id: id.optional(),
+  location_name: z.string(),
+  best_before_date: date,
+};
 const expiring = z.array(z.strictObject({ ...expirationFields, days_until_expiry: id }));
 const expired = z.array(z.strictObject({ ...expirationFields, days_overdue: id }));
 const below = z.array(z.strictObject({ ...volatilityFields, min_amount: z.number(), deficit: z.number() }));
 
-function stockLabel(row: { product_id: number; product_name: string; amount: number; qu_name: string }) {
+function stockLabel(row: {
+  product_id: number;
+  product_name: string;
+  amount: number;
+  qu_name: string;
+  entry_id?: number;
+}) {
   return (
     <>
-      {objectLink("product", row.product_id, row.product_name || "Open product")} · {row.amount} {row.qu_name}
+      {row.entry_id === undefined
+        ? objectLink("product", row.product_id, row.product_name || "Open product")
+        : objectLink("stockentry", row.entry_id, `${row.product_name} · Lot #${row.entry_id}`)}{" "}
+      · {row.amount} {row.qu_name}
     </>
   );
 }

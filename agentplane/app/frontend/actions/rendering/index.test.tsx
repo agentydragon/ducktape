@@ -586,6 +586,39 @@ describe("Action presentation slots", () => {
     }
   });
 
+  it.each([
+    ["get_expiring_stock", { days_until_expiry: 2 }],
+    ["get_expired_stock", { days_overdue: 2 }],
+  ] as const)("opens the individual lot from a %s receipt", async (name, timing) => {
+    const row = {
+      product_id: 21,
+      product_name: "Kefir",
+      amount: 3,
+      qu_name: "Bottle",
+      location_name: "Fridge",
+      best_before_date: "2026-11-25",
+      ...timing,
+    };
+    const result = await drawDetailsResult(identity("grocy_sf", name), {
+      content: [],
+      structuredContent: [
+        { ...row, entry_id: 14 },
+        { ...row, entry_id: 19 },
+      ],
+      isError: false,
+    });
+    expect(Array.from(result.querySelectorAll("a"), (a) => [a.textContent, a.pathname])).toEqual([
+      ["Kefir · Lot #14", "/stockentry/14"],
+      ["Kefir · Lot #19", "/stockentry/19"],
+    ]);
+    const historical = await drawDetailsResult(identity("grocy_sf", name), {
+      content: [],
+      structuredContent: [row],
+      isError: false,
+    });
+    expect(historical.querySelector("a")?.pathname).toBe("/product/21");
+  });
+
   it("shows each physical location for the same product with its own quantity and opened subset", async () => {
     const action = identity("grocy_sf", "stock_get");
     const args = { products: ["Kefir"], locations: ["Fridge", "Pantry"] };
