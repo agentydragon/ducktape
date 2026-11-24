@@ -134,7 +134,7 @@ data:
           supports_function_calling: true
       - model_name: tabbyapi/oai-chat/qwen3.8-flash-next-exl3-256k
         litellm_params:
-          model: hosted_vllm/qwen38-exl3-268
+          model: openai/qwen38-exl3-268
           api_base: http://tabbyapi-model-switching.ollama.svc:5000/v1
           api_key: tabbyapi
           allowed_openai_params:
@@ -145,7 +145,7 @@ data:
           supports_function_calling: true
       - model_name: tabbyapi/oai-chat/qwen3.8-flash-next-abliterated
         litellm_params:
-          model: hosted_vllm/qwen38-exl3-250-abliterated
+          model: openai/qwen38-exl3-250-abliterated
           api_base: http://tabbyapi-model-switching.ollama.svc:5000/v1
           api_key: tabbyapi
           allowed_openai_params:

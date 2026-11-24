@@ -1121,6 +1121,7 @@ flowchart LR
     CENTRAL_SAMPLER_MODEL_CAPABILITIES[Unscheduled: live route check for standard-mode routes]
     CENTRAL_SAMPLER_PROMPT_COMPACTION[Unscheduled: client-side compaction prompt for routes without server compaction]
     CENTRAL_SAMPLER_COMPACTION_HEADROOM[Unscheduled: compact long tool loops before output starvation]
+    TABBY_REASONING_REPLAY[Verify Tabby reasoning replay after proxy rollout]
     CENTRAL_SAMPLER_COMPACTION_TIMELINE[Unscheduled: surface sampler compaction in the timeline]
     CENTRAL_SAMPLER_BACKGROUND_COMPACTION[Unscheduled: compact a prefix while sampling continues]
     CENTRAL_SAMPLER_DRAIN_BUDGET[Unscheduled: consider longer sampling drain]
@@ -1421,6 +1422,20 @@ multiple compactions, a live cell and a failed summary. Measure actual rendered 
 available output tokens and whether the agent resumes the original task without losing a result
 or repeating an effect. Verify historical reasoning at the tokenizer on the deployed model route
 with a paired prompt-token measurement; include both a tool follow-up and a new user turn.
+
+### `TABBY_REASONING_REPLAY` — preserve assistant reasoning on ordinary Tabby requests
+
+**Post-rollout check; Nov 24 staging evidence.** The sampler recorded 18,416 characters of assistant
+reasoning in a tool exchange, but Tabby's next prompt grew by only 99 tokens. Another exchange
+added 10,283 reasoning characters and 93 tokens. Both Tabby aliases used LiteLLM's
+[`hosted_vllm` adapter](https://github.com/BerriAI/litellm/blob/v1.103.0/litellm/llms/hosted_vllm/chat/transformation.py#L161-L174),
+which removes `reasoning_content` from each assistant message before sending the request.
+Qwen's template cannot replay a field that never reaches Tabby.
+
+The generic OpenAI adapter [passed a direct replay probe](../../cluster/cdk8s/ollama/README.md)
+on the abliterated checkpoint. After rollout, repeat the paired prompt-token check through the
+public model aliases, including the stock checkpoint. Verify streamed tool use and the
+placement of a mid-conversation system message. Budget for the larger prompts; any omission at compaction is a separate policy.
 
 ### `CENTRAL_SAMPLER_COMPACTION_TIMELINE` — show when the sampler compacts context
 

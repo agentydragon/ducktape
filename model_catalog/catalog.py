@@ -100,7 +100,6 @@ def shape_mode(shape: ApiShape) -> str:
 _UPSTREAM_DEFINER: dict[str, str] = {
     "anthropic": "ant",
     "openai": "oai",
-    "hosted_vllm": "oai",  # TabbyAPI speaks OpenAI Chat Completions.
     "mistral": "oai",  # OpenAI-compatible chat at api.mistral.ai
     "groq": "oai",  # OpenAI-compatible chat at api.groq.com/openai/v1
     "gemini": "goog",
@@ -534,7 +533,8 @@ def _ollama_routes(variant: ollama.ChatVariant, *, openai_reasoning_efforts: tup
 # TabbyAPI accepts these efforts; its template maps high to Qwen's xhigh.
 _QWEN_EFFORTS = ("low", "medium", "high")
 
-TABBYAPI_CHAT = Upstream(Provider.TABBYAPI, "hosted_vllm", "chat", supports_function_calling=True)
+# Tabby renders Qwen chat messages itself. See cluster/cdk8s/ollama/README.md for the replay probe.
+TABBYAPI_CHAT = Upstream(Provider.TABBYAPI, "openai", "chat", supports_function_calling=True)
 TABBYAPI_QWEN_STOCK = Route(
     Model("qwen3.8-flash-next-exl3-256k", display_name="Qwen3.8 Flash-Next EXL3 2.68 bpw (256K)", reasoning=True),
     TABBYAPI_CHAT,
