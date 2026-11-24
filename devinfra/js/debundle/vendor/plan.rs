@@ -201,6 +201,14 @@ impl VendorResolutionPlan {
         self.full_swaps.iter().map(|swap| swap.chunk_id).collect()
     }
 
+    /// Whole chunks omitted from emission and their replacement packages.
+    pub fn full_swap_packages(&self) -> BTreeMap<ChunkId, &str> {
+        self.full_swaps
+            .iter()
+            .map(|swap| (swap.chunk_id, swap.resolution.package.as_str()))
+            .collect()
+    }
+
     /// Replacement package of every swapped chunk export, by chunk. Facts
     /// derived from those exports' bundled bodies rest on the swap's
     /// equivalence promise (SPEC.md § Vendor swap equivalence).

@@ -1,7 +1,7 @@
 //! Browser loading decisions prepared before final program acceptance.
 
 use source_identity::ChunkId;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::{cell::RefCell, rc::Rc};
@@ -43,8 +43,7 @@ pub struct BrowserHarnessPlan {
 impl BrowserHarnessPlan {
     pub(super) fn prepare(
         artifact: &ChunkBundle,
-        excluded_chunk_ids: &BTreeSet<ChunkId>,
-        replacement_packages: &BTreeMap<ChunkId, String>,
+        replacement_packages: &BTreeMap<ChunkId, &str>,
         options: &EmitBrowserHarnessConfig,
     ) -> Result<Self> {
         let asset_summary_raw = fs::read_to_string(&options.asset_summary_path)
@@ -86,7 +85,7 @@ impl BrowserHarnessPlan {
             let chunk_id = artifact.chunk_table.get(&chunk_name).with_context(|| {
                 format!("Snapshot manifest does not contain chunk {chunk_name}")
             })?;
-            if !artifact.has_chunk(chunk_id) || excluded_chunk_ids.contains(&chunk_id) {
+            if !artifact.has_chunk(chunk_id) || replacement_packages.contains_key(&chunk_id) {
                 bail!("Snapshot manifest does not contain chunk {chunk_name}");
             }
         }
@@ -99,7 +98,6 @@ impl BrowserHarnessPlan {
         asset_paths.sort();
         let runtime_resources = resolve_runtime_resources(
             artifact,
-            excluded_chunk_ids,
             replacement_packages,
             &asset_paths,
             &options.snapshot_root,
@@ -420,8 +418,7 @@ fn is_external_url(value: &str) -> bool {
 
 fn resolve_runtime_resources(
     artifact: &ChunkBundle,
-    excluded: &BTreeSet<ChunkId>,
-    replacements: &BTreeMap<ChunkId, String>,
+    replacements: &BTreeMap<ChunkId, &str>,
     assets: &[PathBuf],
     snapshot_root: &Path,
 ) -> Vec<RuntimeResourceResolution> {
@@ -436,13 +433,7 @@ fn resolve_runtime_resources(
         let source = chunk.js.metadata.source_path.clone();
         let destination = if let Some(package) = replacements.get(&chunk.chunk_id) {
             RuntimeResourceDestination::Replacement {
-                package: package.clone(),
-            }
-        } else if excluded.contains(&chunk.chunk_id) {
-            RuntimeResourceDestination::Unresolved {
-                reason: UnresolvedResourceReason::MissingEmission {
-                    path: source.clone(),
-                },
+                package: (*package).to_owned(),
             }
         } else if let Some(entry) = get_chunk_entry_path(artifact, chunk.chunk_id) {
             RuntimeResourceDestination::Emitted {
@@ -463,7 +454,7 @@ fn resolve_runtime_resources(
     artifact
         .chunks
         .iter()
-        .filter(|chunk| !excluded.contains(&chunk.chunk_id))
+        .filter(|chunk| !replacements.contains_key(&chunk.chunk_id))
         .flat_map(|chunk| {
             chunk
                 .analysis
