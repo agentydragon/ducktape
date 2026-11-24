@@ -162,3 +162,44 @@ const call = tdz.run(refusalScope);
 assert.equal(call.status, "rejected");
 assert.match(call.reason, /unit 2 is not a local allocating declaration/);
 assert(!existsSync(tdz.out));
+
+const regexRecord = fixture(
+  "move-regexp-record",
+  String.raw`const RegExp = () => { throw "shadowed constructor"; };
+   var patterns = { first: /\s/gu, second: /\s/gu, flag: /\p{RI}\p{RI}/u };
+   export { RegExp, patterns };`,
+  ["#1"],
+  ["#0", "#2"]
+);
+const record = regexRecord.run(pivotScope);
+assert.equal(record.status, "certified", JSON.stringify(record));
+assert.deepEqual(regexRecord.run(pivotScope, "--check-output"), record);
+for (const file of [regexRecord.sourceFile, path.join(regexRecord.out, "entry.mjs")]) {
+  const { patterns } = await import(pathToFileURL(file));
+  assert.equal(Object.getPrototypeOf(patterns.first), RegExp.prototype);
+  assert.equal(patterns.first.flags, "gu");
+  assert(patterns.flag.test("🇨🇿"));
+  assert.notEqual(patterns.first, patterns.second);
+  patterns.first.lastIndex = 4;
+  assert.equal(patterns.second.lastIndex, 0);
+}
+
+const profile = path.join(root, "browser-page.json");
+writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
+// Moving these initializers ahead of the patch would change the exported result.
+for (const [name, patch, value] of [
+  ["constructor", 'globalThis.RegExp = class { constructor() { throw "patched"; } }', 'new RegExp("a")'],
+  ["getter", 'Object.defineProperty(RegExp.prototype, "flags", { get() { return "patched"; } })', "/a/g.flags"],
+  ["method", "RegExp.prototype.test = () => false", '/a/.test("a")'],
+]) {
+  const effect = fixture(
+    "regexp-record-" + name,
+    `${patch}; var patterns = { literal: /a/, result: ${value} }; export { patterns };`,
+    ["#1"],
+    ["#0", "#2"]
+  );
+  const denied = effect.run(refusalScope, "--host-contract", profile);
+  assert.equal(denied.status, "rejected", JSON.stringify(denied));
+  assert.match(denied.reason, /unit 1 is not a local allocating declaration/);
+  assert(!existsSync(effect.out));
+}

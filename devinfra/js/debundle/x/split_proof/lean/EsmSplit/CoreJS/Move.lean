@@ -429,6 +429,7 @@ theorem allocOnly_local (r : Nat) (R : Addr → Prop) (n : Nat) :
     · cases e <;> try simp only [Expr.allocOnly, Bool.false_eq_true] at he
       all_goals try unfold evalExpr
       case undef | null | bool | num | str | host | this => exact local_pure _
+      case regexp data => exact (local_alloc (regexpObject data)).bind' fun a => local_pure (Val.obj a)
       case var x => exact local_readVar (hw x (by simp [Expr.readsNow]))
       case unary op operand =>
         simp only [Bool.and_eq_true] at he
