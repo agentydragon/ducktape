@@ -82,8 +82,7 @@ def certify_scroll(runfiles: Runfiles, source: Path, *, deployment_origin: str |
         "normal-completion",
         "--host-contract",
         profile,
-        "--structural-pivot",
-        "1337",
+        "--structural",
     ]
     if deployment_origin is not None:
         command.extend(["--deployment-origin", deployment_origin])

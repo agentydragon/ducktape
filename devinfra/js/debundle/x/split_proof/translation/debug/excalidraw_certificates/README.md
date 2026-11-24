@@ -148,7 +148,7 @@ bbr test "$p:excalidraw_certified_scroll_browser_smoke"
 ```
 
 The baseline loads the pinned editor. The split test certifies the single move
-with `--structural-pivot 1337`, the `browser-page` profile and the live HTTP
+with `--structural`, the `browser-page` profile and the live HTTP
 origin. It repeats certification with `--check-output`. It runs the original
 and certified editor in separate Chromium contexts at the same origin, checks
 the served entry and provider bytes, draws a rectangle, waits for Undo to
