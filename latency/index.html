@@ -259,9 +259,16 @@
                 measured openings out of 337 and 24 measured updates out of 276,
                 with the sampled heads and original selection weights preserved.
                 Baseline opening red includes two heads that published failure
-                and were later canceled. The latest update-green value is one
-                observation. The three later samples are separate fixed windows.
-                Each has a fork-coverage gap.<//
+                and were later canceled.<//
+              >
+              <${Text} my="sm" size="sm"
+                >Exact tested merges show that all 16 heads used sparse checkout
+                and the Nix launcher. Fifteen installed
+                <${Code}>.#precommit<//>. Only the Rustfmt proposal's own check
+                installed <${Code}>.#precommit-ci<//>. Excluding that head
+                raises the opening-green median to 353 s. The direct installer
+                and the combined scanner proposal had yet to roll out.
+                ${pr(19578)} · ${pr(19640)} · ${pr(19653)}<//
               >
               ${disclosure(
                 "Earlier fixed rollout windows",
@@ -442,7 +449,7 @@
 
             <section id="paired-precommit">
               <${Title} order=${2}
-                >On one matched Nix-only PR, all gates passed 222 s earlier<//
+                >The slim profile avoided the cache stall in a matched replay<//
               >
               <${Text} my="sm">
                 A separate dispatch at 00:43:22 UTC on 24 November used the same
