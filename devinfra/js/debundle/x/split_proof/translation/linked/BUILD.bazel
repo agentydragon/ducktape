@@ -127,6 +127,17 @@ js_test(
 )
 
 js_test(
+    name = "staged_ast_gate_test",
+    size = "medium",
+    data = _TEST_DATA,
+    entry_point = "staged_ast_gate_test.mjs",
+    env = dict(
+        _TEST_ENV,
+        SPLIT_PROOF_TIMINGS = "1",
+    ),
+)
+
+js_test(
     name = "mutations_test",
     size = "medium",
     data = _TEST_DATA,

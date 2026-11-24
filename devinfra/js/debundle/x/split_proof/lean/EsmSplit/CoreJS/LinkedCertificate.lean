@@ -9,19 +9,20 @@ namespace CoreJS.LinkedBehavior
 deriving instance Lean.ToExpr for EsmSplit.Module
 deriving instance Lean.ToExpr for EsmSplit.Plan
 
-structure CheckpointText where
-  input : String
-  source : String
-  execution : String
-  gate : String
+structure ProofModule where
+  name : Lean.Name
+  code : String
+  timing : String
+
+/-- Modules are elaborated in order; every module except the last is imported by a later step. -/
+abbrev ProofRecipe := Array ProofModule
 
 structure Certificate where
-  preamble : String
-  execution : String
-  correspondence : String
-  stagedGate : Bool
-  checkpoint : Option CheckpointText
+  ordinary : ProofRecipe
+  checkpoint : Option ProofRecipe
   premises : HostPremises
+
+private def importModule (name : Lean.Name) : String := s!"import {name}\n"
 
 private def layoutDeclaration (visibility program : String) : String :=
   s!"{visibility}noncomputable def {program}Link (w : World) : Option (LinkedBehavior.CheckedLink {program} w) := by\n" ++
@@ -29,8 +30,12 @@ private def layoutDeclaration (visibility program : String) : String :=
 
 /-- Three separately compiled modules check the shared result state before the
 ordinary AST gate imports their execution theorem. -/
-private def checkpointText (preamble options declarations correspondence : String) (fuel : Nat)
-    (stageLink ordered : Bool) (move : Option (Nat × Nat)) : CheckpointText :=
+private def checkpointRecipe (preamble options declarations correspondence : String) (fuel : Nat)
+    (stageLink ordered : Bool) (move : Option (Nat × Nat)) : ProofRecipe :=
+  let inputName := `LinkedReplayInput
+  let sourceName := `LinkedReplaySource
+  let proofName := `LinkedReplayProof
+  let gateName := `LinkedReplayGate
   let sourceLayout := if stageLink then layoutDeclaration "" "source" else ""
   let candidateLayout := if stageLink then layoutDeclaration "private " "candidate" else ""
   let reduceSource := if stageLink then s!"    reduce_linked_run_from {fuel} sourceLink w\n"
@@ -53,7 +58,7 @@ private def checkpointText (preamble options declarations correspondence : Strin
   let checkExports := if stageLink then "  · verify_linked_exports_from sourceLink candidateLink\n"
     else "  · apply LinkedBehavior.sameExports_of_match\n    intro w\n    first | rfl | cbv <;> rfl\n"
   let input := preamble ++ "namespace LinkedReplay\n" ++ declarations ++ "end LinkedReplay\n"
-  let source := "import LinkedReplayInput\nimport Lean.Elab.Tactic.Conv\n" ++ options ++
+  let source := importModule inputName ++ "import Lean.Elab.Tactic.Conv\n" ++ options ++
     "namespace LinkedReplay\n" ++
     sourceLayout ++
     "noncomputable def sourceWitness (w : World) :\n" ++
@@ -62,7 +67,7 @@ private def checkpointText (preamble options declarations correspondence : Strin
     "  case run =>\n" ++
     reduceSource ++
     "end LinkedReplay\n"
-  let execution := "import LinkedReplaySource\n" ++ options ++
+  let execution := importModule sourceName ++ options ++
     "namespace LinkedReplay\n" ++
     candidateLayout ++
     "private theorem candidateRun (w : World) :\n" ++
@@ -77,8 +82,13 @@ private def checkpointText (preamble options declarations correspondence : Strin
     checkExports ++
     "#audit_linked_programs executions\n" ++
     "end LinkedReplay\n"
-  let gate := "import LinkedReplayProof\n" ++ options ++ "open LinkedReplay\n" ++ correspondence
-  { input, source, execution, gate }
+  let gate := importModule proofName ++ options ++ "open LinkedReplay\n" ++ correspondence
+  #[
+    { name := inputName, code := input, timing := inputName.toString },
+    { name := sourceName, code := source, timing := sourceName.toString },
+    { name := proofName, code := execution, timing := proofName.toString },
+    { name := gateName, code := gate, timing := "ast_correspondence" }
+  ]
 
 -- Estimate the size of expanded constructor syntax independently of .olean sharing.
 private partial def expandedBytes (expr : Lean.Expr) : Nat :=
@@ -162,10 +172,23 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   -- The measured 384-field and 705-field cases benefit from separate processes.
   -- Smaller proofs avoid their startup cost. Write batches use file-local CBV rules.
   let checkpoint := if checkpointed then
-      some (checkpointText preamble options (data ++ programs) (raw ++ profiles "private " ++ gate) fuel
+      some (checkpointRecipe preamble options (data ++ programs) (raw ++ profiles "private " ++ gate) fuel
         (stageLink || records.hasWideRecord || move.isSome) ordered move)
     else none
-  return { preamble, execution, correspondence, stagedGate, checkpoint, premises }
+  let executionName := `LinkedExecutionProof
+  let correspondenceName := `LinkedExecution
+  let ordinary := if stagedGate then
+      #[
+        { name := executionName, code := preamble ++ execution, timing := "execution_proof" },
+        { name := correspondenceName,
+          code := importModule executionName ++ preamble ++ correspondence,
+          timing := "ast_correspondence" }
+      ]
+    else
+      #[{ name := correspondenceName,
+          code := preamble ++ execution ++ correspondence,
+          timing := "execution_and_correspondence" }]
+  return { ordinary, checkpoint, premises }
 
 /-- Both proof layouts check the same all-world execution claim and exact ASTs. -/
 def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) (plan : EsmSplit.Plan)

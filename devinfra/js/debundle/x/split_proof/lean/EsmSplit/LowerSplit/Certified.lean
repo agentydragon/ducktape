@@ -51,34 +51,19 @@ private def checkProofModule (work : System.FilePath) (setup : Lean.ModuleSetup)
   IO.FS.writeFile config (toJson setup).compress
   checkLean work (#[s!"--setup={config}"] ++ args ++ #[file.toString])
 
-private def checkCheckpoint (timings : Bool) (work : System.FilePath) (text : CoreJS.LinkedBehavior.CheckpointText)
-    (dataArts : Lean.NameMap Lean.ImportArtifacts) : IO Unit := do
-  let stages := #[(`LinkedReplayInput, text.input), (`LinkedReplaySource, text.source), (`LinkedReplayProof, text.execution)]
+private def runProofRecipe (timings : Bool) (work : System.FilePath)
+    (dataArts : Lean.NameMap Lean.ImportArtifacts) (recipe : CoreJS.LinkedBehavior.ProofRecipe) : IO Unit := do
   let mut importArts := dataArts
-  for (name, code) in stages do
-    let compiled := work / (name.toString ++ ".olean")
-    timePhase timings name.toString fun _ => do
-      checkProofModule work { name, importArts } code #["-o", compiled.toString]
-    importArts := importArts.insert name (.ofArrays #[#[compiled]])
-  timePhase timings "ast_correspondence" fun _ => do
-    checkProofModule work { name := `LinkedReplayGate, importArts } text.gate #[]
-
-/-- The ordinary execution proof can also be imported into a separate AST gate. -/
-private def checkOrdinaryExecution (timings : Bool) (work : System.FilePath)
-    (cert : CoreJS.LinkedBehavior.Certificate) (dataArts : Lean.NameMap Lean.ImportArtifacts) : IO Unit := do
-  if !cert.stagedGate then
-    timePhase timings "execution_and_correspondence" fun _ => do
-      checkProofModule work { name := `LinkedExecution, importArts := dataArts }
-        (cert.preamble ++ cert.execution ++ cert.correspondence) #[]
-  else
-    let name := `LinkedExecutionProof
-    let compiled := work / "LinkedExecutionProof.olean"
-    timePhase timings "execution_proof" fun _ => do
-      checkProofModule work { name, importArts := dataArts } (cert.preamble ++ cert.execution) #["-o", compiled.toString]
-    let importArts := dataArts.insert name (.ofArrays #[#[compiled]])
-    timePhase timings "ast_correspondence" fun _ => do
-      checkProofModule work { name := `LinkedExecution, importArts }
-        ("import LinkedExecutionProof\n" ++ cert.preamble ++ cert.correspondence) #[]
+  for (module, index) in recipe.zipIdx do
+    let intermediate := index + 1 < recipe.size
+    let args := if intermediate then
+        #["-o", (work / (module.name.toString ++ ".olean")).toString]
+      else #[]
+    timePhase timings module.timing fun _ =>
+      checkProofModule work { name := module.name, importArts } module.code args
+    if intermediate then
+      let compiled := work / (module.name.toString ++ ".olean")
+      importArts := importArts.insert module.name (.ofArrays #[#[compiled]])
 
 private def writeCertificateData (work : System.FilePath) (terms : CertificateData.Entries) :
     IO (Lean.NameMap Lean.ImportArtifacts) := do
@@ -92,11 +77,11 @@ private def verifyExecution (timings : Bool) (work : System.FilePath) (cert : Co
     (dataArts : Lean.NameMap Lean.ImportArtifacts) : IO CoreJS.HostPremises := do
   let accepted ← match cert.checkpoint with
     | none => pure false
-    | some checkpoint => try
-        checkCheckpoint timings work checkpoint dataArts
+    | some recipe => try
+        runProofRecipe timings work dataArts recipe
         pure true
       catch _ => pure false
-  unless accepted do checkOrdinaryExecution timings work cert dataArts
+  unless accepted do runProofRecipe timings work dataArts cert.ordinary
   return cert.premises
 
 private def emitVerdict (requested : String) (outcome : Except String Guarantee) (scope : Option String := none) (extra : List (String × Json) := []) : IO UInt32 := do
