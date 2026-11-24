@@ -85,12 +85,12 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
         input.decomposition_by_chunk,
     )?;
     let manifest = ArtifactManifest {
-        counts: input.counts.clone(),
-        chunks: input.chunk_records.to_vec(),
+        counts: input.counts,
+        chunks: input.chunk_records,
         logical_modules: RootLogicalModulesSummary {
             module_count: input.module_count,
         },
-        selected_module_lowerings: input.lowerings.to_vec(),
+        selected_module_lowerings: input.lowerings,
         output_metrics: materialized.output_metrics,
         decomposition_metrics,
     };
