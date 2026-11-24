@@ -83,7 +83,7 @@ class GrocyClient(httpx2.AsyncClient):
     ``get`` method, for example.
     """
 
-    async def _fetch_entities(self, entity_type: EntityType) -> dict[int, dict[str, Any]]:
+    async def entities_by_id(self, entity_type: EntityType) -> dict[int, dict[str, Any]]:
         response = await self.get(f"/objects/{entity_type}")
         response.raise_for_status()
         rows: list[dict[str, Any]] = response.json()
@@ -91,25 +91,20 @@ class GrocyClient(httpx2.AsyncClient):
 
     async def resolve_entity(self, entity_type: EntityType, ref: int | str) -> Resolved:
         """Resolve an ID or name to a validated ``(id, name)`` pair."""
-        return _resolve_ref(entity_type, ref, await self._fetch_entities(entity_type))
+        return _resolve_ref(entity_type, ref, await self.entities_by_id(entity_type))
 
     async def entity_name(self, entity_type: EntityType, entity_id: int) -> str:
         """Look up a name by ID, returning ``id=N`` when it is absent."""
-        return _entity_name(await self._fetch_entities(entity_type), entity_id)
+        return _entity_name(await self.entities_by_id(entity_type), entity_id)
 
     async def get_entity(self, entity_type: EntityType, entity_id: int) -> dict[str, Any] | None:
         """Return one raw entity row by ID."""
-        by_id = await self._fetch_entities(entity_type)
+        by_id = await self.entities_by_id(entity_type)
         return by_id.get(entity_id)
-
-    async def list_entities(self, entity_type: EntityType) -> list[dict[str, Any]]:
-        """Return all raw rows of an entity type."""
-        by_id = await self._fetch_entities(entity_type)
-        return list(by_id.values())
 
     async def entity_name_map(self, entity_type: EntityType) -> dict[int, str]:
         """Return ``{id: name}`` for an entity type."""
-        by_id = await self._fetch_entities(entity_type)
+        by_id = await self.entities_by_id(entity_type)
         return {entity_id: str(row["name"]) for entity_id, row in by_id.items()}
 
     async def _fetch_conversions(self) -> list[dict[str, Any]]:
@@ -120,7 +115,7 @@ class GrocyClient(httpx2.AsyncClient):
 
     async def resolve_qu_for_product(self, qu_ref: int | str, product_id: int) -> ResolvedQU:
         """Resolve a QU and validate or convert it for a product's stock QU."""
-        units = await self._fetch_entities(EntityType.QUANTITY_UNIT)
+        units = await self.entities_by_id(EntityType.QUANTITY_UNIT)
         resolved = _resolve_ref(EntityType.QUANTITY_UNIT, qu_ref, units)
         product = await self.get_entity(EntityType.PRODUCT, product_id)
         if product is None:

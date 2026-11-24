@@ -306,18 +306,17 @@ def register_batch_tools(
     async def _list_reference(
         client: GrocyClient, entity_type: EntityType, detail: DetailLevel, model: Any
     ) -> list[Any]:
-        rows = await client.list_entities(entity_type)
+        rows = (await client.entities_by_id(entity_type)).values()
         if detail == DetailLevel.BRIEF:
             return [BriefListItem(id=int(row["id"]), name=str(row["name"])) for row in rows]
         return [model.model_validate(row) for row in rows]
 
     async def _load_stock_entry_enricher(client: GrocyClient) -> Callable[[dict[str, Any]], StockEntryDetail]:
-        products_raw, qu_names, location_names = await asyncio.gather(
-            client.list_entities(EntityType.PRODUCT),
+        products_by_id, qu_names, location_names = await asyncio.gather(
+            client.entities_by_id(EntityType.PRODUCT),
             client.entity_name_map(EntityType.QUANTITY_UNIT),
             client.entity_name_map(EntityType.LOCATION),
         )
-        products_by_id = {int(product["id"]): product for product in products_raw}
 
         def enrich(entry: dict[str, Any]) -> StockEntryDetail:
             product_id = int(entry["product_id"])
@@ -867,7 +866,7 @@ def register_batch_tools(
         conversions between units, list `quantity_unit_conversions` via
         `entities_list`.
         """
-        rows = await client.list_entities(EntityType.QUANTITY_UNIT)
+        rows = (await client.entities_by_id(EntityType.QUANTITY_UNIT)).values()
         if detail == DetailLevel.BRIEF:
             return [
                 BriefQuantityUnit(id=int(r["id"]), name=str(r["name"]), name_plural=r.get("name_plural")) for r in rows
@@ -1175,15 +1174,25 @@ def register_batch_tools(
         except Exception as e:
             return StockOpError(error=_format_exc(e))
 
+    async def _shopping_products(client: GrocyClient, product_ids: set[int]) -> dict[int, tuple[str, str | None]]:
+        if not product_ids:
+            return {}
+        products = await client.entities_by_id(EntityType.PRODUCT)
+        matched = product_ids.intersection(products)
+        names: dict[int, tuple[str, str | None]] = {pid: (f"id={pid}", None) for pid in product_ids - matched}
+        if matched:
+            units = await client.entity_name_map(EntityType.QUANTITY_UNIT)
+            for pid in matched:
+                product = products[pid]
+                unit_id = int(product["qu_id_stock"])
+                names[pid] = str(product["name"]), units.get(unit_id, f"id={unit_id}")
+        return names
+
     async def _shopping_product_info(client: GrocyClient, product_id: Any) -> tuple[str | None, str | None]:
-        """Look up product name and stock QU name for a shopping-list item's product_id."""
         if product_id is None:
             return None, None
-        product = await client.get_entity(EntityType.PRODUCT, int(product_id))
-        if product is None:
-            return f"id={product_id}", None
-        qu_name = await client.entity_name(EntityType.QUANTITY_UNIT, int(product["qu_id_stock"]))
-        return str(product["name"]), qu_name
+        pid = int(product_id)
+        return (await _shopping_products(client, {pid}))[pid]
 
     async def _shopping_list_items(client: GrocyClient, list_id: int) -> list[dict[str, Any]]:
         r = await client.get("/objects/shopping_list")
@@ -1211,16 +1220,17 @@ def register_batch_tools(
 
         items = await _shopping_list_items(client, sl.id)
 
+        product_ids = [int(item["product_id"]) if item.get("product_id") is not None else None for item in items]
+        products = await _shopping_products(client, {pid for pid in product_ids if pid is not None})
         result_items = []
-        for item in items:
-            product_id = item.get("product_id")
-            product_name, qu_name = await _shopping_product_info(client, product_id)
+        for item, product_id in zip(items, product_ids, strict=True):
+            product_name, qu_name = products[product_id] if product_id is not None else (None, None)
 
             result_items.append(
                 {
                     "item_id": int(item["id"]),
                     "product_name": product_name,
-                    "product_id": int(product_id) if product_id is not None else None,
+                    "product_id": product_id,
                     "amount": float(item.get("amount", 1)),
                     "qu_name": qu_name,
                     "note": item.get("note"),
