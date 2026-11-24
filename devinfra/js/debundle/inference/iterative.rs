@@ -790,19 +790,6 @@ impl<Key: Eq + Hash> ProofTransfers<Key> {
     }
 }
 
-#[cfg(test)]
-fn proof_atom_count(dependencies: &ProofDependencies) -> usize {
-    dependencies.value_inputs.len()
-        + dependencies.native_operation_inputs.len()
-        + dependencies.initializer_call_effect_inputs.len()
-        + dependencies.imported_primitive_array_spread_inputs.len()
-        + dependencies.descriptor_copy_authors.len()
-        + dependencies.argument_inputs.len()
-        + dependencies.host_behavior.len()
-        + dependencies.program_premises.len()
-        + dependencies.no_accessor_install_callables.len()
-}
-
 /// Mutable access is scoped to one monotone producer. Both absent and present
 /// reads install watchers, including reads made before a producer exists.
 pub(crate) struct IterativeContext<'a, R: IterativeRules, const RETAIN_PREMISES: bool = true> {
@@ -897,7 +884,7 @@ impl<'a, R: IterativeRules, const RETAIN_PREMISES: bool> IterativeContext<'a, R,
             for target in targets {
                 #[cfg(test)]
                 {
-                    self.proof_edges.atom_deliveries += proof_atom_count(&added);
+                    self.proof_edges.atom_deliveries += added.atom_count();
                 }
                 let Some(fact) = self.facts.get_mut(target) else {
                     continue;
@@ -965,7 +952,7 @@ impl<'a, R: IterativeRules, const RETAIN_PREMISES: bool> IterativeContext<'a, R,
                 {
                     #[cfg(test)]
                     {
-                        self.proof_edges.atom_deliveries += proof_atom_count(proof);
+                        self.proof_edges.atom_deliveries += proof.atom_count();
                     }
                     dependencies
                         .get_or_insert_with(ProofDependencies::default)
