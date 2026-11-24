@@ -2,9 +2,9 @@
   "source_devel_commit": "1916bcf8e954323b23d69faf6a59466ec434b947",
   "window_start_utc": "2026-11-22T00:00:00Z",
   "window_end_utc": "2026-11-24T00:50:00Z",
-  "published_at_utc": "2026-11-24T01:14:34.903418+00:00",
+  "published_at_utc": "2026-11-24T01:21:21.209511+00:00",
   "attribution": "Exact original job and profile; pinned Rust compiler download markers, cache restart and targeted recovery",
-  "previous_report_commit": "7d3f886e27b8fb07a3299c51c1d3beb21f8410b4",
-  "report_sha256": "76f8929d213fb167992964412e99f907f7679ca1957aa65dab1e0b731fc6dc20",
-  "evidence_sha256": "f804324badff4d5cb13d4bfacaa08caabf19c3c0aacf70b9548ec3ee8a2cf1dc"
+  "previous_report_commit": "5b09e34a5ca346e9b3a5a36b6f3b47b8ac742219",
+  "report_sha256": "bb9b171a82f214ae2aec3b84973c2ee4a671b8fbd97aaf86f2748f06c587b1e9",
+  "evidence_sha256": "252e888dd45d0a2d78aa2fb592effc1647c167170e1745baf8f8d4ce309a24c1"
 }
