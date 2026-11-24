@@ -23,23 +23,7 @@ private def linkedLayoutBundle (asts units : Array Json) : Bundle :=
       lazy := (Effects.dedupeArr t.rawLazy).toList, assigns := Effects.assignedNames t declared,
       exports := published ast, hoisted := t.hoisted }
 
-private inductive Guarantee where
-  | allOutcomes | normalCompletion
-  deriving DecidableEq
-
-private def Guarantee.label : Guarantee → String
-  | .allOutcomes => "all-outcomes"
-  | .normalCompletion => "normal-completion"
-
-/-- Premises for the closed-declaration artifact theorems. The caller checks Valid
-and certifies the output ASTs against these same extracted statements. -/
-private def declarationProof? (groups : List CoreJS.DeclarationGroup) (B : Bundle) (P : Plan) :
-    Option (Guarantee × List CoreJS.Stmt) := do
-  let ss := CoreJS.DeclarationProgram.statements groups
-  guard (footprintsOk ss B)
-  if decide (CoreJS.OrderKept ss P) then return (.allOutcomes, ss)
-  guard (CoreJS.movesOk ss.toArray P.execOrder || CoreJS.certifiedMovesOk ss B P.execOrder)
-  return (.normalCompletion, ss)
+open CoreJS.DeclarationArtifacts (Guarantee)
 
 /-- Check the generated proof with the same toolchain and model as the splitter. -/
 private def checkLean (work : System.FilePath) (args : Array String) : IO Unit := do
@@ -177,18 +161,19 @@ private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work
   for (ast, i) in asts.zipIdx do
     if let some reason := entryPlacementProblem B S ast i then throw (IO.userError reason)
   let P ← planSplit B S timings
-  let layoutOk ← timePhase timings "plan_checks" fun _ => checkLayout B P (some S) false
-  -- Only the closed-declaration theorem needs the footprint-based order check.
-  let declaration := if !structural && layoutOk then declarations.bind (declarationProof? · B P) else none
-  if let some (level, ss) := declaration.filter (fun _ => decide (OrderOk B P)) then
+  let declaration := if structural then none else declarations.bind fun groups =>
+    CoreJS.DeclarationArtifacts.prepare? program (CoreJS.DeclarationProgram.statements groups) B S P
+  if let some prepared := declaration then
+    let level := prepared.level
     try
       if request == .allOutcomes && level != .allOutcomes then
         throw (IO.userError "the checked reorder proves only normal-completion")
       certifyOutput (Json.mkObj []) B P out work input checkOnly timings asts source fun files =>
         timePhase timings "closed_declarations" fun _ => do
-          IO.ofExcept (CoreJS.DeclarationArtifacts.check program files ss B P)
+          IO.ofExcept ((prepared.certify files).map fun _ => ())
       return ← emitVerdict request.label (.ok level) "closed-declarations" (profileVerdict profile {})
     catch e => return ← emitVerdict request.label (.error e.toString) "closed-declarations"
+  let layoutOk ← timePhase timings "plan_checks" fun _ => checkLayout B P (some S) false
   if structural then
     try
       unless request == .normalCompletion do
