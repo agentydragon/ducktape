@@ -443,4 +443,4 @@ Running `example/output/` in Node also found a bug in the first printer (no `exp
 - [Structural checker experiments and Node comparisons](experiments/README.md)
 - [Historical scale measurements](experiments/TIMINGS.md)
 - [Lessons from the experiment](docs/lessons_learned.md)
-- [Excalidraw replay and browser targets](integration/excalidraw/README.md#strict-certification-of-the-scroll-module)
+- [Excalidraw: certified placement, upstream ownership, and browser replay](integration/excalidraw/README.md#certified-placement)
