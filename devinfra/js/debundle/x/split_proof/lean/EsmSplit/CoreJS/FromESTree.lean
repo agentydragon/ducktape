@@ -210,14 +210,18 @@ private def stringOperand : Expr → Bool
   | .str _ | .unary .typeof _ | .prim (.globalTypeof _) [] => true
   | _ => false
 
-/-- Decimal conversion is exact for nonnegative safe integer property names. -/
+/-- A numeric property name uses the string form of the parsed Number, independent of its source spelling. -/
 private def staticPropertyName (key : Json) : Except String Name := do
   if (← field key "type") == "Literal" then
     if let .ok annotation := field key "lit" then
       if annotation.startsWith "n:" then
-        let n ← key.getObjValAs? Nat "value"
-        unless n ≤ 9007199254740991 && annotation == s!"n:{n}" do throw "unsupported numeric property key"
-        return toString n
+        let name ← match ← key.getObjVal? "value" with
+          | .num value => pure (Num.toString (Num.ofString (toString value)))
+          -- The frontend transports an overflowing numeric literal as a JSON string.
+          | .str "Infinity" => pure "Infinity"
+          | _ => throw "expected a numeric property key"
+        unless annotation == "n:" ++ name do throw "numeric property key differs from its annotation"
+        return name
   moduleExportName key
 
 private def isAnonymousDefinition (value : Json) : Except String Bool := do
