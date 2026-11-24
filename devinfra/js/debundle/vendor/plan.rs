@@ -103,16 +103,11 @@ impl VendorResolutionPlan {
         })
     }
 
-    pub fn has_boundary_renames(&self) -> bool {
+    /// Whether any named reimport can change. Every full swap contributes a boundary plan.
+    pub fn rewrites_imports(&self) -> bool {
         !self.boundary_renames.is_empty()
-    }
-
-    pub fn has_partial_swaps(&self) -> bool {
-        !self.partial_swaps.is_empty()
-    }
-
-    pub fn has_bundled_partial_swaps(&self) -> bool {
-        !self.bundled_partial_swaps.is_empty()
+            || !self.partial_swaps.is_empty()
+            || !self.bundled_partial_swaps.is_empty()
     }
 
     /// Oracle answer for one named import of `imported_name` targeting
