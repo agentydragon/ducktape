@@ -1,0 +1,29 @@
+# Transform handles and resize hit tests
+
+The [selector fragment](transform.yaml) traces nine declarations to [`packages/excalidraw/element/transformHandles.ts` at v0.18.1](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/excalidraw/element/transformHandles.ts#L43). Three of the nine are public functions:
+
+- `getTransformHandlesFromCoords` (1713) selects the mouse/pen/touch size (8/16/28), scales it by zoom and constructs the rotated corner and rotation handles. The [coordinate hit test](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/excalidraw/element/resizeTest.ts#L151) calls it on the selection bounds.
+- `getTransformHandles` (1714) excludes locked elements and elbow arrows, chooses which handles to omit, and calls the coordinate constructor. [`resizeTest`](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/excalidraw/element/resizeTest.ts#L57) uses its result to test the rotation handle before other handles.
+- `shouldShowBoundingBox` (1715) checks editing state, selection size and the number of points in a linear element. [App](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/excalidraw/components/App.tsx#L5099) uses it for selection feedback.
+
+The other six are `transformHandleSizes`, `ROTATION_RESIZE_HANDLE_GAP`, `DEFAULT_OMIT_SIDES`, `OMIT_SIDES_FOR_LINE_SLASH`, `OMIT_SIDES_FOR_LINE_BACKSLASH` and `generateTransformHandle` (1705–1710). The default and backslash records have identical keys and values. The selector distinguishes their positions in the declaration group and the default record used by `getOmitSidesForDevice` and `getTransformHandles`. It makes no claim for the upstream frame or multiple-element records.
+
+## Verified placement
+
+Use the 344-binding geometry selection from [#19889](https://github.com/agentydragon/ducktape/pull/19889). Give the full resolver the additional fragment under the existing `packages/excalidraw/element/transformhandles` owner, then add the [named delta](named_delta.json) to a copy of the selection. Retain the canonical import priority. The [Rust resolver export](https://app.buildbuddy.io/invocation/10b28b5c-2ff4-44d2-a934-629bd7277a05) differs from the 344-unit artifact at exactly the nine ordinals above. The result selects **353 of 1,787 units in 42 owners** for editor SHA-256 `fa1cfc7930fe3c0e2b4d95e6cb14ebde21068014cd92db303622509d9a0d455c`.
+
+The [browser replay](https://app.buildbuddy.io/invocation/4d6e2409-db79-4f52-90cd-5511bb39c50a) checked that hash, passed the resolver output directly to Lean with `--resolved-placement editor`, and rechecked the emitted files with `--check-output`. The guarantee is normal-completion equivalence under the browser-page contract with `Math.PI@1` and the checked deployment origin. Chromium compared the original and split editor's 611 public names. For a 100-by-80 rectangle at zoom 1, both editors returned an 8-by-8 northwest mouse handle, hit the same selected rectangle at that corner, and returned null for an unselected rectangle. The coordinate hit test missed the center; both hit-test paths returned east at (104, 40), exercising the four-pixel side threshold. The split's handle module and entry exported the same three function objects.
+
+## Hit-test frontier on the 344-unit baseline
+
+[Independent resolver-to-Lean trials](https://app.buildbuddy.io/invocation/0c429b2e-0fc7-4121-8826-a7e0cdfd1651):
+
+| Additional placement                              | First Lean refusal                                                                                                                                                                                                              |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getSelectionBorders` (1723)                      | Unit 1717 has access to the moved region of 1723. The earlier retained hit-test closure captures the border helper.                                                                                                             |
+| `canResizeFromSides` (1711)                       | Adds a public entry export for private `isAndroid`, cell `@379.0`. `isIOS` already has a public export.                                                                                                                         |
+| `resizeTest` (1717), alone                        | Two extra entry exports: `canResizeFromSides` at `@1712.0` and `getSelectionBorders` at `@1724.0`.                                                                                                                              |
+| `getTransformHandleTypeFromCoords` (1719), alone  | The same two extra entry exports.                                                                                                                                                                                               |
+| All four plus the element hit-test reducer (1718) | One extra entry export for `isAndroid`. Selecting that binding in its constants owner then reaches [unit 378 is not a local allocating declaration](https://app.buildbuddy.io/invocation/1a0c8624-e6b2-4daa-9a9c-8bcc9f719ed4). |
+
+The side threshold and segment predicate are already selected on this baseline. The [platform control](https://app.buildbuddy.io/invocation/61053222-ff13-406a-9b44-61c9278006c5) shows why a stable user-agent string alone does not justify moving the Android regex test: successful native regex tests can overwrite observable legacy match state. The nine-constructor placement leaves both platform flags and the two hit-test implementations in the entry.

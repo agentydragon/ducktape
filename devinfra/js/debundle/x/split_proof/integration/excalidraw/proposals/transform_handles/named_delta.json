@@ -1,0 +1,20 @@
+{
+  "modules": [
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/element/transformhandles",
+      "bindings": [
+        "transformHandleSizes",
+        "ROTATION_RESIZE_HANDLE_GAP",
+        "DEFAULT_OMIT_SIDES",
+        "OMIT_SIDES_FOR_LINE_SLASH",
+        "OMIT_SIDES_FOR_LINE_BACKSLASH",
+        "generateTransformHandle",
+        "getTransformHandlesFromCoords",
+        "getTransformHandles",
+        "shouldShowBoundingBox"
+      ],
+      "anonymous_statements": []
+    }
+  ]
+}
