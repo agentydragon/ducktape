@@ -46,8 +46,8 @@ TOOL_OVERRIDES: dict[tuple[str, str], ToolOverride] = {
     ("DELETE", "/objects/{entity}/{objectId}"): ToolOverride("entity_delete"),
     ("GET", "/stock/volatile"): ToolOverride(
         "list_volatile_stock",
-        "Returns products that are due soon, overdue, expired, or below min stock — the same data "
-        "the typed `get_expiring_stock` / `get_expired_stock` / `get_below_minimum_stock` tools slice.",
+        "Returns product-level summaries for due, overdue, expired, or below-minimum stock. "
+        "Use `get_expiring_stock` or `get_expired_stock` for individual lots and their storage locations.",
     ),
     ("GET", "/stock/entry/{entryId}/printlabel"): _disabled("print_stock_entry_label"),
     ("GET", "/stock/products/{productId}"): ToolOverride(

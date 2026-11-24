@@ -183,14 +183,30 @@ class TestActionPresentations(ActionPresentationCases):
             "grocy_sf",
             "get_expiring_stock",
             {"days_ahead": 7},
-            [{**_KEFIR_ALERT, "location_name": "Fridge", "best_before_date": "2026-11-25", "days_until_expiry": 6}],
+            [
+                {
+                    **_KEFIR_ALERT,
+                    "entry_id": 14,
+                    "location_name": "Fridge",
+                    "best_before_date": "2026-11-25",
+                    "days_until_expiry": 6,
+                }
+            ],
             "Due in 6 d",
         ),
         ActionExample(
             "grocy_sf",
             "get_expired_stock",
             {},
-            [{**_KEFIR_ALERT, "location_name": "Fridge", "best_before_date": "2026-11-17", "days_overdue": 2}],
+            [
+                {
+                    **_KEFIR_ALERT,
+                    "entry_id": 14,
+                    "location_name": "Fridge",
+                    "best_before_date": "2026-11-17",
+                    "days_overdue": 2,
+                }
+            ],
             "2 d overdue",
         ),
         ActionExample(

@@ -285,7 +285,7 @@ def register_batch_tools(
         raise AssertionError("unreachable")
 
     async def _get_with_retry(
-        client: GrocyClient, path: str, *, params: dict[str, int] | None = None
+        client: GrocyClient, path: str, *, params: dict[str, str | list[str]] | None = None
     ) -> httpx2.Response:
         async def get() -> httpx2.Response:
             response = await client.get(path, params=params)
@@ -1371,12 +1371,6 @@ def register_batch_tools(
         )
         return {"kind": "ok"}
 
-    async def _fetch_volatile(client: GrocyClient, *, days_ahead: int | None = None) -> dict[str, Any]:
-        params = {"due_soon_days": days_ahead} if days_ahead is not None else {}
-        r = await _get_with_retry(client, "/stock/volatile", params=params)
-        data: dict[str, Any] = r.json()
-        return data
-
     def _lookup_name(product: dict[str, Any], key: str, name_map: dict[int, str]) -> str:
         raw_id = product.get(key)
         if raw_id is None:
@@ -1384,38 +1378,40 @@ def register_batch_tools(
         return name_map[int(raw_id)]
 
     async def _stock_by_expiry(client: GrocyClient, *, days_ahead: int | None = None) -> list[dict[str, Any]]:
-        """Enrich Grocy's due-soon rows for a window, or its expired use-by rows when omitted."""
-        data = await _fetch_volatile(client, days_ahead=days_ahead)
-        qu_names, location_names = await asyncio.gather(
-            client.entity_name_map(EntityType.QUANTITY_UNIT), client.entity_name_map(EntityType.LOCATION)
-        )
-        today = datetime.now(tz=UTC).date()
-        bucket = "expired_products" if days_ahead is None else "due_products"
-        result = []
-        for entry in data.get(bucket, []):
-            product = entry.get("product") or {}
-            expiry = _parse_date(entry.get("best_before_date"))
-            if days_ahead is None:
-                timing = {"days_overdue": (today - expiry).days if expiry else 0}
-            else:
-                # Grocy 4.6 treats due_soon_days=0 as its default five-day window.
-                if (
-                    expiry is None
-                    or entry["best_before_date"] == _NEVER_EXPIRES_BBD
-                    or (expiry - today).days > days_ahead
-                ):
-                    continue
-                timing = {"days_until_expiry": (expiry - today).days}
+        today = datetime.now(UTC).date()
+        if days_ahead is None:
+            filters = [f"best_before_date<{today}"]
+        else:
+            if days_ahead < 0:
+                return []
+            last_day = today + timedelta(days=min(days_ahead, (date.max - today).days))
+            filters = [f"best_before_date>={today}", f"best_before_date<={last_day}"]
 
+        stock, catalog = await asyncio.gather(
+            _get_with_retry(client, "/objects/stock", params={"query[]": filters, "order": "best_before_date"}),
+            _StockEntryCatalog.load(client),
+        )
+        result = []
+        for row in stock.json():
+            product = catalog.products.get(int(row["product_id"]))
+            if product is None or not int(product["active"]) or float(row["amount"]) <= 0:
+                continue
+            if days_ahead is None and int(product["due_type"]) != 2:
+                continue
+            entry = catalog.describe(row)
+            if entry.best_before_date is None or row["best_before_date"] == _NEVER_EXPIRES_BBD:
+                continue
+            remaining = (entry.best_before_date - today).days
             result.append(
                 {
-                    "product_id": int(entry["product_id"]),
-                    "product_name": str(product.get("name", "")),
-                    "amount": float(entry.get("amount", 0)),
-                    "qu_name": _lookup_name(product, "qu_id_stock", qu_names),
-                    "location_name": _lookup_name(product, "location_id", location_names),
-                    "best_before_date": entry.get("best_before_date"),
-                    **timing,
+                    "entry_id": entry.entry_id,
+                    "product_id": entry.product_id,
+                    "product_name": entry.product_name,
+                    "amount": entry.amount,
+                    "qu_name": entry.qu_name,
+                    "location_name": entry.location_name,
+                    "best_before_date": entry.best_before_date.isoformat(),
+                    **({"days_overdue": -remaining} if days_ahead is None else {"days_until_expiry": remaining}),
                 }
             )
         return result
@@ -1427,8 +1423,8 @@ def register_batch_tools(
     ) -> list[dict[str, Any]]:
         """Stock due to expire within the next `days_ahead` days.
 
-        Each row carries product name, amount, unit, location,
-        best-before date, and a pre-computed `days_until_expiry`. For
+        Each row is one lot with its `entry_id`, product, amount, stock unit, storage
+        location, due date and `days_until_expiry`. Read it with `stock_entries_list(entry_ids=[…])`. For
         already-expired stock use `get_expired_stock`; for low-stock use
         `get_below_minimum_stock`.
         """
@@ -1444,7 +1440,8 @@ def register_batch_tools(
         via `products_create` / `products_edit`. See also
         `get_expiring_stock` and `get_expired_stock`.
         """
-        data = await _fetch_volatile(client)
+        response = await _get_with_retry(client, "/stock/volatile")
+        data = response.json()
         qu_names = await client.entity_name_map(EntityType.QUANTITY_UNIT)
 
         result = []
@@ -1470,8 +1467,8 @@ def register_batch_tools(
     async def get_expired_stock(client: GrocyClient = client_dependency) -> list[dict[str, Any]]:
         """Stock past the use-by date of a product configured to expire (due_type=2).
 
-        Each row carries product name, amount, unit, location,
-        best-before date, and `days_overdue`. For things due to expire
+        Each row is one lot with its `entry_id`, product, amount, stock unit, storage
+        location, due date and `days_overdue`. Read it with `stock_entries_list(entry_ids=[…])`. For things due to expire
         but not yet expired, use `get_expiring_stock`. For low-stock,
         use `get_below_minimum_stock`.
         """
