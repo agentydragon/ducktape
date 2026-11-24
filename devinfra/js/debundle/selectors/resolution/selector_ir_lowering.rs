@@ -35,7 +35,7 @@ pub struct MemberSelectorProgramBuilder {
     /// and statement index.
     projected_anonymous_source_units: BTreeMap<(String, usize), SelectorVariableId>,
     global_source_unit_by_export: BTreeMap<String, GlobalSourceUnit>,
-    targeted_source_units: BTreeMap<SelectorVariableId, String>,
+    targeted_source_units: BTreeSet<SelectorVariableId>,
     injective_targeted_source_units: BTreeSet<SelectorVariableId>,
     source_unit_injectivity_classes: BTreeMap<SelectorVariableId, String>,
 }
@@ -114,8 +114,7 @@ impl MemberSelectorProgramBuilder {
     ) -> Result<SelectorTargetId, SelectorIrLoweringError> {
         let logical_module = logical_module.into();
         let source_unit = self.source_unit_for_local_export(&logical_module, export_name);
-        self.targeted_source_units
-            .insert(source_unit, format!("{logical_module}::{export_name}"));
+        self.targeted_source_units.insert(source_unit);
         if source_unit_injective {
             self.injective_targeted_source_units.insert(source_unit);
         }
@@ -370,7 +369,7 @@ impl MemberSelectorProgramBuilder {
 
     pub fn into_program(mut self) -> Result<SelectorProgram, SelectorIrLoweringError> {
         for ((logical_module, export_name), source_unit) in &self.source_units_by_export {
-            if !self.targeted_source_units.contains_key(source_unit) {
+            if !self.targeted_source_units.contains(source_unit) {
                 return Err(SelectorIrLoweringError::DanglingAnchor {
                     logical_module: logical_module.clone(),
                     export_name: export_name.clone(),
