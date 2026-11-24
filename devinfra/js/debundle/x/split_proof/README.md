@@ -104,6 +104,13 @@ and skips an already entered module in a cycle. The structural certificate check
 order and actual live cells. A refusal applies to that proposal; it leaves other schedules unknown.
 For a required execution order, supply a regular spec with `sequential: true`.
 
+A declaration such as `const width = 2 * spacing` can move when the checked
+prefix in each layout establishes the Number in the linked `spacing` cell.
+The result can supply a later arithmetic initializer. The proof retains the
+operator tree and uses CoreJS Number operations; the emitted code still reads
+the binding. Unknown writes, object coercions and uninitialized cells do not
+provide Number facts.
+
 For a move such as `const chosen = table.value`, the structural checker can
 prove the read from a freshly allocated record with distinct own numeric
 data properties. It checks the receiver's actual linked cell and descriptor
