@@ -392,6 +392,13 @@
       "chunk": "editor",
       "module": "packages/excalidraw/utils",
       "bindings": [
+        "mockDateTime",
+        "getDateTime",
+        "capitalizeString",
+        "isToolIcon",
+        "isInputLike",
+        "isInteractive",
+        "isWritableElement",
         "getFontFamilyString",
         "getFontString",
         "debounce",
