@@ -36,8 +36,12 @@ pub fn emit_browser_harness(
     let copied_assets =
         copy_snapshot_assets(&browser.snapshot_root, &app_root, &browser.asset_paths)?;
 
-    fs::write(app_root.join("index.html"), &browser.index_html)?;
-    fs::write(app_root.join("bootstrap.js"), &browser.bootstrap)?;
+    let generated = HarnessGeneratedManifest {
+        bootstrap: "bootstrap.js",
+        index_html: "index.html",
+    };
+    fs::write(app_root.join(generated.index_html), &browser.index_html)?;
+    fs::write(app_root.join(generated.bootstrap), &browser.bootstrap)?;
     write_common_emission_reports(
         &layout,
         EmittablePlan::Accepted(plan),
@@ -47,13 +51,10 @@ pub fn emit_browser_harness(
     let runtime = HarnessRuntimeReport {
         app_root: format!("../{}", output_layout::APP_DIR),
         copied_assets,
-        entry_scripts: browser.entry_scripts.clone(),
-        module_preloads: browser.module_preloads.clone(),
+        entry_scripts: &browser.entry_scripts,
+        module_preloads: &browser.module_preloads,
         runtime_resources: &browser.runtime_resources,
-        generated: HarnessGeneratedManifest {
-            bootstrap: module_path_from_path(&PathBuf::from("bootstrap.js")),
-            index_html: module_path_from_path(&PathBuf::from("index.html")),
-        },
+        generated,
     };
     write_json(layout.runtime_report(), &runtime)?;
     write_json(
@@ -84,15 +85,15 @@ struct HarnessRuntimeReport<'a> {
     runtime_resources: &'a [artifact::runtime_resources::RuntimeResourceResolution],
     app_root: String,
     copied_assets: Vec<String>,
-    entry_scripts: Vec<String>,
-    module_preloads: Vec<String>,
+    entry_scripts: &'a [String],
+    module_preloads: &'a [String],
     generated: HarnessGeneratedManifest,
 }
 
 #[derive(Serialize)]
 struct HarnessGeneratedManifest {
-    bootstrap: String,
-    index_html: String,
+    bootstrap: &'static str,
+    index_html: &'static str,
 }
 
 #[derive(Serialize)]
