@@ -109,13 +109,37 @@ for (const [name, definition, called] of [
   );
 }
 
-for (const [name, definition, exported] of [
-  ["declaration", "async function* run() { yield 1; }", "run"],
-  ["expression", "const run = async function* () { yield 1; };", "run"],
-  ["method", "const box = { async *run() { yield 1; } };", "box"],
-]) {
-  assertRejected(
-    workerSplit(`async-generator-${name}`, `${definition} export const result = ${exported};`),
-    /async generator/
-  );
+const asyncSource = `
+  async function* stream(value, fallback = 8) { yield value; yield fallback; }
+  const box = { async *values() { yield 12; } };
+  const another = async function* () { yield 13; };
+  function* sync() {}
+  export const result = (() => {
+    if (stream.length !== 1 || stream.name !== "stream" || another.name !== "another") throw "name or length";
+    if (stream.prototype === box.values.prototype || stream.prototype === sync.prototype) throw "own prototype";
+    if (stream.prototype.constructor === sync.prototype.constructor) throw "function kind";
+    if (stream.prototype.constructor !== another.prototype.constructor) throw "shared prototype";
+    try { new stream(); } catch (err) { return true; }
+    return false;
+  })();
+  export { stream, box, another };`;
+const asyncTest = workerSplit("async-generator-creation", asyncSource, ["#1", "#2", "#3", "#4", "#5"]);
+assert.equal(asyncTest.verdict.status, "certified", asyncTest.log);
+const checkedAsync = lower(asyncTest.files.sourceFile, asyncTest.files.specFile, asyncTest.out, ["--check-output"]);
+assert.deepEqual(checkedAsync.verdict, asyncTest.verdict, checkedAsync.log);
+const intrinsicAsyncGenerator = async function* () {};
+for (const file of [asyncTest.files.sourceFile, path.join(asyncTest.out, "entry.mjs")]) {
+  const { result, stream, box, another } = await import(pathToFileURL(file).href);
+  assert.equal(result, true);
+  for (const fn of [stream, box.values, another]) {
+    assert.equal(Object.getPrototypeOf(fn), Object.getPrototypeOf(intrinsicAsyncGenerator));
+    assert.equal(Object.getPrototypeOf(fn.prototype), Object.getPrototypeOf(intrinsicAsyncGenerator.prototype));
+  }
+  const iterator = stream(7);
+  assert.deepEqual(await iterator.next(), { value: 7, done: false });
+  assert.deepEqual(await iterator.next(), { value: 8, done: false });
 }
+assertRejected(
+  workerSplit("reached-async-generator", "async function* run() { yield 1; } export const result = run();"),
+  /async generator invocation requires asynchronous suspension semantics/
+);

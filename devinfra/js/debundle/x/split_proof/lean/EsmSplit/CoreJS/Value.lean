@@ -363,10 +363,23 @@ def asyncFunctionProto : Addr := ⟨0, 3⟩
 def iteratorProto : Addr := ⟨0, 4⟩
 def generatorProto : Addr := ⟨0, 5⟩
 def generatorFunctionProto : Addr := ⟨0, 6⟩
-def regexpProto : Addr := ⟨0, 7⟩
+def asyncIteratorProto : Addr := ⟨0, 7⟩
+def asyncGeneratorProto : Addr := ⟨0, 8⟩
+def asyncGeneratorFunctionProto : Addr := ⟨0, 9⟩
+def regexpProto : Addr := ⟨0, 10⟩
+
+def FuncKind.hasOwnPrototype : FuncKind → Bool
+  | .normal | .generator | .asyncGenerator => true
+  | _ => false
+
+def FuncKind.instanceProto : FuncKind → Addr
+  | .generator => generatorProto
+  | .asyncGenerator => asyncGeneratorProto
+  | _ => objectProto
 
 def Func.intrinsicProto (f : Func) : Addr :=
   if f.kind == .asyncFn then asyncFunctionProto
+  else if f.kind == .asyncGenerator then asyncGeneratorFunctionProto
   else if f.kind == .generator then generatorFunctionProto
   else functionProto
 
@@ -402,14 +415,20 @@ def iteratorPrototype : Obj :=
       hostMembers "Iterator.prototype" ["reduce", "toArray", "forEach", "some", "every", "find", "map",
         "filter", "take", "drop", "flatMap"] ++ [hostIterator "Iterator.prototype[Symbol.iterator]"] }
 
-def generatorPrototype : Obj :=
-  { proto := some iteratorProto,
-    props := [(PropertyKey.str "constructor", Property.data (.obj generatorFunctionProto) false false true)] ++
-      hostMembers "Generator.prototype" ["next", "return", "throw"] }
+private def generatorBase (parent fn : Addr) (name : String) : Obj :=
+  { proto := some parent,
+    props := [(PropertyKey.str "constructor", Property.data (.obj fn) false false true)] ++
+      hostMembers name ["next", "return", "throw"] }
 
-def generatorFunctionPrototype : Obj :=
-  { proto := some functionProto, props := [("prototype", .data (.obj generatorProto) false false true),
-      ("constructor", .data (.host "GeneratorFunction") false false true)] }
+private def generatorFunctionBase (parent : Addr) (name : String) : Obj :=
+  { proto := some functionProto, props := [("prototype", .data (.obj parent) false false true),
+      ("constructor", .data (.host name) false false true)] }
+
+def generatorPrototype := generatorBase iteratorProto generatorFunctionProto "Generator.prototype"
+def generatorFunctionPrototype := generatorFunctionBase generatorProto "GeneratorFunction"
+def asyncIteratorPrototype : Obj := { proto := some objectProto, props := [] }
+def asyncGeneratorPrototype := generatorBase asyncIteratorProto asyncGeneratorFunctionProto "AsyncGenerator.prototype"
+def asyncGeneratorFunctionPrototype := generatorFunctionBase asyncGeneratorProto "AsyncGeneratorFunction"
 
 /-- Getters in the string-key order of the modeled realm. Their function objects
 follow %RegExp.prototype% in the intrinsic heap. -/
@@ -443,7 +462,8 @@ def builtins : Array Obj := #[
   { proto := some objectProto, array := true,
     props := ("length", .data (.num 0) true false false) ::
       (hostMembers "Array.prototype" arrayProtoNames ++ [hostIterator "Array.prototype.values"]) },
-  asyncFunctionPrototype, iteratorPrototype, generatorPrototype, generatorFunctionPrototype, regexpPrototype] ++ (regexpGetters.map fun (k, g) => regexpGetterObject k g).toArray
+  asyncFunctionPrototype, iteratorPrototype, generatorPrototype, generatorFunctionPrototype,
+  asyncIteratorPrototype, asyncGeneratorPrototype, asyncGeneratorFunctionPrototype, regexpPrototype] ++ (regexpGetters.map fun (k, g) => regexpGetterObject k g).toArray
 
 /-! ## The host functions the world answers for -/
 

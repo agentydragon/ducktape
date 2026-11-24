@@ -661,7 +661,8 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
   let tags ← parameters.mapM fun param => field param "type"
   let arity := (tags.toList.takeWhile fun t => t != "AssignmentPattern" && t != "RestElement").length
   if ← j.getObjValAs? Bool "generator" then
-    if async then throw "unsupported async generator function"
+    if async then return .complete (← deferredFunction j .asyncGenerator name self arity
+      "async generator invocation requires asynchronous suspension semantics")
     return .complete (← deferredFunction j .generator name self arity "generator invocation requires suspension semantics")
   if async then
     -- makeFunc captures the enclosing this as well as named cells. No async

@@ -930,7 +930,11 @@ for (const job of splitJobs) {
 if (!same([...host.globals].sort(), [...HOST_GLOBALS].sort()))
   failures.push(`the front end lets through ${HOST_GLOBALS}, the model has rules for ${host.globals}`);
 const generator = function* () {};
+const asyncGenerator = async function* () {};
 const intrinsicPrototypes = {
+  "AsyncGeneratorFunction.prototype": Object.getPrototypeOf(asyncGenerator),
+  "AsyncGenerator.prototype": Object.getPrototypeOf(asyncGenerator.prototype),
+  "AsyncIterator.prototype": Object.getPrototypeOf(Object.getPrototypeOf(asyncGenerator.prototype)),
   "AsyncFunction.prototype": Object.getPrototypeOf(async () => {}),
   "GeneratorFunction.prototype": Object.getPrototypeOf(generator),
   "Generator.prototype": Object.getPrototypeOf(generator.prototype),
