@@ -163,6 +163,19 @@ def test_pr_target_selection(tmp_path: Path, run_ci: RunCI, changed_file: str, g
         ({}, 0, ["test", "build"]),
         ({"FAKE_TESTS": ""}, 0, ["build"]),
         ({"FAKE_TEST_EXIT": "1"}, 1, ["test"]),
+        ({"FAKE_TEST_EXIT": "3"}, 3, ["test", "build"]),
+        ({"FAKE_TEST_EXIT": "3", "FAKE_BUILD_EXIT": "1"}, 3, ["test", "build"]),
+        ({"GITHUB_EVENT_NAME": "workflow_dispatch", "FAKE_TEST_EXIT": "3"}, 3, ["test"]),
+        (
+            {
+                "GITHUB_EVENT_NAME": "pull_request",
+                "PR_HEAD_SHA": "pr-head",
+                "CHANGED_FILE": "a.py",
+                "FAKE_TEST_EXIT": "3",
+            },
+            3,
+            ["test"],
+        ),
         ({"FAKE_TEST_EXIT": "4"}, 4, ["test"]),
         ({"FAKE_BUILD_EXIT": "1"}, 1, ["test", "build"]),
         (

@@ -96,7 +96,8 @@ Unlike the planner it fails loud, because it runs in the job about to publish.
 ## When an image or release stays in the matrix
 
 `release` and `push-images` can run after an unrelated Bazel CI failure. Each planner checks the evidence for
-the individual item.
+the individual item. On a push, if Bazel built the tests and some failed (exit 3), CI still runs its normal
+artifact build before returning the test failure. This gives both planners the usual build outputs.
 
 | Evidence                                                                            | Publication decision                                                                          |
 | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
