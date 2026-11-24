@@ -62,7 +62,8 @@ Target granularity, dependency declarations, generated inputs, lint and tests co
 - [ ] Migrate all Python packages to Bazel monorepo style (colocated tests and flat package structure)
 - [ ] Remove `--per_file_copt=external/or-tools[+]/.*@-Wno-sign-compare` from `.bazelrc` once OR-Tools cleans up signed/unsigned comparisons in `external/or-tools+/`. Currently `or-tools 9.15`.
 - [ ] Pre-commit lint for <devinfra/ci/image_targets.json> completeness: fail if any in-cluster `oci_image` target lacks an entry, and warn on entries whose `target` label points at a non-existent target. Would have caught `airlock`/`fc-vm-pod`-style coverage gaps during the runner-side push rewrite (PR #1290). Easiest implementation: extend `//devinfra/ci:test_plan_image_pushes` to run `bazel query 'kind("oci_image_rule", //...)'` and diff it against `load_images`.
-- [ ] Decide the fate of `secrets/shared/gaffer-private-fetch-pat.yaml` after the private-cache path exists: keep it for another workflow, rotate it, or delete it.
+- [ ] Decide whether to reuse, rotate, or delete `secrets/shared/gaffer-private-fetch-pat.yaml`.
+      The [deployed private-cache path](nix/docs/private_flake_inputs.md) no longer uses it.
 - [ ] Revisit Bazel repository-content caching after the Bazel upgrade: evaluate BuildBuddy or another backend for the experimental remote repository-content cache; measure wyrm2 local-cache hits after deployment and test the known output-base symlink cases on Bazel 9; then decide whether to explicitly configure it on my other developer machines. Account for wyrm2's 100G repository-cache mount and age-only garbage collection.
 - [ ] Package `hetzner-vnc-screenshot` with its skill as an independently released tool.
 

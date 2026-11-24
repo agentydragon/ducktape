@@ -402,9 +402,8 @@
           artifacts
           ;
       };
-      # gaffer-private's drivectl/drivefs, fetched purely as store paths from
-      # cache.allegedly.works/gaffer (no source eval). Empty until gaffer CI's
-      # first push populates ./nix/gaffer-pins.json.
+      # Gaffer closures come from the pins in nix/gaffer-pins.json. See
+      # nix/docs/private_flake_inputs.md for publication and recovery.
       gafferPkgs = import ./nix/packages/gaffer.nix { };
       devTools = import ./nix/flake/devtools.nix {
         inherit

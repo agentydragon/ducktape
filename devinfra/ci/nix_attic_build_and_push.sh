@@ -13,9 +13,8 @@
 # /etc/nixos via builtins.pathExists). nix-fast-build has no --impure flag, but
 # pure-eval=false covers path access. The one impurity it does NOT expose is
 # nixGL's builtins.currentTime driver-sniffing — forced off in these target
-# outputs (see devinfra/ci/nix_attic_targets.nix), which also bakes in the drivefs
-# isolation (google-drive off for wyrm2/rugged) so the private gaffer closure
-# never enters `main`. See cluster/docs/nix_cache.md "Private-binary isolation".
+# outputs. devinfra/ci/nix_attic_targets.nix owns the output lists and private
+# closure filtering. See cluster/docs/nix_cache.md#private-binary-isolation-drivefsdrivectl.
 set -euo pipefail
 
 flake=".#atticPushTargets.x86_64-linux"

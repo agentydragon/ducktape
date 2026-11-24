@@ -144,50 +144,27 @@ not decrypt a SOPS token file.
 
 ## Private-binary isolation (drivefs/drivectl)
 
-`drivefs` (the Google Drive binary) and `drivectl` must stay in the restricted
-`gaffer` cache and **never** land in the broadly-readable `main` cache. The boundary that
-enforces this is the **narinfo**: each cache signs and serves its own narinfos,
-gated by per-cache JWT scope. `main` and `gaffer` physically share
-content-addressed chunks on the local volume; cache authorization governs
-client access to those paths.
+Gaffer publishes `drivefs` and `drivectl` only to the restricted `gaffer` cache.
+Each cache authorizes and signs its own narinfos. The caches share stored NAR chunks,
+so publishing any closure that references a private binary to `main` or `public`
+would make that binary available to readers of that cache.
 
-The leak it guards against: `nix/home/modules/google-drive.nix`, when
-`services.google-drive.enable = true` (wyrm2, rugged), pulls `drivefs` and
-`drivectl` via
-`builtins.fetchClosure` from `gaffer` into the local store **at eval time**. If a
-closure containing them were pushed to `main`, their narinfos would land in
-`main`, pullable by anyone with `main:pull`.
+[The flake's Attic targets](../../devinfra/ci/nix_attic_targets.nix) enforce this
+boundary. `main` takes its top-level packages from `ducktapePkgs`. The full flake
+package set also exports the private Gaffer packages. Before evaluating a NixOS or
+standalone Home Manager closure for `main`, the target checks whether
+`services.google-drive.enable` is true and forces it off for that configuration.
+On NixOS it checks each Home Manager user. Missing options count as disabled, so
+profiles that omit the module (such as `claude-web` and the `bazel-test` root user)
+build without that override. `public` publishes only the bootstrap subset.
+[The CI publisher](../../devinfra/ci/nix_attic_build_and_push.sh) selects one of
+these target sets by cache name.
 
-So `devinfra/ci/nix_attic_build_and_push.sh` forces google-drive **off** for any
-config that enables it before pushing to `main`, detected by reading the
-`services.google-drive.enable` bool (cheap; it does not fetch `drivefs`, which
-lives behind `config = lib.mkIf cfg.enable`):
-
-- NixOS hosts: for each home-manager user reading `enable = true` (wyrm2,
-  rugged), `extendModules` injects
-  `home-manager.sharedModules += { services.google-drive.enable = mkForce false; }`.
-- Home configs: the same check on the config directly (none enable it today).
-
-Configs where the option is absent or false build as-is — they can't reference
-`drivefs`, and injecting an undeclared option would error. Crucially this covers
-configs that have **home-manager but not the google-drive module** (`bazel-test`'s
-`root` user; the standalone `claude-web` profile): the bool read errors → treated
-as not-enabled → built untouched.
-
-With it off, `config = lib.mkIf cfg.enable {…}` never references those private
-packages, so they are never fetched and never enter a pushed closure. Real hosts
-deploy with google-drive **on**: `nixos-rebuild switch` pulls `drivefs` and
-`drivectl` straight from `gaffer` (their reader JWT carries `--pull gaffer`) and
-rebuilds only the cheap home-manager generation diff.
-
-**Invariant:** the override targets exactly the configs whose
-`services.google-drive.enable` reads `true`, so a new google-drive host is covered
-automatically and a config that lacks the module is never mis-targeted (the bug
-that the earlier "force off everywhere with home-manager" approach hit on
-`bazel-test`).
-
-The local volume is shared by the caches; the Attic cache authorization boundary
-still controls which clients can fetch private cache paths.
+Keep this check outside the Google Drive module. Detecting the module's own
+option from inside it previously caused recursive evaluation. Running a normal
+host rebuild uses the real Google Drive setting and fetches the pinned closures
+from `gaffer`. See [the Nix consumer guide](../../nix/docs/private_flake_inputs.md)
+for pin updates, host opt-in, and cache access diagnostics.
 
 ## Pulling (Machines and Users)
 
