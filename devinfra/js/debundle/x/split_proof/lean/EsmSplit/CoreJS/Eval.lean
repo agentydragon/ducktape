@@ -654,9 +654,9 @@ def execStmt : Nat → Env → Stmt → M W Flow
       if ← lift (toBoolean (← evalExpr n env c)) then execStmt n env t else execStmt n env e
     | .block ss => do execStmts n (← enterBlock env ss) ss
     | .loop init test update body => do
-      let env ← enterBlock env [init]
-      let _ ← execStmt n env init
-      let fresh := (lexDecls [init]).filterMap fun (x, mutable) => if mutable then some x else none
+      let env ← enterBlock env init
+      let _ ← execStmts n env init
+      let fresh := (lexDecls init).filterMap fun (x, mutable) => if mutable then some x else none
       loop n (← copyBindings env fresh) fresh test update body
     | .brk => pure .brk
     | .cont => pure .cont

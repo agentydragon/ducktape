@@ -658,22 +658,21 @@ theorem Same.stmt_succ (env env' : Env) (s : Stmt) (hN : Agree s.free env env') 
     · exact free_mem_freeStmts (funDecl_of_mem hf) x (by simp [Stmt.free, hx])
   | loop init test update body =>
     unfold execStmt
-    refine enterBlock_congr (N' := (init.free ++ (test.free ++ (update.free ++ body.free))) ++ lexNames [init]) [init]
+    refine enterBlock_congr (N' := (freeStmts init ++ (test.free ++ (update.free ++ body.free))) ++ lexNames init) init
       hN (fun x hx => ?_) (fun f hf x hx => ?_) fun env1 env1' h1 => ?_
     · rcases List.mem_append.1 hx with hx | hx
-      · by_cases hc : (lexNames [init]).contains x = true
+      · by_cases hc : (lexNames init).contains x = true
         · exact Or.inr (List.contains_iff_mem.1 hc)
         · exact Or.inl (by simp only [Stmt.free, List.mem_filter]; exact ⟨hx, by simpa using hc⟩)
       · exact Or.inr hx
     · have := free_mem_freeStmts (funDecl_of_mem hf) x (by simp [Stmt.free, hx])
-      simp only [freeStmts, List.append_nil] at this
       exact List.mem_append_left _ (List.mem_append_left _ this)
-    · refine M.bind_congr (ih.stmt _ _ _ (h1.mono fun x hx => by simp [hx])) fun _ => ?_
+    · refine M.bind_congr (ih.stmts _ _ _ (h1.mono fun x hx => by simp [hx])) fun _ => ?_
       dsimp only
-      refine copyBindings_congr _ h1 (fun x hx => List.mem_append_right _ (fresh_lex [init] x hx))
+      refine copyBindings_congr _ h1 (fun x hx => List.mem_append_right _ (fresh_lex init x hx))
         fun env2 env2' h2 => ih.loop _ _ _ _ _ _ (h2.mono fun x hx => ?_)
       rcases List.mem_append.1 hx with hx | hx
-      · exact List.mem_append_right _ (fresh_lex [init] x hx)
+      · exact List.mem_append_right _ (fresh_lex init x hx)
       · exact List.mem_append_left _ (List.mem_append_right _ hx)
   | tryCatch body param handler =>
     unfold execStmt

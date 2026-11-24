@@ -151,9 +151,9 @@ theorem execStmt_reachFrame_step {r R cells A n} (away : Away r R A)
     exact (enter env ss h).bind fun next hn => many next ss hn
   | loop init test update body =>
     simp only [execStmt]
-    apply (enter env [init] h).bind
+    apply (enter env init h).bind
     intro next hn
-    apply (step next init hn).bind
+    apply (many next init hn).bind
     intro _ _
     exact (reachFrame_copyBindings away outside next _ hn).bind fun iteration hi =>
       repeatLoop iteration _ test update body hi

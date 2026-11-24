@@ -44,6 +44,51 @@ const entry = "entry.mjs";
   }
 }
 
+{
+  const source = `
+    let trace = "";
+    for (var outer = 0, limit = (trace += "init:", 2); outer < limit; ++outer) {
+      for (var row = outer, inner = 0; inner < 2; ++inner) {
+        trace += \`\${row}\${inner} \`;
+      }
+    }
+    export const result = [trace, outer, limit, row, inner];
+  `;
+  const { files, out, verdict, log } = sequentialSplit("module-for-many-vars", source, {
+    "worker.mjs": ["#0", "#1"],
+    [entry]: ["#2"],
+  });
+  assert.equal(verdict.status, "certified", log);
+  assert.equal(lower(files.sourceFile, files.specFile, out, ["--check-output"]).verdict.status, "certified");
+  for (const file of [files.sourceFile, path.join(out, entry)]) {
+    assert.deepEqual(observe(file, "result"), { result: ["init:00 01 10 11 ", 2, 2, 1, 2] });
+  }
+}
+
+{
+  const source = `
+    const read = () => {
+      let first, second, tdz = false;
+      for (let i = 0, j = i + 10; i < 2; i++, j++) {
+        if (i === 0) first = () => [i, j];
+        else second = () => [i, j];
+      }
+      try { for (let early = later, later = 1; false;) {} }
+      catch { tdz = true; }
+      return [first(), second(), tdz];
+    };
+    export const result = read();
+  `;
+  const { files, out, verdict, log } = sequentialSplit("for-many-lexical-cells", source, {
+    "worker.mjs": ["#0"],
+    [entry]: ["#1"],
+  });
+  assert.equal(verdict.status, "certified", log);
+  for (const file of [files.sourceFile, path.join(out, entry)]) {
+    assert.deepEqual(observe(file, "result"), { result: [[0, 10], [1, 11], true] });
+  }
+}
+
 // The update gets a fresh lexical cell. A closure made before continue must still
 // see the first iteration's value, even after the update and the second iteration.
 const capture = sequentialSplit(

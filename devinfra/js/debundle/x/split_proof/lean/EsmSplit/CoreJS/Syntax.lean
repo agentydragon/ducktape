@@ -201,7 +201,7 @@ inductive Stmt where
   | ite (c : Expr) (t e : Stmt)
   | block (ss : List Stmt)
   /-- `for (init; test; update) body`. -/
-  | loop (init : Stmt) (test update : Expr) (body : Stmt)
+  | loop (init : List Stmt) (test update : Expr) (body : Stmt)
   | brk
   | cont
   | throw (e : Expr)
@@ -287,7 +287,7 @@ def Stmt.varNames : Stmt → List Name
   | .varDecl x => [x]
   | .ite _ t e => t.varNames ++ e.varNames
   | .block ss => varNamesOf ss
-  | .loop init _ _ body => init.varNames ++ body.varNames
+  | .loop init _ _ body => varNamesOf init ++ body.varNames
   | .tryCatch body _ handler => body.varNames ++ handler.varNames
   | .tryFinally body finalizer => body.varNames ++ finalizer.varNames
   | .opaque _ decls _ _ _ => decls.filterMap fun (x, kind) => if kind == .var then some x else none
@@ -422,7 +422,7 @@ def Stmt.free : Stmt → List Name
   | .ite c t e => c.free ++ (t.free ++ e.free)
   | .block ss => (freeStmts ss).filter fun x => !(lexNames ss).contains x
   | .loop init test update body =>
-    (init.free ++ (test.free ++ (update.free ++ body.free))).filter fun x => !(lexNames [init]).contains x
+    (freeStmts init ++ (test.free ++ (update.free ++ body.free))).filter fun x => !(lexNames init).contains x
   | .brk | .cont => []
   | .tryCatch body param handler => body.free ++ handler.free.filter fun x => !(param == some x)
   | .tryFinally body finalizer => body.free ++ finalizer.free

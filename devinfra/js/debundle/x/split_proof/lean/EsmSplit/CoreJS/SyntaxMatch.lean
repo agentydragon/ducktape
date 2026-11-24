@@ -275,7 +275,7 @@ partial def stmtEq : MatchEq Stmt
   | .block a, .block b => (listEq stmtEq a b).map fun h => ⟨congrArg Stmt.block h.down⟩
   | .brk, .brk | .cont, .cont => some ⟨rfl⟩
   | .loop init test update body, .loop init' test' update' body' => do
-    let ⟨i⟩ ← stmtEq init init'
+    let ⟨i⟩ ← listEq stmtEq init init'
     let ⟨t⟩ ← exprEq test test'
     let ⟨u⟩ ← exprEq update update'
     let ⟨b⟩ ← stmtEq body body'

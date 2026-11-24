@@ -1004,16 +1004,15 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
       return .block (← linkedBlockDeclarations profile imports scope 0 j).toList
     | "WhileStatement" =>
       let test ← linkedExpr profile imports true "" (← j.getObjVal? "test")
-      return .loop (.block []) test .undef (← linkedStatement profile imports scope (← j.getObjVal? "body"))
+      return .loop [] test .undef (← linkedStatement profile imports scope (← j.getObjVal? "body"))
     | "ForStatement" =>
       let lower := linkedExpr profile imports true ""
       let init ← j.getObjVal? "init"
-      let initializer ← if init == .null then pure (.block []) else do
+      let initializer ← if init == .null then pure [] else do
         if (← field init "type") == "VariableDeclaration" then
-          -- Keep the declaration directly in the header so each iteration captures its own let cell.
-          let binder := scope.varBinder (← field init "kind")
-          pure (← declarationWith binder (linkedExpr profile imports true) init).2
-        else pure (.expr (← lower init))
+          -- All declarations share the header scope. Fresh let cells are copied together for each iteration.
+          pure (← linkedBlockDeclarations profile imports scope 0 init).toList
+        else pure [.expr (← lower init)]
       let test ← j.getObjVal? "test"
       let test ← if test == .null then pure (.bool true) else lower test
       let update ← j.getObjVal? "update"

@@ -230,7 +230,7 @@ def token (tag : String) (args : List Json) : D Unit := do
     let body ← popStmt
     let update ← popExpr
     let test ← popExpr
-    push (.stmt (.loop (← popStmt) test update body))
+    push (.stmt (.loop [← popStmt] test update body))
   | "brk", [] => push (.stmt .brk)
   | "cont", [] => push (.stmt .cont)
   | "throw", [] => do push (.stmt (.throw (← popExpr)))
