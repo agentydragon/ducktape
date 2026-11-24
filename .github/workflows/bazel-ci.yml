@@ -103,6 +103,8 @@ jobs:
         run: python3 devinfra/ci/pr_mergeability.py verify-source
 
       # The launcher uses stdlib Python and the same CLI artifacts as the Nix packages.
+      # TODO: Revisit .#github-actions-ci-image for GitHub Actions. Compare cold
+      # pull-to-ready time with this pinned install (benchmark run 45287501810).
       - name: Install pinned BuildBuddy CLIs
         run: |
           python3 devinfra/buildbuddy/ci/install_clis.py \
