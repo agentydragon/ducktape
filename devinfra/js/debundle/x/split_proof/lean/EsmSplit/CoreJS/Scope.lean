@@ -433,13 +433,14 @@ theorem Same.cls_succ (env env' : Env) (name : String) (self : Bool) (ctor : Fun
       exact List.mem_append_right _ (fieldInits_free members _ (List.of_mem_zip hzip).2 x hx)
 
 theorem Same.derived_succ (env env' : Env) (name : String) (self : Bool) (parent : Expr) (members : List ClassMember)
-    (hN : Agree (Expr.derived name self parent members).free env env') :
-    (evalExpr (n + 1) env (.derived name self parent members) : M W _) =
-      evalExpr (n + 1) env' (.derived name self parent members) := by
+    (ctor : Option (List Nat × Func))
+    (hN : Agree (Expr.derived name self parent members ctor).free env env') :
+    (evalExpr (n + 1) env (.derived name self parent members ctor) : M W _) =
+      evalExpr (n + 1) env' (.derived name self parent members ctor) := by
   simp only [evalExpr]
   split
   · rfl
-  · refine selfScope_congr (N' := (if self then [name] else []) ++ (parent.free ++ freeMembers members)) self name hN
+  · refine selfScope_congr (N' := (if self then [name] else []) ++ ((parent.free ++ freeMembers members) ++ derivedCtorFree ctor)) self name hN
       (fun x hx => ?_) fun env1 env1' h1 => ?_
     · rcases List.mem_append.1 hx with hx | hx
       · cases self <;> simp at hx
@@ -450,10 +451,22 @@ theorem Same.derived_succ (env env' : Env) (name : String) (self : Bool) (parent
         · exact Or.inl (by
             simp only [Expr.free, List.mem_filter]
             exact ⟨hx, by cases h : (self && x == name) <;> simp_all⟩)
-    · have h2 : Agree (parent.free ++ freeMembers members) env1 env1' := h1.mono fun x hx => List.mem_append_right _ hx
+    · have both : Agree ((parent.free ++ freeMembers members) ++ derivedCtorFree ctor) env1 env1' :=
+        h1.mono fun x hx => List.mem_append_right _ hx
+      have h2 := both.mono fun x (hx : x ∈ parent.free ++ freeMembers members) => List.mem_append_left _ hx
       refine M.bind_congr (ih.expr _ _ _ (h2.mono fun x hx => List.mem_append_left _ hx)) fun base => ?_
       refine M.bind_congr rfl fun parents => ?_
       unfold finishDerived
+      have sameCode : derivedCtorCode env1 ctor = derivedCtorCode env1' ctor := by
+        cases ctor with
+        | none => rfl
+        | some pair =>
+          rcases pair with ⟨xs, f⟩
+          simp only [derivedCtorCode]
+          have captured : Agree f.free env1 env1' := both.mono fun x hx =>
+            List.mem_append_right _ (show x ∈ derivedCtorFree (some (xs, f)) by simpa [derivedCtorFree] using hx)
+          rw [capture_agree captured]
+      simp only [sameCode]
       refine M.bind_congr rfl fun proto => M.bind_congr rfl fun c => M.bind_congr rfl fun _ => ?_
       refine M.bind_congr (ih.members _ _ _ _ _ (h2.mono fun x hx => List.mem_append_right _ hx)) fun _ => ?_
       refine M.bind_congr ?_ fun _ => rfl
@@ -481,7 +494,7 @@ theorem Same.expr_succ (env env' : Env) (e : Expr) (hN : Agree e.free env env') 
     refine ih.assign_like hN (by free_mem) fun r hr => ?_
     same ih hN
   | cls name self ctor members => exact ih.cls_succ env env' name self ctor members hN
-  | derived name self parent members => exact ih.derived_succ env env' name self parent members hN
+  | derived name self parent members ctor => exact ih.derived_succ env env' name self parent members ctor hN
   | unary op a =>
     cases op with
     | typeof =>

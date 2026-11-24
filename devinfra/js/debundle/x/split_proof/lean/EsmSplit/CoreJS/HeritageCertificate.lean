@@ -43,7 +43,7 @@ def HeritageSchedule.bridge (w : HeritageSchedule) : List Nat :=
   w.pre ++ [w.owner] ++ w.between ++ [w.pivot] ++ w.crossed ++ w.suffix
 
 private def subclass? : Stmt → Option (Name × Name)
-  | .decl .var x (.derived _ false (.var base) ms) =>
+  | .decl .var x (.derived _ false (.var base) ms none) =>
     if plainClassMembers ms then some (x, base) else none
   | _ => none
 
@@ -146,7 +146,7 @@ private theorem preserves_resolved {s t : State W} {st : Stmt} (hj : ss[j]? = so
       · cases hs
 
 private theorem swap_resolved {s : State W} {crossed : Stmt}
-    (hi : ss[i]? = some (.decl .var x (.derived name false (.var base) ms)))
+    (hi : ss[i]? = some (.decl .var x (.derived name false (.var base) ms none)))
     (hm : plainClassMembers ms = true) (hj : ss[j]? = some crossed) (hcross : crossesSubclass x crossed = true)
     (hij : i ≠ j) (howner : j ≠ owner) (resolved : ResolvedBase s (bundleEnv ss frames) base owner)
     (n : Nat) :
@@ -200,7 +200,7 @@ private theorem schedule_run {ss : List Stmt} {B : EsmSplit.Bundle} {w : Heritag
     (fp : FootprintsOfSyntax ss B) (ud : EsmSplit.UniqueDefs B)
     (fr : FramesOf ((List.range ss.length).zip ss) frames)
     (reg : ∀ q ∈ frames, ∀ p ∈ q.2, p.2.region = q.1 + 1)
-    (pivot : ss[w.pivot]? = some (.decl .var x (.derived name false (.var base) ms)))
+    (pivot : ss[w.pivot]? = some (.decl .var x (.derived name false (.var base) ms none)))
     (plain : plainClassMembers ms = true)
     (parent : ss[w.owner]? = some parentSt) (good : baseClass base parentSt = true)
     (between : ∀ j ∈ w.between, j ≠ w.owner ∧ ∃ st, ss[j]? = some st ∧ keepsBase base st = true)

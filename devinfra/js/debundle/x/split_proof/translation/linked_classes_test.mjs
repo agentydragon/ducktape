@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import {
+  assertCertifiedResult,
   exportNamed,
   forcePreview,
   id,
@@ -69,6 +70,43 @@ for (const [name, source, expected] of [
   }
 }
 
+// These guards run during module initialization, so certification requires
+// the Lean evaluator to observe the same constructor behavior as Node.
+for (const [name, source] of [
+  [
+    "super-replacement-receiver",
+    `const label = "saved";
+    class Base { constructor(a, b) { return { first: a, second: b }; } }
+    class Child extends Base { constructor(x, y) { (super(y, x), this.label = label); } }
+    const value = new Child("one", "two");
+    if (value.first !== "two" || value.second !== "one" || value.label !== "saved" || Child.length !== 2) throw 1;
+    export const result = true;`,
+  ],
+  [
+    "super-preserves-new-target",
+    `class Base { constructor(arg) { this.arg = arg; } }
+    class Middle extends Base { constructor(unused) { super(); } }
+    class Leaf extends Middle { read() { return 3; } }
+    const value = new Leaf("unused");
+    if (value.arg !== undefined || value.read() !== 3) throw 1;
+    export const result = true;`,
+  ],
+  [
+    "super-return-override",
+    `class Base {}
+    class Child extends Base { constructor(x) { super(); return x; } }
+    const other = {};
+    const value = new Child(other);
+    if (value !== other) throw 1;
+    export const result = true;`,
+  ],
+]) {
+  const test = sequentialSplit(name, source, { "first.mjs": ["#0"], [entry]: ["#1", "#2", "#3", "#4", "#5"] }, [
+    "first.mjs",
+  ]);
+  assertCertifiedResult(test, true);
+}
+
 // A field initializer executes at class creation for static fields and at new
 // for instance fields. Force the defining module ahead of its sibling in both variants.
 for (const isStatic of [false, true]) {
@@ -124,9 +162,19 @@ for (const isStatic of [false, true]) {
 
 for (const [name, source, expectedReason] of [
   [
-    "explicit-super",
-    "const B = class extends null { constructor() { super(); } }; export const result = 1;",
-    /explicit derived constructor/,
+    "pre-super-effects",
+    "const B = class extends null { constructor() { this.x = 1; super(); } }; export const result = 1;",
+    /leading super call/,
+  ],
+  [
+    "super-expression-argument",
+    "const B = class extends null { constructor(a) { super(a + 1); } }; export const result = 1;",
+    /identifier/,
+  ],
+  [
+    "repeated-super",
+    "const B = class extends null { constructor() { super(); super(); } }; export const result = 1;",
+    /super|derived constructor/i,
   ],
   ["derived-field", "const B = class extends null { value = true; }; export const result = 1;", /derived class field/],
   ["computed", "const B = class { ['x']() {} }; export const result = 1;", /computed class key/],

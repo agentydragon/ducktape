@@ -362,7 +362,7 @@ theorem evalMembers_plain_keeps (n : Nat) (env : Env) (proto c : Addr) (ms : Lis
 /-- With fixed prototype parents, an anonymous class with plain members preserves the existing state. -/
 theorem finishDerived_plain_keeps (n : Nat) (env : Env) (name : Name) (members : List ClassMember)
     (parents : Addr × Option Addr) (h : plainClassMembers members = true) {base s : State W} (hb : Extends base s) :
-    (finishDerived (evalMembers n) env name false members parents s).Keeps base := by
+    (finishDerived (evalMembers n) env name false members parents none s).Keeps base := by
   unfold finishDerived
   refine keeps_bind (alloc_keeps _ hb) fun proto s1 h1 hb1 => ?_
   have hp : base.objAt proto = none := hb.fresh (alloc_ok h1).1

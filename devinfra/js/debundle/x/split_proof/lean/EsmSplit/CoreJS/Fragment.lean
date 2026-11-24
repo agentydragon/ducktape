@@ -72,7 +72,7 @@ theorem allocOnly_class_nonliteralKey_rejected :
       [.method false (.var "key") (.opaque "method" .method false 0 0 1 [] none)]).allocOnly = false := rfl
 
 theorem allocOnly_derivedClass_rejected :
-    (Expr.derived "Derived" false (.var "Base") []).allocOnly = false := rfl
+    (Expr.derived "Derived" false (.var "Base") [] none).allocOnly = false := rfl
 
 mutual
 /-- The names an expression that only allocates reads when it runs. Functions and admitted plain classes read none: they keep bindings, not values. -/

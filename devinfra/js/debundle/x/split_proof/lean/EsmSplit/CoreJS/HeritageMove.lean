@@ -40,7 +40,7 @@ private def withParent (fuel : Nat) (env : Env) (name : Name) (ms : List ClassMe
 
 private theorem eval_withParent (h : ParentAt s env base cell ctor proto)
     (hm : plainClassMembers ms = true) (n : Nat) :
-    evalExpr n env (.derived name false (.var base) ms) s = withParent n env name ms ctor proto s := by
+    evalExpr n env (.derived name false (.var base) ms none) s = withParent n env name ms ctor proto s := by
   have hf := plainClassMembers_fieldInits hm
   cases n with
   | zero => rfl
@@ -87,7 +87,7 @@ private theorem parentDecl_local (n : Nat) (hm : plainClassMembers ms = true)
 
 private theorem parentDecl_eq (h : ParentAt s env base cell ctor proto)
     (hm : plainClassMembers ms = true) (n : Nat) :
-    inRegion i (execStmt n env (.decl .var x (.derived name false (.var base) ms))) s =
+    inRegion i (execStmt n env (.decl .var x (.derived name false (.var base) ms none))) s =
       inRegion i (parentDecl n env name x ms ctor proto) s := by
   cases n with
   | zero => rfl
@@ -99,7 +99,7 @@ private theorem parentDecl_eq (h : ParentAt s env base cell ctor proto)
 theorem ParentAt.after_derived {s t : State W} (h : ParentAt s env base cell ctor proto)
     (hm : plainClassMembers ms = true) (hx : ∀ c, env.vars.lookup x = some c → c.region = i + 1)
     (hc : cell.region ≠ i + 1) (ho : ctor.region ≠ i + 1)
-    (run : runUnit n env i (.decl .var x (.derived name false (.var base) ms)) s = .ok f t) :
+    (run : runUnit n env i (.decl .var x (.derived name false (.var base) ms none)) s = .ok f t) :
     ParentAt t env base cell ctor proto :=
   h.after_local (parentDecl_local (R := fun _ => False) n hm hx) hc ho ((parentDecl_eq h hm n).symm.trans run)
 
@@ -110,7 +110,7 @@ theorem derived_var_commutes_at {s : State W} {m : M W α}
     (hx : ∀ c, env.vars.lookup x = some c → c.region = i + 1)
     (hij : i ≠ j) (hl : Local (j + 1) R m) (hr : ∀ c, R c → c.region ≠ i + 1)
     (hc : cell.region ≠ j + 1) (ho : ctor.region ≠ j + 1) (n : Nat) (name : Name) :
-    let a := runUnit n env i (.decl .var x (.derived name false (.var base) ms))
+    let a := runUnit n env i (.decl .var x (.derived name false (.var base) ms none))
     let b := inRegion j m
     ∀ f v t, (∃ u, a s = .ok f u ∧ b u = .ok v t) ↔
              (∃ u, b s = .ok v u ∧ a u = .ok f t) := by

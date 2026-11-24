@@ -281,6 +281,7 @@ def showProperty : Property → String
 
 def showCode : Code → String
   | .derived => "derived"
+  | .derivedBody args f env => s!"derived {f.name} {args} {env.vars.map fun (x, a) => (x, showAddr a)}"
   | .closure f env fields =>
     s!"closure {f.name} {f.params} {env.vars.map fun (x, a) => (x, showAddr a)} {showVal env.this} {fields.map (·.1)}"
   | .host name => s!"host {name}"

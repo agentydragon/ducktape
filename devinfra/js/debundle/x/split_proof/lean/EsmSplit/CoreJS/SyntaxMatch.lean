@@ -112,12 +112,13 @@ partial def exprEq : MatchEq Expr
     let ⟨c⟩ ← funcEq ctor ctor'
     let ⟨m⟩ ← listEq classMemberEq ms ms'
     return ⟨k ▸ s ▸ c ▸ m ▸ rfl⟩
-  | .derived n self parent ms, .derived n' self' parent' ms' => do
+  | .derived n self parent ms ctor, .derived n' self' parent' ms' ctor' => do
     let ⟨k⟩ ← scalarEq n n'
     let ⟨s⟩ ← scalarEq self self'
     let ⟨p⟩ ← exprEq parent parent'
     let ⟨m⟩ ← listEq classMemberEq ms ms'
-    return ⟨k ▸ s ▸ p ▸ m ▸ rfl⟩
+    let ⟨c⟩ ← derivedCtorEq ctor ctor'
+    return ⟨k ▸ s ▸ p ▸ m ▸ c ▸ rfl⟩
   | .new f args, .new f' args' => do
     let ⟨callee⟩ ← exprEq f f'
     let ⟨arguments⟩ ← listEq exprEq args args'
@@ -143,6 +144,14 @@ private partial def arrayElementEq : MatchEq (ArrayElementKind × Expr)
     let ⟨tag⟩ ← scalarEq kind kind'
     let ⟨value⟩ ← exprEq e e'
     return ⟨tag ▸ value ▸ rfl⟩
+
+partial def derivedCtorEq : MatchEq (Option (List Nat × Func))
+  | none, none => some ⟨rfl⟩
+  | some (args, f), some (args', g) => do
+    let ⟨a⟩ ← scalarEq args args'
+    let ⟨b⟩ ← funcEq f g
+    return ⟨a ▸ b ▸ rfl⟩
+  | _, _ => none
 
 partial def funcEq : MatchEq Func
   | .mk name kind self params body, .mk name' kind' self' params' body' => do

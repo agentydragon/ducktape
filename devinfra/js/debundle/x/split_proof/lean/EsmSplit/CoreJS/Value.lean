@@ -71,6 +71,8 @@ def Env.capture (env : Env) (names : List Name) : Env where
 inductive Code where
   /-- An implicit derived constructor forwards to its current internal prototype. -/
   | derived
+  /-- A leading super call forwards selected formals. The body runs with the returned receiver. -/
+  | derivedBody (forward : List Nat) (body : Func) (closed : Env)
   | closure (f : Func) (env : Env) (fields : List (String × Expr))
   | host (name : String)
   /-- Part of the code the world runs with the supplied cells. The constructor capability is

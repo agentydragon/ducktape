@@ -124,8 +124,8 @@ theorem evalExpr_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env)
     (makeArray : ∀ es, ReachFrame r R cells A (SafeVal A) (evalExpr (n + 1) env (.arr es) : M W Val))
     (makeClass : ∀ name self f members,
       ReachFrame r R cells A (SafeVal A) (evalExpr (n + 1) env (.cls name self f members) : M W Val))
-    (extendClass : ∀ name self base members,
-      ReachFrame r R cells A (SafeVal A) (evalExpr (n + 1) env (.derived name self base members) : M W Val))
+    (extendClass : ∀ name self base members ctor,
+      ReachFrame r R cells A (SafeVal A) (evalExpr (n + 1) env (.derived name self base members ctor) : M W Val))
     (e : Expr) :
     ReachFrame r R cells A (SafeVal A) (evalExpr (n + 1) env e : M W Val) := by
   have get := reachFrame_getProp away (callFn n) call.getter root
@@ -145,7 +145,7 @@ theorem evalExpr_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env)
   | obj ps => exact makeObject ps
   | arr es => exact makeArray es
   | cls name self f members => exact makeClass name self f members
-  | derived name self base members => exact extendClass name self base members
+  | derived name self base members ctor => exact extendClass name self base members ctor
   | arrWithSpread _ => exact reachFrame_unknown r R cells A _ _
   | get o k =>
     exact (eval o).bind fun base hb => (eval k).bind fun key _ => get base key hb
