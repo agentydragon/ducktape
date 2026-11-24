@@ -48,19 +48,12 @@ pub(crate) struct VendorReimportOracle<'a> {
 }
 
 impl<'a> VendorReimportOracle<'a> {
-    /// `None` when the plan carries no partial / bundled swaps and no
-    /// boundary renames — classification would never fire. (Full-swap
-    /// marks are covered: every `swap` mark contributes a
-    /// boundary-rename plan entry.)
     pub(crate) fn new(
         plan: &'a VendorResolutionPlan,
         chunk_table: &'a ChunkTable,
         references: &'a ArtifactIndexes,
     ) -> Option<Self> {
-        if !plan.has_partial_swaps()
-            && !plan.has_bundled_partial_swaps()
-            && !plan.has_boundary_renames()
-        {
+        if !plan.rewrites_imports() {
             return None;
         }
         Some(Self {
