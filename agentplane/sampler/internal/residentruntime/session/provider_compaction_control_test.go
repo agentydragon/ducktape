@@ -23,11 +23,11 @@ import (
 )
 
 func TestCompactionRecoveryRejectsChangedPolicy(t *testing.T) {
-	for _, field := range []string{"keep_recent_turns", "per_message_effort", "keep_recent_tokens", "replacement_template", "drop_retained_reasoning"} {
+	for _, field := range []string{"keep_recent_turns", "per_message_effort", "keep_recent_tokens", "replacement_template", "legacy_chat_policy"} {
 		t.Run(field, func(t *testing.T) {
 			store := runtimetesting.NewStore(t, integrationDatabase)
 			api, effort := protocol.APIStyleAnthropicMessages, "high"
-			if field == "keep_recent_tokens" || field == "replacement_template" || field == "drop_retained_reasoning" {
+			if field == "keep_recent_tokens" || field == "replacement_template" || field == "legacy_chat_policy" {
 				api, effort = protocol.APIStyleChatCompletions, ""
 			}
 			session, err := runtimetesting.OpenStoreSession(t, store, &sessionconfig.Configuration{
@@ -79,8 +79,11 @@ func TestCompactionRecoveryRejectsChangedPolicy(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			intentID, _, err := store.BeginCompaction(t.Context(), owner, sessionstore.ProviderRequestIntent(sessionstore.PendingIntentCompaction, connection, config),
-				conversation.Context(), plan.Preparation, providerAttemptTestPolicy())
+			request := sessionstore.ProviderRequestIntent(sessionstore.PendingIntentCompaction, connection, config)
+			if field == "legacy_chat_policy" {
+				request.CompactionControl.ChatUserMessagesOnly = false
+			}
+			intentID, _, err := store.BeginCompaction(t.Context(), owner, request, conversation.Context(), plan.Preparation, providerAttemptTestPolicy())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -101,8 +104,6 @@ func TestCompactionRecoveryRejectsChangedPolicy(t *testing.T) {
 				config.ChatCompaction.KeepRecentTokens = new(64)
 			case "replacement_template":
 				config.ChatCompaction.Replacement.Template = "<checkpoint>{{.Summary}}</checkpoint>"
-			case "drop_retained_reasoning":
-				config.ChatCompaction.DropRetainedReasoning = true
 			}
 			runtime := &Driver{store: store, settings: samplersettings.Settings{
 				Models:      map[string]samplersettings.ModelConfig{session.Model: config},

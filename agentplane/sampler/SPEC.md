@@ -415,44 +415,42 @@ Image tool results become text notices.
 
 A Chat Completions route with `chat_compaction` supports manual compaction. Set
 `auto_compact_tokens` to trigger from the last streamed usage total. Newly appended input and tool
-results can exceed provider limits before another usage report. The sampler keeps the longest
-contiguous tail that fits the estimated `keep_recent_tokens` budget, using four UTF-8 bytes per
-token plus framing for content, reasoning and tool fields in the original messages. Counting the
-original reasoning keeps a reasoning-heavy context eligible for compaction. The cut can fall
-within a user turn. An assistant tool-call batch and every result on that batch stay together.
-A message or batch that exceeds the budget goes into the summary source in full, even if that
-leaves an empty tail.
+results can exceed provider limits before another usage report.
 
-The summary request reuses the system message and tool definitions, sends only the prefix being
-replaced, and appends a user message requesting a handoff. It sets `tool_choice: "none"` and
-`max_tokens` for summary output. The prefix includes any previous handoff. A complete nonempty
-text summary replaces the active prefix only if it reduces serialized context. An upstream context
-limit or incomplete summary leaves the original active context intact. After a successful
-compaction, the retained tail keeps assistant text, tool calls and results. Set
-`drop_retained_reasoning: true` to omit its `reasoning_content`; the default is false, preserving
-reasoning. The summary request uses the prefix as it stood before that compaction.
-Newly sampled messages and the append-only transcript retain the provider's reasoning.
-A compaction-generated environment notice consumes no tail budget and is refreshed on
-replacement. Enable reasoning removal only on routes that accept retained assistant messages
-without reasoning, including messages with tool calls.
-[Staging TabbyAPI replay evidence](../../cluster/cdk8s/litellm/README.md#tabbyapi-reasoning-replay).
+The summarizer receives the full active context, including earlier handoffs, assistant messages,
+reasoning and tool exchanges. The request reuses the system message and tool definitions, appends a
+handoff instruction, disables tool choice and sets `max_tokens` for the response. A provider
+context-limit failure or incomplete response leaves the active context intact.
 
-The sampler freezes the request body before dispatch and reuses it on retry. Changes to the tail
-budget, reasoning-removal policy or replacement settings prevent an in-flight summary from being applied under the new
-policy. Automatic compaction requires a settled context and newly compactable messages.
+The replacement carries recent authored user messages in chronological order, a fresh environment
+baseline and one generated handoff. Earlier assistant messages, reasoning, tool calls and tool
+results remain in History. The user budget `keep_recent_tokens` counts an estimated token per four
+UTF-8 bytes plus five tokens of framing per message. Starting with the newest user message, the
+sampler keeps whole messages while they fit. It can keep one older message with marked middle
+truncation at UTF-8 boundaries. The minimum configured budget is nine tokens, enough for a marker
+and framing. A partial message is omitted when the remaining budget cannot fit its marker. History
+retains the complete authored text.
+
+New Chat environment notices carry durable origin metadata that the provider request omits. They
+consume no authored-user budget. Legacy user-role records without origin metadata remain eligible,
+even if their content matches an environment notice.
+
+The sampler compares serialized bytes for the whole candidate replacement and original active
+context before committing it. It freezes the request body before dispatch and reuses it on retry.
+Recovery rejects an in-flight summary prepared under a different retention or replacement policy.
+Automatic compaction requires a settled context with material the replacement can discard.
+A prior handoff alone does not trigger another compaction.
 
 `chat_compaction.summary_prompt_template` and `chat_compaction.replacement.template` are Go text
 templates. Both receive `.KeepRecentTokens`. The replacement also receives `.Summary` and must
-include it verbatim. Choose `assistant` or `user` for the replacement role. The environment notice
-and retained messages follow. Without custom templates, the sampler uses its built-in handoff prompt
-and assistant-message wrapper.
+include it verbatim. Choose `assistant` or `user` for the replacement role. Without custom
+templates, the sampler uses its built-in handoff prompt and assistant-message wrapper.
 
 ```yaml
 chat_compaction:
   max_tokens: 8192
   keep_recent_tokens: 16000
   auto_compact_tokens: 160000
-  drop_retained_reasoning: true
   summary_prompt_template: |
     Write a handoff for the conversation above with goals, decisions, and open work.
   replacement:
@@ -464,8 +462,10 @@ chat_compaction:
 ```
 
 During the settings rollout, an existing positive `keep_recent_turns` setting selects the
-16,000-token tail budget. Configure only one retention field and update custom templates to use
+16,000-token user budget. Configure only one retention field and update custom templates to use
 `.KeepRecentTokens`.
+
+[Codex rust-v0.162.1 local compaction](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/core/src/compact.rs).
 
 Anthropic preserves signed thinking, redacted thinking and compaction content without translating
 their fields.

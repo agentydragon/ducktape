@@ -118,6 +118,10 @@ func (state *Context) AppendNotice(parts []protocol.ContentPart) error {
 	return state.appendMessage("developer", parts)
 }
 
+func (state *Context) AddEnvironment(parts []protocol.ContentPart, _ bool) error {
+	return state.AppendUser(parts)
+}
+
 func (state *Context) appendMessage(role string, parts []protocol.ContentPart) error {
 	if len(parts) == 1 && parts[0].Type == "input_text" && len(parts[0].Raw) == 0 {
 		item, err := Message(role, parts[0].Text)

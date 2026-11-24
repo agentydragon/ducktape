@@ -106,7 +106,7 @@ func (s *Store) recordEnvironmentContext(conversation *Conversation, session *Se
 	}
 	if update := environmentcontext.Update(conversation.EnvironmentContext, current); update != "" {
 		if err := conversation.apply(func(state protocol.Context) error {
-			return state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: update}})
+			return state.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: update}}, false)
 		}); err != nil {
 			return err
 		}

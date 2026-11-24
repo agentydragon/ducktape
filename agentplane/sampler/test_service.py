@@ -918,9 +918,9 @@ async def test_unknown_json_function_call_returns_function_output(
     assert not failed_results[0].succeeded
 
 
-@pytest.mark.parametrize(("compact", "drop_reasoning"), [(False, False), (True, False), (True, True)])
+@pytest.mark.parametrize("compact", [False, True])
 async def test_chat_completions_tool_round_trip(
-    endpoint: Endpoint, config: Settings, store: Store, tmp_path: Path, compact: bool, drop_reasoning: bool
+    endpoint: Endpoint, config: Settings, store: Store, tmp_path: Path, compact: bool
 ) -> None:
     config.models["test-model"] = ModelConfig(
         connection="provider",
@@ -928,9 +928,7 @@ async def test_chat_completions_tool_round_trip(
         reasoning_efforts={"", "medium", "low"},
         api="chat_completions",
         exec_encoding="json",
-        chat_compaction=ChatCompactionConfig(
-            max_tokens=1024, keep_recent_tokens=128, auto_compact_tokens=256, drop_retained_reasoning=drop_reasoning
-        )
+        chat_compaction=ChatCompactionConfig(max_tokens=1024, keep_recent_tokens=128, auto_compact_tokens=256)
         if compact
         else None,
     )
@@ -988,7 +986,14 @@ async def test_chat_completions_tool_round_trip(
                 summary_request = exchange.request.body
                 assert summary_request["tool_choice"] == "none"
                 assert {"role": "user", "content": user_text} in summary_request["messages"]
-                assert all(m["role"] not in {"assistant", "tool"} for m in summary_request["messages"])
+                source = summary_request["messages"]
+                assistant = next(m for m in source if m.get("tool_calls"))
+                tool = next(m for m in source if m["role"] == "tool")
+                assert assistant["content"] == public_progress
+                assert assistant["reasoning_content"] == reasoning
+                assert assistant["tool_calls"][0]["id"] == "chat-call"
+                assert tool["tool_call_id"] == "chat-call"
+                assert "42" in tool["content"]
                 await exchange.send(
                     SseEvent(
                         "chunk",
@@ -999,27 +1004,32 @@ async def test_chat_completions_tool_round_trip(
 
         async with await endpoint.next() as exchange:
             continued = exchange.request.body
-            assistant = next(m for m in continued["messages"] if m.get("tool_calls"))
-            tool = next(m for m in continued["messages"] if m["role"] == "tool")
+            messages = continued["messages"]
             if compact:
-                if drop_reasoning:
-                    assert "reasoning_content" not in assistant
-                else:
-                    assert assistant["reasoning_content"] == reasoning
-                assert all(m.get("content") != user_text for m in continued["messages"])
+                assert all(
+                    "reasoning_content" not in m and "tool_calls" not in m and m["role"] != "tool" for m in messages
+                )
+                assert all(m.get("content") not in {user_text, public_progress} for m in messages)
+                retained = [m["content"] for m in messages if m["role"] == "user"]
+                assert len(retained) == 1
+                assert "[truncated]" in retained[0]
+                assert [m for m in messages if m["role"] == "assistant"] == [
+                    {"role": "assistant", "content": "Summary of earlier conversation:\nUse the tool."}
+                ]
             else:
+                assistant = next(m for m in messages if m.get("tool_calls"))
+                tool = next(m for m in messages if m["role"] == "tool")
                 assert assistant["reasoning_content"] == reasoning
-            assert assistant["content"] == public_progress
-            assert assistant["tool_calls"] == [
-                {
-                    "id": "chat-call",
-                    "type": "function",
-                    "function": {"name": "exec", "arguments": '{"code":"text(42)"}'},
-                }
-            ]
-            assert tool["role"] == "tool"
-            assert tool["tool_call_id"] == "chat-call"
-            assert "42" in tool["content"]
+                assert assistant["content"] == public_progress
+                assert assistant["tool_calls"] == [
+                    {
+                        "id": "chat-call",
+                        "type": "function",
+                        "function": {"name": "exec", "arguments": '{"code":"text(42)"}'},
+                    }
+                ]
+                assert tool["tool_call_id"] == "chat-call"
+                assert "42" in tool["content"]
             await exchange.send(
                 SseEvent(
                     "chunk",
@@ -1033,8 +1043,16 @@ async def test_chat_completions_tool_round_trip(
                 SseEvent("done", b"data: [DONE]\n\n"),
             )
         assert (await turn_completed(stub, request.session_id, "chat")).status == event_pb2.TURN_STATUS_COMPLETED
-        original = next(m for m in await store.transcript_items(request.session_id) if m.get("tool_calls"))
+        transcript = await store.transcript_items(request.session_id)
+        original = next(m for m in transcript if m.get("tool_calls"))
         assert original["reasoning_content"] == reasoning
+        assert original["content"] == public_progress
+        old_tool = next(m for m in transcript if m["role"] == "tool")
+        assert old_tool["tool_call_id"] == "chat-call"
+        assert "42" in old_tool["content"]
+        assert {"role": "user", "content": user_text} in transcript
+        assert any(m.get("sampler_environment") and m["role"] in {"user", "system"} for m in transcript)
+        assert all("sampler_environment" not in m for m in initial["messages"] + continued["messages"])
 
         entries = await store.events(request.session_id, 0, limit=10000)
         dispatches = [
@@ -1103,11 +1121,11 @@ async def test_chat_completions_compaction(
         exec_encoding="json",
         chat_compaction=ChatCompactionConfig(
             max_tokens=8192,
-            keep_recent_tokens=32,
+            keep_recent_tokens=12,
             auto_compact_tokens=256 if automatic else None,
             summary_prompt_template=None
             if automatic
-            else "Write a handoff for this prefix. The tail budget is {{.KeepRecentTokens}} tokens.",
+            else "Write a handoff. The user message budget is {{.KeepRecentTokens}} tokens.",
             replacement=None
             if automatic
             else ChatCompactionReplacement(role="user", template="<handoff>{{.Summary}}</handoff>"),
@@ -1153,12 +1171,13 @@ async def test_chat_completions_compaction(
             messages = frozen["messages"]
             assert messages[: len(first_request["messages"])] == first_request["messages"]
             assert {"role": "assistant", "content": old_answer, "reasoning_content": old_reasoning} in messages
-            assert ({"role": "user", "content": recent} in messages) == overlong
+            assert {"role": "user", "content": recent} in messages
+            assert ({"role": "assistant", "content": "recent answer"} in messages) == (not automatic)
             assert messages[-1]["role"] == "user"
             if automatic:
                 assert "handoff" in messages[-1]["content"]
             else:
-                assert messages[-1]["content"] == ("Write a handoff for this prefix. The tail budget is 32 tokens.")
+                assert messages[-1]["content"] == ("Write a handoff. The user message budget is 12 tokens.")
             if case == "context_limit":
                 await exchange.respond(JsonResponse(b'{"error":{"code":"context_length_exceeded"}}', 400))
             elif automatic:
@@ -1191,7 +1210,13 @@ async def test_chat_completions_compaction(
                 else {"role": "user", "content": "<handoff>retained summary</handoff>"}
             )
             assert (expected in messages) == (case != "context_limit")
-            assert all("sampler_compaction_summary" not in m for m in messages)
+            assert all("sampler_compaction_summary" not in m and "sampler_environment" not in m for m in messages)
+            if case != "context_limit":
+                assert all(m.get("content") != "recent answer" for m in messages)
+            if case == "overlong_input":
+                retained = [m["content"] for m in messages if m["role"] == "user"]
+                assert len(retained) == 1
+                assert "[truncated]" in retained[0]
             assert ({"role": "user", "content": recent} in messages) == (case != "overlong_input")
             assert ({"role": "user", "content": old} in messages) == (case == "context_limit")
             assert all("truncated summary" not in m["content"] for m in messages)

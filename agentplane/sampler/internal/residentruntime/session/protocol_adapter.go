@@ -244,7 +244,7 @@ func (a chatAdapter) PrepareCompaction(c *sessionstore.Conversation, session *se
 	}
 	return &compactionPlan{
 		Preparation: &providerrequest.Preparation{
-			ModelConfig: a.config, SessionEffort: session.Effort, Compaction: true, ChatCompactionPlan: plan,
+			ModelConfig: a.config, SessionEffort: session.Effort, Compaction: true,
 		},
 		Apply: func(result *sampleResult) (protocol.Context, error) {
 			return plan.Apply(result.Records, result.Audit.(chatcompletions.Audit))

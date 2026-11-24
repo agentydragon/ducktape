@@ -159,10 +159,28 @@ func TruncateTextWithTokenBudget(text string, maxTokens int) string {
 	if maxBytes == 0 {
 		return fmt.Sprintf("…%d tokens truncated…", ApproxTokenCountBytes(len(text)))
 	}
-	left := maxBytes / 2
+	marker := fmt.Sprintf("…%d tokens truncated…", ApproxTokenCountBytes(len(text)-maxBytes))
+	return truncateMiddle(text, maxBytes, marker)
+}
+
+// TruncateTextWithinTokenBudget includes the marker in its UTF-8 byte budget.
+// An empty result means the budget could not fit the marker.
+func TruncateTextWithinTokenBudget(text string, maxTokens int, marker string) string {
+	maxBytes := maxTokens * approxBytesPerToken
+	if len(text) <= maxBytes {
+		return text
+	}
+	if maxBytes < len(marker) {
+		return ""
+	}
+	return truncateMiddle(text, maxBytes-len(marker), marker)
+}
+
+func truncateMiddle(text string, retainedBytes int, marker string) string {
+	left := retainedBytes / 2
 	prefixEnd := floorCharBoundary(text, left)
-	suffixStart := ceilCharBoundary(text, len(text)-(maxBytes-left))
-	return text[:prefixEnd] + fmt.Sprintf("…%d tokens truncated…", ApproxTokenCountBytes(len(text)-maxBytes)) + text[suffixStart:]
+	suffixStart := ceilCharBoundary(text, len(text)-(retainedBytes-left))
+	return text[:prefixEnd] + marker + text[suffixStart:]
 }
 
 func floorCharBoundary(text string, index int) int {

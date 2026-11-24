@@ -145,7 +145,7 @@ func ProviderRequestIntent(kind PendingIntentKind, connection samplersettings.Co
 	if kind == PendingIntentCompaction {
 		request.ProjectionKey = providerrequest.ProjectionFor(config)
 		if config.API == protocol.APIStyleChatCompletions && config.ChatCompaction != nil {
-			request.CompactionControl = &CompactionControl{KeepRecentTokens: config.ChatCompaction.RecentTokenBudget(), DropRetainedReasoning: config.ChatCompaction.DropRetainedReasoning}
+			request.CompactionControl = &CompactionControl{KeepRecentTokens: config.ChatCompaction.RecentTokenBudget(), ChatUserMessagesOnly: true}
 			if replacement := config.ChatCompaction.Replacement; replacement != nil {
 				request.CompactionControl.ReplacementRole = replacement.Role
 				request.CompactionControl.ReplacementTemplate = replacement.Template

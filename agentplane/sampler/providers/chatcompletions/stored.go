@@ -94,55 +94,41 @@ func PrepareNextProfile(store interface {
 	return store.PutContent(profileKind, raw)
 }
 
-// PrepareRequest retains the system and tool profile and stores only the prefix being summarized.
-func (p *CompactionPlan) PrepareRequest(store interface {
+// PrepareCompactionRequest keeps the sampling tool definitions in the prompt and
+// disables their selection for the appended summary request.
+func PrepareCompactionRequest(store interface {
 	content.ContentReader
 	content.ContentWriter
-}, profileID content.ContentID,
-) (content.ContentID, []content.ContentID, content.ContentID, error) {
+}, profileID content.ContentID, config CompactionConfig,
+) (content.ContentID, content.ContentID, error) {
 	raw, err := load(store, profileID, profileKind)
 	if err != nil {
-		return "", nil, "", err
+		return "", "", err
 	}
 	var profile requestProfile
 	if err := json.Unmarshal(raw, &profile); err != nil {
-		return "", nil, "", err
+		return "", "", err
 	}
 	profile.ToolChoice = "none"
-	profile.MaxTokens = p.config.MaxTokens
+	profile.MaxTokens = config.MaxTokens
 	raw, err = json.Marshal(profile)
 	if err != nil {
-		return "", nil, "", err
+		return "", "", err
 	}
 	profileID, err = store.PutContent(profileKind, raw)
 	if err != nil {
-		return "", nil, "", err
+		return "", "", err
 	}
-	instruction, err := p.config.summaryPrompt()
+	instruction, err := config.summaryPrompt()
 	if err != nil {
-		return "", nil, "", err
+		return "", "", err
 	}
 	raw, err = json.Marshal(message{Role: "user", Content: instruction})
 	if err != nil {
-		return "", nil, "", err
+		return "", "", err
 	}
 	instructionID, err := StoreRecord(store, raw)
-	if err != nil {
-		return "", nil, "", err
-	}
-	records, err := (&Context{messages: p.prefix}).ProjectRecords(0)
-	if err != nil {
-		return "", nil, "", err
-	}
-	ids := make([]content.ContentID, 0, len(records))
-	for _, record := range records {
-		id, err := StoreRecord(store, record)
-		if err != nil {
-			return "", nil, "", err
-		}
-		ids = append(ids, id)
-	}
-	return profileID, ids, instructionID, nil
+	return profileID, instructionID, err
 }
 
 func StoreRecord(store content.ContentWriter, raw json.RawMessage) (content.ContentID, error) {

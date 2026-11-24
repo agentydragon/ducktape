@@ -191,11 +191,10 @@ class ChatCompactionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     max_tokens: int = Field(gt=0)
-    keep_recent_tokens: int | None = Field(default=None, gt=0)
+    keep_recent_tokens: int | None = Field(default=None, ge=9)
     # CLEANUP(added 2026-11-24): Remove after staging has rolled out settings with keep_recent_tokens.
     keep_recent_turns: int | None = Field(default=None, gt=0)
     auto_compact_tokens: int | None = Field(default=None, gt=0)
-    drop_retained_reasoning: bool = False
 
     summary_prompt_template: str | None = None
     replacement: ChatCompactionReplacement | None = None

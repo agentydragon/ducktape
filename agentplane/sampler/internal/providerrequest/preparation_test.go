@@ -198,14 +198,6 @@ func TestChatEffortUpdatesNewRequestsWithoutChangingRetainedRequests(t *testing.
 		t.Fatal(err)
 	}
 	preparation.Compaction = true
-	state := &chatcompletions.Context{}
-	if err := state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: strings.Repeat("old text ", 64)}}); err != nil {
-		t.Fatal(err)
-	}
-	preparation.ChatCompactionPlan, err = state.PrepareCompaction(*config.ChatCompaction, "")
-	if err != nil {
-		t.Fatal(err)
-	}
 	compact, err := Prepare(memory, snapshot, preparation)
 	if err != nil {
 		t.Fatal(err)
