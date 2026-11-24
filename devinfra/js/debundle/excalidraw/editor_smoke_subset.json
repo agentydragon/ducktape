@@ -501,6 +501,18 @@
       "module": "packages/excalidraw/change",
       "bindings": ["Delta"],
       "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/math/line",
+      "bindings": ["line", "linesIntersectAt"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/math/triangle",
+      "bindings": ["triangleIncludesPoint"],
+      "anonymous_statements": []
     }
   ]
 }
