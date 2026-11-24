@@ -6,7 +6,7 @@ use analysis_model::DepKind;
 use anyhow::{Context, Result};
 use clap::Args as ClapArgs;
 use command_output::{infallible, write_ndjson_list, write_report};
-use peel::plan::{LimitReport, apply_limit_with_metadata};
+use peel::plan::LimitReport;
 use peel::{
     CommonArgs as PeelCommonArgs, DEFAULT_DESCRIBE_LIMIT, ExplainDirection, OutputFormat,
     resolve_binding_source_units,
@@ -274,25 +274,15 @@ pub fn run_cluster(args: ClusterArgs, output: &mut dyn std::io::Write) -> Result
     }
     let mut incoming_modules = incoming.into_values().collect::<Vec<_>>();
     let mut outgoing_modules = outgoing.into_values().collect::<Vec<_>>();
-    let mut sections = std::collections::BTreeMap::new();
-    apply_limit_with_metadata(
-        &mut incoming_modules,
-        limit,
-        &mut sections,
-        "incoming_modules",
-    );
-    apply_limit_with_metadata(
-        &mut outgoing_modules,
-        limit,
-        &mut sections,
-        "outgoing_modules",
-    );
+    let mut limits = LimitReport::new(limit);
+    limits.apply("incoming_modules", &mut incoming_modules);
+    limits.apply("outgoing_modules", &mut outgoing_modules);
     let report = ClusterReport {
         binding: sym.to_string(),
         home_module: resolve_module_ref(graph, home_key),
         incoming_modules,
         outgoing_modules,
-        limits: LimitReport { limit, sections },
+        limits,
     };
     let format = OutputFormat::resolve(args.format);
     write_report(&report, format, output, infallible(render_cluster_text))
