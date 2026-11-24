@@ -212,7 +212,9 @@ The ingress flag independently controls new writes.
 
 Each Session's opening watermark bounds its pass. Apply commits one block per transaction under
 the Session writer lock, with a 30-second deadline, a 1-second lock timeout and a 50 ms pause between
-blocks to pace WAL. Each moved event is read through the production block reader and compared with
+blocks to pace WAL. If the Session writer lock times out, `--all --apply` logs the Session ID,
+continues with the next Session, and reports `skipped_busy_sessions` on completion. Rerun the
+pass or target the skipped Session later. A single-Session apply reports the timeout as an error. Each moved event is read through the production block reader and compared with
 its original protobuf before commit. Event identities, projection state and acknowledged watermarks
 stay unchanged, so there are no settlement/removal notifications or projection write leases.
 
