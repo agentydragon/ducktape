@@ -1069,7 +1069,7 @@ def ownPropertyKeys (props : List (PropertyKey × Property)) : List PropertyKey 
     props.filterMap fun (key, _) => if key.string?.isNone then some key else none
 
 private def ordinaryForIn (o : Obj) : Bool :=
-  !o.array && o.code.isNone && o.regexp.isNone
+  !o.array && o.code.isNone && o.regexp.isNone && !o.errorIdentity
 
 /-- Own string keys in order, with enumerability retained for inherited shadowing. -/
 def forInLevels : Nat → Addr → M W (List (Addr × List (String × Bool)))
