@@ -589,8 +589,17 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
   | "AssignmentExpression" =>
     let op ← field j "operator"
     let lower := linkedExpr profile imports inFunction ""
-    let target ← j.getObjVal? "left" >>= linkedTarget imports inFunction (op == "=") lower
+    let lhs ← j.getObjVal? "left"
     let rhs ← j.getObjVal? "right"
+    if op == "=" && (field lhs "type").toOption == some "Identifier" &&
+        (field lhs "k").toOption == some "G" then
+      let name ← identifier lhs
+      if profile.mayResolveMissingBinding name then
+        -- Resolve the reference before the RHS. PutValue uses that reference
+        -- even if the RHS changes the ambient environment or throws.
+        let value ← linkedExpr profile imports inFunction name rhs
+        return .seq (.prim (.resolveMissingBinding name) []) (.prim (.putMissingBinding name) [value])
+    let target ← linkedTarget imports inFunction (op == "=") lower lhs
     let targetName := match target with
       | .var name | .frozen name => name
       | _ => ""

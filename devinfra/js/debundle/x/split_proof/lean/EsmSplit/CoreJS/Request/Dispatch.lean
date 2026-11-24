@@ -150,6 +150,15 @@ theorem reachFrame_prim {r R cells A} (away : Away r R A) (call : Call W) (hf : 
   | regExpGet getter => exact reachFrame_readRegExp away call hf root getter _ (safe_arg safe 0)
   | globalTypeof name => exact reachFrame_observeGlobalTypeof r R cells A name
   | globalRef name => exact reachFrame_readHostRef r R cells A (.binding name)
+  | resolveMissingBinding name =>
+    apply (reachFrame_readHostRef r R cells A (.unresolvableBinding name)).bind
+    intro result _
+    cases result <;> try exact reachFrame_unknown r R cells A _ _
+    split
+    · exact reachFrame_pure r R cells A _ (by simp [SafeVal, Val.nodes])
+    · exact reachFrame_unknown r R cells A _ _
+  | putMissingBinding name =>
+    exact reachFrame_errorValue (.error .reference s!"{name} is not defined") (fun _ hn => by cases hn)
   | wellKnownSymbol sym =>
     apply (reachFrame_readHostRef r R cells A (.property "Symbol" sym.member)).bind
     intro value _
