@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -174,6 +176,47 @@ def test_run_server_action_is_idempotent_on_retry(store: SqlStore) -> None:
     )
     assert second == first
     # Mutator was NOT replayed — credits stayed at 5000 millis, not 10000.
+    assert store.state_dump(_U).balance.credits_millis == 5000
+    assert len(_ledger_rows(store)) == 1
+
+
+@pytest.mark.parametrize("existing_user", [False, True], ids=["first-use", "existing-user"])
+def test_overlapping_retry_returns_original_result(store: SqlStore, existing_user: bool) -> None:
+    if existing_user:
+        store.state_dump(_U)
+
+    def run(mutator):
+        return store.run_server_action(
+            username=_U, client_action_id="overlap", action_type="test.grant", mutator=mutator
+        )
+
+    def unexpected_mutation(*_args):
+        pytest.fail("Retry ran the mutator a second time")
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        retries = []
+
+        def grant(s, _now_ms):
+            balance = locked_balance(s, _U)
+            retry = pool.submit(run, unexpected_mutation)
+            retries.append(retry)
+            # Hold the original transaction open until PostgreSQL sees the retry waiting on it.
+            waiting = text(
+                "SELECT EXISTS (SELECT FROM pg_locks WHERE NOT granted AND pg_backend_pid() = ANY(pg_blocking_pids(pid)))"
+            )
+            deadline = time.monotonic() + 10
+            while not s.scalar(waiting):
+                if retry.done():
+                    retry.result()
+                    pytest.fail("Retry returned before the original transaction committed")
+                if time.monotonic() >= deadline:
+                    pytest.fail("Retry never waited for the original transaction")
+                time.sleep(0.01)
+            balance.credits += 5000
+            return ActionMutation(result=ConvertResult(amount=5))
+
+        assert run(grant) == retries[0].result(timeout=10) == ConvertResult(amount=5)
+
     assert store.state_dump(_U).balance.credits_millis == 5000
     assert len(_ledger_rows(store)) == 1
 

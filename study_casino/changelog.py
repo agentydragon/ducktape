@@ -56,6 +56,12 @@ CHANGELOG: list[ChangelogEntry] = [
             "Sessions end when the identity provider token expires. Signing out uses a same-origin POST.",
         ],
     ),
+    ChangelogEntry(
+        id=4,
+        date="2026-11-23",
+        title="Overlapping requests",
+        items=["If a request is retried while it is still saving, both requests now receive the original result."],
+    ),
 ]
 
 LATEST_CHANGELOG_ID = CHANGELOG[-1].id

@@ -11,10 +11,6 @@ Defer until there's a real need.
       from the enclosing scope; making it an explicit parameter of the
       mutator callable would surface the user-scoping dependency at every
       ORM-row construction and helper invocation.
-- [ ] Replace the SELECT-then-INSERT lazy-seed in `SqlStore._ensure_user`
-      with a dialect-aware upsert (`INSERT ... ON CONFLICT DO NOTHING`)
-      so first-touch by two concurrent requests can't race. Current
-      behavior is fine for a single-replica deployment.
 - [ ] Reconsider whether the casino actually needs multi-tenancy. The
       shared-schema refactor was driven by symmetry with other CNPG apps
       in the cluster; if auragon stays the only user, the `user_id`
