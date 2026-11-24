@@ -216,8 +216,8 @@ private def decode (format : BodyFormat) (source providers files : Json) (P : Es
   let after : Program := { entry := P.entry, modules := split ++ shared }
   let (before, after) ← match format with
     | .linked => pure (before, after)
-    | .structural _ location => do
-      return (← location.attach before, ← location.attach after)
+    | .structural _ location =>
+      pure (← location.attach before, ← location.attach after)
   checkScopes before after
   return (before, after)
 

@@ -199,6 +199,49 @@ for (const [source, reason] of [
   cases.push({ kind: "opaque", input: parse(source), expected: reason });
 }
 
+// The same module-scoped binding moves into an import in the last statement.
+// The first initializer remains an opaque typed-array construction and its reader hoists.
+function structural({ glueBinding = "scroll", pivot = 3, init = "new Uint8Array([seed()])", emittedInit = init } = {}) {
+  const request = 'import { seed } from "./provider.mjs";';
+  const read = "function first() { return bytes[0]; }";
+  const arrow = "var scroll = ({ offset }) => offset + 1;";
+  const suffix = "var run = () => scroll({ offset: first() }); export { run };";
+  return {
+    pivot,
+    glueBinding,
+    source: parse(`${request} const bytes = ${init}; ${read} ${arrow} ${suffix}`),
+    providers: { "provider.mjs": parse("export const seed = () => 9;") },
+    files: {
+      "entry.mjs": parse(
+        `${request} import { scroll } from "./lib/scroll.mjs"; const bytes = ${emittedInit}; ${read} ${suffix}`
+      ),
+      "lib/scroll.mjs": parse(`import { seed } from "../provider.mjs"; ${arrow} export { ${glueBinding} as scroll };`),
+    },
+  };
+}
+const seed = [6, ["seed"], []];
+const allocation = [1, ["bytes"], ["seed"]];
+const first = [2, ["first"], ["bytes"]];
+const pivot = [3, "scroll"];
+const run = [4, ["run"], ["first", "scroll"]];
+cases.push({
+  kind: "structural",
+  input: structural(),
+  expected: [
+    [seed, allocation, first, pivot, run],
+    [seed, pivot, allocation, first, run],
+  ],
+});
+for (const [controls, expected] of [
+  [{ glueBinding: "seed" }, /unit 4: reference to scroll resolves to a different linked cell/],
+  [{ emittedInit: "new Float32Array([seed()])" }, /emitted syntax differs from original unit 1/],
+  [{ init: "import.meta.url" }, /requires source-module or method context/],
+  [{ init: "class extends Uint8Array { read() { return super.value; } }" }, /requires source-module or method context/],
+  [{ pivot: 0 }, /pivot 0 is not an executable source unit/],
+]) {
+  cases.push({ kind: "structural", input: structural(controls), expected });
+}
+
 // Lean elaborates the test entry once for the whole fixture table.
 const result = spawnSync(process.env.LINKED_INPUT_CHECKER, [], {
   encoding: "utf8",
