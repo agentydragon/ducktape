@@ -72,7 +72,7 @@ fn prepare_change<'a>(
         tree_config,
         assignments,
         import_order,
-        readable_names,
+        mut readable_names,
         mut selector_overrides,
         dry_run,
         effect_assessment_context,
@@ -176,7 +176,6 @@ fn prepare_change<'a>(
     let mut bindings = Vec::new();
     let mut anonymous_ordinals = Vec::new();
     let mut selected_names = BTreeSet::new();
-    let mut used_names = BTreeSet::new();
     for assignment in &assignments {
         let unit = graph
             .source_unit_id(&assignment.unit_id)
@@ -191,16 +190,12 @@ fn prepare_change<'a>(
                 continue; // Shared var sites are addressed by one binding claim.
             }
             let readable = readable_names
-                .get(&runtime)
-                .cloned()
+                .remove(&runtime)
                 .unwrap_or_else(|| binding.export_name.to_string());
             ensure!(
                 !readable.is_empty(),
                 "readable name for {runtime:?} is empty"
             );
-            if readable_names.contains_key(&runtime) {
-                used_names.insert(runtime.clone());
-            }
             let selector = selector_overrides
                 .get_mut(&assignment.unit_id)
                 .and_then(|selectors| selectors.remove(&runtime));
@@ -208,7 +203,7 @@ fn prepare_change<'a>(
         }
     }
     ensure!(
-        used_names.len() == readable_names.len(),
+        readable_names.is_empty(),
         "readable_names must name only newly claimed bindings"
     );
     selector_overrides.retain(|_, selectors| !selectors.is_empty());
