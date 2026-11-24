@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.LinkedPivot
+import EsmSplit.CoreJS.StringInitializer
 import EsmSplit.CoreJS.StableIntrinsic
 import EsmSplit.CoreJS.Request.Allocation
 import EsmSplit.CoreJS.SyntaxMatch
@@ -58,6 +59,16 @@ abbrev PivotLocal (w : World) (n : Nat) (u : LinkedUnit) :=
 abbrev PivotLocalFor (intrinsics : List StableIntrinsic) (u : LinkedUnit) :=
   ∀ w, StableIntrinsic.Worlds intrinsics w → ∀ n, PivotLocal w n u
 
+/-- A closed string expression reads no lexical or host state. Host reads need
+the selected descriptor's own proof. Both feed the same declaration step. -/
+private def pureInitializer? (intrinsics : List StableIntrinsic) (e : Expr) :
+    Option (PLift (∀ w, StableIntrinsic.Worlds intrinsics w → ∀ fuel env,
+      (evalExpr fuel env e : M w Val) = outOfFuel ∨ ∃ v, evalExpr (W := w) fuel env e = pure v)) := do
+  if let some a := stringInitializer? (fun _ => none) e then return ⟨fun w _ => a.closed w⟩
+  intrinsics.attach.findSome? fun ⟨d, hd⟩ => do
+    let ⟨evaluate⟩ ← d.evalValue? e
+    return ⟨fun w hw => evaluate w (hw d hd)⟩
+
 /-- Existing local evaluations need no host observations. An opted-in
 descriptor can also prove an actual Number read independent of host state. -/
 def checkedLocal? (intrinsics : List StableIntrinsic) (pivot : LinkedUnit) :
@@ -66,23 +77,22 @@ def checkedLocal? (intrinsics : List StableIntrinsic) (pivot : LinkedUnit) :
   match hp : pivot with
   | (id, .decl kind name e, env) =>
     let ⟨owned⟩ ← if h : inRegion (id + 1) env name = true then some (PLift.up h) else none
-    intrinsics.attach.findSome? fun ⟨d, hd⟩ => do
-      let ⟨evaluate⟩ ← d.evalValue? e
-      return ⟨by
-        rw [hp]
-        intro w hw fuel
-        have hx (c : Addr) (h : env.vars.lookup name = some c) : c.region = id + 1 := inRegion_owns owned h
-        cases fuel with
-        | zero => exact local_outOfFuel
-        | succ n =>
-          have expr : Local (id + 1) (fun _ => False) (evalExpr n env e : M w Val) := by
-            rcases evaluate w (hw d hd) n env with exhausted | ⟨x, value⟩
-            · rw [exhausted]; exact local_outOfFuel
-            · rw [value]; exact local_pure _
-          change Local (id + 1) (fun _ => False) (execStmt (n + 1) env (.decl kind name e) : M w Flow)
-          cases kind <;> unfold execStmt
-          case var => exact expr.bind' fun v => (local_writeVar hx v).bind' fun _ => local_pure _
-          all_goals exact expr.bind' fun v => (local_initVar hx v).bind' fun _ => local_pure _⟩
+    let ⟨evaluate⟩ ← pureInitializer? intrinsics e
+    return ⟨by
+      rw [hp]
+      intro w hw fuel
+      have hx (c : Addr) (h : env.vars.lookup name = some c) : c.region = id + 1 := inRegion_owns owned h
+      cases fuel with
+      | zero => exact local_outOfFuel
+      | succ n =>
+        have expr : Local (id + 1) (fun _ => False) (evalExpr n env e : M w Val) := by
+          rcases evaluate w hw n env with exhausted | ⟨x, value⟩
+          · rw [exhausted]; exact local_outOfFuel
+          · rw [value]; exact local_pure _
+        change Local (id + 1) (fun _ => False) (execStmt (n + 1) env (.decl kind name e) : M w Flow)
+        cases kind <;> unfold execStmt
+        case var => exact expr.bind' fun v => (local_writeVar hx v).bind' fun _ => local_pure _
+        all_goals exact expr.bind' fun v => (local_initVar hx v).bind' fun _ => local_pure _⟩
   | _ => none
 
 private def outsideRegion (r : Nat) (node : HeapNode) : Bool := node.addr.region != r

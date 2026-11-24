@@ -130,3 +130,42 @@ equating its property values. A proof for the benign case must establish an own
 data descriptor and value after the common prefix, then show that the crossed
 code preserves that lookup through every alias. Merely selecting the allocator
 in the same module does not establish either condition.
+
+## Character ranges and the RTL constructor
+
+On editor SHA-256 `fa1cfc7930fe3c0e2b4d95e6cb14ebde21068014cd92db303622509d9a0d455c`,
+full-context Rust selectors for the upstream `packages/excalidraw/utils.ts` resolve
+`RS_LTR_CHARS` (`r7`, #562), `RS_RTL_CHARS` (`U7`, #563), `RE_RTL_CHECK`
+(`l7`, #564) and `isRTL` (`hs`, #565). Adding just the first two to the
+278-binding utilities proposal [passed emission, disk checking and Chromium](https://app.buildbuddy.io/invocation/ab384ba5-99e2-429a-a35f-15076d354d23).
+This uses the existing rule for string literals.
+The [four-binding trial](https://app.buildbuddy.io/invocation/b584ed7c-8f10-48af-a37b-725df6b5f69a)
+refused the move of #564.
+
+The original initializer is:
+
+```js
+new RegExp(`^[^${r7}]*[${U7}]`);
+```
+
+`linkedTemplate` converts each substitution to a string before adding the
+next cooked segment. [StringInitializer](../../lean/EsmSplit/CoreJS/StringInitializer.lean)
+proves the result and absence of effects **given the values of the reads**.
+The two inputs are module `var` cells in different regions from the result.
+A move proof still needs to show the corresponding writes have run in both
+schedules and all crossed code preserves those cell values, including code
+with previously captured or published handles. Moving a template ahead of
+`var text = "a"` can otherwise substitute `"undefined"`.
+
+The browser-page profile currently stops at the ambient `RegExp` callee,
+before evaluating the argument. Even a stable binding identity would need
+a separate construction rule: given the actual intrinsic as callee and new
+target, compile the established string, throw on an invalid pattern, or
+allocate a **fresh** object with the intrinsic prototype, matcher data and
+its own writable `lastIndex` initialized to zero. The object's `.source`
+must use the escaped pattern representation (including `(?:)` for the
+empty pattern). CoreJS already allocates that object for a _parsed literal_;
+copying an arbitrary constructor argument into its literal data would skip
+both syntax errors and escaping. A replacement constructor or callee getter
+can run code before or instead of native construction. The RTL placement
+does not justify treating the global name as a built-in.
