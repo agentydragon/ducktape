@@ -219,10 +219,37 @@ assert.deepEqual(
   captured.verdict
 );
 
+const ordinaryReceivers = sequentialSplit(
+  "pre-super-ordinary-receivers",
+  `class Base {
+     constructor(options, fn) {
+       options.value = 4;
+       return { first: options.method(9), second: { value: 2, fn }.fn(13) };
+     }
+   }
+   class Child extends Base {
+     constructor(seed) {
+       const makeOptions = () => ({
+         method(offset) {
+           const read = () => this.value + offset + seed;
+           return read();
+         },
+       });
+       super(makeOptions(), function (offset) { return this.value + offset + seed; });
+     }
+   }
+   const child = new Child(5);
+   export const result = [child.first, child.second];`,
+  { "base.mjs": ["#0"], "entry.mjs": ["#1", "#2", "#3"] },
+  ["base.mjs"]
+);
+assertCertifiedResult(ordinaryReceivers, [18, 20]);
+
 for (const [name, body] of [
   ["nested-receiver", "const x = 1 + this.x; super(x);"],
   ["captured-super", "const read = () => super.x; super(read);"],
   ["argument-receiver", "super(this.x);"],
+  ["object-method-computed-key", "super({ [this.x]() {} });"],
 ]) {
   const refused = sequentialSplit(
     `pre-super-${name}`,

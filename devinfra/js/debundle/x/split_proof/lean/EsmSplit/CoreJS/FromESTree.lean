@@ -396,24 +396,25 @@ private def leadingSuper? (stmt : Json) : Option (Json × Option Json) := do
   return (call, some (.obj (fields.insert fieldName residual)))
 
 /-- Resolve lexical `this` in prefix and argument arrows to the constructor's
-receiver cell. Ordinary functions and classes introduce other receiver scopes. -/
-private partial def prepareBeforeSuper (j : Json) (allowArrow : Bool) (underArrow := false) : Except String Json := do
+receiver cell. Ordinary functions, including object methods, bind their own receiver. -/
+private partial def prepareBeforeSuper (j : Json) (allowFunctions : Bool) (underArrow := false) : Except String Json := do
   match j with
   | .obj fields =>
     let kind := (field j "type").toOption.getD ""
     if kind == "ThisExpression" && underArrow then
       return Json.mkObj [("type", .str "CoreJSDerivedReceiver")]
-    if ["ThisExpression", "Super", "MetaProperty", "FunctionExpression", "FunctionDeclaration",
+    if kind == "FunctionExpression" && allowFunctions then return j
+    if ["ThisExpression", "Super", "MetaProperty", "FunctionDeclaration",
         "ClassExpression", "ClassDeclaration"].contains kind ||
-        (kind == "ArrowFunctionExpression" && !allowArrow) then
+        (["ArrowFunctionExpression", "FunctionExpression"].contains kind && !allowFunctions) then
       throw s!"unsupported {kind} before super"
     if kind == "CallExpression" && (j.getObjVal? "callee" >>= identifier).toOption == some "eval" then
       throw "unsupported direct eval before super"
     let capturesReceiver := underArrow || kind == "ArrowFunctionExpression"
     let entries ← fields.toList.mapM fun (key, value) => do
-      pure (key, ← prepareBeforeSuper value allowArrow capturesReceiver)
+      pure (key, ← prepareBeforeSuper value allowFunctions capturesReceiver)
     return Json.mkObj entries
-  | .arr items => return .arr (← items.mapM (prepareBeforeSuper · allowArrow underArrow))
+  | .arr items => return .arr (← items.mapM (prepareBeforeSuper · allowFunctions underArrow))
   | _ => return j
 
 /-- Each entry identifies the object field through which the walk reached the child. Arrays
