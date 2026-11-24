@@ -147,20 +147,25 @@ p=//devinfra/js/debundle/x/split_proof/integration/excalidraw
 bbr test --config=ci "${p}:excalidraw_certified_editor_browser_smoke"
 ```
 
-The placement extracts 352 units from the pinned editor.
+The placement extracts 454 units from the pinned editor.
 
-| Module            | Source units |
-| ----------------- | ------------ |
-| `startup.mjs`     | `#5–18`      |
-| `codecs.mjs`      | `#19–300`    |
-| `utilities.mjs`   | `#301–353`   |
-| `coordinates.mjs` | `#559–560`   |
-| `scroll.mjs`      | `#1337`      |
+| Module                   | Source units                          |
+| ------------------------ | ------------------------------------- |
+| `startup.mjs`            | `#5–18`                               |
+| `codecs.mjs`             | `#19–300`                             |
+| `utilities.mjs`          | `#301–353`                            |
+| `palette-primitives.mjs` | `#359–366`                            |
+| `constants.mjs`          | 74 literal initializers in `#385–471` |
+| `font-strings.mjs`       | `#404`, `#548–549`                    |
+| `frame-animation.mjs`    | `#550–554`                            |
+| `collections.mjs`        | 12 collection helpers in `#555–597`   |
+| `coordinates.mjs`        | `#559–560`                            |
+| `scroll.mjs`             | `#1337`                               |
 
-The prefix keeps its execution order. The two coordinate helpers and the
-scroll helper move ahead of the residual entry. The checker selects the
-multiple-move proof with
-`--structural`, the `browser-page` profile and the live HTTP origin. The test
+The prefix keeps its execution order. Later declarations move ahead of the
+residual entry, which retains the file picker imports and interleaved computed
+initializers. The checker selects the multiple-move proof with `--structural`,
+the `browser-page` profile and the live HTTP origin. The test
 repeats certification with `--check-output`, then runs the original and
 certified editor in separate Chromium contexts at the same origin. It checks the
 served entry, provider and extracted module bytes, compares all 611 entry
