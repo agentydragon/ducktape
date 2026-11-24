@@ -28,7 +28,8 @@
         "vectorSubtract",
         "vectorScale",
         "vectorMagnitudeSq",
-        "vectorMagnitude"
+        "vectorMagnitude",
+        "vectorNormalize"
       ],
       "anonymous_statements": []
     },
