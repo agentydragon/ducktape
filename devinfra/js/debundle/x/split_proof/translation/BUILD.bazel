@@ -1226,7 +1226,7 @@ js_library(
     srcs = ["generate_specs.mjs"],
 )
 
-filegroup(
+js_library(
     name = "generator_gap_cases",
     srcs = ["debug/generator_findings/cases.mjs"],
     visibility = ["//devinfra/js/debundle/x/split_proof/effects:__pkg__"],
