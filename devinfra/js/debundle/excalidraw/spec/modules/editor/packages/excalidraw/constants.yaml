@@ -121,6 +121,7 @@ source_matches:
         EXPORT_SCALES = [1,2,3],
         DEFAULT_EXPORT_PADDING = 10,
         DEFAULT_MAX_IMAGE_WIDTH_OR_HEIGHT = 1440,
+        MAX_ALLOWED_FILE_BYTES = 4 * 1024 * 1024,
         DECLARATORS_AFTER = null;
     bindings:
       - DEFAULT_UI_OPTIONS
@@ -132,6 +133,7 @@ source_matches:
       - EXPORT_SCALES
       - DEFAULT_EXPORT_PADDING
       - DEFAULT_MAX_IMAGE_WIDTH_OR_HEIGHT
+      - MAX_ALLOWED_FILE_BYTES
   - match: |
       var DECLARATORS_BEFORE = null,
         SVG_NS = "http://www.w3.org/2000/svg",

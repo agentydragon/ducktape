@@ -38,6 +38,23 @@ the linked state exposed [`vectorNormalize`](https://app.buildbuddy.io/invocatio
 an earlier unit accessed the moved region of [`hitElementBoundText`](https://app.buildbuddy.io/invocation/1eed0d13-c6ec-46ac-8c67-6ef04cf9b895)
 and of [`loadFromBlob`](https://app.buildbuddy.io/invocation/7ad47e3f-24cd-4140-801c-4911859cee5b).
 
+## Applying the generic move proofs together
+
+The [combined 224-binding replay](https://app.buildbuddy.io/invocation/aaca1ba2-7ef6-4c50-aaac-339b715b5bd7)
+keeps the full Rust assignment as its reference and exercises these additional moves:
+
+- The regex-literal rule certifies the `COMMON` and `EMOJI` tables in text wrapping.
+- The isolated-observer and adjacent-declaration rules allow `isLinearElement`,
+  the two free-draw predicates and `isBindingElementType`. Adjacent captures
+  also occur in collision, group selection and file-handle helpers.
+- The numeric rule certifies `MAX_ALLOWED_FILE_BYTES = 4 * 1024 * 1024` in
+  `constants.ts`. Restored dependencies also allow `cappedElementCanvasSize`,
+  `restoreAppState` and `restore` in their original owners.
+
+The following screening and refusal counts describe the earlier 107-binding
+baseline; they are evidence for the rule changes, not a count of remaining
+refusals on the current checker.
+
 ## What limited the candidate set
 
 To select a trial, join the canonical Rust graph to the scope-annotated original

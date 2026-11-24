@@ -78,7 +78,11 @@
         "isUsingProportionalRadius",
         "canApplyRoundnessTypeToElement",
         "getDefaultRoundnessTypeForElement",
-        "isFixedPointBinding"
+        "isFixedPointBinding",
+        "isFreeDrawElement",
+        "isFreeDrawElementType",
+        "isLinearElement",
+        "isBindingElementType"
       ],
       "anonymous_statements": []
     },
@@ -91,7 +95,7 @@
     {
       "chunk": "editor",
       "module": "packages/excalidraw/element/collision",
-      "bindings": ["shouldTestInside", "hitElementBoundingBoxOnly"],
+      "bindings": ["shouldTestInside", "hitElementBoundingBoxOnly", "hitElementBoundText"],
       "anonymous_statements": []
     },
     {
@@ -108,7 +112,8 @@
         "shouldResetImageFilter",
         "getCanvasPadding",
         "renderSelectionElement",
-        "getRenderOpacity"
+        "getRenderOpacity",
+        "cappedElementCanvasSize"
       ],
       "anonymous_statements": []
     },
@@ -153,7 +158,8 @@
         "getSelectedGroupIdForElement",
         "addToGroup",
         "removeFromSelectedGroups",
-        "isInGroup"
+        "isInGroup",
+        "getSelectedGroupForElement"
       ],
       "anonymous_statements": []
     },
@@ -226,7 +232,9 @@
         "coalesceAppStateValue",
         "LegacyAppStateMigrations",
         "restoreLibraryItem",
-        "restoreLibraryItems"
+        "restoreLibraryItems",
+        "restoreAppState",
+        "restore"
       ],
       "anonymous_statements": []
     },
@@ -255,7 +263,9 @@
         "dataURLToFile",
         "SVGStringToFile",
         "ImageURLToFile",
-        "getActualMimeTypeFromImage"
+        "getActualMimeTypeFromImage",
+        "getFileFromEvent",
+        "getFileHandle"
       ],
       "anonymous_statements": []
     },
@@ -263,6 +273,12 @@
       "chunk": "editor",
       "module": "packages/excalidraw/data/encode",
       "bindings": ["byteStringToArrayBuffer", "byteStringToString"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/element/textwrapping",
+      "bindings": ["COMMON", "EMOJI"],
       "anonymous_statements": []
     }
   ]
