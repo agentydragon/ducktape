@@ -1387,26 +1387,55 @@ def register_batch_tools(
 
         return {"kind": "ok", "cleared": len(items)}
 
-    async def _fetch_volatile(client: GrocyClient) -> dict[str, Any]:
-        r = await _retry(lambda: client.get("/stock/volatile"))
+    async def _fetch_volatile(client: GrocyClient, *, days_ahead: int | None = None) -> dict[str, Any]:
+        params = {"due_soon_days": days_ahead} if days_ahead is not None else {}
+        r = await _retry(lambda: client.get("/stock/volatile", params=params))
         r.raise_for_status()
         data: dict[str, Any] = r.json()
         return data
-
-    async def _fetch_volatile_with_locations(
-        client: GrocyClient,
-    ) -> tuple[dict[str, Any], dict[int, str], dict[int, str]]:
-        data = await _fetch_volatile(client)
-        qu_names, location_names = await asyncio.gather(
-            client.entity_name_map(EntityType.QUANTITY_UNIT), client.entity_name_map(EntityType.LOCATION)
-        )
-        return data, qu_names, location_names
 
     def _lookup_name(product: dict[str, Any], key: str, name_map: dict[int, str]) -> str:
         raw_id = product.get(key)
         if raw_id is None:
             raise ValueError(f"product {product.get('id')} has no {key}")
         return name_map[int(raw_id)]
+
+    async def _stock_by_expiry(client: GrocyClient, *, days_ahead: int | None = None) -> list[dict[str, Any]]:
+        """Enrich Grocy's due-soon rows for a window, or its expired use-by rows when omitted."""
+        data = await _fetch_volatile(client, days_ahead=days_ahead)
+        qu_names, location_names = await asyncio.gather(
+            client.entity_name_map(EntityType.QUANTITY_UNIT), client.entity_name_map(EntityType.LOCATION)
+        )
+        today = datetime.now(tz=UTC).date()
+        bucket = "expired_products" if days_ahead is None else "due_products"
+        result = []
+        for entry in data.get(bucket, []):
+            product = entry.get("product") or {}
+            expiry = _parse_date(entry.get("best_before_date"))
+            if days_ahead is None:
+                timing = {"days_overdue": (today - expiry).days if expiry else 0}
+            else:
+                # Grocy 4.6 treats due_soon_days=0 as its default five-day window.
+                if (
+                    expiry is None
+                    or entry["best_before_date"] == _NEVER_EXPIRES_BBD
+                    or (expiry - today).days > days_ahead
+                ):
+                    continue
+                timing = {"days_until_expiry": (expiry - today).days}
+
+            result.append(
+                {
+                    "product_id": int(entry["product_id"]),
+                    "product_name": str(product.get("name", "")),
+                    "amount": float(entry.get("amount", 0)),
+                    "qu_name": _lookup_name(product, "qu_id_stock", qu_names),
+                    "location_name": _lookup_name(product, "location_id", location_names),
+                    "best_before_date": entry.get("best_before_date"),
+                    **timing,
+                }
+            )
+        return result
 
     @mcp.tool()
     async def get_expiring_stock(
@@ -1420,29 +1449,7 @@ def register_batch_tools(
         already-expired stock use `get_expired_stock`; for low-stock use
         `get_below_minimum_stock`.
         """
-        data, qu_names, location_names = await _fetch_volatile_with_locations(client)
-        today = datetime.now(tz=UTC).date()
-        cutoff = today + timedelta(days=days_ahead)
-        result = []
-
-        for entry in data.get("due_products", []):
-            product = entry.get("product") or {}
-            expiry_date = _parse_date(entry.get("best_before_date"))
-            if expiry_date is None or expiry_date > cutoff:
-                continue
-
-            result.append(
-                {
-                    "product_id": int(entry["product_id"]),
-                    "product_name": str(product.get("name", "")),
-                    "amount": float(entry.get("amount", 0)),
-                    "qu_name": _lookup_name(product, "qu_id_stock", qu_names),
-                    "location_name": _lookup_name(product, "location_id", location_names),
-                    "best_before_date": entry.get("best_before_date"),
-                    "days_until_expiry": (expiry_date - today).days,
-                }
-            )
-        return result
+        return await _stock_by_expiry(client, days_ahead=days_ahead)
 
     @mcp.tool()
     async def get_below_minimum_stock(client: GrocyClient = client_dependency) -> list[dict[str, Any]]:
@@ -1478,31 +1485,11 @@ def register_batch_tools(
 
     @mcp.tool()
     async def get_expired_stock(client: GrocyClient = client_dependency) -> list[dict[str, Any]]:
-        """Stock that's already past its best-before date.
+        """Stock past the use-by date of a product configured to expire (due_type=2).
 
         Each row carries product name, amount, unit, location,
         best-before date, and `days_overdue`. For things due to expire
         but not yet expired, use `get_expiring_stock`. For low-stock,
         use `get_below_minimum_stock`.
         """
-        data, qu_names, location_names = await _fetch_volatile_with_locations(client)
-        today = datetime.now(tz=UTC).date()
-
-        result = []
-        for entry in data.get("expired_products", []):
-            product = entry.get("product") or {}
-            expiry_date = _parse_date(entry.get("best_before_date"))
-            days_overdue = (today - expiry_date).days if expiry_date else 0
-
-            result.append(
-                {
-                    "product_id": int(entry.get("product_id", 0)),
-                    "product_name": str(product.get("name", "")),
-                    "amount": float(entry.get("amount", 0)),
-                    "qu_name": _lookup_name(product, "qu_id_stock", qu_names),
-                    "location_name": _lookup_name(product, "location_id", location_names),
-                    "best_before_date": entry.get("best_before_date"),
-                    "days_overdue": days_overdue,
-                }
-            )
-        return result
+        return await _stock_by_expiry(client)

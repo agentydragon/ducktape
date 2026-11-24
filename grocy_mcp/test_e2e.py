@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncGenerator
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import httpx
 import pytest
@@ -707,11 +707,61 @@ async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData) -
     await call_tool(mcp_client, "shopping_list_items_remove", {"item_ids": [sl_item_id]})
 
 
-async def test_volatile_stock_queries(mcp_client: Client) -> None:
-    """Smoke test: expiring, below-minimum, expired queries don't error."""
-    await call_tool(mcp_client, "get_expiring_stock", {"days_ahead": 30})
+async def _add_dated_stock(client: Client, ref_data: RefData, products: dict[str, date]) -> None:
+    items = [
+        {
+            "product": name,
+            "qu": ref_data.qu,
+            "location": ref_data.location,
+            "amount": 3,
+            "best_before_date": due.isoformat(),
+        }
+        for name, due in products.items()
+    ]
+    added = await call_tool(client, "stock_add", {"items": items})
+    assert [row["kind"] for row in added] == ["ok"] * len(items), added
+
+
+async def test_expiring_stock_honors_window(mcp_client: Client, ref_data: RefData) -> None:
+    today = datetime.now(UTC).date()
+    soon, later = ref_data.products
+    await _add_dated_stock(mcp_client, ref_data, {soon: today + timedelta(days=2), later: today + timedelta(days=12)})
+
+    for window, expected in [(0, {}), (11, {soon: 2}), (12, {soon: 2, later: 12})]:
+        rows = await call_tool(mcp_client, "get_expiring_stock", {"days_ahead": window})
+        assert {
+            row["product_name"]: row["days_until_expiry"] for row in rows if row["product_name"] in ref_data.products
+        } == expected
+
+    await _add_dated_stock(mcp_client, ref_data, {soon: today})
+    due_today = await call_tool(mcp_client, "get_expiring_stock", {"days_ahead": 0})
+    assert [row["days_until_expiry"] for row in due_today if row["product_name"] == soon] == [0]
+
+
+async def test_expired_stock_distinguishes_use_by_from_best_before(mcp_client: Client, ref_data: RefData) -> None:
+    best_before, use_by = ref_data.products
+    edited = await call_tool(mcp_client, "products_edit", {"items": [{"product": use_by, "due_type": 2}]})
+    assert edited[0]["kind"] == "ok", edited
+
+    past = datetime.now(UTC).date() - timedelta(days=2)
+    await _add_dated_stock(mcp_client, ref_data, {best_before: past, use_by: past})
+    rows = await call_tool(mcp_client, "get_expired_stock", {})
+    assert best_before not in {row["product_name"] for row in rows}
+    assert [row for row in rows if row["product_name"] == use_by] == [
+        {
+            "product_id": ref_data.product_ids[1],
+            "product_name": use_by,
+            "amount": 3,
+            "qu_name": ref_data.qu,
+            "location_name": ref_data.location,
+            "best_before_date": past.isoformat(),
+            "days_overdue": 2,
+        }
+    ]
+
+
+async def test_stock_status_queries(mcp_client: Client) -> None:
     await call_tool(mcp_client, "get_below_minimum_stock", {})
-    await call_tool(mcp_client, "get_expired_stock", {})
     await call_tool(mcp_client, "get_db_changed_time", {})
 
 
