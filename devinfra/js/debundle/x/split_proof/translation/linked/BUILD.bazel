@@ -78,6 +78,7 @@ _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean
         "pre_super_test",
         "provider_programs_test",
         "realm_constructors_test",
+        "record_prefix_test",
         "record_values_test",
         "relational_test",
         "reordering_test",

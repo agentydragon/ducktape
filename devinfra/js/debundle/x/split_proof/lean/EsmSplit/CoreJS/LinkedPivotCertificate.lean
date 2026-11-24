@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.HiddenRegion
+import EsmSplit.CoreJS.PrefixProjection
 import EsmSplit.CoreJS.LinkedPivotCheck
 import EsmSplit.CoreJS.LinkWorld
 import EsmSplit.CoreJS.StateMatch
@@ -254,6 +255,20 @@ inductive StructuralProof where
   | singlePivot
   | multiplePivots
 
+/-- The schedule checker also serves proof-local sequences whose executions
+have already been related to the original unit lists. -/
+private def checkRuns (intrinsics : List StableIntrinsic) (ready : State World.probe)
+    (source candidate : List LinkedUnit) :
+    Except String (Nat × PLift (∀ w, StableIntrinsic.Worlds intrinsics w → ∀ n (final : State w),
+      runUnits n source (linkState w ready) = .ok () final ↔ runUnits n candidate (linkState w ready) = .ok () final)) := do
+  let schedule ← checkSchedule intrinsics ready [] (source.map PreparedUnit.ofUnit) (candidate.map LinkedUnit.id)
+  let some ⟨same⟩ := sameUnits? schedule.units candidate |
+    throw "the linked schedules differ in unit order, syntax, or scope"
+  return (schedule.moves, ⟨by
+    intro w hw n final
+    rw [← runUnits_same n same]
+    simpa [List.map_map, Function.comp_def, PreparedUnit.ofUnit] using schedule.equivalent w hw n final⟩)
+
 /-- Select the rule from the linked schedules, then validate the witness in all worlds. -/
 def checkStructuralSchedule (intrinsics : List StableIntrinsic) (source candidate : Program) :
     Except String (StructuralProof × PLift (NormalEquivalent (StableIntrinsic.Worlds intrinsics) source candidate ∧ SameExports source candidate)) := do
@@ -272,16 +287,22 @@ def checkStructuralSchedule (intrinsics : List StableIntrinsic) (source candidat
     exact exportsEqual
   let sourceUnits := unitsOf before.linked
   let candidateUnits := unitsOf after.linked
-  let schedule ← checkSchedule intrinsics before.ready [] (sourceUnits.map PreparedUnit.ofUnit) (candidateUnits.map LinkedUnit.id)
-  let some ⟨same⟩ := sameUnits? schedule.units candidateUnits |
-    throw "the linked schedules differ in unit order, syntax, or scope"
+  let runs ← match checkRuns intrinsics before.ready sourceUnits candidateUnits with
+    | .ok ok => pure ok
+    | .error why => do
+      unless sourceUnits.any (fun u => u.stmt matches .decl _ _ (.get (.var _) (.str _))) do throw why
+      let ⟨beforeUnits, ⟨left⟩⟩ := PrefixProjection.prepare before.ready sourceUnits
+      let ⟨afterUnits, ⟨right⟩⟩ := PrefixProjection.prepare before.ready candidateUnits
+      let (count, ⟨middle⟩) ← checkRuns intrinsics before.ready beforeUnits afterUnits
+      pure (count, PLift.up (fun w hw n final =>
+        (left w n final).trans ((middle w hw n final).trans (right w n final).symm)))
   have equivalent : NormalEquivalent (StableIntrinsic.Worlds intrinsics) source candidate := normalEquivalent_of_bounded fun w hw n final => by
     rw [run_after_link n (before.forWorld w), run_after_link n (after.forWorld w)]
     change runUnits n sourceUnits (linkState w before.ready) = .ok () final ↔
       runUnits n candidateUnits (linkState w after.ready) = .ok () final
-    rw [← runUnits_same n same, ← congrArg (linkState w) initial]
-    simpa [List.map_map, Function.comp_def, PreparedUnit.ofUnit] using schedule.equivalent w hw n final
-  let method := match schedule.moves with
+    rw [← congrArg (linkState w) initial]
+    exact runs.2.down w hw n final
+  let method := match runs.1 with
     | 0 => .preservedOrder
     | 1 => .singlePivot
     | _ => .multiplePivots
