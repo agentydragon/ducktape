@@ -10,7 +10,7 @@ report snapshots. The [report index](index.html) links each review and its obser
 
 - **CI test cost:** [test and fixture audit](ci-test-cost/index.html), with fresh Action and Thread browser costs, devel push controls, and a current dependency graph probe. [Evidence](ci-test-cost/evidence.json) · [Manifest](ci-test-cost/manifest.json)
 
-- **Latency (22–24 November UTC):** [report](latency/index.html). Twelve of 16 heads in the latest fixed window passed the required checks. Green medians missed the 30% target. Pre-commit finished last on ten greens during a public Nix cache incident. [Cache recovery and gate timing](latency/index.html#latest-drivers) · [Evidence](latency/evidence.json) · [Manifest](latency/manifest.json)
+- **Latency (22–24 November UTC):** [report](latency/index.html). Twelve of 16 heads in the latest fixed window passed the required checks. Green medians exceeded the 30% thresholds from the audited 182-head baseline. Pre-commit finished last on ten greens during a public Nix cache incident. [Audited baseline](latency/index.html#cohorts) · [Cache recovery](latency/index.html#latest-drivers) · [Evidence](latency/evidence.json) · [Manifest](latency/manifest.json)
 
 - **Reliability (15–21 November UTC; partial 22 November):** [report](reliability/index.html). Thirteen of 168 sampled heads remained red. The separate 22 November sample includes one verified fresh sandbox frontend recovery and four fresh first-attempt VM passes. [Evidence](reliability/evidence.json) · [Manifest](reliability/manifest.json)
 

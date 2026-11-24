@@ -2,9 +2,9 @@
   "source_devel_commit": "1916bcf8e954323b23d69faf6a59466ec434b947",
   "window_start_utc": "2026-11-22T00:00:00Z",
   "window_end_utc": "2026-11-24T00:50:00Z",
-  "published_at_utc": "2026-11-24T01:21:21.209511+00:00",
-  "attribution": "Exact original job and profile; pinned Rust compiler download markers, cache restart and targeted recovery",
-  "previous_report_commit": "5b09e34a5ca346e9b3a5a36b6f3b47b8ac742219",
-  "report_sha256": "bb9b171a82f214ae2aec3b84973c2ee4a671b8fbd97aaf86f2748f06c587b1e9",
-  "evidence_sha256": "252e888dd45d0a2d78aa2fb592effc1647c167170e1745baf8f8d4ce309a24c1"
+  "published_at_utc": "2026-11-24T01:43:20.068723+00:00",
+  "attribution": "Original run-time target audit, exact-source fork feedback, and public Nix cache recovery",
+  "previous_report_commit": "fd9bcfd9bbc7165eacaee1ac4f8710c891de2df1",
+  "report_sha256": "8c02944cdaae6384edfeb28f63540f8b933b8124e17f3ec5888832b9aa2fb795",
+  "evidence_sha256": "8a882ee80a26fdc8dc7c44834350922b57a37d038adda146a799a2621d777578"
 }
