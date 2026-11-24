@@ -166,6 +166,9 @@ isolate the constructor move. In 1248 the helper also writes an already
 allocated class object in another unit's region; the constructor premise
 alone cannot justify that write.
 
+The [306-binding audit](audits/editor_306/README.md) accounts for every editor unit by canonical
+owner and records nine retries. The largest passing addition on that baseline was `isLinearElementType`.
+
 ## What limited the candidate set
 
 To select a trial, join the canonical Rust graph to the scope-annotated original

@@ -1,0 +1,80 @@
+{
+  "source_sha256": "fa1cfc7930fe3c0e2b4d95e6cb14ebde21068014cd92db303622509d9a0d455c",
+  "canonical_sha256": "d648dd807a4ecb5188f62245ccdad575d339cddd35ef2c664285b54e42a0e8fd",
+  "selected_sha256": "a5cbc8bec01786e3693cc45e0066696d76fd6de6fb684892efd40b6358ca6fa5",
+  "baseline_evidence": "https://app.buildbuddy.io/invocation/0ce8960d-1c80-4a2e-8853-750df5254da0",
+  "trial_evidence": "https://app.buildbuddy.io/invocation/fcefcf77-e3a8-4e93-b0e3-f971df606e0c",
+  "trials": {
+    "linear": {
+      "add": {
+        "packages/excalidraw/element/typechecks": ["isLinearElementType"]
+      },
+      "status": "certified"
+    },
+    "linear_bare": {
+      "add": {
+        "packages/excalidraw/element/typechecks": ["isLinearElementType"],
+        "packages/excalidraw/element/textwrapping": ["cachedCjkRegex", "cachedLineBreakRegex", "cachedEmojiRegex"]
+      },
+      "status": "rejected",
+      "reason": "source placement or module linkage checks failed"
+    },
+    "linear_brand": {
+      "add": {
+        "packages/excalidraw/utils": ["toBrandedType"],
+        "packages/excalidraw/element/typechecks": ["isLinearElementType"]
+      },
+      "status": "rejected",
+      "reason": "the linked state already exposes the region of unit 601"
+    },
+    "linear_class": {
+      "add": {
+        "packages/excalidraw/element/typechecks": ["isLinearElementType"],
+        "packages/excalidraw/change": ["Delta"],
+        "packages/excalidraw/store": ["Snapshot"]
+      },
+      "status": "rejected",
+      "reason": "entry exports resolve to different linked cells; extra 1: \"Dr\" (candidate cell @1470.0); missing 0; retargeted 0"
+    },
+    "linear_color": {
+      "add": {
+        "packages/excalidraw/colors": ["COLOR_PALETTE"],
+        "packages/excalidraw/element/typechecks": ["isLinearElementType"]
+      },
+      "status": "rejected",
+      "reason": "unit 367 is not a local allocating declaration"
+    },
+    "linear_crop": {
+      "add": {
+        "packages/excalidraw/element/typechecks": ["isLinearElementType"],
+        "packages/excalidraw/element/cropelement": ["adjustCropPosition"]
+      },
+      "status": "rejected",
+      "reason": "unit 1187 has access to the moved region of unit 1189"
+    },
+    "linear_erase": {
+      "add": {
+        "packages/excalidraw/element/typechecks": ["isLinearElementType"],
+        "packages/excalidraw/random": ["random", "randomInteger"]
+      },
+      "status": "rejected",
+      "reason": "unit 1428 is not a local allocating declaration"
+    },
+    "linear_hoists": {
+      "add": {
+        "packages/excalidraw/element/typechecks": ["isLinearElementType"],
+        "packages/excalidraw/element/utils": ["deconstructRectanguloidElement", "deconstructDiamondElement"]
+      },
+      "status": "rejected",
+      "reason": "entry exports resolve to different linked cells; extra 4: \"il\" (candidate cell @521.0), \"X$1\" (candidate cell @517.0), \"Jt\" (candidate cell @523.0), \u2026; missing 0; retargeted 0"
+    },
+    "linear_props": {
+      "add": {
+        "packages/excalidraw/constants": ["DEFAULT_ELEMENT_PROPS"],
+        "packages/excalidraw/element/typechecks": ["isLinearElementType"]
+      },
+      "status": "rejected",
+      "reason": "unit 459 is not a local allocating declaration"
+    }
+  }
+}
