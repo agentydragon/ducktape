@@ -26,31 +26,13 @@ import { generate as printJs } from "astring";
 import { frontBundle, frontTree } from "./frontend.mjs";
 import { generateAstBundle, astStatistics, generateRenamed } from "./testing/ast_generator.mjs";
 import { generateProgram } from "./testing/gen/index.mjs";
-import { mulberry32 } from "../seeded_random.mjs";
+import { seededRandom } from "../seeded_random.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const translate = process.env.TRANSLATE ?? path.join(here, "../lean/.lake/build/bin/translate");
 // The premises the checker runs under besides the always-on ones: the world defines no accessors or conversion hooks on
 // program objects (P3), which the generated bundles satisfy.
 const premises = { noWorldHooks: true };
-
-function rng(seed) {
-  const float = mulberry32(seed);
-  const int = (n) => Math.floor(float() * n);
-  return {
-    int,
-    chance: (p) => float() < p,
-    pick: (xs) => xs[int(xs.length)],
-    shuffle: (xs) => {
-      const out = [...xs];
-      for (let i = out.length - 1; i > 0; i--) {
-        const j = int(i + 1);
-        [out[i], out[j]] = [out[j], out[i]];
-      }
-      return out;
-    },
-  };
-}
 
 // A unit's source mentions names through markers, so that one source renders under any naming.
 const top = (n) => `\u0001${n}\u0002`; // a module-scope name, renamed and imported per module
@@ -1266,7 +1248,7 @@ async function main() {
   const bump = (key) => (tally[key] = (tally[key] ?? 0) + 1);
 
   const oneBundle = async (round) => {
-    const r = rng(seed * 100003 + round);
+    const r = seededRandom(seed * 100003 + round);
     const bundle = astCorpus
       ? generateAstBundle(seed, round)
       : callbackCorpus
@@ -1304,7 +1286,7 @@ async function main() {
       return;
     }
     for (let t = 0; t < trees; t++) {
-      const tr = rng(seed * 7919 + round * 131 + t);
+      const tr = seededRandom(seed * 7919 + round * 131 + t);
       const place = callbackCorpus
         ? bundle.units.map((_, i) => (t % 2 === 1 ? Number(bundle.side.includes(i)) : round % 2))
         : astCorpus && t === 0

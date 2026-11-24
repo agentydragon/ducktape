@@ -1,4 +1,4 @@
-import { rng } from "../translation/testing/gen/core.mjs";
+import { seededRandom } from "../seeded_random.mjs";
 
 const operations = [
   { method: "get", property: "accessor" },
@@ -87,6 +87,6 @@ function makeCase(random, seed, { method, property, receiver, inherited }) {
 }
 
 export function generateCases(seed) {
-  const random = rng(seed);
+  const random = seededRandom(seed);
   return shapes.map((shape) => makeCase(random, seed, shape));
 }

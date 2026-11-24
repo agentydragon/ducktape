@@ -14,6 +14,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { seededRandom } from "../seeded_random.mjs";
 import { frontBundle, frontTree } from "../translation/frontend.mjs";
 import { pairFiles } from "../translation/pair.mjs";
 
@@ -29,7 +30,6 @@ const permutations = option("permutations", 0);
 const caseSeed = option("seed", 1);
 const auditGaps = process.argv.includes("--known-gaps");
 const generatedGaps = process.argv.includes("--generated-known-gaps");
-let seed = caseSeed;
 
 // `CASES=path` runs another file of cases with the same shape; a relative path is from this script's directory. Without
 // it, `node run.mjs` takes `cases.mjs` and `cases_general.mjs` beside it. A generated module may export
@@ -63,21 +63,8 @@ for (const c of cases) if (c.family) familyCounts.set(c.family, (familyCounts.ge
 for (const [family, minimum] of Object.entries(requiredFamilies)) {
   if ((familyCounts.get(family) ?? 0) < minimum) throw new Error(`generator emitted too few ${family} cases`);
 }
-// mulberry32: a small seeded generator, so a failing permutation can be run again
-const random = () => {
-  seed = (seed + 0x6d2b79f5) >>> 0;
-  let t = Math.imul(seed ^ (seed >>> 15), seed | 1);
-  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-};
-const shuffled = (n) => {
-  const a = [...Array(n).keys()];
-  for (let i = n - 1; i > 0; i--) {
-    const j = Math.floor(random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-};
+const { shuffle } = seededRandom(caseSeed);
+const shuffled = (n) => shuffle(Array(n).keys());
 const shardCount = Number(process.env.TEST_TOTAL_SHARDS ?? 1);
 const shardIndex = Number(process.env.TEST_SHARD_INDEX ?? 0);
 assert(

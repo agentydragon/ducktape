@@ -1,7 +1,7 @@
 // Seeded, bounded coverage for rule families that the general tree generator rarely composes. Each generated program is
 // still checked by effects/run.mjs: lower classifies every unit, translate checks the reordered tree, and Node supplies
 // the observable behavior oracle.
-import { mulberry32 } from "../seeded_random.mjs";
+import { seededRandom } from "../seeded_random.mjs";
 
 const noWorldHooks = { noWorldHooks: true };
 
@@ -12,22 +12,6 @@ export const requiredFamilies = {
   recursive_hooks: 4,
   uncaught_throw: 3,
 };
-
-function random(seed) {
-  const float = mulberry32(seed);
-  return {
-    chance: (p) => float() < p,
-    int: (n) => Math.floor(float() * n),
-    shuffle: (values) => {
-      const out = [...values];
-      for (let i = out.length - 1; i > 0; i--) {
-        const j = Math.floor(float() * (i + 1));
-        [out[i], out[j]] = [out[j], out[i]];
-      }
-      return out;
-    },
-  };
-}
 
 const pure = (code) => ({ code, expect: "pure" });
 const world = (code) => ({ code, expect: "world" });
@@ -219,7 +203,7 @@ function makeThrowCases() {
 }
 
 export function generateCases(seed) {
-  const rng = random(seed);
+  const rng = seededRandom(seed);
   return [
     ...makeIteratorCases(rng),
     ...makePrototypeCases(rng),

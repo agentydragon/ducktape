@@ -14,24 +14,19 @@
 // `{ units: [{ tmpl, src, defs, uses }], exports, imports }`, where `src` marks module-scope names (`top`) and the unit's own
 // names (`local`) so that the splitter can rename and import them. `imports` are lines the splitter repeats in every module: the
 // names they bind are never marked, because a module imports them itself.
-import { mulberry32 } from "../../../seeded_random.mjs";
+import { seededRandom } from "../../../seeded_random.mjs";
 
 export const top = (n) => `\u0001${n}\u0002`;
 export const local = (n) => `\u0003${n}\u0004`;
 // eslint-disable-next-line no-control-regex -- Match the reserved top-level name marker.
 const TOP = /\u0001([^\u0002]+)\u0002/g;
 
-export function rng(seed) {
-  const float = mulberry32(seed);
-  return { float, int: (n) => Math.floor(float() * n) };
-}
-
 /** The kind of a type: `num`, `str`, `bool`, or the `t` of a structured type. */
 export const kindOf = (type) => (typeof type === "string" ? type : type.t);
 
 export class Gen {
   constructor(seed) {
-    this.random = rng(seed);
+    this.random = seededRandom(seed);
     this.units = [];
     this.top = []; // module-scope bindings declared so far, in order
     this.counter = 0;
@@ -50,10 +45,10 @@ export class Gen {
     return this.random.int(n);
   }
   chance(p) {
-    return this.random.float() < p;
+    return this.random.chance(p);
   }
   pick(xs) {
-    return xs[this.int(xs.length)];
+    return this.random.pick(xs);
   }
   /** One of `items` (each with a weight `w`), or `null` if there is none. */
   weighted(items) {

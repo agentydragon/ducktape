@@ -1,5 +1,5 @@
 // Compose setup, dispatch, and observation separately so one protocol can run through several built-in operators.
-import { rng } from "./core.mjs";
+import { seededRandom } from "../../../seeded_random.mjs";
 
 const arrMethods = {
   map: "(x) => x",
@@ -135,7 +135,7 @@ function intrinsicPatches(pick, score) {
 }
 
 export function generateCases(seed) {
-  const random = rng(seed);
+  const random = seededRandom(seed);
   const pick = (values) => values[random.int(values.length)];
   const score = () => 1 + random.int(9);
   const meter = "const meter = { n: 0 };";
