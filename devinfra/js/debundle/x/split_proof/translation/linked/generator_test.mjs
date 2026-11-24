@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { assertRejected, lower, sequentialSplit, workerSplit } from "./harness.mjs";
+import { assertRejected, lower, sequentialSplit, structuralFixture, workerSplit } from "./harness.mjs";
 
 const source = `
   const offset = 7;
@@ -143,3 +143,67 @@ assertRejected(
   workerSplit("reached-async-generator", "async function* run() { yield 1; } export const result = run();"),
   /async generator invocation requires asynchronous suspension semantics/
 );
+
+// Both declarations stay in the entry; only an unrelated initializer moves.
+// The alias is read before the declaration and the captured cell is written
+// between resumes, after both entry graphs have finished initializing.
+const spelling = "function* stream(value, fallback = 8) { /* keep me */ yield value; yield current; yield fallback; }";
+const retained = structuralFixture(
+  "retained-generators",
+  `const alias = stream;
+   ${spelling}
+   async function* asyncStream() { yield current; }
+   let current = 1;
+   function update(value) { current = value; }
+   const unrelated = 11;
+   export { alias, stream, asyncStream, update, unrelated };`,
+  ["#5"],
+  ["#0", "#1", "#2", "#3", "#4", "#6"]
+);
+const moved = retained.run("linked-structural-pivot");
+assert.equal(moved.status, "certified", JSON.stringify(moved));
+assert.deepEqual(retained.run("linked-structural-pivot", "--check-output"), moved);
+const entryFile = path.join(retained.out, "entry.mjs");
+for (const file of [retained.sourceFile, entryFile]) {
+  const { alias, stream, asyncStream, update, unrelated } = await import(pathToFileURL(file).href);
+  assert.equal(unrelated, 11);
+  assert.equal(alias, stream);
+  assert.equal(Function.prototype.toString.call(alias), spelling);
+  assert.notEqual(stream.prototype, asyncStream.prototype);
+  for (const [fn, intrinsic, length, name] of [
+    [stream, function* () {}, 1, "stream"],
+    [asyncStream, async function* () {}, 0, "asyncStream"],
+  ]) {
+    assert.equal(fn.length, length);
+    assert.equal(fn.name, name);
+    assert.equal(Object.getPrototypeOf(fn), Object.getPrototypeOf(intrinsic));
+    assert.equal(Object.getPrototypeOf(fn.prototype), Object.getPrototypeOf(intrinsic.prototype));
+    assert.equal(Object.hasOwn(fn.prototype, "constructor"), false);
+    assert.throws(() => new fn(), TypeError);
+  }
+  const iterator = alias(2);
+  assert.deepEqual(iterator.next(), { value: 2, done: false });
+  update(23);
+  assert.deepEqual(iterator.next(), { value: 23, done: false });
+  assert.deepEqual(iterator.next(), { value: 8, done: false });
+  assert.deepEqual(await asyncStream().next(), { value: 23, done: false });
+}
+
+const reparsed = readFileSync(entryFile, "utf8");
+assert(reparsed.includes(spelling));
+writeFileSync(entryFile, reparsed.replace("/* keep me */", "/* different spelling */"));
+assert.equal(retained.run("linked-structural", "--check-output").status, "rejected");
+
+const reached = structuralFixture(
+  "retained-generator-observes-initializer",
+  `function* observe() { yield later; }
+   const before = observe().next().value;
+   var later = 7;
+   export { before, later, observe };`,
+  ["#2"],
+  ["#0", "#1", "#3"]
+);
+assert.equal((await import(pathToFileURL(reached.sourceFile).href)).before, undefined);
+const denied = reached.run("linked-structural");
+assert.equal(denied.status, "rejected", JSON.stringify(denied));
+assert.match(denied.reason, /already exposes the region of unit 2/);

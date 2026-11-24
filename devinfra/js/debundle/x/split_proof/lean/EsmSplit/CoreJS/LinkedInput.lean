@@ -59,8 +59,14 @@ private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (impo
     (origin : Nat) (j : Json) (exported : Bool) : Except String (Stmt × List Name) := do
   if let .structural pivots location := format then
     unless pivots.contains origin do
-      let s ← OpaqueInput.unit origin j location.unitNames[origin]?
-      return (s, if exported then (Lower.topDefs j).eraseDups else [])
+      -- A whole-unit opaque hoist represents ordinary and async functions.
+      -- Generator declarations need their own intrinsic and fresh prototype.
+      -- Lower the declaration by the same numbered, capture-checked path as a pivot.
+      if Lower.typ j == "FunctionDeclaration" && Lower.flag j "generator" then
+        if let some why := Lower.outsideModel false j then throw why
+      else
+        let s ← OpaqueInput.unit origin j location.unitNames[origin]?
+        return (s, if exported then (Lower.topDefs j).eraseDups else [])
   let ast := ((numberFunctions origin j).run 1).1
   if exported then
     let (bindings, s) ← FromESTree.linkedDeclaration imports ast profile
