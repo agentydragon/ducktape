@@ -3680,6 +3680,7 @@ data:
       "gateway_target": "environments.agentplane-staging.svc.cluster.local:8082",
       "direct_executor_insecure_localtest": false,
       "max_live_sessions": 32,
+      "event_block_writes": true,
       "rpc_timeout_seconds": 30,
       "executor_initialize_timeout_seconds": 30,
       "shutdown_drain_seconds": 40,

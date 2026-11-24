@@ -89,6 +89,7 @@ class CentralSampler(Construct):
             gateway_target=environment_service.environments_service(namespace).authority,
             gateway_tls=workload_tls.service_client_tls(SANDBOX_CONTROLLER_URI, client_uri=CENTRAL_SAMPLER_URI),
             max_live_sessions=props.max_live_sessions,
+            event_block_writes=props.event_block_writes,
             rpc_timeout_seconds=props.rpc_timeout_seconds,
             executor_initialize_timeout_seconds=props.executor_initialize_timeout_seconds,
             lease_seconds=props.lease_seconds,
