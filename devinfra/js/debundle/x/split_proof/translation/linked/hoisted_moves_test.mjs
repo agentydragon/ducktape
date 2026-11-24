@@ -158,3 +158,41 @@ const call = tdz.run(refusalScope);
 assert.equal(call.status, "rejected");
 assert.match(call.reason, /unit 2 is not a local allocating declaration/);
 assert(!existsSync(tdz.out));
+
+// The outer hoist holds the middle hoist's cell, which in turn holds the
+// inner observer's cell. All three rows must be restored before the suffix.
+for (const early of [false, true]) {
+  const chain = structuralFixture(
+    early ? "outer-observer-called-during-move" : "outer-observer-only-in-suffix",
+    `const before = ${early ? "{ get value() { return outer(); } }.value" : "new Uint8Array([9])[0]"};
+     var later = () => 7;
+     function inner() { return typeof later; }
+     function middle() { return inner(); }
+     function outer() { return middle(); }
+     const after = outer();
+     export { before, after, later, outer };`,
+    ["#1"],
+    ["#0", "#2", "#3", "#4", "#5", "#6"]
+  );
+  const source = await import(pathToFileURL(chain.sourceFile));
+  assert.equal(source.after, "function");
+  if (early) {
+    assert.equal(source.before, "undefined");
+    const refused = chain.run(refusalScope);
+    assert.equal(refused.status, "rejected", JSON.stringify(refused));
+    assert.match(refused.reason, /linked state already exposes the region of unit 1/);
+    assert(!existsSync(chain.out));
+  } else {
+    const verdict = chain.run(pivotScope);
+    assert.equal(verdict.status, "certified", JSON.stringify(verdict));
+    assert.deepEqual(chain.run(pivotScope, "--check-output"), verdict);
+    const split = await import(pathToFileURL(path.join(chain.out, "entry.mjs")));
+    for (const ns of [source, split]) {
+      assert.deepEqual(Object.keys(ns), ["after", "before", "later", "outer"]);
+      assert.equal(ns.before, 9);
+      assert.equal(ns.after, "function");
+      assert.equal(ns.outer(), "function");
+      assert.equal(ns.later(), 7);
+    }
+  }
+}
