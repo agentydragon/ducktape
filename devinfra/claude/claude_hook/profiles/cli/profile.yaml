@@ -1,8 +1,3 @@
-# CLEANUP(added 2026-05-30): `otel:` removed — ignored by the Rust daemon (config.rs
-# drops unknown fields; the daemon emits no OTLP, Claude Code's native exporter
-# does — devinfra/claude/README.md § Claude Code Telemetry). Endpoint was
-# https://alloy-otlp.allegedly.works/v1/traces;
-# DUCKTAPE_OTEL_BEARER_TOKEN still comes from .envrc (cli_env.sh) regardless.
 git_shim:
   block_amend: true
   # block_stash stays off: with it on, `git commit` failed with "pre-commit died of
@@ -13,7 +8,6 @@ git_shim:
   block_stash: false
   block_add_all: true
 idle_watchdog: true
-# CLEANUP(added 2026-05-30): `setup_tmpfs` removed for the same reason as `otel:` above.
 env_exports: |
   # Ansible tmp dir: Claude Code sandbox makes /tmp read-only; redirect to $TMPDIR.
   export ANSIBLE_LOCAL_TEMP="${TMPDIR:-/tmp}/ansible-tmp"
