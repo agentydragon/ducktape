@@ -54,16 +54,18 @@
         Code,
         Container,
         Group,
+        Select,
         Stack,
         Table,
         Text,
         Title,
       } from "@mantine/core";
+      import React from "react";
       import { BarChart } from "@mantine/charts";
       import { html, mount } from "../report.js";
 
       const evidenceSha =
-        "8a882ee80a26fdc8dc7c44834350922b57a37d038adda146a799a2621d777578";
+        "cbc79ebc984297232d124c4d24db0bdfda646887ab4ce2b856c65d8d6d942303";
       const response = await fetch(`./evidence.json?v=${evidenceSha}`);
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const bytes = await response.arrayBuffer();
@@ -78,20 +80,10 @@
       const repo = "https://github.com/agentydragon/ducktape";
       const link = (href, name) => html`<${Anchor} href=${href}>${name}<//>`;
       const pr = (n) => link(`${repo}/pull/${n}`, `#${n}`);
-      const run = (n, label) => link(`${repo}/actions/runs/${n}`, label);
-      const job = (n, id, label) =>
-        link(`${repo}/actions/runs/${n}/job/${id}`, label);
       const inv = (id, label) =>
         link(`https://app.buildbuddy.io/invocation/${id}`, label);
-      const prior = (fragment, label) =>
-        link(
-          `${repo}/blob/${e.previous_report_commit}/latency/index.html${fragment}`,
-          label,
-        );
       const source = (path, label) =>
         link(`${repo}/blob/${e.source_devel_commit}/${path}`, label);
-      const values = (data) =>
-        data?.n ? `${data.p50} / ${data.p90} s (${data.n})` : "—";
       const table = (headers, rows, width = 540) =>
         html` <${Table.ScrollContainer}
           minWidth=${width}
@@ -116,574 +108,402 @@
             <${Accordion.Panel}>${contents}<//>
           <//>
         <//>`;
-      const classes = [
-        ["Same-repo opening", "same_repo_open"],
-        ["Same-repo update", "same_repo_update"],
-        ["Trusted-fork opening", "fork_open"],
-        ["Trusted-fork update", "fork_update"],
-      ];
-      const greenChart = classes.slice(0, 2).map(([name, key]) => ({
-        name: name.endsWith("opening") ? "Opening" : "Update",
-        Baseline: e.baseline.summary[key].green_s.p50,
-        Latest: e.latest[key].green_s.p50,
-        Goal: e.baseline.summary[key].green_goal_s,
-      }));
-      const latestHeads = e.fixed_windows.at(-1).heads;
-      const greenWithin = (key, seconds) => {
-        const before = e.baseline.summary[key];
-        const now = latestHeads.filter((head) => head.stratum === key);
-        const green = now.filter(
-          (head) =>
-            head.required_green_s != null && head.required_green_s <= seconds,
-        );
-        return `${green.length}/${now.length} versus ${before.sample_horizon_counts[seconds].green}/${before.n}`;
+      const names = {
+        same_repo_open: "Repository opening",
+        same_repo_update: "Repository update",
+        fork_open: "Trusted fork opening",
+        fork_update: "Trusted fork update",
       };
-      const headCounts = (summary) =>
-        summary ? `${summary.n} (${summary.outcomes.cancelled ?? 0})` : "0 (0)";
-      const driver = e.latest_gate_breakdown;
-      const recovery = e.public_cache_recovery;
-      const gateNames = [
-        ["Pre-commit", "precommit"],
-        ["Bazel", "bazel"],
-        ["Artifacts and imports", "artifacts_and_imports"],
-      ];
-      const outcomeTime = (r) =>
-        r.required_green_s ?? r.actionable_red_s ?? null;
-      const traceRows = latestHeads.map((r) => [
-        html`${pr(r.pr)} <${Code}>${r.sha.slice(0, 8)}<//>`,
-        r.stratum.endsWith("_open") ? "Opening" : "Update",
-        r.superseded_by ? "Superseded / canceled" : r.required_outcome,
-        outcomeTime(r) == null ? "—" : `${outcomeTime(r)} s`,
-        html`<${Code}>${r.tested_merge.slice(0, 8)}<//> ${r.precommit_profile}`,
-        html`<${Group} gap="xs"
-          >${r.gates.map((g) => link(g.url, g.gate === "Pre-commit checks" ? "Pre-commit" : g.gate.startsWith("bazel-ci") ? "Bazel" : "Artifacts"))}<//
-        >`,
-      ]);
-
+      const fmt = (v) => (v == null ? "—" : String(Math.round(v * 10) / 10));
+      const pair = (v) =>
+        v.n ? fmt(v.p50) + " / " + fmt(v.p90) + " (" + v.n + ")" : "—";
+      const section = (id, title, ...children) =>
+        html`<section id=${id}>
+          <${Stack} gap="sm"><${Title} order=${2}>${title}<//>${children}<//>
+        </section>`;
+      const p = (...s) => html`<${Text}>${s}<//>`;
+      const previous = link(
+        repo + "/blob/" + e.previous_report_commit + "/latency/index.html",
+        "Previous snapshot and matched trials",
+      );
+      const now = e.heads.filter((r) => r.day === "2026-11-24");
+      const jf = (r, k) =>
+        link(
+          repo + "/actions/runs/" + r.gates[k].run + "/job/" + r.gates[k].job,
+          k,
+        );
+      const sample = (pr, time) =>
+        now.find((r) => r.pr === pr && (r.green === time || r.red === time));
       function Report() {
+        const [k, setK] = React.useState("fork_open");
+        const days = e.daily[k];
         return html`<${Container}
           component="main"
-          size="73rem"
+          size="72rem"
           py="xl"
           style=${{ overflowWrap: "anywhere" }}
-        >
-          <${Stack} gap="xl">
+          ><${Stack} gap="xl">
             <header>
-              ${link("../", "Ducktape reports")}
-              <${Title} order=${1} my="sm">CI feedback latency<//>
+              ${link("../", "Ducktape reports")}<${Title} my="sm"
+                >CI feedback latency<//
+              >
               <${Text} size="lg"
-                >The latest production window fell short of the 30% goal. Twelve
-                of 16 heads reached required green. Median green took 330 s for
-                seven openings and 445 s for five updates, versus 197 s and 281
-                s in the audited baseline. Pre-commit finished last on ten
-                greens during a public Nix cache incident.<//
+                >Bazel finished last on 59 of 69 green heads on 24 November.
+                Median green ranged from 4m 51s to 7m 01s across the four PR
+                classes. A 30% cut to median green needs roughly half the
+                measured Bazel critical path removed. A 60% cut also requires
+                changing which work enters that path.<//
               >
-              <${Text} mt="sm" size="sm" c="dimmed"
-                >Latest arrivals on 24 November, 00:10:01–00:50:00 UTC. Baseline
-                from 22 November 00:00 through 23 November 22:49:59 UTC.
-                Inspected devel <${Code}>${e.source_devel_commit}<//><//
-              >
-              <${Text} mt="sm" size="sm"
-                >${link("#paired-precommit", "Matched pre-commit trial during the incident")}<//
+              <${Text} c="dimmed" mt="sm"
+                >17–23 November UTC and 24 November through 22:30 UTC. Seconds
+                from first observed workflow creation for each PR head.
+                Successful reruns included.<//
               >
             </header>
-
-            <section id="latest">
-              <${Title} order=${2}>Required green by head type<//>
-              <${Text} my="sm"
-                >The census covers 11 same-repo openings and five updates. One
-                opening reached actionable red at 191 s and required red at 198
-                s. Three original opening heads were canceled as replacements
-                arrived. No eligible head lacked ordinary CI and no fork heads
-                arrived. Five stacked heads were outside the devel census.
-                ${" "}${inv("ca9cbbb6-87d6-5283-86bf-5c57bce8c4a2", "CoreJS axiom-audit failure")}<//
-              >
-              <${Text} size="sm" c="dimmed"
-                >Median required-green time (seconds)<//
-              >
-              <${Box}
-                role="img"
-                data-chart="required-green"
-                aria-label="Median required-green seconds in the audited baseline and latest window, with 30 percent targets of 137.9 for openings and 196.7 for updates"
-              >
-                <${BarChart}
-                  h=${245}
-                  withLegend
-                  dataKey="name"
-                  data=${greenChart}
-                  series=${[
-                    { name: "Baseline", color: "blue.7" },
-                    { name: "Latest", color: "orange.7" },
-                    { name: "Goal", color: "teal.7" },
-                  ]}
-                  yAxisProps=${{ width: 37 }}
-                />
-              <//>
-              <${Text} my="sm"
-                >At five minutes, openings reached green at${" "}
-                ${greenWithin("same_repo_open", 300)}, and at ten minutes
-                at${" "} ${greenWithin("same_repo_open", 600)}. The update
-                counts were${" "} ${greenWithin("same_repo_update", 300)}
-                ${" and "}${greenWithin("same_repo_update", 600)} respectively.
-                Each compares the latest window with its raw historical stratum,
-                including cancellations. These arrival windows do not isolate a
-                rollout effect.<//
-              >
-              ${disclosure("Exact heads and required checks", table(["PR head", "Kind", "Outcome", "Time to signal", "Tested merge and profile", "Job links"], traceRows, 740))}
-            </section>
-
-            <section id="cohorts">
-              <${Title} order=${2}>Comparable clocks and distinct arrivals<//>
-              <${Text} my="sm"
-                >Openings start at PR creation. Updates start at the first
-                matching workflow creation on the exact head. Green is the last
-                of the three required successes. PR-visible red is the first
-                published failure on the head or the first failed required
-                check. Earlier statuses available through the exact fork merge
-                are measured separately. Delivery to agents is unmeasured.<//
-              >
-              ${table(
+            ${section(
+              "cohorts",
+              "Time to green and first red",
+              table(
                 [
-                  "PR class",
-                  "Baseline heads (canceled)",
-                  "Baseline green p50/p90 (n)",
-                  "Latest heads (canceled)",
-                  "Latest green p50/p90 (n)",
-                  "Baseline PR-visible red p50/p90 (n)",
-                  "Latest PR-visible red p50/p90 (n)",
+                  "24 November",
+                  "Heads",
+                  "Green / red / canceled",
+                  "Required green p50 / p90 (n)",
+                  "First red p50 / p90 (n)",
+                  "Required red p50 / p90 (n)",
                 ],
-                classes.map(([label, k]) => [
-                  label,
-                  headCounts(e.baseline.summary[k]),
-                  values(e.baseline.summary[k].green_s),
-                  headCounts(e.latest[k]),
-                  values(e.latest[k]?.green_s),
-                  values(e.baseline.summary[k].actionable_red_s),
-                  values(e.latest[k]?.actionable_red_s),
+                Object.entries(e.classes).map(([k, s]) => [
+                  names[k],
+                  s.n,
+                  [
+                    s.outcomes.green || 0,
+                    s.outcomes.red || 0,
+                    s.outcomes.cancelled || 0,
+                  ].join(" / "),
+                  pair(s.green),
+                  pair(s.red),
+                  pair(s.required_red),
                 ]),
                 820,
-              )}
-              <${Text} my="sm" size="sm"
-                >The run-time source audit retained 182 of 195 sampled heads. It
-                excluded 13 same-repo heads that merged onto a different base
-                and verified all 120 fork heads separately. The other historical
-                candidates are unaudited, so the earlier population weights and
-                weighted horizon comparisons are withdrawn.${" "} ${pr(19402)}
-                ${" · "}${link("./evidence.json", "Per-head audit evidence")}<//
-              >
-              <${Text} my="sm" size="sm"
-                >The audited opening red median is 165 s from three head-visible
-                failures. Two excluded openings had published failure before
-                cancellation. The latest 191 s opening red is one observation.
-                The same-repo 30% red targets are 115.5 s for openings and
-                147.35 s for updates. There were no latest update reds.<//
-              >
-              <${Text} my="sm" size="sm"
-                >Exact tested merges show that all 16 heads used sparse checkout
-                and the Nix launcher. Fifteen installed ${" "}
-                <${Code}>.#precommit<//>. Only the Rustfmt proposal's own check
-                installed <${Code}>.#precommit-ci<//>. Excluding that head
-                raises the opening-green median to 353 s. The direct installer
-                and the combined scanner proposal had yet to roll out.${" "}
-                ${pr(19578)} · ${pr(19640)} · ${pr(19653)}<//
-              >
-              ${disclosure(
-                "Earlier fixed arrival windows",
-                html`<${Stack} gap="sm">
-                  ${table(
+              ),
+              disclosure(
+                "First green or red on each head",
+                table(
+                  [
+                    "Class",
+                    "Any verdict / heads",
+                    "First verdict p50 / p90 (s)",
+                    "30% / 60% median targets (s)",
+                  ],
+                  Object.entries(e.classes).map(([k, d]) => [
+                    names[k],
+                    d.first_verdict.n + " / " + d.n,
+                    fmt(d.first_verdict.p50) + " / " + fmt(d.first_verdict.p90),
+                    fmt(0.7 * d.first_verdict.p50) +
+                      " / " +
+                      fmt(0.4 * d.first_verdict.p50),
+                  ]),
+                ),
+              ),
+              p(
+                "The median PR-opening to workflow delay was 4 s in-repository and 5 s on trusted forks. GitHub does not give this collection a comparable push timestamp for updates. On devel the rules require Bazel, artifacts/imports and pre-commit, with zero required approvals and no strict up-to-date requirement.",
+              ),
+              p(
+                "Of 98 audited heads, 69 reached green, 16 ended red and 13 were canceled. Four greens and one cancellation had already reported a failure. First red includes a matching BuildBuddy status, a failed required gate or a confirmed devel merge conflict. Required green is the completion of all three checks. Draft status, conflict resolution, policy exceptions and the time an agent read the result have no historical readiness clock here.",
+              ),
+              html`<${Select}
+                label="Daily green by PR class"
+                value=${k}
+                onChange=${(v) => v && setK(v)}
+                allowDeselect=${false}
+                maw="22rem"
+                data=${Object.entries(names).map(([value, label]) => ({ value, label }))}
+              />`,
+              html`<${Box} role="img" aria-label="Minutes to required green by UTC arrival day"><${BarChart} h=${235} withLegend dataKey="day" data=${days.map((d) => ({ day: d.day.slice(8) + (d.day.endsWith("24") ? "*" : ""), Median: d.green.n ? d.green.p50 / 60 : null, P90: d.green.n >= 8 ? d.green.p90 / 60 : null }))} series=${[
+                { name: "Median", color: "blue.7" },
+                { name: "P90", color: "orange.7" },
+              ]} yAxisLabel="Minutes" /></${Box}>`,
+              p(
+                "UTC arrival day, * partial. Green counts for days 17–24: " +
+                  days.map((d) => d.green.n).join(", ") +
+                  ". A missing bar means no observations or fewer than eight greens for p90. Small samples make the tails sensitive to a single rerun.",
+              ),
+              disclosure(
+                "Daily values in seconds",
+                table(
+                  [
+                    "UTC day",
+                    "Heads",
+                    "Green (n)",
+                    "Green p50 / p90, s",
+                    "First red p50 / p90, s (n)",
+                  ],
+                  days.map((d) => [
+                    d.day,
+                    d.n,
+                    d.green.n,
+                    d.green.n
+                      ? fmt(d.green.p50) +
+                        " / " +
+                        (d.green.n >= 8 ? fmt(d.green.p90) : "—")
+                      : "—",
+                    pair(d.red),
+                  ]),
+                ),
+              ),
+              disclosure(
+                "Changed paths and sample selection",
+                html`<${Stack}
+                  >${table(
                     [
-                      "Arrival window (UTC)",
-                      "Heads and outcomes",
-                      "Green or red clocks",
+                      "24 November",
+                      "Heads",
+                      "Green p50 / p90 (n)",
+                      "First red p50 / p90 (n)",
                     ],
-                    [
-                      [
-                        "23:18:44–23:38:59",
-                        "31 · 29 green, 2 canceled",
-                        "Open green 266 / 456 s (21). Update green 395.5 / 479 s (8). p50 / p90.",
-                      ],
-                      [
-                        "23:39:00–23:44:39",
-                        "4 · 2 green, 2 red",
-                        "Open green at 468 and 540 s. Open red at 438 s and update red at 416 s; required failures followed at 538 s and 505 s.",
-                      ],
-                      [
-                        "23:50:26–23:55:25",
-                        "7 · all green",
-                        "Open green at 418, 492 and 578 s. Update green at 376, 383, 448 and 617 s.",
-                      ],
-                      [
-                        "23 Nov 23:56:00–24 Nov 00:10:00",
-                        "11 · 5 green, 3 red, 2 canceled, 1 superseded",
-                        "Open green 452.5 / 498 s (4). Update green at 465 s (1), and update red 394 / 460 s (3). p50 / p90.",
-                      ],
-                    ],
-                    600,
-                  )}
-                  <${Text}
-                    >The first window inherited sparse Bazel checkout,
-                    host-profile sharding, and block storage reuse. Six heads
-                    included linked-program sharding. The later windows included
-                    the new resolver source but no fork exercised it. All four
-                    windows used the Nix launcher. The two later windows around
-                    midnight also inherited the Lean partition and cdk8s
-                    classification. ${pr(19582)} · ${pr(19580)} · ${pr(19587)} ·
-                    ${pr(19603)} · ${pr(19596)} · ${pr(19623)}<//
-                  >
-                  <${Text} size="sm"
-                    >These earlier windows retain their original sampled heads
-                    and clocks. They cover separate intervals and workloads and
-                    do not measure adoption effects.
-                    ${link("./evidence.json", "Cohort evidence")}<//
-                  >
-                <//>`,
-              )}
-            </section>
-
-            <section id="latest-drivers">
-              <${Title} order=${2}
-                >The Nix cache stalled pre-commit on ten greens<//
-              >
-              <${Text} my="sm"
-                >Pre-commit finished a median of 173.5 s after the next gate on
-                those ten heads. Setup took a median of 368 s and hooks took 15
-                s. Nix installation took 3.79 s and the evaluation and
-                realization plan took 17.49 s. The interval from the compiler
-                copy announcement to the dependent Rustfmt copy or stream error
-                was 335.44 s at the median. Rustfmt skipped on all ten heads.<//
-              >
-              ${table(
-                [
-                  "Required gate",
-                  "Median hosted wait",
-                  "Median job runtime",
-                  "Last on green",
-                ],
-                gateNames.map(([label, key]) => [
-                  label,
-                  `${driver.runner_admission_median_s[key]} s`,
-                  `${driver.job_duration_median_s[key]} s`,
-                  `${driver.last[key]} / ${driver.greens}`,
-                ]),
-                540,
-              )}
-              <${Text} my="sm"
-                >The public cache process was OOM-killed at 00:49:12 UTC with an
-                8 GiB limit. At 00:48:30 its working set was 7.989 GiB. The
-                ordinary PR and independent full replay reported HTTP/2 framing
-                errors for the same pinned Rust compiler stream within 13 ms of
-                each other in the restart second. The memory measurements do not
-                identify which operations consumed that memory.${" "}
-                ${job(45299462842, 138128057878, "Ordinary pre-commit log")}
-                ·${" "} ${job(45299454803, 138128032136, "Full replay log")}<//
-              >
-              <${Text} my="sm"
-                >After restart, four successful ordinary devel-targeting jobs
-                used the same full profile and pinned compiler. The median
-                interval to the dependent Rustfmt copy fell to${" "}
-                ${recovery.transfer_median_s.toFixed(2)} s (10.34–16.79 s). The
-                entire pre-commit job took ${recovery.job_median_s} s at the
-                median. This targeted comparison covers pre-commit through 01:08
-                UTC.${" "}
-                ${job(45301879131, 138136133865, "Full-profile recovery log")}
-                ${" "}A later full-profile job waited 508.52 s for the same
-                compiler and finished in 564 s, with Rustfmt skipped and no
-                further cache restart.${" "}
-                ${job(45302892989, 138139538129, "Later stall on #19662")}<//
-              >
-              <${Text} size="sm"
-                >Even with pre-commit finishing before both other gates on every
-                green, the measured other gates leave optimistic medians of 168
-                s for openings and 216 s for updates. The audited 30% thresholds
-                are 137.9 s and 196.7 s respectively. Both lower bounds still
-                exceed those thresholds. Bazel was last on 132 of 134 audited
-                baseline greens.<//
-              >
-            </section>
-
-            <section id="experiments">
-              <${Title} order=${2}>What the experiments shortened<//>
-              <${Stack} gap="md" mt="sm">
-                <${Text}
-                  ><strong>Pre-commit bootstrap.</strong> The candidate gate
-                  completed in 89 s, with 56 s of Nix setup and 16 s of hooks.
-                  It skipped Rustfmt using the existing matcher and deferred
-                  417.4 MiB of unpacked Nix closure. Rust-using changes retain
-                  the original compiler and formatter. The two historical replay
-                  gates spent 309 s and 383 s in setup. Their logs stalled
-                  between announcing the compiler and its dependent formatter.
-                  Those and the one hosted candidate are unmatched observations.
-                  Its own proposed change was the sole treated head in the
-                  latest devel-targeting window. ${" "}${pr(19640)} ·
-                  ${job(45295577252, 138114986539, "Hosted candidate")}<//
-                >
-                <${Text} size="sm"
-                  >A stacked follow-up defers another 1.24 GiB of the initial
-                  closure by realizing Ansible and Checkov only on demand. It
-                  matched production scanner exit codes on valid and invalid
-                  inputs. In one unpaired stacked PR outside the devel census
-                  all required checks passed in 98 s, with pre-commit taking 62
-                  s, including 37 s of setup and 11 s of hooks. Another gate
-                  finished last. ${pr(19653)}<//
-                >
-                <${Text}
-                  ><strong>Bazel launcher.</strong> Three fresh hosted starts
-                  per arm reached working CLIs in median 34 s with Nix setup, 22
-                  s with the prebuilt image, and 13 s with direct
-                  checksum-verified downloads. The image was 205 MiB compressed.
-                  Its layer comparison overlapped, so it adds no evidence for a
-                  layer override. Every direct-install sample was faster than
-                  every image or Nix sample and had not been adopted in these
-                  cohorts. ${run(45287501810, "Hosted three-arm benchmark")} ·
-                  ${run(45289827845, "Image layer trial")} · ${pr(19578)}<//
-                >
-                <${Text}
-                  ><strong>Exact full-gate replay.</strong> On two immutable
-                  historical merge trees, sparse checkout plus direct install
-                  shortened setup before the BuildBuddy step by 24 s on green
-                  and 42 s on red. Both green arms reached all gates at +607 s,
-                  waiting for shared pre-commit. Indexed ordinary red appeared
-                  at +584.20 s and +583.37 s. They shared the failing RBE
-                  action. The control also hit an Electric container-loading
-                  error whose structured abort events followed the failed-test
-                  summary. This pair establishes launch savings. Its shared and
-                  differing execution paths prevent an independent red estimate.
-                  ${" "}${run(45292001590, "Fixed-workload replay")} ·
-                  ${inv("1778e54a-0817-5797-a3ac-fe8474c7d50f", "Red control")}<//
-                >
-                <${Text}
-                  ><strong>Block storage control plane.</strong> One real
-                  envtest API server and etcd replaced six per process. All nine
-                  cases still passed in each of three repetitions per arm with
-                  real loop devices. The median action fell from 39.00 s to
-                  32.12 s and median pytest time from 30.64 s to 13.07 s on
-                  different workers. #19587 landed at 23:17:41 UTC. Its isolated
-                  savings do not supply a PR-level estimate.${" "}${pr(19587)} ·
-                  ${inv("9ffcc6e4-635a-402a-9eb6-93865e21da52", "Parent tests")}
-                  ·
-                  ${inv("5be30f7e-e215-40e9-baea-67dceeec765d", "Candidate tests")}<//
-                >
-              <//>
-            </section>
-
-            <section id="paired-precommit">
-              <${Title} order=${2}
-                >The slim profile avoided the cache stall in a matched replay<//
-              >
-              <${Text} my="sm">
-                A separate dispatch at 00:43:22 UTC on 24 November used the same
-                two-Nix-file workload on all four runners. Each started at +3 s
-                and passed. Both arms share Bazel (+102 s, zero affected
-                targets) and the real artifacts/imports check (+152 s). Full
-                pre-commit finished at +374 s and slim pre-commit finished at
-                +69 s. The last required gate moved from pre-commit to
-                artifacts/imports. Relative to dispatch, all three gates passed
-                at +152 s with slim pre-commit, down from +374 s with full
-                pre-commit (59.4% earlier).${" "}
-                ${run(45299454803, "Matched dispatch")} ·${" "}
-                ${link(repo + "/commit/8ec08d64147f8a7babc19e763575ec66ea48b299", "Tested merge")}
-              <//>
-              <${Text} size="sm">
-                Full Nix setup took 336 s and hooks 13 s. Slim setup took 28 s
-                and hooks 12 s. The full job's public Attic rustc NAR transfer
-                returned HTTP 200 and failed after 304.7 s with an HTTP/2
-                framing error. Nix retried and the job passed. The slim job
-                avoided fetching rustc. Fresh Ubuntu 26.04 hosts used different
-                image revisions and regions (westus and us-west-2). This elapsed
-                comparison captures avoidance of the shared cache incident on
-                one stacked workload. The recovered full-profile jobs supply no
-                evidence of an ongoing 335 s per-job saving. A matched
-                healthy-cache comparison remains unmeasured.${" "}
-                ${job(45299454803, 138128032136, "Full pre-commit log")}
-              <//>
-            </section>
-
-            <section id="runner-demand">
-              <${Title} order=${2}
-                >A devel publication fanout overlapped seven queued PRs<//
-              >
-              <${Text} my="sm"
-                >During 23:50:26–23:55:25 UTC, seven PR Bazel jobs waited 58–170
-                s for a hosted runner, median 82 s. The census counted 36–40
-                concurrent executing jobs in this repository, with 11,791
-                runner-seconds across 113 jobs. Image and release jobs from one
-                failed devel push accounted for 4,562 runner-seconds in that
-                window. The matched replay accounted for 1,239. These counts
-                describe observed overlap. The account limit, other
-                repositories’ load and counterfactual PR wait are unknown.
-                ${" "}${run(45290550409, "Failed devel publication")}<//
-              >
-              <${Text}
-                >The failed devel run selected 55 images and 70 releases after
-                its ordinary test failure skipped the normal build. All 55
-                images and 44 releases were confirmed no-ops. In a read-only
-                replay on the exact failed SHA, the 296.312 s normal build
-                returned enough outputs for 53 unchanged images and 67 already
-                published release digests. The replay would schedule five jobs
-                in place of 125. Two external OCI cases and three release cases
-                still lack matching evidence. The 120 omitted jobs consumed
-                14,223 runner-seconds in the historical run. No queue
-                improvement was measured. ${pr(19642)} ·
-                ${inv("675a900f-329d-4a92-bc71-f150b975ec75", "Read-only replay")}<//
-              >
-              <${Text} mt="sm" size="sm"
-                >Only one of six failed Bazel runs in the latest 100 devel
-                pushes was the exit-3 case addressed here. Five exited 1,
-                including four OCI manifest errors on the Electric pin already
-                redirected by #19573. The branch's focused tests passed. Its
-                full CI hit a separate Lean audit failure. ${pr(19573)} ·
-                ${inv("93848b4d-ad67-4d0f-b46e-8616be39d477", "Focused validation")}<//
-              >
-            </section>
-
-            <section id="fork-red">
-              <${Title} order=${2}
-                >Earlier fork red was already published on the tested merge<//
-              >
-              <${Text} my="sm"
-                >All 17 Bazel-red fork heads published earlier live status on
-                their exact tested merge. The lead was 4–315 s, median 78 s.
-                Fourteen named a failed test. Eight other fork reds were devel
-                merge conflicts before checkout. Including merge-only signals,
-                fork opening red was 215 / 434 s (p50 / p90 over ten). Fork
-                update red was 227 / 513 s over 17, including one later
-                cancellation and one later green. The 30% targets for this
-                lookup clock are 150.5 s for openings and 158.9 s for updates.
-                GitHub's Checks tab and CLI omitted the live status on an
-                inspected fork.
-                ${" "}${link(`${repo}/pull/19357/checks`, "Fork check view")}<//
-              >
-              <${Text}
-                >The repository-specific lookup was a withdrawn prototype. It
-                took a median of 2.28 s per read across 17 historical heads,
-                recovering 15 original reds and selecting newer green attempts
-                for the other two. The PR closed unmerged. Current readback uses
-                the generic GitHub status and BuildBuddy invocation APIs. The
-                required Bazel check retains the final verdict.${" "}
-                ${pr(19648)} ·${" "}
-                ${inv("85f63c62-c101-4c33-bf31-0fdb778c839f", "Prototype validation")}<//
-              >
-            </section>
-
-            <section id="next">
-              <${Title} order=${2}>Next measurements<//>
-              <${Stack} gap="sm" mt="sm">
-                <${Text}
-                  ><strong
-                    >1. Measure the pre-commit and direct-installer rollout on
-                    consecutive heads.</strong
-                  >
-                  Anchor to merge times and verify the installer and profile in
-                  each job log. Record cache health alongside required feedback
-                  on openings, updates and forks. Keep Rust-using heads visible
-                  because they realize the deferred closure.<//
-                >
-                <${Text}
-                  ><strong
-                    >2. Measure publication suppression during naturally
-                    overlapping work.</strong
-                  >
-                  The exit-3 replay justifies a focused change. Read the next
-                  qualifying devel push against actual selected publication
-                  jobs, runner occupancy and PR starts. Keep PR failure timing,
-                  the normal build result and release evidence distinct.<//
-                >
-                <${Text}
-                  ><strong
-                    >3. Watch proof and provider chains where Bazel stays
-                    last.</strong
-                  >
-                  Capture the inner worker and outer admission clocks
-                  separately. The current Bazel queue measurements do not
-                  justify adding remote workers. Compare matched proof and
-                  provider edits before trading coverage for seconds.
-                  ${" "}${link("../ci-test-cost/", "Test cost and split evaluation")}<//
-                >
-              <//>
-            </section>
-
-            <section id="prior">
-              <${Title} order=${2}>Prior dated observations<//>
-              <${Text} my="sm"
-                >The preceding report sampled 24 same-repository heads per day
-                from 15–21 November, with a partial 22 November point. 126 of
-                168 heads reached required green in the seven complete days.
-                That median was 186 s and p90 was 576 s from CI workflow
-                creation. This archived trend retains its original sampling and
-                eligibility rules. The run-time target audit covers the later
-                baseline only.
-                ${" "}${prior("#weekly-trend", "21 November trend and source")}<//
-              >
-              ${disclosure(
-                "Previous daily trend and KVM measurements",
-                html`<${Stack} gap="md">
-                  <${Text} size="sm" c="dimmed"
-                    >Required-green time (minutes)<//
-                  >
-                  <${Box}
-                    role="img"
-                    data-chart="archived-trend"
-                    aria-label="Prior median and p90 minutes to required green for 15 to 22 November"
-                  >
-                    <${BarChart}
-                      h=${225}
-                      withLegend
-                      dataKey="day"
-                      data=${e.archived_observation.daily.map((d) => ({ day: d.day.slice(8) + (d.day.endsWith("-22") ? "*" : ""), Median: +(d.median_s / 60).toFixed(2), P90: +(d.p90_s / 60).toFixed(2) }))}
-                      series=${[
-                        { name: "Median", color: "blue.7" },
-                        { name: "P90", color: "orange.7" },
-                      ]}
-                      yAxisProps=${{ width: 32 }}
-                    />
-                  <//>
-                  ${table(
-                    [
-                      "UTC date",
-                      "Eligible",
-                      "Sampled",
-                      "Green",
-                      "Median / p90",
-                    ],
-                    e.archived_observation.daily.map((d) => [
-                      d.day + (d.day.endsWith("-22") ? " through 11:40" : ""),
-                      d.eligible_heads,
-                      d.sampled,
-                      d.outcomes.green ?? 0,
-                      `${d.median_s} / ${d.p90_s} s`,
+                    Object.entries(e.workloads).map(([k, s]) => [
+                      k,
+                      s.n,
+                      pair(s.green),
+                      pair(s.red),
                     ]),
-                    510,
                   )}
-                  <${Text}
-                    >In that prior sample Bazel was last on 118 of 126 greens.
-                    The separate six-hour 22 November KVM sample had room for
-                    another VM suite in 208 of 254 fully observed samples with
-                    queued reservations. The Firecracker packing comparison kept
-                    the final completion near 17 minutes but delayed the first
-                    result and failed a live-guest case on repeat. These
-                    observations still support keeping the two-to-eight worker
-                    range and one Firecracker test per 8 GiB worker.
-                    ${prior("#current-clocks", "Gate replay")} ·
-                    ${prior("#kvm-capacity", "KVM sample")} ·
-                    ${prior("#kvm-pilot-results", "Packing and seeding trials")}<//
-                  >
-                <//>`,
-              )}
-            </section>
-
-            <footer>
-              <${Group} gap="md">
-                ${link("./evidence.json", "Reviewed evidence")}
-                ${link("./manifest.json", "Manifest")}
-                ${link(`${repo}/blob/${e.prior_snapshot_commit}/latency/index.html`, "Previous snapshot before the source audit")}
-                ${link(`${repo}/rules?ref=refs%2Fheads%2Fdevel`, "Current branch rules")}
-                ${source(".github/workflows/bazel-ci.yml", "Inspected Bazel workflow")}
-              <//>
-            </footer>
-          <//>
-        <//>`;
+                  ${p("We ranked heads by a hash of the SHA within day, repository and opening/update class. The cap was eight per class per complete day and 30 on the 24th. Of 320 candidates, 276 tested merges had the event head as second parent and a devel first parent, and six fork resolver logs confirmed a devel conflict. We excluded 38 other merges, including 22 on the 24th. An opening was the first observed workflow within one minute of PR creation. Counts do not estimate the repository-wide mix. Changed paths use the tested tree versus its first parent, prioritizing Debundle, Agentplane, cluster and Nix when edits span areas.")}<//
+                >`,
+              ),
+            )}
+            ${section(
+              "drivers",
+              "What runs while a PR waits",
+              p(
+                "Debundle accounted for 80 of 98 audited heads and 58 of 69 greens. In the final 90 minutes of arrivals, nine of ten heads touched Debundle. Five reached green (416–2,687 s), two ended red and three were canceled. These samples describe that workload mix.",
+              ),
+              p(
+                "On the 69 greens, GitHub admission for the first Bazel job took 2 s at the median and 10 s at p90. Its Test + Build + lint step took 309 / 624 s. The pinned CLI install step took 1 / 2 s among 59 jobs with a positive-duration step. Pre-commit finished last five times, and artifacts/imports five times. The previous cache-stall sample had pre-commit last on ten of twelve. ",
+                previous,
+              ),
+              p(
+                "On 54 Bazel-last, single-attempt greens with a native test critical path, its median length was 254 s. Test actions accounted for the largest portion on 24 paths, Rust compilation on 16, Lean compilation on 12 and other operations on two. Median reported remote queue share was 0.16% among paths with that field. The outer runner still needs to start and sync. This sample gives little reason to buy general runner slots.",
+              ),
+              table(
+                [
+                  "Head",
+                  "Hosted and remote clocks from workflow creation",
+                  "What determined feedback",
+                ],
+                [
+                  [
+                    pr(19701),
+                    "Bazel runner +27 s, remote sync +41 s, affected targets logged +93 s, all green +113 s.",
+                    "20 targets, six tests. Native test path 1.35 s.",
+                  ],
+                  [
+                    pr(19836),
+                    "Remote wait message → first sync 17 s. 235 affected targets. Artifacts green +107 s, Bazel green +421 s.",
+                    "Test invocation 305 s, with a 291 s path through Rust CLI compilation, graph export and editor-spec generation.",
+                  ],
+                  [
+                    pr(19849),
+                    "Bazel runner +2 s, other gates green by +83 s. Printer test enqueued +876 s, timed out +939 s. Live status +998 s, required red +1,248 s.",
+                    "The failing process ran 61 s. A different test, linked if_test, ended the 1,096 s native critical path. Shrinking that last test alone would miss the first red.",
+                  ],
+                ],
+                730,
+              ),
+              html`<${Group}
+                >${[sample(19701, 113), sample(19836, 421), sample(19849, 998)].map((r) => inv(r.trace.invocation, "#" + r.pr + " inner trace"))}<//
+              >`,
+              p(
+                "The sample’s assigned, completed GitHub jobs occupied 1,145 runner-minutes inside the 24 November window, including waiting on BuildBuddy. This includes pre-audit candidates. On #19849 the three largest fresh TestRunner labels by aggregate process time were property_assignment (833 s), flat_patterns (624 s) and loops (586 s). Their actions overlap. The native path instead spent 267 s in corejs_certificate_support, 150 s in corejs_runtime and 312 s in if_test. BuildBuddy’s outer runner handles checkout and invokes Bazel. The inner actions run on RBE. Pool-wide entitlement, backlog and per-action worker class were unavailable from these clocks.",
+              ),
+              disclosure(
+                "Reruns and earlier red",
+                p(
+                  "Four heads recovered on the same tested merge. #19821 hit the 300 s default_parameters timeout. #19857 timed out in reordering and the Excalidraw browser smoke. One #19800 head failed test_services_central and another hit a microVM restore error. All four had user-triggered rerun attempts. On #19857 the first job ended 21:37:02 UTC, the next attempt started 21:52:02 and its Bazel job started 21:58:08. The 15-minute gap preceded the attempt. On the 20 heads with both red clocks the paired median lead of the first signal was 5.5 s, and the maximum was 261 s. A subscription that follows the tested merge’s live status can expose those leads. The stored timestamps measure publication. ",
+                  pr(19857),
+                  " · ",
+                  pr(19800),
+                ),
+              ),
+            )}
+            ${section(
+              "goals",
+              "What a 30% or 60% reduction requires",
+              p(
+                "The targets below are relative to each class’s current green median. For each head we reduce its measured ordinary-test critical path and recompute the latest of all three gates. Untraced heads and reruns keep their original clocks. The simulation assumes each second removed from the path moves Bazel completion a full second earlier. A parallel straggler can absorb that saving.",
+              ),
+              table(
+                [
+                  "PR class",
+                  "Current",
+                  "30% target",
+                  "60% target",
+                  "If path halves",
+                  "Path cut needed for 30% / 60%",
+                  "Other-gate floor",
+                ],
+                e.model.map((m) => [
+                  names[m.k],
+                  m.base,
+                  fmt(0.7 * m.base),
+                  fmt(0.4 * m.base),
+                  fmt(m.half),
+                  m.needed.join("% / ") + "%",
+                  fmt(m.floor),
+                ]),
+                735,
+              ),
+              p(
+                "The previous 182-head baseline had green medians of 197, 281, 167 and 397 s in the same class order. Its 30% goals were 138, 197, 117 and 278 s. All four current medians exceed them. The dates, sampled workloads and opening-clock origins differ. The new estimates use today’s observations.",
+              ),
+              p(
+                "For first red, 30% / 60% targets are 142 / 81 s for fork openings, 113 / 64 s for fork updates, and 539 / 308 s for same-repo updates. The last pair rests on four first-red signals. Four fork conflicts were diagnosed in 7–15 s. We observed no same-repo opening red. Simply reporting terminal checks faster cannot recover minutes on heads whose failing action starts late.",
+              ),
+              html`<${Title} order=${3}
+                >Run the printer test as soon as its own inputs are ready<//
+              >`,
+              p(
+                "It invokes only lowersplit --diagnostic, yet its launcher includes both compiler entry points and their shared Bazel target includes Certified.lean. Give the diagnostic runner its actual import closure and module I/O. Keep a separate end-to-end test for public CLI dispatch. This bounded change could advance red on proof edits that leave the printer’s inputs unchanged. ",
+                source(
+                  "devinfra/js/debundle/x/split_proof/lean/BUILD.bazel",
+                  "Current targets",
+                ),
+              ),
+              p(
+                "The first same-seed trial favored the warm stock dependencies: stock passed in 16.8 s, while the cold candidate entered the queue 167 s later and timed out at 60 s. We then changed only Certified.lean after both layouts had built and forced both tests to execute again with their original assertions. The diagnostic-only test entered the queue 192 s earlier, alongside the stock workflow-library rebuild, and passed in 48.7 s. The stock test then timed out at 60.2 s. This demonstrates earlier eligibility on that kind of edit. Both layouts timed out once across the two trials. Confirm repeatability and measure PR-wide red before adopting.",
+                " ",
+                inv(
+                  "6a0b1b4a-22d6-425a-8fd8-f8485dd33aed",
+                  "Same-input diagnostic trial",
+                ),
+                " · ",
+                inv(
+                  "8a9d83ab-3a5a-4ce5-b192-e67529f25489",
+                  "Certified-only edit replay",
+                ),
+              ),
+              html`<${Title} order=${3}
+                >Start a focused test run on graph-wide changes<//
+              >`,
+              p(
+                "The median trusted-fork update red came from #19732. Its MODULE.bazel change triggered a sweep with 2,294 test labels in scope. It also edited the translation package BUILD file. The remote driver started at +39 s. The failing shift_fuzz_test queued at +150 s, ran 8.6 s and published red at +161 s. The preliminary query took 10.8 s. Removing it alone cannot deliver the 48 s required for 30%. ",
+                jf(sample(19732, 161), "Bazel"),
+                " · ",
+                inv("6d108243-88f9-46a0-8411-b6249e93d595", "Selection query"),
+              ),
+              p(
+                "Trial a parallel run of tests in directly edited BUILD packages on the same merge, using the normal flags, trust boundary and cache. Keep the full sweep running. For this head, a focused run starting at +39 s would have 74 s to produce red for a 30% cut, or 25 s for 60%. The latter leaves about 16 s for startup and dependencies after the test itself. Compare exact-source failures, extra runner-minutes, duplicated setup and required green before enabling. This helps only when the early run contains the failure.",
+              ),
+              html`<${Title} order=${3}
+                >Narrow the Rust tool used for graph export<//
+              >`,
+              p(
+                "The graph action invokes the full debundler with run --graphs --reports-only. Give that action a smaller executable that calls the same export code, as the analyzer and projector already do. On #19836 the tool-side CLI rlib alone took 67 s. The whole 67 s would cover just over half the 126 s needed for a 30% cut on this head. Compare emitted graph bytes, rejection markers, editor specs, real browser behavior and cold/warm full-gate clocks. Medium engineering effort, no standing capacity. The shared pipeline crates and other Rust test targets can remain the last work. ",
+                source(
+                  "devinfra/js/debundle/pipeline.bzl",
+                  "Graph export action",
+                ),
+              ),
+              html`<${Title} order=${3}
+                >Reduce both proof compilation and editor-test time<//
+              >`,
+              p(
+                "Try one cacheable Lean compilation per module or small import component, with dependents starting when their imports finish. Retain the pinned toolchain, axiom audit and byte-equivalent outputs. Replay an upstream runtime edit and a downstream proof edit with both target and exec configurations. Previous Frame/Scope partitioning saved 39 s on a warm 415 s path but regressed twice cold. A new boundary must also beat the cold control. ",
+                inv(
+                  "d22f7c7a-e421-49ec-99d8-3200ee4f0a30",
+                  "Earlier warm replay",
+                ),
+              ),
+              p(
+                "The certified editor test binds an origin, certifies the split, runs the stock browser, installs the overlay and runs the split browser. The first two operations after binding both read the original inputs. Overlap certification and the stock browser, await both before installing the overlay, and retain the separate output-tree check and both browser comparisons. This can save at most the shorter overlapping phase and raises peak CPU and memory. Measure each phase and compare the full gate, including competing tests. ",
+                source(
+                  "devinfra/js/debundle/x/split_proof/integration/excalidraw/browser_smoke_test.py",
+                  "Editor test contract",
+                ),
+              ),
+              p(
+                "For green, #19838 took 868 s. Its 769 s path contained roughly 464 s of Lean work and 303 s in the editor test. Holding the other 99 s fixed, a 30% cut allows 509 s on this path (for example, 280 s Lean and 225 s editor). A 60% cut allows 248 s (145 s Lean and 100 s editor). These are engineering budgets. Any newly limiting parallel action must fit too. ",
+                pr(19838),
+              ),
+              p(
+                "For first red, #19849 first signaled at 998 s. Its first failing action entered the queue at +876 s. If the remaining 122 s are fixed, the action must enter by +577 s for a 30% cut or +277 s for 60%. Narrowing the diagnostic executable can remove unrelated prerequisites. The 60% target may also require faster shared Lean compilation, and the observed interval between action exit and first GitHub status was 59 s. The watcher polls at two seconds by default. The available clocks do not isolate BuildBuddy indexing from status publication. ",
+                pr(19849),
+                " · ",
+                source(
+                  "devinfra/buildbuddy/ci/live_test_status.py",
+                  "Live watcher",
+                ),
+              ),
+              p(
+                "A blind sharding rollout lost its first comparison. On the same source revision the unmodified if_test passed in 83.2 s. Three independent actions containing every original case once passed in 98.0, 154.8 and 94.6 s. All four processes started within two seconds, and the three candidates consumed 264 CPU-s combined versus 114 CPU-s for control. Different workers and one run limit attribution. Keep this arrangement out of production. ",
+                inv("6fed6de6-e657-4540-9a3c-bd8102f17a64", "Four-arm trial"),
+              ),
+              html`<${Title} order=${3}
+                >Protect the pre-commit gate during cache outages<//
+              >`,
+              p(
+                "The previous matched replay cut green from 374 to 152 s during a failed compiler download. Both Rustfmt and scanner changes are still open. Apply their real file matchers and retain the tools on matching changes. Their ceiling is small on today’s Bazel-last heads. The direct installer and exit-3 publication fix have landed. The installer currently takes 1 s at the median. We have no matched production estimate for runner time freed by publication suppression. ",
+                pr(19640),
+                " · ",
+                pr(19653),
+                " · ",
+                pr(19578),
+                " · ",
+                pr(19642),
+              ),
+            )}
+            ${section(
+              "evidence",
+              "Source and measurements",
+              p(
+                "Source ",
+                link(
+                  repo + "/tree/" + e.source_devel_commit,
+                  e.source_devel_commit,
+                ),
+                ". Success uses the earliest observed completion of all required contexts in the original workflow runs and their reruns. Live ordinary failures must match the run, attempt and invocation. Job clocks have one-second resolution. Provider timestamps do not measure first log accessibility, inbox acceptance or agent read time. The notification service supports commit status, check and workflow events, but no matched subscriber receipts were collected. ",
+                pr(19648),
+                " (withdrawn fork lookup) · ",
+                source(
+                  "agentplane/notification_service/internal/sources/github/publication/fanout/github_matching_integration_test.go",
+                  "Subscriber matching",
+                ),
+                " · ",
+                link(repo + "/rules?ref=refs%2Fheads%2Fdevel", "Current rules"),
+              ),
+              disclosure(
+                "Exact heads and gate clocks",
+                table(
+                  [
+                    "PR head",
+                    "Class",
+                    "Outcome",
+                    "Green / first red (s)",
+                    "First-attempt jobs",
+                  ],
+                  now.map((r) => [
+                    link(
+                      repo + "/pull/" + r.pr,
+                      "#" + r.pr + " " + r.sha.slice(0, 8),
+                    ),
+                    names[r.class],
+                    r.outcome,
+                    fmt(r.green) + " / " + fmt(r.red),
+                    html`<${Group} gap="xs"
+                      >${Object.keys(r.gates).map((k) => jf(r, k))}<//
+                    >`,
+                  ]),
+                  660,
+                ),
+              ),
+              html`<${Group}
+                >${link("./evidence.json", "Head-level evidence")}
+                ${link("./manifest.json", "Manifest")} ${previous}<//
+              >`,
+            )}<//
+          ><//
+        >`;
       }
-
       mount(Report);
     </script>
   </body>
