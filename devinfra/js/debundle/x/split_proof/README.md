@@ -181,7 +181,11 @@ by its superclass. Its default constructor forwards the original arguments. An e
 initializes the fields after `super(...)` succeeds and before its next expression. Initializers
 resolve lexical names in the class definition scope. Derived static fields remain unsupported.
 
-A derived constructor with plain parameters can compute local values before a direct `super(...)` call.
+An explicit derived constructor can use named parameter defaults. Missing or `undefined` arguments
+trigger defaults from left to right, before the constructor body or its direct `super(...)` call.
+Later parameters stay in the temporal dead zone, and the first default determines the constructor's
+`length`. Defaults follow the same receiver restrictions as the prefix. A body binding that would
+shadow an outer name used in a default is rejected.
 The prefix admits simple `let` and `const` bindings and expression statements. Prefixes and arguments
 that read `this` or define a nested callable are rejected. The parent receives the evaluated arguments
 in source order. The rest of the constructor sees the same local bindings and the receiver returned by
