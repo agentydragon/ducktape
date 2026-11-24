@@ -68,6 +68,58 @@ const tdz = sequentialSplit(
 assertRejected(tdz, /original threw during linked initialization/);
 assert.deepEqual(observe(tdz.files.sourceFile, "result"), { error: "ReferenceError" });
 
+const vars = sequentialSplit(
+  "pre-super-var",
+  `const trace = { value: "" };
+   class Base { constructor(value) { trace.value += value + ";"; } }
+   class Child extends Base {
+     constructor(value) {
+       trace.value += typeof scratch + ";";
+       var value, scratch = value + 1;
+       (super(value), this.scratch = scratch);
+     }
+   }
+   class Defaults extends Base {
+     constructor(value = 3) {
+       var scratch = value + 2;
+       if ((super(scratch), scratch === 5)) this.scratch = scratch;
+     }
+   }
+   const a = new Child(7);
+   const b = new Defaults();
+   export const result = [trace.value, a.scratch, b.scratch];`,
+  { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3", "#4", "#5", "#6"] },
+  ["base.mjs"]
+);
+assertCertifiedResult(vars, ["undefined;7;5;", 8, 5]);
+
+const defaultShadow = sequentialSplit(
+  "pre-super-var-default-shadow",
+  `const source = 7;
+   class Base { constructor(value) { this.value = value; } }
+   class Child extends Base {
+     constructor(value = source) { var source = 9; super(value); }
+   }
+   export const result = new Child().value;`,
+  { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3"] },
+  ["base.mjs"]
+);
+assertRejected(defaultShadow, /var before super overlaps default parameters or their references/);
+assert.deepEqual(observe(defaultShadow.files.sourceFile, "result"), { result: 7 });
+
+const functionOverlap = sequentialSplit(
+  "pre-super-var-function-overlap",
+  `class Base { constructor(value) { this.value = value; } }
+   class Child extends Base {
+     constructor() { var same = 6; super(same); function same() {} }
+   }
+   export const result = new Child().value;`,
+  { "base.mjs": ["#0"], "entry.mjs": ["#1", "#2"] },
+  ["base.mjs"]
+);
+assertRejected(functionOverlap, /local function declaration overlaps a var binding before super/);
+assert.deepEqual(observe(functionOverlap.files.sourceFile, "result"), { result: 6 });
+
 // Super arguments run before the superclass constructor check, even with a null base.
 const nullBase = sequentialSplit(
   "pre-super-null-base",

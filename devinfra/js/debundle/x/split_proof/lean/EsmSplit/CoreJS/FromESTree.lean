@@ -827,7 +827,6 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
   for stmt in prefixStmts do
     match ← field stmt "type" with
     | "VariableDeclaration" =>
-      unless ["const", "let"].contains (← field stmt "kind") do throw "expected a lexical declaration before super"
       for d in ← stmt.getObjValAs? (Array Json) "declarations" do
         discard <| localBinding (← d.getObjVal? "id")
       before := before ++ (← linkedBlockDeclarations profile imports .function (← prepareBeforeSuper stmt true))
@@ -847,17 +846,27 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
     linkedArgument (linkedExpr profile imports true "") (← prepareBeforeSuper arg true)
   let stmts := rest.toList ++ tail
   let post := Json.obj ((← block.getObj?).insert "body" (.arr stmts.toArray))
+  let prefixVars := varNamesOf before.toList
+  let checkFunctionOverlap := fun body =>
+    if (funDecls body).any (fun f => prefixVars.contains f.name) then
+      throw "local function declaration overlaps a var binding before super"
+    else pure ()
   match ← linkedFunctionParts profile imports .classCtor name false (.obj ((← fn.getObj?).insert "body" post)) with
   | .complete body =>
     -- An opaque body may depend on the derived constructor's home object or new.target.
     if let some (_, _, _, why) := body.opaqueBody then throw (why.getD "unsupported derived constructor body")
+    checkFunctionOverlap body.body
     return (before.toList, args, body)
   | .defaults slots arity initializers body =>
     -- derivedScope enters both halves of the body at once. A body lexical binding must
-    -- not hide an outer name used by a default. linkedFunctionParts already checks hoisted vars.
+    -- not hide an outer name used by a default. Check prefix vars against the parameter
+    -- cells and default references, as linkedFunctionParts does for vars in the tail.
     let reads := freeStmts initializers
     if (lexNames (before.toList ++ body)).any reads.contains then
       throw "derived constructor body binding shadows a default parameter reference"
+    if prefixVars.any reads.contains then
+      throw "var before super overlaps default parameters or their references"
+    checkFunctionOverlap body
     return (initializers ++ before.toList, args, .withDefaults name .classCtor false slots arity body)
 
 /-- Public, static-name class elements with default or explicit derived constructors. -/
