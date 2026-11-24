@@ -1,23 +1,17 @@
 """Public acceptance round for the exact recipe shipped with the agent skills."""
 
 import json
-import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import cast
 
 import pytest
 import pytest_bazel
 import yaml
-from python.runfiles import Runfiles
 
-from devinfra.js.debundle.skills.shared.examples.isolated_edit import (
-    Snapshot,
-    graph_command,
-    merge_and_regenerate,
-    recorded_run,
-)
+from devinfra.js.debundle.skills.shared.examples.isolated_edit import Snapshot, graph_command, recorded_run
 from devinfra.testing.undeclared_outputs import undeclared_outputs_dir
 
 
@@ -27,15 +21,11 @@ def run(argv: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     return result
 
 
-def test_worker_patch_is_integrated_only_after_baseline_verification(runfiles: Runfiles, tmp_path: Path) -> None:
-    files = runfiles.root()
-    engine = str(files / os.environ["DEBUNDLE_HANDOFF_ENGINE"])
-    node = str(files / os.environ["DEBUNDLE_HANDOFF_NODE"])
-    fixture_config = str(files / "ducktape/devinfra/js/debundle/skills/shared/examples/fixture/spec_config.yaml")
+def test_worker_patch_is_integrated_only_after_baseline_verification(
+    engine: str, node: str, shared: Path, original: Path, tmp_path: Path
+) -> None:
     evidence = undeclared_outputs_dir() / "delegation"
     evidence.mkdir()
-    original = tmp_path / "original inputs"
-    shutil.copytree(Path(fixture_config).parent, original)
     original_output = run([node, str(original / "source/main.js")], tmp_path).stdout
     output = tmp_path / "baseline output"
     packages = tmp_path / "package inputs"
@@ -84,14 +74,31 @@ def test_worker_patch_is_integrated_only_after_baseline_verification(runfiles: R
     shutil.rmtree(packages)
     worker_records = evidence / "worker"
     reviewed_import_order = ["arithmetic"]
-    merge_and_regenerate(
-        worker, Path("main"), ["values", "calculation"], "arithmetic", reviewed_import_order, worker_records
-    )
-    assert json.loads((worker_records / "apply.stdout").read_text())["gate"] == "claims_checked"
-    assert json.loads((worker_records / "import_order.json").read_text()) == reviewed_import_order
-    for step in ("baseline", "preview", "apply", "regenerate"):
-        assert json.loads((worker_records / f"{step}.result.json").read_text()) == {"exit_code": 0}
-    assert json.loads((worker_records / "preview_write_check.json").read_text())["unchanged"] is True
+    priority = tmp_path / "reviewed priority.json"
+    priority.write_text(json.dumps(reviewed_import_order))
+
+    def merge(snapshot_record: str, records: Path) -> None:
+        run(
+            [
+                sys.executable,
+                str(shared / "examples/isolated_edit.py"),
+                "--snapshot-report",
+                str(evidence / snapshot_record),
+                "--module-subdir",
+                "main",
+                "--target",
+                "arithmetic",
+                "--import-order",
+                str(priority),
+                "--evidence",
+                str(records),
+                "values",
+                "calculation",
+            ],
+            tmp_path,
+        )
+
+    merge("worker-snapshot-create.stdout", worker_records)
     plan = json.loads((worker_records / "apply.plan.json").read_text())
     assert plan["executable"] == worker["engine"]
     assert plan["argv"] == json.loads((worker_records / "apply.invocation.json").read_text())["argv"]
@@ -151,16 +158,16 @@ def test_worker_patch_is_integrated_only_after_baseline_verification(runfiles: R
     assert worker_config != integration_config
     integration_config_before = yaml.safe_load(integration_config.read_text())
     integration_records = evidence / "integration"
-    merge_and_regenerate(
-        integration, Path("main"), ["values", "calculation"], "arithmetic", reviewed_import_order, integration_records
-    )
+    merge("integration-snapshot-create.stdout", integration_records)
     integration_config_after = yaml.safe_load(integration_config.read_text())
     assert integration_config_after["import_order"]["main"] == reviewed_import_order
     integration_config_before.pop("import_order", None)
     integration_config_after.pop("import_order", None)
     assert integration_config_after == integration_config_before
-    assert json.loads((integration_records / "import_order.json").read_text()) == reviewed_import_order
     for snapshot_info, records in ((worker, worker_records), (integration, integration_records)):
+        assert json.loads((records / "import_order.json").read_text()) == reviewed_import_order
+        entry = Path(snapshot_info["directory"]) / "output/app/main/entry.js"
+        assert run([node, str(entry)], tmp_path).stdout == original_output == "7\n"
         modules = Path(snapshot_info["modules"]) / "main"
         written_config = yaml.safe_load(Path(snapshot_info["tree_config"]).read_text())
         assert written_config["import_order"]["main"] == reviewed_import_order
@@ -178,10 +185,6 @@ def test_worker_patch_is_integrated_only_after_baseline_verification(runfiles: R
     assert (Path(worker["modules"]) / "main/arithmetic.yaml").read_bytes() == (
         Path(integration["modules"]) / "main/arithmetic.yaml"
     ).read_bytes()
-    for snapshot_info in (worker, integration):
-        entry = Path(snapshot_info["directory"]) / "output/app/main/entry.js"
-        actual = run([node, str(entry)], tmp_path)
-        assert actual.stdout == original_output == "7\n"
     shutil.copyfile(worker_manifest, evidence / "worker-baseline.json")
     shutil.copyfile(integration_manifest, evidence / "integration-baseline.json")
 

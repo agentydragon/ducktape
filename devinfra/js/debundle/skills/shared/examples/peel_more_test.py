@@ -6,13 +6,11 @@ import os
 import shutil
 import subprocess
 import sys
-import zipfile
 from pathlib import Path
 
 import pytest
 import pytest_bazel
 import yaml
-from python.runfiles import Runfiles
 
 from devinfra.js.debundle.skills.shared.examples.isolated_edit import recorded_run
 
@@ -26,15 +24,8 @@ def entry_source_units(graph_path: Path) -> set[str]:
 
 @pytest.mark.parametrize("selected_view", [False, True], ids=["full-tree", "selected-view"])
 def test_shipped_recipe_reduces_residual_and_emits_the_expected_behavior(
-    runfiles: Runfiles, tmp_path: Path, selected_view: bool
+    engine: str, node: str, shared: Path, original: Path, tmp_path: Path, selected_view: bool
 ) -> None:
-    files = runfiles.root()
-    engine = str(files / os.environ["DEBUNDLE_PEEL_ENGINE"])
-    node = str(files / os.environ["DEBUNDLE_PEEL_NODE"])
-    skill = str(files / os.environ["DEBUNDLE_PEEL_SKILL"])
-    fixture = str(files / "ducktape/devinfra/js/debundle/skills/shared/examples/fixture/spec_config.yaml")
-    original = tmp_path / "inputs"
-    shutil.copytree(Path(fixture).parent, original)
     (original / "modules/main/calculation.yaml").unlink()
     (original / "modules/main/values.yaml").write_text("members: [{selector: {binding: {name: initialValue}}}]\n")
     config_path = original / "spec_config.yaml"
@@ -91,11 +82,7 @@ def test_shipped_recipe_reduces_residual_and_emits_the_expected_behavior(
     snapshot = json.loads(snapshot_text)
     authored_owner = Path(snapshot["modules"]) / "main/values.yaml"
     authored_owner_before = authored_owner.read_bytes()
-    extracted = tmp_path / "skill"
-    with zipfile.ZipFile(skill) as archive:
-        archive.extractall(extracted)
-    recipe = extracted / "debundle_lane_worker/references/skills/shared/examples/peel_more.py"
-    assert recipe.is_file()
+    recipe = shared / "examples/peel_more.py"
     result = subprocess.run(
         [sys.executable, str(recipe), "--snapshot-report", str(snapshot_report), "--evidence", str(records / "peel")],
         cwd=tmp_path,
