@@ -140,11 +140,11 @@ the existing local host-binding proof.
 
 ### Browser smoke
 
-The smoke extracts members from the canonical
-[Excalidraw editor spec](../../../../excalidraw/spec/modules/editor/packages):
-the five `math/utils` bindings, `math/angle::normalizeRadians`, element type
-predicates and `scene/scroll::centerScrollOn`. The
-[Rust ownership subset](../../../../excalidraw/editor_smoke_subset.json) lists them.
+The smoke extracts **107 bindings into 23 upstream modules** from the canonical
+[Excalidraw editor spec](../../../../excalidraw/spec/modules/editor/packages).
+The [Rust ownership subset](../../../../excalidraw/editor_smoke_subset.json) lists
+the retained names. See the [recovery notes](recovery.md) for the candidate
+selection, remaining blockers and checked placements.
 To change the placement, edit the subset's module paths and readable member names.
 Rust resolves selectors in the full spec before applying the subset. Unselected
 units stay in the entry; selected owners retain their relative import priority.
