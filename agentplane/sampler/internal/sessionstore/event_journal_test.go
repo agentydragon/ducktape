@@ -3,6 +3,7 @@ package sessionstore
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -65,9 +66,7 @@ func TestJournalBlockPreservesLegacyFramesAndCommandAdmission(t *testing.T) {
 	store, session, owner := claimedSession(t)
 	const window = eventcodec.MaxBlockEntries
 	for cursor := session.Cursor; cursor < window; cursor++ {
-		if err := admitExportEvent(t.Context(), store, session.ID, int(cursor)); err != nil {
-			t.Fatal(err)
-		}
+		admitInput(t, store, session.ID, fmt.Sprintf("legacy-input-%d", cursor), "legacy input")
 	}
 	command := &commandpb.Command{CommandId: "packed-admission", Operation: &commandpb.Command_SubmitInput{
 		SubmitInput: &commandpb.SubmitInput{Text: "packed input"},
