@@ -293,6 +293,7 @@ def describe {W : World} (s : State W) : Val → String
   | .error .syntax _ => "SyntaxError"
   | .error .range _ => "RangeError"
   | .error .uri _ => "URIError"
+  | .error (.native ..) _ => "Error"
   | .host _ => "host"
 
 private def showSymbol (a : Addr) : String := s!"symbol@{a.region}.{a.index}"
