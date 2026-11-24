@@ -15,8 +15,26 @@ js_binary(
         ":node_modules/zod",
         "//:node_modules/esbuild",
         "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
     ],
     entry_point = "prepare.mjs",
+)
+
+js_test(
+    name = "standalone_parser_dump_test",
+    size = "small",
+    data = [
+        "entries/acorn.mjs",
+        "entries/semver.mjs",
+        "prepare.mjs",
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        ":node_modules/semver",
+        "//:node_modules/esbuild",
+        "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+    ],
+    entry_point = "standalone_parser_dump_test.mjs",
 )
 
 js_binary(

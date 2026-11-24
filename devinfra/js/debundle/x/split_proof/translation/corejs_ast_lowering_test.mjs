@@ -3,13 +3,12 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import * as acorn from "acorn";
-import * as eslintScope from "eslint-scope";
+import { acorn, dump as dumpSource, eslintScope } from "./parser.mjs";
 import { dumpParsed } from "./annotated_estree.mjs";
 import { coreFromParsed } from "../model/to_core.mjs";
 import { bundleFromParsed } from "./frontend.mjs";
 import { parseModule } from "./scope_metadata.mjs";
-import { coreOf, dumpOf } from "./split_dump.mjs";
+import { coreOf } from "./split_dump.mjs";
 
 const dir = process.env.TEST_TMPDIR;
 function file(name, contents) {
@@ -85,7 +84,7 @@ for (let seed = 0; seed < 48; seed++) {
   sources.push(`export ${["var", "let", "const"][seed % 3]} ${group.join(", ")}; throw part1;`);
   sources.push(`${declarations.join("\n")} export { ${last} as result }; throw ${last};`);
 }
-const actual = run(sources.map(dumpOf), true);
+const actual = run(sources.map(dumpSource), true);
 assert.deepEqual(actual, run(sources.map(reference), false));
 for (const [i, source] of sources.entries()) {
   assert.deepEqual(
@@ -97,7 +96,7 @@ for (const [i, source] of sources.entries()) {
 
 const unsupportedOperands = ["-binding", "-true", "-Infinity", "+1", "~1"];
 const refusals = run(
-  unsupportedOperands.map((e) => dumpOf(`const binding = 1, value = ${e};`)),
+  unsupportedOperands.map((e) => dumpSource(`const binding = 1, value = ${e};`)),
   true
 );
 for (const [i, expression] of unsupportedOperands.entries()) {
@@ -107,14 +106,14 @@ for (const [i, expression] of unsupportedOperands.entries()) {
 
 const spec = file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["a", "b"] } }));
 function split(source, args = []) {
-  const ast = file("bundle.json", JSON.stringify(dumpOf(source)));
+  const ast = file("bundle.json", JSON.stringify(dumpSource(source)));
   return execFileSync(process.env.LOWERSPLIT, ["--diagnostic", ast, spec, dir, ...args], { encoding: "utf8" });
 }
 
 const source = "var a = 1, b = a;";
 // The checker obtains identities from Program.body even when presented with a
 // conflicting legacy table. A table on its own cannot stand in for a module.
-const program = dumpOf(source);
+const program = dumpSource(source);
 assert.equal(program.type, "Program");
 assert.equal(program.body.length, 1);
 assert.equal(program.body[0].declarations.length, 2);
@@ -128,7 +127,7 @@ split('/*😀*/ export var a = "🌱", b = a;');
 const rendered = readFileSync(path.join(dir, "entry.mjs"), "utf8");
 assert.match(rendered, /export var a = "🌱";/);
 assert.match(rendered, /export var b = a;/);
-const badRange = dumpOf("/*😀*/ var a = 1, b = a;");
+const badRange = dumpSource("/*😀*/ var a = 1, b = a;");
 badRange.body[0].declarations[0].start = 3;
 const invalid = file("bad-range.json", JSON.stringify(badRange));
 assert.throws(

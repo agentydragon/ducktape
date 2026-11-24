@@ -3,15 +3,13 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import * as acorn from "acorn";
-import * as eslintScope from "eslint-scope";
-import { lowerDump } from "../annotated_estree.mjs";
+import { dump } from "../parser.mjs";
 
 const root = process.env.TEST_TMPDIR;
 const input = path.join(root, "input.json");
 const placement = path.join(root, "placement.json");
 function prepare(source, modules, order, entry = "entry.mjs") {
-  const ast = lowerDump(source, acorn, eslintScope);
+  const ast = dump(source);
   fs.writeFileSync(input, JSON.stringify(ast));
   fs.writeFileSync(placement, JSON.stringify({ entry, order, sequential: true, modules }));
   return ast;

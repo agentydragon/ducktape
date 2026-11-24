@@ -6,16 +6,14 @@ import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import * as acorn from "acorn";
-import * as eslintScope from "eslint-scope";
-import { lowerDump } from "./annotated_estree.mjs";
+import { acorn, dump } from "./parser.mjs";
 
 const temp = process.env.TEST_TMPDIR;
 assert(temp);
 
 function footprints(name, code) {
   const input = path.join(temp, `${name}-ast.json`);
-  writeFileSync(input, JSON.stringify(lowerDump(code, acorn, eslintScope)));
+  writeFileSync(input, JSON.stringify(dump(code)));
   const lower = spawnSync(process.env.LOWER, [input], { encoding: "utf8" });
   assert.equal(lower.status, 0, lower.stderr);
   const effects = lower.stdout

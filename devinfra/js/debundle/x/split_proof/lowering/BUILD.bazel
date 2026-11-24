@@ -5,7 +5,7 @@ js_binary(
     data = [
         "statement_shape.mjs",
         "//devinfra/js/debundle/x/split_proof/lean:lower",
-        "//devinfra/js/debundle/x/split_proof/translation:bazel_parser",
+        "//devinfra/js/debundle/x/split_proof/translation:parser",
         "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
     ],
     entry_point = "compare.mjs",

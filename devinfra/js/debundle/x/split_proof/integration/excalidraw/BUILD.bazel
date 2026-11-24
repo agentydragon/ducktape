@@ -93,7 +93,7 @@ js_test(
 
 _EXCALIDRAW_SCROLL_DATA = [
     ":" + _EXCALIDRAW_EDITOR_SPEC,
-    "//devinfra/js/debundle/x/split_proof/translation:bazel_parser",
+    "//devinfra/js/debundle/x/split_proof/translation:parser",
     "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
     "//devinfra/js/debundle/x/split_proof/translation:syntax_inventory",
     "//devinfra/js/debundle/excalidraw:bundle",

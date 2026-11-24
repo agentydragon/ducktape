@@ -4,9 +4,7 @@ import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import * as acorn from "acorn";
-import * as eslintScope from "eslint-scope";
-import { lowerDump } from "./annotated_estree.mjs";
+import { dump as dumpSource } from "./parser.mjs";
 import { shiftCandidate } from "./shift_candidate.mjs";
 import { walk } from "./syntax_inventory.mjs";
 import { topLevelStatements } from "./scope_metadata.mjs";
@@ -269,7 +267,7 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
   }
   let dump;
   try {
-    dump = lowerDump(source, acorn, eslintScope);
+    dump = dumpSource(source);
   } catch {
     stats.loweringRejected++;
     record("loweringRejected");

@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
-import { lowerDump } from "../../translation/annotated_estree.mjs";
+import { dumpParsed } from "../../translation/annotated_estree.mjs";
+import { parseModule } from "../../translation/scope_metadata.mjs";
 
 const [output, ...requested] = process.argv.slice(2);
 if (!output) throw new Error("usage: prepare <output dir> [bundle ...]");
@@ -40,5 +41,5 @@ for (const variant of requested.length ? requested : stems) {
   });
   const source = outputFiles[0].text;
   await writeFile(`${stem}.mjs`, source);
-  await writeFile(`${stem}.json`, JSON.stringify(lowerDump(source, acorn, eslintScope)));
+  await writeFile(`${stem}.json`, JSON.stringify(dumpParsed(parseModule(source, acorn.parse, eslintScope))));
 }

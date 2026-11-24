@@ -2,9 +2,7 @@ import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import * as acorn from "acorn";
-import * as eslintScope from "eslint-scope";
-import { lowerDump } from "./annotated_estree.mjs";
+import { dump } from "./parser.mjs";
 
 const temp = process.env.TEST_TMPDIR;
 assert(temp, "TEST_TMPDIR is required");
@@ -17,7 +15,7 @@ const code =
   "export { value };\n";
 const astPath = path.join(work, "bundle.json");
 const specPath = path.join(work, "spec.json");
-writeFileSync(astPath, JSON.stringify(lowerDump(code, acorn, eslintScope)));
+writeFileSync(astPath, JSON.stringify(dump(code)));
 writeFileSync(
   specPath,
   JSON.stringify({
@@ -70,7 +68,7 @@ assert(!existsSync(unsafeOut), "an invalid spec does not create its output root"
 assert(!existsSync(path.join(work, "escape.mjs")), "an invalid spec cannot write outside its output root");
 
 const closedSource = "const a = 1; const b = 2; export const result = a;\n";
-writeFileSync(astPath, JSON.stringify(lowerDump(closedSource, acorn, eslintScope)));
+writeFileSync(astPath, JSON.stringify(dump(closedSource)));
 writeFileSync(
   specPath,
   JSON.stringify({

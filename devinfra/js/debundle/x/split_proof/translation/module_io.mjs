@@ -3,10 +3,8 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import * as acorn from "acorn";
-import * as eslintScope from "eslint-scope";
 import { literalKey, needsPrintRange } from "./scope_metadata.mjs";
-import { loadSnapshot, lowerDump } from "./annotated_estree.mjs";
+import { dump, loadSnapshot } from "./parser.mjs";
 
 const linkedAnnotations = { includeOpaqueCaptures: true };
 
@@ -15,7 +13,7 @@ function program(file, expectedHash) {
     const bytes = fs.readFileSync(file);
     if (expectedHash !== undefined && createHash("sha256").update(bytes).digest("hex") !== expectedHash)
       throw new Error("resolved placement source_sha256 differs from source bytes");
-    return lowerDump(bytes.toString("utf8"), acorn, eslintScope, linkedAnnotations);
+    return dump(bytes.toString("utf8"), linkedAnnotations);
   } catch (error) {
     throw new Error(`${file}: ${error.message}`);
   }
@@ -183,7 +181,7 @@ try {
     writeJson(output, program(input));
   } else if (mode === "--load-input") {
     const [input, output] = args;
-    writeJson(output, loadSnapshot(readJson(input), acorn, eslintScope, linkedAnnotations));
+    writeJson(output, loadSnapshot(readJson(input), linkedAnnotations));
   } else if (mode === "--check-output") {
     const [manifestPath, originalSourcePath, providersManifestPath, dir, groupedPath] = args;
     checkOutput(manifestPath, originalSourcePath, providersManifestPath, dir, groupedPath);

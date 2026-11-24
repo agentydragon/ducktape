@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import * as acorn from "acorn";
-import * as eslintScope from "eslint-scope";
-import { lowerDump } from "../annotated_estree.mjs";
+import { dump } from "../parser.mjs";
 
-const parse = (source) => lowerDump(source, acorn, eslintScope);
+const parse = (source) => dump(source);
 const provider = `
 var make = (cb) => { const invoke = () => cb(); return invoke; };
 export { make as build };

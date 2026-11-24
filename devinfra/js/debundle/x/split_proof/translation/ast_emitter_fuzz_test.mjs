@@ -3,10 +3,8 @@ import { strict as assert } from "node:assert";
 import { spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { lowerDump } from "./annotated_estree.mjs";
+import { dump } from "./parser.mjs";
 import { topLevelStatements } from "./scope_metadata.mjs";
-import * as acorn from "acorn";
-import * as eslintScope from "eslint-scope";
 import { generateAstBundle } from "./testing/ast_generator.mjs";
 import { lcg32 } from "../seeded_random.mjs";
 
@@ -78,8 +76,8 @@ if (process.argv[2] !== "--worker") {
   for (let round = start; round < end; round++) {
     const choose = random((seed ^ 0xa341316c ^ Math.imul(round, 0x9e3779b1)) >>> 0);
     const { source } = generateAstBundle(seed, round);
-    const dump = lowerDump(source, acorn, eslintScope);
-    const units = topLevelStatements(dump);
+    const program = dump(source);
+    const units = topLevelStatements(program);
     const original = path.join(tmp, `original-${round}.mjs`);
     writeFileSync(original, source);
     const expected = run(process.execPath, [original]);
@@ -110,7 +108,7 @@ if (process.argv[2] !== "--worker") {
       });
       const order = choose(2) ? ["side-a.mjs", "side-b.mjs"] : ["side-b.mjs", "side-a.mjs"];
       writeFileSync(path.join(dir, "source.mjs"), source);
-      writeFileSync(path.join(dir, "ast.json"), JSON.stringify(dump));
+      writeFileSync(path.join(dir, "ast.json"), JSON.stringify(program));
       writeFileSync(path.join(dir, "spec.json"), JSON.stringify({ entry: "entry.mjs", modules, order }));
       const args = ["--diagnostic", path.join(dir, "ast.json"), path.join(dir, "spec.json"), dir];
       const checked = run(process.env.LOWERSPLIT, args);
