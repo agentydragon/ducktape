@@ -60,15 +60,15 @@ func writeInvocationExport(exported *bbapipb.InvocationExport) error {
 // parseInvocationExport parses a raw BuildBuddy BES stream into the stable CI
 // contract. Presence flags distinguish an absent count from explicit zero.
 func parseInvocationExport(raw []byte) (*bbapipb.InvocationExport, error) {
-	var rawEvents []json.RawMessage
-	if err := json.Unmarshal(raw, &rawEvents); err != nil {
-		return nil, fmt.Errorf("parse invocation event stream: %w", err)
+	events, err := decodeBuildEvents(raw)
+	if err != nil {
+		return nil, err
 	}
-	if rawEvents == nil {
+	if events == nil {
 		return nil, fmt.Errorf("invocation event stream is not a list")
 	}
 
-	artifacts, err := parseArtifacts(raw)
+	artifacts, err := indexArtifacts(events)
 	if err != nil {
 		return nil, err
 	}
@@ -92,13 +92,9 @@ func parseInvocationExport(raw []byte) (*bbapipb.InvocationExport, error) {
 	var explicitCmdLines []*[]string
 	var requestedPatterns []string
 	var commitSHAs []string
-	for i, rawEvent := range rawEvents {
-		var event bespb.BuildEvent
-		if err := unmarshalJSON(rawEvent, &event); err != nil {
-			return nil, fmt.Errorf("parse invocation event %d: %w", i, err)
-		}
+	for i, event := range events {
 		var presence invocationPresenceEvent
-		if err := json.Unmarshal(rawEvent, &presence); err != nil {
+		if err := json.Unmarshal(event.rawJSON, &presence); err != nil {
 			return nil, fmt.Errorf("parse invocation event presence %d: %w", i, err)
 		}
 

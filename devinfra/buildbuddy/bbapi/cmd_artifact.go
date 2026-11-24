@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -515,31 +514,29 @@ func listArtifacts(c *client, invocationID string) (*invocationArtifacts, error)
 	return artifacts, nil
 }
 
-// parseArtifacts extracts both test and build artifacts from a raw BES stream.
+func parseArtifacts(data []byte) (*invocationArtifacts, error) {
+	events, err := decodeBuildEvents(data)
+	if err != nil {
+		return nil, err
+	}
+	return indexArtifacts(events)
+}
+
+// indexArtifacts extracts test and build artifacts from decoded BES events.
 //
 // Build outputs are reached indirectly: a TargetComplete event names output
 // groups, each group names NamedSetOfFiles ids, and those sets hold the files —
 // and may reference further sets, since Bazel shares subsets between targets
 // rather than repeating them. So the sets are indexed first, then walked
 // transitively per target.
-func parseArtifacts(data []byte) (*invocationArtifacts, error) {
-	var rawEvents []json.RawMessage
-	if err := json.Unmarshal(data, &rawEvents); err != nil {
-		return nil, fmt.Errorf("parse BES event stream: %w", err)
-	}
-	events := make([]*bespb.BuildEvent, 0, len(rawEvents))
+func indexArtifacts(events []decodedBuildEvent) (*invocationArtifacts, error) {
 	result := &invocationArtifacts{}
 	fileSets := map[string]*bespb.NamedSetOfFiles{}
 	// How many shards and runs each test had, which only its summary, last in the stream, says.
 	type summaryKey struct{ label, configuration string }
 	summaries := map[summaryKey]*bespb.TestSummary{}
-	for _, raw := range rawEvents {
-		var ev bespb.BuildEvent
-		if err := unmarshalJSON(raw, &ev); err != nil {
-			return nil, fmt.Errorf("parse BES event: %w", err)
-		}
-		events = append(events, &ev)
-		result.children = appendAnnouncedChildren(result.children, &ev)
+	for _, ev := range events {
+		result.children = appendAnnouncedChildren(result.children, ev.BuildEvent)
 		if ns := ev.GetNamedSetOfFiles(); ns != nil {
 			fileSets[ev.GetId().GetNamedSet().GetId()] = ns
 		}
