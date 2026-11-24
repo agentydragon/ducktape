@@ -1,4 +1,4 @@
-import EsmSplit.CoreJS.DeclarationGroup
+import EsmSplit.CoreJS.Declaration.Group
 import EsmSplit.CoreJS.Split
 
 /-!
@@ -11,7 +11,7 @@ regions, so the comparison is equality of CoreJS results, including the entire f
 normal and abrupt completion.
 
 Extraction retains the inline export names. Evaluation of the closed module needs no export
-table. `DeclarationCertificate.lean` connects this result to the checked plan.
+table. `Certificate.lean` connects this result to the checked plan.
 -/
 
 namespace CoreJS.DeclarationProgram

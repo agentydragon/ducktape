@@ -1,7 +1,7 @@
 import EsmSplit.CoreJS.ExpressionFrame
 import EsmSplit.CoreJS.ObjectFrame
 import EsmSplit.CoreJS.OpaqueClosureFrame
-import EsmSplit.CoreJS.RequestDispatch
+import EsmSplit.CoreJS.Request.Dispatch
 
 /-! Prove the reachability frame for the actual mutually recursive CoreJS evaluator by fuel induction. -/
 

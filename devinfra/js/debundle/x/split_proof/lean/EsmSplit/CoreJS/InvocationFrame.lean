@@ -1,6 +1,6 @@
 import EsmSplit.CoreJS.BindingFrame
 import EsmSplit.CoreJS.HostFrame
-import EsmSplit.CoreJS.RequestProperty
+import EsmSplit.CoreJS.Request.Property
 
 /-! # Frames for call and constructor dispatch
 

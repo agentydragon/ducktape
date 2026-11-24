@@ -1,4 +1,4 @@
-import EsmSplit.CoreJS.DeclarationArtifacts
+import EsmSplit.CoreJS.Declaration.Artifacts
 
 namespace CoreJS.DeclarationArtifactsExamples
 

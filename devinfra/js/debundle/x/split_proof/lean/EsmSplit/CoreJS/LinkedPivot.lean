@@ -1,5 +1,5 @@
 import EsmSplit.CoreJS.LinkedBehavior
-import EsmSplit.CoreJS.RequestFrame
+import EsmSplit.CoreJS.Request.Frame
 import EsmSplit.CoreJS.Split
 
 namespace CoreJS.LinkedBehavior

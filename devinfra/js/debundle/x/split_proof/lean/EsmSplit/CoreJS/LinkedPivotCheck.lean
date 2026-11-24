@@ -1,5 +1,5 @@
 import EsmSplit.CoreJS.LinkedPivot
-import EsmSplit.CoreJS.RequestAllocation
+import EsmSplit.CoreJS.Request.Allocation
 import EsmSplit.CoreJS.SyntaxMatch
 
 /-! Compare linked units and check the frame conditions

@@ -1,5 +1,5 @@
 import EsmSplit.CoreJS.InvocationFrame
-import EsmSplit.CoreJS.RequestAllocation
+import EsmSplit.CoreJS.Request.Allocation
 
 /-! Reachability frames for object, array and class literals. -/
 

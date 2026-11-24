@@ -1,5 +1,5 @@
-import EsmSplit.CoreJS.DeclarationInput
-import EsmSplit.CoreJS.DeclarationProgram
+import EsmSplit.CoreJS.Declaration.Input
+import EsmSplit.CoreJS.Declaration.Program
 import EsmSplit.CoreJS.BindingMoves
 
 namespace CoreJS.DeclarationCertificate

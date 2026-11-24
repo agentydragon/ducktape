@@ -1,4 +1,4 @@
-import EsmSplit.CoreJS.RequestFrame
+import EsmSplit.CoreJS.Request.Frame
 
 /-! # Opaque object and callback allocation
 
