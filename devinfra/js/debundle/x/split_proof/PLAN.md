@@ -226,10 +226,10 @@ A profile can also name opaque constructors in deferred code. If initialization 
 
 Use the public editor and its real providers to exercise the same certification path on a public input. Run two placements through the ordinary splitter requesting `normal-completion`. Moving the single scroll arrow at unit 1337 (`Jb`) preserves all 611 public editor names in the diagnostic output. Aim to certify this split and run its emitted entry. The authored pair (1337 and 1338) adds three private names to the entry’s exports in the diagnostic output. Keep the pair as a rejection case.
 
-The [strict replay targets](translation/debug/excalidraw_certificates/README.md#strict-certification-of-the-scroll-module)
+The [strict replay targets](integration/excalidraw/README.md#strict-certification-of-the-scroll-module)
 pin the current blocker. For each extension, add a regression, generate programs using
 the feature, compare their behavior with Node, and rerun both placements. Record the next
-blocker or guarantee obtained. The [browser smoke targets](translation/debug/excalidraw_certificates/README.md#browser-smoke)
+blocker or guarantee obtained. The [browser smoke targets](integration/excalidraw/README.md#browser-smoke)
 exercise the original editor and require a certificate before loading the split. Defer
 `import.meta.url`.
 
@@ -237,7 +237,7 @@ An earlier pairwise diagnostic identified 14 of the 259 structural conflicts as 
 `Ve(callback)` (units 5–18). Applying the wrapper theorem to the full editor would require
 establishing its runtime premises at each crossing. The first of the other 245 pairs
 was unit 19, `Ml = ra(yo())`, crossing `Jb`.
-[Scroll replay and proof scope](translation/debug/excalidraw_certificates/README.md#strict-certification-of-the-scroll-module)
+[Scroll replay and proof scope](integration/excalidraw/README.md#strict-certification-of-the-scroll-module)
 
 Seven of the editor's eight flat destructuring declarations read keys present in
 four allocation-only object literals. Units 95 (`s6`), 103 (`Ui`), 201 (`I2`)
@@ -249,7 +249,7 @@ For the first `Ui` read at 105, establish that the pattern at 104 preserves
 that record. Unit 104 reads `s6`, created at 95, and unit 99 executes an opaque
 `new Uint32Array(f6())` between creation and use. The next proof obligation is
 to show which bindings and heap records survive that intervening execution.
-[Editor move census](translation/debug/excalidraw_certificates/README.md)
+[Editor move census](integration/excalidraw/README.md)
 
 ### Proof track
 

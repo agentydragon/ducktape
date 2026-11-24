@@ -4,8 +4,8 @@ import { execFile } from "node:child_process";
 import { copyFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
-import { splitInputs } from "../../split_dump.mjs";
-import { topLevelStatements } from "../../scope_metadata.mjs";
+import { splitInputs } from "../../translation/split_dump.mjs";
+import { topLevelStatements } from "../../translation/scope_metadata.mjs";
 
 const execute = promisify(execFile);
 const root = process.env.EXCALIDRAW_OUTPUTS.split(" ").find((p) => p.endsWith("/bundle"));

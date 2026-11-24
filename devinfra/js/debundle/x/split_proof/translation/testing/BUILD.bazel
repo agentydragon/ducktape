@@ -8,6 +8,10 @@ package(
 js_library(
     name = "ast_assertions",
     srcs = ["ast_assertions.mjs"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
+    ],
     deps = [
         "//devinfra/js/debundle/x/split_proof/translation:node_modules/acorn",
         "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",

@@ -3,7 +3,7 @@
 Run the experimental Lean checker against the public, pinned Excalidraw bundle:
 
 ```sh
-bbr test //devinfra/js/debundle/x/split_proof/translation:excalidraw_certificate_census
+bbr test //devinfra/js/debundle/x/split_proof/integration/excalidraw:excalidraw_certificate_census
 ```
 
 This manual investigation target inventories every JS chunk. It probes the main
@@ -37,8 +37,8 @@ it is diagnostic evidence, not a certificate bypassing the checker's other premi
 ## Building and replaying the authored Excalidraw specs
 
 ```sh
-bbr build --remote_build_event_upload=all //devinfra/js/debundle/x/split_proof/translation:excalidraw_lean_specs
-bbr test //devinfra/js/debundle/x/split_proof/translation:excalidraw_authored_placements
+bbr build --remote_build_event_upload=all //devinfra/js/debundle/x/split_proof/integration/excalidraw:excalidraw_lean_specs
+bbr test //devinfra/js/debundle/x/split_proof/integration/excalidraw:excalidraw_authored_placements
 ```
 
 The build translates the Rust debundler's `spec_graphs` reports into
@@ -74,8 +74,8 @@ Both replays stop at structural checks before reaching the module URL guard.
 ### Strict certification of the scroll module
 
 ```sh
-bbr test //devinfra/js/debundle/x/split_proof/translation:excalidraw_scroll_certificate
-bbr test //devinfra/js/debundle/x/split_proof/translation:excalidraw_scroll_single_certificate
+bbr test //devinfra/js/debundle/x/split_proof/integration/excalidraw:excalidraw_scroll_certificate
+bbr test //devinfra/js/debundle/x/split_proof/integration/excalidraw:excalidraw_scroll_single_certificate
 ```
 
 The generated editor spec assigns `#1337` and `#1338` to
@@ -126,13 +126,13 @@ The probe runs the provider in Node. It does not execute the complete editor.
 
 The separate CoreJS theorem covers wrapper creation and the independent arrow declaration from
 a common linked environment. Both orders reach exactly the same successful final states.
-[Linked reproduction](../../../lean/EsmSplit/CoreJS/WrapperLinked.lean)
+[Linked reproduction](../../lean/EsmSplit/CoreJS/WrapperLinked.lean)
 
 The single-arrow move plan records 259 structural source-order conflicts. All
 cross `#1337`, including the conflict with the first source unit after imports.
 The test records them in `scroll-move-report.json` alongside
 `import-boundary.json` and `entry-exports.json`. The reduced case in
-[`linked_host_profile_test.mjs`](../../linked/linked_host_profile_test.mjs) uses a
+[`linked_host_profile_test.mjs`](../../translation/linked/linked_host_profile_test.mjs) uses a
 small imported wrapper and reproduces the ambient `Symbol.for` refusal. A
 lexical `Symbol` binding passes strict certification and the Node control in
 the existing local host-binding proof.
@@ -143,9 +143,9 @@ the existing local host-binding proof.
 Run these opt-in targets on RBE:
 
 ```sh
-p=//devinfra/js/debundle/x/split_proof/translation
-bbr test "$p:excalidraw_original_editor_browser_smoke"
-bbr test "$p:excalidraw_certified_scroll_browser_smoke" "$p:excalidraw_certified_startup_browser_smoke"
+p=//devinfra/js/debundle/x/split_proof/integration/excalidraw
+bbr test "${p}:excalidraw_original_editor_browser_smoke"
+bbr test "${p}:excalidraw_certified_scroll_browser_smoke" "${p}:excalidraw_certified_startup_browser_smoke"
 ```
 
 The baseline loads the pinned editor. The split test certifies the single move
@@ -405,7 +405,7 @@ opaque statement. Effects tracks visible intrinsic patches and assumes P1 for
 unseen patches. Its `Array` summary does not provide a CoreJS constructor or a
 proof of correspondence for sparse arrays.
 
-The executable controls in [inert_escape_test.mjs](../../inert_escape_test.mjs)
+The executable controls in [inert_escape_test.mjs](../../translation/inert_escape_test.mjs)
 move a factory initializer across (1) an in-bundle replacement of `Array`
 and (2) a call to the original `Array` whose length expression runs `valueOf`.
 Each original prints `undefined`, each forced split prints `function`, and both
