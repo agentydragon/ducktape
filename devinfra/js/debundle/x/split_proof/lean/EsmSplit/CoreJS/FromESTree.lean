@@ -285,6 +285,7 @@ private def linkedTemplate (lower : Json → Except String Expr) (j : Json) : Ex
   return result
 
 private def ambientSymbolMember? (j : Json) : Option Name := do
+  guard ((field j "type").toOption == some "MemberExpression")
   let receiver ← (j.getObjVal? "object").toOption
   if (field receiver "k").toOption != some "G" || (identifier receiver).toOption != some "Symbol" ||
       (j.getObjValAs? Bool "computed").toOption != some false ||
@@ -453,8 +454,9 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
   | "Identifier" => reference imports inFunction j profile
   | "ThisExpression" => return .this
   | "MemberExpression" =>
-    if inFunction && ambientSymbolMember? j == some "iterator" then
-      return .prim (.opaqueAmbientMemberRef "Symbol" "iterator") []
+    if ambientSymbolMember? j == some "iterator" then
+      if profile == .browserPage then return .prim .iteratorSymbol []
+      if inFunction then return .prim (.opaqueAmbientMemberRef "Symbol" "iterator") []
     let (base, key) ← linkedMember (linkedExpr profile imports inFunction "") j
     return .get base key
   | "ChainExpression" =>
@@ -749,9 +751,15 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
   for member in ← body.getObjValAs? (Array Json) "body" do
     let tag ← field member "type"
     unless tag == "MethodDefinition" || tag == "PropertyDefinition" do throw s!"unsupported class element {tag}"
-    if ← member.getObjValAs? Bool "computed" then throw "unsupported computed class key"
-    let key ← moduleExportName (← member.getObjVal? "key")
-    let keyExpr := Expr.str key
+    let keyNode ← member.getObjVal? "key"
+    let (key, keyExpr) ← if ← member.getObjValAs? Bool "computed" then do
+      unless tag == "MethodDefinition" && profile == .browserPage && ambientSymbolMember? keyNode == some "iterator" do
+        throw "unsupported computed class key"
+      -- SetFunctionName wraps a symbol’s description in brackets.
+      pure ("[Symbol.iterator]", Expr.prim .iteratorSymbol [])
+    else do
+      let name ← moduleExportName keyNode
+      pure (name, Expr.str name)
     let static ← member.getObjValAs? Bool "static"
     let value ← member.getObjVal? "value"
     if tag == "PropertyDefinition" then
