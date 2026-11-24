@@ -79,7 +79,7 @@ def _resolve_placement_impl(ctx):
         fragment_files.append(files[0])
 
         # _run_debundler starts in the bin tree, not the execroot.
-        extra_args += ["--proposal-fragment", shell.quote(owner + "=") + '"${OLDPWD}"/' + shell.quote(files[0].path)]
+        extra_args += ["--proposal-fragment", shell.quote(owner + "=") + _shell_execroot_path(files[0].path)]
     if canonical:
         extra_args += ["--canonical-out", shell.quote(canonical.short_path)]
     _run_debundler(
@@ -89,7 +89,7 @@ def _resolve_placement_impl(ctx):
         args = ["spec", "resolve-placement"] +
                _spec_args(ctx, plan, ctx.label.name + ".unused") + plan.package_args +
                ["--chunk", shell.quote(ctx.attr.chunk), "--out", shell.quote(out.short_path)] +
-               (["--ownership-subset", _shell_source_path(subset.path)] if subset else []) + extra_args,
+               (["--ownership-subset", _shell_execroot_path(subset.path)] if subset else []) + extra_args,
         mnemonic = "DebundleResolvePlacement",
         progress = "Resolving authored source-unit owners for %{label}",
     )
@@ -162,7 +162,7 @@ def _run_apply(ctx, plan, analysis, out_dir, projection = None):
     graph_export = projection == None
     run_flags = _run_flags(ctx, include_full_streams = not graph_export)
     if ctx.file.ownership_subset:
-        run_flags += ["--ownership-subset", _shell_source_path(ctx.file.ownership_subset.path)]
+        run_flags += ["--ownership-subset", _shell_execroot_path(ctx.file.ownership_subset.path)]
     if graph_export:
         mnemonic = "DebundleExportGraphs"
         progress = "Exporting full debundle graphs for %{label}"
@@ -254,7 +254,7 @@ def _spec_plan(ctx):
         fail("tree_config, tree_modules, and tree_vendor_marks must all be set together")
 
     if has_flat:
-        spec_args = ["--spec", _shell_source_path(ctx.file.spec.path)]
+        spec_args = ["--spec", _shell_execroot_path(ctx.file.spec.path)]
 
         # A flat spec's source paths resolve against the working directory.
         source_root = "\"${PWD}\""
@@ -263,11 +263,11 @@ def _spec_plan(ctx):
         source_root = _tree_source_root_arg(ctx)
         spec_args = [
             "--tree-config",
-            _shell_source_path(ctx.file.tree_config.path),
+            _shell_execroot_path(ctx.file.tree_config.path),
             "--tree-modules",
-            _shell_source_path(paths.join(pkg, ctx.attr.tree_modules)),
+            _shell_execroot_path(paths.join(pkg, ctx.attr.tree_modules)),
             "--tree-vendor-marks",
-            _shell_source_path(ctx.file.tree_vendor_marks.path),
+            _shell_execroot_path(ctx.file.tree_vendor_marks.path),
             # Source-relative paths embedded in the tree config YAML
             # (e.g. `inputs.js_list_path`) resolve against this root.
             "--tree-source-root",
@@ -342,25 +342,14 @@ def _tree_source_root_arg(ctx):
             sorted(roots),
         ))
 
-    root = files[0].root.path
-    if not root:
-        # Source file: its root *is* the execroot.
-        return _shell_source_path(".")
-    return _shell_execroot_path(root)
+    # Source files have an empty root path: their root is the execroot itself.
+    return _shell_execroot_path(files[0].root.path or ".")
 
-def _shell_source_path(workspace_relative):
-    """Shell expression referencing a workspace-root-relative source path.
-
-    The action cd's into `${BAZEL_BINDIR}`; source-tree files live under
-    `${OLDPWD}` (= execroot). Absolute paths are passed through unchanged.
-    """
-    if workspace_relative.startswith("/"):
-        return shell.quote(workspace_relative)
-    return _shell_execroot_path(workspace_relative)
-
-def _shell_execroot_path(execroot_relative):
-    """Shell expression referencing an execroot-relative path."""
-    return "\"${{OLDPWD}}/{}\"".format(execroot_relative)
+def _shell_execroot_path(path):
+    """Quote a path for the action shell after its cd from the execroot to bazel-bin."""
+    if path.startswith("/"):
+        return shell.quote(path)
+    return '"${OLDPWD}"/' + shell.quote(path)
 
 _COMMON_ATTRS = {
     "spec": attr.label(
