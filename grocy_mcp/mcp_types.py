@@ -295,7 +295,13 @@ class StockEntryOk(BaseModel):
     entry: StockEntryDetail
 
 
-class StockEntryEditOk(StockEntryOk):
+class StockEntryEditOk(BaseModel):
+    kind: Literal["ok"] = "ok"
+    entry_id: int = Field(description="Original stock entry ID recorded by this edit.")
+    transaction_id: str
+    entry: StockEntryDetail | None = Field(
+        default=None, description="Current lot when readable. Grocy can merge matching lots during an edit."
+    )
     changes: dict[str, dict[str, Any]] | None = Field(
         default=None, description="For edits: {field: {old: ..., new: ...}} diff of changed fields."
     )

@@ -120,13 +120,13 @@ class _StockEntryCatalog:
         product_id = int(entry["product_id"])
         product = self.products.get(product_id)
         product_name = str(product["name"]) if product else f"id={product_id}"
-        stock_qu_id = int(product["qu_id_stock"]) if product else 0
+        stock_qu_id = int(product["qu_id_stock"]) if product else None
         return StockEntryDetail(
             entry_id=int(entry["id"]),
             product_id=product_id,
             product_name=product_name,
             amount=float(entry["amount"]),
-            qu_name=self.unit_names.get(stock_qu_id, f"id={stock_qu_id}"),
+            qu_name=self.unit_names.get(stock_qu_id, f"id={stock_qu_id}") if stock_qu_id is not None else "stock units",
             location_name=self.location_name(_entry_location_id(entry, product)),
             best_before_date=_parse_date(entry.get("best_before_date")),
             purchased_date=_parse_date(entry.get("purchased_date")),
@@ -737,6 +737,26 @@ def register_batch_tools(
         """
         return await _stock_batch(client, items)
 
+    async def _read_stock_entry(client: GrocyClient, entry_id: int) -> dict[str, Any]:
+        response = await _get_with_retry(client, f"/stock/entry/{entry_id}")
+        row: dict[str, Any] | None = response.json()
+        if row is None:  # Grocy returns HTTP 200 with JSON null for a retired ID.
+            raise ValueError(f"Stock entry {entry_id} was not found.")
+        return row
+
+    async def _stock_entries_by_id(
+        client: GrocyClient, entry_ids: list[int], catalog: _StockEntryCatalog
+    ) -> list[StockEntryOk | StockEntryError]:
+        async def _fetch(entry_id: int) -> StockEntryOk:
+            return StockEntryOk(entry=catalog.describe(await _read_stock_entry(client, entry_id)))
+
+        return await _ordered_batch(
+            entry_ids,
+            "entry_ids",
+            _fetch,
+            lambda entry_id, exc: StockEntryError(entry_id=entry_id, error=_format_exc(exc)),
+        )
+
     @mcp.tool()
     async def stock_entries_list(
         products: Annotated[
@@ -785,19 +805,8 @@ def register_batch_tools(
                     all_results.append(StockEntryError(error=_format_exc(e)))
             return all_results
 
-        # Entry ID mode: batch GET /stock/entry/{id}
         assert entry_ids is not None
-
-        async def _fetch(entry_id: int) -> StockEntryOk:
-            r = await _get_with_retry(client, f"/stock/entry/{entry_id}")
-            return StockEntryOk(entry=catalog.describe(r.json()))
-
-        return await _ordered_batch(
-            entry_ids,
-            "entry_ids",
-            _fetch,
-            lambda entry_id, exc: StockEntryError(entry_id=entry_id, error=_format_exc(exc)),
-        )
+        return await _stock_entries_by_id(client, entry_ids, catalog)
 
     @mcp.tool()
     async def stock_entry_edit(
@@ -809,33 +818,49 @@ def register_batch_tools(
         For each item, the server reads the current entry, merges your
         changes, and writes back — you don't have to copy-paste unchanged
         fields. Returns one result per input item, in order. Each success
-        carries the post-edit entry plus a field-by-field changes diff. To remove a
-        nullable field's value (vs setting it to a new value), name it in
+        carries the transaction ID and saved field changes from Grocy's journal.
+        The current entry is included when it can be read. Grocy may have
+        merged the edited lot into another. To remove a nullable value, name it in
         `clear_fields`. See also `stock_entries_list` to discover IDs.
         """
 
         async def _edit_one(item: EditStockEntryItem) -> StockEntryEditOk:
-            path = f"/stock/entry/{item.entry_id}"
-            current = (await _get_with_retry(client, path)).json()
+            current = await _read_stock_entry(client, item.entry_id)
             body = await _merge_stock_entry(client, item, current)
-            changes = {
-                field: {"old": current.get(field), "new": value}
-                for field, value in body.items()
-                if current.get(field) != value
-            }
 
-            async def _put() -> None:
-                response = await client.put(path, json=body)
+            async def _put() -> StockEntryEditOk:
+                response = await client.put(f"/stock/entry/{item.entry_id}", json=body)
                 response.raise_for_status()
+                journal = response.json()
+                try:
+                    sides = {row["transaction_type"]: row for row in journal}
+                    old, new = sides["stock-edit-old"], sides["stock-edit-new"]
+                    for row in (old, new):
+                        row["open"] = row["opened_date"] is not None
+                    changes = {key: {"old": old[key], "new": new[key]} for key in body if old[key] != new[key]}
+                    return StockEntryEditOk(
+                        entry_id=item.entry_id, transaction_id=new["transaction_id"], changes=changes or None
+                    )
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise MutationMayHaveAppliedError(
+                        f"edit stock entry {item.entry_id}", "received an incomplete edit journal"
+                    ) from exc
 
-            await _retry_mutation(_put, describe=f"edit stock entry {item.entry_id}")
-            updated = (await _get_with_retry(client, path)).json()
-            catalog = await _StockEntryCatalog.load(client)
-            return StockEntryEditOk(entry=catalog.describe(updated), changes=changes or None)
+            return await _retry_mutation(_put, describe=f"edit stock entry {item.entry_id}")
 
-        return await _ordered_batch(
+        results: list[StockEntryEditOk | StockEntryError] = await _ordered_batch(
             items, "items", _edit_one, lambda item, exc: StockEntryError(entry_id=item.entry_id, error=_format_exc(exc))
         )
+        saved = [result for result in results if isinstance(result, StockEntryEditOk)]
+        if saved:
+            catalog = await _best_effort("stock entry names", lambda: _StockEntryCatalog.load(client))
+            current_entries = await _stock_entries_by_id(
+                client, [edit.entry_id for edit in saved], catalog or _StockEntryCatalog({}, {}, {})
+            )
+            for edit, current_entry in zip(saved, current_entries, strict=True):
+                if isinstance(current_entry, StockEntryOk):
+                    edit.entry = current_entry.entry
+        return results
 
     @mcp.tool()
     async def products_list(

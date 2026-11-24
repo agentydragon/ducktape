@@ -554,6 +554,38 @@ describe("Action presentation slots", () => {
     expect(rendered.textContent).toContain("Failed · Item missing");
   });
 
+  it("shows saved stock edits and links only lots that could be read", async () => {
+    const action = identity("grocy_sf", "stock_entry_edit");
+    const entry = {
+      entry_id: 8,
+      product_id: 21,
+      product_name: "Kefir",
+      amount: 3,
+      qu_name: "Bottle",
+      location_name: "Fridge",
+    };
+    const receipt = {
+      content: [],
+      structuredContent: [
+        { kind: "ok", entry_id: 7, transaction_id: "tx-merged", changes: { price: { old: 1, new: 2 } }, entry: null },
+        { kind: "ok", entry_id: 8, transaction_id: "tx-current", entry },
+        { kind: "ok", entry: { ...entry, entry_id: 9 } },
+      ],
+      isError: false,
+    };
+    const args = { items: [7, 8, 9].map((entry_id) => ({ entry_id, price: 2 })) };
+    for (const view of [
+      await drawDetailsResult(action, receipt),
+      await mount(appActionRendering.renderActionCall(action, args, receipt)?.content),
+    ]) {
+      expect(view.textContent).toContain("Saved edit to stock entry #7");
+      expect(view.textContent).toContain("Price · 1 → 2");
+      expect(view.textContent).toContain("tx-merged");
+      expect(view.textContent).toContain("tx-current");
+      expect(Array.from(view.querySelectorAll("a"), (a) => a.pathname)).toEqual(["/stockentry/8", "/stockentry/9"]);
+    }
+  });
+
   it("shows each physical location for the same product with its own quantity and opened subset", async () => {
     const action = identity("grocy_sf", "stock_get");
     const args = { products: ["Kefir"], locations: ["Fridge", "Pantry"] };

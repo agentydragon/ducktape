@@ -423,6 +423,38 @@ async def test_stock_operations(mcp_client: Client, ref_data: RefData) -> None:
     assert float(entries[0]["entry"]["price"]) == 9.99
 
 
+async def test_edit_compacting_two_lots_reports_success(
+    mcp_client: Client, grocy_http_client: GrocyClient, ref_data: RefData
+) -> None:
+    product_id = ref_data.product_ids[0]
+    path = f"/stock/products/{product_id}"
+    for amount, price in [(2, 1), (3, 2)]:
+        purchase = await grocy_http_client.post(
+            f"{path}/add", json={"amount": amount, "price": price, "best_before_date": "2035-01-31"}
+        )
+        purchase.raise_for_status()
+    lots = await grocy_http_client.get(f"{path}/entries")
+    lots.raise_for_status()
+    edited_id, survivor = sorted(row["id"] for row in lots.json())
+
+    receipt = await call_tool(mcp_client, "stock_entry_edit", {"items": [{"entry_id": edited_id, "price": 2}]})
+
+    after = await grocy_http_client.get(f"{path}/entries")
+    after.raise_for_status()
+    assert [(row["id"], row["amount"], row["price"]) for row in after.json()] == [(survivor, 5, 2)]
+    [saved] = receipt
+    assert saved["kind"] == "ok", saved
+    assert saved["entry_id"] == edited_id
+    assert saved.get("entry") is None
+    assert saved["changes"] == {"price": {"old": 1, "new": 2}}
+    journal = await grocy_http_client.get(f"/stock/transactions/{saved['transaction_id']}")
+    journal.raise_for_status()
+    assert {(row["transaction_type"], row["stock_row_id"]) for row in journal.json()} == {
+        ("stock-edit-old", edited_id),
+        ("stock-edit-new", edited_id),
+    }
+
+
 async def test_editing_stock_price_preserves_purchase_store(
     mcp_client: Client, grocy_http_client: GrocyClient, ref_data: RefData
 ) -> None:

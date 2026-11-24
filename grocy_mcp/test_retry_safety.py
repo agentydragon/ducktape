@@ -116,6 +116,44 @@ async def test_stock_edit_lost_reply_reports_uncertain_outcome(mcp_client: tuple
     assert "may or may not have been applied" in receipt["error"]
 
 
+@pytest.mark.parametrize("unavailable", ["entry", "names"])
+async def test_saved_stock_edit_survives_unavailable_details(
+    mcp_client: tuple[Client, respx.Router], unavailable: str
+) -> None:
+    client, router = mcp_client
+    path = "/stock/entry/7"
+    current = {"id": 7, "product_id": 1, "amount": 2, "open": 0, "location_id": 1, "price": 1}
+    old = {
+        **current,
+        "price": 2,
+        "opened_date": None,
+        "best_before_date": None,
+        "purchased_date": None,
+        "shopping_location_id": None,
+        "note": None,
+        "transaction_id": "saved-edit",
+    }
+    # Another writer changed the price between our initial GET and the PUT.
+    journal = [dict(old, transaction_type="stock-edit-new", price=3), dict(old, transaction_type="stock-edit-old")]
+    write = router.put(path).respond(json=journal)
+    after = httpx.Response(503) if unavailable == "entry" else httpx.Response(200, json={**current, "price": 3})
+    router.get(path).mock(side_effect=[httpx.Response(200, json=current), after, after, after])
+    if unavailable == "names":
+        router.get("/objects/products").respond(status_code=503)
+
+    result = await client.call_tool("stock_entry_edit", {"items": [{"entry_id": 7, "price": 3}]})
+    [saved] = unwrap_result(result)
+    assert write.calls.call_count == 1
+    assert saved["kind"] == "ok", saved
+    assert saved["transaction_id"] == "saved-edit"
+    assert saved["changes"] == {"price": {"old": 2, "new": 3}}
+    if unavailable == "entry":
+        assert saved.get("entry") is None
+    else:
+        assert saved["entry"]["entry_id"] == 7
+        assert saved["entry"]["price"] == 3
+
+
 async def test_mutating_post_not_retried_on_timeout(mcp_client: tuple[Client, respx.Router]) -> None:
     """A timeout on a mutating POST must NOT re-send — a re-POST would double-apply it."""
     client, router = mcp_client

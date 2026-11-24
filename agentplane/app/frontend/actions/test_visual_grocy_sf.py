@@ -146,13 +146,22 @@ class TestActionPresentations(ActionPresentationCases):
         ActionExample(
             "grocy_sf",
             "stock_entry_edit",
-            {"items": [{"entry_id": 12, "amount": 2, "clear_fields": ["price"]}]},
+            {"items": [{"entry_id": 12, "amount": 2, "clear_fields": ["price"]}, {"entry_id": 14, "price": 2}]},
             [
                 {
                     "kind": "ok",
+                    "entry_id": 12,
+                    "transaction_id": "tx-kefir-count",
                     "entry": {**_KEFIR_ENTRY, "price": None},
                     "changes": {"amount": {"old": 3, "new": 2}, "price": {"old": 3.2, "new": None}},
-                }
+                },
+                {
+                    "kind": "ok",
+                    "entry_id": 14,
+                    "transaction_id": "tx-kefir-price",
+                    "entry": None,
+                    "changes": {"price": {"old": 1, "new": 2}},
+                },
             ],
             "Amount · 3 → 2",
         ),

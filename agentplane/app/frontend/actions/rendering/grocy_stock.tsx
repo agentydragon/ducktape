@@ -2,7 +2,7 @@ import { Stack } from "@mantine/core";
 import type { ReactNode } from "react";
 import { z } from "zod";
 
-import { definePreview } from "./entry";
+import { definePreview, defineReceiptPreview } from "./entry";
 import { batchError, batchOutcome, displayRef, grocyRequest, Line, objectLink, reference } from "./grocy_shared";
 import type { ActionPresentation } from "./presentation";
 import { defineResultPreview, type ResultPreview } from "./result_entry";
@@ -202,9 +202,11 @@ const entry = z.strictObject({
   note: z.string().nullish(),
 });
 const updatedField = z.strictObject({ old: z.unknown(), new: z.unknown() });
+const entryOk = z.strictObject({ kind: z.literal("ok"), entry, changes: z.record(z.string(), updatedField).nullish() });
 const entries = z.array(
-  z.discriminatedUnion("kind", [
-    z.strictObject({ kind: z.literal("ok"), entry, changes: z.record(z.string(), updatedField).nullish() }),
+  z.union([
+    entryOk,
+    entryOk.extend({ entry: entry.nullish(), entry_id: id, transaction_id: z.string() }),
     z.strictObject({ kind: z.literal("error"), error: z.string(), entry_id: id.nullish() }),
   ])
 );
@@ -223,7 +225,7 @@ function changedValue(value: unknown): ReactNode {
   return value == null ? "(none)" : typeof value === "string" ? value || "(empty text)" : JSON.stringify(value);
 }
 
-const entryResult = defineResultPreview(entries, ({ result }) => (
+const StockEntries = ({ result }: { result: z.infer<typeof entries> }) => (
   <Stack gap="xs">
     {result.length === 0 && <Line>No stock entries matched</Line>}
     {result.map((row, index) =>
@@ -233,22 +235,34 @@ const entryResult = defineResultPreview(entries, ({ result }) => (
         </Line>
       ) : (
         <Stack gap={2} key={index}>
-          <Line>
-            {objectLink("stockentry", row.entry.entry_id, row.entry.product_name)} · {row.entry.amount}{" "}
-            {row.entry.qu_name} in {row.entry.location_name}
-            {row.entry.open && " · Opened"}
-          </Line>
-          <Fields
-            values={[
-              [
-                "Best before",
-                row.entry.best_before_date === "2999-12-31" ? "Never expires" : row.entry.best_before_date,
-              ],
-              ["Purchased", row.entry.purchased_date],
-              ["Price per unit", row.entry.price],
-              ["Note", row.entry.note],
-            ]}
-          />
+          {"transaction_id" in row && (
+            <>
+              <Line>Saved edit to stock entry #{row.entry_id}</Line>
+              <Line>Transaction · {row.transaction_id}</Line>
+            </>
+          )}
+          {row.entry ? (
+            <>
+              <Line>
+                {objectLink("stockentry", row.entry.entry_id, row.entry.product_name)} · {row.entry.amount}{" "}
+                {row.entry.qu_name} in {row.entry.location_name}
+                {row.entry.open && " · Opened"}
+              </Line>
+              <Fields
+                values={[
+                  [
+                    "Best before",
+                    row.entry.best_before_date === "2999-12-31" ? "Never expires" : row.entry.best_before_date,
+                  ],
+                  ["Purchased", row.entry.purchased_date],
+                  ["Price per unit", row.entry.price],
+                  ["Note", row.entry.note],
+                ]}
+              />
+            </>
+          ) : (
+            <Line>Current lot unavailable</Line>
+          )}
           {Object.entries(row.changes ?? {}).map(([name, values]) => (
             <Line key={name}>
               {Object.hasOwn(fieldLabels, name) ? fieldLabels[name] : name.replaceAll("_", " ")} ·{" "}
@@ -259,7 +273,9 @@ const entryResult = defineResultPreview(entries, ({ result }) => (
       )
     )}
   </Stack>
-));
+);
+
+const entryResult = defineResultPreview(entries, StockEntries);
 
 const productStock = defineResultPreview(
   z.object({
@@ -636,6 +652,7 @@ export const grocyStockRenderers: ReadonlyMap<string, ActionPresentation> = new 
           />
         )
       ),
+      call: defineReceiptPreview(editArgs, entries, StockEntries),
       outcome: unknownStockOutcome,
     },
   ],
