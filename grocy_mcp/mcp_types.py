@@ -140,7 +140,7 @@ class GetResultBase(BaseModel):
 class ShoppingItemNames(BaseModel):
     product_name: str | None = None
     list_name: str | None = None
-    unit_name: str | None = None
+    unit_name: str | None = Field(default=None, description="Product stock unit for the raw shopping-list amount.")
 
 
 class GetOk(GetResultBase):

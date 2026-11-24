@@ -655,7 +655,7 @@ async def test_stock_add_applies_default_best_before_days(mcp_client: Client, re
     assert await _latest_bbd() == override.isoformat()
 
 
-async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData) -> None:
+async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData, grocy_base_url: str) -> None:
     """Add items (product-linked, note-only, product+note), get list, edit item, remove item."""
     product = ref_data.products[0]
 
@@ -681,6 +681,27 @@ async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData) -
     assert all(r["kind"] == "ok" for r in sl_results)
     sl_item_id = sl_results[0]["item_id"]
 
+    # Choose a shopping unit that contains six stock units, as a user can in Grocy.
+    cases = await call_tool(
+        mcp_client, "quantity_units_create", {"items": [{"name": f"Case-{ref_data.suffix}", "name_plural": "cases"}]}
+    )
+    case_id = cases[0]["created_object_id"]
+    async with httpx.AsyncClient(base_url=f"{grocy_base_url}/api") as http:
+        product_row = await http.get(f"/objects/products/{ref_data.product_ids[0]}")
+        product_row.raise_for_status()
+        conversion = await http.post(
+            "/objects/quantity_unit_conversions",
+            json={
+                "product_id": ref_data.product_ids[0],
+                "from_qu_id": case_id,
+                "to_qu_id": product_row.json()["qu_id_stock"],
+                "factor": 6,
+            },
+        )
+        conversion.raise_for_status()
+        updated = await http.put(f"/objects/shopping_list/{sl_item_id}", json={"qu_id": case_id, "amount": 12})
+        updated.raise_for_status()
+
     # Get shopping list — verify items present
     sl_data = await call_tool(mcp_client, "shopping_list_get", {"shopping_list": 1})
     assert "items" in sl_data
@@ -695,7 +716,11 @@ async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData) -
     assert exact[0]["entity_type"] == "shopping_list"
     assert exact[0]["object_id"] == sl_item_id
     assert int(exact[0]["data"]["id"]) == sl_item_id
-    assert float(exact[0]["data"]["amount"]) == 2
+    assert int(exact[0]["data"]["qu_id"]) == case_id
+    assert float(exact[0]["data"]["amount"]) == 12
+    assert exact[0]["shopping_item_names"]["unit_name"] == ref_data.qu
+    listed = next(item for item in our_items if item["item_id"] == sl_item_id)
+    assert (listed["amount"], listed["qu_name"]) == (12, ref_data.qu)
     assert exact[0]["shopping_item_names"]["product_name"] == product
     assert exact[0]["shopping_item_names"]["list_name"] == sl_data["name"]
 

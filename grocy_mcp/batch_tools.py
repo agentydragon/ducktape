@@ -417,25 +417,25 @@ def register_batch_tools(
         results also include available names for the linked product, list and unit.
         """
 
-        async def _linked_name(kind: EntityType, raw_id: object) -> str | None:
+        async def _linked_row(kind: EntityType, raw_id: object) -> dict[str, Any]:
             if not isinstance(raw_id, (int, str)) or isinstance(raw_id, bool):
-                return None
+                return {}
             try:
                 object_id = int(raw_id)
-                if object_id <= 0:
-                    return None
-                async with sem:
-                    response = await client.get(f"/objects/{kind}/{object_id}")
-                    response.raise_for_status()
-                row = response.json()
-                if isinstance(row, dict) and str(row.get("id")) == str(object_id):
-                    name = row.get("name")
-                    if isinstance(name, str) and name.strip():
-                        return name
+                if object_id > 0:
+                    async with sem:
+                        response = await client.get(f"/objects/{kind}/{object_id}")
+                        response.raise_for_status()
+                    row = response.json()
+                    if isinstance(row, dict) and str(row.get("id")) == str(object_id):
+                        return row
             except httpx2.HTTPError, ValueError:
-                # Linked names are optional. Keep the shopping row.
-                return None
-            return None
+                pass  # Linked names are optional. Keep the shopping row.
+            return {}
+
+        def _name(row: dict[str, Any]) -> str | None:
+            name = row.get("name")
+            return name if isinstance(name, str) and name.strip() else None
 
         async def _fetch(object_id: int) -> GetOk:
             async def _do() -> dict[str, Any]:
@@ -447,12 +447,15 @@ def register_batch_tools(
             data = await _retry(_do)
             names = None
             if entity_type == "shopping_list":
-                product, shopping_list, unit = await asyncio.gather(
-                    _linked_name(EntityType.PRODUCT, data.get("product_id")),
-                    _linked_name(EntityType.SHOPPING_LIST, data.get("shopping_list_id")),
-                    _linked_name(EntityType.QUANTITY_UNIT, data.get("qu_id")),
+                product, shopping_list = await asyncio.gather(
+                    _linked_row(EntityType.PRODUCT, data.get("product_id")),
+                    _linked_row(EntityType.SHOPPING_LIST, data.get("shopping_list_id")),
                 )
-                names = ShoppingItemNames(product_name=product, list_name=shopping_list, unit_name=unit)
+                # Grocy stores amount in stock units. The row's qu_id only selects its display unit.
+                unit = await _linked_row(EntityType.QUANTITY_UNIT, product.get("qu_id_stock"))
+                names = ShoppingItemNames(
+                    product_name=_name(product), list_name=_name(shopping_list), unit_name=_name(unit)
+                )
             return GetOk(entity_type=entity_type, object_id=object_id, data=data, shopping_item_names=names)
 
         return await _ordered_batch(
