@@ -1984,6 +1984,408 @@
       "values": {
         "$recorded_ref": "value_192"
       }
+    },
+    "value_194": {
+      "type": "numeric-multi",
+      "typeVersion": [0, 1],
+      "custom": {
+        "resultType": "vector",
+        "calculatedMinStep": 60000
+      }
+    },
+    "value_197": {
+      "namespace": "namespace-f",
+      "job": "cluster-f/postgres",
+      "datname": "database-a",
+      "schemaname": "schema-b",
+      "relname": "table-i"
+    },
+    "value_196": {
+      "name": "Value",
+      "type": "number",
+      "typeInfo": {
+        "frame": "float64"
+      },
+      "labels": {
+        "$recorded_ref": "value_197"
+      },
+      "config": {
+        "displayNameFromDS": "cluster-f/postgres database-a.schema-b.table-i"
+      }
+    },
+    "value_195": [
+      {
+        "name": "Time",
+        "type": "time",
+        "typeInfo": {
+          "frame": "time.Time"
+        },
+        "config": {
+          "interval": 60000
+        }
+      },
+      {
+        "$recorded_ref": "value_196"
+      }
+    ],
+    "value_200": {
+      "namespace": "namespace-f",
+      "job": "cluster-f/postgres",
+      "datname": "database-a",
+      "schemaname": "schema-b",
+      "relname": "table-d"
+    },
+    "value_199": {
+      "name": "Value",
+      "type": "number",
+      "typeInfo": {
+        "frame": "float64"
+      },
+      "labels": {
+        "$recorded_ref": "value_200"
+      },
+      "config": {
+        "displayNameFromDS": "cluster-f/postgres database-a.schema-b.table-d"
+      }
+    },
+    "value_198": [
+      {
+        "name": "Time",
+        "type": "time",
+        "typeInfo": {
+          "frame": "time.Time"
+        },
+        "config": {
+          "interval": 60000
+        }
+      },
+      {
+        "$recorded_ref": "value_199"
+      }
+    ],
+    "value_203": {
+      "namespace": "namespace-c",
+      "job": "cluster-c/postgres",
+      "datname": "database-e",
+      "schemaname": "schema-b",
+      "relname": "table-e"
+    },
+    "value_202": {
+      "name": "Value",
+      "type": "number",
+      "typeInfo": {
+        "frame": "float64"
+      },
+      "labels": {
+        "$recorded_ref": "value_203"
+      },
+      "config": {
+        "displayNameFromDS": "cluster-c/postgres database-e.schema-b.table-e"
+      }
+    },
+    "value_201": [
+      {
+        "name": "Time",
+        "type": "time",
+        "typeInfo": {
+          "frame": "time.Time"
+        },
+        "config": {
+          "interval": 60000
+        }
+      },
+      {
+        "$recorded_ref": "value_202"
+      }
+    ],
+    "value_206": {
+      "namespace": "namespace-a",
+      "job": "cluster-a/postgres",
+      "datname": "database-g",
+      "schemaname": "schema-b",
+      "relname": "table-l"
+    },
+    "value_205": {
+      "name": "Value",
+      "type": "number",
+      "typeInfo": {
+        "frame": "float64"
+      },
+      "labels": {
+        "$recorded_ref": "value_206"
+      },
+      "config": {
+        "displayNameFromDS": "cluster-a/postgres database-g.schema-b.table-l"
+      }
+    },
+    "value_204": [
+      {
+        "name": "Time",
+        "type": "time",
+        "typeInfo": {
+          "frame": "time.Time"
+        },
+        "config": {
+          "interval": 60000
+        }
+      },
+      {
+        "$recorded_ref": "value_205"
+      }
+    ],
+    "value_209": {
+      "namespace": "namespace-a",
+      "job": "cluster-a/postgres",
+      "datname": "database-d",
+      "schemaname": "schema-b",
+      "relname": "table-j"
+    },
+    "value_208": {
+      "name": "Value",
+      "type": "number",
+      "typeInfo": {
+        "frame": "float64"
+      },
+      "labels": {
+        "$recorded_ref": "value_209"
+      },
+      "config": {
+        "displayNameFromDS": "cluster-a/postgres database-d.schema-b.table-j"
+      }
+    },
+    "value_207": [
+      {
+        "name": "Time",
+        "type": "time",
+        "typeInfo": {
+          "frame": "time.Time"
+        },
+        "config": {
+          "interval": 60000
+        }
+      },
+      {
+        "$recorded_ref": "value_208"
+      }
+    ],
+    "value_212": {
+      "namespace": "namespace-a",
+      "job": "cluster-a/postgres",
+      "datname": "database-f",
+      "schemaname": "schema-b",
+      "relname": "table-g"
+    },
+    "value_211": {
+      "name": "Value",
+      "type": "number",
+      "typeInfo": {
+        "frame": "float64"
+      },
+      "labels": {
+        "$recorded_ref": "value_212"
+      },
+      "config": {
+        "displayNameFromDS": "cluster-a/postgres database-f.schema-b.table-g"
+      }
+    },
+    "value_210": [
+      {
+        "name": "Time",
+        "type": "time",
+        "typeInfo": {
+          "frame": "time.Time"
+        },
+        "config": {
+          "interval": 60000
+        }
+      },
+      {
+        "$recorded_ref": "value_211"
+      }
+    ],
+    "value_215": {
+      "namespace": "namespace-f",
+      "job": "cluster-f/postgres",
+      "datname": "database-a",
+      "schemaname": "schema-b",
+      "relname": "table-f"
+    },
+    "value_214": {
+      "name": "Value",
+      "type": "number",
+      "typeInfo": {
+        "frame": "float64"
+      },
+      "labels": {
+        "$recorded_ref": "value_215"
+      },
+      "config": {
+        "displayNameFromDS": "cluster-f/postgres database-a.schema-b.table-f"
+      }
+    },
+    "value_213": [
+      {
+        "name": "Time",
+        "type": "time",
+        "typeInfo": {
+          "frame": "time.Time"
+        },
+        "config": {
+          "interval": 60000
+        }
+      },
+      {
+        "$recorded_ref": "value_214"
+      }
+    ],
+    "value_218": {
+      "namespace": "namespace-d",
+      "job": "cluster-d/postgres",
+      "datname": "database-b",
+      "schemaname": "schema-b",
+      "relname": "table-c"
+    },
+    "value_217": {
+      "name": "Value",
+      "type": "number",
+      "typeInfo": {
+        "frame": "float64"
+      },
+      "labels": {
+        "$recorded_ref": "value_218"
+      },
+      "config": {
+        "displayNameFromDS": "cluster-d/postgres database-b.schema-b.table-c"
+      }
+    },
+    "value_216": [
+      {
+        "name": "Time",
+        "type": "time",
+        "typeInfo": {
+          "frame": "time.Time"
+        },
+        "config": {
+          "interval": 60000
+        }
+      },
+      {
+        "$recorded_ref": "value_217"
+      }
+    ],
+    "value_221": {
+      "namespace": "namespace-e",
+      "job": "cluster-e/postgres",
+      "datname": "database-h",
+      "schemaname": "schema-b",
+      "relname": "table-h"
+    },
+    "value_220": {
+      "name": "Value",
+      "type": "number",
+      "typeInfo": {
+        "frame": "float64"
+      },
+      "labels": {
+        "$recorded_ref": "value_221"
+      },
+      "config": {
+        "displayNameFromDS": "cluster-e/postgres database-h.schema-b.table-h"
+      }
+    },
+    "value_219": [
+      {
+        "name": "Time",
+        "type": "time",
+        "typeInfo": {
+          "frame": "time.Time"
+        },
+        "config": {
+          "interval": 60000
+        }
+      },
+      {
+        "$recorded_ref": "value_220"
+      }
+    ],
+    "value_224": {
+      "namespace": "namespace-b",
+      "job": "cluster-b/postgres",
+      "datname": "database-c",
+      "schemaname": "schema-a",
+      "relname": "table-a"
+    },
+    "value_223": {
+      "name": "Value",
+      "type": "number",
+      "typeInfo": {
+        "frame": "float64"
+      },
+      "labels": {
+        "$recorded_ref": "value_224"
+      },
+      "config": {
+        "displayNameFromDS": "cluster-b/postgres database-c.schema-a.table-a"
+      }
+    },
+    "value_222": [
+      {
+        "name": "Time",
+        "type": "time",
+        "typeInfo": {
+          "frame": "time.Time"
+        },
+        "config": {
+          "interval": 60000
+        }
+      },
+      {
+        "$recorded_ref": "value_223"
+      }
+    ],
+    "value_226": {
+      "type": "timeseries-multi",
+      "typeVersion": [0, 1],
+      "custom": {
+        "resultType": "matrix",
+        "calculatedMinStep": 60000
+      }
+    },
+    "value_225": {
+      "refId": "A",
+      "meta": {
+        "$recorded_ref": "value_226"
+      },
+      "fields": {
+        "$recorded_ref": "value_198"
+      }
+    },
+    "value_227": {
+      "refId": "A",
+      "meta": {
+        "$recorded_ref": "value_226"
+      },
+      "fields": {
+        "$recorded_ref": "value_195"
+      }
+    },
+    "value_228": {
+      "refId": "A",
+      "meta": {
+        "$recorded_ref": "value_226"
+      },
+      "fields": {
+        "$recorded_ref": "value_207"
+      }
+    },
+    "value_229": {
+      "refId": "A",
+      "meta": {
+        "$recorded_ref": "value_226"
+      },
+      "fields": {
+        "$recorded_ref": "value_204"
+      }
     }
   },
   "fixture": {
@@ -7754,13 +8156,640 @@
             }
           ]
         }
+      },
+      "18": {
+        "A": {
+          "frames": [
+            {
+              "schema": {
+                "refId": "A",
+                "meta": {
+                  "$recorded_ref": "value_194"
+                },
+                "fields": {
+                  "$recorded_ref": "value_195"
+                }
+              },
+              "data": {
+                "values": [[1738411200000], [47308201984.0]]
+              }
+            },
+            {
+              "schema": {
+                "refId": "A",
+                "meta": {
+                  "$recorded_ref": "value_194"
+                },
+                "fields": {
+                  "$recorded_ref": "value_198"
+                }
+              },
+              "data": {
+                "values": [[1738411200000], [20030144512.0]]
+              }
+            },
+            {
+              "schema": {
+                "refId": "A",
+                "meta": {
+                  "$recorded_ref": "value_194"
+                },
+                "fields": {
+                  "$recorded_ref": "value_201"
+                }
+              },
+              "data": {
+                "values": [[1738411200000], [11860049920.0]]
+              }
+            },
+            {
+              "schema": {
+                "refId": "A",
+                "meta": {
+                  "$recorded_ref": "value_194"
+                },
+                "fields": {
+                  "$recorded_ref": "value_204"
+                }
+              },
+              "data": {
+                "values": [[1738411200000], [7511793664.0]]
+              }
+            },
+            {
+              "schema": {
+                "refId": "A",
+                "meta": {
+                  "$recorded_ref": "value_194"
+                },
+                "fields": {
+                  "$recorded_ref": "value_207"
+                }
+              },
+              "data": {
+                "values": [[1738411200000], [5352374272.0]]
+              }
+            },
+            {
+              "schema": {
+                "refId": "A",
+                "meta": {
+                  "$recorded_ref": "value_194"
+                },
+                "fields": {
+                  "$recorded_ref": "value_210"
+                }
+              },
+              "data": {
+                "values": [[1738411200000], [4672774144.0]]
+              }
+            },
+            {
+              "schema": {
+                "refId": "A",
+                "meta": {
+                  "$recorded_ref": "value_194"
+                },
+                "fields": {
+                  "$recorded_ref": "value_213"
+                }
+              },
+              "data": {
+                "values": [[1738411200000], [3844423680.0]]
+              }
+            },
+            {
+              "schema": {
+                "refId": "A",
+                "meta": {
+                  "$recorded_ref": "value_194"
+                },
+                "fields": {
+                  "$recorded_ref": "value_216"
+                }
+              },
+              "data": {
+                "values": [[1738411200000], [3724517376.0]]
+              }
+            },
+            {
+              "schema": {
+                "refId": "A",
+                "meta": {
+                  "$recorded_ref": "value_194"
+                },
+                "fields": {
+                  "$recorded_ref": "value_219"
+                }
+              },
+              "data": {
+                "values": [[1738411200000], [2749005824.0]]
+              }
+            },
+            {
+              "schema": {
+                "refId": "A",
+                "meta": {
+                  "$recorded_ref": "value_194"
+                },
+                "fields": {
+                  "$recorded_ref": "value_222"
+                }
+              },
+              "data": {
+                "values": [[1738411200000], [2466004992.0]]
+              }
+            }
+          ]
+        }
+      },
+      "19": {
+        "A": {
+          "frames": [
+            {
+              "schema": {
+                "$recorded_ref": "value_225"
+              },
+              "data": {
+                "values": [
+                  [1738410900000, 1738410960000, 1738411020000, 1738411080000, 1738411140000, 1738411200000],
+                  [20028276736.0, 20028276736.0, 20030144512.0, 20030144512.0, 20030144512.0, 20030144512.0]
+                ]
+              }
+            },
+            {
+              "schema": {
+                "refId": "A",
+                "meta": {
+                  "$recorded_ref": "value_226"
+                },
+                "fields": {
+                  "$recorded_ref": "value_213"
+                }
+              },
+              "data": {
+                "values": [
+                  [1738410900000, 1738410960000, 1738411020000, 1738411080000, 1738411140000, 1738411200000],
+                  [3844366336.0, 3844366336.0, 3844366336.0, 3844423680.0, 3844423680.0, 3844423680.0]
+                ]
+              }
+            },
+            {
+              "schema": {
+                "$recorded_ref": "value_227"
+              },
+              "data": {
+                "values": [
+                  [1738410900000, 1738410960000, 1738411020000, 1738411080000, 1738411140000, 1738411200000],
+                  [47307513856.0, 47307513856.0, 47307513856.0, 47308201984.0, 47308201984.0, 47308201984.0]
+                ]
+              }
+            },
+            {
+              "schema": {
+                "refId": "A",
+                "meta": {
+                  "$recorded_ref": "value_226"
+                },
+                "fields": {
+                  "$recorded_ref": "value_216"
+                }
+              },
+              "data": {
+                "values": [
+                  [1738410900000, 1738410960000, 1738411020000, 1738411080000, 1738411140000, 1738411200000],
+                  [3724517376.0, 3724517376.0, 3724517376.0, 3724517376.0, 3724517376.0, 3724517376.0]
+                ]
+              }
+            },
+            {
+              "schema": {
+                "refId": "A",
+                "meta": {
+                  "$recorded_ref": "value_226"
+                },
+                "fields": {
+                  "$recorded_ref": "value_222"
+                }
+              },
+              "data": {
+                "values": [
+                  [1738410900000, 1738410960000, 1738411020000, 1738411080000, 1738411140000, 1738411200000],
+                  [2466004992.0, 2466004992.0, 2466004992.0, 2466004992.0, 2466004992.0, 2466004992.0]
+                ]
+              }
+            },
+            {
+              "schema": {
+                "$recorded_ref": "value_228"
+              },
+              "data": {
+                "values": [
+                  [1738410900000, 1738410960000, 1738411020000, 1738411080000, 1738411140000, 1738411200000],
+                  [5318713344.0, 5322964992.0, 5327716352.0, 5333245952.0, 5342052352.0, 5352374272.0]
+                ]
+              }
+            },
+            {
+              "schema": {
+                "refId": "A",
+                "meta": {
+                  "$recorded_ref": "value_226"
+                },
+                "fields": {
+                  "$recorded_ref": "value_201"
+                }
+              },
+              "data": {
+                "values": [
+                  [1738410900000, 1738410960000, 1738411020000, 1738411080000, 1738411140000, 1738411200000],
+                  [11860049920.0, 11860049920.0, 11860049920.0, 11860049920.0, 11860049920.0, 11860049920.0]
+                ]
+              }
+            },
+            {
+              "schema": {
+                "refId": "A",
+                "meta": {
+                  "$recorded_ref": "value_226"
+                },
+                "fields": {
+                  "$recorded_ref": "value_210"
+                }
+              },
+              "data": {
+                "values": [
+                  [1738410900000, 1738410960000, 1738411020000, 1738411080000, 1738411140000, 1738411200000],
+                  [4672757760.0, 4672757760.0, 4672757760.0, 4672757760.0, 4672765952.0, 4672774144.0]
+                ]
+              }
+            },
+            {
+              "schema": {
+                "$recorded_ref": "value_229"
+              },
+              "data": {
+                "values": [
+                  [1738410900000, 1738410960000, 1738411020000, 1738411080000, 1738411140000, 1738411200000],
+                  [7471202304.0, 7476502528.0, 7481999360.0, 7488552960.0, 7499776000.0, 7511793664.0]
+                ]
+              }
+            },
+            {
+              "schema": {
+                "refId": "A",
+                "meta": {
+                  "$recorded_ref": "value_226"
+                },
+                "fields": {
+                  "$recorded_ref": "value_219"
+                }
+              },
+              "data": {
+                "values": [
+                  [1738410900000, 1738410960000, 1738411020000, 1738411080000, 1738411140000, 1738411200000],
+                  [2749005824.0, 2749005824.0, 2749005824.0, 2749005824.0, 2749005824.0, 2749005824.0]
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "20": {
+        "A": {
+          "frames": [
+            {
+              "schema": {
+                "$recorded_ref": "value_225"
+              },
+              "data": {
+                "values": [
+                  [1738410960000, 1738411020000, 1738411080000, 1738411140000, 1738411200000],
+                  [0.0, 2490368.0, 2282837.3333333335, 2179072.0, 2116812.8]
+                ]
+              }
+            },
+            {
+              "schema": {
+                "$recorded_ref": "value_227"
+              },
+              "data": {
+                "values": [
+                  [1738410960000, 1738411020000, 1738411080000, 1738411140000, 1738411200000],
+                  [0.0, 0.0, 841045.3333333334, 802816.0, 779878.4]
+                ]
+              }
+            },
+            {
+              "schema": {
+                "refId": "A",
+                "meta": {
+                  "$recorded_ref": "value_226"
+                },
+                "fields": [
+                  {
+                    "name": "Time",
+                    "type": "time",
+                    "typeInfo": {
+                      "frame": "time.Time"
+                    },
+                    "config": {
+                      "interval": 60000
+                    }
+                  },
+                  {
+                    "name": "Value",
+                    "type": "number",
+                    "typeInfo": {
+                      "frame": "float64"
+                    },
+                    "labels": {
+                      "namespace": "namespace-b",
+                      "job": "cluster-b/postgres",
+                      "datname": "database-c",
+                      "schemaname": "schema-a",
+                      "relname": "table-b"
+                    },
+                    "config": {
+                      "displayNameFromDS": "cluster-b/postgres database-c.schema-a.table-b"
+                    }
+                  }
+                ]
+              },
+              "data": {
+                "values": [
+                  [1738410960000, 1738411020000, 1738411080000, 1738411140000, 1738411200000],
+                  [245760.0, 513365.3333333333, 570709.3333333334, 1204224.0, 1634030.9333333333]
+                ]
+              }
+            },
+            {
+              "schema": {
+                "$recorded_ref": "value_228"
+              },
+              "data": {
+                "values": [
+                  [1738410960000, 1738411020000, 1738411080000, 1738411140000, 1738411200000],
+                  [7086080.0, 12004010.666666666, 17762076.444444444, 27228842.666666668, 38149051.733333334]
+                ]
+              }
+            },
+            {
+              "schema": {
+                "refId": "A",
+                "meta": {
+                  "$recorded_ref": "value_226"
+                },
+                "fields": [
+                  {
+                    "name": "Time",
+                    "type": "time",
+                    "typeInfo": {
+                      "frame": "time.Time"
+                    },
+                    "config": {
+                      "interval": 60000
+                    }
+                  },
+                  {
+                    "name": "Value",
+                    "type": "number",
+                    "typeInfo": {
+                      "frame": "float64"
+                    },
+                    "labels": {
+                      "namespace": "namespace-a",
+                      "job": "cluster-a/postgres",
+                      "datname": "database-d",
+                      "schemaname": "schema-b",
+                      "relname": "table-k"
+                    },
+                    "config": {
+                      "displayNameFromDS": "cluster-a/postgres database-d.schema-b.table-k"
+                    }
+                  }
+                ]
+              },
+              "data": {
+                "values": [
+                  [1738410960000, 1738411020000, 1738411080000, 1738411140000, 1738411200000],
+                  [669013.3333333334, 1026730.6666666666, 1571953.777777778, 2427562.666666667, 3444462.933333333]
+                ]
+              }
+            },
+            {
+              "schema": {
+                "$recorded_ref": "value_229"
+              },
+              "data": {
+                "values": [
+                  [1738410960000, 1738411020000, 1738411080000, 1738411140000, 1738411200000],
+                  [8833706.666666668, 14396074.666666666, 21206357.333333336, 33335978.666666668, 46003541.333333336]
+                ]
+              }
+            },
+            {
+              "schema": {
+                "refId": "A",
+                "meta": {
+                  "$recorded_ref": "value_226"
+                },
+                "fields": [
+                  {
+                    "name": "Time",
+                    "type": "time",
+                    "typeInfo": {
+                      "frame": "time.Time"
+                    },
+                    "config": {
+                      "interval": 60000
+                    }
+                  },
+                  {
+                    "name": "Value",
+                    "type": "number",
+                    "typeInfo": {
+                      "frame": "float64"
+                    },
+                    "labels": {
+                      "namespace": "namespace-a",
+                      "job": "cluster-a/postgres",
+                      "datname": "database-g",
+                      "schemaname": "schema-b",
+                      "relname": "table-m"
+                    },
+                    "config": {
+                      "displayNameFromDS": "cluster-a/postgres database-g.schema-b.table-m"
+                    }
+                  }
+                ]
+              },
+              "data": {
+                "values": [
+                  [1738410960000, 1738411020000, 1738411080000, 1738411140000, 1738411200000],
+                  [314026.6666666667, 502442.6666666666, 730908.4444444445, 1060864.0, 1494766.9333333333]
+                ]
+              }
+            },
+            {
+              "schema": {
+                "refId": "A",
+                "meta": {
+                  "$recorded_ref": "value_226"
+                },
+                "fields": [
+                  {
+                    "name": "Time",
+                    "type": "time",
+                    "typeInfo": {
+                      "frame": "time.Time"
+                    },
+                    "config": {
+                      "interval": 60000
+                    }
+                  },
+                  {
+                    "name": "Value",
+                    "type": "number",
+                    "typeInfo": {
+                      "frame": "float64"
+                    },
+                    "labels": {
+                      "namespace": "namespace-a",
+                      "job": "cluster-a/postgres",
+                      "datname": "database-g",
+                      "schemaname": "schema-b",
+                      "relname": "table-n"
+                    },
+                    "config": {
+                      "displayNameFromDS": "cluster-a/postgres database-g.schema-b.table-n"
+                    }
+                  }
+                ]
+              },
+              "data": {
+                "values": [
+                  [1738410960000, 1738411020000, 1738411080000, 1738411140000, 1738411200000],
+                  [273066.6666666667, 469674.6666666666, 630784.0, 850602.6666666667, 1104827.7333333334]
+                ]
+              }
+            },
+            {
+              "schema": {
+                "refId": "A",
+                "meta": {
+                  "$recorded_ref": "value_226"
+                },
+                "fields": [
+                  {
+                    "name": "Time",
+                    "type": "time",
+                    "typeInfo": {
+                      "frame": "time.Time"
+                    },
+                    "config": {
+                      "interval": 60000
+                    }
+                  },
+                  {
+                    "name": "Value",
+                    "type": "number",
+                    "typeInfo": {
+                      "frame": "float64"
+                    },
+                    "labels": {
+                      "namespace": "namespace-a",
+                      "job": "cluster-a/postgres",
+                      "datname": "database-g",
+                      "schemaname": "schema-b",
+                      "relname": "table-o"
+                    },
+                    "config": {
+                      "displayNameFromDS": "cluster-a/postgres database-g.schema-b.table-o"
+                    }
+                  }
+                ]
+              },
+              "data": {
+                "values": [
+                  [1738410960000, 1738411020000, 1738411080000, 1738411140000, 1738411200000],
+                  [696320.0, 1168725.3333333333, 1612003.5555555557, 1940138.6666666667, 2200371.1999999997]
+                ]
+              }
+            },
+            {
+              "schema": {
+                "refId": "A",
+                "meta": {
+                  "$recorded_ref": "value_226"
+                },
+                "fields": [
+                  {
+                    "name": "Time",
+                    "type": "time",
+                    "typeInfo": {
+                      "frame": "time.Time"
+                    },
+                    "config": {
+                      "interval": 60000
+                    }
+                  },
+                  {
+                    "name": "Value",
+                    "type": "number",
+                    "typeInfo": {
+                      "frame": "float64"
+                    },
+                    "labels": {
+                      "namespace": "namespace-a",
+                      "job": "cluster-a/postgres",
+                      "datname": "database-g",
+                      "schemaname": "schema-b",
+                      "relname": "table-p"
+                    },
+                    "config": {
+                      "displayNameFromDS": "cluster-a/postgres database-g.schema-b.table-p"
+                    }
+                  }
+                ]
+              },
+              "data": {
+                "values": [
+                  [1738410960000, 1738411020000, 1738411080000, 1738411140000, 1738411200000],
+                  [382293.3333333334, 567978.6666666666, 760945.7777777779, 1041749.3333333334, 1448345.5999999999]
+                ]
+              }
+            }
+          ]
+        }
       }
     },
     "variables": {
-      "node": ["node-a", "node-b", "node-c", "node-d", "node-e", "node-f", "node-g"]
+      "node": ["node-a", "node-b", "node-c", "node-d", "node-e", "node-f", "node-g"],
+      "pg_namespace": ["namespace-a", "namespace-b", "namespace-c", "namespace-d", "namespace-e", "namespace-f"],
+      "pg_job": [
+        "cluster-a/postgres",
+        "cluster-b/postgres",
+        "cluster-c/postgres",
+        "cluster-d/postgres",
+        "cluster-e/postgres",
+        "cluster-f/postgres"
+      ],
+      "pg_database": [
+        "database-a",
+        "database-b",
+        "database-c",
+        "database-d",
+        "database-e",
+        "database-f",
+        "database-g",
+        "database-h"
+      ],
+      "pg_schema": ["schema-a", "schema-b"]
     },
     "capture_notes": {
-      "time_range": "Captured from one historical 24-hour window with All selected; identifying labels anonymized."
+      "time_range": "Captured from one historical 24-hour window with All selected; identifying labels anonymized.",
+      "cnpg_table_metrics": "CNPG table-size and positive-growth results captured over five minutes shortly after collection was enabled. Namespace, job, database, schema, and table labels were anonymized. The measured sample spacing and byte magnitudes were retained, and timestamps were shifted to the deterministic fixture clock. The rolling one-hour gauge delta uses the available samples until a full hour of history accumulates."
     }
   }
 }
