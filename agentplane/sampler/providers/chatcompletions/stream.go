@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -292,7 +293,10 @@ func (s *stream) finish(ctx context.Context, evidence protocol.EvidenceSink) (*R
 			return nil, malformed("finish reason does not match tool calls")
 		}
 	default:
-		return nil, &protocol.KnownFailureError{Evidence: map[string]any{"finish_reason": s.audit.FinishReason}}
+		return nil, &protocol.KnownFailureError{
+			Message:  fmt.Sprintf("Chat Completions returned an unsupported finish_reason: %q", s.audit.FinishReason),
+			Evidence: map[string]any{"finish_reason": s.audit.FinishReason},
+		}
 	}
 	if _, _, err := inspect([]message{m}); err != nil {
 		// The model may have reached its limit inside a tool argument even when

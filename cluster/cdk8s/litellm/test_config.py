@@ -5,6 +5,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+import litellm
 import pytest
 import pytest_bazel
 from cdk8s import App, Chart
@@ -16,6 +17,7 @@ from litellm.litellm_core_utils.litellm_logging import (
     create_dummy_standard_logging_payload,
 )
 from litellm.proxy.litellm_pre_call_utils import LiteLLMProxyRequestSetup
+from litellm.types.llms.openai import AllMessageValues
 
 from cluster.cdk8s.litellm.config import main_proxy_config, model_entry
 from cluster.cdk8s.litellm.proxy import LiteLLMProxy
@@ -70,7 +72,7 @@ def test_rugged_routes_register_and_inject_the_bearer_key(deployment_env: dict[s
 def test_stock_qwen_routes_to_tabbyapi() -> None:
     entries = {entry["model_name"]: entry for entry in main_proxy_config()["model_list"]}
     params = entries[TABBYAPI_QWEN_STOCK.id]["litellm_params"]
-    assert params["model"] == "hosted_vllm/qwen38-exl3-268"
+    assert params["model"] == "openai/qwen38-exl3-268"
     assert params["api_base"] == "http://tabbyapi-model-switching.ollama.svc:5000/v1"
     assert params["allowed_openai_params"] == ["reasoning_effort"]
     assert params["use_chat_completions_api"] is True
@@ -82,12 +84,37 @@ def test_abliterated_qwen_routes_to_its_own_checkpoint() -> None:
     ]
     assert entry["model_info"] == {"mode": "chat", "supports_function_calling": True}
     assert entry["litellm_params"] == {
-        "model": "hosted_vllm/qwen38-exl3-250-abliterated",
+        "model": "openai/qwen38-exl3-250-abliterated",
         "api_base": "http://tabbyapi-model-switching.ollama.svc:5000/v1",
         "api_key": "tabbyapi",
         "allowed_openai_params": ["reasoning_effort"],
         "use_chat_completions_api": True,
     }
+
+
+def test_tabby_chat_adapter_preserves_message_history() -> None:
+    params = model_entry(TABBYAPI_QWEN_STOCK)["litellm_params"]
+    model, provider, *_ = litellm.get_llm_provider(model=params["model"])
+    config = litellm.ProviderConfigManager.get_provider_chat_config(
+        model=model, provider=litellm.LlmProviders(provider)
+    )
+    assert config is not None
+    messages: list[AllMessageValues] = [
+        {"role": "user", "content": "Check readiness."},
+        {"role": "assistant", "content": "Ready.", "reasoning_content": "replay marker"},
+        {"role": "system", "content": "The environment changed."},
+        {"role": "user", "content": "Check again."},
+    ]
+    request = config.transform_request(
+        model,
+        messages,
+        {"reasoning_effort": "medium"},
+        {"api_base": params["api_base"], "custom_llm_provider": provider},
+        {},
+    )
+    assert [m["role"] for m in request["messages"]] == ["user", "assistant", "system", "user"]
+    assert request["messages"][1]["reasoning_content"] == "replay marker"
+    assert request["reasoning_effort"] == "medium"
 
 
 def test_route_timeouts_are_projected_independently() -> None:

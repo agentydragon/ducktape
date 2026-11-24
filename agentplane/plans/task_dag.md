@@ -1121,6 +1121,7 @@ flowchart LR
     CENTRAL_SAMPLER_MODEL_CAPABILITIES[Unscheduled: live route check for standard-mode routes]
     CENTRAL_SAMPLER_PROMPT_COMPACTION[Unscheduled: client-side compaction prompt for routes without server compaction]
     CENTRAL_SAMPLER_COMPACTION_HEADROOM[Unscheduled: compact long tool loops before output starvation]
+    TABBY_REASONING_REPLAY[Verify Tabby reasoning replay after proxy rollout]
     CENTRAL_SAMPLER_COMPACTION_TIMELINE[Unscheduled: surface sampler compaction in the timeline]
     CENTRAL_SAMPLER_BACKGROUND_COMPACTION[Unscheduled: compact a prefix while sampling continues]
     CENTRAL_SAMPLER_DRAIN_BUDGET[Unscheduled: consider longer sampling drain]
@@ -1403,8 +1404,10 @@ a bounded continuation with a tool call on a route without native compaction.
 
 **Unscheduled; Nov 24 staging regression.** A Chat Completions session exceeded its 192K
 compaction threshold and reached 261,181 input tokens without recording a compaction intent.
-Trace the decision at each sampling boundary: last usage, active context, eligible prefix,
-live cells, and retry state. Reserve enough space for the summary request as well as the next
+At all 59 sampling boundaries with a known previous usage above threshold, the sampler saw one
+live Code Mode cell, at least three user messages and no retry. The live-cell guard suppressed
+compaction while sampling continued. Cover a cell that stays live across the threshold: preserve
+its handle and eventual result without executing it twice. Reserve room for the summary and the next
 ordinary completion. Repeating the same nearly full prompt can exhaust even a bounded retry budget.
 
 Use the last N items as the retention unit. Move the cut to keep a parallel tool-call batch and
@@ -1419,6 +1422,22 @@ multiple compactions, a live cell and a failed summary. Measure actual rendered 
 available output tokens and whether the agent resumes the original task without losing a result
 or repeating an effect. Verify historical reasoning at the tokenizer on the deployed model route
 with a paired prompt-token measurement; include both a tool follow-up and a new user turn.
+
+### `TABBY_REASONING_REPLAY` — preserve assistant reasoning on ordinary Tabby requests
+
+**Post-rollout check; Nov 24 staging evidence.** The sampler recorded 18,416 characters of assistant
+reasoning in a tool exchange, but Tabby's next prompt grew by only 99 tokens. Another exchange
+added 10,283 reasoning characters and 93 tokens. Both Tabby aliases used LiteLLM's
+[`hosted_vllm` adapter](https://github.com/BerriAI/litellm/blob/v1.103.0/litellm/llms/hosted_vllm/chat/transformation.py#L161-L174),
+which removes `reasoning_content` from each assistant message before sending the request.
+Qwen's template cannot replay a field that never reaches Tabby.
+
+The generic OpenAI adapter [passed a direct replay probe](../../cluster/cdk8s/litellm/README.md#tabbyapi-reasoning-replay)
+on the abliterated checkpoint. After rollout, repeat the paired prompt-token check through the
+public model aliases, including the stock checkpoint. Verify streamed tool use and the
+placement of a mid-conversation system message. Repeat through LiteLLM’s Responses and Anthropic
+Messages bridges with their native reasoning items; the old stock route accepted both but
+showed no prompt-token increase. Budget for the larger prompts; any omission at compaction is a separate policy.
 
 ### `CENTRAL_SAMPLER_COMPACTION_TIMELINE` — show when the sampler compacts context
 

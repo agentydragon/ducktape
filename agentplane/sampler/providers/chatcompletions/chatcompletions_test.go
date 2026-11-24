@@ -177,6 +177,15 @@ func TestStreamCompletion(t *testing.T) {
 	}
 }
 
+func TestUnsupportedFinishReason(t *testing.T) {
+	const frame = `{"id":"chat","choices":[{"delta":{"content":"partial"},"finish_reason":"vendor_future_stop"}]}`
+	result, err := readStream(t.Context(), sse(frame, "[DONE]"), nil, false, protocol.ProviderHooks{})
+	var failure *protocol.KnownFailureError
+	if result != nil || !errors.As(err, &failure) || failure.Error() != `Chat Completions returned an unsupported finish_reason: "vendor_future_stop"` {
+		t.Fatalf("result=%v error=%v", result, err)
+	}
+}
+
 // Staging LiteLLM 1.103.0 appended this usage-bearing empty choice after a
 // finished TabbyAPI response on 2026-11-20.
 func TestTrailingUsageChoice(t *testing.T) {
