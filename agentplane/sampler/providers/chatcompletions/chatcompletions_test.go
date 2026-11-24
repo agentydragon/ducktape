@@ -358,10 +358,10 @@ func TestCompactionPreservesAuthorshipAcrossRestore(t *testing.T) {
 	if err := state.AppendUser(parts); err != nil {
 		t.Fatal(err)
 	}
-	if err := state.AddEnvironment(parts, false); err != nil {
+	if _, err := state.AddEnvironment(parts, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := state.AddEnvironment(parts, true); err != nil {
+	if _, err := state.AddEnvironment(parts, true); err != nil {
 		t.Fatal(err)
 	}
 	records, err := state.Records()
@@ -400,7 +400,7 @@ func TestCompactionPreservesAuthorshipAcrossRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := result.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: "refreshed environment"}}, true); err != nil {
+	if _, err := result.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: "refreshed environment"}}, true); err != nil {
 		t.Fatal(err)
 	}
 	if err := plan.CheckReduction(result); err != nil {
@@ -408,10 +408,10 @@ func TestCompactionPreservesAuthorshipAcrossRestore(t *testing.T) {
 	}
 	if len(result.messages) != 3 ||
 		result.messages[2].Content != "refreshed environment" || result.messages[2].Role != "system" ||
-		result.messages[0].Content != identical || !result.messages[0].isAuthoredUser() {
+		result.messages[0].Content != identical || !result.messages[0].isAuthoredUser(result.Origins().OriginAt(0).Kind) {
 		t.Fatal("compaction must retain the authored message and refresh the generated environment")
 	}
-	if err := result.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: strings.Repeat("expanded environment ", 100)}}, true); err != nil {
+	if _, err := result.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: strings.Repeat("expanded environment ", 100)}}, true); err != nil {
 		t.Fatal(err)
 	}
 	if err := plan.CheckReduction(result); err == nil {
@@ -497,5 +497,66 @@ func TestCompactionRejectsInvalidTemplates(t *testing.T) {
 				t.Fatal("invalid compaction config accepted")
 			}
 		})
+	}
+}
+
+func TestCompactionRemapsUserOrigins(t *testing.T) {
+	const legacy = "<environment_context>original user text</environment_context>"
+	const newest = "Most recent request."
+	const future = "User content with a newer origin kind."
+	userSource := protocol.RecordOrigin{Kind: protocol.RecordOriginUserInput, SourceID: "earlier-command"}
+	recentSource := protocol.RecordOrigin{Kind: protocol.RecordOriginUserInput, SourceID: "recent-command"}
+	futureSource := protocol.RecordOrigin{Kind: "future_origin", SourceID: "future-source"}
+	state := &Context{messages: []message{
+		{Role: "user", Content: strings.Repeat("🧪", 200)},
+		{Role: "assistant", Content: "old answer"},
+		{Role: "user", Content: legacy},
+		{Role: "user", Content: legacy},
+		{Role: "user", Content: future},
+		{Role: "user", Content: newest},
+	}}
+	state.Origins().Insert(0, userSource)
+	state.Origins().Insert(1, protocol.RecordOrigin{Kind: protocol.RecordOriginProviderResult, SourceID: "old-intent"})
+	state.Origins().Insert(3, protocol.RecordOrigin{Kind: protocol.RecordOriginEnvironment, SourceID: "environment-session"})
+	state.Origins().Insert(4, futureSource)
+	state.Origins().Insert(5, recentSource)
+	budget := userMessageTokens(newest) + userMessageTokens(future) + userMessageTokens(legacy) + 16
+	plan, err := state.PrepareCompaction(CompactionConfig{KeepRecentTokens: &budget})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := plan.Apply([]json.RawMessage{json.RawMessage(`{"role":"assistant","content":"summary"}`)}, Audit{FinishReason: "stop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if candidate.RecordCount() != 5 || !strings.Contains(candidate.messages[0].Content, userTruncationMarker) ||
+		candidate.messages[1].Content != legacy || candidate.messages[2].Content != future || candidate.messages[3].Content != newest {
+		t.Fatalf("unexpected retained records: %+v", candidate.messages)
+	}
+	want := []protocol.OriginEntry{
+		{Index: 0, Origin: protocol.RecordOrigin{
+			Kind: protocol.RecordOriginUserInput, SourceID: userSource.SourceID, Projection: protocol.RecordProjectionTruncated,
+		}},
+		{Index: 2, Origin: futureSource},
+		{Index: 3, Origin: recentSource},
+	}
+	if got := candidate.Origins().EntriesFrom(0); !slices.Equal(got, want) {
+		t.Fatalf("origin metadata did not follow the selected records: got %+v, want %+v", got, want)
+	}
+	native, err := candidate.Records()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restored Context
+	if err := restored.AppendRecords(native); err != nil {
+		t.Fatal(err)
+	}
+	if err := restored.Origins().Restore(candidate.Origins().EntriesFrom(0), restored.RecordCount()); err != nil {
+		t.Fatal(err)
+	}
+	if !restored.Origins().Equal(candidate.Origins()) || !restored.messages[4].CompactionGenerated ||
+		state.Origins().OriginAt(0) != userSource ||
+		state.messages[0].Content != strings.Repeat("🧪", 200) {
+		t.Fatal("compaction lost origin metadata or changed the original data")
 	}
 }

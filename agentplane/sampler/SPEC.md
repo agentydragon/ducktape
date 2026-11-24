@@ -403,6 +403,19 @@ Each conversation is pinned to its API and retains its native items or messages.
 call/result pairing, completion, effort controls, and compaction. They derive generic tool invocations
 with call IDs and native source-record ordinals; these execution decisions are not extra conversation
 records. The shared runtime owns effect intents, execution, leases, interruption, and recovery.
+The sampler records semantic origin separately from native items. Each origin links a kind and
+source identifier to a record ordinal and its native content ID. Environment updates reference the
+Session, execution snapshots reference the conversation, and submitted user input references its
+command in the Session. Sampling output and settled tool results reference their sampler intents.
+An optional projection identifies a transformed record, such as shortened user text. Older
+unmarked records have unknown origin, including text identical to generated notices.
+
+The context controls point to a separate immutable origin chain. Appends extend that chain with
+new origin entries, and compaction remaps entries for retained records. Provider requests use
+the native content chain. The origin chain can carry new kinds without changing provider records,
+including future Agentplane notification objects with their own stable identity. Current
+`notify()` output uses its existing tool-call and cell provenance.
+
 The native API packages receive execution snapshots and a provider-neutral evidence sink. Each
 stream event and its derived History observations commit atomically before parsing continues;
 evidence failure stops the stream without acknowledging the pending effect.
@@ -936,13 +949,17 @@ sampler-private `internal/content` content reader/writer: typed IDs/kinds, stand
 content hashing and integrity checks. The content package imports neither provider nor semantic
 protocol packages and does not interpret provider payloads. The shared `protocol` package defines
 semantic contracts, not persisted records. The sampler owns PostgreSQL, transactions, context roots,
-authorization and request history. The shared table holds native item/block JSON and small
-provider-specific message/profile reference records, not a universal message schema.
+authorization and request history. The shared table holds native item/block JSON, small
+provider-specific message/profile references, and sampler origin entries.
 
-`sampler_context` represents an immutable ordered prefix plus one native record. Appending an item
+`sampler_context` represents an immutable ordered prefix plus a content record. Appending an item
 shares the entire prior prefix. The conversation transcript retains the full native conversation
 across compaction. Transcript and optional active roots reference these contexts; small controls
-retain Anthropic deferred effort. With no replacement context, the transcript is the active context.
+retain Anthropic deferred effort, the execution snapshot baseline, and the root of each sparse
+origin chain. Provider attempts also freeze the source controls for retry validation. An older
+writer may omit the origin root when updating controls. The current sampler then reports unknown
+origins for that context while replaying the same native content. With no replacement context,
+the transcript is the active context.
 `sampler_model_request` links each provider request to a frozen profile, ordered request-only
 prefix/suffix references, and a provider-ready history root. A source root and versioned API/dialect/
 encoding projection key permit projecting only newly appended native records. A changed prefix

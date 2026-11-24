@@ -313,7 +313,7 @@ func lockProviderResumption(ctx context.Context, tx *sql.Tx, owner Owner, kind P
 	if err := checkInterrupt(ctx, tx, owner); err != nil {
 		return nil, err
 	}
-	if kind == PendingIntentCompaction && !sameNativeContext(conversation.Context(), original) {
+	if kind == PendingIntentCompaction && !sameCompactionSource(conversation.Context(), original) {
 		return nil, protocol.ErrPrecondition
 	}
 	return conversation, nil

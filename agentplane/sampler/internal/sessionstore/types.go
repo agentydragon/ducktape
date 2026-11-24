@@ -72,6 +72,20 @@ func (c *Conversation) apply(change func(protocol.Context) error) error {
 	return nil
 }
 
+func (c *Conversation) appendProviderRecords(records []json.RawMessage, attemptID string) error {
+	origin := protocol.RecordOrigin{Kind: protocol.RecordOriginProviderResult, SourceID: attemptID}
+	return c.apply(func(state protocol.Context) error {
+		start := state.RecordCount()
+		if err := state.AppendRecords(records); err != nil {
+			return err
+		}
+		for index := start; index < state.RecordCount(); index++ {
+			state.Origins().Insert(index, origin)
+		}
+		return nil
+	})
+}
+
 func (c *Conversation) appendToolResult(call protocol.ToolInvocation, output []protocol.ContentPart) error {
 	// The transcript ordinal is authoritative. Compacted active context has different local ordinals.
 	original, err := c.Transcript.FindCall(call.CallID)

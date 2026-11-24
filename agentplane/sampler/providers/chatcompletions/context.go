@@ -23,7 +23,7 @@ type toolCall struct {
 
 type message struct {
 	Role string `json:"role"`
-	// Marks the generated handoff and environment notice in the native context.
+	// Marks the generated handoff. Older records also used this for environment notices.
 	CompactionGenerated bool       `json:"sampler_compaction_summary,omitempty"`
 	Content             string     `json:"content,omitempty"`
 	Reasoning           string     `json:"reasoning_content,omitempty"`
@@ -44,6 +44,7 @@ func (m message) MarshalJSON() ([]byte, error) {
 }
 
 type Context struct {
+	protocol.RecordOrigins
 	messages []message
 }
 
@@ -52,9 +53,11 @@ var _ protocol.Context = (*Context)(nil)
 func (*Context) API() protocol.APIStyle    { return protocol.APIStyleChatCompletions }
 func (*Context) ChangeEffort(string) error { return nil }
 
-func (c *Context) MarshalJSON() ([]byte, error)        { return json.Marshal(c.messages) }
-func (c *Context) RecordCount() int                    { return len(c.messages) }
-func (c *Context) Clone() protocol.Context             { return &Context{messages: slices.Clone(c.messages)} }
+func (c *Context) MarshalJSON() ([]byte, error) { return json.Marshal(c.messages) }
+func (c *Context) RecordCount() int             { return len(c.messages) }
+func (c *Context) Clone() protocol.Context {
+	return &Context{RecordOrigins: c.RecordOrigins.Clone(), messages: slices.Clone(c.messages)}
+}
 func (c *Context) Records() ([]json.RawMessage, error) { return c.RecordsFrom(0) }
 
 func (c *Context) RecordsFrom(start int) ([]json.RawMessage, error) {
@@ -107,12 +110,11 @@ func (c *Context) AppendNotice(parts []protocol.ContentPart) error {
 	return c.appendText("system", parts)
 }
 
-func (c *Context) AddEnvironment(parts []protocol.ContentPart, afterCompaction bool) error {
+func (c *Context) AddEnvironment(parts []protocol.ContentPart, _ bool) (int, error) {
 	if err := c.AppendNotice(parts); err != nil {
-		return err
+		return 0, err
 	}
-	c.messages[len(c.messages)-1].CompactionGenerated = afterCompaction
-	return nil
+	return c.RecordCount() - 1, nil
 }
 
 func (c *Context) appendText(role string, parts []protocol.ContentPart) error {

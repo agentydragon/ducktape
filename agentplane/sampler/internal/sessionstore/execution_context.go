@@ -59,6 +59,9 @@ func (conversation *Conversation) appendExecutionState(state *protocol.Execution
 		if err := native.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: "Active execution handles: " + string(raw)}}); err != nil {
 			return err
 		}
+		native.Origins().Insert(native.RecordCount()-1, protocol.RecordOrigin{
+			Kind: protocol.RecordOriginExecutionSnapshot, SourceID: conversation.ID,
+		})
 		conversation.executionSnapshots[native] = &snapshot
 		return nil
 	})

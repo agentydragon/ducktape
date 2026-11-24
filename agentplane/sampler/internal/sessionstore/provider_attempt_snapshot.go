@@ -82,7 +82,7 @@ func (s *Store) FinishPreparedSampling(ctx context.Context, owner Owner, intentI
 		return protocol.ErrPrecondition
 	}
 	return s.finish(ctx, owner, intentID, result, contextTokens, snapshot, func(conversation *Conversation) error {
-		if err := conversation.apply(func(state protocol.Context) error { return state.AppendRecords(records) }); err != nil {
+		if err := conversation.appendProviderRecords(records, intentID); err != nil {
 			return &InvalidSamplingContinuationError{Cause: err}
 		}
 		if validate != nil {
@@ -118,7 +118,7 @@ func (conversation *Conversation) hasContextCheckpoint(native protocol.Context, 
 		return head == "" && len(control) == 0
 	}
 	checkpoint, ok := conversation.storedContexts[native]
-	if !ok || checkpoint.Head != head || checkpoint.Count != native.RecordCount() {
+	if !ok || checkpoint.Head != head || checkpoint.Count != native.RecordCount() || !native.Origins().Equal(&checkpoint.Origins) {
 		return false
 	}
 	currentControl, err := conversation.contextControl(native)

@@ -13,6 +13,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 )
 
@@ -152,7 +153,7 @@ func TestCompactionRefreshesEnvironmentInNativeOrder(t *testing.T) {
 				}
 				return content
 			}
-			store := newTestStore(t)
+			store, dsn := newTestStoreWithDSN(t)
 			today := time.Date(2026, 1, 2, 12, 0, 0, 0, time.Local)
 			store.now = func() time.Time { return today }
 			session, err := openStoreSession(t, store, &sessionconfig.Configuration{
@@ -174,6 +175,10 @@ func TestCompactionRefreshesEnvironmentInNativeOrder(t *testing.T) {
 				t.Fatalf("initial environment records: %s err=%v", initial, err)
 			}
 			checkEnvironment(initial[0], "/fixture", "2026-01-02", "bash")
+			origin := protocol.RecordOrigin{Kind: protocol.RecordOriginEnvironment, SourceID: session.ID}
+			if original.Context().Origins().OriginAt(0) != origin {
+				t.Fatal("initial environment has no Session origin")
+			}
 			intent, _, err := store.BeginCompaction(ctx, owner, IntentPayload{Kind: PendingIntentCompaction}, original.Context(), nil, providerAttemptTestPolicy())
 			if err != nil {
 				t.Fatal(err)
@@ -220,6 +225,8 @@ func TestCompactionRefreshesEnvironmentInNativeOrder(t *testing.T) {
 			if err := store.FinishCompaction(ctx, owner, intent, audit, original.Context(), replacement, nil); err != nil {
 				t.Fatal(err)
 			}
+			store = New(postgres.Open(t, dsn), store.operationTimeout, nil)
+			store.now = func() time.Time { return today }
 			// Read the persisted roots and check that an unchanged next step adds no
 			// second environment message.
 			prepared, err := store.PrepareSamplingContext(ctx, owner, nil)
@@ -235,6 +242,11 @@ func TestCompactionRefreshesEnvironmentInNativeOrder(t *testing.T) {
 			}
 			if content := checkEnvironment(got[tc.envIndex], "/fixture", "2026-01-03", "zsh"); strings.Contains(content, "bash") {
 				t.Fatalf("replacement environment contains the old shell: %s", content)
+			}
+			if prepared.Context().Origins().OriginAt(tc.envIndex) != origin ||
+				prepared.Transcript.Origins().OriginAt(original.Transcript.RecordCount()) != origin ||
+				prepared.Context().Origins().Len() != 1 || prepared.Transcript.Origins().Len() != 2 {
+				t.Fatal("the environment origin did not survive compaction and store reopen")
 			}
 			for i, original := range tc.records {
 				index := i
@@ -260,6 +272,9 @@ func TestCompactionRefreshesEnvironmentInNativeOrder(t *testing.T) {
 				t.Fatalf("next environment update records=%s err=%v", updated, err)
 			}
 			checkEnvironment(updated[len(got)], "2026-01-04")
+			if update.Context().Origins().OriginAt(len(got)) != origin || update.Context().Origins().Len() != 2 {
+				t.Fatal("the next environment update lost its origin")
+			}
 			for i, record := range got {
 				if !sameJSONValue(updated[i], record) {
 					t.Fatalf("ordinary replay changed an existing record at index %d", i)

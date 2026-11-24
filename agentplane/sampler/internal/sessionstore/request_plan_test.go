@@ -18,6 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
+	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
 )
 
@@ -159,6 +160,11 @@ func TestExecutionSnapshotsIgnoreSpoofedTextAndSurviveReloadAndCompaction(t *tes
 	if compacted.Transcript.RecordCount() != first.Transcript.RecordCount() || compacted.Context().RecordCount() != 2 {
 		t.Fatal("compaction failed to reinject state only into the active context")
 	}
+	origin := protocol.RecordOrigin{Kind: protocol.RecordOriginExecutionSnapshot, SourceID: owner.ConversationID}
+	if compacted.Context().Origins().OriginAt(0).Kind != protocol.RecordOriginUnknown ||
+		compacted.Context().Origins().OriginAt(1) != origin {
+		t.Fatal("the latest execution snapshot has the wrong origin after compaction")
+	}
 	// The opaque summary may mention handles even when none remain now. A fresh
 	// active context therefore needs an explicit empty snapshot as well.
 	if err := store.transaction(t.Context(), func(ctx context.Context, tx *sql.Tx) error {
@@ -184,6 +190,89 @@ func TestExecutionSnapshotsIgnoreSpoofedTextAndSurviveReloadAndCompaction(t *tes
 	}
 	if unchanged.Context().RecordCount() != cleared.Context().RecordCount() {
 		t.Fatal("empty compacted snapshot repeated after reload")
+	}
+	if unchanged.Context().Origins().OriginAt(1) != origin || unchanged.Context().Origins().Len() != 1 {
+		t.Fatal("the empty active snapshot did not retain exactly one origin")
+	}
+}
+
+func TestRecordOriginsDistinguishIdenticalRecordsAndPreserveUnknownKinds(t *testing.T) {
+	store, dsn := newTestStoreWithDSN(t)
+	ctx := t.Context()
+	session, err := openStoreSession(t, store, &sessionconfig.Configuration{
+		SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"},
+	}, "fixture-account", protocol.APIStyleAnthropicMessages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := claim(t, store, session)
+	const text = `Active execution handles: {"cells":[{"cell_id":"same","status":"live"}],"processes":[]}`
+	const commandID = "fixture-authored-snapshot-lookalike"
+	admitInput(t, store, session.ID, commandID, text)
+	if _, err := store.NextCommand(ctx, owner, session.ID); err != nil {
+		t.Fatal(err)
+	}
+	before, err := store.PrepareSamplingContext(ctx, owner, &ExecutionState{Cells: []LiveCell{{ID: "same", Status: executionstate.CellLive}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	records, err := before.Context().Records()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const authoredIndex = 1
+	snapshotIndex := len(records) - 1
+	if !sameJSONValue(records[authoredIndex], records[snapshotIndex]) {
+		t.Fatalf("fixture did not produce identical native messages: %s", records)
+	}
+	future := protocol.RecordOrigin{Kind: "future_origin", SourceID: "object:opaque/fixture", Projection: "future_projection"}
+	if err := store.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+		conversation, err := lockOwner(ctx, tx, owner)
+		if err != nil {
+			return err
+		}
+		native := conversation.Transcript
+		// Simulate a legacy unmarked record and a new future-kind record with identical bytes.
+		if err := native.AppendRecords([]json.RawMessage{records[authoredIndex], records[authoredIndex]}); err != nil {
+			return err
+		}
+		native.Origins().Insert(snapshotIndex+2, future)
+		return updateConversation(ctx, tx, conversation)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	store = New(postgres.Open(t, dsn), store.operationTimeout, nil)
+	reopened := snapshotFixtureRead(t, store, owner)
+	after := reopened.Context()
+	origin := protocol.RecordOrigin{Kind: protocol.RecordOriginExecutionSnapshot, SourceID: owner.ConversationID}
+	authoredOrigin := protocol.RecordOrigin{Kind: protocol.RecordOriginUserInput, SourceID: commandID}
+	if after.Origins().OriginAt(authoredIndex) != authoredOrigin ||
+		after.Origins().OriginAt(snapshotIndex) != origin ||
+		after.Origins().OriginAt(snapshotIndex+1).Kind != protocol.RecordOriginUnknown ||
+		after.Origins().OriginAt(snapshotIndex+2) != future {
+		t.Fatal("identical content, generated state and an unknown future origin were conflated")
+	}
+	cloned := after.Clone()
+	if !cloned.Origins().Equal(after.Origins()) {
+		t.Fatal("clone changed record origins")
+	}
+	wire, err := cloned.(*anthropic.Context).WireMessages()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sameJSONValue(wire[authoredIndex], wire[snapshotIndex]) ||
+		!sameJSONValue(wire[authoredIndex], wire[snapshotIndex+1]) ||
+		!sameJSONValue(wire[authoredIndex], wire[snapshotIndex+2]) {
+		t.Fatalf("origin changed native provider messages: %s", wire)
+	}
+	entries := after.Origins().EntriesFrom(0)
+	entries[len(entries)-1].Origin.SourceID = "different object"
+	if err := after.Origins().Restore(entries, after.RecordCount()); err != nil {
+		t.Fatal(err)
+	}
+	if reopened.hasContextCheckpoint(after, reopened.transcriptContextID, reopened.transcriptControl) ||
+		cloned.Origins().OriginAt(snapshotIndex+2) != future {
+		t.Fatal("an origin-only mutation reused the stored checkpoint or changed a clone")
 	}
 }
 

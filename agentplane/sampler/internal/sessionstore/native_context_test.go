@@ -160,6 +160,11 @@ func TestCompactionNotificationsRetainAnsweredCallProvenanceAfterReload(t *testi
 			if err != nil {
 				t.Fatal(err)
 			}
+			origins := conversation.Transcript.Origins()
+			if origins.OriginAt(call.SourceRecord-1) != (protocol.RecordOrigin{Kind: protocol.RecordOriginProviderResult, SourceID: sampling}) ||
+				origins.OriginAt(conversation.Transcript.RecordCount()-1) != (protocol.RecordOrigin{Kind: protocol.RecordOriginToolResult, SourceID: cell}) {
+				t.Fatal("the accepted call and tool result did not retain their own intent IDs")
+			}
 			compaction, _, err := store.BeginCompaction(ctx, owner, IntentPayload{Kind: PendingIntentCompaction}, conversation.Context(), nil, providerAttemptTestPolicy())
 			if err != nil {
 				t.Fatal(err)

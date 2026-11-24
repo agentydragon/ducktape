@@ -101,7 +101,12 @@ func (s *Store) recordEnvironmentContext(conversation *Conversation, session *Se
 		if update == "" {
 			return nil
 		}
-		return state.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: update}}, afterCompaction)
+		index, err := state.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: update}}, afterCompaction)
+		if err != nil {
+			return err
+		}
+		state.Origins().Insert(index, protocol.RecordOrigin{Kind: protocol.RecordOriginEnvironment, SourceID: session.ID})
+		return nil
 	}); err != nil {
 		return err
 	}

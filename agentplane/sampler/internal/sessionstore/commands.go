@@ -66,7 +66,12 @@ func (s *Store) NextCommand(ctx context.Context, owner Owner, sessionID string) 
 			}
 			text := payload.GetSubmitInput().GetText()
 			if err := conversation.apply(func(state protocol.Context) error {
-				return state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: text}})
+				index := state.RecordCount()
+				if err := state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: text}}); err != nil {
+					return err
+				}
+				state.Origins().Insert(index, protocol.RecordOrigin{Kind: protocol.RecordOriginUserInput, SourceID: next.ID})
+				return nil
 			}); err != nil {
 				return err
 			}

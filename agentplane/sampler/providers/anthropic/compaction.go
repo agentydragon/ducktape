@@ -38,7 +38,11 @@ func PrepareCompaction(params RequestParams, config Config, previousMessageID, r
 	if cut == 0 {
 		return nil, &protocol.KnownFailureError{Evidence: map[string]any{"reason": "no settled prefix remains after keeping recent turns"}}
 	}
-	originalContext := &Context{messages: cloneRecords(records), PendingEffort: cloneString(params.Context.PendingEffort)}
+	originalContext := &Context{
+		RecordOrigins: params.Context.RecordOrigins.Clone(),
+		messages:      cloneRecords(records),
+		PendingEffort: cloneString(params.Context.PendingEffort),
+	}
 	prefix := &Context{messages: records[:cut]}
 	if err := prefix.CheckSettled(); err != nil {
 		return nil, err
@@ -95,6 +99,7 @@ func (p *CompactionPlan) Apply(records []json.RawMessage, audit *Audit, events [
 	}
 	replacement := &Context{messages: []json.RawMessage{slices.Clone(records[0])}, PendingEffort: cloneString(p.original.PendingEffort)}
 	replacement.messages = append(replacement.messages, cloneRecords(p.suffix)...)
+	replacement.RecordOrigins = p.original.Origins().RetainSuffix(len(p.original.messages)-len(p.suffix), 1)
 	if p.restoreEffort != nil {
 		replacement.PendingEffort = cloneString(p.restoreEffort)
 	}

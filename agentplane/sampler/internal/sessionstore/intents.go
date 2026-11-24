@@ -120,13 +120,23 @@ func (s *Store) publishIntent(ctx context.Context, tx *sql.Tx, conversation *Con
 
 func (s *Store) Finish(ctx context.Context, owner Owner, intentID string, result any, records []json.RawMessage, contextTokens *int) error {
 	return s.finish(ctx, owner, intentID, result, contextTokens, nil, func(c *Conversation) error {
-		return c.apply(func(state protocol.Context) error { return state.AppendRecords(records) })
+		return c.appendProviderRecords(records, intentID)
 	})
 }
 
 func (s *Store) FinishTool(ctx context.Context, owner Owner, intentID string, result map[string]any, call protocol.ToolInvocation, output []protocol.ContentPart) error {
 	return s.finish(ctx, owner, intentID, result, nil, nil, func(c *Conversation) error {
-		return c.appendToolResult(call, output)
+		transcriptIndex := c.Transcript.RecordCount()
+		activeIndex := c.Context().RecordCount()
+		if err := c.appendToolResult(call, output); err != nil {
+			return err
+		}
+		origin := protocol.RecordOrigin{Kind: protocol.RecordOriginToolResult, SourceID: intentID}
+		c.Transcript.Origins().Insert(transcriptIndex, origin)
+		if c.ActiveContext != nil {
+			c.ActiveContext.Origins().Insert(activeIndex, origin)
+		}
+		return nil
 	})
 }
 
@@ -298,7 +308,7 @@ func (s *Store) beginCompaction(ctx context.Context, owner Owner, request Intent
 		if err := checkInterrupt(ctx, tx, owner); err != nil {
 			return err
 		}
-		if !sameNativeContext(conversation.Context(), original) {
+		if !sameCompactionSource(conversation.Context(), original) {
 			return protocol.ErrPrecondition
 		}
 		if err := conversation.Transcript.CheckSettled(); err != nil {
@@ -364,7 +374,7 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 		if !pendingMatches(conversation.Pending, intentID, PendingIntentCompaction) {
 			return protocol.ErrPrecondition
 		}
-		if !sameNativeContext(conversation.Context(), original) {
+		if !sameCompactionSource(conversation.Context(), original) {
 			return protocol.ErrPrecondition
 		}
 		intent, err := intentFor(ctx, tx, intentID)
@@ -536,6 +546,10 @@ func pendingMatches(pending *PendingIntent, id string, kind PendingIntentKind) b
 		return false
 	}
 	return kind == "" || pending.Kind == kind
+}
+
+func sameCompactionSource(left, right protocol.Context) bool {
+	return left.Origins().Equal(right.Origins()) && sameNativeContext(left, right)
 }
 
 func sameNativeContext(left, right protocol.Context) bool {

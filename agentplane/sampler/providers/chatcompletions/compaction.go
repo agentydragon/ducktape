@@ -125,11 +125,21 @@ func (c *CompactionConfig) Compatible(other *CompactionConfig) bool {
 type CompactionPlan struct {
 	originalSize int
 	users        []message
+	origins      protocol.RecordOrigins
 	config       CompactionConfig
 }
 
-func (m message) isAuthoredUser() bool {
-	return m.Role == "user" && !m.CompactionGenerated
+func (m message) isAuthoredUser(kind protocol.RecordOriginKind) bool {
+	if m.Role != "user" || m.CompactionGenerated {
+		return false
+	}
+	switch kind {
+	case protocol.RecordOriginEnvironment, protocol.RecordOriginExecutionSnapshot,
+		protocol.RecordOriginProviderResult, protocol.RecordOriginToolResult:
+		return false
+	default:
+		return true
+	}
 }
 
 func userMessageTokens(text string) int {
@@ -137,11 +147,11 @@ func userMessageTokens(text string) int {
 }
 
 func (c *Context) CanCompact(keepRecentTokens int) bool {
-	for _, m := range c.messages {
+	for i, m := range c.messages {
 		if m.CompactionGenerated || m.Role == "system" {
 			continue
 		}
-		if !m.isAuthoredUser() {
+		if !m.isAuthoredUser(c.Origins().OriginAt(i).Kind) {
 			return true
 		}
 		keepRecentTokens -= userMessageTokens(m.Content)
@@ -152,10 +162,15 @@ func (c *Context) CanCompact(keepRecentTokens int) bool {
 	return false
 }
 
-func (c *Context) recentUsers(tokens int) []message {
-	var users []message
-	for _, m := range slices.Backward(c.messages) {
-		if !m.isAuthoredUser() {
+func (c *Context) recentUsers(tokens int) ([]message, protocol.RecordOrigins) {
+	type retainedUser struct {
+		message message
+		origin  protocol.RecordOrigin
+	}
+	var retained []retainedUser
+	for i, m := range slices.Backward(c.messages) {
+		origin := c.Origins().OriginAt(i)
+		if !m.isAuthoredUser(origin.Kind) {
 			continue
 		}
 		cost := userMessageTokens(m.Content)
@@ -163,15 +178,24 @@ func (c *Context) recentUsers(tokens int) []message {
 			text := tooloutput.TruncateTextWithinTokenBudget(m.Content, tokens-userMessageFramingTokens, userTruncationMarker)
 			if text != "" {
 				m.Content = text
-				users = append(users, m)
+				origin.Projection = protocol.RecordProjectionTruncated
+				retained = append(retained, retainedUser{message: m, origin: origin})
 			}
 			break
 		}
-		users = append(users, m)
+		retained = append(retained, retainedUser{message: m, origin: origin})
 		tokens -= cost
 	}
-	slices.Reverse(users)
-	return users
+	slices.Reverse(retained)
+	users := make([]message, len(retained))
+	var origins protocol.RecordOrigins
+	for i, user := range retained {
+		users[i] = user.message
+		if user.origin.Kind != protocol.RecordOriginUnknown {
+			origins.Insert(i, user.origin)
+		}
+	}
+	return users, origins
 }
 
 func (c *Context) serializedSize() (int, error) {
@@ -198,7 +222,8 @@ func (c *Context) PrepareCompaction(config CompactionConfig) (*CompactionPlan, e
 	if err != nil {
 		return nil, err
 	}
-	return &CompactionPlan{originalSize: size, users: c.recentUsers(tokens), config: config}, nil
+	users, origins := c.recentUsers(tokens)
+	return &CompactionPlan{originalSize: size, users: users, origins: origins, config: config}, nil
 }
 
 func (p *CompactionPlan) Apply(records []json.RawMessage, audit Audit) (*Context, error) {
@@ -211,7 +236,7 @@ func (p *CompactionPlan) Apply(records []json.RawMessage, audit Audit) (*Context
 	if err != nil {
 		return nil, rejectCompaction(err.Error())
 	}
-	result := &Context{messages: append(slices.Clone(p.users), handoff)}
+	result := &Context{messages: append(slices.Clone(p.users), handoff), RecordOrigins: p.origins.Clone()}
 	if err := p.CheckReduction(result); err != nil {
 		return nil, err
 	}

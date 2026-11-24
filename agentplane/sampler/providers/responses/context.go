@@ -13,6 +13,7 @@ import (
 // Context retains only native Responses records. Request-only items and adapter markers are not
 // replayed from this context.
 type Context struct {
+	protocol.RecordOrigins
 	items []Item
 }
 
@@ -60,7 +61,7 @@ func (state Context) MarshalJSON() ([]byte, error) {
 func (state *Context) RecordCount() int { return len(state.items) }
 
 func (state *Context) Clone() protocol.Context {
-	return &Context{items: append([]Item(nil), state.items...)}
+	return &Context{RecordOrigins: state.RecordOrigins.Clone(), items: append([]Item(nil), state.items...)}
 }
 
 func (state *Context) Records() ([]json.RawMessage, error) {
@@ -118,18 +119,22 @@ func (state *Context) AppendNotice(parts []protocol.ContentPart) error {
 	return state.appendMessage("developer", parts)
 }
 
-func (state *Context) AddEnvironment(parts []protocol.ContentPart, afterCompaction bool) error {
+func (state *Context) AddEnvironment(parts []protocol.ContentPart, afterCompaction bool) (int, error) {
 	if !afterCompaction {
-		return state.AppendUser(parts)
+		index := state.RecordCount()
+		if err := state.AppendUser(parts); err != nil {
+			return 0, err
+		}
+		return index, nil
 	}
 	// Codex rust-v0.162.1 core/src/compact.rs places canonical context before
 	// the opaque item when the replacement contains no retained user message.
 	prefix := &Context{}
 	if err := prefix.AppendUser(parts); err != nil {
-		return err
+		return 0, err
 	}
 	state.items = append(prefix.items, state.items...)
-	return nil
+	return 0, nil
 }
 
 func (state *Context) appendMessage(role string, parts []protocol.ContentPart) error {

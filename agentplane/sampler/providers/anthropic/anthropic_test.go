@@ -96,7 +96,17 @@ func TestSuccessfulCompactionAuditKeepsReplacementWithoutEvents(t *testing.T) {
 	if err := original.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: strings.Repeat("original context ", 40)}}); err != nil {
 		t.Fatal(err)
 	}
-	plan := &CompactionPlan{original: original}
+	retainedIndex, err := original.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: "kept environment"}}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	origin := protocol.RecordOrigin{Kind: protocol.RecordOriginEnvironment, SourceID: "session-fixture"}
+	original.Origins().Insert(retainedIndex, origin)
+	retained, err := original.RecordsFrom(retainedIndex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan := &CompactionPlan{original: original, suffix: retained}
 	audit := &Audit{
 		Response:   json.RawMessage(`{"id":"msg_fixture","usage":{"input_tokens":11,"output_tokens":6,"provider_usage":{"cache":3}},"provider_metadata":{"opaque_sequence":9007199254740993}}`),
 		HTTPStatus: 200, ProviderRequestID: "req_fixture",
@@ -109,6 +119,9 @@ func TestSuccessfulCompactionAuditKeepsReplacementWithoutEvents(t *testing.T) {
 	}
 	if audit.Replacement != replacement {
 		t.Fatal("successful compaction did not retain its replacement context in the audit")
+	}
+	if replacement.Origins().OriginAt(1) != origin || replacement.Origins().Len() != 1 {
+		t.Fatal("retained environment lost its origin at the replacement ordinal")
 	}
 	got := string(wirefixture.MustMarshalJSON(t, audit))
 	if strings.Contains(got, `"events"`) {

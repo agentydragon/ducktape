@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -263,7 +264,7 @@ func TestPreparedSamplingBeginReloadsChangedContext(t *testing.T) {
 }
 
 func TestPreparedSamplingFinishReloadsChangedContext(t *testing.T) {
-	for _, change := range []string{"head", "control"} {
+	for _, change := range []string{"head", "control", "origins"} {
 		t.Run(change, func(t *testing.T) {
 			store, session, owner := claimedSession(t)
 			if change == "control" {
@@ -278,14 +279,24 @@ func TestPreparedSamplingFinishReloadsChangedContext(t *testing.T) {
 				if err != nil {
 					return err
 				}
-				if change == "head" {
+				switch change {
+				case "head":
 					if err := current.Transcript.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: intervening}}); err != nil {
 						return err
 					}
-				} else {
+				case "control":
 					current.executionSnapshots[current.ActiveContext] = &modelExecutionSnapshot{
 						Cells: []modelCell{{CellID: "fixture-intervening-cell", Status: executionstate.CellLive}}, Processes: []modelProcess{},
 					}
+				case "origins":
+					if current.Transcript.Origins().Len() == 0 {
+						t.Fatal("fixture has no stored environment origin")
+					}
+					// Keep the same native context bytes and remove its origin root, as an older
+					// writer may do. The old provider snapshot must not restore stale controls.
+					_, err := tx.ExecContext(ctx, `UPDATE sampler_conversation
+						SET transcript_control=transcript_control - 'origin_context_id' WHERE id=$1`, current.ID)
+					return err
 				}
 				return updateConversation(ctx, tx, current)
 			}); err != nil {
@@ -316,8 +327,13 @@ func TestPreparedSamplingFinishReloadsChangedContext(t *testing.T) {
 			if len(records) != before.Transcript.RecordCount()+1 {
 				t.Fatalf("durable transcript has %d records, want %d", len(records), before.Transcript.RecordCount()+1)
 			}
-			if change == "control" && !sameJSONValue(before.activeControl, after.activeControl) {
+			if change == "control" && !reflect.DeepEqual(before.executionSnapshots[before.ActiveContext], after.executionSnapshots[after.ActiveContext]) {
 				t.Fatal("finish replaced the current context control with the snapshot control")
+			}
+			providerOrigin := protocol.RecordOrigin{Kind: protocol.RecordOriginProviderResult, SourceID: id}
+			origins := after.Transcript.Origins()
+			if change == "origins" && (origins.Len() != 1 || origins.OriginAt(after.Transcript.RecordCount()-1) != providerOrigin) {
+				t.Fatal("finish restored an origin root from the stale snapshot")
 			}
 		})
 	}

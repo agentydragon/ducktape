@@ -14,6 +14,7 @@ import (
 // Context stores one native Messages API message per record. Messages are kept as raw
 // JSON so provider-owned fields, content block boundaries, signatures, and usage survive replay.
 type Context struct {
+	protocol.RecordOrigins
 	messages      []json.RawMessage
 	PendingEffort *string `json:"pending_effort,omitempty"`
 }
@@ -23,7 +24,7 @@ func (*Context) API() protocol.APIStyle { return protocol.APIStyleAnthropicMessa
 func (c *Context) RecordCount() int { return len(c.messages) }
 
 func (c *Context) Clone() protocol.Context {
-	return &Context{messages: append([]json.RawMessage(nil), c.messages...), PendingEffort: cloneString(c.PendingEffort)}
+	return &Context{RecordOrigins: c.RecordOrigins.Clone(), messages: append([]json.RawMessage(nil), c.messages...), PendingEffort: cloneString(c.PendingEffort)}
 }
 
 func (c *Context) Records() ([]json.RawMessage, error) { return c.RecordsFrom(0) }
@@ -128,10 +129,13 @@ func (c *Context) AppendNotice(parts []protocol.ContentPart) error {
 	return c.AppendRecords([]json.RawMessage{record})
 }
 
-func (c *Context) AddEnvironment(parts []protocol.ContentPart, _ bool) error {
+func (c *Context) AddEnvironment(parts []protocol.ContentPart, _ bool) (int, error) {
 	// Leave the signed summary and kept turns adjacent. Only authored user
 	// input may activate deferred effort restoration.
-	return c.AppendNotice(parts)
+	if err := c.AppendNotice(parts); err != nil {
+		return 0, err
+	}
+	return c.RecordCount() - 1, nil
 }
 
 func (c *Context) AppendToolResult(call protocol.ToolInvocation, parts []protocol.ContentPart) error {
@@ -417,7 +421,7 @@ func (c *Context) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("Anthropic record %d: %w", i+1, err)
 		}
 	}
-	c.messages, c.PendingEffort = messages, pending
+	*c = Context{messages: messages, PendingEffort: pending}
 	return nil
 }
 

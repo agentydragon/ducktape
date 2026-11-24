@@ -107,6 +107,8 @@ func decodePendingIntent(raw []byte) (*PendingIntent, error) {
 
 func loadConversationItems(ctx context.Context, tx *sql.Tx, conversation *Conversation) error {
 	store := newContentDB(ctx, tx)
+	conversation.executionSnapshots = map[protocol.Context]*modelExecutionSnapshot{}
+	conversation.storedContexts = map[protocol.Context]contextCheckpoint{}
 	var err error
 	conversation.Transcript, err = conversation.loadNativeContext(store, conversation.API, conversation.transcriptContextID, conversation.transcriptControl)
 	if err != nil {
@@ -114,19 +116,6 @@ func loadConversationItems(ctx context.Context, tx *sql.Tx, conversation *Conver
 	}
 	if len(conversation.activeControl) > 0 {
 		conversation.ActiveContext, err = conversation.loadNativeContext(store, conversation.API, conversation.activeContextID, conversation.activeControl)
-	}
-	if err == nil {
-		conversation.storedContexts = map[protocol.Context]contextCheckpoint{conversation.Transcript: {Head: conversation.transcriptContextID, Count: conversation.Transcript.RecordCount()}}
-		conversation.executionSnapshots = map[protocol.Context]*modelExecutionSnapshot{}
-		if err := conversation.restoreExecutionSnapshot(conversation.Transcript, conversation.transcriptControl); err != nil {
-			return err
-		}
-		if conversation.ActiveContext != nil {
-			conversation.storedContexts[conversation.ActiveContext] = contextCheckpoint{Head: conversation.activeContextID, Count: conversation.ActiveContext.RecordCount()}
-			if err := conversation.restoreExecutionSnapshot(conversation.ActiveContext, conversation.activeControl); err != nil {
-				return err
-			}
-		}
 	}
 	return err
 }
