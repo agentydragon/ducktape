@@ -549,6 +549,8 @@ theorem Same.expr_succ (env env' : Env) (e : Expr) (hN : Agree e.free env env') 
     unfold evalExpr
     rw [hN.home, hN.this]
     same ih hN
+  | callOptionalCallee _ _ _ property =>
+    cases property <;> unfold evalExpr <;> same ih hN
   | assign t rhs =>
     unfold evalExpr
     refine ih.assign_like hN (by free_mem) fun r hr => ?_

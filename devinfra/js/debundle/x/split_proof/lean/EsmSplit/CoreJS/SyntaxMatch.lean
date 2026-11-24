@@ -114,11 +114,16 @@ partial def exprEq : MatchEq Expr
     let ⟨key⟩ ← exprEq k k'
     let ⟨arguments⟩ ← listEq exprEq args args'
     return ⟨base ▸ key ▸ arguments ▸ rfl⟩
-  | .callOptionalCallee o k args, .callOptionalCallee o' k' args' => do
+  | .callOptionalCallee o k args p, .callOptionalCallee o' k' args' p' => do
     let ⟨base⟩ ← exprEq o o'
     let ⟨key⟩ ← exprEq k k'
     let ⟨arguments⟩ ← listEq exprEq args args'
-    return ⟨base ▸ key ▸ arguments ▸ rfl⟩
+    let property : Option (PLift (p = p')) := match p, p' with
+      | none, none => some ⟨rfl⟩
+      | some prop, some prop' => (exprEq prop prop').map fun h => ⟨congrArg some h.down⟩
+      | _, _ => none
+    let ⟨tail⟩ ← property
+    return ⟨base ▸ key ▸ arguments ▸ tail ▸ rfl⟩
   | .cls n self ctor ms, .cls n' self' ctor' ms' => do
     let ⟨k⟩ ← scalarEq n n'
     let ⟨s⟩ ← scalarEq self self'

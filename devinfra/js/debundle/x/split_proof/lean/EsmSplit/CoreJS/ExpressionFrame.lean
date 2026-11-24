@@ -261,7 +261,7 @@ theorem evalExpr_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env)
     · exact (eval k).bind fun key _ =>
         (get base key hb).bind fun f hf =>
           (args es).bind fun vs hvs => call f base vs hf hb hvs
-  | callOptionalCallee o k es =>
+  | callOptionalCallee o k es property =>
     simp only [evalExpr]
     apply (eval o).bind
     intro base hb
@@ -273,7 +273,13 @@ theorem evalExpr_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env)
     intro skip _
     cases skip
     · exact undef
-    · exact (args es).bind fun vs hvs => call f base vs hf hb hvs
+    · apply (args es).bind
+      intro vs hvs
+      apply (call f base vs hf hb hvs).bind
+      intro value hv
+      cases property with
+      | none => exact reachFrame_pure r R cells A value hv
+      | some p => exact (eval p).bind fun key _ => get value key hv
   | new f es =>
     exact (eval f).bind fun c hc => (args es).bind fun vs hs => construct c vs hc hs
   | prim p es =>
