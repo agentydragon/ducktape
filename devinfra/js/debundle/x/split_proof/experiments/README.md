@@ -14,53 +14,13 @@ An earlier verbatim-output checker exposed a callback/TDZ bug in the extractor: 
 read as lazy even when the callback ran during initialization. The regression now checks the extractor's
 eager read and the translation validator's verdict, and runs the unsafe output in Node.
 
-## 2. A real semantics for a small JS-like language
+## 2. A generated reordering in CoreJS
 
-[`MiniJS.lean`](../lean/Experiments/MiniJS.lean): numbers, one-argument closures, application, recursion through module-level
-names, and `log`. It is Turing-complete (self-application diverges). Evaluation is fuel-bounded call-by-value.
-Divergence means "no result at any fuel", and the theorem never reasons about it.
+The [three-declaration fixture](../proof_fixture/README.md) checks the source statements, footprints, execution order and rendered files of a generated plan. Its CoreJS proof relates successful executions at every fuel. Node runs the emitted modules and observes the temporal dead zone in the forced unsafe split.
 
-It _derives_ what `Semantics.lean` assumes: a statement's behavior depends only on the names in its footprint.
+## 3. Custom proofs for pairs the syntax check refuses
 
-| Part                                                    | Lines   |
-| ------------------------------------------------------- | ------- |
-| language, substitution, evaluator                       | 41      |
-| locality + coverage lemma (the semantic content)        | 66      |
-| statement footprints, computed from the syntax          | 21      |
-| read closure: proved in `Bundle.lean` now; helpers here | 6       |
-| reachable-state invariant                               | 35      |
-| concrete step, abstract meaning, helpers                | 49      |
-| adequacy: the abstract `Meaning` is the evaluator       | 37      |
-| invariant preserved by every step                       | 56      |
-| run correspondence + final theorem                      | 26      |
-| **total**                                               | **337** |
-
-Final theorem, for the real evaluator, at every fuel:
-
-```lean
-theorem mjs_reorder (hc : ReadsClosed (toBundle P)) (hwf : WF P) (fuel : Nat) (ord : List Nat) …
-    (hok : ord.Pairwise fun a b => a < b ∨ (toBundle P).conflict a b = false) :
-    ord.foldl (fun s j => cstep P fuel j s) (G0 P, []) = (List.range P.length).foldl (fun s j => cstep P fuel j s) (G0 P, [])
-```
-
-[`MiniJSExample.lean`](../lean/Experiments/MiniJSExample.lean) runs a 7-statement program through it: higher-order `twice`,
-a closure over a constant, two logs. A reordering is proved equal, both orders print `[3, 3]` in the kernel,
-and a bad order is rejected and prints something else.
-The theorem's axioms are Lean's three standard ones, as for the main development.
-
-What a real fragment adds beyond this, and I did not do: a heap (allocation order must be shown unobservable, or allocation
-counts as an effect), objects and prototypes, exceptions, and the module system itself.
-
-## 3. Two tiers: automatic for the formulaic pairs, custom Lean for the rest
-
-[`TwoTier.lean`](../lean/Experiments/TwoTier.lean): the reordering theorem with the commutation test as an oracle (68 lines; it is the proof
-of `Semantics.lean` over any step function). Tier 1: footprints do not conflict. `step_adequate` + `step_comm` give the commutation (14 lines).
-Tier 2: the user lists extra pairs and proves `SemComm a b` in the real semantics (19 lines for the theorem).
-
-[`TwoTierExample.lean`](../lean/Experiments/TwoTierExample.lean): `((x) => x)(1);` is a call, so the analysis calls it an effect and tier 1
-refuses to move a `log` past it. The custom proof that it is the identity step is one line, because the call is closed and `simp`
-just evaluates it. That is the easy end. A call to a function defined elsewhere, shown log-free, needs an effect analysis proved
-sound once per language (my estimate: 40–60 lines for this language). Symbolic facts (for all `n`, `isEven n` …) need real induction.
+[`CustomMoveExample.lean`](../lean/CustomMoveExample.lean) starts with two expression statements that evaluate boolean literals. `movesOk` refuses to swap them. The example proves the two steps commute in either order and passes that relation to the production `moves_preserve_run_of_sound` theorem.
 
 ## 4. How much does Lean's own automation write?
 
@@ -364,8 +324,7 @@ no strategy proved it
 
 (`decide +kernel` is left out of the lodash ladder: it reaches 12 GB in 62 s, § 5. Raw output: [`records/ladder_*.txt`](records).)
 
-**Custom proofs for the residue.** When the footprints cannot justify a pair, the file lists the pair and a hand-written lemma proves it ([`TwoTierExample.lean`](../lean/Experiments/TwoTierExample.lean), § 3).
-The custom part there is two lines, `stmt2_is_identity`: `rcases fuel with _ | _ | fuel <;> simp [cstep, prog2, eval, Expr.subst]`.
+For a worked example of a pair-specific proof, see § 3.
 
 **What this is not.** It is not proof search. The strategy space is small enough to enumerate, so the ladder does.
 For a statement that is not decidable, the loop is the usual one: write a tactic script, run `lake env lean --json`, read the goals and errors, try `simp`, `omega`, `grind`, `exact?`.

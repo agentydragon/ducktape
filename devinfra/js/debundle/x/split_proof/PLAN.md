@@ -273,7 +273,6 @@ The active [footprint soundness work](docs/footprint_soundness.md) establishes a
   - Of the 718,365 failing pairs where neither statement is an effect, greedy by pairs resolved: classes 213,764; calls of bundle functions and IIFEs +119,877; pure expressions (operators, property reads, templates) +282,425; standard built-ins (`Map`, `Set`, `RegExp`, `Object.*`) +101,547.
   - On the bundle-order split, by reviewed modules freed: classes 15, built-ins +23, pure expressions +27, calls of bundle functions +57, the world +3 (125 in all).
 - _Done when:_ the share is near the census's 73%, or the shortfall is explained by counted statement kinds.
-- _Then delete `MiniJS`_ ([`lean/Experiments/MiniJS.lean`](lean/Experiments/MiniJS.lean) and its two companions): `CoreJS` replaces it now that commutation is proved there.
 
 **N5. Remove the imports that exist only for order.** The bundle-order split of the large bundle has 2,744 bare imports in 629 modules, nested 466 deep. Each is a candidate to drop, and dropping one is a claim that two modules commute. First candidates: a forward mention of a module that only declares functions. The count of ordering imports going down is the measure of how readable the output is. The second rule to prove belongs here: unknown code cannot write a name declared later, except through an object that escaped earlier. The peel probe measured it as the largest lever (873 modules that peel alone would become about 1,624, an optimistic count).
 
