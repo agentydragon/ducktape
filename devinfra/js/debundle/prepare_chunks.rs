@@ -4,7 +4,6 @@ use anyhow::{Context, Result};
 use rayon::prelude::*;
 use swc_common::GLOBALS;
 
-use artifact::reports::{ArtifactChunkRecord, ArtifactCounts};
 use artifact::{
     CANONICAL_CHUNK_ENTRY_FILE, ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole,
     JsChunk, JsFile, JsFileBody, LoadedJsChunks, SourceProgram,
@@ -19,13 +18,6 @@ const CANONICALIZE_HEADER_LINES: &[&str] = &[
     "// Executable chunk entry.",
 ];
 
-#[derive(Clone)]
-pub struct SourcePreparation {
-    pub program: SourceProgram,
-    pub counts: ArtifactCounts,
-    pub chunk_records: Vec<ArtifactChunkRecord>,
-}
-
 /// `materialized_chunk_ids` is `TransformSpec::materialize_chunk_ids`: the
 /// chunks whose modules are planned keep their AST, and their static import
 /// closure keeps read-only syntax for program analysis. `analysis_provider_chunk_ids`
@@ -36,7 +28,7 @@ pub fn prepare_js_chunks(
     analysis_provider_chunk_ids: &BTreeSet<String>,
     vendor: &BTreeMap<String, VendorMark>,
     loaded: LoadedJsChunks,
-) -> Result<SourcePreparation> {
+) -> Result<SourceProgram> {
     let LoadedJsChunks {
         chunks,
         chunk_table,
@@ -100,16 +92,11 @@ pub fn prepare_js_chunks(
         chunk_table,
     };
 
-    let (counts, chunk_records) = build_prepare_output(&artifact.chunks);
-    Ok(SourcePreparation {
-        program: SourceProgram::new(artifact)?.retain_entry_asts(
-            materialized_chunk_ids,
-            analysis_provider_chunk_ids,
-            &emission_asts,
-        )?,
-        counts,
-        chunk_records,
-    })
+    SourceProgram::new(artifact)?.retain_entry_asts(
+        materialized_chunk_ids,
+        analysis_provider_chunk_ids,
+        &emission_asts,
+    )
 }
 
 struct PrepareChunkJob<'a> {
@@ -171,28 +158,6 @@ fn canonical_parsed_file(chunk_id: &str, source_path: &str, parsed: ParsedJsModu
     }
 }
 
-fn build_prepare_output(chunks: &[ChunkArtifact]) -> (ArtifactCounts, Vec<ArtifactChunkRecord>) {
-    let mut counts = ArtifactCounts {
-        kept_top_level_declarations: 0,
-        top_level_side_effects: 0,
-        export_aliases: 0,
-        unresolved_exports: 0,
-    };
-    let mut chunk_records = Vec::with_capacity(chunks.len());
-    for chunk in chunks {
-        let analysis = &chunk.analysis;
-        counts.kept_top_level_declarations += analysis.counts.kept_top_level_declarations;
-        counts.top_level_side_effects += analysis.counts.top_level_side_effects;
-        counts.export_aliases += analysis.counts.export_aliases;
-        counts.unresolved_exports += analysis.counts.unresolved_exports;
-        chunk_records.push(ArtifactChunkRecord {
-            chunk_id: analysis.chunk_id.clone(),
-            source_path: analysis.source_path.clone(),
-        });
-    }
-    (counts, chunk_records)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,7 +199,7 @@ mod tests {
                     loaded,
                 )
                 .unwrap();
-                let artifact = prepared.program.artifact();
+                let artifact = prepared.artifact();
                 for chunk in &artifact.chunks {
                     let name = artifact.chunk_table.name(chunk.chunk_id);
                     let file = chunk.js.get_file(CANONICAL_CHUNK_ENTRY_FILE).unwrap();
@@ -263,7 +228,7 @@ mod tests {
                 // storage before eager mutation passes can enroll the provider.
                 let emissions = [
                     artifact::EmissionFiles::new(artifact.clone()).unwrap(),
-                    artifact::EmissionFiles::from_prepared(prepared.program),
+                    artifact::EmissionFiles::from_prepared(prepared),
                 ];
                 for emission in emissions {
                     for chunk in &emission.files().chunks {
@@ -320,8 +285,8 @@ mod tests {
                 loaded,
             )
             .unwrap();
-            let emission = artifact::EmissionFiles::from_prepared(prepared.program.clone());
-            for artifact in [prepared.program.artifact(), emission.files()] {
+            let emission = artifact::EmissionFiles::from_prepared(prepared.clone());
+            for artifact in [prepared.artifact(), emission.files()] {
                 for chunk in &artifact.chunks {
                     let name = artifact.chunk_table.name(chunk.chunk_id);
                     let has_ast = chunk

@@ -15,7 +15,7 @@ use anyhow::{Context, Result, bail};
 
 use analysis_projection::AnalysisSpec;
 use artifact::EmissionFiles;
-use artifact::reports::{ArtifactChunkRecord, ChunkDecompositionOutput};
+use artifact::reports::{ArtifactChunkRecord, ArtifactCounts, ChunkDecompositionOutput};
 use emit_harness::emit_browser_harness;
 use final_global_resolution::GlobalResolutionSources;
 use gate::{CandidateRelocationAssessmentReport, UnmatchedSpecClaim};
@@ -29,7 +29,7 @@ use lowering::{
     ReportEmission, materialize_logical_modules,
 };
 use output_layout::GLOBAL_RESOLUTION_REPORT;
-use prepare_chunks::{SourcePreparation, prepare_js_chunks};
+use prepare_chunks::prepare_js_chunks;
 use reconstruction::{EmittablePlan, RejectedPlan, VendorManifestOutput, validate_reconstruction};
 use spec::{ChunkExportPurity, LogicalModule, NodeBuiltinModuleExt, TransformSpec};
 use spec_modules::read_flat_transform_spec;
@@ -663,7 +663,7 @@ pub fn project_analysis_and_apply(
         )?;
     }
     let base = AnalysisSpec::from_transform(&spec, &prepared.source_root)?;
-    let artifact = prepared.source.program.into_artifact();
+    let artifact = prepared.source.into_artifact();
     let projection = frontend_elaboration::project_analysis(
         artifact,
         &spec,
@@ -679,7 +679,7 @@ pub fn project_analysis_and_apply(
 /// Each run gets its own mutable AST; vendor decisions remain read-only.
 #[derive(Clone)]
 struct PreparedTransform {
-    source: SourcePreparation,
+    source: artifact::SourceProgram,
     vendor_plan: Arc<VendorResolutionPlan>,
     provenance: GraphProvenance,
     /// Host loader per embedded input file.
@@ -832,7 +832,7 @@ impl SelectedOwnershipProgram {
         let chunks: Vec<_> = self.spec.materialize_chunk_ids().into_iter().collect();
         lowering::with_selected_ownership_preflight(
             lowering::SelectedOwnershipPreparationInput {
-                artifact: self.prepared.source.program.artifact(),
+                artifact: self.prepared.source.artifact(),
                 spec_inputs: MaterializeSpecInputs {
                     host_behavior: &self.spec.host_behavior,
                     program_premises: &self.spec.program_premises,
@@ -1152,7 +1152,6 @@ fn prepare_transform(
         &spec.vendor,
         artifact,
     )?;
-    let source_program = &source.program;
 
     // Single post-prepare vendor resolution pass: validates every mark,
     // resolves boundary mappings, swap targets, and partial-swap symbol
@@ -1162,8 +1161,8 @@ fn prepare_transform(
     // spec mid-pipeline.
     let swap_cfg = &spec.swap_vendor_chunks;
     let vendor_plan = build_vendor_resolution_plan(
-        source_program.artifact(),
-        source_program.indexes(),
+        source.artifact(),
+        source.indexes(),
         &spec.vendor,
         &VendorPlanOptions {
             package_roots: &cli.package_roots,
@@ -1201,17 +1200,13 @@ fn run_prepared_transform(
     diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<PreparedTransformResult> {
     let PreparedTransform {
-        source,
+        source: source_program,
         vendor_plan,
         provenance,
         embedded_loaders,
         ..
     } = prepared;
-    let SourcePreparation {
-        program: source_program,
-        counts,
-        chunk_records,
-    } = source;
+    let (counts, chunk_records) = source_report_records(&source_program.artifact().chunks);
     let materialise_chunk_ids: Vec<String> = spec.materialize_chunk_ids().into_iter().collect();
     anyhow::ensure!(
         options.ownership_subset.is_none() || !materialise_chunk_ids.is_empty(),
@@ -1437,6 +1432,30 @@ fn run_prepared_transform(
     }
 
     Ok(PreparedTransformResult::Completed)
+}
+
+fn source_report_records(
+    chunks: &[artifact::ChunkArtifact],
+) -> (ArtifactCounts, Vec<ArtifactChunkRecord>) {
+    let mut counts = ArtifactCounts {
+        kept_top_level_declarations: 0,
+        top_level_side_effects: 0,
+        export_aliases: 0,
+        unresolved_exports: 0,
+    };
+    let mut chunk_records = Vec::with_capacity(chunks.len());
+    for chunk in chunks {
+        let analysis = &chunk.analysis;
+        counts.kept_top_level_declarations += analysis.counts.kept_top_level_declarations;
+        counts.top_level_side_effects += analysis.counts.top_level_side_effects;
+        counts.export_aliases += analysis.counts.export_aliases;
+        counts.unresolved_exports += analysis.counts.unresolved_exports;
+        chunk_records.push(ArtifactChunkRecord {
+            chunk_id: analysis.chunk_id.clone(),
+            source_path: analysis.source_path.clone(),
+        });
+    }
+    (counts, chunk_records)
 }
 
 /// Chunk records of the emission set: records of excluded (fully-swapped)
