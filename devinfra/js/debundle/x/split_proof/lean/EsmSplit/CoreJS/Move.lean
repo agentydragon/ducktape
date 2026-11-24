@@ -396,7 +396,7 @@ theorem local_evalMembers_plain (n : Nat) (env : Env) (proto c : Addr) (ms : Lis
         unfold evalMembers
         refine (local_evalExpr_str n env _).bind' fun key => ?_
         refine (local_lift _).bind' fun name => ?_
-        refine (local_makeFunc env f).bind' fun value => ?_
+        refine (local_makeFunc _ f).bind' fun value => ?_
         refine (local_defineOwn ?_ name _).bind' fun _ => ?_
         · cases static <;> assumption
         · exact (local_pure _).bind' fun field => (ih ms h).bind' fun _ => local_pure _
@@ -506,6 +506,13 @@ theorem allocOnly_local (r : Nat) (R : Addr → Prop) (n : Nat) :
           refine (ihE env v he.1 fun z hz => hw z (by simp [readsNowProps, hz])).bind' fun _ => ?_
           exact (local_defineOwn ha name _).bind' fun _ =>
             ihP env a ps he.2 (fun z hz => hw z (by simp [readsNowProps, hz])) ha
+        | method k f =>
+          cases k <;> simp only [allocOnlyProps, Bool.false_eq_true] at he
+          rename_i key
+          unfold evalProps
+          refine (local_evalExpr_str n env key).bind' fun _ => (local_lift _).bind' fun name => ?_
+          refine (local_makeFunc _ f).bind' fun _ => (local_defineOwn ha name _).bind' fun _ => ?_
+          exact ihP env a ps he (by simpa [readsNowProps] using hw) ha
         | getter | setter | proto | spread => simp only [allocOnlyProps, Bool.false_eq_true] at he
 
 /-- **A declaration whose initializer only allocates is local**: run in region `r`, it sees region `r` and the
@@ -1063,7 +1070,7 @@ theorem map_bundleUnit_keys {ss : List Stmt} (frames : List (Nat × List (Name �
     rw [List.map_cons, List.map_cons, List.filterMap_cons, map_bundleUnit_keys frames l fun j hj => h j (by simp [hj])]
     simp [numbered, bundleUnit, List.getElem?_eq_getElem hi]
 
-theorem Agree.refl (N : List Name) (env : Env) : Agree N env env := ⟨rfl, fun _ _ => rfl⟩
+theorem Agree.refl (N : List Name) (env : Env) : Agree N env env := ⟨rfl, rfl, fun _ _ => rfl⟩
 
 /-- A successful-run equivalence between the orders in the linked bundle scope also holds for the split program. -/
 theorem moves_preserve_run_of_order {W : World} {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.Spec}

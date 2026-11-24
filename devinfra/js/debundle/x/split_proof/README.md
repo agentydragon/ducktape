@@ -64,6 +64,13 @@ CoreJS allocates a fresh object for each regular-expression literal. It preserve
 
 The browser-page profile also allows deferred construction of selected ambient constructors (`Date`, `Error`, `RegExp`, `Set`, and `URL`). The linked model retains the constructor name and arguments. If initialization reaches that lookup, it reports an unknown result before evaluating the arguments, including inside a `try` block. Reading `Date.now` can certify under a stable-reference premise. Calling it during initialization requires a model of the clock. The caller is responsible for choosing a profile that holds in the deployment.
 
+Linked replay models `super.member` and `super[key]` reads, direct calls, and
+optional calls. It starts at the current prototype of the method's home object
+and passes the active receiver to getters and calls. An arrow retains both the
+home object and receiver of its enclosing scope. Async bodies can retain these
+references, but replay stops if it reaches an async invocation. Super-property
+writes and deletion remain outside the executable model.
+
 The command prints one JSON verdict. A successful split reports `status: "certified"` after Lean certifies the output module ASTs and the printer writes them to the requested directory. The default `normal-completion` request means that, for each modeled world and successful final state, the bundle reaches that state exactly when the split does. It does not say that either program completes normally; in the closed-declaration case, both may throw. The linked-program proof additionally establishes that both programs initialize normally. The checker reports the strongest available guarantee, so a default request may report `all-outcomes` for a supported order-preserving split. Pass `--require all-outcomes` to insist on that stronger guarantee. A rejected request exits nonzero with `status: "rejected"`, a null guarantee and a reason.
 
 To move an initializer such as `Math.PI / 12`, pass

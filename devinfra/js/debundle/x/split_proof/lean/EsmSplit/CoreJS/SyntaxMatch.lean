@@ -70,6 +70,9 @@ partial def exprEq : MatchEq Expr
     let ⟨base⟩ ← exprEq o o'
     let ⟨key⟩ ← exprEq k k'
     return ⟨base ▸ key ▸ rfl⟩
+  | .getSuper k, .getSuper k' => do
+    let ⟨key⟩ ← exprEq k k'
+    return ⟨key ▸ rfl⟩
   | .getOptional o k, .getOptional o' k' => do
     let ⟨base⟩ ← exprEq o o'
     let ⟨key⟩ ← exprEq k k'
@@ -102,6 +105,11 @@ partial def exprEq : MatchEq Expr
     let ⟨key⟩ ← exprEq k k'
     let ⟨arguments⟩ ← listEq exprEq args args'
     return ⟨base ▸ key ▸ arguments ▸ rfl⟩
+  | .callSuper k args optional, .callSuper k' args' optional' => do
+    let ⟨key⟩ ← exprEq k k'
+    let ⟨xs⟩ ← listEq exprEq args args'
+    let ⟨opt⟩ ← scalarEq optional optional'
+    return ⟨key ▸ xs ▸ opt ▸ rfl⟩
   | .callOptionalReceiver o k args, .callOptionalReceiver o' k' args' => do
     let ⟨base⟩ ← exprEq o o'
     let ⟨key⟩ ← exprEq k k'
@@ -217,6 +225,10 @@ private partial def propEq : MatchEq PropDef
     let ⟨key⟩ ← exprEq k k'
     let ⟨value⟩ ← exprEq v v'
     return ⟨key ▸ value ▸ rfl⟩
+  | .method k f, .method k' f' => do
+    let ⟨key⟩ ← exprEq k k'
+    let ⟨method⟩ ← funcEq f f'
+    return ⟨key ▸ method ▸ rfl⟩
   | .getter k f, .getter k' f' => do
     let ⟨key⟩ ← exprEq k k'
     let ⟨fn⟩ ← funcEq f f'

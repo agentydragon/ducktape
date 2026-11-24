@@ -79,18 +79,20 @@ def Property.enumerable : Property → Bool
 def Property.configurable : Property → Bool
   | .data _ _ _ c | .accessor _ _ _ c => c
 
-/-- Names to bindings, innermost first, and the value of `this`. -/
+/-- Names to bindings, innermost first, and the receiver and home object for member access. -/
 structure Env where
   vars : List (Name × Addr)
   this : Val
+  home : Option Addr := none
   deriving DecidableEq
 
-/-- The bindings of `names` in `env`, and its `this`: what a closure keeps of the scope it was made in. A function
+/-- The bindings of `names`, receiver and home object: what a closure keeps of its scope. A function
 keeps the bindings its code can mean (`Func.closes`) and no others, so two scopes that give those names the same
 bindings give the same closure. -/
 def Env.capture (env : Env) (names : List Name) : Env where
   vars := names.eraseDups.filterMap fun x => (env.vars.lookup x).map (x, ·)
   this := env.this
+  home := env.home
 
 /-- What a callable object runs. `fields` are the instance fields of a class constructor. -/
 inductive Code where
@@ -451,7 +453,7 @@ def regexpPrototype : Obj :=
 private def regexpGetterObject (name : String) (getter : RegExpGetter) : Obj :=
   let label := "get " ++ name
   let f := Func.mk label .method false [] [.ret (.prim (.regExpGet getter) [.this])]
-  { proto := some functionProto, code := some (.closure f ⟨[], .undef⟩ []),
+  { proto := some functionProto, code := some (.closure f ⟨[], .undef, none⟩ []),
     props := [("length", .data (.num 0) false false true), ("name", .data (.str label) false false true)] }
 
 def regexpObject (data : RegExpData) : Obj :=

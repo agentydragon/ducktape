@@ -94,6 +94,17 @@ theorem getProp_le {call call' : Call W} (h : Call.le call call') (base key : Va
   unfold getProp
   repeat' first | exact getFrom_le h _ _ _ | exact protoProp_le h _ _ _ _ | mono_step
 
+theorem getSuperProp_le {call call' : Call W} (h : Call.le call call') (home : Option Addr) (receiver key : Val) :
+    getSuperProp call home receiver key ⊑ getSuperProp call' home receiver key := by
+  cases home with
+  | none => exact M.le_refl _
+  | some a =>
+    unfold getSuperProp
+    refine M.le_bind (M.le_refl _) fun key => M.le_bind (M.le_refl _) fun obj => ?_
+    cases obj.proto <;> simp only []
+    · exact M.le_refl _
+    · exact getFrom_le h _ _ key
+
 theorem setProp_le {call call' : Call W} (h : Call.le call call') (base key v : Val) :
     setProp call base key v ⊑ setProp call' base key v := by
   unfold setProp
@@ -188,6 +199,7 @@ macro_rules
     | with_reducible exact copySpread_le ($h).callLe _ _
     | with_reducible exact classParents_le ($h).callLe _
     | with_reducible exact getProp_le ($h).callLe _ _
+    | with_reducible exact getSuperProp_le ($h).callLe _ _ _
     | with_reducible exact setProp_le ($h).callLe _ _ _
     | with_reducible exact getRef_le ($h).callLe _ _
     | with_reducible exact putRef_le ($h).callLe _ _ _

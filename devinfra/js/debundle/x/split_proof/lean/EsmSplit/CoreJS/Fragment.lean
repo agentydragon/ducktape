@@ -75,6 +75,7 @@ def allocOnlyAll : List Expr → Bool
 def allocOnlyProps : List PropDef → Bool
   | [] => true
   | .init (.str _) v :: ps => v.allocOnly && allocOnlyProps ps
+  | .method (.str _) _ :: ps => allocOnlyProps ps
   | _ :: _ => false
 end
 

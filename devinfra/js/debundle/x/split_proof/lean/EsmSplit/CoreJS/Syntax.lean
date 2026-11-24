@@ -115,6 +115,8 @@ inductive Expr where
   | derived (name : String) (self : Bool) (parent : Expr) (members : List ClassMember)
       (ctor : Option (List Stmt × Option (List Expr) × Func))
   | get (o k : Expr)
+  /-- Read from the current prototype of the lexical home object, using the active receiver. -/
+  | getSuper (k : Expr)
   /-- `o?.[k]`: evaluate the receiver once and skip the key on a nullish value. -/
   | getOptional (o k : Expr)
   /-- `k in o`. -/
@@ -128,6 +130,7 @@ inductive Expr where
   | call (f : Expr) (args : List Expr)
   /-- `o[k](args)`: the callee is read from `o`, which is `this` in the call. -/
   | callMethod (o k : Expr) (args : List Expr)
+  | callSuper (k : Expr) (args : List Expr) (optional : Bool)
   /-- `o?.m(args)`: evaluate the receiver once, short circuit a nullish value, and keep the receiver as `this`. -/
   | callOptionalReceiver (o k : Expr) (args : List Expr)
   /-- `o.m?.(args)`: look up the callee once and keep `o` as `this` if called. -/
@@ -148,6 +151,7 @@ inductive Target where
 
 inductive PropDef where
   | init (k v : Expr)
+  | method (k : Expr) (f : Func)
   | getter (k : Expr) (f : Func)
   | setter (k : Expr) (f : Func)
   /-- `__proto__: v`. -/
@@ -322,6 +326,7 @@ def Expr.free : Expr → List Name
   | .derived name self parent members ctor =>
     ((parent.free ++ freeMembers members) ++ derivedCtorFree ctor).filter fun x => !(self && x == name)
   | .get o k | .getOptional o k => o.free ++ k.free
+  | .getSuper k => k.free
   | .hasProp k o => k.free ++ o.free
   | .delete o k => o.free ++ k.free
   | .assign t rhs => t.free ++ rhs.free
@@ -331,6 +336,7 @@ def Expr.free : Expr → List Name
   | .call f args => f.free ++ freeExprs args
   | .callMethod o k args | .callOptionalReceiver o k args | .callOptionalCallee o k args =>
     o.free ++ (k.free ++ freeExprs args)
+  | .callSuper k args _ => k.free ++ freeExprs args
   | .new f args => f.free ++ freeExprs args
   | .prim _ args => freeExprs args
   | .unary _ e => e.free
@@ -345,7 +351,7 @@ def Target.free : Target → List Name
 
 def PropDef.free : PropDef → List Name
   | .init k v => k.free ++ v.free
-  | .getter k f | .setter k f => k.free ++ f.free
+  | .method k f | .getter k f | .setter k f => k.free ++ f.free
   | .proto v | .spread v => v.free
 
 def ClassMember.free : ClassMember → List Name

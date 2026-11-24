@@ -120,10 +120,14 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
       · intro cells env t safe
         exact evalTarget_reachFrame_step (fun e => prev.expr cells env e safe) t
       · intro cells env a ps safe ha
-        exact evalProps_reachFrame_step away env ha (prev.call cells).getter (fun e => prev.expr cells env e safe) (make cells env safe)
+        have makeMethod (home : Addr) (h : A (.obj home)) :=
+          make cells { env with home := some home } (Env.nodes_setHome safe (some home) (by simpa))
+        exact evalProps_reachFrame_step away env ha (prev.call cells).getter (fun e => prev.expr cells env e safe) makeMethod
           (fun ps => prev.props cells env a ps safe ha) ps
       · intro cells env p c ms safe hp hc
-        exact evalMembers_reachFrame_step away env hp hc (fun e => prev.expr cells env e safe) (make cells env safe)
+        have makeMethod (home : Addr) (h : A (.obj home)) :=
+          make cells { env with home := some home } (Env.nodes_setHome safe (some home) (by simpa))
+        exact evalMembers_reachFrame_step away env hp hc (fun e => prev.expr cells env e safe) makeMethod
           (fun ms => prev.members cells env p c ms safe hp hc) ms
       · intro cells env a fs safe ha
         exact evalFields_reachFrame_step away env ha (fun e => prev.expr cells env e safe)

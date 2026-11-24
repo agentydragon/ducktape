@@ -61,20 +61,21 @@ theorem filterMap_congr {f g : α → Option β} : ∀ (l : List α), (∀ a ∈
 
 /-! ## Scopes that agree on some names -/
 
-/-- `env` and `env'` have the same `this` and give every name of `N` the same binding, or none. -/
+/-- The environments share a receiver and home object and resolve each name of `N` to the same binding. -/
 structure Agree (N : List Name) (env env' : Env) : Prop where
   this : env.this = env'.this
+  home : env.home = env'.home
   vars : ∀ x ∈ N, env.vars.lookup x = env'.vars.lookup x
 
 theorem Agree.mono {N N' : List Name} {env env' : Env} (h : Agree N env env') (sub : ∀ x ∈ N', x ∈ N) :
     Agree N' env env' :=
-  ⟨h.this, fun x hx => h.vars x (sub x hx)⟩
+  ⟨h.this, h.home, fun x hx => h.vars x (sub x hx)⟩
 
 /-- A new innermost frame, the same in both scopes: they then also agree on the names of the frame. -/
 theorem Agree.push {N N' : List Name} {env env' : Env} (h : Agree N env env') (frame : List (Name × Addr))
     (sub : ∀ x ∈ N', x ∈ N ∨ x ∈ frame.map (·.1)) :
     Agree N' { env with vars := frame ++ env.vars } { env' with vars := frame ++ env'.vars } := by
-  refine ⟨h.this, fun x hx => ?_⟩
+  refine ⟨h.this, h.home, fun x hx => ?_⟩
   simp only [List.lookup_append]
   cases hf : frame.lookup x with
   | some a => rfl
@@ -87,11 +88,15 @@ theorem Agree.push {N N' : List Name} {env env' : Env} (h : Agree N env env') (f
 
 theorem Agree.withThis {N : List Name} {env env' : Env} (h : Agree N env env') (v : Val) :
     Agree N { env with this := v } { env' with this := v } :=
-  ⟨rfl, h.vars⟩
+  ⟨rfl, h.home, h.vars⟩
+
+theorem Agree.withHome {N : List Name} {env env' : Env} (h : Agree N env env') (home : Option Addr) :
+    Agree N { env with home } { env' with home } :=
+  ⟨h.this, rfl, h.vars⟩
 
 theorem capture_agree {N : List Name} {env env' : Env} (h : Agree N env env') : env.capture N = env'.capture N := by
   unfold Env.capture
-  rw [h.this, filterMap_congr _ fun x hx => by rw [h.vars x (List.mem_eraseDups.1 hx)]]
+  rw [h.this, h.home, filterMap_congr _ fun x hx => by rw [h.vars x (List.mem_eraseDups.1 hx)]]
 
 theorem readVar_agree {env env' : Env} {x : Name} (h : env.vars.lookup x = env'.vars.lookup x) :
     (readVar env x : M W Val) = readVar env' x := by
@@ -350,6 +355,8 @@ macro_rules
     | same_apply ($ih).stmt using $hN
     | same_apply ($ih).stmts using $hN
     | same_apply makeFunc_agree using $hN
+    | (with_reducible apply makeFunc_agree
+       with_reducible exact (($hN).mono (by free_mem)).withHome _)
     | with_reducible exact readVar_agree (($hN).vars _ (by free_here))
     | with_reducible exact writeVar_agree (($hN).vars _ (by free_here)) _
     | with_reducible exact initVar_agree (($hN).vars _ (by free_here)) _
@@ -427,12 +434,13 @@ theorem Same.cls_succ (env env' : Env) (name : String) (self : Bool) (ctor : Fun
           exact ⟨hx, by cases h : (self && x == name) <;> simp_all⟩)
   · have h2 : Agree (ctor.free ++ freeMembers members) env1 env1' := h1.mono fun x hx => List.mem_append_right _ hx
     dsimp only
-    rw [capture_agree h2]
-    refine M.bind_congr rfl fun proto => M.bind_congr rfl fun c => M.bind_congr rfl fun _ => ?_
+    refine M.bind_congr rfl fun proto => ?_
+    rw [capture_agree (h2.withHome (some proto))]
+    refine M.bind_congr rfl fun c => M.bind_congr rfl fun _ => ?_
     refine M.bind_congr (ih.members _ _ _ _ _ (h2.mono fun x hx => List.mem_append_right _ hx)) fun keys => ?_
     refine M.bind_congr rfl fun _ => M.bind_congr ?_ fun _ => M.bind_congr ?_ fun _ => rfl
     · exact initSelf_agree self (.obj c) fun hs => h1.vars name (by simp [hs])
-    · refine ih.fields _ _ _ _ ((h2.withThis (.obj c)).mono fun x hx => ?_)
+    · refine ih.fields _ _ _ _ (((h2.withThis (.obj c)).withHome (some c)).mono fun x hx => ?_)
       obtain ⟨⟨k, init⟩, hmem, hx⟩ := List.mem_flatMap.1 hx
       obtain ⟨⟨⟨static, k'⟩, init'⟩, hzip, hsome⟩ := List.mem_filterMap.1 hmem
       cases static <;> simp at hsome
@@ -464,29 +472,31 @@ theorem Same.derived_succ (env env' : Env) (name : String) (self : Bool) (parent
       refine M.bind_congr (ih.expr _ _ _ (h2.mono fun x hx => List.mem_append_left _ hx)) fun base => ?_
       refine M.bind_congr rfl fun parents => ?_
       unfold finishDerived
-      have sameCode (fields : List (PropertyKey × Expr))
+      have sameCode (proto : Addr) (fields : List (PropertyKey × Expr))
           (hfree : ∀ x ∈ fields.flatMap (·.2.free), x ∈ freeMembers members) :
-          derivedCtorCode env1 ctor fields = derivedCtorCode env1' ctor fields := by
+          derivedCtorCode { env1 with home := some proto } ctor fields =
+            derivedCtorCode { env1' with home := some proto } ctor fields := by
         have agree : Agree (derivedCtorFree ctor ++ fields.flatMap (·.2.free)) env1 env1' :=
           both.mono fun x hx => by
             rcases List.mem_append.1 hx with hc | hf
             · exact List.mem_append_right _ hc
             · exact List.mem_append_left _ (List.mem_append_right _ (hfree x hf))
         unfold derivedCtorCode
-        rw [capture_agree agree]
-      rw [sameCode [] (by simp)]
-      refine M.bind_congr rfl fun proto => M.bind_congr rfl fun c => M.bind_congr rfl fun _ => ?_
+        rw [capture_agree (agree.withHome (some proto))]
+      refine M.bind_congr rfl fun proto => ?_
+      dsimp only
+      rw [sameCode proto [] (by simp)]
+      refine M.bind_congr rfl fun c => M.bind_congr rfl fun _ => ?_
       refine M.bind_congr (ih.members _ _ _ _ _ (h2.mono fun x hx => List.mem_append_right _ hx)) fun keys => ?_
       let fields := (keys.zip (fieldInits members)).filterMap fun ((static, k), init) =>
         if static then none else some (k, init)
-      have hcode := sameCode fields fun x hx => by
+      have hcode := sameCode proto fields fun x hx => by
         obtain ⟨⟨k, init⟩, hmem, hx⟩ := List.mem_flatMap.1 hx
         obtain ⟨⟨⟨static, k'⟩, init'⟩, hzip, hsome⟩ := List.mem_filterMap.1 hmem
         cases static <;> simp at hsome
         obtain ⟨rfl, rfl⟩ := hsome
         exact fieldInits_free members _ (List.of_mem_zip hzip).2 x hx
       have hself := initSelf_agree (W := W) self (.obj c) fun hs => h1.vars name (by simp [hs])
-      dsimp only
       rw [hcode, hself]
 
 set_option maxHeartbeats 1000000 in
@@ -494,6 +504,10 @@ theorem Same.expr_succ (env env' : Env) (e : Expr) (hN : Agree e.free env env') 
     (evalExpr (n + 1) env e : M W _) = evalExpr (n + 1) env' e := by
   cases e with
   | this => unfold evalExpr; rw [hN.this]
+  | getSuper | callSuper =>
+    unfold evalExpr
+    rw [hN.home, hN.this]
+    same ih hN
   | assign t rhs =>
     unfold evalExpr
     refine ih.assign_like hN (by free_mem) fun r hr => ?_
@@ -677,7 +691,7 @@ theorem lookup_filterMap (f : Name → Option Addr) (x : Name) : ∀ (l : List N
 when the kept names include its free names. -/
 theorem capture_faithful (n : Nat) (env : Env) (s : Stmt) (N : List Name) (hN : ∀ x ∈ s.free, x ∈ N) :
     (execStmt n (env.capture N) s : M W Flow) = execStmt n env s := by
-  refine (same n).stmt _ _ s ⟨rfl, fun x hx => ?_⟩
+  refine (same n).stmt _ _ s ⟨rfl, rfl, fun x hx => ?_⟩
   show (N.eraseDups.filterMap fun y => (env.vars.lookup y).map (y, ·)).lookup x = _
   simp only [lookup_filterMap, List.mem_eraseDups, hN x hx, ite_true]
 

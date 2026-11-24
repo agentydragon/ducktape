@@ -258,7 +258,7 @@ private def linkedObject (lower : Name → Json → Except String Expr)
       | "set" => pure (.setter keyExpr (← method ("set " ++ key) value))
       | "init" =>
         if ← p.getObjValAs? Bool "method" then
-          pure (.init keyExpr (.func (← method key value)))
+          pure (.method keyExpr (← method key value))
         else if key == "__proto__" && !(← p.getObjValAs? Bool "shorthand") then
           pure (.proto (← lower "" value))
         else pure (.init keyExpr (← lower key value))
@@ -296,15 +296,22 @@ private def ambientSymbolMember? (j : Json) : Option Name := do
     let prop ← (j.getObjVal? "property").toOption
     (identifier prop).toOption
 
+private def memberKey (lower : Json → Except String Expr) (j : Json) : Except String Expr := do
+  let prop ← j.getObjVal? "property"
+  if (← field prop "type") == "PrivateIdentifier" then throw "unsupported private member access"
+  if ← j.getObjValAs? Bool "computed" then lower prop else Expr.str <$> identifier prop
+
+private def isSuperMember (j : Json) : Bool :=
+  (field j "type").toOption == some "MemberExpression" &&
+    (j.getObjVal? "object" >>= (field · "type")).toOption == some "Super"
+
 /-- Decode a property access, retaining the receiver and the unevaluated key for
 the interpreter's property read, call, or write. -/
 private partial def linkedMember (lower : Json → Except String Expr) (j : Json) (allowOptional := false) :
     Except String (Expr × Expr) := do
   if (← j.getObjValAs? Bool "optional") && !allowOptional then throw "unsupported optional member access"
   let obj ← j.getObjVal? "object"
-  let prop ← j.getObjVal? "property"
-  if (← field obj "type") == "Super" then throw "unsupported super member access"
-  if (← field prop "type") == "PrivateIdentifier" then throw "unsupported private member access"
+  if isSuperMember j then throw "unsupported super member access"
   -- Consecutive optional reads propagate undefined. A non-optional continuation
   -- would need to distinguish a skipped access from a property that returned undefined.
   let lowerBase := do
@@ -317,8 +324,7 @@ private partial def linkedMember (lower : Json → Except String Expr) (j : Json
     match ambientSymbolMember? j with
     | some member => s!"unsupported ambient member Symbol.{member}"
     | none => reason
-  let key ← if ← j.getObjValAs? Bool "computed" then lower prop else Expr.str <$> identifier prop
-  return (base, key)
+  return (base, ← memberKey lower j)
 
 private def linkedTarget (imports : List Name) (inFunction allowFrozen : Bool)
     (lower : Json → Except String Expr) (j : Json) : Except String Target := do
@@ -396,31 +402,38 @@ private def enclosedSuperCall (parents : List (String × Json)) : Bool := Id.run
     ["ClassExpression", "ClassDeclaration"].contains ((field cls "type").toOption.getD "") &&
     (cls.getObjVal? "superClass").toOption.any (· != .null)
 
-private partial def opaqueContext (checkPrivateNames wholeUnit moduleLocationChecked : Bool) (parents : List (String × Json)) (j : Json) : Bool :=
+private partial def opaqueContext (checkPrivateNames wholeUnit moduleLocationChecked retainedSuperMembers : Bool) (parents : List (String × Json)) (j : Json) : Bool :=
   match j with
   | .obj fields =>
     let kind := (field j "type").toOption.getD ""
-    (kind == "Super" && !(wholeUnit && enclosedSuperCall parents)) ||
+    let retainedMember := retainedSuperMembers && (match parents with
+      | ("object", parent) :: _ => isSuperMember parent
+      | _ => false)
+    (kind == "Super" && !retainedMember && !(wholeUnit && enclosedSuperCall parents)) ||
       (kind == "ImportExpression" && !moduleLocationChecked) ||
       (kind == "MetaProperty" && !(moduleLocationChecked &&
         (j.getObjVal? "meta" >>= identifier).toOption == some "import" &&
         (j.getObjVal? "property" >>= identifier).toOption == some "meta")) || (checkPrivateNames && kind == "PrivateIdentifier") ||
       (kind == "CallExpression" && (j.getObjVal? "callee" >>= identifier).toOption == some "eval") ||
-      fields.toList.any (fun (key, child) => opaqueContext checkPrivateNames wholeUnit moduleLocationChecked (if wholeUnit then (key, j) :: parents else []) child)
-  | .arr items => items.any (opaqueContext checkPrivateNames wholeUnit moduleLocationChecked parents)
+      fields.toList.any (fun (key, child) => opaqueContext checkPrivateNames wholeUnit moduleLocationChecked retainedSuperMembers
+        (if wholeUnit || retainedSuperMembers then (key, j) :: parents else []) child)
+  | .arr items => items.any (opaqueContext checkPrivateNames wholeUnit moduleLocationChecked retainedSuperMembers parents)
   | _ => false
 
 /-- Detached bodies require their source module and method context. When the entire statement is
 retained, a direct super call within the body of its own derived constructor retains its class.
 Direct eval can refer to cells absent from the static capture list in either case. -/
 def needsOpaqueContext (j : Json) (checkPrivateNames wholeUnit moduleLocationChecked : Bool := false) : Bool :=
-  opaqueContext checkPrivateNames false false [] j && (!wholeUnit || opaqueContext checkPrivateNames true moduleLocationChecked [] j)
+  opaqueContext checkPrivateNames false false false [] j &&
+    (!wholeUnit || opaqueContext checkPrivateNames true moduleLocationChecked false [] j)
 
 /-- LinkedInput numbers each callable by its original unit and lexical site and checks emitted syntax.
 The scope resolver supplies references to cells outside the retained callable. -/
 private def deferredFunction (j : Json) (kind : FuncKind) (name : Name) (self : Bool)
     (arity : Nat) (reason : String) (checkPrivateNames := true) : Except String Func := do
-  if needsOpaqueContext j (checkPrivateNames := checkPrivateNames) then throw reason
+  -- Linked lowering retains the entire parsed method and its lexical arrows. The
+  -- closure keeps its home object, and invocation with a refusal always stops replay.
+  if opaqueContext checkPrivateNames false false true [] j then throw reason
   let .ok captures := j.getObjValAs? (List Name) "opaqueCaptures" | throw reason
   let .ok code := j.getObjValAs? Nat ":opaque-unit" | throw reason
   let .ok part := j.getObjValAs? Nat ":opaque-part" | throw reason
@@ -464,7 +477,9 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     if ambientSymbolMember? j == some "iterator" then
       if profile == .browserPage then return .prim .iteratorSymbol []
       if inFunction then return .prim (.opaqueAmbientMemberRef "Symbol" "iterator") []
-    let (base, key) ← linkedMember (linkedExpr profile imports inFunction "") j
+    let lower := linkedExpr profile imports inFunction ""
+    if isSuperMember j then return .getSuper (← memberKey lower j)
+    let (base, key) ← linkedMember lower j
     return .get base key
   | "ChainExpression" =>
     let body ← j.getObjVal? "expression"
@@ -476,6 +491,8 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
       unless (← field member "type") == "MemberExpression" do throw reason
       let optionalReceiver ← member.getObjValAs? Bool "optional"
       if optionalCallee == optionalReceiver then throw reason
+      if isSuperMember member then
+        return .callSuper (← memberKey lower member) (← (← body.getObjValAs? (List Json) "arguments").mapM lower) true
       if ← member.getObjValAs? Bool "computed" then throw "unsupported computed optional method call"
       let (base, key) ← linkedMember lower member (allowOptional := optionalReceiver)
       let args ← (← body.getObjValAs? (List Json) "arguments").mapM lower
@@ -622,6 +639,8 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
       | _ => pure ()
     match ← field callee "type" with
     | "MemberExpression" =>
+      if isSuperMember callee then
+        return .callSuper (← memberKey lower callee) (← args.mapM lower) false
       if ambientSymbolMember? callee == some "for" then
         -- Retain deferred arguments and their captures. Initialization stops at
         -- the opaque callee reference before it can evaluate an argument.

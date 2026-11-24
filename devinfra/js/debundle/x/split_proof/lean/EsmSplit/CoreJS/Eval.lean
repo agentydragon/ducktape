@@ -58,8 +58,10 @@ def addPrototype (a : Addr) (kind : FuncKind := .normal) : M W Unit := do
 /-- A function object for `f`, closed over the bindings of `env` that its code can mean. -/
 def makeFunc (env : Env) (f : Func) : M W Val := do
   let env ← selfScope env f.self f.name
+  let closed := env.capture f.closes
+  let closed := if f.kind == .normal then { closed with home := none } else closed
   let a ← alloc {
-    proto := some f.intrinsicProto, code := some (.closure f (env.capture f.closes) []),
+    proto := some f.intrinsicProto, code := some (.closure f closed []),
     props := [("length", .data (.num (Float.ofNat f.length)) false false true),
       ("name", .data (.str f.name) false false true)] }
   (if f.kind.hasOwnPrototype then addPrototype a f.kind else pure ())
@@ -202,7 +204,8 @@ def finishDerived (runMembers : Env → Addr → Addr → List ClassMember → M
     (env : Env) (name : Name) (self : Bool) (members : List ClassMember) (parents : Addr × Option Addr)
     (ctor : Option (List Stmt × Option (List Expr) × Func) := none) : M W Val := do
   let proto ← alloc { proto := parents.2, props := [] }
-  let (code, arity) := derivedCtorCode env ctor []
+  let ctorEnv := { env with home := some proto }
+  let (code, arity) := derivedCtorCode ctorEnv ctor []
   let c ← alloc {
     proto := some parents.1, code := some code,
     props := [("length", .data (.num (Float.ofNat arity)) false false true),
@@ -212,7 +215,7 @@ def finishDerived (runMembers : Env → Addr → Addr → List ClassMember → M
   let fields := (keys.zip (fieldInits members)).filterMap fun ((static, k), init) =>
     if static then none else some (k, init)
   unless fields.isEmpty do
-    modifyObj c fun o => { o with code := some (derivedCtorCode env ctor fields).1 }
+    modifyObj c fun o => { o with code := some (derivedCtorCode ctorEnv ctor fields).1 }
   initSelf env self name (.obj c)
   pure (.obj c)
 
@@ -247,6 +250,15 @@ def forwardFreshArguments (args : List Val) : M W (List Val) := do
   | some (.data (.host "ArrayIterator.prototype.next") ..) => pure args
   | _ => unknown "arguments spread uses a modified array iterator"
 
+/-- Start at the home object's current prototype. Any accessor uses the receiver retained by the reference. -/
+def getSuperProp (call : Call W) (home : Option Addr) (receiver key : Val) : M W Val := do
+  let some home := home | unknown "super property requires a home object"
+  let key ← toKey key
+  let obj ← getObj home
+  match obj.proto with
+  | some parent => getFrom call parent receiver key
+  | none => throwErr .type "cannot read properties of null super base"
+
 mutual
 
 def evalExpr : Nat → Env → Expr → M W Val
@@ -274,8 +286,8 @@ def evalExpr : Nat → Env → Expr → M W Val
     | .arrWithSpread _ => unknown "array spread requires iterator semantics"
     | .cls name self ctor members => do
       let env ← selfScope env self name
-      let closed := env.capture (ctor.free ++ freeMembers members)
       let proto ← alloc { proto := some objectProto, props := [] }
+      let closed := { env with home := some proto }.capture (ctor.free ++ freeMembers members)
       let c ← alloc {
         proto := some functionProto, code := some (.closure ctor closed []),
         props := [("length", .data (.num (Float.ofNat ctor.length)) false false true),
@@ -287,7 +299,7 @@ def evalExpr : Nat → Env → Expr → M W Val
       let perInstance := fields.filterMap fun ((static, k), init) => if static then none else some (k, init)
       modifyObj c fun o => { o with code := some (.closure ctor closed perInstance) }
       initSelf env self name (.obj c)
-      evalFields n { env with this := .obj c } c
+      evalFields n { env with this := .obj c, home := some c } c
         (fields.filterMap fun ((static, k), init) => if static then some (k, init) else none)
       pure (.obj c)
     | .derived name self parent members ctor => do
@@ -300,6 +312,8 @@ def evalExpr : Nat → Env → Expr → M W Val
       let base ← evalExpr n env o
       let key ← evalExpr n env k
       getProp (callFn n) base key
+    | .getSuper k => do
+      getSuperProp (callFn n) env.home env.this (← evalExpr n env k)
     | .getOptional o k => do
       let base ← evalExpr n env o
       if !(← lift (shortCircuits .nullish base)) then pure .undef else do
@@ -347,6 +361,11 @@ def evalExpr : Nat → Env → Expr → M W Val
       let key ← evalExpr n env k
       let callee ← getProp (callFn n) base key
       callFn n callee base (← evalArgs n env args)
+    | .callSuper k args optional => do
+      let callee ← getSuperProp (callFn n) env.home env.this (← evalExpr n env k)
+      if optional then
+        if !(← lift (shortCircuits .nullish callee)) then return .undef
+      callFn n callee env.this (← evalArgs n env args)
     | .callOptionalReceiver o k args => do
       let base ← evalExpr n env o
       if !(← lift (shortCircuits .nullish base)) then pure .undef else do
@@ -407,12 +426,15 @@ def evalProps : Nat → Env → Addr → List PropDef → M W Unit
     | .init k v =>
       let key ← toKey (← evalExpr n env k)
       createData a key (← evalExpr n env v)
+    | .method k f =>
+      let key ← toKey (← evalExpr n env k)
+      createData a key (← makeFunc { env with home := some a } f)
     | .getter k f =>
       let key ← toKey (← evalExpr n env k)
-      defineOwn a key { get := some (← makeFunc env f), enumerable := some true, configurable := some true }
+      defineOwn a key { get := some (← makeFunc { env with home := some a } f), enumerable := some true, configurable := some true }
     | .setter k f =>
       let key ← toKey (← evalExpr n env k)
-      defineOwn a key { set := some (← makeFunc env f), enumerable := some true, configurable := some true }
+      defineOwn a key { set := some (← makeFunc { env with home := some a } f), enumerable := some true, configurable := some true }
     | .spread source => copySpread (callFn n) a (← evalExpr n env source)
     | .proto v =>
       match ← evalExpr n env v with
@@ -433,15 +455,15 @@ def evalMembers : Nat → Env → Addr → Addr → List ClassMember → M W (Li
       | .method static k f => do
         let key ← toKey (← evalExpr n env k)
         defineOwn (home static) key
-          { value := some (← makeFunc env f), writable := some true, enumerable := some false, configurable := some true }
+          { value := some (← makeFunc { env with home := some (home static) } f), writable := some true, enumerable := some false, configurable := some true }
         pure none
       | .getter static k f => do
         let key ← toKey (← evalExpr n env k)
-        defineOwn (home static) key { get := some (← makeFunc env f), enumerable := some false, configurable := some true }
+        defineOwn (home static) key { get := some (← makeFunc { env with home := some (home static) } f), enumerable := some false, configurable := some true }
         pure none
       | .setter static k f => do
         let key ← toKey (← evalExpr n env k)
-        defineOwn (home static) key { set := some (← makeFunc env f), enumerable := some false, configurable := some true }
+        defineOwn (home static) key { set := some (← makeFunc { env with home := some (home static) } f), enumerable := some false, configurable := some true }
         pure none
       | .field static k _ => do pure (some (static, ← toKey (← evalExpr n env k)))
     pure (field.toList ++ (← evalMembers n env proto c ms))

@@ -346,11 +346,7 @@ theorem constructTarget_reachFrame_of_steps {r R cells A n} (away : Away r R A)
           apply (reachFrame_constructorReceiver root allocate proto hp).bind
           intro receiver hra
           have hr := safeVal_obj.2 hra
-          have fieldEnv : ∀ node ∈ Env.nodes { closed with this := .obj receiver }, A node := by
-            intro node he
-            rcases List.mem_append.mp he with hp | hp
-            · exact caps node (List.mem_append_left _ hp)
-            · exact hr node hp
+          have fieldEnv := Env.nodes_setThis caps hr
           apply (fields { closed with this := .obj receiver } receiver fs fieldEnv hra).bind
           intro _ _
           let finishValue : Val → M W Val

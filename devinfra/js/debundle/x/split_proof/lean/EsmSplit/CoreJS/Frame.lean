@@ -353,7 +353,7 @@ theorem evalMembers_plain_keeps (n : Nat) (env : Env) (proto c : Addr) (ms : Lis
         unfold evalMembers
         refine keeps_bind ((evalExpr_str_inert n env _).keeps hb) fun key s1 _ hb1 => ?_
         refine keeps_bind ((inert_lift _).keeps hb1) fun name s2 _ hb2 => ?_
-        refine keeps_bind (makeFunc_keeps env f hb2) fun value s3 _ hb3 => ?_
+        refine keeps_bind (makeFunc_keeps _ f hb2) fun value s3 _ hb3 => ?_
         refine keeps_bind (defineOwn_keeps _ name _ hb3 ?_) fun _ s4 _ hb4 => ?_
         · cases static <;> assumption
         · refine keeps_bind ((inert_pure _).keeps hb4) fun field s5 _ hb5 => ?_
@@ -482,6 +482,14 @@ theorem allocOnly_keeps (n : Nat) :
           refine keeps_bind ((inert_lift _).keeps hb1) fun name s2 _ hb2 => ?_
           refine keeps_bind (ihE env v base s2 he.1 hb2) fun vv s3 _ hb3 => ?_
           exact keeps_bind (defineOwn_keeps a name _ hb3 ha) fun _ s4 _ hb4 => ihP env a ps base s4 he.2 hb4 ha
+        | method k f =>
+          cases k <;> simp only [allocOnlyProps, Bool.false_eq_true] at he
+          rename_i key
+          unfold evalProps
+          refine keeps_bind (ihE env (.str key) base s rfl hb) fun _ s1 _ hb1 => ?_
+          refine keeps_bind ((inert_lift _).keeps hb1) fun name s2 _ hb2 => ?_
+          refine keeps_bind (makeFunc_keeps _ f hb2) fun _ s3 _ hb3 => ?_
+          exact keeps_bind (defineOwn_keeps a name _ hb3 ha) fun _ s4 _ hb4 => ihP env a ps base s4 he hb4 ha
         | getter | setter | proto | spread => simp only [allocOnlyProps, Bool.false_eq_true] at he
 
 /-- **An expression that only allocates changes nothing that existed**, however it ends: with a value, with a throw

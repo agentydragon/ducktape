@@ -21,11 +21,11 @@ def program (swap : Bool) (returned callback moved : Func) : Program where
       body := if swap then [(2, movedStmt moved), (1, callerStmt callback)]
               else [(1, callerStmt callback), (2, movedStmt moved)], exports := [] }]
 
-private def providerEnv : Env := ⟨[("makeWrapper", ⟨1, 0⟩)], .undef⟩
+private def providerEnv : Env := ⟨[("makeWrapper", ⟨1, 0⟩)], .undef, none⟩
 
 private def consumerEnv (swap : Bool) : Env :=
   ⟨(if swap then [("independent", ⟨3, 0⟩), ("deferred", ⟨2, 0⟩)] else [("deferred", ⟨2, 0⟩), ("independent", ⟨3, 0⟩)]) ++
-    [("importedWrapper", ⟨1, 0⟩)], .undef⟩
+    [("importedWrapper", ⟨1, 0⟩)], .undef, none⟩
 
 private def linkedState (W : World) : State W :=
   let frame : Array Binding := #[⟨some .undef, true⟩]
@@ -73,7 +73,7 @@ private theorem run_linked (W : World) (fuel : Nat) (swap : Bool) (returned call
   rw [link_bind, ht, hi, M.pure_bind, hr, bind_of_ok hd, hs, lift, M.pure_bind, hu, init, M.pure_bind]
 
 private theorem consumer_agree (names : List Name) : Agree names (consumerEnv true) (consumerEnv false) := by
-  refine ⟨rfl, fun x _ => ?_⟩
+  refine ⟨rfl, rfl, fun x _ => ?_⟩
   by_cases hp : x = "deferred"
   · subst x; rfl
   by_cases hj : x = "independent"

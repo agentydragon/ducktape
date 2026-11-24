@@ -86,7 +86,8 @@ private theorem evalMembers_instance_preserves_ctor (n : Nat) (env : Env) (proto
         have hs2 := (inert_lift _).ok hn
         subst s2
         obtain ⟨value, s3, hf, h3⟩ := bind_ok h2
-        have hfunc := makeFunc_keeps env f (Extends.refl s)
+        have hfunc := makeFunc_keeps { env with home := some proto } f (Extends.refl s)
+        simp only [Bool.false_eq_true, ite_false] at hf
         rw [hf] at hfunc
         obtain ⟨_, s4, hd, h4⟩ := bind_ok h3
         have hother := defineOwn_preserves_other hne hd
@@ -100,7 +101,7 @@ private theorem evalExpr_plainClass_origin {n : Nat} {env : Env} {name : Name}
     {ctor : Func} {ms : List ClassMember} (hm : literalInstanceMembers ms = true)
     {s t : State W} {v : Val} (h : evalExpr n env (.cls name false ctor ms) s = .ok v t) :
     ∃ a p o, v = .obj a ∧ a.region = s.region ∧ t.objAt a = some o ∧
-      o.code = some (.closure ctor (env.capture (ctor.free ++ freeMembers ms)) []) ∧
+      o.code = some (.closure ctor ({ env with home := some p }.capture (ctor.free ++ freeMembers ms)) []) ∧
       o.props.lookup (.str "prototype") = some (.data (.obj p) false false false) := by
   cases n with
   | zero => cases h
@@ -162,7 +163,7 @@ theorem plainClassVar_origin {n id : Nat} {env : Env} {x name : Name} {ctor : Fu
     {s t : State W} {flow : Flow} (h : runUnit n env id (.decl .var x (.cls name false ctor ms)) s = .ok flow t) :
     ∃ cell a p o, env.vars.lookup x = some cell ∧ cell.region = id + 1 ∧
       t.cellAt cell = some ⟨some (.obj a), true⟩ ∧ a.region = id + 1 ∧ t.objAt a = some o ∧
-      o.code = some (.closure ctor (env.capture (ctor.free ++ freeMembers ms)) []) ∧
+      o.code = some (.closure ctor ({ env with home := some p }.capture (ctor.free ++ freeMembers ms)) []) ∧
       o.props.lookup (.str "prototype") = some (.data (.obj p) false false false) := by
   obtain ⟨u, hexec, rfl⟩ := runUnit_ok h
   cases n with
