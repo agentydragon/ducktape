@@ -863,6 +863,7 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
   | .objectBindings slots initializers body =>
     -- The argument slots are already bound. A getter or coercion can throw before
     -- any constructor statement, superclass call or instance-field initializer runs.
+    checkFunctionOverlap body
     return (initializers ++ before.toList, args, .mk name .classCtor false slots body)
   | .complete body =>
     -- An opaque body may depend on the derived constructor's home object or new.target.
