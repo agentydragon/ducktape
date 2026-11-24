@@ -106,6 +106,14 @@ private def emitVerdict (requested : String) (outcome : Except String Guarantee)
   IO.println (Json.mkObj ([("requested", toJson requested), ("scope", toJson scope)] ++ fields ++ extra)).compress
   return if outcome.isOk then 0 else 1
 
+/-- Convert a typed refusal into the existing verdict fields at the CLI boundary. -/
+private def emitRefusal (requested : String) (refusal : CertificationRefusal)
+    (scope : Option String := none) : IO UInt32 := do
+  let reasonCodeFields := refusal.reasonCode.toList.map fun code => ("reason_code", toJson code)
+  let observationFields := refusal.observation.toList.map fun observation => ("observation", observation)
+  let details := reasonCodeFields ++ observationFields
+  emitVerdict requested (.error (IO.userError refusal.reason).toString) scope details
+
 private def profileFields (profile : CoreJS.HostProfile) : List (String × Json) :=
   if profile == .empty then [] else [("hostProfile", toJson profile.label)]
 
@@ -188,10 +196,13 @@ private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work
     try
       if request == .allOutcomes && level != .allOutcomes then
         throw (IO.userError "the checked reorder proves only normal-completion")
-      certifyOutput (Json.mkObj []) B P out work input checkOnly timings asts source fun files =>
+      let checked ← certifyOutput (Json.mkObj []) B P out work input checkOnly timings asts source fun files => do
         timePhase timings "closed_declarations" fun _ => do
-          IO.ofExcept ((prepared.certify files).map fun _ => ())
-      return ← emitVerdict request.label (.ok level) "closed-declarations" (profileVerdict profile {})
+          let _ ← IO.ofExcept (prepared.certify files)
+          pure (.ok ())
+      match checked with
+      | .ok _ => return ← emitVerdict request.label (.ok level) "closed-declarations" (profileVerdict profile {})
+      | .error refusal => return ← emitRefusal request.label refusal "closed-declarations"
     catch e => return ← emitVerdict request.label (.error e.toString) "closed-declarations"
   let layoutOk ← timePhase timings "plan_checks" fun _ => checkLayout B P (some S) false
   if structural then
@@ -203,11 +214,15 @@ private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work
       let providers ← timePhase timings "provider_loading" fun _ => loadProviders program bundlePath work
       let deployment ← deploymentOrigin.mapM fun origin =>
         timePhase timings "deployment_loading" fun _ => readDeployment program providers bundlePath work origin P
-      let (used, proof) ← certifyOutput providers B P out work input checkOnly timings asts source fun files =>
+      let checked ← certifyOutput providers B P out work input checkOnly timings asts source fun files => do
         timePhase timings "structural_certificate" fun _ => do
           let result ← IO.lazyPure fun _ =>
             CoreJS.LinkedBehavior.certifyStructuralASTs profile intrinsics program providers files P deployment
-          IO.ofExcept (result.map fun r => (r.1, r.2.1))
+          let value ← IO.ofExcept (result.map fun r => (r.1, r.2.1))
+          pure (.ok value)
+      let (used, proof) ← match checked with
+        | .ok value => pure value
+        | .error refusal => return ← emitRefusal request.label refusal "linked-structural"
       let scope := match proof with
         | .preservedOrder => "linked-structural-order"
         | .singlePivot => "linked-structural-pivot"
@@ -222,42 +237,48 @@ private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work
       return ← emitVerdict request.label (.ok .normalCompletion) scope
         (profileFields profile ++ [("assumptions", toJson assumptions)])
     catch e => return ← emitVerdict request.label (.error e.toString) "linked-structural"
-  let errorFields ← IO.mkRef ([] : List (String × Json))
   try
     unless layoutOk do throw (IO.userError "source placement or module linkage checks failed")
     let providers ← timePhase timings "provider_loading" fun _ => do
       loadProviders program bundlePath work
-    let used ← IO.mkRef ({} : CoreJS.HostPremises)
-    certifyOutput providers B P out work input checkOnly timings asts source fun files => do
+    let checked ← certifyOutput providers B P out work input checkOnly timings asts source fun files => do
       let decoded ← timePhase timings "linked_lowering" fun _ =>
         IO.lazyPure fun _ => CoreJS.LinkedInput.decodePair program providers files P profile
-      let (original, candidate) ← match decoded with
-        | .ok pair => pure pair
-        | .error reason =>
-          errorFields.set [("reason_code", toJson "linked_input")]
-          throw (IO.userError reason)
-      unless request == .normalCompletion do
-        throw (IO.userError "linked execution proves only normal-completion")
-      let prepared ← timePhase timings "certificate_preparation" fun _ => do
-        let result ← IO.lazyPure fun _ =>
-          CoreJS.LinkedBehavior.certificate profile program providers files P original candidate
-        match result with
-        | .error refusal => pure (Except.error refusal)
-        | .ok (cert, terms) =>
-          try
-            return .ok (cert, ← writeCertificateData work terms)
-          catch err =>
-            return .error { code := .proofPreparation, reason := err.toString }
-      let (cert, dataArts) ← match prepared with
-        | .ok result => pure result
-        | .error refusal =>
-          let detail := (refusal.observation.map fun value => ("observation", value)).toList
-          errorFields.set (("reason_code", toJson refusal.code.label) :: detail)
-          throw (IO.userError refusal.reason)
-      used.set (← verifyExecution timings work cert dataArts)
-    let active ← used.get
-    return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs" (profileVerdict profile active)
-  catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs" (← errorFields.get)
+      match decoded with
+      | .error reason => pure (.error ({ reason, reasonCode := some "linked_input" } : CertificationRefusal))
+      | .ok (original, candidate) => do
+        if request != .normalCompletion then
+          pure (.error ({ reason := "linked execution proves only normal-completion" } : CertificationRefusal))
+        else do
+          let prepared : Except CertificationRefusal
+              (CoreJS.LinkedBehavior.Certificate × Lean.NameMap Lean.ImportArtifacts) ←
+            timePhase timings "certificate_preparation" fun _ => do
+            let result ← IO.lazyPure fun _ =>
+              CoreJS.LinkedBehavior.certificate profile program providers files P original candidate
+            match result with
+            | .error refusal =>
+              pure (.error ({
+                reason := refusal.reason
+                reasonCode := some refusal.code.label
+                observation := refusal.observation
+              } : CertificationRefusal))
+            | .ok (cert, terms) =>
+              try
+                pure (.ok (cert, ← writeCertificateData work terms))
+              catch err =>
+                pure (.error ({
+                  reason := err.toString
+                  reasonCode := some "proof_preparation"
+                } : CertificationRefusal))
+          match prepared with
+          | .error refusal => pure (.error refusal)
+          | .ok (cert, dataArts) => do
+            let used ← verifyExecution timings work cert dataArts
+            pure (.ok used)
+    match checked with
+    | .ok active => return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs" (profileVerdict profile active)
+    | .error refusal => return ← emitRefusal request.label refusal "linked-programs"
+  catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs"
 
 def certified (args : List String) : IO UInt32 := do
   let (level?, args) := Effects.takeFlag "--require" args

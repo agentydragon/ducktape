@@ -6,6 +6,13 @@ namespace EsmSplit.SplitFiles
 
 open Lean
 
+/-- A certification refusal keeps user-facing diagnostics and structured probe details together
+until the CLI emits its verdict. -/
+structure CertificationRefusal where
+  reason : String
+  reasonCode : Option String := none
+  observation : Option Json := none
+
 /-- Optional stderr timing keeps stdout available for the certification verdict. -/
 def timePhase (enabled : Bool) (phase : String) (action : Unit → IO α) : IO α := do
   unless enabled do return ← action ()
@@ -102,7 +109,7 @@ private def unitProgram (ast : Json) : Except String Json := do
 /-- Certify the exact program map handed to the printer or compared with an existing directory. -/
 def certifyOutput {α : Type} (providers : Json) (B : Bundle) (P : Plan)
     (out work input : System.FilePath) (checkOnly timings : Bool) (asts : Array Json) (source : String)
-    (check : Json → IO α) : IO α := do
+    (check : Json → IO (Except CertificationRefusal α)) : IO (Except CertificationRefusal α) := do
   let dependencies := (← IO.ofExcept providers.getObj?).toList
   for (name, _) in dependencies do
     if (P.find name).isSome then throw (IO.userError s!"provider {name} collides with a planned output module")
@@ -122,23 +129,25 @@ def certifyOutput {α : Type} (providers : Json) (B : Bundle) (P : Plan)
         unless planned == observed do throw (IO.userError s!"output module {name} differs from its generated ESTree")
     check programs
   else
-    let certified ← check programs
-    timePhase timings "output_publication" fun _ => do
-      let manifest ← writeProgramManifest programs work
-      let parent := out.parent.getD "."
-      IO.FS.createDirAll parent
-      -- A sibling directory makes publication a single same-filesystem rename.
-      let stage := parent / (".split-proof-" ++ work.fileName.get!)
-      IO.FS.createDir stage
-      try
-        javascript #["--print"] #[manifest, stage, input]
-        for (name, ast) in dependencies do
-          let dest := stage / name
-          IO.FS.createDirAll (dest.parent.getD stage)
-          IO.FS.writeFile dest (← IO.ofExcept (ast.getObjValAs? String "sourceText"))
-        IO.FS.rename stage out
-      finally
-        if ← stage.pathExists then IO.FS.removeDirAll stage
-    return certified
+    match ← check programs with
+    | .error refusal => pure (.error refusal)
+    | .ok certified => do
+      timePhase timings "output_publication" fun _ => do
+        let manifest ← writeProgramManifest programs work
+        let parent := out.parent.getD "."
+        IO.FS.createDirAll parent
+        -- A sibling directory makes publication a single same-filesystem rename.
+        let stage := parent / (".split-proof-" ++ work.fileName.get!)
+        IO.FS.createDir stage
+        try
+          javascript #["--print"] #[manifest, stage, input]
+          for (name, ast) in dependencies do
+            let dest := stage / name
+            IO.FS.createDirAll (dest.parent.getD stage)
+            IO.FS.writeFile dest (← IO.ofExcept (ast.getObjValAs? String "sourceText"))
+          IO.FS.rename stage out
+        finally
+          if ← stage.pathExists then IO.FS.removeDirAll stage
+      return .ok certified
 
 end EsmSplit.SplitFiles
