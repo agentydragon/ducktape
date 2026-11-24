@@ -52,53 +52,7 @@ private theorem CheckedPivot.forWorld {ready pre crossed pivot}
     CheckedPivot (linkState w ready) pre crossed pivot :=
   ⟨Access.linkState checks.access, checks.scope⟩
 
-private theorem swapLocal (n : Nat) (s final : State w) (pre suffix : List LinkedUnit) {a b : LinkedUnit}
-    (diff : a.1 ≠ b.1)
-    (ha : PivotLocal w n a)
-    (hb : PivotLocal w n b) :
-    runUnits n (pre ++ [a, b] ++ suffix) s = .ok () final ↔
-      runUnits n (pre ++ [b, a] ++ suffix) s = .ok () final := by
-  have swap := runUnits_pivot n pre [b] suffix a (fun _ => True) s final
-    (fun _ _ => trivial) (fun _ _ _ _ _ _ _ => trivial)
-  simp only [List.append_assoc, List.cons_append, List.nil_append] at swap ⊢
-  apply swap
-  intro u hu
-  obtain rfl := List.mem_singleton.mp hu
-  exact ⟨fun t _ => local_units_commute diff ha hb nofun nofun t,
-    fun t _ => local_units_commute diff.symm hb ha nofun nofun t⟩
-
-/-- Move adjacent declarations together when the first captures the second. In the
-proof schedule the second moves first, before the first can publish its capture.
-Both moves across arbitrary code still require the full linked heap frame. -/
-private theorem movePair (n : Nat) (final : State w) {ready : State w} {pre crossed suffix : List LinkedUnit}
-    {a b : LinkedUnit} (diff : a.1 ≠ b.1)
-    (ha : PivotLocal w n a)
-    (hb : PivotLocal w n b)
-    (second : CheckedPivot ready pre crossed b) (first : CheckedPivot ready (pre ++ [b]) crossed a) :
-    runUnits n (pre ++ crossed ++ [a, b] ++ suffix) ready = .ok () final ↔
-      runUnits n (pre ++ [a, b] ++ crossed ++ suffix) ready = .ok () final := by
-  have swapBefore := swapLocal n ready final (pre ++ crossed) suffix diff ha hb
-  have moveSecond := runUnits_move (suffix := a :: suffix) n final hb second
-  have moveFirst := runUnits_move (suffix := suffix) n final ha first
-  have swapAfter := swapLocal n ready final pre (crossed ++ suffix) diff ha hb
-  simp only [List.append_assoc, List.cons_append, List.nil_append] at *
-  exact swapBefore.trans (moveSecond.trans (moveFirst.trans swapAfter.symm))
-
 private abbrev original (units : List PreparedUnit) := units.map PreparedUnit.unit
-
-private def checkPair? (intrinsics : List StableIntrinsic) (ready : State World.probe) (pre crossed : List PreparedUnit) (a b : PreparedUnit) :
-    Option (PLift (a.unit.1 ≠ b.unit.1 ∧ PivotLocalFor intrinsics a.unit ∧ PivotLocalFor intrinsics b.unit ∧
-      CheckedPivot ready (original pre) (original crossed) b.unit ∧
-      CheckedPivot ready (original pre ++ [b.unit]) (original crossed) a.unit)) := do
-  -- Only try this proof order when a has a reference into b's region.
-  guard (a.unit.2.1.free.any fun x => (a.unit.2.2.vars.lookup x).any (fun cell => cell.region == b.unit.1 + 1))
-  if diff : a.unit.1 ≠ b.unit.1 then
-    let ⟨ha⟩ ← checkedLocal? intrinsics a.unit
-    let ⟨hb⟩ ← checkedLocal? intrinsics b.unit
-    let ⟨second⟩ ← (checkPivot ready pre crossed b.unit).toOption
-    let ⟨first⟩ ← (checkPivot ready (pre ++ [b]) crossed a.unit).toOption
-    return ⟨diff, ha, hb, second, by simpa [original] using first⟩
-  else none
 
 private structure CheckedSchedule (intrinsics : List StableIntrinsic) (ready : State World.probe) (source : List PreparedUnit) where
   units : List LinkedUnit
@@ -173,6 +127,76 @@ private def checkMove (intrinsics : List StableIntrinsic) (ready : State World.p
     let some ⟨move⟩ := checkMaskedMove? intrinsics ready pre crossed pivot localStep qs | throw why
     return ⟨by simpa only [original, List.map_append, List.map_cons, List.map_nil] using move (original suffix)⟩
 
+/-- Move an ordered run across the same crossed code one declaration at a time.
+Each check sees the prefix produced by the previous one. -/
+private def checkRun? (intrinsics : List StableIntrinsic) (ready : State World.probe)
+    (pre crossed suffix : List PreparedUnit) : (group : List PreparedUnit) →
+    Option (PLift (∀ w, StableIntrinsic.Worlds intrinsics w → ∀ n (final : State w),
+      runUnits n (original (pre ++ crossed ++ group ++ suffix)) (linkState w ready) = .ok () final ↔
+        runUnits n (original (pre ++ group ++ crossed ++ suffix)) (linkState w ready) = .ok () final))
+  | [] => some ⟨by simp⟩
+  | a :: rest => do
+    let ⟨first⟩ ← (checkMove intrinsics ready pre crossed (rest ++ suffix) a).toOption
+    let ⟨tail⟩ ← checkRun? intrinsics ready (pre ++ [a]) crossed suffix rest
+    return ⟨by
+      intro w hw n final
+      have head := first w hw n final
+      have remaining := tail w hw n final
+      simp only [original, List.append_assoc, List.cons_append, List.nil_append] at head remaining ⊢
+      exact head.trans remaining⟩
+
+/-- Rotate a local initializer across other local steps in distinct regions;
+their stored captures may mention each other. -/
+private theorem rotateLocal (n : Nat) (s final : State w) (pre group suffix : List LinkedUnit) (b : LinkedUnit)
+    (hb : PivotLocal w n b) (locals : ∀ a ∈ group, b.1 ≠ a.1 ∧ PivotLocal w n a) :
+    runUnits n (pre ++ [b] ++ group ++ suffix) s = .ok () final ↔
+      runUnits n (pre ++ group ++ [b] ++ suffix) s = .ok () final := by
+  apply runUnits_pivot n pre group suffix b (fun _ => True) _ _ (fun _ _ => trivial) (fun _ _ _ _ _ _ _ => trivial)
+  intro a ha
+  obtain ⟨diff, localA⟩ := locals a ha
+  exact ⟨fun t _ => local_units_commute diff hb localA nofun nofun t,
+    fun t _ => local_units_commute diff.symm localA hb nofun nofun t⟩
+
+/-- For crossed code X, a local group G and its later initializer b, prove
+X G b ≃ X b G ≃ b X G ≃ b G X ≃ G b X. Only the two rotations use
+local commutation; every crossing of X uses the regular linked move check. -/
+private def checkGroup? (intrinsics : List StableIntrinsic) (ready : State World.probe)
+    (pre crossed group suffix : List PreparedUnit) (b : PreparedUnit) :
+    Option (PLift (∀ w, StableIntrinsic.Worlds intrinsics w → ∀ n (final : State w),
+      runUnits n (original (pre ++ crossed ++ group ++ [b] ++ suffix)) (linkState w ready) = .ok () final ↔
+        runUnits n (original (pre ++ group ++ [b] ++ crossed ++ suffix)) (linkState w ready) = .ok () final)) := do
+  let ⟨hb⟩ ← checkedLocal? intrinsics b.unit
+  if checked : group.all (fun a => b.unit.1 != a.unit.1 && (checkedLocal? intrinsics a.unit).isSome) then
+    let ⟨moveB⟩ ← (checkMove intrinsics ready pre crossed (group ++ suffix) b).toOption
+    let ⟨moveGroup⟩ ← checkRun? intrinsics ready (pre ++ [b]) crossed suffix group
+    return ⟨by
+      intro w hw n final
+      have locals : ∀ a ∈ original group, b.unit.1 ≠ a.1 ∧ PivotLocal w n a := by
+        intro a ha
+        obtain ⟨u, hu, rfl⟩ := List.mem_map.mp ha
+        have ok := List.all_eq_true.mp checked u hu
+        simp only [Bool.and_eq_true] at ok
+        exact ⟨bne_iff_ne.mp ok.1, ((checkedLocal? intrinsics u.unit).get ok.2).down w hw n⟩
+      have before := rotateLocal n (linkState w ready) final (original pre ++ original crossed)
+        (original group) (original suffix) b.unit (hb w hw n) locals
+      have after := rotateLocal n (linkState w ready) final (original pre)
+        (original group) (original crossed ++ original suffix) b.unit (hb w hw n) locals
+      have first := moveB w hw n final
+      have next := moveGroup w hw n final
+      simp only [original, List.map_append, List.map_cons, List.append_assoc,
+        List.cons_append, List.nil_append] at before first next after ⊢
+      exact before.symm.trans (first.trans (next.trans after))⟩
+  else none
+
+/-- Length of the intervening run before the first forward capture, provided
+the source and requested schedules agree through that initializer. -/
+private def forwardGap? (regions : List Nat) : List PreparedUnit → List Nat → Option Nat
+  | u :: us, id :: ids => do
+    guard (u.unit.1 == id)
+    if regions.contains (id + 1) then return 0
+    return (← forwardGap? regions us ids) + 1
+  | _, _ => none
+
 /-- Match the requested order from left to right. Each move is checked against
 the prefix already placed, including units moved by previous steps. -/
 private def checkSchedule (intrinsics : List StableIntrinsic) (ready : State World.probe) (prefixRev remaining : List PreparedUnit) :
@@ -196,21 +220,25 @@ private def checkSchedule (intrinsics : List StableIntrinsic) (ready : State Wor
         have joined := List.takeWhile_append_dropWhile (p := fun u : PreparedUnit => u.unit.1 != id) (l := remaining)
         rw [h] at joined
         exact joined.symm
-      -- Try the reversed proof order only for an adjacent forward reference.
-      match rest, hs : suffix with
-      | nextId :: rest', b :: tail =>
-        if b.unit.1 == nextId then
-          if let some ⟨diff, ha, hb, second, first⟩ := checkPair? intrinsics ready prefixRev.reverse crossed pivot b then
-            let next ← checkSchedule intrinsics ready (b :: pivot :: prefixRev) (crossed ++ tail) rest'
-            return ⟨next.units, next.moves + 2, by
-              intro w hw n final
-              have pair := movePair (suffix := original tail) n final diff (ha w hw n) (hb w hw n) (second.forWorld w) (first.forWorld w)
-              have after := next.equivalent w hw n final
-              simp only [original, List.map_append, List.map_cons, split, hs, List.reverse_cons,
-                List.append_assoc, List.cons_append, List.nil_append]
-                at pair after ⊢
-              exact pair.trans after⟩
-      | _, _ => pure ()
+      let regions := (pivot.nodes.get.map (·.addr.region)).filter (· != pivot.unit.1 + 1)
+      if !regions.isEmpty then
+        if let some k := forwardGap? regions suffix rest then
+          let middle := suffix.take k
+          let group := pivot :: middle
+          match hs : suffix.drop k with
+          | b :: tail =>
+            if let some ⟨move⟩ := checkGroup? intrinsics ready prefixRev.reverse crossed group tail b then
+              let next ← checkSchedule intrinsics ready (b :: group.reverse ++ prefixRev) (crossed ++ tail) (rest.drop (k + 1))
+              return ⟨next.units, next.moves + group.length + 1, by
+                intro w hw n final
+                have parted : suffix = middle ++ b :: tail := by
+                  rw [← hs]; exact (List.take_append_drop k suffix).symm
+                have before := move w hw n final
+                have after := next.equivalent w hw n final
+                simp only [split, parted, group, List.reverse_cons, List.reverse_append, List.reverse_reverse,
+                  List.append_assoc, List.cons_append, List.nil_append, original] at before after ⊢
+                exact before.trans after⟩
+          | [] => pure ()
       let ⟨move⟩ ← checkMove intrinsics ready prefixRev.reverse crossed suffix pivot
       let next ← checkSchedule intrinsics ready (pivot :: prefixRev) (crossed ++ suffix) rest
       return ⟨next.units, next.moves + 1, by
@@ -220,6 +248,9 @@ private def checkSchedule (intrinsics : List StableIntrinsic) (ready : State Wor
         have tail := next.equivalent w hw n final
         simp only [List.reverse_cons, List.append_assoc, List.singleton_append] at step tail ⊢
         exact step.trans tail⟩
+
+termination_by ids => ids.length
+decreasing_by all_goals simp_all <;> omega
 
 inductive StructuralProof where
   | preservedOrder
