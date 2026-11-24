@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
 use clap::{ArgMatches, Args as ClapArgs, parser::ValueSource};
-use package_args::{collect_package_roots, parse_package_root_kv};
+use package_args::{PackageRootArgs, collect_package_roots};
 use pipeline::{RunOutput, TransformRequest, TransformSpecSource, project_analysis_and_apply};
 use spec_tree::CompileSpecTreeOptions;
 
@@ -96,12 +96,8 @@ pub struct TransformContextAuxArgs {
     /// Output root used when compiling tree-shaped authoring sources.
     #[arg(long = "out-root", env = "DEBUNDLE_OUT")]
     pub out_root: Option<PathBuf>,
-    /// Map a package name to its source directory: `<pkg>=<dir>`. May be repeated.
-    #[arg(long = "package-root", value_parser = parse_package_root_kv)]
-    pub package_roots: Vec<(String, PathBuf)>,
-    /// Root directory containing per-package sources (alternative to repeated --package-root).
-    #[arg(long)]
-    pub packages_root: Option<PathBuf>,
+    #[command(flatten)]
+    pub package_sources: PackageRootArgs,
 }
 
 impl TransformContextArgs {
@@ -110,10 +106,10 @@ impl TransformContextArgs {
         let spec_source = resolve_spec_source(&self)?;
         Ok(TransformRequest {
             spec_source,
-            package_roots: collect_package_roots(self.auxiliary.package_roots)?
+            package_roots: collect_package_roots(self.auxiliary.package_sources.package_roots)?
                 .into_iter()
                 .collect(),
-            packages_root: self.auxiliary.packages_root,
+            packages_root: self.auxiliary.package_sources.packages_root,
         })
     }
 
@@ -126,19 +122,15 @@ impl TransformContextAuxArgs {
     pub fn has_explicit_inputs(&self) -> bool {
         self.tree_vendor_marks.is_some()
             || self.out_root.is_some()
-            || !self.package_roots.is_empty()
-            || self.packages_root.is_some()
+            || !self.package_sources.package_roots.is_empty()
+            || self.package_sources.packages_root.is_some()
     }
 
     /// Whether any transform input is present, including environment values.
     /// `modules apply` uses this after its command
     /// registrations disable the source/output environment defaults.
     pub fn has_any_inputs(&self) -> bool {
-        self.tree_vendor_marks.is_some()
-            || self.tree_source_root.is_some()
-            || self.out_root.is_some()
-            || !self.package_roots.is_empty()
-            || self.packages_root.is_some()
+        self.tree_source_root.is_some() || self.has_explicit_inputs()
     }
 }
 
