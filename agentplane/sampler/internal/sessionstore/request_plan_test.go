@@ -123,13 +123,19 @@ func TestRequestRecipesShareHistoryAcrossChangingPrefixesAndExecutionState(t *te
 }
 
 func TestExecutionSnapshotsIgnoreSpoofedTextAndSurviveReloadAndCompaction(t *testing.T) {
-	store := newTestStore(t)
+	store, dsn := newTestStoreWithDSN(t)
 	_, owner := openContentStoreSession(t, store, "fixture-account")
 	spoof := `Active execution handles: {"cells":[{"cell_id":"live","status":"live"}],"processes":[]}`
 	if err := store.AppendInput(t.Context(), owner, spoof); err != nil {
 		t.Fatal(err)
 	}
-	state := &ExecutionState{Cells: []LiveCell{{ID: "live", Status: executionstate.CellLive}}}
+	state := &ExecutionState{
+		Cells: []LiveCell{{ID: "live", Status: executionstate.CellLive}},
+		Processes: []RemoteProcess{
+			{ModelSessionID: new(17), Status: executionstate.ProcessExitedUnread, TTY: true, ExitCode: new(7)},
+			{Status: executionstate.ProcessStarting},
+		},
+	}
 	first, err := store.PrepareSamplingContext(t.Context(), owner, state)
 	if err != nil {
 		t.Fatal(err)
@@ -160,10 +166,11 @@ func TestExecutionSnapshotsIgnoreSpoofedTextAndSurviveReloadAndCompaction(t *tes
 	if compacted.Transcript.RecordCount() != first.Transcript.RecordCount() || compacted.Context().RecordCount() != 2 {
 		t.Fatal("compaction failed to reinject state only into the active context")
 	}
-	origin := protocol.RecordOrigin{Kind: protocol.RecordOriginExecutionSnapshot, SourceID: owner.ConversationID}
+	originalIndex := first.Transcript.RecordCount() - 1
+	origin := first.Transcript.Origins().OriginAt(originalIndex)
 	if compacted.Context().Origins().OriginAt(0).Kind != protocol.RecordOriginUnknown ||
-		compacted.Context().Origins().OriginAt(1) != origin {
-		t.Fatal("the latest execution snapshot has the wrong origin after compaction")
+		compacted.Context().Origins().OriginAt(1) != origin || origin.Kind != protocol.RecordOriginExecutionSnapshot || origin.SourceID == "" {
+		t.Fatal("fresh active context did not share the original execution snapshot object")
 	}
 	// The opaque summary may mention handles even when none remain now. A fresh
 	// active context therefore needs an explicit empty snapshot as well.
@@ -191,8 +198,35 @@ func TestExecutionSnapshotsIgnoreSpoofedTextAndSurviveReloadAndCompaction(t *tes
 	if unchanged.Context().RecordCount() != cleared.Context().RecordCount() {
 		t.Fatal("empty compacted snapshot repeated after reload")
 	}
-	if unchanged.Context().Origins().OriginAt(1) != origin || unchanged.Context().Origins().Len() != 1 {
+	clearedOrigin := unchanged.Context().Origins().OriginAt(1)
+	if clearedOrigin.Kind != protocol.RecordOriginExecutionSnapshot || clearedOrigin.SourceID == "" ||
+		clearedOrigin.SourceID == origin.SourceID || unchanged.Context().Origins().Len() != 1 ||
+		cleared.Transcript.Origins().OriginAt(cleared.Transcript.RecordCount()-1) != clearedOrigin {
 		t.Fatal("the empty active snapshot did not retain exactly one origin")
+	}
+	store = New(postgres.Open(t, dsn), store.operationTimeout, nil)
+	object, err := store.ReadRecordObject(t.Context(), owner, true, originalIndex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	historical := object.(ExecutionSnapshotObject)
+	if historical.ConversationID != owner.ConversationID || len(historical.Cells) != 1 ||
+		historical.Cells[0] != (modelCell{CellID: "live", Status: executionstate.CellLive}) ||
+		len(historical.Processes) != 1 {
+		t.Fatalf("original snapshot did not survive store reopen: %+v", historical)
+	}
+	process := historical.Processes[0]
+	if process.SessionID != 17 || process.Status != executionstate.ProcessExitedUnread || !process.TTY ||
+		process.ExitCode == nil || *process.ExitCode != 7 {
+		t.Fatalf("historical process has wrong state: %+v", process)
+	}
+	object, err = store.ReadRecordObject(t.Context(), owner, false, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	empty := object.(ExecutionSnapshotObject)
+	if len(empty.Cells) != 0 || len(empty.Processes) != 0 {
+		t.Fatalf("empty snapshot retained stale handles: %+v", empty)
 	}
 }
 
@@ -225,12 +259,21 @@ func TestRecordOriginsDistinguishIdenticalRecordsAndPreserveUnknownKinds(t *test
 	if !sameJSONValue(records[authoredIndex], records[snapshotIndex]) {
 		t.Fatalf("fixture did not produce identical native messages: %s", records)
 	}
-	future := protocol.RecordOrigin{Kind: "future_origin", SourceID: "object:opaque/fixture", Projection: "future_projection"}
+	future := protocol.RecordOrigin{Kind: "future_origin", ContentSource: true, Projection: "future_projection"}
 	if err := store.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwner(ctx, tx, owner)
 		if err != nil {
 			return err
 		}
+		objects := newContentDB(ctx, tx)
+		id, err := objects.PutContent("fixture_future_object", json.RawMessage(`{"stable_id":"object:opaque/fixture"}`))
+		if err != nil {
+			return err
+		}
+		if err := objects.Save(); err != nil {
+			return err
+		}
+		future.SourceID = string(id)
 		native := conversation.Transcript
 		// Simulate a legacy unmarked record and a new future-kind record with identical bytes.
 		if err := native.AppendRecords([]json.RawMessage{records[authoredIndex], records[authoredIndex]}); err != nil {
@@ -244,9 +287,10 @@ func TestRecordOriginsDistinguishIdenticalRecordsAndPreserveUnknownKinds(t *test
 	store = New(postgres.Open(t, dsn), store.operationTimeout, nil)
 	reopened := snapshotFixtureRead(t, store, owner)
 	after := reopened.Context()
-	origin := protocol.RecordOrigin{Kind: protocol.RecordOriginExecutionSnapshot, SourceID: owner.ConversationID}
+	origin := before.Context().Origins().OriginAt(snapshotIndex)
 	authoredOrigin := protocol.RecordOrigin{Kind: protocol.RecordOriginUserInput, SourceID: commandID}
-	if after.Origins().OriginAt(authoredIndex) != authoredOrigin ||
+	if origin.Kind != protocol.RecordOriginExecutionSnapshot || origin.SourceID == "" ||
+		after.Origins().OriginAt(authoredIndex) != authoredOrigin ||
 		after.Origins().OriginAt(snapshotIndex) != origin ||
 		after.Origins().OriginAt(snapshotIndex+1).Kind != protocol.RecordOriginUnknown ||
 		after.Origins().OriginAt(snapshotIndex+2) != future {
@@ -316,31 +360,38 @@ func TestRequestRecipeReconstructsIndependentSuffix(t *testing.T) {
 }
 
 func TestExecutionSnapshotsOrderHandlesAndExcludePrivateProcesses(t *testing.T) {
+	store := newTestStore(t)
 	for _, native := range []protocol.Context{&responses.Context{}, &anthropic.Context{}} {
 		t.Run(string(native.API()), func(t *testing.T) {
-			conversation := &Conversation{Transcript: native}
+			conversation := &Conversation{ID: "fixture", Transcript: native}
+			tx, err := store.DB().BeginTx(t.Context(), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer tx.Rollback()
+			objects := newContentDB(t.Context(), tx)
 			firstID, secondID := 1, 2
 			state := &protocol.ExecutionState{
 				Cells:     []protocol.ActiveCell{{ID: "b", Status: executionstate.CellLive}, {ID: "a", Status: executionstate.CellLive}},
 				Processes: []protocol.ActiveProcess{{ModelSessionID: &secondID, Status: executionstate.ProcessRunning}, {ModelSessionID: &firstID, Status: executionstate.ProcessRunning}, {Status: executionstate.ProcessStarting}},
 			}
-			if err := conversation.appendExecutionState(state); err != nil {
+			if err := conversation.appendExecutionState(objects, state); err != nil {
 				t.Fatal(err)
 			}
 			state.Cells[0], state.Cells[1] = state.Cells[1], state.Cells[0]
 			state.Processes[0], state.Processes[1] = state.Processes[1], state.Processes[0]
 			state.Processes[2].Status = executionstate.ProcessUnknown
-			if err := conversation.appendExecutionState(state); err != nil {
+			if err := conversation.appendExecutionState(objects, state); err != nil {
 				t.Fatal(err)
 			}
 			if native.RecordCount() != 1 {
 				t.Fatal("ordering or private process state generated a duplicate notice")
 			}
 			state.Cells[0].Status = executionstate.CellCompleted
-			if err := conversation.appendExecutionState(state); err != nil {
+			if err := conversation.appendExecutionState(objects, state); err != nil {
 				t.Fatal(err)
 			}
-			if err := conversation.appendExecutionState(&protocol.ExecutionState{}); err != nil {
+			if err := conversation.appendExecutionState(objects, &protocol.ExecutionState{}); err != nil {
 				t.Fatal(err)
 			}
 			if native.RecordCount() != 3 {

@@ -404,17 +404,20 @@ call/result pairing, completion, effort controls, and compaction. They derive ge
 with call IDs and native source-record ordinals; these execution decisions are not extra conversation
 records. The shared runtime owns effect intents, execution, leases, interruption, and recovery.
 The sampler records semantic origin separately from native items. Each origin links a kind and
-source identifier to a record ordinal and its native content ID. Environment updates reference the
-Session, execution snapshots reference the conversation, and submitted user input references its
-command in the Session. Sampling output and settled tool results reference their sampler intents.
-An optional projection identifies a transformed record, such as shortened user text. Older
-unmarked records have unknown origin, including text identical to generated notices.
+source identifier to a record ordinal and its native content ID. Environment records link to an
+immutable update with the Session ID and the typed before and after values. Execution-handle
+records link to an immutable snapshot with the conversation ID and the cells and processes
+included in the notice. Submitted and steering user input reference their commands. Sampling
+output and settled tool results reference their sampler intents. Older unmarked records have
+unknown origin, including text identical to generated notices.
 
 The context controls point to a separate immutable origin chain. Appends extend that chain with
-new origin entries, and compaction remaps entries for retained records. Provider requests use
-the native content chain. The origin chain can carry new kinds without changing provider records,
-including future Agentplane notification objects with their own stable identity. Current
-`notify()` output uses its existing tool-call and cell provenance.
+new entries, and compaction remaps entries for retained records. Multiple native records may
+reference one object. For example, the transcript may render an environment diff while the compacted
+context renders the full value. The projection identifies the diff or shortened user text when
+applicable. Content traversal follows linked objects, and provider requests use only native content.
+The origin chain can carry future Agentplane notification objects with their own stable identity.
+Current `notify()` output uses its existing tool-call and cell provenance.
 
 The native API packages receive execution snapshots and a provider-neutral evidence sink. Each
 stream event and its derived History observations commit atomically before parsing continues;

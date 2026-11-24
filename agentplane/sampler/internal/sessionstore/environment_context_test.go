@@ -175,9 +175,9 @@ func TestCompactionRefreshesEnvironmentInNativeOrder(t *testing.T) {
 				t.Fatalf("initial environment records: %s err=%v", initial, err)
 			}
 			checkEnvironment(initial[0], "/fixture", "2026-01-02", "bash")
-			origin := protocol.RecordOrigin{Kind: protocol.RecordOriginEnvironment, SourceID: session.ID}
-			if original.Context().Origins().OriginAt(0) != origin {
-				t.Fatal("initial environment has no Session origin")
+			initialOrigin := original.Context().Origins().OriginAt(0)
+			if initialOrigin.Kind != protocol.RecordOriginEnvironment || initialOrigin.SourceID == "" || initialOrigin.Projection != "" {
+				t.Fatal("initial environment has no full environment object")
 			}
 			intent, _, err := store.BeginCompaction(ctx, owner, IntentPayload{Kind: PendingIntentCompaction}, original.Context(), nil, providerAttemptTestPolicy())
 			if err != nil {
@@ -243,10 +243,26 @@ func TestCompactionRefreshesEnvironmentInNativeOrder(t *testing.T) {
 			if content := checkEnvironment(got[tc.envIndex], "/fixture", "2026-01-03", "zsh"); strings.Contains(content, "bash") {
 				t.Fatalf("replacement environment contains the old shell: %s", content)
 			}
-			if prepared.Context().Origins().OriginAt(tc.envIndex) != origin ||
-				prepared.Transcript.Origins().OriginAt(original.Transcript.RecordCount()) != origin ||
+			activeOrigin := prepared.Context().Origins().OriginAt(tc.envIndex)
+			transcriptIndex := original.Transcript.RecordCount()
+			transcriptOrigin := prepared.Transcript.Origins().OriginAt(transcriptIndex)
+			if activeOrigin.Kind != protocol.RecordOriginEnvironment || activeOrigin.SourceID == "" ||
+				activeOrigin.SourceID == initialOrigin.SourceID || activeOrigin.Projection != "" ||
+				transcriptOrigin.SourceID != activeOrigin.SourceID ||
+				transcriptOrigin.Kind != activeOrigin.Kind || transcriptOrigin.Projection != protocol.RecordProjectionEnvironmentDiff ||
 				prepared.Context().Origins().Len() != 1 || prepared.Transcript.Origins().Len() != 2 {
-				t.Fatal("the environment origin did not survive compaction and store reopen")
+				t.Fatal("full and diff projections did not share the same durable environment update")
+			}
+			object, err := store.ReadRecordObject(ctx, owner, false, tc.envIndex)
+			if err != nil {
+				t.Fatal(err)
+			}
+			environment := object.(EnvironmentUpdateObject)
+			if environment.SessionID != session.ID || environment.Before == nil || environment.Before.CurrentDate != "2026-01-02" ||
+				environment.Before.Shell == nil || *environment.Before.Shell != "bash" ||
+				environment.After.Cwd != "/fixture" || environment.After.CurrentDate != "2026-01-03" ||
+				environment.After.Shell == nil || *environment.After.Shell != "zsh" {
+				t.Fatalf("compaction environment update lost its actual before/after state: %+v", environment)
 			}
 			for i, original := range tc.records {
 				index := i
@@ -272,8 +288,15 @@ func TestCompactionRefreshesEnvironmentInNativeOrder(t *testing.T) {
 				t.Fatalf("next environment update records=%s err=%v", updated, err)
 			}
 			checkEnvironment(updated[len(got)], "2026-01-04")
-			if update.Context().Origins().OriginAt(len(got)) != origin || update.Context().Origins().Len() != 2 {
+			dateOrigin := update.Context().Origins().OriginAt(len(got))
+			if dateOrigin.Kind != protocol.RecordOriginEnvironment || dateOrigin.SourceID == "" ||
+				dateOrigin.SourceID == activeOrigin.SourceID || dateOrigin.Projection != protocol.RecordProjectionEnvironmentDiff ||
+				update.Context().Origins().Len() != 2 {
 				t.Fatal("the next environment update lost its origin")
+			}
+			object, err = store.ReadRecordObject(ctx, owner, true, transcriptIndex)
+			if err != nil || object.(EnvironmentUpdateObject).After.CurrentDate != "2026-01-03" {
+				t.Fatalf("later updates changed the historical environment object: object=%+v err=%v", object, err)
 			}
 			for i, record := range got {
 				if !sameJSONValue(updated[i], record) {

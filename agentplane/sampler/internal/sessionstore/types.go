@@ -72,6 +72,17 @@ func (c *Conversation) apply(change func(protocol.Context) error) error {
 	return nil
 }
 
+func (c *Conversation) appendUserCommand(commandID, text string) error {
+	return c.apply(func(state protocol.Context) error {
+		index := state.RecordCount()
+		if err := state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: text}}); err != nil {
+			return err
+		}
+		state.Origins().Insert(index, protocol.RecordOrigin{Kind: protocol.RecordOriginUserInput, SourceID: commandID})
+		return nil
+	})
+}
+
 func (c *Conversation) appendProviderRecords(records []json.RawMessage, attemptID string) error {
 	origin := protocol.RecordOrigin{Kind: protocol.RecordOriginProviderResult, SourceID: attemptID}
 	return c.apply(func(state protocol.Context) error {

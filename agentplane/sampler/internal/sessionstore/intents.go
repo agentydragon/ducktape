@@ -414,7 +414,11 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 
 		conversation.ContextTokens = nil
 		conversation.Pending = nil
-		if err := s.recordEnvironmentContext(conversation, session, true); err != nil {
+		objects := newContentDB(ctx, tx)
+		if err := s.recordEnvironmentContext(objects, conversation, session, true); err != nil {
+			return err
+		}
+		if err := objects.Save(); err != nil {
 			return err
 		}
 		if validateReplacement != nil {

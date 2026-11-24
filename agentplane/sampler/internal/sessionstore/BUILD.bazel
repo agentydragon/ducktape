@@ -27,6 +27,7 @@ go_library(
         "provider_evidence.go",
         "provider_recovery.go",
         "provider_request.go",
+        "record_object.go",
         "recovery.go",
         "request_plan.go",
         "sampling_recovery.go",

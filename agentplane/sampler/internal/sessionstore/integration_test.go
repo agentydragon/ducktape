@@ -1990,6 +1990,11 @@ func TestSteeringInputJoinsTheActiveTurnOnceInAdmissionOrder(t *testing.T) {
 	if got, want := normalized(items[len(items)-1]), normalized(expected); got != want {
 		t.Fatalf("last conversation item=%s, want %s", got, want)
 	}
+	if origin := conversation.Transcript.Origins().OriginAt(len(items) - 1); origin != (protocol.RecordOrigin{
+		Kind: protocol.RecordOriginUserInput, SourceID: "steer-a",
+	}) {
+		t.Fatalf("steering input did not reference its durable command: %+v", origin)
+	}
 	for id, want := range map[string]samplerpb.CommandOutcome{
 		"steer-a":     samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED,
 		"after-model": samplerpb.CommandOutcome_COMMAND_OUTCOME_ACCEPTED,

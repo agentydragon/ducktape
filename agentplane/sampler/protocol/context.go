@@ -59,16 +59,20 @@ const (
 
 type RecordOriginProjection string
 
-// RecordProjectionTruncated identifies a shortened copy of the source content.
-const RecordProjectionTruncated RecordOriginProjection = "truncated"
+const (
+	RecordProjectionTruncated       RecordOriginProjection = "truncated"
+	RecordProjectionEnvironmentDiff RecordOriginProjection = "environment_diff"
+)
 
 // RecordOrigin identifies the sampler object or event represented by a record.
-// The origin kind determines the namespace of SourceID. Projection describes
-// transformations beyond the normal provider encoding.
+// ContentSource identifies content-addressed objects. The origin kind determines
+// the namespace of other SourceIDs. Projection describes transformations beyond
+// the normal provider encoding.
 type RecordOrigin struct {
-	Kind       RecordOriginKind       `json:"kind"`
-	SourceID   string                 `json:"source_id,omitempty"`
-	Projection RecordOriginProjection `json:"projection,omitempty"`
+	Kind          RecordOriginKind       `json:"kind"`
+	SourceID      string                 `json:"source_id,omitempty"`
+	ContentSource bool                   `json:"content_source,omitempty"`
+	Projection    RecordOriginProjection `json:"projection,omitempty"`
 }
 
 type OriginEntry struct {

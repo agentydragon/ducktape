@@ -47,7 +47,7 @@ func (s *Store) BeginPreparedSampling(ctx context.Context, owner Owner, source *
 		if err != nil {
 			return err
 		}
-		if err := s.applySamplingContext(conversation, session, state); err != nil {
+		if err := s.applySamplingContext(ctx, tx, conversation, session, state); err != nil {
 			return err
 		}
 		// Request projection needs durable context references for the just-appended records.

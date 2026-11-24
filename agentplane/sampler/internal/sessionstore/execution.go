@@ -7,6 +7,7 @@ import (
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/sampler/internal/content"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/environmentcontext"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
@@ -85,12 +86,13 @@ func (s *Store) SetExecutorSession(ctx context.Context, owner Owner, sessionID s
 
 // recordEnvironmentContext advances the environment baseline. A replacement
 // receives the full current environment while the transcript receives any diff.
-func (s *Store) recordEnvironmentContext(conversation *Conversation, session *Session, refreshCompacted bool) error {
+func (s *Store) recordEnvironmentContext(objects content.ContentWriter, conversation *Conversation, session *Session, refreshCompacted bool) error {
 	request := &sessionconfig.Configuration{}
 	if err := proto.Unmarshal(session.Configuration, request); err != nil {
 		return err
 	}
 	current := environmentcontext.Current(request.GetSpec().GetCwd(), conversation.ExecutorShell, s.now())
+	var sourceID string
 	if err := conversation.apply(func(state protocol.Context) error {
 		afterCompaction := refreshCompacted && state == conversation.ActiveContext
 		previous := conversation.EnvironmentContext
@@ -101,11 +103,24 @@ func (s *Store) recordEnvironmentContext(conversation *Conversation, session *Se
 		if update == "" {
 			return nil
 		}
+		if sourceID == "" {
+			var err error
+			sourceID, err = putRecordObject(objects, EnvironmentUpdateObject{
+				SessionID: session.ID, Before: conversation.EnvironmentContext, After: current,
+			})
+			if err != nil {
+				return err
+			}
+		}
 		index, err := state.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: update}}, afterCompaction)
 		if err != nil {
 			return err
 		}
-		state.Origins().Insert(index, protocol.RecordOrigin{Kind: protocol.RecordOriginEnvironment, SourceID: session.ID})
+		origin := protocol.RecordOrigin{Kind: protocol.RecordOriginEnvironment, SourceID: sourceID, ContentSource: true}
+		if previous != nil {
+			origin.Projection = protocol.RecordProjectionEnvironmentDiff
+		}
+		state.Origins().Insert(index, origin)
 		return nil
 	}); err != nil {
 		return err
