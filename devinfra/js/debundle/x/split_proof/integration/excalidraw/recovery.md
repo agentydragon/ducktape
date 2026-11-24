@@ -1,9 +1,11 @@
 # Recovering the pinned Excalidraw editor's authored modules
 
 The canonical Rust editor graph places **272 of 1,787 units in 35 named modules**.
-The browser smoke selects readable binding names from those owners. Each trial
-keeps all other units in the original entry, uses Rust's selected schedule, and
-requests the structural `normal-completion` guarantee at the browser origin.
+The [current browser smoke](README.md#browser-smoke) resolves the selected owners and
+authored import priority in Rust. Lean computes the schedule and checks structural
+`normal-completion` at the browser origin. Unselected units stay in the original entry.
+Earlier trials below used the Rust emitter's selected schedule; the proposal records
+its tested order explicitly.
 A refusal of one placement does not establish that moving a binding changes
 JavaScript behavior.
 

@@ -224,32 +224,11 @@ A profile can also name opaque constructors in deferred code. If initialization 
 
 ### Excalidraw (public intermediate milestone)
 
-Use the public editor and its real providers to exercise the same certification path on a public input. Run two placements through the ordinary splitter requesting `normal-completion`. Moving the single scroll arrow at unit 1337 (`Jb`) preserves all 611 public editor names in the diagnostic output. Aim to certify this split and run its emitted entry. The authored pair (1337 and 1338) adds three private names to the entry’s exports in the diagnostic output. Keep the pair as a rejection case.
+For the pinned public bundle, deliver a spec whose emitted modules Lean can certify and whose ownership follows the [upstream Excalidraw sources](https://github.com/excalidraw/excalidraw/tree/v0.18.1/packages) as closely as the evidence supports. Use upstream files and readable member names to justify placements. Leave unresolved units in the original entry and record what prevents them from moving. The [integration README](integration/excalidraw/README.md#certified-placement) distinguishes the checked-in browser baseline, certified proposals and the full authored replay.
 
-The [strict replay targets](integration/excalidraw/README.md#strict-certification-of-the-scroll-module)
-pin the current blocker. For each extension, add a regression, generate programs using
-the feature, compare their behavior with Node, and rerun both placements. Record the next
-blocker or guarantee obtained. The [browser smoke targets](integration/excalidraw/README.md#browser-smoke)
-exercise the original editor and require a certificate before loading the split. Defer
-`import.meta.url`.
+Grow the spec one upstream dependency group at a time. Resolve its selectors against the pinned input, review the ownership and import-priority diff, then certify the **combined** placement at emission and from disk under the stated host contract. Exercise the certified overlay in Chromium against the original app. Record which upstream files and members were recovered and any remaining deviations. A refusal applies to the tested placement and order; retain its witness so the next trial can distinguish a changed export or observed behavior from a limitation of the checker.
 
-An earlier pairwise diagnostic identified 14 of the 259 structural conflicts as calls to
-`Ve(callback)` (units 5–18). Applying the wrapper theorem to the full editor would require
-establishing its runtime premises at each crossing. The first of the other 245 pairs
-was unit 19, `Ml = ra(yo())`, crossing `Jb`.
-[Scroll replay and proof scope](integration/excalidraw/README.md#strict-certification-of-the-scroll-module)
-
-Seven of the editor's eight flat destructuring declarations read keys present in
-four allocation-only object literals. Units 95 (`s6`), 103 (`Ui`), 201 (`I2`)
-and 299 (`x5`) have 5, 28, 5 and 5 distinct own keys. This accounts for 938
-candidate crossings. The remaining 134 involve unit 325 reading `Math`.
-[`literalVar_origin`](lean/EsmSplit/CoreJS/RecordOrigin.lean) establishes the
-binding and own data descriptors immediately after each qualifying declaration.
-For the first `Ui` read at 105, establish that the pattern at 104 preserves
-that record. Unit 104 reads `s6`, created at 95, and unit 99 executes an opaque
-`new Uint32Array(f6())` between creation and use. The next proof obligation is
-to show which bindings and heap records survive that intervening execution.
-[Editor move census](integration/excalidraw/README.md)
+The next editor decision is whether to adopt the [scroll dependency proposal](integration/excalidraw/proposals/scroll/README.md) and its explicit import priority in the maintained spec. It certifies with the recorded order; the authored priority was refused for the same owners. For the remaining `calculateScrollCenter` dependencies, the proposal records both the private exports that a partial move introduces and the first refused moves in the larger closure. For the main entry, the [renderer trial](integration/excalidraw/main.md) isolates a retained module metadata reader. Keep the [ordinary scroll checker trials](integration/excalidraw/README.md#strict-certification-of-the-scroll-module) as regressions for that proof mode.
 
 ### Proof track
 
@@ -353,20 +332,11 @@ Acceptance for every step, after running the [debundle case corpus](debundle_cas
 
 Steps are independent PRs. Steps 2–5 touch different Lean files and can run in parallel. Order by entries unlocked per effort:
 
-**TODO (eventual authoring workflow).** Let authors keep the same spec across bundle rebuilds that rename bindings or shift statement ordinals. Rust debundle already resolves stable selectors such as AST templates with holes, distinctive string literals and relationships to other declarations. Consider a substring anchor if an exact literal is too brittle. Reuse the Rust resolver to turn the authored spec into concrete unit-to-module assignments for each input. For now the Lean splitter takes a declared binding name or a zero-based `#n` and its destination module. Selector resolution is a separate authoring problem and can wait while we prove the correctness of a given placement. [Rust selector syntax](../../docs/selectors.md) · [How Rust resolves selectors](../../docs/selector_resolution.md)
+### 1. Use Rust selector resolution in the corpus adapter
 
-### 1. Take selector resolution from debundle (deferred)
+The Excalidraw browser smoke already uses Rust's `spec resolve-placement` output to bind the source digest, requested owners and authored import priority to one input. Lean computes and checks the resulting schedule. The [corpus adapter](debundle_cases/run_cases.mjs) still matches binding selectors and hole-free templates itself. The saved baseline has 54 comparable entries in this group and 12 refusal tests.
 
-Track the extraction and verification boundary in [TODO.md](TODO.md). The corpus has 54 comparable entries in this group and 12 refusal tests.
-
-The adapter resolves `binding` selectors and hole-free templates by exact AST shape. debundle resolves holes, alpha-renaming, statement ranges and the dataflow selectors (`passed_to_call`, `member_of_module`, `cross_ref`, `reads_member`, `makes_decorate_call`).
-
-- **Do not port the matcher.** 42 entries need holes, alpha-renaming and ranges. 24 need dataflow facts. debundle's resolver is a shape matcher plus a solver ([`docs/selector_resolution.md`](../../docs/selector_resolution.md)). A JS port would have to follow both.
-- **Read debundle's answer instead.** Run `debundle run` per entry and read the owner of every source unit. `modules.json` has `source_unit_ids` per module and `dependency_graph.json.gz` has `unit:N` nodes ([`docs/wire_format.md`](../../docs/wire_format.md)). Check whether the nodes carry input ranges. If not, add one side output to debundle: unit → input range → owner path.
-- The adapter maps units to statements (declarators, as in step 2) and writes the `lowersplit` spec as today.
-- This makes `Valid` an independent second opinion on debundle's gate for every spec debundle resolved.
-- The 12 refusal entries stay `refusal-test`.
-- Open: how the harness runs the `//devinfra/js/debundle:debundle` binary, and what one call costs.
+Reuse the resolver output for corpus entries with holes, alpha-renaming, ranges or dataflow selectors; keep the refusal tests distinct. Measure the cost of resolving one entry and check that the adapter maps resolved units to the same declarators before relying on the results. See the [selector semantics](../../docs/selector_resolution.md) and the remaining [production handoff work](TODO.md).
 
 ### 2. Declarator granularity in the adapter, and repeated `var` (6 comparable entries: 3 not run, 3 `strict-but-runs`; 2 more are refusal tests)
 

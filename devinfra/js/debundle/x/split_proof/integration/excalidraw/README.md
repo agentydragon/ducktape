@@ -1,5 +1,17 @@
 # Excalidraw CoreJS proof and artifact coverage
 
+## Certified placement
+
+The goal is a runnable, Lean-certified split of the pinned bundle that recovers the files and members of [Excalidraw v0.18.1](https://github.com/excalidraw/excalidraw/tree/v0.18.1/packages). Review each proposed owner against that source. Track the members still in the entry and the reason each group cannot yet move. The certificate establishes the requested CoreJS guarantee for the emitted placement; source evidence establishes whether a module is a faithful recovery.
+
+| Placement                                                                                     | What the evidence establishes                                                                                                                                                                                                        |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [Checked-in editor subset](#browser-smoke)                                                    | Rust resolves the selected owners and import priority. Lean certifies the emitted modules and rechecks them from disk under the browser deployment contract. Chromium exercises the overlay. This is the baseline to extend.         |
+| [236-unit scroll proposal](proposals/scroll/README.md)                                        | Additional upstream groups passed emit, disk and Chromium checks with the recorded Lean order. The same owners were refused with the authored priority. The proposal and its order are separate from the checked-in smoke selection. |
+| [Full authored editor and main replay](#building-and-replaying-the-authored-excalidraw-specs) | Compares placement and execution order with the Rust reports and records refusals. It does not establish a certificate for the full split.                                                                                           |
+
+## Diagnostic census
+
 Run the experimental Lean checker against the public, pinned Excalidraw bundle:
 
 ```sh
