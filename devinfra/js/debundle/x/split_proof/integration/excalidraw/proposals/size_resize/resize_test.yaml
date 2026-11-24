@@ -1,0 +1,58 @@
+# Excalidraw v0.18.1: packages/excalidraw/element/resizeTest.ts
+source_matches:
+  - match: |
+      var DECLARATORS_BEFORE = null,
+        isInsideTransformHandle = (handle,x,y) => x >= handle[0] && x <= handle[0]+handle[2] && y >= handle[1] && y <= handle[1]+handle[3],
+        resizeTest = (element,map,state,x,y,zoom,pointer,device) => {
+          if (!state.selectedElementIds[element.id]) return !1;
+          let {rotation:rot,...handles} = getTransformHandles(element,zoom,map,pointer,getOmitSidesForDevice(device));
+          if (rot && isInsideTransformHandle(rot,x,y)) return "rotation";
+          STMT_LIST;
+        },
+        getElementWithTransformHandleType = (elements,state,x,y,zoom,pointer,map,device) =>
+          elements.reduce((result,element) => {
+            if(result) return result;
+            let type=resizeTest(element,map,state,x,y,zoom,pointer,device);
+            return type ? {element:element,transformHandleType:type} : null;
+          },null),
+        getTransformHandleTypeFromCoords = ([x1,y1,x2,y2],x,y,zoom,pointer,device) => {
+          let handles=getTransformHandlesFromCoords([x1,y1,x2,y2,(x1+x2)/2,(y1+y2)/2],0,zoom,pointer,getOmitSidesForDevice(device)),
+            found=Object.keys(handles).find(key => {
+              let handle=handles[key];
+              return handle && isInsideTransformHandle(handle,x,y);
+            });
+          STMT_LIST;
+        },
+        RESIZE_CURSORS = ["ns","nesw","ew","nwse"],
+        rotateResizeCursor = (cursor,angle) => {
+          let index=RESIZE_CURSORS.indexOf(cursor);
+          if(index>=0) {
+            let step=Math.round(angle/(Math.PI/4));
+            cursor=RESIZE_CURSORS[(index+step)%RESIZE_CURSORS.length];
+          }
+          return cursor;
+        },
+        getCursorForResizingElement = item => {
+          let {element:element,transformHandleType:type}=item, swap=element && Math.sign(element.height)*Math.sign(element.width)===-1, cursor=null;
+          switch(type) {
+            case "n": case "s": cursor="ns"; break;
+            case CASE_REST:
+            case "rotation": return "grab";
+          }
+          return (cursor && element && (cursor=rotateResizeCursor(cursor,element.angle)),cursor ? `${cursor}-resize` : "");
+        },
+        getSelectionBorders = ([x1,y1],[x2,y2],center,angle) => {
+          let tl=pointRotateRads(pointFrom(x1,y1),center,angle), tr=pointRotateRads(pointFrom(x2,y1),center,angle),
+            bl=pointRotateRads(pointFrom(x1,y2),center,angle), br=pointRotateRads(pointFrom(x2,y2),center,angle);
+          return {n:[tl,tr],e:[tr,br],s:[br,bl],w:[bl,tl]};
+        },
+        DECLARATORS_AFTER = null;
+    bindings:
+      - isInsideTransformHandle
+      - resizeTest
+      - getElementWithTransformHandleType
+      - getTransformHandleTypeFromCoords
+      - RESIZE_CURSORS
+      - rotateResizeCursor
+      - getCursorForResizingElement
+      - getSelectionBorders

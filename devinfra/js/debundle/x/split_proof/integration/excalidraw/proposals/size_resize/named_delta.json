@@ -1,0 +1,16 @@
+{
+  "modules": [
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/element/sizehelpers",
+      "bindings": ["isElementCompletelyInViewport", "getPerfectElementSize"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/element/resizetest",
+      "bindings": ["isInsideTransformHandle", "RESIZE_CURSORS", "rotateResizeCursor", "getCursorForResizingElement"],
+      "anonymous_statements": []
+    }
+  ]
+}
