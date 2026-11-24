@@ -85,7 +85,10 @@ component despite their different upstream homes. Assigning the helpers to
 their original modules splits that component across the entry, `element/index`
 and `element/bounds`; both the [canonical gate](https://app.buildbuddy.io/invocation/bdb36333-a093-4883-82c2-c7376e45b82c)
 and the [named-subset gate](https://app.buildbuddy.io/invocation/892125c3-5f45-4cfb-8abc-6c687835303d)
-refused it before Lean emission.
+refused it. This is an ordinary Rust gate result. The
+[independent Lean replay and selector fixtures](proposals/scroll/README.md)
+record the checker's own refusals for the full closure and a certified
+236-unit placement for smaller upstream groups.
 
 ## What limited the candidate set
 
