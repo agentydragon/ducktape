@@ -14,7 +14,6 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/postgres/wakeups"
 	commandpb "github.com/agentydragon/ducktape/agentplane/proto/command"
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
-	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	identitypb "github.com/agentydragon/ducktape/agentplane/proto/identity"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/sampler/api/samplerpb"
@@ -326,8 +325,8 @@ func TestResponseEvidenceAcceptsOpenCompactionIntent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var cursor uint64
-	if err := store.DB().QueryRowContext(t.Context(), `SELECT COALESCE(MAX(sequence),0) FROM sampler_event WHERE session_id=$1`, session.ID).Scan(&cursor); err != nil {
+	current, err := store.GetSession(t.Context(), session.ID, "")
+	if err != nil {
 		t.Fatal(err)
 	}
 	if err := (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID, ProgressLease: time.Minute}).Record(t.Context(), protocol.HTTPResponseHead{
@@ -336,32 +335,19 @@ func TestResponseEvidenceAcceptsOpenCompactionIntent(t *testing.T) {
 		t.Fatalf("open compaction evidence was rejected: %v", err)
 	}
 
-	rows, err := store.DB().QueryContext(t.Context(), `SELECT sequence,entry FROM sampler_event WHERE session_id=$1 AND sequence>$2 ORDER BY sequence`, session.ID, cursor)
+	entries, err := store.Events(t.Context(), session.ID, current.Cursor, 16)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
 	var boundarySequence, observationSource uint64
-	for rows.Next() {
-		var sequence uint64
-		var wire []byte
-		if err := rows.Scan(&sequence, &wire); err != nil {
-			t.Fatal(err)
-		}
-		entry := &eventlogpb.EventEntry{}
-		if err := proto.Unmarshal(wire, entry); err != nil {
-			t.Fatal(err)
-		}
+	for _, entry := range entries {
 		event := entry.GetEvent()
 		if boundary := event.GetBoundaryRecord(); boundary != nil && boundary.GetCorrelationId() == intentID {
-			boundarySequence = sequence
+			boundarySequence = entry.GetCursor()
 		}
 		if event.GetTextDelta().GetItemId() == "compaction-output" && len(event.GetSourceSequences()) == 1 {
 			observationSource = event.GetSourceSequences()[0]
 		}
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
 	}
 	if boundarySequence == 0 || observationSource != boundarySequence {
 		t.Fatalf("compaction observation source=%d, boundary sequence=%d", observationSource, boundarySequence)
@@ -396,8 +382,8 @@ func TestResponseEvidenceRejectsLateRecordsForClosedIntent(t *testing.T) {
 				}
 			}
 
-			var before uint64
-			if err := store.DB().QueryRowContext(t.Context(), `SELECT COALESCE(MAX(sequence),0) FROM sampler_event WHERE session_id=$1`, session.ID).Scan(&before); err != nil {
+			before, err := store.GetSession(t.Context(), session.ID, "")
+			if err != nil {
 				t.Fatal(err)
 			}
 			err = (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID, ProgressLease: time.Minute}).Record(t.Context(), protocol.WireBytes{Bytes: []byte("late provider bytes")}, true,
@@ -405,12 +391,12 @@ func TestResponseEvidenceRejectsLateRecordsForClosedIntent(t *testing.T) {
 			if !errors.Is(err, protocol.ErrPrecondition) {
 				t.Fatalf("late evidence for %s intent error=%v, want ErrPrecondition", scenario, err)
 			}
-			var after uint64
-			if err := store.DB().QueryRowContext(t.Context(), `SELECT COALESCE(MAX(sequence),0) FROM sampler_event WHERE session_id=$1`, session.ID).Scan(&after); err != nil {
+			after, err := store.GetSession(t.Context(), session.ID, "")
+			if err != nil {
 				t.Fatal(err)
 			}
-			if after != before {
-				t.Fatalf("late evidence changed event cursor from %d to %d", before, after)
+			if after.Cursor != before.Cursor {
+				t.Fatalf("late evidence changed event cursor from %d to %d", before.Cursor, after.Cursor)
 			}
 		})
 	}

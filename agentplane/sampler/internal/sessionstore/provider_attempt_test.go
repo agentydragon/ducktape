@@ -508,6 +508,7 @@ func TestFailProviderCommandPreservesUnrelatedLiveCell(t *testing.T) {
 
 func TestProviderAttemptRetryPersistsFrontierAndEvidenceAcrossStoreReopen(t *testing.T) {
 	store, dsn := newTestStoreWithDSN(t)
+	store.eventBlockWrites = true
 	session := openSessionForStore(t, store, "")
 	owner := claim(t, store, session)
 	const commandID = "durable-provider-command"
@@ -522,6 +523,12 @@ func TestProviderAttemptRetryPersistsFrontierAndEvidenceAcrossStoreReopen(t *tes
 		protocol.WireBytes{Bytes: []byte("partial native provider frame")}, true,
 		&eventpb.Event{Observation: &eventpb.Event_ItemStarted{ItemStarted: &eventpb.ItemStarted{ItemId: partialID}}}); err != nil {
 		t.Fatal(err)
+	}
+	for range 16 {
+		if err := (&ResponseEvidence{Store: store, Owner: owner, IntentID: intentID}).Record(t.Context(),
+			protocol.WireBytes{Bytes: []byte("additional provider frame")}, false); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := store.AbandonProviderAttempt(t.Context(), owner, intentID, ProviderAttemptFailure{
 		Class: ProviderAttemptTransient, Reason: "provider stream stalled", RetryAfter: 5 * time.Millisecond,

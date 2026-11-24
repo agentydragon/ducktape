@@ -34,20 +34,42 @@ func Encode(wire []byte) ([]byte, error) {
 }
 
 func Decode(wire []byte, entry *eventlogpb.EventEntry) error {
+	wire, err := Uncompress(wire)
+	if err != nil {
+		return err
+	}
+	return proto.Unmarshal(wire, entry)
+}
+
+func Uncompress(wire []byte) ([]byte, error) {
+	return unpack(wire, 0)
+}
+
+// UnpackBlockEntry unwraps a standalone row without changing its frame bytes.
+// An entry too large to fit in a block returns a nil frame.
+func UnpackBlockEntry(wire []byte) ([]byte, error) {
+	return unpack(wire, MaxBlockBytes-FrameHeaderBytes)
+}
+
+func unpack(wire []byte, limit int) ([]byte, error) {
 	if len(wire) >= 2 && wire[0] == 0x1f && wire[1] == 0x8b {
 		reader, err := gzip.NewReader(bytes.NewReader(wire))
 		if err != nil {
-			return err
+			return nil, err
 		}
-		decoded, err := io.ReadAll(reader)
-		closeErr := reader.Close()
+		defer reader.Close()
+		var input io.Reader = reader
+		if limit > 0 {
+			input = io.LimitReader(input, int64(limit)+1)
+		}
+		decoded, err := io.ReadAll(input)
 		if err != nil {
-			return err
-		}
-		if closeErr != nil {
-			return closeErr
+			return nil, err
 		}
 		wire = decoded
 	}
-	return proto.Unmarshal(wire, entry)
+	if limit > 0 && len(wire) > limit {
+		return nil, nil
+	}
+	return wire, nil
 }

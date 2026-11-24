@@ -440,7 +440,7 @@ func (s *Store) completeCompactionCommand(ctx context.Context, tx *sql.Tx, sessi
 		return err
 	}
 	session.ActiveCommand = nil
-	if _, err := appendEvent(ctx, tx, session, &eventpb.Event{
+	if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{
 		SourceSequences: sources,
 		Observation: &eventpb.Event_ExecutionProgress{ExecutionProgress: &eventpb.ExecutionProgress{
 			OperationId: command.ID, Kind: eventpb.ExecutionProgress_KIND_COMMAND, Phase: eventpb.ExecutionProgress_PHASE_COMPLETED,

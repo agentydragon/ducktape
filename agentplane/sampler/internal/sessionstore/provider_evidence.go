@@ -71,7 +71,7 @@ func (e *ResponseEvidence) Record(ctx context.Context, payload protocol.Provider
 				continue
 			}
 			observation.SourceSequences = sources
-			if _, err := appendEvent(ctx, tx, session, observation); err != nil {
+			if _, err := e.Store.appendEvent(ctx, tx, session, observation); err != nil {
 				return err
 			}
 		}

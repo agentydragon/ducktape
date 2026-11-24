@@ -4,7 +4,10 @@ package(default_visibility = ["//agentplane/sampler:__subpackages__"])
 
 go_library(
     name = "eventcodec",
-    srcs = ["event_storage.go"],
+    srcs = [
+        "event_block.go",
+        "event_storage.go",
+    ],
     importpath = "github.com/agentydragon/ducktape/agentplane/sampler/internal/eventcodec",
     deps = [
         "//agentplane/proto:event_log_go_proto",

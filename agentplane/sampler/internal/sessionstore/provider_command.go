@@ -98,7 +98,7 @@ func (s *Store) FailProviderCommand(ctx context.Context, owner Owner, sessionID,
 		// Input confirmation has already settled the command as effected in History.
 		// Preserve that receipt while failing the sampler run and its turn.
 		if !confirmedInput {
-			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandFailed{
+			if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandFailed{
 				CommandFailed: &eventpb.CommandFailed{CommandId: commandID, Reason: reason},
 			}}); err != nil {
 				return err
@@ -108,13 +108,13 @@ func (s *Store) FailProviderCommand(ctx context.Context, owner Owner, sessionID,
 			if err := settleTurnInterrupts(ctx, tx, session, TurnFailed); err != nil {
 				return err
 			}
-			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_TurnCompleted{
+			if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_TurnCompleted{
 				TurnCompleted: &eventpb.TurnCompleted{TurnId: commandID, Status: eventpb.TurnStatus_TURN_STATUS_FAILED, Error: reason},
 			}}); err != nil {
 				return err
 			}
 			session.ActiveTurn = nil
-		} else if err := appendProgress(ctx, tx, session, &eventpb.ExecutionProgress{
+		} else if err := s.appendProgress(ctx, tx, session, &eventpb.ExecutionProgress{
 			OperationId: commandID, Kind: eventpb.ExecutionProgress_KIND_COMMAND, Phase: eventpb.ExecutionProgress_PHASE_FAILED,
 		}); err != nil {
 			return err

@@ -293,7 +293,7 @@ func (s *Store) AbandonProviderAttempt(ctx context.Context, owner Owner, intentI
 				return err
 			}
 			reconciliation.SourceSequences = append(reconciliation.SourceSequences, abandonedSources...)
-			if _, err := appendEvent(ctx, tx, session, reconciliation); err != nil {
+			if _, err := s.appendEvent(ctx, tx, session, reconciliation); err != nil {
 				return err
 			}
 		}

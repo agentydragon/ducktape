@@ -39,6 +39,7 @@ type Store struct {
 	operationTimeout           time.Duration
 	providerProgressCoalescing time.Duration
 	providerRetryMaxBackoff    time.Duration
+	eventBlockWrites           bool
 	// now dates the model-visible environment context.
 	now func() time.Time
 }
@@ -52,6 +53,7 @@ func New(db *sql.DB, operationTimeout time.Duration, settings *samplersettings.S
 		db: db, operationTimeout: operationTimeout, now: time.Now,
 		providerProgressCoalescing: settings.ProviderProgressLeaseCoalescing(),
 		providerRetryMaxBackoff:    settings.ProviderRetryMaxBackoff(),
+		eventBlockWrites:           settings.EventBlockWrites,
 	}
 }
 
@@ -325,7 +327,7 @@ func scanSession(row rowScanner) (*Session, error) {
 	return &session, nil
 }
 
-func appendEvent(ctx context.Context, tx *sql.Tx, session *Session, event *eventpb.Event) (*eventlogpb.EventEntry, error) {
+func (s *Store) appendEvent(ctx context.Context, tx *sql.Tx, session *Session, event *eventpb.Event) (*eventlogpb.EventEntry, error) {
 	session.Cursor++
 	event.At = timestamppb.Now()
 	entry := &eventlogpb.EventEntry{
@@ -343,6 +345,11 @@ func appendEvent(ctx context.Context, tx *sql.Tx, session *Session, event *event
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_event(session_id,sequence,entry) VALUES($1,$2,$3)`, session.ID, session.Cursor, wire); err != nil {
 		return nil, err
+	}
+	if s.eventBlockWrites && session.Cursor%eventcodec.MaxBlockEntries == 0 {
+		if err := sealJournalWindow(ctx, tx, session.ID, session.Cursor); err != nil {
+			return nil, err
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE sampler_session SET cursor=$2 WHERE id=$1`, session.ID, session.Cursor); err != nil {
 		return nil, err

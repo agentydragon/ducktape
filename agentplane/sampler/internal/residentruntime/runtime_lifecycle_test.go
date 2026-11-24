@@ -453,6 +453,7 @@ func (f *drainFixture) captureState(t *testing.T, snapshot *drainFailureSnapshot
 		{"processes", `SELECT to_jsonb(p) FROM sampler_process p WHERE p.conversation_id=$1 ORDER BY p.generation,p.id LIMIT 100`, []any{f.session.ConversationID}},
 		{"commands", `SELECT to_jsonb(c) FROM sampler_command c WHERE c.session_id=$1 ORDER BY c.id LIMIT 100`, []any{f.session.ID}},
 		{"events", `SELECT to_jsonb(e) FROM (SELECT * FROM sampler_event WHERE session_id=$1 ORDER BY sequence DESC LIMIT 100) e ORDER BY sequence`, []any{f.session.ID}},
+		{"event_blocks", `SELECT to_jsonb(b) FROM (SELECT * FROM sampler_event_block WHERE session_id=$1 ORDER BY first_sequence DESC LIMIT 4) b ORDER BY first_sequence`, []any{f.session.ID}},
 		{"model_requests", `SELECT to_jsonb(r) FROM sampler_model_request r WHERE r.conversation_id=$1 ORDER BY r.position DESC LIMIT 20`, []any{f.session.ConversationID}},
 		// Each fixture has an isolated database; include referenced content, not only context nodes.
 		{"contexts", `SELECT to_jsonb(c) FROM sampler_context c ORDER BY c.item_count,c.id LIMIT 100`, nil},

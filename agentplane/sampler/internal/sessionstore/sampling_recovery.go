@@ -8,7 +8,6 @@ import (
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	"github.com/agentydragon/ducktape/agentplane/sampler/internal/eventcodec"
 )
 
 func samplingReconciliation(ctx context.Context, tx *sql.Tx, session *Session, intentID string) (*eventpb.Event, error) {
@@ -71,25 +70,8 @@ func samplingReconciliation(ctx context.Context, tx *sql.Tx, session *Session, i
 }
 
 func recoveryEventsBefore(ctx context.Context, tx *sql.Tx, sessionID string, before uint64) ([]*eventlogpb.EventEntry, error) {
-	// Bound each query even when the Session has a long transcript: closing a PostgreSQL
-	// result early must not drain all earlier entries from the connection.
-	rows, err := tx.QueryContext(ctx, `SELECT entry FROM sampler_event
-		WHERE session_id=$1 AND sequence<$2 ORDER BY sequence DESC LIMIT 256`, sessionID, before)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var entries []*eventlogpb.EventEntry
-	for rows.Next() {
-		var wire []byte
-		if err := rows.Scan(&wire); err != nil {
-			return nil, err
-		}
-		entry := &eventlogpb.EventEntry{}
-		if err := eventcodec.Decode(wire, entry); err != nil {
-			return nil, err
-		}
-		entries = append(entries, entry)
-	}
-	return entries, rows.Err()
+	const pageSize = 256
+	entries, err := readJournalRange(ctx, tx, sessionID, max(before, pageSize+1)-pageSize, before-1)
+	slices.Reverse(entries)
+	return entries, err
 }

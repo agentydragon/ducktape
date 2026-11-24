@@ -342,21 +342,42 @@ class Store:
     async def events(self, session_id: str, after: int, *, limit: int = 256) -> list[event_log_pb2.EventEntry]:
         async with self.engine.connect() as connection:
             entries = (
-                await connection.scalars(
+                await connection.execute(
                     text(
-                        "SELECT entry FROM sampler_event "
-                        "WHERE session_id=:session_id AND sequence>:after "
-                        "ORDER BY sequence LIMIT :limit"
+                        "SELECT sequence, sequence, entry FROM sampler_event "
+                        "WHERE session_id=:session_id AND sequence BETWEEN :first AND :last "
+                        "UNION ALL "
+                        "SELECT first_sequence, last_sequence, payload FROM sampler_event_block "
+                        "WHERE session_id=:session_id AND first_sequence BETWEEN :oldest_block AND :last "
+                        "AND last_sequence >= :first ORDER BY 1"
                     ),
-                    {"session_id": session_id, "after": after, "limit": limit},
+                    {
+                        "session_id": session_id,
+                        "first": after + 1,
+                        "last": after + limit,
+                        "oldest_block": max(1, after - 30),
+                    },
                 )
             ).all()
         decoded = []
-        for entry in entries:
+        for first, last, entry in entries:
             raw = bytes(entry)
             if raw.startswith(b"\x1f\x8b"):
                 raw = gzip.decompress(raw)
-            decoded.append(event_log_pb2.EventEntry.FromString(raw))
+            if first == last:
+                decoded.append(event_log_pb2.EventEntry.FromString(raw))
+                continue
+            # Block framing is specified in migration 0021.
+            offset = 0
+            for cursor in range(first, last + 1):
+                size = int.from_bytes(raw[offset : offset + 4], "big")
+                offset += 4
+                assert size > 0
+                assert offset + size <= len(raw)
+                if after < cursor <= after + limit:
+                    decoded.append(event_log_pb2.EventEntry.FromString(raw[offset : offset + size]))
+                offset += size
+            assert offset == len(raw)
         return decoded
 
 
