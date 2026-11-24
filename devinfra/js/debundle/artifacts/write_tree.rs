@@ -45,7 +45,6 @@ pub struct WriteTreeInput<'a> {
     /// Chunk records of the emission set — the caller drops records of
     /// excluded chunks before passing them in.
     pub chunk_records: &'a [ArtifactChunkRecord],
-    pub module_count: usize,
     pub decomposition_by_chunk: &'a HashMap<ChunkId, ChunkDecompositionOutput>,
 }
 
@@ -88,7 +87,11 @@ pub fn write_js_tree(input: &WriteTreeInput) -> Result<()> {
         counts: input.counts,
         chunks: input.chunk_records,
         logical_modules: RootLogicalModulesSummary {
-            module_count: input.module_count,
+            module_count: input
+                .decomposition_by_chunk
+                .values()
+                .map(|d| d.logical_modules.module_paths.len())
+                .sum(),
         },
         selected_module_lowerings: input.lowerings,
         output_metrics: materialized.output_metrics,

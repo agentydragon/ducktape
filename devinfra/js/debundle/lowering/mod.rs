@@ -77,7 +77,6 @@ pub struct MaterializeLogicalModulesResult {
     pub output: CandidateEmissionDraft,
     pub decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput>,
     pub selected_lowerings: Vec<SelectedModuleLowering>,
-    pub module_count: usize,
     /// Spec claims that named a binding for which no top-level
     /// declaration exists in the source chunk, collected across every chunk
     /// so reconstruction can diagnose all claims (the chunk lowers as if the
@@ -951,7 +950,6 @@ pub fn materialize_logical_modules(
         })
         .collect::<Result<Vec<_>>>()?;
 
-    let mut reports = Vec::with_capacity(chunk_results.len());
     let mut applied = Vec::<SelectedModuleLowering>::new();
     let mut unmatched_spec_claims = Vec::<UnmatchedSpecClaim>::new();
     let mut gate_rejections = Vec::<ChunkGateRejection>::new();
@@ -966,7 +964,6 @@ pub fn materialize_logical_modules(
             )?;
         }
         applied.extend(chunk_result.applied.iter().cloned());
-        reports.push(chunk_result.report.clone());
         unmatched_spec_claims.extend(chunk_result.unmatched_spec_claims.iter().cloned());
         gate_rejections.extend(chunk_result.gate_rejection.iter().cloned());
         for (key, count) in &chunk_result.vendor_reference_rewrites {
@@ -985,13 +982,11 @@ pub fn materialize_logical_modules(
         vendor_reference_rewrites,
     );
 
-    let module_count: usize = reports.iter().map(|r| r.final_module_contents.len()).sum();
     Ok(Materialized::Lowered(Box::new(
         MaterializeLogicalModulesResult {
             output,
             decomposition_by_chunk,
             selected_lowerings: applied,
-            module_count,
             unmatched_spec_claims,
             gate_rejections,
         },
