@@ -138,22 +138,10 @@ for (const [seed, value] of ["initialized", 42].entries()) {
   }
 }
 
-for (const [name, source, count, reason] of [
-  ["generator", "function* read() { return 3; } export { read };", 2, /unsupported generator function/],
-  [
-    "block-local",
-    "function read() { { function nested() { return 3; } return nested(); } } read(); export { read };",
-    3,
-    /unsupported statement FunctionDeclaration/,
-  ],
-]) {
-  const { out, verdict, log } = sequentialSplit(
-    name,
-    source,
-    { [entry]: Array.from({ length: count }, (_, i) => `#${i}`) },
-    []
-  );
+{
+  const source = "function read() { { function nested() { return 3; } return nested(); } } read(); export { read };";
+  const { out, verdict, log } = sequentialSplit("block-local", source, { [entry]: ["#0", "#1", "#2"] }, []);
   assert.equal(verdict.status, "rejected", log);
-  assert.match(verdict.reason, reason, log);
+  assert.match(verdict.reason, /unsupported statement FunctionDeclaration/, log);
   assert(!existsSync(out));
 }

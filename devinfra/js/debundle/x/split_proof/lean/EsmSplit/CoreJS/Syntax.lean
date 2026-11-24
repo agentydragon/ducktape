@@ -61,7 +61,7 @@ inductive Prim where
 
 /-- `normal` can be called and constructed, `method`, `asyncFn` and `arrow` only called, `classCtor` only constructed. -/
 inductive FuncKind where
-  | normal | arrow | method | asyncFn | classCtor
+  | normal | arrow | method | asyncFn | generator | classCtor
   deriving DecidableEq, Repr
 
 /-- The object created for a hoisted function declaration. The world interprets an async

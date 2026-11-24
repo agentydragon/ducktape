@@ -302,8 +302,8 @@ theorem initSelf_keeps {env env1 : Env} {self : Bool} {x : Name} (v : Val) {base
     exact initVar_keeps v hb hc (h0.freshCell hfree)
   · exact (inert_pure _).keeps hb
 
-theorem addPrototype_keeps (a : Addr) {base s : State W} (hb : Extends base s) (ha : base.objAt a = none) :
-    (addPrototype a s).Keeps base := by
+theorem addPrototype_keeps (a : Addr) (generator : Bool) {base s : State W} (hb : Extends base s)
+    (ha : base.objAt a = none) : (addPrototype a generator s).Keeps base := by
   unfold addPrototype
   exact keeps_bind (alloc_keeps _ hb) fun p s' _ hb' => modifyObj_keeps a _ hb' ha
 
@@ -314,7 +314,7 @@ theorem makeFunc_keeps (env : Env) (f : Func) {base s : State W} (hb : Extends b
   have ha : base.objAt a = none := hb1.fresh (alloc_ok h2).1
   refine keeps_bind ?_ fun _ s3 _ hb3 => ?_
   · split
-    · exact addPrototype_keeps a hb2 ha
+    · exact addPrototype_keeps a _ hb2 ha
     · exact (inert_pure _).keeps hb2
   · exact keeps_bind (initSelf_keeps _ h1 hb hb3) fun _ s4 _ hb4 => (inert_pure _).keeps hb4
 

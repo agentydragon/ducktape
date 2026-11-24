@@ -46,9 +46,12 @@ def selfScope (env : Env) (self : Bool) (name : Name) : M W Env :=
 def initSelf (env : Env) (self : Bool) (name : Name) (v : Val) : M W Unit :=
   if self then initVar env name v else pure ()
 
-/-- The `prototype` of a function that can be constructed: a new object that points back to it. -/
-def addPrototype (a : Addr) : M W Unit := do
-  let p ← alloc { proto := some objectProto, props := [("constructor", .data (.obj a) true false true)] }
+/-- A generator has a fresh prototype with no own constructor. An ordinary constructor's prototype
+has an own property pointing back to the function. -/
+def addPrototype (a : Addr) (generator : Bool := false) : M W Unit := do
+  let p ← alloc {
+    proto := some (if generator then generatorProto else objectProto),
+    props := if generator then [] else [("constructor", .data (.obj a) true false true)] }
   modifyObj a fun o => { o with props := o.props ++ [("prototype", .data (.obj p) true false false)] }
 
 /-- A function object for `f`, closed over the bindings of `env` that its code can mean. -/
@@ -58,7 +61,7 @@ def makeFunc (env : Env) (f : Func) : M W Val := do
     proto := some f.intrinsicProto, code := some (.closure f (env.capture f.closes) []),
     props := [("length", .data (.num (Float.ofNat f.length)) false false true),
       ("name", .data (.str f.name) false false true)] }
-  (if f.kind == .normal then addPrototype a else pure ())
+  (if f.kind == .normal || f.kind == .generator then addPrototype a (f.kind == .generator) else pure ())
   initSelf env f.self f.name (.obj a)
   pure (.obj a)
 
