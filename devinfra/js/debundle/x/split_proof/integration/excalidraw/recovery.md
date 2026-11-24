@@ -7,13 +7,23 @@ requests the structural `normal-completion` guarantee at the browser origin.
 A refusal of one placement does not establish that moving a binding changes
 JavaScript behavior.
 
-The [passing subset](../../../../excalidraw/editor_smoke_subset.json) moves **107 bindings
+The first expanded subset moved **107 bindings
 into 23 canonical modules**, up from 16 in four. The
 [combined run](https://app.buildbuddy.io/invocation/6777e49b-e517-41bb-ba1e-b1b24dea0b85)
 built Rust's selected tree and certified Lean's selected tree both at emission
 and from disk. Chromium loaded the certified modules and compared the complete
 editor entry namespace with the original. The result is a lower bound for this
 checker and input; the candidate filters below are not a maximality proof.
+
+## Hoisted declarations
+
+The [hoisted declaration rule](https://github.com/agentydragon/ducktape/pull/19735)
+certifies 23 of the 25 authored function declarations together with their
+eligible dependents. The [136-binding replay](https://app.buildbuddy.io/invocation/74aa1a8e-295b-4c8d-a74c-0d07e4ae5aac)
+checked Rust emission, both Lean certificates and the browser overlay.
+The two remaining hoists, `deconstructRectanguloidElement` and
+`deconstructDiamondElement`, depend on private entry bindings.
+[Restoring both changed the entry exports](https://app.buildbuddy.io/invocation/45f6d119-2f0f-4d2d-9d9b-3d1fae522121).
 
 ## What limited the candidate set
 
