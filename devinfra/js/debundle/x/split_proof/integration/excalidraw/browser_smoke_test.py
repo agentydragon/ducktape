@@ -31,6 +31,10 @@ COORDINATES = "packages/excalidraw/scene/coordinates.mjs"
 SCROLL = "packages/excalidraw/scene/scroll.mjs"
 STARTUP = "packages/excalidraw/editor/startup.mjs"
 STARTUP_UNITS = range(5, 19)
+# Keep interleaved computed initializers in the entry and put #404 with the font helpers.
+EDITOR_CONSTANT_UNITS = tuple(
+    unit for unit in range(385, 472) if unit not in {392, 403, 404, 409, 413, 415, 422, 423, 426, 445, 459, 462, 463}
+)
 
 
 def resolve(runfiles: Runfiles, path: str) -> Path:
@@ -285,6 +289,24 @@ async def test_original_editor(
                 STARTUP: STARTUP_UNITS,
                 "packages/excalidraw/editor/codecs.mjs": range(19, 301),
                 "packages/excalidraw/editor/utilities.mjs": range(301, 354),
+                "packages/excalidraw/editor/palette-primitives.mjs": range(359, 367),
+                "packages/excalidraw/editor/constants.mjs": EDITOR_CONSTANT_UNITS,
+                "packages/excalidraw/editor/font-strings.mjs": (404, 548, 549),
+                "packages/excalidraw/editor/frame-animation.mjs": (550, 551, 552, 553, 554),
+                "packages/excalidraw/editor/collections.mjs": (
+                    555,
+                    568,
+                    569,
+                    577,
+                    578,
+                    579,
+                    580,
+                    589,
+                    590,
+                    595,
+                    596,
+                    597,
+                ),
                 COORDINATES: (559, 560),
                 SCROLL: (1337,),
             },
