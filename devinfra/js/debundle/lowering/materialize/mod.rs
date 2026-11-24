@@ -1071,24 +1071,9 @@ pub(super) fn finish_logical_chunk(
         destructuring_groups: &ast_analysis.destructuring_groups,
         nested_var_statements: &ast_analysis.nested_var_statements,
     });
+    let preflight = gate::CandidatePreflight::prepare(&assignment_analysis, &placement_projection);
     if assessment_only {
-        let no_reports = ReportEmission::None;
-        let report_context = ChunkReportContext {
-            ownership_subset: ownership_subset.as_ref(),
-            chunk_id,
-            report_emission: &no_reports,
-            graph_reports: GraphReportSelection::None,
-            policy: gate_rejection_policy,
-            effect_conflicts_jsonl: false,
-            full_translation_validation: false,
-            full_export_reentry: false,
-            full_residual_atomic_groups: false,
-        };
-        let (evaluation, _) = evaluate_chunk_candidate(
-            report_context,
-            gate::CandidatePreflight::prepare(&assignment_analysis, &placement_projection),
-            &analysis.facts,
-        )?;
+        let evaluation = evaluate_with_sinks(preflight, &analysis.facts, None, None)?;
         let assessment = evaluation.into_candidate_assessment();
         return Ok(FinishedLogicalChunk::Assessed {
             chunk_id: chunk_id.to_string(),
@@ -1115,11 +1100,8 @@ pub(super) fn finish_logical_chunk(
             .contains(&super::FullReportKind::ResidualAtomicGroups)
             && (full_report_chunks.is_empty() || full_report_chunks.contains(chunk_id)),
     };
-    let (evaluation, report_out_dir) = evaluate_chunk_candidate(
-        report_context,
-        gate::CandidatePreflight::prepare(&assignment_analysis, &placement_projection),
-        &analysis.facts,
-    )?;
+    let (evaluation, report_out_dir) =
+        evaluate_chunk_candidate(report_context, preflight, &analysis.facts)?;
     let gate_outcome = emit_reports_and_resolve_gate(
         report_context,
         program_graph,
@@ -1737,7 +1719,7 @@ fn evaluate_chunk_candidate<'a, 'b>(
         "--full-report requested for chunk {chunk_id}, but the current report policy suppresses output; run without --dry-run",
     );
 
-    let mut full_tv = if full_translation_validation {
+    let full_tv = if full_translation_validation {
         Some(JsonlReport::create(chunk_report_path(
             report_out_dir.expect("full-report output was checked"),
             chunk_id,
@@ -1746,7 +1728,7 @@ fn evaluate_chunk_candidate<'a, 'b>(
     } else {
         None
     };
-    let mut jsonl = if effect_conflicts_jsonl {
+    let jsonl = if effect_conflicts_jsonl {
         Some(JsonlReport::create(chunk_report_path(
             report_out_dir.expect("effect-conflict output was checked"),
             chunk_id,
@@ -1755,24 +1737,26 @@ fn evaluate_chunk_candidate<'a, 'b>(
     } else {
         None
     };
+    Ok((
+        evaluate_with_sinks(preflight, facts, full_tv, jsonl)?,
+        report_out_dir,
+    ))
+}
+
+fn evaluate_with_sinks<'a>(
+    preflight: gate::CandidatePreflight<'a>,
+    facts: &[analysis::facts::StatementFacts],
+    mut full_tv: Option<JsonlReport>,
+    mut jsonl: Option<JsonlReport>,
+) -> Result<gate::CandidateEvaluation<'a>> {
     let evaluation = {
-        let mut write_tv = |row: &gate::TranslationValidationEvidenceReport| -> Result<()> {
-            full_tv
-                .as_mut()
-                .expect("active full-report sink")
-                .write(row)
-        };
-        let mut write_effect = |row: &gate::EffectConflictDiagnosticRow<'_>| -> Result<()> {
-            jsonl
-                .as_mut()
-                .expect("active effect-conflict sink")
-                .write(row)
-        };
-        preflight.evaluate(
-            facts,
-            full_translation_validation.then_some(&mut write_tv),
-            effect_conflicts_jsonl.then_some(&mut write_effect),
-        )?
+        let mut tv = full_tv
+            .as_mut()
+            .map(|writer| move |row: &gate::TranslationValidationEvidenceReport| writer.write(row));
+        let mut effect = jsonl
+            .as_mut()
+            .map(|writer| move |row: &gate::EffectConflictDiagnosticRow<'_>| writer.write(row));
+        preflight.evaluate(facts, tv.as_mut(), effect.as_mut())?
     };
     if let Some(writer) = full_tv {
         writer.finish()?;
@@ -1780,7 +1764,7 @@ fn evaluate_chunk_candidate<'a, 'b>(
     if let Some(writer) = jsonl {
         writer.finish()?;
     }
-    Ok((evaluation, report_out_dir))
+    Ok(evaluation)
 }
 
 fn graph_export_guidance(
