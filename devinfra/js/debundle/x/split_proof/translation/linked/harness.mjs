@@ -280,3 +280,19 @@ export function observedProgram(initializer, result) {
     },
   ]);
 }
+
+export function structuralFixture(name, source, moved, kept, provider = "") {
+  const dir = path.join(root, name);
+  const files = prepare(dir, {
+    source,
+    provider,
+    spec: {
+      entry: "entry.mjs",
+      modules: { "entry.mjs": kept, "scroll.mjs": moved },
+    },
+  });
+  const out = path.join(dir, "out");
+  const run = (scope, ...args) =>
+    lower(files.sourceFile, files.specFile, out, ["--structural", ...args], scope).verdict;
+  return { sourceFile: files.sourceFile, out, run };
+}
