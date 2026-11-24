@@ -48,16 +48,16 @@ private structure Parsed where
   units : List (Nat × Stmt × Json)
   exports : List (Name × Name)
 
-/-- Structural proofs lower one source unit concretely and interpret the remaining whole units
+/-- Structural proofs can lower a selected source unit concretely and interpret the remaining whole units
 through their lexical capability lists. The ordinary linked checker lowers every unit concretely. -/
 private inductive BodyFormat where
   | linked
-  | structural (pivot : Nat) (location : LinkedDeployment.Access)
+  | structural (pivot : Option Nat) (location : LinkedDeployment.Access)
 
 private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (imports : List Name)
     (origin : Nat) (j : Json) (exported : Bool) : Except String (Stmt × List Name) := do
   if let .structural pivot location := format then
-    if origin != pivot then
+    if some origin != pivot then
       let s ← OpaqueInput.unit origin j location.unitNames[origin]?
       return (s, if exported then (Lower.topDefs j).eraseDups else [])
   let ast := ((numberFunctions origin j).run 1).1
@@ -204,7 +204,7 @@ private def decode (format : BodyFormat) (source providers files : Json) (P : Es
     if ["ImportDeclaration", "ExportNamedDeclaration"].contains (← typ j) then
       unless entry.stmts.contains i do throw s!"original import or export unit {i} must stay in the entry"
   let original ← parse format profile "bundle.mjs" nodes
-  if let .structural pivot _ := format then
+  if let .structural (some pivot) _ := format then
     unless original.units.any (fun u => u.1 == pivot) do throw s!"pivot {pivot} is not an executable source unit"
   for req in original.imports do
     unless providerNames.contains req.source do throw s!"missing original dependency {req.source}"
@@ -228,13 +228,13 @@ providers, whose stable identities start after that array. -/
 def decodePair (source providers files : Json) (P : EsmSplit.Plan) (profile : HostProfile := .empty) :
     Except String (Program × Program) := decode .linked source providers files P profile
 
-/-- Experimental input for a single-pivot proof. The body of each returned module retains the
+/-- Experimental input for a structural schedule proof. The body of each returned module retains the
 original source ordinals, including when an emitted module has different positions. Providers use
-disjoint ordinals. The pivot has its actual CoreJS statement on both sides. The other statements
-are decoded from their own syntax and carry the same source code ID across the move.
+disjoint ordinals. A selected pivot has its actual CoreJS statement on both sides. Retained statements
+are decoded from their own syntax and carry the same source code ID between layouts.
 This verifies placement, unchanged unit syntax, import/export links and resolved captures. A proof
 of the order change and correspondence with the emitted source files are separate obligations. -/
-def decodeStructuralPair (source providers files : Json) (P : EsmSplit.Plan) (pivot : Nat)
+def decodeStructuralPair (source providers files : Json) (P : EsmSplit.Plan) (pivot : Option Nat)
     (profile : HostProfile := .empty) (deployment : Option LinkedDeployment.Input := none) :
     Except String (Program × Program) := do
   let location ← deployment.mapM (LinkedDeployment.check · source providers P)
