@@ -1,0 +1,28 @@
+pg_table:
+  primary: true
+  target_databases:
+    - "*"
+  query: |
+    SELECT pg_catalog.current_database() AS datname,
+           n.nspname AS schemaname,
+           c.relname,
+           pg_catalog.pg_total_relation_size(c.oid) AS total_bytes
+    FROM pg_catalog.pg_class AS c
+    JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace
+    WHERE c.relkind IN ('r', 'm')
+      AND c.relpersistence <> 't'
+      AND n.nspname !~ '^pg_'
+      AND n.nspname <> 'information_schema'
+  metrics:
+    - datname:
+        usage: LABEL
+        description: Database name
+    - schemaname:
+        usage: LABEL
+        description: Schema name
+    - relname:
+        usage: LABEL
+        description: Table or materialized view name
+    - total_bytes:
+        usage: GAUGE
+        description: Allocated bytes including indexes and TOAST, reported per physical table or materialized view
