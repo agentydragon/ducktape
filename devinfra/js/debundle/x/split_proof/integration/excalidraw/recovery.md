@@ -308,3 +308,14 @@ failed: the linked initial state already exposes the region of
 consumers in the entry then exposed the same proof condition for
 [`bezierEquation` (525)](https://app.buildbuddy.io/invocation/78f1f928-788b-43b5-9a68-f2bf165df18d).
 These are proof refusals, not observed behavioral differences.
+
+The [observer-chain proof](https://github.com/agentydragon/ducktape/pull/19889)
+accounts for hoisted observers in dependency order. For example, the
+`curveIntersectLineSegment` closure can reach `rectangleIntersectLineSegment`,
+which can reach `lineSegmentIntersectionPoints`, which captures
+`pointOnLineSegment`. The [linked probe](https://app.buildbuddy.io/invocation/173feb9b-e2dc-4d81-b7e6-b7839b698081)
+checked that the three observers could be isolated, starting with the outermost.
+The [combined 344-binding replay](https://app.buildbuddy.io/invocation/460d6629-1056-48f1-aefb-19f483b54515)
+then certified all eight previously omitted segment, rectangle and Bézier helpers
+together. The proof does not require an additional host assumption or a different
+module order.
