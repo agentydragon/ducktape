@@ -430,6 +430,11 @@ theorem allocOnly_local (r : Nat) (R : Addr → Prop) (n : Nat) :
       all_goals try unfold evalExpr
       case undef | null | bool | num | str | host | this => exact local_pure _
       case regexp data => exact (local_alloc (regexpObject data)).bind' fun a => local_pure (Val.obj a)
+      case binary op a b =>
+        change Local r R (evalExpr (n + 1) env (.binary op a b) : M W Val)
+        rcases evalExpr_literalArithmetic (W := W) (n + 1) env _ he with hf | ⟨x, hx⟩
+        · rw [hf]; exact local_outOfFuel
+        · rw [hx]; exact local_pure _
       case var x => exact local_readVar (hw x (by simp [Expr.readsNow]))
       case unary op operand =>
         simp only [Bool.and_eq_true] at he

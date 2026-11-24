@@ -34,6 +34,18 @@ theorem localUnaryOperand_ops {op : UnOp} {e : Expr} (h : localUnaryOperand op e
     op = .not ∨ op = .neg := by
   cases op <;> simp_all [localUnaryOperand]
 
+/-- These operators on two Numbers always return a Number, including NaN and infinities. -/
+def BinOp.numberArithmetic : BinOp → Bool
+  | .add | .sub | .mul | .div | .mod => true
+  | _ => false
+
+/-- A closed arithmetic tree. Requiring Number leaves excludes coercion hooks,
+binding reads and host properties such as `Math.PI`. -/
+def Expr.literalArithmetic : Expr → Bool
+  | .num _ => true
+  | .binary op a b => op.numberArithmetic && a.literalArithmetic && b.literalArithmetic
+  | _ => false
+
 mutual
 /-- An expression that only allocates: a literal, a name, a function, an object literal of named data properties, an array literal of such expressions, a plain class, or a supported unary operation. -/
 def Expr.allocOnly : Expr → Bool
@@ -41,6 +53,7 @@ def Expr.allocOnly : Expr → Bool
   -- The literal allocates with the realm's intrinsic prototype. It reads no
   -- ambient constructor or prototype properties.
   | .regexp _ => true
+  | e@(.binary ..) => e.literalArithmetic
   | .unary op operand => localUnaryOperand op operand && operand.allocOnly
   | .obj props => allocOnlyProps props
   | .arr elems => allocOnlyAll elems

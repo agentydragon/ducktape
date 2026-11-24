@@ -383,6 +383,27 @@ theorem evalExpr_localUnary {W : World} {op : UnOp} {operand : Expr}
       (evalExpr n env operand >>= fun v => lift (unop (initialState W 0) op v)) := by
   rcases localUnaryOperand_ops h with rfl | rfl <;> rfl
 
+/-- At any fuel, a literal arithmetic tree either runs out of fuel or returns
+a Number independent of the state. Use the evaluator's own binary operation,
+so the move proof does not fold constants or approximate IEEE arithmetic. -/
+theorem evalExpr_literalArithmetic (fuel : Nat) (env : Env) (e : Expr) (h : e.literalArithmetic = true) :
+    (evalExpr fuel env e : M W Val) = outOfFuel ∨ ∃ x : Float, evalExpr (W := W) fuel env e = pure (.num x) := by
+  induction fuel generalizing e with
+  | zero => exact Or.inl rfl
+  | succ n ih =>
+    cases e <;> simp only [Expr.literalArithmetic, Bool.false_eq_true, Bool.and_eq_true] at h
+    case num x => exact Or.inr ⟨x, rfl⟩
+    case binary op a b =>
+      obtain ⟨⟨hop, ha⟩, hb⟩ := h
+      rw [evalExpr]
+      rcases ih a ha with hf | ⟨x, hx⟩
+      · rw [hf]; exact Or.inl rfl
+      rw [hx]
+      rcases ih b hb with hf | ⟨y, hy⟩
+      · rw [hf]; exact Or.inl rfl
+      rw [hy]
+      cases op <;> first | contradiction | exact Or.inr ⟨_, rfl⟩
+
 theorem allocOnly_keeps (n : Nat) :
     (∀ env e (base s : State W), e.allocOnly = true → Extends base s → (evalExpr n env e s).Keeps base) ∧
     (∀ env es (base s : State W), allocOnlyAll es = true → Extends base s → (evalArgs n env es s).Keeps base) ∧
@@ -402,6 +423,11 @@ theorem allocOnly_keeps (n : Nat) :
       case undef | null | bool | num | str | host | this => exact (inert_pure _).keeps hb
       case regexp data =>
         exact keeps_bind (alloc_keeps (regexpObject data) hb) fun a _ _ h => (inert_pure (Val.obj a)).keeps h
+      case binary op a b =>
+        change (evalExpr (n + 1) env (.binary op a b) s).Keeps base
+        rcases evalExpr_literalArithmetic (W := W) (n + 1) env _ he with hf | ⟨x, hx⟩
+        · rw [hf]; trivial
+        · rw [hx]; exact (inert_pure _).keeps hb
       case var x => exact (inert_readVar env x).keeps hb
       case unary op operand =>
         simp only [Bool.and_eq_true] at he

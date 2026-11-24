@@ -24,6 +24,38 @@ function fixture(name, source, moved, kept, provider = "") {
   return { sourceFile: files.sourceFile, out, run };
 }
 
+const arithmetic = fixture(
+  "nested-number-products",
+  `var marker = 1; var limit = { bytes: 3 * 128 * 256, fraction: (5 + 2) % 4 / 2,
+      invalid: 0 / 0, signedZero: 0 / (0 - 1) }; export { marker, limit };`,
+  ["#1"],
+  ["#0", "#2"]
+);
+const product = arithmetic.run(pivotScope);
+assert.equal(product.status, "certified", JSON.stringify(product));
+assert.deepEqual(arithmetic.run(pivotScope, "--check-output"), product);
+for (const file of [arithmetic.sourceFile, path.join(arithmetic.out, "entry.mjs")]) {
+  const { limit } = await import(pathToFileURL(file));
+  assert.equal(limit.bytes, 98304);
+  assert.equal(limit.fraction, 1.5);
+  assert(Number.isNaN(limit.invalid));
+  assert(Object.is(limit.signedZero, -0));
+}
+
+const arithmeticProfile = path.join(root, "arithmetic-profile.json");
+writeFileSync(arithmeticProfile, JSON.stringify({ profile: "browser-page" }));
+for (const [name, before, operand] of [
+  ["coercion", "Object.prototype.valueOf = () => 3", "({})"],
+  ["replaced-math", "globalThis.Math = { PI: 12 }", "Math.PI"],
+  ["shadowed-math", "const Math = { get PI() { return 12; } }", "Math.PI"],
+]) {
+  const unsafe = fixture(name, `${before}; var value = ${operand} / 12; export { value };`, ["#1"], ["#0", "#2"]);
+  const denied = unsafe.run(refusalScope, "--host-contract", arithmeticProfile);
+  assert.equal(denied.status, "rejected", JSON.stringify(denied));
+  assert.match(denied.reason, /unit 1 is not a local allocating declaration/);
+  assert(!existsSync(unsafe.out));
+}
+
 const typedArraySource = `import { seed } from "./provider.mjs";
    const bytes = new Uint8Array([seed, 17]);
    const read = (position) => bytes[position];
