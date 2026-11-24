@@ -807,6 +807,17 @@ sh_test(
     use_bash_launcher = True,
 )
 
+lean_axiom_test(
+    name = "weakmap_boundary_test",
+    srcs = ["EsmSplit/CoreJS/WeakMapBoundary.lean"],
+    imports = ["EsmSplit.CoreJS.WeakMapBoundary"],
+    theorems = [
+        "CoreJS.WeakMapBoundary.stableRead_newEmpty",
+        "CoreJS.WeakMapBoundary.sameShape_sameObservation",
+    ],
+    deps = [":corejs_certificate_support"],
+)
+
 lean_test(
     name = "corejs_uint8_test",
     srcs = [

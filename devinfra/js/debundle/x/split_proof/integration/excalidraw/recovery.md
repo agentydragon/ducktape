@@ -126,6 +126,46 @@ and `SHIFT_LOCKING_ANGLE` under the explicit `Math.PI@1` browser contract.
   theorem does not justify invoking a mutable ambient `RegExp` constructor.
   [Partial placement, disk check and Chromium](https://app.buildbuddy.io/invocation/ab384ba5-99e2-429a-a35f-15076d354d23).
 
+### What would justify the constructor in unit 1248?
+
+On the pinned editor (SHA-256
+`fa1cfc7930fe3c0e2b4d95e6cb14ebde21068014cd92db303622509d9a0d455c`),
+unit 1248 passes the result of `new WeakMap()` to the static-field helper.
+The [neutral replay](https://app.buildbuddy.io/invocation/d2350079-73ab-4040-8ad0-a63e0f554aa8)
+isolates the constructor: moving only `var cache = new WeakMap()` ahead of an
+unrelated declaration fails the local-allocation check. Concrete linked
+execution under the browser-page profile reaches “host value window.WeakMap
+is constructed”.
+
+[WeakMapBoundary.lean](../../lean/EsmSplit/CoreJS/WeakMapBoundary.lean) proves
+that even an effect-free stable binding read returning a stipulated constructor
+identity leads to that unknown result at sufficient fuel, with the input state
+unchanged. The world has no native construct operation. A future rule would
+need to check the unshadowed binding, require it to yield the realm's intrinsic
+constructor without effects throughout initialization, and implement the
+zero-argument construct with that same new target. Its only state change should
+be allocation at a fresh address, with the realm's intrinsic WeakMap prototype
+and an empty `[[WeakMapData]]` slot. These premises do not apply to
+`new WeakMap([])`, which processes an iterable.
+
+The [runtime controls and kernel audit](https://app.buildbuddy.io/invocation/261231e7-a949-4131-ba1d-0ebdfea74647)
+distinguish a native map from an ordinary object with identical own properties
+and prototype. After removing both prototypes, the saved native `has` still
+returns false for the map and throws for the lookalike. The current object
+record cannot make that distinction from its fields alone. Supporting
+allocation requires preserving the brand independently of those properties;
+reached collection operations need corresponding semantics or an unknown
+result. A replaced or shadowed constructor can return an existing sentinel;
+even a getter returning the native constructor, or a stable constructor that
+reenters, can observe the order of initialization.
+
+This boundary adds no certified editor units. The other standalone
+zero-argument declaration, `elementWithCanvasCache` (1206), is captured by
+unit 675's deferred callback, which calls `delete` on the cache. It does not
+isolate the constructor move. In 1248 the helper also writes an already
+allocated class object in another unit's region; the constructor premise
+alone cannot justify that write.
+
 ## What limited the candidate set
 
 To select a trial, join the canonical Rust graph to the scope-annotated original
