@@ -1,12 +1,13 @@
 import EsmSplit.TranslateInput
 import EsmSplit.Effects
+import EsmSplit.Cli
 
 open Lean Lower Effects
 
 /-- Print one footprint per source ordinal for an annotated Program, or per executable unit
 for a translation-checker bundle. The premises used by the analysis go to stderr. -/
 def main (args : List String) : IO UInt32 := do
-  let (premPath?, args) := takeFlag "--premises" args
+  let (premPath?, args) := EsmSplit.takeFlag "--premises" args
   let [path] := args | IO.eprintln "usage: lower <bundle.json> [--premises <file>]"; return 2
   let prem ← loadPremises premPath?
   let j ← IO.ofExcept (Json.parse (← IO.FS.readFile path))
