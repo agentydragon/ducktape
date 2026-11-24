@@ -568,6 +568,23 @@ def constructTarget : Nat → Val → Val → List Val → M W Val
     | .host name => unknown s!"host value {name} is constructed"
     | _ => throwErr .type "not a constructor"
 
+def bindPattern : Nat → Env → DeclKind → BindingPattern → Val → M W Unit
+  | 0, _, _, _, _ => outOfFuel
+  | _ + 1, env, kind, .name x, value => if kind == .var then writeVar env x value else initVar env x value
+  | n + 1, env, kind, .object props, value =>
+    -- RequireObjectCoercible runs before even the first computed key, including
+    -- when the pattern has no properties.
+    match value with
+    | .undef | .null => throwErr .type "cannot destructure undefined or null"
+    | _ =>
+      props.forM fun (key, field) => do
+        let key ← evalExpr n env key
+        let v ← getProp (callFn n) value key
+        bindPattern n env kind field v
+  | n + 1, env, kind, .defaultValue target init, value => do
+    let v ← if let .undef := value then evalExpr n env init else pure value
+    bindPattern n env kind target v
+
 def execStmt : Nat → Env → Stmt → M W Flow
   | 0, _, _ => outOfFuel
   | n + 1, env, s =>
@@ -580,6 +597,9 @@ def execStmt : Nat → Env → Stmt → M W Flow
       pure .normal
     | .decl _ x e => do
       initVar env x (← evalExpr n env e)
+      pure .normal
+    | .bind kind pattern e => do
+      bindPattern n env kind pattern (← evalExpr n env e)
       pure .normal
     | .varDecl _ | .funDecl _ => pure .normal
     | .ret e => .ret <$> evalExpr n env e

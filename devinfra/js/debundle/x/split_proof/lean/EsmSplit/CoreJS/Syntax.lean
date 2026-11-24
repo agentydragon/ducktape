@@ -178,10 +178,18 @@ inductive Func where
   | opaque (name : String) (kind : FuncKind) (self : Bool) (length code part : Nat)
       (free : List Name) (refusal : Option String)
 
+/-- A binding pattern initializes cells in its enclosing scope. Object properties
+evaluate their keys and bind their values from left to right. -/
+inductive BindingPattern where
+  | name (x : Name)
+  | object (properties : List (Expr × BindingPattern))
+  | defaultValue (pattern : BindingPattern) (fallback : Expr)
+
 inductive Stmt where
   | expr (e : Expr)
   /-- `var x = e`, `let x = e`, `const x = e`; `let x;` has `e = undefined`. -/
   | decl (kind : DeclKind) (x : Name) (init : Expr)
+  | bind (kind : DeclKind) (pattern : BindingPattern) (init : Expr)
   /-- `var x;` -/
   | varDecl (x : Name)
   | funDecl (f : Func)
@@ -257,9 +265,21 @@ def Program.single (ss : List Stmt) : Program where
 /-! ## Hoisting: which names a scope declares -/
 
 mutual
+def BindingPattern.names : BindingPattern → List Name
+  | .name x => [x]
+  | .object ps => objectBindingNames ps
+  | .defaultValue pattern _ => pattern.names
+
+def objectBindingNames : List (Expr × BindingPattern) → List Name
+  | [] => []
+  | (_, pattern) :: rest => pattern.names ++ objectBindingNames rest
+end
+
+mutual
 /-- The `var` names of a statement: they belong to the enclosing function, through every block. -/
 def Stmt.varNames : Stmt → List Name
   | .decl .var x _ => [x]
+  | .bind .var pattern _ => pattern.names
   | .varDecl x => [x]
   | .ite _ t e => t.varNames ++ e.varNames
   | .block ss => varNamesOf ss
@@ -276,11 +296,13 @@ end
 
 /-- The lexical declarations of a statement list, each with whether it can be assigned. -/
 def lexDecls (ss : List Stmt) : List (Name × Bool) :=
-  ss.filterMap fun
-    | .decl .let_ x _ => some (x, true)
-    | .decl .const x _ => some (x, false)
-    | .funDecl f => some (f.name, true)
-    | _ => none
+  ss.flatMap fun
+    | .decl .let_ x _ => [(x, true)]
+    | .decl .const x _ => [(x, false)]
+    | .bind .let_ pattern _ => pattern.names.map (·, true)
+    | .bind .const pattern _ => pattern.names.map (·, false)
+    | .funDecl f => [(f.name, true)]
+    | _ => []
 
 /-- The function declarations of a statement list: bound and initialized when the scope is entered. -/
 def funDecls (ss : List Stmt) : List Func :=
@@ -376,9 +398,19 @@ def Func.free : Func → List Name
   | .mk name _ self params body | .withDefaults name _ self params _ body =>
     freeFunctionNames (if self then name :: params else params) body (freeStmts body)
 
+def BindingPattern.free : BindingPattern → List Name
+  | .name x => [x]
+  | .object ps => freeObjectBindings ps
+  | .defaultValue pattern e => pattern.free ++ e.free
+
+def freeObjectBindings : List (Expr × BindingPattern) → List Name
+  | [] => []
+  | (key, pattern) :: rest => key.free ++ pattern.free ++ freeObjectBindings rest
+
 def Stmt.free : Stmt → List Name
   | .expr e | .ret e | .throw e => e.free
   | .decl _ x e => x :: e.free
+  | .bind _ pattern e => pattern.free ++ e.free
   | .varDecl x => [x]
   | .funDecl f => f.name :: f.free
   | .ite c t e => c.free ++ (t.free ++ e.free)

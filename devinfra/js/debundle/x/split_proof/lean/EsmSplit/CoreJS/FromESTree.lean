@@ -1008,6 +1008,27 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
 
 end
 
+private partial def moduleObjectBinding (profile : HostProfile) (imports : List Name) (j : Json) :
+    Except String BindingPattern := do
+  let lower := linkedExpr profile imports false
+  match ← field j "type" with
+  | "Identifier" => return .name (← moduleBinding j)
+  | "ObjectPattern" =>
+    let props ← j.getObjValAs? (List Json) "properties"
+    return .object (← props.mapM fun p => do
+      unless (← field p "type") == "Property" do throw "unsupported object binding property"
+      unless (← field p "kind") == "init" && !(← p.getObjValAs? Bool "method") do
+        throw "expected an object binding property initializer"
+      let key ← p.getObjVal? "key"
+      let key ← if ← p.getObjValAs? Bool "computed" then lower "" key else .str <$> staticPropertyName key
+      let target ← p.getObjVal? "value" >>= moduleObjectBinding profile imports
+      return (key, target))
+  | "AssignmentPattern" =>
+    let target ← j.getObjVal? "left" >>= moduleObjectBinding profile imports
+    let name := if let .name name := target then name else ""
+    return .defaultValue target (← lower name (← j.getObjVal? "right"))
+  | other => throw s!"unsupported module binding pattern {other}"
+
 /-- Lower one module declaration and list its declared names in binding order.
 Function declarations initialize their cells at link time. -/
 def linkedDeclaration (imports : List Name) (j : Json) (profile : HostProfile := .empty) :
@@ -1026,16 +1047,17 @@ def linkedDeclaration (imports : List Name) (j : Json) (profile : HostProfile :=
     if (← field id "type") != "ObjectPattern" then
       let (name, s) ← declaratorWith moduleBinding (linkedExpr profile imports false) kind d
       return ([name], s)
-    unless kind == "var" do throw "unsupported module lexical object pattern"
     unless (← field d "type") == "VariableDeclarator" do throw "expected a variable declarator"
-    let bindings ← linkedObjectPattern id (linkedPatternIdentifier moduleBinding)
+    let kind ← match kind with
+      | "var" => pure DeclKind.var
+      | "let" => pure DeclKind.let_
+      | "const" => pure DeclKind.const
+      | _ => throw s!"unsupported declaration {kind}"
+    let pattern ← moduleObjectBinding profile imports id
     let init ← d.getObjVal? "init"
     if init == .null then throw "object pattern declaration needs an initializer"
     let value ← linkedExpr profile imports false "" init
-    -- Only the saved initializer is block-local. The var names still belong to the module.
-    let saved := ":destructure"
-    let reads := bindings.map fun (key, name) => Stmt.decl .var name (.get (.var saved) (.str key))
-    return (bindings.map Prod.snd, .block (.decl .const saved value :: reads))
+    return (pattern.names, .bind kind pattern value)
   | _ => throw "expected a module declaration"
 
 /-- A top-level executable statement of the linked fragment. -/

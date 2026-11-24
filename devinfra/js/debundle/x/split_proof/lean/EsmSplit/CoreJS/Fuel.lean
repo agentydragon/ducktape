@@ -172,6 +172,7 @@ structure Mono (W : World) (n m : Nat) : Prop where
   fields : ∀ env a fs, (evalFields n env a fs : M W _) ⊑ evalFields m env a fs
   call : ∀ callee this args, (callFn n callee this args : M W _) ⊑ callFn m callee this args
   construct : ∀ target callee args, (constructTarget n target callee args : M W _) ⊑ constructTarget m target callee args
+  binding : ∀ env k p v, (bindPattern n env k p v : M W _) ⊑ bindPattern m env k p v
   stmt : ∀ env s, (execStmt n env s : M W _) ⊑ execStmt m env s
   stmts : ∀ env ss, (execStmts n env ss : M W _) ⊑ execStmts m env ss
   loop : ∀ env fresh test update body, (loop n env fresh test update body : M W _) ⊑ loop m env fresh test update body
@@ -191,6 +192,7 @@ macro_rules
     | with_reducible exact ($h).fields _ _ _
     | with_reducible exact ($h).call _ _ _
     | with_reducible exact ($h).construct _ _ _
+    | with_reducible exact ($h).binding _ _ _ _
     | with_reducible exact ($h).stmt _ _
     | with_reducible exact ($h).stmts _ _
     | with_reducible exact ($h).loop _ _ _ _ _
@@ -250,6 +252,31 @@ theorem Mono.construct_succ (target callee : Val) (args : List Val) :
   unfold constructTarget constructParent initDerivedFields
   mono ih
   exact superArgsMono _ _
+
+theorem Mono.binding_succ (env : Env) (kind : DeclKind) (p : BindingPattern) (v : Val) :
+    (bindPattern (n + 1) env kind p v : M W _) ⊑ bindPattern (m + 1) env kind p v := by
+  cases p with
+  | name => simp only [bindPattern]; exact M.le_refl _
+  | defaultValue => simp only [bindPattern]; mono ih
+  | object props =>
+    simp only [bindPattern]
+    have fields : ∀ props : List (Expr × BindingPattern),
+        (props.forM (fun (key, field) => do
+          let key ← evalExpr n env key
+          let v' ← getProp (callFn n) v key
+          bindPattern n env kind field v') : M W Unit) ⊑
+        props.forM (fun (key, field) => do
+          let key ← evalExpr m env key
+          let v' ← getProp (callFn m) v key
+          bindPattern m env kind field v') := by
+      intro props
+      induction props with
+      | nil => exact M.le_refl _
+      | cons item rest step =>
+        obtain ⟨key, field⟩ := item
+        unfold List.forM
+        repeat' first | exact step | mono_part ih | mono_step
+    split <;> first | exact M.le_refl _ | exact fields props
 
 theorem Mono.stmt_succ (env : Env) (s : Stmt) : (execStmt (n + 1) env s : M W _) ⊑ execStmt (m + 1) env s := by
   cases s with
@@ -312,7 +339,8 @@ theorem mono : ∀ n m, n ≤ m → Mono W n m := by
     intro m _
     exact ⟨fun _ _ => M.le_outOfFuel _, fun _ _ => M.le_outOfFuel _, fun _ _ => M.le_outOfFuel _,
       fun _ _ _ => M.le_outOfFuel _, fun _ _ _ _ => M.le_outOfFuel _, fun _ _ _ => M.le_outOfFuel _,
-      fun _ _ _ => M.le_outOfFuel _, fun _ _ _ => M.le_outOfFuel _, fun _ _ => M.le_outOfFuel _,
+      fun _ _ _ => M.le_outOfFuel _, fun _ _ _ => M.le_outOfFuel _, fun _ _ _ _ => M.le_outOfFuel _,
+      fun _ _ => M.le_outOfFuel _,
       fun _ _ => M.le_outOfFuel _, fun _ _ _ _ _ => M.le_outOfFuel _, fun _ _ _ => M.le_outOfFuel _⟩
   | succ n ih =>
     intro m hm
@@ -321,7 +349,7 @@ theorem mono : ∀ n m, n ≤ m → Mono W n m := by
     | succ m =>
       have ih := ih m (by omega)
       exact ⟨ih.expr_succ, ih.args_succ, ih.target_succ, ih.props_succ, ih.members_succ, ih.fields_succ, ih.call_succ,
-        ih.construct_succ, ih.stmt_succ, ih.stmts_succ, ih.loop_succ, ih.converse_succ⟩
+        ih.construct_succ, ih.binding_succ, ih.stmt_succ, ih.stmts_succ, ih.loop_succ, ih.converse_succ⟩
 
 theorem runUnits_le {n m : Nat} (h : n ≤ m) (units : List LinkedUnit) :
     (runUnits n units : M W _) ⊑ runUnits m units := by

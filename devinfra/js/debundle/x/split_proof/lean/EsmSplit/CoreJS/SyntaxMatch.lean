@@ -241,6 +241,22 @@ private partial def propEq : MatchEq PropDef
   | .spread a, .spread b => (exprEq a b).map fun h => ⟨congrArg PropDef.spread h.down⟩
   | _, _ => none
 
+private partial def objectBindingEq : MatchEq (Expr × BindingPattern)
+  | (k, p), (k', p') => do
+    let ⟨key⟩ ← exprEq k k'
+    let ⟨pattern⟩ ← patternEq p p'
+    return ⟨key ▸ pattern ▸ rfl⟩
+
+private partial def patternEq : MatchEq BindingPattern
+  | .name a, .name b => (scalarEq a b).map fun h => ⟨congrArg BindingPattern.name h.down⟩
+  | .object a, .object b =>
+    (listEq objectBindingEq a b).map fun h => ⟨congrArg BindingPattern.object h.down⟩
+  | .defaultValue p e, .defaultValue p' e' => do
+    let ⟨pattern⟩ ← patternEq p p'
+    let ⟨fallback⟩ ← exprEq e e'
+    return ⟨pattern ▸ fallback ▸ rfl⟩
+  | _, _ => none
+
 /-- A match returns a proof of statement equality. -/
 partial def stmtEq : MatchEq Stmt
   | .funDecl a, .funDecl b => (funcEq a b).map fun h => ⟨congrArg Stmt.funDecl h.down⟩
@@ -275,6 +291,11 @@ partial def stmtEq : MatchEq Stmt
     let ⟨n⟩ ← scalarEq name name'
     let ⟨v⟩ ← exprEq init init'
     return ⟨k ▸ n ▸ v ▸ rfl⟩
+  | .bind kind pattern init, .bind kind' pattern' init' => do
+    let ⟨k⟩ ← scalarEq kind kind'
+    let ⟨p⟩ ← patternEq pattern pattern'
+    let ⟨v⟩ ← exprEq init init'
+    return ⟨k ▸ p ▸ v ▸ rfl⟩
   | .opaque code decls funs free run, .opaque code' decls' funs' free' run' => do
     let ⟨c⟩ ← scalarEq code code'
     let ⟨d⟩ ← scalarEq decls decls'

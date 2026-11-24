@@ -25,6 +25,8 @@ structure EvaluatorFrames (W : World) (n r : Nat) (R : Addr → Prop) (A : HeapN
   call : ∀ cells, CallFramed r R cells A (callFn n : Call W)
   construct : ∀ cells t f args, SafeVal A t → SafeVal A f → (∀ v ∈ args, SafeVal A v) →
     ReachFrame r R cells A (SafeVal A) (constructTarget n t f args : M W Val)
+  binding : ∀ cells env kind p v, (∀ node ∈ Env.nodes env, A node) → SafeVal A v →
+    ReachFrame r R cells A (fun _ => True) (bindPattern n env kind p v : M W Unit)
   stmt : ∀ cells env st, (∀ node ∈ Env.nodes env, A node) →
     ReachFrame r R cells A (FlowSafe A) (execStmt n env st : M W Flow)
   stmts : ∀ cells env ss, (∀ node ∈ Env.nodes env, A node) →
@@ -74,6 +76,7 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
       · intros; exact reachFrame_fuel
       · intros; exact reachFrame_fuel
       · intro cells f this args hf ht ha; exact reachFrame_fuel
+      · intros; exact reachFrame_fuel
       · intros; exact reachFrame_fuel
       · intros; exact reachFrame_fuel
       · intros; exact reachFrame_fuel
@@ -137,9 +140,13 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
       · intro cells
         exact constructTarget_reachFrame_of_steps away (Ne.symm hr) objectRoot (allocate cells) (prev.call cells).getter convo
           (prev.fields cells) (enterCall cells) (prev.stmts cells) (prev.args cells) (prev.construct cells)
+      · intro cells env kind p v safe hv
+        exact bindPattern_reachFrame_step away env safe (fun e => prev.expr cells env e safe)
+          (reachFrame_getProp away (callFn n) (prev.call cells).getter objectRoot)
+          (fun kind p v hv => prev.binding cells env kind p v safe hv) kind p v hv
       · intro cells env st safe
         exact execStmt_reachFrame_step away cell (fun e env h => prev.expr cells env e h)
-          (prev.stmt cells) (prev.stmts cells) (prev.loop cells) (enter cells)
+          (prev.stmt cells) (prev.binding cells) (prev.stmts cells) (prev.loop cells) (enter cells)
           (execOpaque_reachFrame_step away object objectRoot functionRoot convo) env safe st
       · intro cells env ss safe
         exact execStmts_reachFrame_step (prev.stmt cells) (prev.stmts cells) env safe ss

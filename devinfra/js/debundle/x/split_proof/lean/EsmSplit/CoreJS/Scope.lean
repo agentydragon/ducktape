@@ -248,7 +248,7 @@ theorem funDecl_of_mem {f : Func} {ss : List Stmt} (h : f ∈ funDecls ss) : Stm
 
 theorem funDecl_name_lex {f : Func} {ss : List Stmt} (h : Stmt.funDecl f ∈ ss) : f.name ∈ lexNames ss := by
   unfold lexNames lexDecls
-  exact List.mem_map.2 ⟨(f.name, true), List.mem_filterMap.2 ⟨_, h, rfl⟩, rfl⟩
+  exact List.mem_map.2 ⟨(f.name, true), List.mem_flatMap.2 ⟨_, h, by simp⟩, rfl⟩
 
 theorem lexBindings_names (ss : List Stmt) :
     ((lexDecls ss).map fun (x, mutable) => (x, ({ value := none, mutable } : Binding))).map (·.1) = lexNames ss := by
@@ -309,6 +309,8 @@ structure Same (W : World) (n : Nat) : Prop where
     (evalMembers n env proto c ms : M W _) = evalMembers n env' proto c ms
   fields : ∀ env env' a fs, Agree (fs.flatMap (·.2.free)) env env' →
     (evalFields n env a fs : M W _) = evalFields n env' a fs
+  binding : ∀ env env' kind p v, Agree p.free env env' →
+    (bindPattern n env kind p v : M W _) = bindPattern n env' kind p v
   stmt : ∀ env env' s, Agree s.free env env' → (execStmt n env s : M W _) = execStmt n env' s
   stmts : ∀ env env' ss, Agree (freeStmts ss) env env' → (execStmts n env ss : M W _) = execStmts n env' ss
   loop : ∀ env env' fresh test update body, Agree (fresh ++ (test.free ++ (update.free ++ body.free))) env env' →
@@ -321,19 +323,19 @@ macro_rules
     (intro x hx
      first
      | (simp only [Expr.free, Target.free, PropDef.free, ClassMember.free, Stmt.free, freeExprs, freeProps,
-          freeMembers, freeStmts, List.flatMap_cons, List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hx
+          freeMembers, freeStmts, BindingPattern.free, freeObjectBindings, List.flatMap_cons, List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hx
         done)
      | (try simp only [Expr.free, Target.free, PropDef.free, ClassMember.free, Stmt.free, freeExprs, freeProps,
-          freeMembers, freeStmts, List.flatMap_cons, List.mem_append, List.mem_cons, List.not_mem_nil,
+          freeMembers, freeStmts, BindingPattern.free, freeObjectBindings, List.flatMap_cons, List.mem_append, List.mem_cons, List.not_mem_nil,
           or_false] at hx
         try simp only [Expr.free, Target.free, PropDef.free, ClassMember.free, Stmt.free, freeExprs, freeProps,
-          freeMembers, freeStmts, List.flatMap_cons, List.mem_append, List.mem_cons, List.not_mem_nil, or_false]
+          freeMembers, freeStmts, BindingPattern.free, freeObjectBindings, List.flatMap_cons, List.mem_append, List.mem_cons, List.not_mem_nil, or_false]
         first | exact hx | simp only [hx, true_or, or_true])))
 
 /-- This name is among the free names of the code that mentions it. -/
 syntax "free_here" : tactic
 macro_rules
-  | `(tactic| free_here) => `(tactic| simp [Expr.free, Target.free, Stmt.free])
+  | `(tactic| free_here) => `(tactic| simp [Expr.free, Target.free, Stmt.free, BindingPattern.free])
 
 -- Match the equality before proving agreement on the selected names.
 syntax "same_apply " term:max " using " ident : tactic
@@ -352,6 +354,7 @@ macro_rules
     | same_apply ($ih).props using $hN
     | same_apply ($ih).members using $hN
     | same_apply ($ih).fields using $hN
+    | same_apply ($ih).binding using $hN
     | same_apply ($ih).stmt using $hN
     | same_apply ($ih).stmts using $hN
     | same_apply makeFunc_agree using $hN
@@ -569,6 +572,33 @@ section step
 variable {n : Nat} (ih : Same W n)
 include ih
 
+theorem Same.binding_succ (env env' : Env) (kind : DeclKind) (p : BindingPattern) (v : Val)
+    (hN : Agree p.free env env') :
+    (bindPattern (n + 1) env kind p v : M W _) = bindPattern (n + 1) env' kind p v := by
+  cases p with
+  | name x => simp only [bindPattern]; cases kind <;> same ih hN
+  | defaultValue target fallback => simp only [bindPattern]; same ih hN
+  | object props =>
+    simp only [bindPattern]
+    have fields : ∀ props : List (Expr × BindingPattern), Agree (freeObjectBindings props) env env' →
+        (props.forM (fun (key, field) => do
+          let key ← evalExpr n env key
+          let v' ← getProp (callFn n) v key
+          bindPattern n env kind field v') : M W Unit) =
+        props.forM (fun (key, field) => do
+          let key ← evalExpr n env' key
+          let v' ← getProp (callFn n) v key
+          bindPattern n env' kind field v') := by
+      intro props
+      induction props with
+      | nil => exact fun _ => rfl
+      | cons item rest step =>
+        obtain ⟨key, field⟩ := item
+        intro agree
+        unfold List.forM
+        repeat' first | same_apply step using agree | same_part ih agree | same_step
+    split <;> first | rfl | exact fields props hN
+
 theorem Same.stmt_succ (env env' : Env) (s : Stmt) (hN : Agree s.free env env') :
     (execStmt (n + 1) env s : M W _) = execStmt (n + 1) env' s := by
   cases s with
@@ -657,10 +687,11 @@ end step
 and on `this`, run it the same way: the same result in the same state, for every bound and every world. -/
 theorem same : ∀ n, Same W n
   | 0 => ⟨fun _ _ _ _ => rfl, fun _ _ _ _ => rfl, fun _ _ _ _ => rfl, fun _ _ _ _ _ => rfl, fun _ _ _ _ _ _ => rfl,
-      fun _ _ _ _ _ => rfl, fun _ _ _ _ => rfl, fun _ _ _ _ => rfl, fun _ _ _ _ _ _ _ => rfl⟩
+      fun _ _ _ _ _ => rfl, fun _ _ _ _ _ _ => rfl, fun _ _ _ _ => rfl, fun _ _ _ _ => rfl,
+      fun _ _ _ _ _ _ _ => rfl⟩
   | n + 1 =>
     have ih := same n
-    ⟨ih.expr_succ, ih.args_succ, ih.target_succ, ih.props_succ, ih.members_succ, ih.fields_succ, ih.stmt_succ,
+    ⟨ih.expr_succ, ih.args_succ, ih.target_succ, ih.props_succ, ih.members_succ, ih.fields_succ, ih.binding_succ, ih.stmt_succ,
       ih.stmts_succ, ih.loop_succ⟩
 
 /-- A statement of a program, run in the scopes of two modules that agree on the names it mentions. -/

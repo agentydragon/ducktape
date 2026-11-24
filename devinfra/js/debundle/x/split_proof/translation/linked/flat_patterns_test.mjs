@@ -4,6 +4,8 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   arrow,
+  assertCertified,
+  assertRejected,
   block,
   call,
   exportNamed,
@@ -11,6 +13,7 @@ import {
   functionExpression,
   id,
   literal,
+  lower,
   observe,
   program,
   property,
@@ -48,31 +51,101 @@ const entry = "entry.mjs";
   }
 }
 
-{
+for (const kind of ["var", "const"]) {
   const source = `
     const input = { x: 5, y: 7 };
-    export var { x: right, "y": left } = input;
+    export ${kind} { x: right, "y": left } = input;
   `;
-  const { files, out, verdict, log } = sequentialSplit("inline-module-var", source, {
+  const { files, out, verdict, log } = sequentialSplit(`inline-module-${kind}`, source, {
     "worker.mjs": ["#0"],
     [entry]: ["#1"],
   });
-  assert.equal(verdict.status, "certified", log);
+  assertCertified(verdict, log);
   for (const file of [files.sourceFile, path.join(out, entry)]) {
     const mod = await import(pathToFileURL(file).href);
     assert.deepEqual({ ...mod }, { left: 7, right: 5 });
   }
 }
 
-for (const [name, declaration, reason] of [
-  ["module-var-computed", "var {[key]: value} = {};", "expected a static object pattern property"],
-  ["module-lexical", "let {x: value} = {x: 1};", "unsupported module lexical object pattern"],
+{
+  const source = `
+    let calls = 0, order = "";
+    function make() {
+      calls += 1;
+      const receiver = {
+        get left() { if (this !== receiver) throw 1; order += "L"; return 37; },
+        get right() { order += "R"; return first; },
+        get nested() { order += "N"; return { 0x10: null }; },
+      };
+      return receiver;
+    }
+    function key() { order += "K"; return "right"; }
+    let { left: first, [key()]: second, nested: { 0x10: third = 7 }, absent: read = () => first } = make();
+    function change() { first += 1; }
+    const atInit = [read(), read.name];
+    export { first, second, third, calls, order, read, change, atInit };
+  `;
+  const { files, out, verdict, log } = sequentialSplit("module-lexical", source, {
+    "worker.mjs": ["#0", "#1", "#2", "#3", "#4", "#5"],
+    [entry]: ["#6", "#7"],
+  });
+  assertCertified(verdict, log);
+  assert.deepEqual(lower(files.sourceFile, files.specFile, out, ["--check-output"]).verdict, verdict);
+  for (const file of [files.sourceFile, path.join(out, entry)]) {
+    const { atInit, calls, order, second, third, read, change, ...initial } = await import(pathToFileURL(file).href);
+    assert.deepEqual(
+      { atInit, calls, order, second, third, initial },
+      {
+        atInit: [37, "read"],
+        calls: 1,
+        order: "LKRN",
+        second: 37,
+        third: null,
+        initial: { first: 37 },
+      }
+    );
+    change();
+    const mod = await import(pathToFileURL(file).href);
+    assert.equal(mod.first, 38);
+    assert.equal(read(), 38);
+  }
+}
+
+{
+  const source = `
+    const { value = make() } = {};
+    const result = read();
+    function read() { return value; }
+    function make() { return 7; }
+    export { result };
+  `;
+  const modules = { "pattern.mjs": ["#0"], "call.mjs": ["#1", "#2", "#3"], [entry]: ["#4"] };
+  const correct = sequentialSplit("lexical-before-read", source, modules, ["pattern.mjs", "call.mjs"]);
+  assertCertified(correct.verdict, correct.log);
+  for (const file of [correct.files.sourceFile, path.join(correct.out, entry)])
+    assert.deepEqual(observe(file, "result"), { result: 7 });
+
+  const early = sequentialSplit("lexical-read-before-init", source, modules, ["call.mjs", "pattern.mjs"]);
+  assertRejected(early, /split threw during linked initialization/);
+  const preview = path.join(root, "lexical-read-before-init-preview");
+  forcePreview(early.files, preview);
+  assert.deepEqual(observe(path.join(preview, entry), "result"), { error: "ReferenceError" });
+}
+
+for (const [name, declaration, reason, error] of [
+  [
+    "module-default-tdz",
+    "const { missing: earlier = value, other: value = 9 } = {};",
+    /original threw during linked initialization/,
+    "ReferenceError",
+  ],
+  ["module-null-before-key", "const { [value]: value } = null;", /original threw/, "TypeError"],
+  ["module-rest", "const { ...value } = {};", /unsupported object binding property/, null],
 ]) {
-  const source = `const key = "x"; ${declaration} export { value };`;
-  const result = sequentialSplit(name, source, { [entry]: ["#0", "#1", "#2"] }, []);
-  assert.equal(result.verdict.status, "rejected", result.log);
-  assert.match(result.verdict.reason, new RegExp(reason));
-  assert(!existsSync(result.out));
+  const source = `${declaration} export { value };`;
+  const result = sequentialSplit(name, source, { [entry]: ["#0", "#1"] }, []);
+  assertRejected(result, reason);
+  if (error) assert.deepEqual(observe(result.files.sourceFile, "value"), { error });
 }
 
 // Calling make() twice would bind two different objects. A null argument to the
