@@ -118,6 +118,7 @@ private structure CertifiedOptions where
   structural : Bool
   deploymentOrigin : Option String
   checkOnly : Bool
+  resolvedChunk : Option String
 
 private def parseCertifiedOptions (label : String) (args : List String) : IO (SplitPaths × CertifiedOptions) := do
   let request ← match label with
@@ -142,18 +143,23 @@ private def parseCertifiedOptions (label : String) (args : List String) : IO (Sp
   let (deploymentOrigin, args) := Effects.takeFlag "--deployment-origin" args
   if deploymentOrigin.isSome && !structural then
     throw (IO.userError "--deployment-origin requires --structural")
+  let (resolvedChunk, args) := Effects.takeFlag "--resolved-placement" args
   let checkOnly := args.contains "--check-output"
   let args := args.filter (· != "--check-output")
-  let usage := IO.userError "usage: lowersplit <bundle.mjs|bundle.json> spec.json outdir [--require LEVEL] [--check-output] [--host-contract PROFILE.json] [--structural [--deployment-origin ORIGIN]]; use --diagnostic for plan and preview options"
+  let usage := IO.userError "usage: lowersplit <bundle.mjs|bundle.json> spec.json outdir [--require LEVEL] [--resolved-placement CHUNK] [--check-output] [--host-contract PROFILE.json] [--structural [--deployment-origin ORIGIN]]; use --diagnostic for plan and preview options"
   let [bundle, spec, out] := args | throw usage
   if args.any (·.startsWith "--") then throw usage
-  return (⟨bundle, spec, out⟩, { request, profile, intrinsics, structural, deploymentOrigin, checkOnly })
+  return (⟨bundle, spec, out⟩, { request, profile, intrinsics, structural, deploymentOrigin, checkOnly, resolvedChunk })
 
 private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work : System.FilePath) : IO UInt32 := do
-  let { request, profile, intrinsics, structural, deploymentOrigin, checkOnly } := options
+  let { request, profile, intrinsics, structural, deploymentOrigin, checkOnly, resolvedChunk } := options
   let { bundle := bundlePath, spec := specPath, out } := paths
   let timings := (← IO.getEnv "SPLIT_PROOF_TIMINGS") == some "1"
-  let ⟨program, source, input⟩ ← readBundle bundlePath work true timings
+  let resolved ← resolvedChunk.mapM fun chunk => do
+    let j ← readJson specPath
+    let digest ← IO.ofExcept (j.getObjValAs? String "source_sha256")
+    return (chunk, j, digest)
+  let ⟨program, source, input⟩ ← readBundle bundlePath work true timings (resolved.map (·.2.2))
   let asts ← IO.ofExcept (ESTreeUnits.checkedNodes program source)
   if let some reason := asts.findSome? unsupportedStatement then throw (IO.userError reason)
   let units := Effects.footprintUnits asts
@@ -162,7 +168,11 @@ private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work
       let (fps, _) ← analyzeFootprints asts units {} timings
       pure (bundleOfFootprints asts fps #[])
     else timePhase timings "layout_scan" fun _ => IO.lazyPure fun _ => linkedLayoutBundle asts units
-  let S ← loadSpec specPath
+  let S ← match resolved with
+    | none => loadSpec specPath
+    | some (chunk, j, _) => do
+      let some entry := bundlePath.fileName | throw (IO.userError "source is missing its entry filename")
+      IO.ofExcept (parseResolvedSpec j chunk entry asts.size)
   for name in S.entry :: S.modules.map Prod.fst do
     let moduleExtension := name.endsWith ".mjs" || (profile == .browserPage && name.endsWith ".js")
     unless CoreJS.ModuleInput.supportedFilename name && moduleExtension do

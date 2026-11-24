@@ -4,7 +4,7 @@ import EsmSplit.LowerSplit.Diagnostic
 /-!
 # AST + spec in; modules, verdict and a kernel certificate out.
 
-    lowersplit <bundle.mjs|bundle.json> <spec.json> <outdir> [--require <all-outcomes|normal-completion>] [--check-output] [--host-contract PROFILE.json] [--structural [--deployment-origin ORIGIN]]
+    lowersplit <bundle.mjs|bundle.json> <spec.json> <outdir> [--require <all-outcomes|normal-completion>] [--resolved-placement CHUNK] [--check-output] [--host-contract PROFILE.json] [--structural [--deployment-origin ORIGIN]]
     lowersplit --diagnostic <bundle.mjs|bundle.json> <spec.json> <outdir> [--lean <Generated.lean> [--namespace NAME] [--variant SPEC]... [--control SPEC]...] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]
 
 JavaScript source and annotated ESTree dumps share the Acorn parser and scope/literal metadata.
