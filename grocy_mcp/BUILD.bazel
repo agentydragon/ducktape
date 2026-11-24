@@ -174,7 +174,6 @@ py_test(
     deps = [
         ":client",
         ":conftest",
-        ":grocy_types",
         ":mcp_types",
         ":request_scoped_openapi",
         ":server",
@@ -187,14 +186,11 @@ py_test(
 py_test(
     name = "test_fix_openapi_spec",
     srcs = ["test_fix_openapi_spec.py"],
-    data = [":grocy_openapi_fixed"],
     deps = [
         ":conftest",
         ":fix_openapi_spec",
-        ":grocy_types",
         "//:conftest",
         "@pypi//pytest_bazel",
-        "@rules_python//python/runfiles",
     ],
 )
 

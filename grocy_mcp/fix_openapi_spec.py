@@ -85,10 +85,8 @@ def fix_entity_refs(spec: dict[str, object]) -> None:
 
 # Writable product columns missing from Grocy's hand-maintained spec.
 # Types follow Grocy's existing style: booleans are encoded as ``integer``
-# (0/1 in SQLite), FK IDs are ``integer``, amounts are ``number``. Keep in
-# sync with ``PRODUCT_WRITABLE_FIELDS`` in grocy_types.py; the
-# test_fix_openapi_spec smoke test enforces that every writable field is
-# present in the patched schema.
+# (0/1 in SQLite), FK IDs are ``integer``, amounts are ``number``. The Grocy
+# container test compares the advertised update schema with real product rows.
 _MISSING_PRODUCT_PROPERTIES: dict[str, dict[str, object]] = {
     "active": {"type": "integer", "default": 1, "description": "0 or 1 (boolean)."},
     "calories": {"type": "number", "description": "Calories per stock QU."},
@@ -110,7 +108,19 @@ _MISSING_PRODUCT_PROPERTIES: dict[str, dict[str, object]] = {
         "description": "-1 = never expires after freezing.",
     },
     "default_best_before_days_after_thawing": {"type": "integer", "minimum": 0, "default": 0},
+    "default_purchase_price_type": {
+        "type": "integer",
+        "enum": [1, 2, 3],
+        "default": 1,
+        "description": "Default purchase price entry mode: 1 = unspecified, 2 = unit price, 3 = total price.",
+    },
     "default_stock_label_type": {"type": "integer", "default": 0},
+    "disable_open": {
+        "type": "integer",
+        "enum": [0, 1],
+        "default": 0,
+        "description": "1 if the product cannot be opened.",
+    },
     "due_type": {"type": "integer", "default": 1, "description": "1 = best before, 2 = expiration."},
     "hide_on_stock_overview": {"type": "integer", "default": 0, "description": "0 or 1 (boolean)."},
     "parent_product_id": {
@@ -127,6 +137,11 @@ _MISSING_PRODUCT_PROPERTIES: dict[str, dict[str, object]] = {
     "qu_id_consume": {"type": "integer", "description": "Default QU for consume (FK to quantity_units)."},
     "qu_id_price": {"type": "integer", "description": "Default QU for price display (FK to quantity_units)."},
     "quick_consume_amount": {"type": "number", "default": 1},
+    "quick_open_amount": {
+        "type": "number",
+        "default": 1,
+        "description": "Stock units opened by the quick open button.",
+    },
 }
 
 

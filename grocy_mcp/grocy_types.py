@@ -1,6 +1,6 @@
 """Types modelling Grocy's API surface.
 
-Entity type enums and writable field sets. These correspond to Grocy's schema —
+Entity type enums. These correspond to Grocy's schema —
 not to the MCP tool I/O types (see mcp_types.py for those).
 """
 
@@ -110,39 +110,3 @@ type GettableEntityType = ReadableEntityType | Literal["shopping_list"]
 
 # Sanity check: every WriteableEntityType must be a valid ReadableEntityType.
 assert {t.value for t in WriteableEntityType} <= {t.value for t in ReadableEntityType}
-
-
-# Writable columns on the products table (migration 0207 + 0210 + 0219).
-# Grocy's GET returns computed view fields (has_sub_products, qu_factor_*, etc.)
-# that are rejected on PUT. Only send these columns.
-PRODUCT_WRITABLE_FIELDS: set[str] = {
-    "name",
-    "description",
-    "product_group_id",
-    "active",
-    "location_id",
-    "shopping_location_id",
-    "qu_id_purchase",
-    "qu_id_stock",
-    "qu_id_consume",
-    "qu_id_price",
-    "min_stock_amount",
-    "default_best_before_days",
-    "default_best_before_days_after_open",
-    "default_best_before_days_after_freezing",
-    "default_best_before_days_after_thawing",
-    "picture_file_name",
-    "enable_tare_weight_handling",
-    "tare_weight",
-    "not_check_stock_fulfillment_for_recipes",
-    "parent_product_id",
-    "calories",
-    "cumulate_min_stock_amount_of_sub_products",
-    "due_type",
-    "quick_consume_amount",
-    "hide_on_stock_overview",
-    "default_stock_label_type",
-    "should_not_be_frozen",
-    "treat_opened_as_out_of_stock",
-    "no_own_stock",
-}

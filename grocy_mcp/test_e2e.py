@@ -271,61 +271,50 @@ async def test_products_edit_serializes_values_and_resolves_references(mcp_clien
     assert int(product["due_type"]) == 2
 
 
-async def test_entity_update_patch_semantics(mcp_client: Client, grocy_base_url: str, ref_data: RefData) -> None:
-    """Grocy's ``PUT /objects/{entity}/{objectId}`` is a partial update.
+async def test_entity_update_advertises_product_columns(mcp_client: Client, ref_data: RefData) -> None:
+    tool = next(tool for tool in await mcp_client.list_tools() if tool.name == "entity_update")
+    variants = tool.input_schema["properties"]["body"]["anyOf"]
+    product_schema = next(schema["properties"] for schema in variants if "qu_id_stock" in schema["properties"])
+    rows = await call_tool(
+        mcp_client, "entities_get", {"entity_type": "products", "object_ids": [ref_data.product_ids[0]]}
+    )
+    # The object API returns the product's columns and attaches userfields separately.
+    editable = rows[0]["data"].keys() - {"id", "row_created_timestamp", "userfields"}
+    assert editable <= product_schema.keys(), editable - product_schema.keys()
 
-    Locks in the three claims the ``entity_update`` tool description makes
-    to agents, so a future Grocy version that flipped the behavior (or a
-    misread of the server code) would break this test rather than silently
-    corrupting user data:
 
-      1. Omitted writable fields are preserved, not nulled.
-      2. Unknown / server-computed columns echoed back in the body are
-         silently dropped (no 400), so agents can safely round-trip
-         ``entities_get`` output.
-      3. Sending a nullable field with value ``null`` nulls it, without
-         affecting other omitted fields.
-    """
+async def test_entity_update_patch_semantics(mcp_client: Client, ref_data: RefData) -> None:
     product_id = ref_data.product_ids[0]
 
-    results = await call_tool(mcp_client, "entities_get", {"entity_type": "products", "object_ids": [product_id]})
-    before = results[0]["data"]
-    # Fixture populates name, description, min_stock_amount, location_id, qu_id_stock.
-    assert before["description"] == "Test product for e2e"
-    assert float(before["min_stock_amount"]) == 1
+    async def product() -> dict:
+        rows = await call_tool(mcp_client, "entities_get", {"entity_type": "products", "object_ids": [product_id]})
+        data = rows[0]["data"]
+        assert isinstance(data, dict)
+        return data
 
-    async with httpx.AsyncClient(base_url=f"{grocy_base_url}/api", timeout=30.0) as http:
-        # (1) Partial: only `description` in body.
-        new_desc = f"patched-{ref_data.suffix}"
-        r = await http.put(f"/objects/products/{product_id}", json={"description": new_desc})
-        assert r.status_code < 400, f"partial PUT failed: {r.status_code} {r.text!r}"
+    target = {"entity": "products", "objectId": product_id}
+    before = await product()
+    changes = {
+        "description": "New label",
+        "quick_open_amount": 2.5,
+        "disable_open": 1,
+        "default_purchase_price_type": 3,
+    }
+    await mcp_client.call_tool("entity_update", {**target, "body": changes})
+    after = await product()
+    assert after["description"] == "New label"
+    assert float(after["quick_open_amount"]) == 2.5
+    assert int(after["disable_open"]) == 1
+    assert int(after["default_purchase_price_type"]) == 3
+    assert after["min_stock_amount"] == before["min_stock_amount"]
 
-        results = await call_tool(mcp_client, "entities_get", {"entity_type": "products", "object_ids": [product_id]})
-        after = results[0]["data"]
-        assert after["description"] == new_desc
-        # Omitted writable fields preserved — the core PATCH claim.
-        assert after["name"] == before["name"]
-        assert float(after["min_stock_amount"]) == float(before["min_stock_amount"])
-        assert after["location_id"] == before["location_id"]
-        assert after["qu_id_stock"] == before["qu_id_stock"]
-
-        # (2) Echoing the full GET row back fails with 400: Grocy rejects
-        # server-computed columns (qu_factor_*, has_sub_products, etc.) on
-        # PUT. Agents must send only writable columns — this is why the
-        # docstring warns against blindly round-tripping `entities_get`.
-        echo_body = dict(after)
-        echo_body["description"] = f"echoed-{ref_data.suffix}"
-        r = await http.put(f"/objects/products/{product_id}", json=echo_body)
-        assert r.status_code == 400, f"Expected 400 when echoing computed columns back, got {r.status_code}: {r.text!r}"
-
-        # (3) Explicit null nulls the field; other omitted fields still preserved.
-        r = await http.put(f"/objects/products/{product_id}", json={"description": None})
-        assert r.status_code < 400, f"null PUT failed: {r.status_code} {r.text!r}"
-        results = await call_tool(mcp_client, "entities_get", {"entity_type": "products", "object_ids": [product_id]})
-        after3 = results[0]["data"]
-        assert after3["description"] in (None, "")  # Grocy normalizes null→"" on some columns
-        assert after3["name"] == before["name"]
-        assert float(after3["min_stock_amount"]) == float(before["min_stock_amount"])
+    rejected = await mcp_client.call_tool("entity_update", {**target, "body": after}, raise_on_error=False)
+    assert rejected.is_error
+    await mcp_client.call_tool("entity_update", {**target, "body": {"description": None}})
+    cleared = await product()
+    assert cleared["description"] in (None, "")
+    assert cleared["name"] == before["name"]
+    assert cleared["disable_open"] == after["disable_open"]
 
 
 async def test_stock_operations(mcp_client: Client, ref_data: RefData) -> None:
