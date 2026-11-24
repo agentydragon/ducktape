@@ -139,18 +139,23 @@ def main() -> None:
     def opts(*pairs: tuple[str, Path | str]) -> list[str]:
         return [item for flag, value in pairs for item in (f"--{flag}", str(value))]
 
-    common = opts(
-        ("tree-config", inputs["config"]),
-        ("tree-modules", inputs["modules"]),
-        ("tree-vendor-marks", inputs["vendor_marks"]),
+    source = opts(
         ("tree-source-root", inputs["source_root"]),
         ("package-root", f"clsx={inputs['clsx']}"),
         ("package-root", f"roughjs={inputs['roughjs']}"),
     )
+    tree = [
+        *source,
+        *opts(
+            ("tree-config", inputs["config"]),
+            ("tree-modules", inputs["modules"]),
+            ("tree-vendor-marks", inputs["vendor_marks"]),
+        ),
+    ]
     commands = {
         "project": [
             str(binaries["projector"]),
-            *common,
+            *tree,
             *opts(
                 ("out-root", work / "projection-out"),
                 ("out", projection),
@@ -158,20 +163,11 @@ def main() -> None:
                 ("projection-root", inputs["source_root"]),
             ),
         ],
-        "analyze": [
-            str(binaries["analyzer"]),
-            *opts(
-                ("projection", projection),
-                ("tree-source-root", inputs["source_root"]),
-                ("package-root", f"clsx={inputs['clsx']}"),
-                ("package-root", f"roughjs={inputs['roughjs']}"),
-                ("out", analysis),
-            ),
-        ],
+        "analyze": [str(binaries["analyzer"]), *source, *opts(("projection", projection), ("out", analysis))],
         "apply": [
             str(binaries["debundler"]),
             "run",
-            *common,
+            *tree,
             *opts(
                 ("out-root", work / "apply-out"),
                 ("analysis", analysis),

@@ -1,20 +1,21 @@
 load("@image_pins//:pins.bzl", "BUILDBUDDY_REMOTE_RUNNER_DIGEST", "BUILDBUDDY_REMOTE_RUNNER_IMAGE")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
-_INPUT_DATA = [
-    "//:node_modules/clsx/dir",
-    "//:node_modules/roughjs/dir",
-    "//devinfra/js/debundle/excalidraw:config.yaml",
+_INPUT_RUNFILES = {
+    "DEBUNDLE_BENCH_CLSX": "//:node_modules/clsx/dir",
+    "DEBUNDLE_BENCH_CONFIG": "//devinfra/js/debundle/excalidraw:config.yaml",
+    "DEBUNDLE_BENCH_ROUGHJS": "//:node_modules/roughjs/dir",
+    "DEBUNDLE_BENCH_SPEC_MARKER": "//devinfra/js/debundle/excalidraw:spec/vendor_marks.yaml",
+}
+
+_INPUT_DATA = _INPUT_RUNFILES.values() + [
     "//devinfra/js/debundle/excalidraw:source",
     "//devinfra/js/debundle/excalidraw:spec",
-    "//devinfra/js/debundle/excalidraw:spec_vendor_marks",
 ]
 
 _INPUT_ENV = {
-    "DEBUNDLE_BENCH_CLSX": "$(rlocationpath //:node_modules/clsx/dir)",
-    "DEBUNDLE_BENCH_CONFIG": "$(rlocationpath //devinfra/js/debundle/excalidraw:config.yaml)",
-    "DEBUNDLE_BENCH_ROUGHJS": "$(rlocationpath //:node_modules/roughjs/dir)",
-    "DEBUNDLE_BENCH_SPEC_MARKER": "$(rlocationpath //devinfra/js/debundle/excalidraw:spec_vendor_marks)",
+    variable: "$(rlocationpath {})".format(label)
+    for variable, label in _INPUT_RUNFILES.items()
 }
 
 # Run on the single-action kvm-vm workers to reduce contention during timing
