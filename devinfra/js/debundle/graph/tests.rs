@@ -121,7 +121,7 @@ mod from_report_tests {
     };
     use source_identity::SourceUnitId;
 
-    use crate::{DependencyEdgeId, DependencyGraph, DependencyGraphInput, EdgeRole, StatementKind};
+    use crate::{DependencyEdgeId, DependencyGraphInput, EdgeRole, StatementKind};
     use analysis_model::DepKind;
 
     fn node(id: &str, ordinal: usize) -> SourceUnitReport {
@@ -194,8 +194,9 @@ mod from_report_tests {
                 },
             ),
         ] {
-            let graph =
-                DependencyGraph::from_report(&report_with_edge("unit:0", wire_role)).unwrap();
+            let input =
+                DependencyGraphInput::from_report(report_with_edge("unit:0", wire_role)).unwrap();
+            let graph = input.graph();
             assert_eq!(graph.num_edges(), 1, "{case}");
             assert_eq!(
                 graph.edge(DependencyEdgeId(0)).reason.role(),
@@ -208,11 +209,14 @@ mod from_report_tests {
     #[test]
     fn loaded_graph_shares_topology_and_retains_report_metadata() {
         let mut report = report_with_edge(
-            "unit:0",
+            "provider",
             Some(EdgeRoleReport::PromotedAtInit {
-                callee_source_unit: "unit:2".to_string(),
+                callee_source_unit: "callee".to_string(),
             }),
         );
+        report.nodes[0].id = "provider".to_string();
+        report.nodes[2].id = "callee".to_string();
+        report.nodes.swap(0, 2);
         report.nodes[1]
             .declared_bindings
             .push(crate::BindingReport {
@@ -225,13 +229,15 @@ mod from_report_tests {
         assert!(std::sync::Arc::ptr_eq(&first, &second));
         assert!(std::ptr::eq(input.graph(), &*first));
         assert_eq!(input.source_unit_id("unit:1"), Some(SourceUnitId(1)));
+        assert_eq!(input.source_unit_id("provider"), Some(SourceUnitId(2)));
+        assert_eq!(input.source_unit_id("callee"), Some(SourceUnitId(0)));
         assert_eq!(input.source_unit_id("missing"), None);
         assert_eq!(first.edge(DependencyEdgeId(0)).from, SourceUnitId(1));
-        assert_eq!(first.edge(DependencyEdgeId(0)).to, SourceUnitId(0));
+        assert_eq!(first.edge(DependencyEdgeId(0)).to, SourceUnitId(2));
         assert_eq!(
             first.edge(DependencyEdgeId(0)).reason.role(),
             EdgeRole::PromotedAtInit {
-                callee_source_unit: SourceUnitId(2)
+                callee_source_unit: SourceUnitId(0)
             },
         );
         assert_eq!(
@@ -246,7 +252,8 @@ mod from_report_tests {
     /// planner-side gate would otherwise reason over a weaker graph.
     #[test]
     fn from_report_errors_on_unresolvable_edge_endpoint() {
-        let err = DependencyGraph::from_report(&report_with_edge("unit:999", None)).unwrap_err();
+        let err =
+            DependencyGraphInput::from_report(report_with_edge("unit:999", None)).unwrap_err();
         assert_eq!(err.endpoint, "unit:999");
         assert_eq!(err.edge_id, "dependency_edge:0");
         assert!(err.to_string().contains("unit:999"), "{err}");
@@ -269,9 +276,10 @@ mod from_report_tests {
         let wire = serde_json::to_value(&report).unwrap();
         assert!(wire["nodes"][0].get("heap_native_integrity_uses").is_none());
         let parsed: DependencyGraphReport = serde_json::from_value(wire.clone()).unwrap();
-        let graph = DependencyGraph::from_report(&parsed).unwrap();
+        let input = DependencyGraphInput::from_report(parsed).unwrap();
         assert_eq!(
-            graph
+            input
+                .graph()
                 .iter_nodes()
                 .nth(1)
                 .unwrap()
@@ -286,9 +294,9 @@ mod from_report_tests {
                 .remove("heap_native_integrity_uses");
         }
         let old_report: DependencyGraphReport = serde_json::from_value(old_wire).unwrap();
-        let old_graph = DependencyGraph::from_report(&old_report).unwrap();
+        let old = DependencyGraphInput::from_report(old_report).unwrap();
         assert!(
-            old_graph
+            old.graph()
                 .iter_nodes()
                 .all(|node| node.heap_native_integrity_uses.is_empty())
         );

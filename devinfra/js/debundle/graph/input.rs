@@ -37,16 +37,10 @@ impl DependencyGraphInput {
     pub fn from_report(
         report: DependencyGraphReport,
     ) -> Result<Self, UnresolvedDependencyEdgeEndpoint> {
-        let graph = Arc::new(DependencyGraph::from_report(&report)?);
-        let source_units_by_report_id = report
-            .nodes
-            .iter()
-            .enumerate()
-            .map(|(index, node)| (node.id.clone(), SourceUnitId(index)))
-            .collect();
+        let (graph, source_units_by_report_id) = DependencyGraph::from_report(&report)?;
         Ok(Self {
             report,
-            graph,
+            graph: Arc::new(graph),
             source_units_by_report_id,
         })
     }
