@@ -1,0 +1,192 @@
+# Upstream owner: packages/excalidraw/constants.ts at v0.18.1.
+source_matches:
+  - match: |
+      var DECLARATORS_BEFORE = null,
+        APP_NAME = "Excalidraw",
+        TEXT_AUTOWRAP_THRESHOLD = 36,
+        DRAGGING_THRESHOLD = 10,
+        LINE_CONFIRM_THRESHOLD = 8,
+        ELEMENT_SHIFT_TRANSLATE_AMOUNT = 5,
+        ELEMENT_TRANSLATE_AMOUNT = 1,
+        TEXT_TO_CENTER_SNAP_THRESHOLD = 30,
+        DECLARATORS_AFTER = null;
+    bindings:
+      - APP_NAME
+      - TEXT_AUTOWRAP_THRESHOLD
+      - DRAGGING_THRESHOLD
+      - LINE_CONFIRM_THRESHOLD
+      - ELEMENT_SHIFT_TRANSLATE_AMOUNT
+      - ELEMENT_TRANSLATE_AMOUNT
+      - TEXT_TO_CENTER_SNAP_THRESHOLD
+  - match: |
+      var DECLARATORS_BEFORE = null,
+        DEFAULT_LASER_COLOR = "red",
+        CURSOR_TYPE = AST_CONTAINS_STRING("crosshair"),
+        POINTER_BUTTON = {MAIN:0, WHEEL:1, SECONDARY:2, TOUCH:-1, ERASER:5},
+        POINTER_EVENTS = AST_CONTAINS_STRING("var(--ui-pointerEvents)"),
+        YOUTUBE_STATES = {UNSTARTED:-1, ENDED:0, PLAYING:1, PAUSED:2, BUFFERING:3, CUED:5},
+        ENV = {TEST:"test", DEVELOPMENT:"development"},
+        CLASSES = AST_CONTAINS_STRING("zoom-actions"),
+        CJK_HAND_DRAWN_FALLBACK_FONT = "Xiaolai",
+        WINDOWS_EMOJI_FALLBACK_FONT = "Segoe UI Emoji",
+        FONT_FAMILY = {Virgil:1,Helvetica:2,Cascadia:3,Excalifont:5,Nunito:6,"Lilita One":7,"Comic Shanns":8,"Liberation Sans":9},
+        DECLARATORS_AFTER = null;
+    bindings:
+      - DEFAULT_LASER_COLOR
+      - CURSOR_TYPE
+      - POINTER_BUTTON
+      - POINTER_EVENTS
+      - YOUTUBE_STATES
+      - ENV
+      - CLASSES
+      - CJK_HAND_DRAWN_FALLBACK_FONT
+      - WINDOWS_EMOJI_FALLBACK_FONT
+      - FONT_FAMILY
+  - match: |
+      var DECLARATORS_BEFORE = null,
+        THEME = {LIGHT:"light", DARK:"dark"},
+        FRAME_STYLE = AST_CONTAINS_STRING("#bbb"),
+        MIN_FONT_SIZE = 1,
+        DEFAULT_FONT_SIZE = 20,
+        DECLARATORS_AFTER = null;
+    bindings:
+      - THEME
+      - FRAME_STYLE
+      - MIN_FONT_SIZE
+      - DEFAULT_FONT_SIZE
+  - match: |
+      var DECLARATORS_BEFORE = null,
+        DEFAULT_TEXT_ALIGN = "left",
+        DEFAULT_VERTICAL_ALIGN = "top",
+        DEFAULT_TRANSFORM_HANDLE_SPACING = 2,
+        DECLARATORS_AFTER = null;
+    bindings:
+      - DEFAULT_TEXT_ALIGN
+      - DEFAULT_VERTICAL_ALIGN
+      - DEFAULT_TRANSFORM_HANDLE_SPACING
+  - match: |
+      var DECLARATORS_BEFORE = null,
+        COLOR_WHITE = "#ffffff",
+        COLOR_CHARCOAL_BLACK = "#1e1e1e",
+        COLOR_VOICE_CALL = "#a2f1a6",
+        DEFAULT_GRID_SIZE = 20,
+        DEFAULT_GRID_STEP = 5,
+        IMAGE_MIME_TYPES = AST_CONTAINS_STRING("image/svg+xml"),
+        DECLARATORS_AFTER = null;
+    bindings:
+      - COLOR_WHITE
+      - COLOR_CHARCOAL_BLACK
+      - COLOR_VOICE_CALL
+      - DEFAULT_GRID_SIZE
+      - DEFAULT_GRID_STEP
+      - IMAGE_MIME_TYPES
+  - match: |
+      var DECLARATORS_BEFORE = null,
+        EXPORT_IMAGE_TYPES = {png:"png", svg:"svg", clipboard:"clipboard"},
+        EXPORT_DATA_TYPES = AST_CONTAINS_STRING("excalidraw/clipboard"),
+        DECLARATORS_AFTER = null;
+    bindings:
+      - EXPORT_IMAGE_TYPES
+      - EXPORT_DATA_TYPES
+  - match: |
+      var DECLARATORS_BEFORE = null,
+        IMAGE_RENDER_TIMEOUT = 500,
+        TAP_TWICE_TIMEOUT = 300,
+        TOUCH_CTX_MENU_TIMEOUT = 500,
+        SCROLL_TIMEOUT = 100,
+        ZOOM_STEP = .1,
+        MIN_ZOOM = .1,
+        MAX_ZOOM = 30,
+        HYPERLINK_TOOLTIP_DELAY = 300,
+        THEME_FILTER = "invert(93%) hue-rotate(180deg)",
+        DECLARATORS_AFTER = null;
+    bindings:
+      - IMAGE_RENDER_TIMEOUT
+      - TAP_TWICE_TIMEOUT
+      - TOUCH_CTX_MENU_TIMEOUT
+      - SCROLL_TIMEOUT
+      - ZOOM_STEP
+      - MIN_ZOOM
+      - MAX_ZOOM
+      - HYPERLINK_TOOLTIP_DELAY
+      - THEME_FILTER
+  - match: |
+      var DECLARATORS_BEFORE = null,
+        DEFAULT_UI_OPTIONS = EXPR,
+        MQ_MAX_WIDTH_PORTRAIT = 730,
+        MQ_MAX_WIDTH_LANDSCAPE = 1e3,
+        MQ_MAX_HEIGHT_LANDSCAPE = 500,
+        MQ_RIGHT_SIDEBAR_MIN_WIDTH = 1229,
+        MAX_DECIMALS_FOR_SVG_EXPORT = 2,
+        EXPORT_SCALES = [1,2,3],
+        DEFAULT_EXPORT_PADDING = 10,
+        DEFAULT_MAX_IMAGE_WIDTH_OR_HEIGHT = 1440,
+        DECLARATORS_AFTER = null;
+    bindings:
+      - DEFAULT_UI_OPTIONS
+      - MQ_MAX_WIDTH_PORTRAIT
+      - MQ_MAX_WIDTH_LANDSCAPE
+      - MQ_MAX_HEIGHT_LANDSCAPE
+      - MQ_RIGHT_SIDEBAR_MIN_WIDTH
+      - MAX_DECIMALS_FOR_SVG_EXPORT
+      - EXPORT_SCALES
+      - DEFAULT_EXPORT_PADDING
+      - DEFAULT_MAX_IMAGE_WIDTH_OR_HEIGHT
+  - match: |
+      var DECLARATORS_BEFORE = null,
+        SVG_NS = "http://www.w3.org/2000/svg",
+        VERSIONS = {excalidraw:2,excalidrawLibrary:2},
+        BOUND_TEXT_PADDING = 5,
+        ARROW_LABEL_WIDTH_FRACTION = .7,
+        ARROW_LABEL_FONT_SIZE_TO_MIN_WIDTH_RATIO = 11,
+        VERTICAL_ALIGN = {TOP:"top",MIDDLE:"middle",BOTTOM:"bottom"},
+        TEXT_ALIGN = {LEFT:"left",CENTER:"center",RIGHT:"right"},
+        ELEMENT_READY_TO_ERASE_OPACITY = 20,
+        DEFAULT_PROPORTIONAL_RADIUS = .25,
+        DEFAULT_ADAPTIVE_RADIUS = 32,
+        ROUNDNESS = {LEGACY:1,PROPORTIONAL_RADIUS:2,ADAPTIVE_RADIUS:3},
+        ROUGHNESS = {architect:0,artist:1,cartoonist:2},
+        STROKE_WIDTH = {thin:1,bold:2,extraBold:4},
+        DECLARATORS_AFTER = null;
+    bindings:
+      - SVG_NS
+      - VERSIONS
+      - BOUND_TEXT_PADDING
+      - ARROW_LABEL_WIDTH_FRACTION
+      - ARROW_LABEL_FONT_SIZE_TO_MIN_WIDTH_RATIO
+      - VERTICAL_ALIGN
+      - TEXT_ALIGN
+      - ELEMENT_READY_TO_ERASE_OPACITY
+      - DEFAULT_PROPORTIONAL_RADIUS
+      - DEFAULT_ADAPTIVE_RADIUS
+      - ROUNDNESS
+      - ROUGHNESS
+      - STROKE_WIDTH
+  - match: |
+      var DECLARATORS_BEFORE = null,
+        LIBRARY_SIDEBAR_TAB = "library",
+        CANVAS_SEARCH_TAB = "search",
+        DECLARATORS_AFTER = null;
+    bindings:
+      - LIBRARY_SIDEBAR_TAB
+      - CANVAS_SEARCH_TAB
+  - match: |
+      var DECLARATORS_BEFORE = null,
+        TOOL_TYPE = AST_CONTAINS_STRING("selection"),
+        EDITOR_LS_KEYS = AST_CONTAINS_STRING("excalidraw-oai-api-key"),
+        DEFAULT_FILENAME = "Untitled",
+        STATS_PANELS = {generalStats:1,elementProperties:2},
+        MIN_WIDTH_OR_HEIGHT = 1,
+        ARROW_TYPE = {sharp:"sharp",round:"round",elbow:"elbow"},
+        DEFAULT_REDUCED_GLOBAL_ALPHA = .3,
+        ELEMENT_LINK_KEY = "element",
+        DECLARATORS_AFTER = null;
+    bindings:
+      - TOOL_TYPE
+      - EDITOR_LS_KEYS
+      - DEFAULT_FILENAME
+      - STATS_PANELS
+      - MIN_WIDTH_OR_HEIGHT
+      - ARROW_TYPE
+      - DEFAULT_REDUCED_GLOBAL_ALPHA
+      - ELEMENT_LINK_KEY

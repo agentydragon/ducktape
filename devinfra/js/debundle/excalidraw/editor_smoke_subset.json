@@ -2,6 +2,10 @@
   "modules": [
     {
       "chunk": "editor",
+      "module": "packages/excalidraw/constants"
+    },
+    {
+      "chunk": "editor",
       "module": "packages/math/utils",
       "bindings": ["clamp", "round", "roundToStep", "isFiniteNumber", "isCloseTo"],
       "anonymous_statements": []
@@ -99,7 +103,13 @@
     {
       "chunk": "editor",
       "module": "packages/excalidraw/renderer/renderelement",
-      "bindings": ["isPendingImageElement", "shouldResetImageFilter", "getCanvasPadding", "renderSelectionElement"],
+      "bindings": [
+        "isPendingImageElement",
+        "shouldResetImageFilter",
+        "getCanvasPadding",
+        "renderSelectionElement",
+        "getRenderOpacity"
+      ],
       "anonymous_statements": []
     },
     {

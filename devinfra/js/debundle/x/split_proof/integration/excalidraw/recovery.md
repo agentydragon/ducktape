@@ -25,6 +25,19 @@ The two remaining hoists, `deconstructRectanguloidElement` and
 `deconstructDiamondElement`, depend on private entry bindings.
 [Restoring both changed the entry exports](https://app.buildbuddy.io/invocation/45f6d119-2f0f-4d2d-9d9b-3d1fae522121).
 
+## Restoring an upstream dependency
+
+The canonical selectors for [constants.ts](../../../../excalidraw/spec/modules/editor/packages/excalidraw/constants.yaml)
+place 73 additional bindings in their [pinned upstream module](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/excalidraw/constants.ts).
+Moving `ELEMENT_READY_TO_ERASE_OPACITY` into that module lets the renderer
+import it there. The checker can now certify `getRenderOpacity` without exposing
+its former private dependency from the editor entry.
+
+Three further trials on the hoist baseline identified separate proof limits:
+the linked state exposed [`vectorNormalize`](https://app.buildbuddy.io/invocation/b18c0ffd-ecaf-4e0f-b7db-bf9daae50835);
+an earlier unit accessed the moved region of [`hitElementBoundText`](https://app.buildbuddy.io/invocation/1eed0d13-c6ec-46ac-8c67-6ef04cf9b895)
+and of [`loadFromBlob`](https://app.buildbuddy.io/invocation/7ad47e3f-24cd-4140-801c-4911859cee5b).
+
 ## What limited the candidate set
 
 To select a trial, join the canonical Rust graph to the scope-annotated original
