@@ -1,5 +1,5 @@
 {
-  "name": "lowering-experiment",
+  "name": "library-split-fixtures",
   "private": true,
   "type": "module",
   "dependencies": {

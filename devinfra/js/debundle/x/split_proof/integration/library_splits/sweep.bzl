@@ -19,21 +19,20 @@ _VARIANTS = [
     ("zod.min", 4, 40),
 ]
 
-def real_bundle_artifacts():
+def _real_bundle_artifacts():
     """Generate independently cacheable bundle + AST output pairs."""
     for variant, _, _ in _VARIANTS:
         js_run_binary(
             name = "prepare_" + variant.replace(".", "_"),
-            tool = ":prepare_real_bundles",
+            tool = ":prepare",
             args = ["real_bundles", variant],
             chdir = native.package_name(),
             outs = ["real_bundles/" + variant + ext for ext in [".mjs", ".json"]],
-            visibility = [_SPLIT_PROOF + "/integration/library_splits:__pkg__"],
         )
 
 def _real_split_test(bundle, cut_step = 1, entry_first_step = 10, smoke = False):
     name = "real_split_" + bundle.replace(".", "_") + "_test"
-    bundle_files = [_SPLIT_PROOF + "/translation:real_bundles/" + bundle + ext for ext in [".mjs", ".json"]]
+    bundle_files = [":real_bundles/" + bundle + ext for ext in [".mjs", ".json"]]
     if smoke:
         name = "library_smoke_test"
     sh_test(
@@ -54,6 +53,7 @@ def _real_split_test(bundle, cut_step = 1, entry_first_step = 10, smoke = False)
 
 def real_split_sweeps():
     """Expose one opt-in test per bundle variant and a suite for the full corpus."""
+    _real_bundle_artifacts()
     _real_split_test("semver", smoke = True)
     native.test_suite(
         name = "real_split_sweep",

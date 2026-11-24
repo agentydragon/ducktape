@@ -1,6 +1,23 @@
 load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_test")
+load("@npm_split_proof//:defs.bzl", "npm_link_all_packages")
 load("//devinfra/lint:linters.bzl", "eslint_test")
 load(":sweep.bzl", "real_split_sweeps")
+
+npm_link_all_packages(name = "node_modules")
+
+js_binary(
+    name = "prepare",
+    data = glob(["entries/*.mjs"]) + [
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        ":node_modules/lodash-es",
+        ":node_modules/semver",
+        ":node_modules/zod",
+        "//:node_modules/esbuild",
+        "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
+    ],
+    entry_point = "prepare.mjs",
+)
 
 js_binary(
     name = "real_split",
@@ -30,7 +47,7 @@ js_binary(
 real_split_sweeps()
 
 _LIBRARY_SOURCES = [
-    "//devinfra/js/debundle/x/split_proof/translation:real_bundles/" + library + ".mjs"
+    ":real_bundles/" + library + ".mjs"
     for library in [
         "acorn",
         "semver",
@@ -55,7 +72,10 @@ js_test(
 js_library(
     name = "lint_sources",
     testonly = True,
-    srcs = glob(["*.mjs"]),
+    srcs = glob([
+        "*.mjs",
+        "entries/*.mjs",
+    ]),
 )
 
 eslint_test(

@@ -1,7 +1,6 @@
 // node prefix.mjs <bundle.json> <n> > prefix.json
 import { readFileSync } from "node:fs";
-import * as acorn from "acorn";
-import * as eslintScope from "eslint-scope";
+import { acorn, eslintScope } from "../translation/bazel_parser.mjs";
 import { topLevelStatements } from "../translation/scope_metadata.mjs";
 import { lowerDump } from "../translation/annotated_estree.mjs";
 

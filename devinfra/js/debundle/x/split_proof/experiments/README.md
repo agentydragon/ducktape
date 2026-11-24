@@ -47,7 +47,6 @@ pinned in [`lean-toolchain`](../lean/lean-toolchain).
 
 ```sh
 p=devinfra/js/debundle/x/split_proof
-(cd "$p/lowering" && cp package.json.in package.json && npm ci --no-audit --no-fund)
 (cd "$p/translation" && cp package.json.in package.json && npm ci --no-audit --no-fund)
 (cd "$p/lean" && lake build lowersplit)
 BUNDLES_DIR="$out" "$p/lowering/scale.sh"
@@ -214,8 +213,10 @@ the public bundles and their annotated ESTree:
 
 ```sh
 p=//devinfra/js/debundle/x/split_proof
-bb run "$p/translation:prepare_real_bundles" -- "$out"
+bb run "$p/integration/library_splits:prepare" -- "$out"
 ```
+
+To run the same builder outside Bazel, copy `package.json.in` to `package.json` in [the fixture package](../integration/library_splits), run `npm ci` there, then `node prepare.mjs "$out"`. Pass library variants after the output directory (for example, `semver zod.min`) to build a subset.
 
 Compare their footprints with `bb run "$p/lowering:compare_footprints" -- "$out/"*.json`.
 

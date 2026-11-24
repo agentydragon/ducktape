@@ -306,12 +306,12 @@ npm.npm_translate_lock(
 use_repo(npm, "npm_ducktape")
 
 # Keep the splitter validator's parser pins separate from the JS workspace.
-translation_npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", isolate = True)
-translation_npm.npm_translate_lock(
-    name = "npm_split_proof_translation",
-    pnpm_lock = "//devinfra/js/debundle/x/split_proof/translation:pnpm-lock.yaml",
+split_proof_npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", isolate = True)
+split_proof_npm.npm_translate_lock(
+    name = "npm_split_proof",
+    pnpm_lock = "//devinfra/js/debundle/x/split_proof:pnpm-lock.yaml",
 )
-use_repo(translation_npm, "npm_split_proof_translation")
+use_repo(split_proof_npm, "npm_split_proof")
 
 # Custom multitool lockfile with newer ruff (0.17.4 vs 0.8.3 in aspect_rules_lint)
 multitool = use_extension("@rules_multitool//multitool:extension.bzl", "multitool")
