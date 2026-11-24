@@ -24,7 +24,7 @@ def checkArrayIteratorNext : M W Unit := do
   | _ => unknown "array iterator next differs from the modeled intrinsic"
 
 def getIterator (call : Call W) (value : Val) : M W IteratorCursor := do
-  let method ← getProp call value .iteratorSymbol
+  let method ← getProp call value (.wellKnownSymbol .iterator)
   if let .host "Array.prototype.values" := method then
     let a ← requireIteratorObject "array iterator receiver is not an object" value
     if (← getObj a).array then

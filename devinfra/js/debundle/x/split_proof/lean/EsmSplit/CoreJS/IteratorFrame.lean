@@ -38,7 +38,7 @@ theorem getIterator_reachFrame {r R cells A} (away : Away r R A) (call : Call W)
     (arrayIteratorRoot : A (.obj arrayIteratorProto)) (value : Val) (safe : SafeVal A value) :
     ReachFrame r R cells A (IteratorCursor.Safe A) (getIterator call value) := by
   unfold getIterator
-  refine (reachFrame_getProp away call framed.getter objectRoot value .iteratorSymbol safe).bind fun method hm => ?_
+  refine (reachFrame_getProp away call framed.getter objectRoot value (.wellKnownSymbol .iterator) safe).bind fun method hm => ?_
   split
   · refine (reachFrame_requireIteratorObject _ value safe).bind fun a ha => ?_
     refine (reachFrame_getObj away ha).bind fun obj _ => ?_
