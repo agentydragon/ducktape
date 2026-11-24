@@ -41,7 +41,7 @@ theorem runUnits_same (n : Nat) {us us' : List LinkedUnit} (h : SameUnits us us'
     obtain ⟨id, s, env⟩ := u
     obtain ⟨id', s', env'⟩ := u'
     obtain ⟨hid, hs, hagree⟩ := hu
-    dsimp only at hid hs hagree
+    dsimp only [LinkedUnit.id, LinkedUnit.stmt, LinkedUnit.env] at hid hs hagree
     subst hid
     subst hs
     unfold runUnits
@@ -63,7 +63,7 @@ theorem initFunctions_same {us us' : List LinkedUnit} (h : SameUnits us us') :
     obtain ⟨id, s, env⟩ := u
     obtain ⟨id', s', env'⟩ := u'
     obtain ⟨hid, hs, hagree⟩ := hu
-    dsimp only at hid hs hagree
+    dsimp only [LinkedUnit.id, LinkedUnit.stmt, LinkedUnit.env] at hid hs hagree
     subst hid
     subst hs
     unfold initFunctions
