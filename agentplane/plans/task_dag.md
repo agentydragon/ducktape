@@ -2445,6 +2445,9 @@ filter and optional live follow. The browser follows Threads through Electric
 
 ```mermaid
 flowchart TD
+    JOURNAL_STORAGE_BASELINE[Pending rollout: measure staging journal packing]
+    JOURNAL_STORAGE_DESIGN[Decision: efficient retained event storage]
+    JOURNAL_STORAGE_BASELINE -->|measured baseline for final comparison| JOURNAL_STORAGE_DESIGN
     JOURNAL_REPRESENTATION_DESIGN[Decision, unscheduled: History as stored journals]
     THREAD_SYNC_WITHOUT_ELECTRIC[Decision, unscheduled: replace Electric with our own thread stream]
     JOURNAL_REPRESENTATION_DESIGN -. what the stream follows .-> THREAD_SYNC_WITHOUT_ELECTRIC
@@ -2459,6 +2462,25 @@ Revisit replacing `ReadSessionEvents` with `FollowSession` and `follow = false` 
 preserve bounded reads and the browser's raw observation detail through the HTTP facade.
 Automatic titles remain deferred under
 [`THREAD_TITLE_GENERATION`](task_freezer.md#thread_title_generation--revisit-automatic-thread-titles).
+
+### `JOURNAL_STORAGE_BASELINE` — measure staging journal packing
+
+**Pending staging rollout, 2026-11-24.** History and sampler packing merged. Each writer waits
+for its own reader rollout. Record when each writer starts packing, whether historical History
+rows were backfilled, and the subsequent relation growth and event volume. Compare with the
+[November 24 recurrence and earlier incidents](storage_representations.md#november-24-recurrence-and-storage-decision).
+
+### `JOURNAL_STORAGE_DESIGN` — choose how to store retained event values
+
+**Operator decision requested, 2026-11-24.** Can an existing library or backend provide
+cross-record compression behind simple value writes, lookups and scans while preserving sampler
+recovery and History replay? Evaluate content references, sequential column storage and shared
+dictionaries, including alternatives to PostgreSQL. Begin the workload study now. Use the
+post-rollout baseline for the final comparison. **Exit:** bring the operator a measured
+recommendation, including the option of retaining the stopgap, before scheduling implementation.
+The [storage plan](storage_representations.md#november-24-recurrence-and-storage-decision) owns
+the comparisons. Coordinate any change to what History retains with the journal representation
+decision below.
 
 ### `JOURNAL_REPRESENTATION_DESIGN` — History as stored journals
 
