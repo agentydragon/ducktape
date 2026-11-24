@@ -2,6 +2,7 @@ package sessionstore
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -194,7 +195,29 @@ func TestCompactionRefreshesEnvironmentInNativeOrder(t *testing.T) {
 				t.Fatal(err)
 			}
 			today = today.AddDate(0, 0, 1)
-			if err := store.FinishCompaction(ctx, owner, intent, map[string]any{"response": "complete"}, original.Context(), replacement, nil); err != nil {
+			audit := map[string]any{"response": "complete"}
+			if tc.api == protocol.APIStyleChatCompletions {
+				rejected := errors.New("compaction replacement rejected by provider policy")
+				err := store.FinishCompaction(ctx, owner, intent, audit, original.Context(), replacement, func(candidate protocol.Context) error {
+					records, err := candidate.Records()
+					if err != nil || len(records) != len(tc.records)+1 {
+						t.Fatalf("validation must see refreshed environment before pending notices: %s, %v", records, err)
+					}
+					checkEnvironment(records[tc.envIndex], "/fixture", "2026-01-03", "zsh")
+					return rejected
+				})
+				if !errors.Is(err, rejected) {
+					t.Fatalf("the replacement should be rejected: %v", err)
+				}
+				restored, err := store.Read(ctx, owner)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !sameNativeContext(restored.Context(), original.Context()) || restored.Pending == nil || restored.Pending.ID != intent {
+					t.Fatalf("rejection must roll back the replacement and its intent settlement: %+v", restored.Pending)
+				}
+			}
+			if err := store.FinishCompaction(ctx, owner, intent, audit, original.Context(), replacement, nil); err != nil {
 				t.Fatal(err)
 			}
 			// Read the persisted roots and check that an unchanged next step adds no
