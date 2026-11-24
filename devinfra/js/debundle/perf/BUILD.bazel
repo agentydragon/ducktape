@@ -53,6 +53,7 @@ py_library(
     testonly = True,
     srcs = ["excalidraw_pipeline.py"],
     deps = [
+        ":run_benchmark",
         "@rules_python//python/runfiles",
     ],
 )
@@ -94,6 +95,7 @@ py_test(
     exec_properties = _BENCH_EXEC_PROPERTIES | {"test.EstimatedComputeUnits": "1"},
     deps = [
         ":excalidraw_pipeline",
+        ":run_benchmark",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

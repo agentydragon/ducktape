@@ -5,18 +5,13 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-from enum import StrEnum
 from pathlib import Path
 
 from python.runfiles import Runfiles
 
-ADDRESS_SPACE_BYTES, FILE_SIZE_BYTES, PHASE_TIMEOUT_SECONDS = 16 * 1024**3, 512 * 1024**2, 30 * 60
+from devinfra.js.debundle.perf.run_benchmark import PRLIMIT, ProfileMode
 
-
-class ProfileMode(StrEnum):
-    NONE = "none"
-    CPU = "cpu"
-    HEAP = "heap"
+PHASE_TIMEOUT_SECONDS = 30 * 60
 
 
 def runfile(runfiles: Runfiles, variable: str) -> Path:
@@ -44,20 +39,6 @@ def input_paths(runfiles: Runfiles) -> dict[str, Path]:
         "clsx": runfile(runfiles, "DEBUNDLE_BENCH_CLSX"),
         "roughjs": runfile(runfiles, "DEBUNDLE_BENCH_ROUGHJS"),
     }
-
-
-def bounded_command(argv: list[str], timeout_seconds: int) -> list[str]:
-    return [
-        "timeout",
-        "--signal=TERM",
-        "--kill-after=15s",
-        f"{timeout_seconds}s",
-        "prlimit",
-        f"--as={ADDRESS_SPACE_BYTES}",
-        f"--fsize={FILE_SIZE_BYTES}",
-        "--",
-        *argv,
-    ]
 
 
 def phase_command(argv: list[str], *, phase: str, profile: ProfileMode, outputs: Path) -> list[str]:
@@ -101,11 +82,18 @@ def execute_phase(
     timeout_seconds: int = PHASE_TIMEOUT_SECONDS,
 ) -> None:
     outputs.mkdir(parents=True, exist_ok=True)
-    time_binary = runner_tool("time")
-    child = phase_command(argv, phase=phase, profile=profile, outputs=outputs)
-    command = bounded_command(
-        [time_binary, "--verbose", "--output", str(outputs / "gnu-time.txt"), *child], timeout_seconds
-    )
+    command = [
+        "timeout",
+        "--signal=TERM",
+        "--kill-after=15s",
+        f"{timeout_seconds}s",
+        *PRLIMIT,
+        runner_tool("time"),
+        "--verbose",
+        "--output",
+        str(outputs / "gnu-time.txt"),
+        *phase_command(argv, phase=phase, profile=profile, outputs=outputs),
+    ]
     with (outputs / "stdout.txt").open("wb") as stdout, (outputs / "stderr.txt").open("wb") as stderr:
         subprocess.run(command, env=env, stdout=stdout, stderr=stderr, check=True)
 

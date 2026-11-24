@@ -11,6 +11,7 @@ import yaml
 from python.runfiles import Runfiles
 
 from devinfra.js.debundle.perf import excalidraw_pipeline
+from devinfra.js.debundle.perf.run_benchmark import ProfileMode
 
 
 def test_excalidraw_runfiles_are_readable_without_copying() -> None:
@@ -34,7 +35,7 @@ def test_execute_phase_captures_child_output_and_gnu_time(tmp_path: Path) -> Non
     excalidraw_pipeline.execute_phase(
         "project",
         [sys.executable, "-c", "import sys; print('child stdout'); print('child stderr', file=sys.stderr)"],
-        profile=excalidraw_pipeline.ProfileMode.NONE,
+        profile=ProfileMode.NONE,
         outputs=output,
         env=os.environ.copy(),
         timeout_seconds=10,
@@ -51,7 +52,7 @@ def test_execute_phase_preserves_logs_and_propagates_child_failure(tmp_path: Pat
         excalidraw_pipeline.execute_phase(
             "analyze",
             [sys.executable, "-c", "import sys; print('partial output'); raise SystemExit(23)"],
-            profile=excalidraw_pipeline.ProfileMode.NONE,
+            profile=ProfileMode.NONE,
             outputs=output,
             env=os.environ.copy(),
             timeout_seconds=10,
@@ -63,14 +64,10 @@ def test_execute_phase_preserves_logs_and_propagates_child_failure(tmp_path: Pat
 
 
 @pytest.mark.parametrize(
-    ("profile", "tool", "absent"),
-    [
-        (excalidraw_pipeline.ProfileMode.CPU, "perf", "heaptrack"),
-        (excalidraw_pipeline.ProfileMode.HEAP, "heaptrack", "perf"),
-    ],
+    ("profile", "tool", "absent"), [(ProfileMode.CPU, "perf", "heaptrack"), (ProfileMode.HEAP, "heaptrack", "perf")]
 )
 def test_profile_modes_are_separate(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, profile: excalidraw_pipeline.ProfileMode, tool: str, absent: str
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, profile: ProfileMode, tool: str, absent: str
 ) -> None:
     monkeypatch.setattr(excalidraw_pipeline, "runner_tool", lambda name: name)
     analyzer = ["analyzer", "--projection", "input"]
@@ -86,17 +83,17 @@ def test_profile_modes_are_separate(
 
 
 @pytest.mark.parametrize("phase", ["project", "analyze", "apply"])
-@pytest.mark.parametrize("profile", [excalidraw_pipeline.ProfileMode.CPU, excalidraw_pipeline.ProfileMode.HEAP])
+@pytest.mark.parametrize("profile", [ProfileMode.CPU, ProfileMode.HEAP])
 def test_profiled_phase_writes_metrics_to_its_output_directory(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, phase: str, profile: excalidraw_pipeline.ProfileMode
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, phase: str, profile: ProfileMode
 ) -> None:
     monkeypatch.setattr(excalidraw_pipeline, "runner_tool", lambda name: name)
     command = excalidraw_pipeline.phase_command(["debundle", phase], phase=phase, profile=profile, outputs=tmp_path)
     assert command[-2:] == ["--metrics-file", str(tmp_path / "metrics.jsonl")]
 
 
-@pytest.mark.parametrize("profile", [excalidraw_pipeline.ProfileMode.CPU, excalidraw_pipeline.ProfileMode.HEAP])
-def test_profiled_environment_uses_standard_otel_export_interval(profile: excalidraw_pipeline.ProfileMode) -> None:
+@pytest.mark.parametrize("profile", [ProfileMode.CPU, ProfileMode.HEAP])
+def test_profiled_environment_uses_standard_otel_export_interval(profile: ProfileMode) -> None:
     env = excalidraw_pipeline.phase_environment(profile, {"DEBUNDLE_OUT": "stale", "KEEP": "yes"})
     assert env["OTEL_METRIC_EXPORT_INTERVAL"] == "1000"
     assert "DEBUNDLE_OUT" not in env
