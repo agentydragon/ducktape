@@ -17,6 +17,11 @@ def listEq (item : MatchEq α) : MatchEq (List α)
     return ⟨head ▸ tail ▸ rfl⟩
   | _, _ => none
 
+def optionEq (item : MatchEq α) : MatchEq (Option α)
+  | none, none => some ⟨rfl⟩
+  | some a, some b => (item a b).map fun h => ⟨congrArg some h.down⟩
+  | _, _ => none
+
 mutual
 partial def exprEq : MatchEq Expr
   | .undef, .undef | .null, .null | .this, .this => some ⟨rfl⟩
@@ -146,11 +151,11 @@ private partial def arrayElementEq : MatchEq (ArrayElementKind × Expr)
     let ⟨value⟩ ← exprEq e e'
     return ⟨tag ▸ value ▸ rfl⟩
 
-private partial def derivedCtorEq : MatchEq (Option (List Stmt × List Expr × Func))
+private partial def derivedCtorEq : MatchEq (Option (List Stmt × Option (List Expr) × Func))
   | none, none => some ⟨rfl⟩
   | some (before, args, f), some (before', args', g) => do
     let ⟨p⟩ ← listEq stmtEq before before'
-    let ⟨a⟩ ← listEq exprEq args args'
+    let ⟨a⟩ ← optionEq (listEq exprEq) args args'
     let ⟨b⟩ ← funcEq f g
     return ⟨p ▸ a ▸ b ▸ rfl⟩
   | _, _ => none

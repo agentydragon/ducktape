@@ -1,5 +1,17 @@
 # TODO — sampler
 
+## Configure compaction thresholds per model
+
+Make automatic compaction thresholds configurable for each model route across provider APIs,
+including Responses. Chat Completions and Anthropic already have per-route thresholds; Responses
+currently uses the sampler-wide setting. Account for each route's context window and headroom.
+
+## Compare sampler and notification-service notifications
+
+Consider whether the sampler's Codex-derived in-turn notifications and the Notification Service's
+notifications should share a mechanism. Compare their recipients, delivery timing, ordering,
+durability, authority, and recovery semantics first; unify them only if those contracts fit.
+
 ## Define model continuation compatibility
 
 Decide who owns same-API model transition policy and where to configure it. Establish compatibility

@@ -129,7 +129,9 @@ func (c *Context) AppendNotice(parts []protocol.ContentPart) error {
 }
 
 func (c *Context) AddEnvironment(parts []protocol.ContentPart, _ bool) error {
-	return c.AppendUser(parts)
+	// Leave the signed summary and kept turns adjacent. Only authored user
+	// input may activate deferred effort restoration.
+	return c.AppendNotice(parts)
 }
 
 func (c *Context) AppendToolResult(call protocol.ToolInvocation, parts []protocol.ContentPart) error {

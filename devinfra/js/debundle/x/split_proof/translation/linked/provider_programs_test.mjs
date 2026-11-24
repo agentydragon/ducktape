@@ -4,6 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   assertCertified,
+  caseShard,
   root,
   id,
   literal,
@@ -182,8 +183,10 @@ function eagerProvider() {
   ]);
 }
 
+const runCase = caseShard();
+
 // The entry publishes bindings from both a copied provider and a newly split module.
-{
+if (runCase("entry-exports-imports")) {
   const dir = path.join(root, "entry-exports-imports");
   const source = `
     import { original as imported } from "./provider.mjs";
@@ -209,6 +212,7 @@ function eagerProvider() {
 // Generated aliases, layouts and provider-body shapes exercise the ordinary
 // source-file CLI. The entry calls a moved try-body function during initialization.
 for (let seed = 0; seed < 8; seed++) {
+  if (!runCase(`generated-${seed}`)) continue;
   const fixture = generatedCase(seed);
   const dir = path.join(root, `generated-${seed}`);
   const files = prepare(dir, fixture);
@@ -276,7 +280,7 @@ for (let seed = 0; seed < 8; seed++) {
 }
 
 // The second lexical binding shadows the function parameter throughout the try block.
-{
+if (runCase("group-hoisting-and-tdz")) {
   const source = `const run = (later) => {
     try { let first = later, later = 9; }
     catch { return true; }
@@ -297,7 +301,7 @@ for (let seed = 0; seed < 8; seed++) {
 
 // The catch binding is visible inside its handler, including a nested block.
 // A normal callback skips the handler and still reads the function parameter.
-{
+if (runCase("linked-function-catch-scope")) {
   const dir = path.join(root, "linked-function-catch-scope");
   const fragment = "worker.mjs";
   const sourceBody = [
@@ -342,7 +346,7 @@ for (let seed = 0; seed < 8; seed++) {
 
 // Destructuring catch parameters remain outside this lowering's supported
 // subset, even though the source itself is valid and has a normal result.
-{
+if (runCase("unsupported-catch-pattern")) {
   const dir = path.join(root, "unsupported-catch-pattern");
   const fragment = "worker.mjs";
   const catchPattern = {
@@ -381,7 +385,7 @@ for (let seed = 0; seed < 8; seed++) {
 
 // The provider's own import graph is discovered, copied beside the split and
 // checked as part of the output. The extra module remains a real relative import.
-{
+if (runCase("transitive-provider")) {
   const dir = path.join(root, "transitive-provider");
   const files = prepare(dir, {
     source: program([
@@ -421,7 +425,7 @@ for (let seed = 0; seed < 8; seed++) {
 // Provider graph discovery refuses both a provider edge back to the input
 // source and a symlink alias for a module, which would make output links
 // ambiguous relative to the generated directory.
-{
+if (runCase("provider-request-back-to-source")) {
   const dir = path.join(root, "provider-request-back-to-source");
   const files = prepare(dir, {
     source: program([
@@ -451,7 +455,7 @@ for (let seed = 0; seed < 8; seed++) {
   assert.match(refused.verdict.reason, /request back to the source entry/i);
   assert(!existsSync(out));
 }
-{
+if (runCase("provider-symlink-alias")) {
   const dir = path.join(root, "provider-symlink-alias");
   const files = prepare(dir, {
     source: program([
@@ -483,7 +487,7 @@ const eager = eagerProvider();
 // An eager callback that sees the later const would read it in the TDZ in the
 // source module. Moving that const into a dependency would initialize it first,
 // so normal-completion certification must refuse this layout.
-{
+if (runCase("eager-observes-later-binding")) {
   const dir = path.join(root, "eager-observes-later-binding");
   const fragment = "fragment.mjs";
   const files = prepare(dir, {
@@ -531,7 +535,7 @@ const eager = eagerProvider();
 
 // The linked-module decoder rejects implicit `arguments` references: CoreJS
 // does not allocate the ordinary function's arguments object.
-{
+if (runCase("implicit-arguments")) {
   const dir = path.join(root, "implicit-arguments");
   const files = prepare(dir, {
     source: program([

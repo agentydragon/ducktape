@@ -118,8 +118,18 @@ func (state *Context) AppendNotice(parts []protocol.ContentPart) error {
 	return state.appendMessage("developer", parts)
 }
 
-func (state *Context) AddEnvironment(parts []protocol.ContentPart, _ bool) error {
-	return state.AppendUser(parts)
+func (state *Context) AddEnvironment(parts []protocol.ContentPart, afterCompaction bool) error {
+	if !afterCompaction {
+		return state.AppendUser(parts)
+	}
+	// Codex rust-v0.162.1 core/src/compact.rs places canonical context before
+	// the opaque item when the replacement contains no retained user message.
+	prefix := &Context{}
+	if err := prefix.AppendUser(parts); err != nil {
+		return err
+	}
+	state.items = append(prefix.items, state.items...)
+	return nil
 }
 
 func (state *Context) appendMessage(role string, parts []protocol.ContentPart) error {

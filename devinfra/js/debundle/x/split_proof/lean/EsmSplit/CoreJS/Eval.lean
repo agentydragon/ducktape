@@ -185,7 +185,7 @@ def classParents (call : Call W) : Val → M W (Addr × Option Addr)
   | .null => pure (functionProto, none)
   | base => classParentsNonNull call base
 
-def derivedCtorCode (env : Env) (ctor : Option (List Stmt × List Expr × Func))
+def derivedCtorCode (env : Env) (ctor : Option (List Stmt × Option (List Expr) × Func))
     (fields : List (PropertyKey × Expr)) : Code × Nat :=
   let closed := env.capture (derivedCtorFree ctor ++ fields.flatMap (·.2.free))
   match ctor, fields with
@@ -200,7 +200,7 @@ def derivedScope (before : List Stmt) (body : Func) : Func :=
 /-- Build the class after evaluating and checking its heritage. -/
 def finishDerived (runMembers : Env → Addr → Addr → List ClassMember → M W (List (Bool × PropertyKey)))
     (env : Env) (name : Name) (self : Bool) (members : List ClassMember) (parents : Addr × Option Addr)
-    (ctor : Option (List Stmt × List Expr × Func) := none) : M W Val := do
+    (ctor : Option (List Stmt × Option (List Expr) × Func) := none) : M W Val := do
   let proto ← alloc { proto := parents.2, props := [] }
   let (code, arity) := derivedCtorCode env ctor []
   let c ← alloc {
@@ -238,6 +238,14 @@ def arrayObject (vs : List Val) : Obj :=
   let items := vs.zipIdx.map fun (v, i) => (PropertyKey.str (toString i), Property.data v true true true)
   { proto := some arrayProto, array := true,
     props := items ++ [(PropertyKey.str "length", Property.data (.num (Float.ofNat vs.length)) true false false)] }
+
+/-- A newly entered strict constructor has a fresh unmapped arguments object with dense own
+indices, length and the intrinsic array-values iterator. Only its iterator's next method is
+a mutable external lookup. Leave a changed descriptor to general iterator semantics. -/
+def forwardFreshArguments (args : List Val) : M W (List Val) := do
+  match (← getObj arrayIteratorProto).props.lookup (.str "next") with
+  | some (.data (.host "ArrayIterator.prototype.next") ..) => pure args
+  | _ => unknown "arguments spread uses a modified array iterator"
 
 mutual
 
@@ -492,7 +500,7 @@ def constructTarget : Nat → Val → Val → List Val → M W Val
         match ← execStmts n env before with
         | .normal => do
           let parent := (← getObj a).proto
-          let argv ← evalArgs n env superArgs
+          let argv ← superArgs.elim (forwardFreshArguments args) (evalArgs n env)
           -- ECMA-262 selects the superclass before evaluating arguments. V8 can select it after.
           if (← getObj a).proto != parent then unknown "superclass changed while evaluating super arguments"
           else do

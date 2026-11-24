@@ -245,7 +245,7 @@ func TestCompactionKeepsOnlyRecentUsers(t *testing.T) {
 		t.Fatal("assistant and tool messages are compactable even when all users fit")
 	}
 	budget := userMessageTokens(recent)
-	plan, err := c.PrepareCompaction(CompactionConfig{KeepRecentTokens: &budget}, "current environment")
+	plan, err := c.PrepareCompaction(CompactionConfig{KeepRecentTokens: &budget})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,7 +284,6 @@ func TestCompactionKeepsOnlyRecentUsers(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
-		`{"role":"system","content":"current environment"}`,
 		`{"role":"user","content":"recent task to keep"}`,
 		`{"role":"assistant","content":"Summary of earlier conversation:\nuseful summary"}`,
 	}
@@ -309,7 +308,7 @@ func TestSecondCompactionReplacesPriorHandoff(t *testing.T) {
 		MaxTokens: 100, KeepRecentTokens: new(16),
 		Replacement: &CompactionReplacement{Role: "user", Template: "Handoff: {{.Summary}}"},
 	}
-	plan, err := state.PrepareCompaction(config, "")
+	plan, err := state.PrepareCompaction(config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +333,7 @@ func TestSecondCompactionReplacesPriorHandoff(t *testing.T) {
 	if err := restored.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "newest request"}}); err != nil {
 		t.Fatal(err)
 	}
-	next, err := restored.PrepareCompaction(config, "")
+	next, err := restored.PrepareCompaction(config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -381,13 +380,19 @@ func TestCompactionPreservesAuthorshipAcrossRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(projected[0], projected[1]) || bytes.Contains(projected[2], []byte("sampler_environment")) {
-		t.Fatalf("origin metadata leaked into the provider request: %s", projected)
+	for i, raw := range projected {
+		var m message
+		if err := json.Unmarshal(raw, &m); err != nil || m.Content != identical || m.CompactionGenerated {
+			t.Fatalf("unexpected wire message %d: %s (%v)", i, raw, err)
+		}
+		if (i == 0) != (m.Role == "user") {
+			t.Fatalf("unexpected role for message %d: %s", i, raw)
+		}
 	}
 	if err := restored.AppendRecords([]json.RawMessage{json.RawMessage(`{"role":"assistant","content":"` + strings.Repeat("old answer ", 100) + `"}`)}); err != nil {
 		t.Fatal(err)
 	}
-	plan, err := restored.PrepareCompaction(CompactionConfig{KeepRecentTokens: &budget}, "refreshed environment")
+	plan, err := restored.PrepareCompaction(CompactionConfig{KeepRecentTokens: &budget})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -395,10 +400,22 @@ func TestCompactionPreservesAuthorshipAcrossRestore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := result.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: "refreshed environment"}}, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := plan.CheckReduction(result); err != nil {
+		t.Fatal(err)
+	}
 	if len(result.messages) != 3 ||
-		result.messages[0].Content != "refreshed environment" || !result.messages[0].GeneratedEnvironment ||
-		result.messages[1].Content != identical || !result.messages[1].isAuthoredUser() {
+		result.messages[2].Content != "refreshed environment" || result.messages[2].Role != "system" ||
+		result.messages[0].Content != identical || !result.messages[0].isAuthoredUser() {
 		t.Fatal("compaction must retain the authored message and refresh the generated environment")
+	}
+	if err := result.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: strings.Repeat("expanded environment ", 100)}}, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := plan.CheckReduction(result); err == nil {
+		t.Fatal("expanded environment must count against the whole replacement")
 	}
 }
 
@@ -413,7 +430,7 @@ func TestCompactionTruncatesOversizeUserWithinBudget(t *testing.T) {
 		if err := config.Validate(); err != nil {
 			t.Fatal(err)
 		}
-		plan, err := context.PrepareCompaction(config, "")
+		plan, err := context.PrepareCompaction(config)
 		if err != nil {
 			t.Fatal(err)
 		}

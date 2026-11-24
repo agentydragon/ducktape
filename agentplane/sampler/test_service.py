@@ -1051,8 +1051,7 @@ async def test_chat_completions_tool_round_trip(
         assert old_tool["tool_call_id"] == "chat-call"
         assert "42" in old_tool["content"]
         assert {"role": "user", "content": user_text} in transcript
-        assert any(m.get("sampler_environment") and m["role"] in {"user", "system"} for m in transcript)
-        assert all("sampler_environment" not in m for m in initial["messages"] + continued["messages"])
+        assert any(m["role"] == "system" and "<environment_context>" in m["content"] for m in transcript)
 
         entries = await store.events(request.session_id, 0, limit=10000)
         dispatches = [
@@ -1210,7 +1209,7 @@ async def test_chat_completions_compaction(
                 else {"role": "user", "content": "<handoff>retained summary</handoff>"}
             )
             assert (expected in messages) == (case != "context_limit")
-            assert all("sampler_compaction_summary" not in m and "sampler_environment" not in m for m in messages)
+            assert all("sampler_compaction_summary" not in m for m in messages)
             if case != "context_limit":
                 assert all(m.get("content") != "recent answer" for m in messages)
             if case == "overlong_input":

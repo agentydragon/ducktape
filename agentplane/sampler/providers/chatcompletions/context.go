@@ -23,13 +23,12 @@ type toolCall struct {
 
 type message struct {
 	Role string `json:"role"`
-	// Native origin metadata. The legacy summary marker also marks earlier compacted environments.
-	CompactionGenerated  bool       `json:"sampler_compaction_summary,omitempty"`
-	GeneratedEnvironment bool       `json:"sampler_environment,omitempty"`
-	Content              string     `json:"content,omitempty"`
-	Reasoning            string     `json:"reasoning_content,omitempty"`
-	ToolCalls            []toolCall `json:"tool_calls,omitempty"`
-	ToolID               string     `json:"tool_call_id,omitempty"`
+	// Marks the generated handoff and environment notice in the native context.
+	CompactionGenerated bool       `json:"sampler_compaction_summary,omitempty"`
+	Content             string     `json:"content,omitempty"`
+	Reasoning           string     `json:"reasoning_content,omitempty"`
+	ToolCalls           []toolCall `json:"tool_calls,omitempty"`
+	ToolID              string     `json:"tool_call_id,omitempty"`
 }
 
 // Chat Completions requires content for system, user and tool messages, even when empty.
@@ -74,7 +73,6 @@ func (c *Context) recordsFrom(start int, project bool) ([]json.RawMessage, error
 	for _, m := range c.messages[start:] {
 		if project {
 			m.CompactionGenerated = false
-			m.GeneratedEnvironment = false
 		}
 		raw, err := json.Marshal(m)
 		if err != nil {
@@ -102,28 +100,27 @@ func (c *Context) AppendRecords(records []json.RawMessage) error {
 }
 
 func (c *Context) AppendUser(parts []protocol.ContentPart) error {
-	return c.appendText(message{Role: "user"}, parts)
+	return c.appendText("user", parts)
 }
 
 func (c *Context) AppendNotice(parts []protocol.ContentPart) error {
-	return c.appendText(message{Role: "system"}, parts)
+	return c.appendText("system", parts)
 }
 
 func (c *Context) AddEnvironment(parts []protocol.ContentPart, afterCompaction bool) error {
-	role := "user"
-	if afterCompaction {
-		role = "system"
+	if err := c.AppendNotice(parts); err != nil {
+		return err
 	}
-	return c.appendText(message{Role: role, GeneratedEnvironment: true}, parts)
+	c.messages[len(c.messages)-1].CompactionGenerated = afterCompaction
+	return nil
 }
 
-func (c *Context) appendText(m message, parts []protocol.ContentPart) error {
+func (c *Context) appendText(role string, parts []protocol.ContentPart) error {
 	text, err := textParts(parts)
 	if err != nil {
 		return err
 	}
-	m.Content = text
-	c.messages = append(c.messages, m)
+	c.messages = append(c.messages, message{Role: role, Content: text})
 	return nil
 }
 

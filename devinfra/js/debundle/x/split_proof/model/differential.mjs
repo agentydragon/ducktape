@@ -934,6 +934,7 @@ const asyncGenerator = async function* () {};
 const intrinsicPrototypes = {
   "AsyncGeneratorFunction.prototype": Object.getPrototypeOf(asyncGenerator),
   "AsyncGenerator.prototype": Object.getPrototypeOf(asyncGenerator.prototype),
+  "ArrayIterator.prototype": Object.getPrototypeOf([][Symbol.iterator]()),
   "AsyncIterator.prototype": Object.getPrototypeOf(Object.getPrototypeOf(asyncGenerator.prototype)),
   "AsyncFunction.prototype": Object.getPrototypeOf(async () => {}),
   "GeneratorFunction.prototype": Object.getPrototypeOf(generator),

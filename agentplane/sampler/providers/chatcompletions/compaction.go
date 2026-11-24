@@ -125,16 +125,11 @@ func (c *CompactionConfig) Compatible(other *CompactionConfig) bool {
 type CompactionPlan struct {
 	originalSize int
 	users        []message
-	environment  string
 	config       CompactionConfig
 }
 
 func (m message) isAuthoredUser() bool {
-	return m.Role == "user" && !m.isGenerated()
-}
-
-func (m message) isGenerated() bool {
-	return m.CompactionGenerated || m.GeneratedEnvironment
+	return m.Role == "user" && !m.CompactionGenerated
 }
 
 func userMessageTokens(text string) int {
@@ -143,7 +138,7 @@ func userMessageTokens(text string) int {
 
 func (c *Context) CanCompact(keepRecentTokens int) bool {
 	for _, m := range c.messages {
-		if m.isGenerated() {
+		if m.CompactionGenerated || m.Role == "system" {
 			continue
 		}
 		if !m.isAuthoredUser() {
@@ -191,7 +186,7 @@ func (c *Context) serializedSize() (int, error) {
 	return size, nil
 }
 
-func (c *Context) PrepareCompaction(config CompactionConfig, environment string) (*CompactionPlan, error) {
+func (c *Context) PrepareCompaction(config CompactionConfig) (*CompactionPlan, error) {
 	if err := c.CheckSettled(); err != nil {
 		return nil, err
 	}
@@ -203,7 +198,7 @@ func (c *Context) PrepareCompaction(config CompactionConfig, environment string)
 	if err != nil {
 		return nil, err
 	}
-	return &CompactionPlan{originalSize: size, users: c.recentUsers(tokens), environment: environment, config: config}, nil
+	return &CompactionPlan{originalSize: size, users: c.recentUsers(tokens), config: config}, nil
 }
 
 func (p *CompactionPlan) Apply(records []json.RawMessage, audit Audit) (*Context, error) {
@@ -216,21 +211,23 @@ func (p *CompactionPlan) Apply(records []json.RawMessage, audit Audit) (*Context
 	if err != nil {
 		return nil, rejectCompaction(err.Error())
 	}
-	replacement := slices.Clone(p.users)
-	if p.environment != "" {
-		replacement = slices.Insert(replacement, max(0, len(replacement)-1), message{
-			Role: "system", Content: p.environment, GeneratedEnvironment: true,
-		})
-	}
-	result := &Context{messages: append(replacement, handoff)}
-	newSize, err := result.serializedSize()
-	if err != nil {
+	result := &Context{messages: append(slices.Clone(p.users), handoff)}
+	if err := p.CheckReduction(result); err != nil {
 		return nil, err
 	}
-	if newSize >= p.originalSize {
-		return nil, rejectCompaction("summary did not reduce serialized model context")
-	}
 	return result, nil
+}
+
+// CheckReduction validates the whole replacement after the runtime adds its environment.
+func (p *CompactionPlan) CheckReduction(result *Context) error {
+	newSize, err := result.serializedSize()
+	if err != nil {
+		return err
+	}
+	if newSize >= p.originalSize {
+		return rejectCompaction("summary did not reduce serialized model context")
+	}
+	return nil
 }
 
 func rejectCompaction(reason string) error {

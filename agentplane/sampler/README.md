@@ -373,8 +373,10 @@ active context, leaving the append-only conversation and History intact. `keep_r
 summarizes all context; positive values preserve that many completed turns and any subsequent input.
 Boundaries move backward over an effort control to keep signed thinking valid. The signed summary
 goes first, followed directly by the unchanged suffix. Summarized effort is restored after the next
-new user message. Live cells and unanswered tools prevent compaction; failed compaction preserves
-old context. Background compaction and dynamic definitions remain in the [task DAG](../plans/task_dag.md).
+new user message. Compaction waits for model tool calls to be answered. Yielded cells keep running
+on their existing host. The next sample sees the current execution handles and any queued cell
+notifications. Failed compaction preserves old context. Background compaction and dynamic
+definitions remain in the [task DAG](../plans/task_dag.md).
 Langfuse export is an independent deferred follow-up; native exchanges are already retained in
 the sampler DB.
 

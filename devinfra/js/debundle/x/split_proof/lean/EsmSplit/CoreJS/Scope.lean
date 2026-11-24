@@ -440,7 +440,7 @@ theorem Same.cls_succ (env env' : Env) (name : String) (self : Bool) (ctor : Fun
       exact List.mem_append_right _ (fieldInits_free members _ (List.of_mem_zip hzip).2 x hx)
 
 theorem Same.derived_succ (env env' : Env) (name : String) (self : Bool) (parent : Expr) (members : List ClassMember)
-    (ctor : Option (List Stmt × List Expr × Func))
+    (ctor : Option (List Stmt × Option (List Expr) × Func))
     (hN : Agree (Expr.derived name self parent members ctor).free env env') :
     (evalExpr (n + 1) env (.derived name self parent members ctor) : M W _) =
       evalExpr (n + 1) env' (.derived name self parent members ctor) := by

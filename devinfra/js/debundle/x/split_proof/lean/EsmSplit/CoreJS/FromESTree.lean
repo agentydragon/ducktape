@@ -204,12 +204,6 @@ private def withBindingDefault (name : Name) (fallback : Option Expr) : Expr :=
   | none => .var name
   | some init => .cond (.binary .strictEq (.var name) .undef) init (.var name)
 
-/-- These expressions produce strings whenever they complete normally. Loose equality and inequality
-between two such operands never invoke numeric or object coercion. -/
-private def stringOperand : Expr → Bool
-  | .str _ | .unary .typeof _ | .prim (.globalTypeof _) [] => true
-  | _ => false
-
 /-- A numeric property name uses the string form of the parsed Number, independent of its source spelling. -/
 private def staticPropertyName (key : Json) : Except String Name := do
   if (← field key "type") == "Literal" then
@@ -582,10 +576,8 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     | "===" => return .binary .strictEq left right
     | "!==" => return .binary .strictNe left right
     | "in" => return .hasProp left right
-    | "==" | "!=" =>
-      unless stringOperand left && stringOperand right do
-        throw s!"linked {op} requires two string operands (string literals or typeof expressions)"
-      return .binary (if op == "==" then .eq else .ne) left right
+    | "==" => return .binary .eq left right
+    | "!=" => return .binary .ne left right
     | _ => throw s!"unsupported linked binary operator {op}"
   | "LogicalExpression" =>
     let op : LogOp ← match ← field j "operator" with
@@ -734,7 +726,7 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
 /-- Split a derived constructor at its direct super call, including a call at the head
 of a comma expression. All three parts run with the same parameter and local cells. -/
 private partial def linkedDerivedConstructor (profile : HostProfile) (imports : List Name)
-    (name : Name) (fn : Json) : Except String (List Stmt × List Expr × Func) := do
+    (name : Name) (fn : Json) : Except String (List Stmt × Option (List Expr) × Func) := do
   for param in ← fn.getObjValAs? (Array Json) "params" do
     if (← field param "type") == "AssignmentPattern" then
       discard <| localBinding (← param.getObjVal? "left")
@@ -759,7 +751,15 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
       checkBeforeSuper expr
       before := before.push (.expr (← linkedExpr profile imports true "" expr))
     | other => throw s!"unsupported {other} before super"
-  let args ← (← call.getObjValAs? (List Json) "arguments").mapM fun arg => do
+  let rawArgs ← call.getObjValAs? (List Json) "arguments"
+  let forward := match rawArgs with
+    | [arg] => (field arg "type").toOption == some "SpreadElement" &&
+      (arg.getObjVal? "argument" >>= identifier).toOption == some "arguments" &&
+      (arg.getObjVal? "argument" >>= (field · "k")).toOption == some "L"
+    | _ => false
+  let args ← if forward && before.isEmpty && (← fn.getObjValAs? (Array Json) "params").isEmpty then
+    pure none
+  else some <$> rawArgs.mapM fun arg => do
     checkBeforeSuper arg
     linkedExpr profile imports true "" arg
   let stmts := rest.map (fun e => Json.mkObj [("type", .str "ExpressionStatement"), ("expression", e)]) ++ tail
@@ -931,7 +931,7 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
     Except String Stmt := do
   let kind ← field j "type"
   let nested := scope != .module
-  if nested || ["TryStatement", "ForStatement"].contains kind then
+  if nested || ["IfStatement", "TryStatement", "ForStatement"].contains kind then
     let blockScope := if nested then scope else LinkedScope.moduleBlock
     match kind with
     | "BlockStatement" => return ← linkedBlock profile imports scope j
@@ -941,9 +941,9 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
     | "EmptyStatement" => return .block []
     | "IfStatement" =>
       let test ← linkedExpr profile imports true "" (← j.getObjVal? "test")
-      let consequent ← linkedStatement profile imports scope (← j.getObjVal? "consequent")
+      let consequent ← linkedStatement profile imports blockScope (← j.getObjVal? "consequent")
       let alternate ← j.getObjVal? "alternate"
-      let elseBranch ← if alternate == .null then pure (.block []) else linkedStatement profile imports scope alternate
+      let elseBranch ← if alternate == .null then pure (.block []) else linkedStatement profile imports blockScope alternate
       return .ite test consequent elseBranch
     | "SwitchStatement" => return ← linkedSwitch profile imports scope j
     | "VariableDeclaration" =>

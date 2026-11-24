@@ -4,7 +4,9 @@ import { pathToFileURL } from "node:url";
 import {
   assertCertified,
   array,
+  caseShard,
   exportNamed,
+  forcePreview,
   literal,
   lower,
   moduleEvaluationOrder,
@@ -42,22 +44,32 @@ const spec = {
   sequential: true,
 };
 const dir = path.join(root, "dense-array-batch");
-const { sourceFile, specFile } = prepare(dir, { source, provider: "", spec });
+const files = prepare(dir, { source, provider: "", spec });
+const { sourceFile, specFile } = files;
 const out = path.join(dir, "out");
-const { verdict, log } = lower(sourceFile, specFile, out);
-assertCertified(verdict, log);
-assert.deepEqual(moduleEvaluationOrder(out, entry), [...order, entry]);
-assert.deepEqual(lower(sourceFile, specFile, out, ["--check-output"]).verdict, verdict);
+const runCase = caseShard();
+const emit = runCase("certified emission and runtime");
+if (emit) {
+  const { verdict, log } = lower(sourceFile, specFile, out);
+  assertCertified(verdict, log);
+  assert.deepEqual(moduleEvaluationOrder(out, entry), [...order, entry]);
 
-const expectedRows = Array.from({ length: rowCount }, (_, index) => [
-  `row-${index}`,
-  undefined,
-  [[index], [index % 2 === 0]],
-  [],
-]);
-for (const file of [sourceFile, path.join(out, entry)]) {
-  const namespace = await import(pathToFileURL(file).href);
-  assert.deepEqual(namespace.rows, expectedRows);
-  assert.equal(new Set(namespace.rows.map((row) => row[3])).size, rowCount);
-  assert.equal(namespace.marker, "ready");
+  const expectedRows = Array.from({ length: rowCount }, (_, index) => [
+    `row-${index}`,
+    undefined,
+    [[index], [index % 2 === 0]],
+    [],
+  ]);
+  for (const file of [sourceFile, path.join(out, entry)]) {
+    const namespace = await import(pathToFileURL(file).href);
+    assert.deepEqual(namespace.rows, expectedRows);
+    assert.equal(new Set(namespace.rows.map((row) => row[3])).size, rowCount);
+    assert.equal(namespace.marker, "ready");
+  }
+}
+
+if (runCase("exact disk verification")) {
+  if (!emit) forcePreview(files, out);
+  const { verdict, log } = lower(sourceFile, specFile, out, ["--check-output"]);
+  assertCertified(verdict, log);
 }
