@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { assertCertifiedResult, assertRejected, lower, workerSplit } from "./linked_programs.mjs";
+import { assertCertifiedResult, assertRejected, lower, observe, workerSplit } from "./linked_programs.mjs";
 
 const copied = workerSplit(
   "object-spread",
@@ -23,3 +23,13 @@ const opaque = workerSplit(
    export const result = run();`
 );
 assertRejected(opaque, /object spread inspects an engine error/);
+
+const supplementary = workerSplit(
+  "object-spread-supplementary",
+  `const run = () => ({ ..."A😀" });
+   export const result = run();`
+);
+assert.deepEqual(observe(supplementary.files.sourceFile, "result"), {
+  result: { 0: "A", 1: "\ud83d", 2: "\ude00" },
+});
+assertRejected(supplementary, /object spread would copy an isolated UTF-16 surrogate/);
