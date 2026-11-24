@@ -778,14 +778,48 @@ impl<Key> Default for ProofTransfers<Key> {
     }
 }
 
-impl<Key: Eq + Hash> ProofTransfers<Key> {
-    fn remove_target(&mut self, source: &Key, target: &Key) {
-        let Some(targets) = self.edges.get_mut(source) else {
-            return;
-        };
-        targets.remove(target);
-        if targets.is_empty() {
-            self.edges.remove(source);
+impl<Key: Clone + Eq + Hash> ProofTransfers<Key> {
+    fn insert<const RETAIN_PREMISES: bool>(&mut self, source: &Key, target: &Key) -> bool {
+        let added = self
+            .edges
+            .entry(source.clone())
+            .or_default()
+            .insert(target.clone());
+        if added && !RETAIN_PREMISES {
+            self.inputs
+                .entry(target.clone())
+                .or_default()
+                .insert(source.clone());
+        }
+        added
+    }
+
+    fn retire<const RETAIN_PREMISES: bool, Fact>(&mut self, key: &Key, fact: &Judgment<Key, Fact>) {
+        // Reuse the explanatory premises when available. Values-only solves
+        // retain their own incoming edges so retirement stays local.
+        if RETAIN_PREMISES {
+            for source in fact.premises() {
+                Self::remove_link(&mut self.edges, source, key);
+            }
+        } else if let Some(sources) = self.inputs.remove(key) {
+            for source in sources {
+                Self::remove_link(&mut self.edges, &source, key);
+            }
+        }
+        let outgoing = self.edges.remove(key);
+        if !RETAIN_PREMISES {
+            for target in outgoing.into_iter().flatten() {
+                Self::remove_link(&mut self.inputs, &target, key);
+            }
+        }
+    }
+
+    fn remove_link(index: &mut FxHashMap<Key, FxHashSet<Key>>, from: &Key, to: &Key) {
+        if let Some(neighbors) = index.get_mut(from) {
+            neighbors.remove(to);
+            if neighbors.is_empty() {
+                index.remove(from);
+            }
         }
     }
 }
@@ -941,21 +975,7 @@ impl<'a, R: IterativeRules, const RETAIN_PREMISES: bool> IterativeContext<'a, R,
         let mut dependencies = (!self.dependencies.is_empty()).then(|| self.dependencies.clone());
         for &source_id in &self.reads {
             let source = self.facts.key(source_id);
-            if source_id != id
-                && self
-                    .proof_edges
-                    .edges
-                    .entry(source.clone())
-                    .or_default()
-                    .insert(key.clone())
-            {
-                if !RETAIN_PREMISES {
-                    self.proof_edges
-                        .inputs
-                        .entry(key.clone())
-                        .or_default()
-                        .insert(source.clone());
-                }
+            if source_id != id && self.proof_edges.insert::<RETAIN_PREMISES>(source, key) {
                 // A newly activated edge must also receive atoms that
                 // appeared after the read, even on an unchanged proposal.
                 if let Some(proof) = self
@@ -1161,30 +1181,7 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
         let id = self.facts.id(&key)?;
         let fact = self.facts.remove(id)?;
         self.dependencies.extend(fact.dependencies());
-        // Completion freezes both values and their evidence. The proof queue
-        // has drained; neither incoming nor outgoing live edges are needed.
-        // Reuse the existing premise set when retained, rather than keeping
-        // another forward graph beside the explanatory one.
-        if RETAIN_PREMISES {
-            for source in fact.premises() {
-                self.proof_edges.remove_target(source, &key);
-            }
-        } else if let Some(sources) = self.proof_edges.inputs.remove(&key) {
-            for source in sources {
-                self.proof_edges.remove_target(&source, &key);
-            }
-        }
-        let outgoing = self.proof_edges.edges.remove(&key);
-        if !RETAIN_PREMISES {
-            for target in outgoing.into_iter().flatten() {
-                if let Some(sources) = self.proof_edges.inputs.get_mut(&target) {
-                    sources.remove(&key);
-                    if sources.is_empty() {
-                        self.proof_edges.inputs.remove(&target);
-                    }
-                }
-            }
-        }
+        self.proof_edges.retire::<RETAIN_PREMISES, _>(&key, &fact);
         self.reads.retain(|&read| read != id);
         self.changed.remove(&id);
         // `readers` is the durable reverse of every rule-local `keys` entry
