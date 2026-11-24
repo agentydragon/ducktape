@@ -1,0 +1,44 @@
+# Upstream: packages/excalidraw/element/transformHandles.ts (v0.18.1).
+source_matches:
+  - match: |
+      var DECLARATORS_BEFORE = null,
+        transformHandleSizes = {mouse: 8, pen: 16, touch: 28},
+        ROTATION_RESIZE_HANDLE_GAP = 16,
+        DEFAULT_OMIT_SIDES = {e: !0, s: !0, n: !0, w: !0},
+        OMIT_SIDES_FOR_LINE_SLASH = {e: !0, s: !0, n: !0, w: !0, nw: !0, se: !0},
+        OMIT_SIDES_FOR_LINE_BACKSLASH = {e: !0, s: !0, n: !0, w: !0},
+        generateTransformHandle = (x,y,w,h,cx,cy,angle) => {
+          let [rx,ry] = pointRotateRads(pointFrom(x+w/2,y+h/2),pointFrom(cx,cy),angle);
+          return [rx-w/2, ry-h/2, w, h];
+        },
+        canResizeFromSides = device => !(device.viewport.isMobile || device.isTouchScreen && (isAndroid || isIOS)),
+        getOmitSidesForDevice = device => canResizeFromSides(device) ? DEFAULT_OMIT_SIDES : {},
+        getTransformHandlesFromCoords = ([x1,y1,x2,y2,cx,cy],angle,zoom,pointer,omit={},margin=4,spacing=DEFAULT_TRANSFORM_HANDLE_SPACING) => {
+          let handleSize=transformHandleSizes[pointer], west=handleSize/zoom.value, north=handleSize/zoom.value,
+            east=handleSize/zoom.value, south=handleSize/zoom.value, width=x2-x1, height=y2-y1,
+            dashed=margin/zoom.value, offset=(handleSize-spacing*2)/(2*zoom.value),
+            handles=EXPR, minimum=(5*transformHandleSizes.mouse)/zoom.value;
+          STMT_LIST;
+        },
+        getTransformHandles = (element, zoom, map, pointer="mouse", omit=DEFAULT_OMIT_SIDES) => {
+          if (element.locked || isElbowArrow(element)) return {};
+          STMT_LIST;
+          return getTransformHandlesFromCoords(getElementAbsoluteCoords(element,map,!0),element.angle,zoom,pointer,omit,EXPR,isImageElement(element)?0:void 0);
+        },
+        shouldShowBoundingBox = (selected,state) => {
+          if (state.editingLinearElement) return !1;
+          if (selected.length > 1) return !0;
+          let element=selected[0];
+          return isElbowArrow(element) ? !1 : isLinearElement(element) ? element.points.length > 2 : !0;
+        },
+        DECLARATORS_AFTER = null;
+    bindings:
+      - transformHandleSizes
+      - ROTATION_RESIZE_HANDLE_GAP
+      - DEFAULT_OMIT_SIDES
+      - OMIT_SIDES_FOR_LINE_SLASH
+      - OMIT_SIDES_FOR_LINE_BACKSLASH
+      - generateTransformHandle
+      - getTransformHandlesFromCoords
+      - getTransformHandles
+      - shouldShowBoundingBox
