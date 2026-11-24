@@ -183,7 +183,13 @@ pub(super) fn inventory(
     let baseline_to_arena: BTreeMap<_, _> = baseline
         .modules
         .iter()
-        .map(|(&id, path)| (id, module_ids[&Token::Owner(Owner::Module(path.clone()))]))
+        .enumerate()
+        .map(|(index, path)| {
+            (
+                ModuleId(index),
+                module_ids[&Token::Owner(Owner::Module(path.clone()))],
+            )
+        })
         .chain([(baseline.entry(), entry)])
         .collect();
     let clocks: BTreeMap<_, _> = event_clocks(schedule, baseline.entry())
