@@ -49,7 +49,8 @@ def _entity_name(by_id: dict[int, dict[str, Any]], entity_id: int) -> str:
     return str(row["name"]) if row else f"id={entity_id}"
 
 
-def _resolve_ref(entity_type: EntityType, ref: int | str, by_id: dict[int, dict[str, Any]]) -> Resolved:
+def resolve_entity_ref(entity_type: EntityType, ref: int | str, by_id: dict[int, dict[str, Any]]) -> Resolved:
+    """Resolve against the supplied rows, using the same names and suggestions as the HTTP client."""
     entity_label = entity_type.name.lower().replace("_", " ")
     if isinstance(ref, int):
         if (row := by_id.get(ref)) is not None:
@@ -91,7 +92,7 @@ class GrocyClient(httpx2.AsyncClient):
 
     async def resolve_entity(self, entity_type: EntityType, ref: int | str) -> Resolved:
         """Resolve an ID or name to a validated ``(id, name)`` pair."""
-        return _resolve_ref(entity_type, ref, await self.entities_by_id(entity_type))
+        return resolve_entity_ref(entity_type, ref, await self.entities_by_id(entity_type))
 
     async def entity_name(self, entity_type: EntityType, entity_id: int) -> str:
         """Look up a name by ID, returning ``id=N`` when it is absent."""
@@ -116,7 +117,7 @@ class GrocyClient(httpx2.AsyncClient):
     async def resolve_qu_for_product(self, qu_ref: int | str, product_id: int) -> ResolvedQU:
         """Resolve a QU and validate or convert it for a product's stock QU."""
         units = await self.entities_by_id(EntityType.QUANTITY_UNIT)
-        resolved = _resolve_ref(EntityType.QUANTITY_UNIT, qu_ref, units)
+        resolved = resolve_entity_ref(EntityType.QUANTITY_UNIT, qu_ref, units)
         product = await self.get_entity(EntityType.PRODUCT, product_id)
         if product is None:
             raise ValueError(f"Product id={product_id} not found")

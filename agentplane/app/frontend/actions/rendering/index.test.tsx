@@ -554,9 +554,9 @@ describe("Action presentation slots", () => {
     expect(rendered.textContent).toContain("Failed · Item missing");
   });
 
-  it("shows total inventory stock with the opened subset and matched location", async () => {
+  it("shows each physical location for the same product with its own quantity and opened subset", async () => {
     const action = identity("grocy_sf", "stock_get");
-    const args = { products: ["Kefir"], locations: ["Fridge"] };
+    const args = { products: ["Kefir"], locations: ["Fridge", "Pantry"] };
     expect((await mount(appActionRendering.renderDetailsArguments(action, args))).textContent).toContain(
       "Locations · Fridge"
     );
@@ -572,10 +572,19 @@ describe("Action presentation slots", () => {
           location_name: "Fridge",
           best_before_date: "2026-11-25",
         },
+        {
+          product_id: 21,
+          product_name: "Kefir",
+          amount: 2,
+          amount_opened: 0,
+          qu_name: "Bottle",
+          location_name: "Pantry",
+        },
       ],
       isError: false,
     });
     expect(view.textContent).toContain("Kefir · 3 Bottle in Fridge");
+    expect(view.textContent).toContain("Kefir · 2 Bottle in Pantry");
     expect(view.textContent).toContain("1 opened");
     expect(view.textContent).toContain("Best before 2026-11-25");
   });

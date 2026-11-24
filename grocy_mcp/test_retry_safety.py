@@ -121,17 +121,47 @@ async def test_mutating_post_not_retried_on_timeout(mcp_client: tuple[Client, re
     assert "double-appl" in error, "error should warn against a blind retry"
 
 
-async def test_read_get_still_retried_on_timeout(mcp_client: tuple[Client, respx.Router]) -> None:
-    """Regression guard: reads/GETs still retry on timeout (only mutations changed)."""
+@pytest.mark.parametrize(
+    ("tool", "args", "path", "payload", "failure"),
+    [
+        ("stock_get", {}, "/objects/stock", [], httpx2.ReadTimeout("simulated timeout")),
+        ("stock_get", {}, "/objects/stock", [], httpx.Response(503)),
+        ("stock_entries_list", {"products": [1]}, "/stock/products/1/entries", [], httpx.Response(503)),
+        ("get_below_minimum_stock", {}, "/stock/volatile", {"missing_products": []}, httpx.Response(503)),
+    ],
+)
+async def test_stock_reports_retry_temporary_read_failures(
+    mcp_client: tuple[Client, respx.Router],
+    tool: str,
+    args: dict,
+    path: str,
+    payload: list | dict,
+    failure: httpx2.ReadTimeout | httpx.Response,
+) -> None:
     client, router = mcp_client
+    route = router.get(path).mock(side_effect=[failure, httpx.Response(200, json=payload)])
+    assert unwrap_result(await client.call_tool(tool, args)) == []
+    assert route.calls.call_count == 2
 
-    stock_route = router.get("/stock").mock(
-        side_effect=[httpx2.ReadTimeout("simulated timeout"), httpx.Response(200, json=[])]
-    )
 
-    result = await client.call_tool("stock_get", {"products": [], "locations": []})
-    assert unwrap_result(result) == []
-    assert stock_route.calls.call_count == 2, "read GET should retry after a timeout"
+async def test_stock_entries_keep_other_products_when_a_name_is_missing(
+    mcp_client: tuple[Client, respx.Router],
+) -> None:
+    client, router = mcp_client
+    products = router.get("/objects/products").respond(json=PRODUCTS)
+    router.get("/stock/products/1/entries").respond(json=[{"id": 17, "product_id": 1, "amount": 3}])
+
+    rows = unwrap_result(await client.call_tool("stock_entries_list", {"products": ["TestProduct", "Absent", 1]}))
+    assert [row["kind"] for row in rows] == ["ok", "error", "ok"]
+    assert rows[0]["entry"] == rows[2]["entry"]
+    assert rows[0]["entry"]["entry_id"] == 17
+    assert "Absent" in rows[1]["error"]
+    assert products.calls.call_count == 1
+
+    products.respond(json=[{**PRODUCTS[0], "name": "Renamed product"}])
+    [row] = unwrap_result(await client.call_tool("stock_entries_list", {"products": [1]}))
+    assert row["entry"]["product_name"] == "Renamed product"
+    assert products.calls.call_count == 2
 
 
 async def test_shopping_list_catalogs_are_read_once_per_report(mcp_client: tuple[Client, respx.Router]) -> None:

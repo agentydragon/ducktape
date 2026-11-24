@@ -1,17 +1,9 @@
-"""Concurrency is bounded by an asyncio.Semaphore so that large batches don't
-overwhelm Grocy's PHP/SQLite backend. The authenticated backend client is a
-FastMCP dependency resolved once before the batch tool body, then shared by its
-item workers. Reads retry transient errors with exponential backoff.
+"""Handwritten Grocy batch tools share one authenticated client per MCP call.
 
-IMPORTANT: reads/GETs go through _retry(), which retries transient errors
-including timeouts. Mutating requests go through _retry_mutation(), which
-retries only errors that prove no request was sent. A timeout, transport
-failure, or server error may arrive after Grocy applied the mutation, so a
-blind re-send can double-apply it (the 2026-04-17 stock-inflation incident:
-products 90, 95, 97). Such ambiguous outcomes raise
-MutationMayHaveAppliedError so the caller can verify state before retrying
-manually. The follow-up GET that reads new_amount is best-effort, outside any
-retry loop.
+Retried GETs check HTTP status inside each attempt. A mutation can retry only
+when the request was never sent. Retrying an ambiguous response can apply the
+same purchase twice (the 2026-04-17 stock-inflation incident). Follow-up reads
+for purchase receipts run outside the mutation retry loop.
 """
 
 from __future__ import annotations
@@ -21,9 +13,11 @@ import functools
 import json
 import logging
 import traceback
+from collections import defaultdict
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from typing import Annotated, Any
+from typing import Annotated, Any, Self
 
 import httpx2
 from fastmcp import FastMCP
@@ -31,7 +25,7 @@ from fastmcp.dependencies import Depends
 from pydantic import Field
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential
 
-from grocy_mcp.client import GrocyClient, ResolvedQU
+from grocy_mcp.client import GrocyClient, ResolvedQU, resolve_entity_ref
 from grocy_mcp.grocy_types import EntityType, GettableEntityType, ReadableEntityType
 from grocy_mcp.mcp_types import (
     DETAIL_DESC,
@@ -54,7 +48,6 @@ from grocy_mcp.mcp_types import (
     EditOk,
     EditProductItem,
     EditShoppingListField,
-    EditStockEntryField,
     EditStockEntryItem,
     FullLocation,
     FullProduct,
@@ -91,6 +84,56 @@ def _parse_date(value: str | None) -> date | None:
     except ValueError:
         logger.warning("unparseable date from Grocy: %r", value)
         return None
+
+
+def _entry_is_open(entry: dict[str, Any]) -> bool:
+    return entry.get("open") in (True, 1, "1")
+
+
+def _entry_location_id(entry: dict[str, Any], product: dict[str, Any] | None) -> int:
+    location_id = entry.get("location_id")
+    if location_id is None:  # Older stock entries use the product's default location.
+        location_id = product["location_id"] if product else 0
+    return int(location_id)
+
+
+@dataclass
+class _StockEntryCatalog:
+    products: dict[int, dict[str, Any]]
+    unit_names: dict[int, str]
+    locations: dict[int, dict[str, Any]]
+
+    @classmethod
+    async def load(cls, client: GrocyClient) -> Self:
+        products, units, locations = await asyncio.gather(
+            client.entities_by_id(EntityType.PRODUCT),
+            client.entity_name_map(EntityType.QUANTITY_UNIT),
+            client.entities_by_id(EntityType.LOCATION),
+        )
+        return cls(products, units, locations)
+
+    def location_name(self, location_id: int) -> str:
+        location = self.locations.get(location_id)
+        return str(location["name"]) if location else f"id={location_id}"
+
+    def describe(self, entry: dict[str, Any]) -> StockEntryDetail:
+        product_id = int(entry["product_id"])
+        product = self.products.get(product_id)
+        product_name = str(product["name"]) if product else f"id={product_id}"
+        stock_qu_id = int(product["qu_id_stock"]) if product else 0
+        return StockEntryDetail(
+            entry_id=int(entry["id"]),
+            product_id=product_id,
+            product_name=product_name,
+            amount=float(entry["amount"]),
+            qu_name=self.unit_names.get(stock_qu_id, f"id={stock_qu_id}"),
+            location_name=self.location_name(_entry_location_id(entry, product)),
+            best_before_date=_parse_date(entry.get("best_before_date")),
+            purchased_date=_parse_date(entry.get("purchased_date")),
+            price=float(entry["price"]) if entry.get("price") is not None else None,
+            open=_entry_is_open(entry),
+            note=entry.get("note"),
+        )
 
 
 def _date_to_str(value: date | None) -> str | None:
@@ -242,6 +285,15 @@ def register_batch_tools(
                 raise
         raise AssertionError("unreachable")
 
+    async def _get_with_retry(
+        client: GrocyClient, path: str, *, params: dict[str, int] | None = None
+    ) -> httpx2.Response:
+        async def get() -> httpx2.Response:
+            response = await client.get(path, params=params)
+            return response.raise_for_status()
+
+        return await _retry(get)
+
     async def _retry_mutation[T](fn: Callable[[], Awaitable[T]], *, describe: str) -> T:
         return await _retry(fn, mutation=True, describe=describe)
 
@@ -287,19 +339,23 @@ def register_batch_tools(
     ) -> dict[str, Any]:
         body: dict[str, Any] = {
             key: current.get(key)
-            for key in ("amount", "best_before_date", "purchased_date", "price", "location_id", "note")
+            # Grocy replaces all eight fields and journals the edit, including the purchase store.
+            for key in (
+                "amount",
+                "best_before_date",
+                "purchased_date",
+                "price",
+                "location_id",
+                "shopping_location_id",
+                "note",
+            )
         }
-        body["open"] = current.get("open") in (True, 1, "1")
+        body["open"] = _entry_is_open(current)
         body.update(item.model_dump(mode="json", include=set(body), exclude_unset=True, exclude_none=True))
         if item.location is not None:
             body["location_id"] = await _resolve_id(client, EntityType.LOCATION, item.location)
-        for field, key in {
-            EditStockEntryField.PRICE: "price",
-            EditStockEntryField.PURCHASED_DATE: "purchased_date",
-            EditStockEntryField.NOTE: "note",
-        }.items():
-            if field in (item.clear_fields or ()):
-                body[key] = None
+        for field in item.clear_fields or ():
+            body[field.value] = None
         return body
 
     async def _list_reference(
@@ -309,37 +365,6 @@ def register_batch_tools(
         if detail == DetailLevel.BRIEF:
             return [BriefListItem(id=int(row["id"]), name=str(row["name"])) for row in rows]
         return [model.model_validate(row) for row in rows]
-
-    async def _load_stock_entry_enricher(client: GrocyClient) -> Callable[[dict[str, Any]], StockEntryDetail]:
-        products_by_id, qu_names, location_names = await asyncio.gather(
-            client.entities_by_id(EntityType.PRODUCT),
-            client.entity_name_map(EntityType.QUANTITY_UNIT),
-            client.entity_name_map(EntityType.LOCATION),
-        )
-
-        def enrich(entry: dict[str, Any]) -> StockEntryDetail:
-            product_id = int(entry["product_id"])
-            product = products_by_id.get(product_id)
-            product_name = str(product["name"]) if product else f"id={product_id}"
-            stock_qu_id = int(product["qu_id_stock"]) if product else 0
-            loc_id = entry.get("location_id")
-            if loc_id is None:
-                loc_id = int(product["location_id"]) if product else 0
-            return StockEntryDetail(
-                entry_id=int(entry["id"]),
-                product_id=product_id,
-                product_name=product_name,
-                amount=float(entry["amount"]),
-                qu_name=qu_names.get(stock_qu_id, f"id={stock_qu_id}"),
-                location_name=location_names.get(int(loc_id), f"id={loc_id}"),
-                best_before_date=_parse_date(entry.get("best_before_date")),
-                purchased_date=_parse_date(entry.get("purchased_date")),
-                price=float(entry["price"]) if entry.get("price") is not None else None,
-                open=entry.get("open") in (True, 1, "1"),
-                note=entry.get("note"),
-            )
-
-        return enrich
 
     @mcp.tool()
     async def entities_create(
@@ -390,12 +415,8 @@ def register_batch_tools(
         _check_batch_size(entity_types, "entity_types")
 
         async def _fetch(entity_type: ReadableEntityType) -> tuple[str, list[Any]]:
-            async def _do() -> tuple[str, list[Any]]:
-                r = await client.get(f"/objects/{entity_type}")
-                r.raise_for_status()
-                return str(entity_type), r.json()
-
-            return await _retry(_do)
+            r = await _get_with_retry(client, f"/objects/{entity_type}")
+            return str(entity_type), r.json()
 
         pairs = await asyncio.gather(*[_fetch(et) for et in entity_types])
         return dict(pairs)
@@ -444,13 +465,8 @@ def register_batch_tools(
         """
 
         async def _fetch(object_id: int) -> GetOk:
-            async def _do() -> dict[str, Any]:
-                r = await client.get(f"/objects/{entity_type}/{object_id}")
-                r.raise_for_status()
-                data: dict[str, Any] = r.json()
-                return data
-
-            data = await _retry(_do)
+            r = await _get_with_retry(client, f"/objects/{entity_type}/{object_id}")
+            data = r.json()
             names = None
             if entity_type == "shopping_list":
                 (product, unit), shopping_list = await asyncio.gather(
@@ -487,7 +503,7 @@ def register_batch_tools(
         ],
         client: GrocyClient = client_dependency,
     ) -> list[StockEntry]:
-        """Aggregate stock-on-hand: product, amount, QU, location, best-before.
+        """Return one row per product and physical storage location, with its amount, stock QU and earliest best-before date.
 
         Answers "what's in stock?" Filters AND together; pass empty lists
         (the default) for the whole inventory. Use this before
@@ -498,46 +514,36 @@ def register_batch_tools(
         includes `amount_opened`; the opened amount is a subset, not an
         additional bucket.
         """
-        stock_r, qu_names, location_names = await asyncio.gather(
-            _retry(lambda: client.get("/stock")),
-            client.entity_name_map(EntityType.QUANTITY_UNIT),
-            client.entity_name_map(EntityType.LOCATION),
+        stock, catalog = await asyncio.gather(
+            _get_with_retry(client, "/objects/stock"), _StockEntryCatalog.load(client)
         )
-        stock_r.raise_for_status()
-        stock_data: list[dict[str, Any]] = stock_r.json()
+        product_ids = {resolve_entity_ref(EntityType.PRODUCT, ref, catalog.products).id for ref in products}
+        location_ids = {resolve_entity_ref(EntityType.LOCATION, ref, catalog.locations).id for ref in locations}
 
-        product_ids: set[int] = set()
-        for ref in products:
-            product_ids.add(await _resolve_id(client, EntityType.PRODUCT, ref))
-        location_ids: set[int] = set()
-        for ref in locations:
-            location_ids.add(await _resolve_id(client, EntityType.LOCATION, ref))
+        lots: defaultdict[tuple[int, int], list[dict[str, Any]]] = defaultdict(list)
+        for entry in stock.json():
+            product_id = int(entry["product_id"])
+            product = catalog.products.get(product_id)
+            if product is None or not int(product.get("active", 1)) or (product_ids and product_id not in product_ids):
+                continue
+            location_id = _entry_location_id(entry, product)
+            if not location_ids or location_id in location_ids:
+                lots[product_id, location_id].append(entry)
 
         result = []
-        for entry in stock_data:
-            pid = int(entry["product_id"])
-            if product_ids and pid not in product_ids:
-                continue
-
-            product = entry.get("product") or {}
-            loc_id_raw = product.get("location_id")
-            loc_id = int(loc_id_raw) if loc_id_raw is not None else None
-
-            if location_ids and (loc_id is None or loc_id not in location_ids):
-                continue
-
-            qu_name = _lookup_name(product, "qu_id_stock", qu_names)
-            location_name = _lookup_name(product, "location_id", location_names)
-
+        for (product_id, location_id), entries in sorted(lots.items()):
+            product = catalog.products[product_id]
+            dates = (_parse_date(entry.get("best_before_date")) for entry in entries)
+            unit_id = int(product["qu_id_stock"])
             result.append(
                 StockEntry(
-                    product_id=pid,
-                    product_name=str(product.get("name", f"product_id={pid}")),
-                    amount=float(entry["amount"]),
-                    amount_opened=float(entry["amount_opened"]),
-                    qu_name=qu_name,
-                    location_name=location_name,
-                    best_before_date=_parse_date(entry.get("best_before_date")),
+                    product_id=product_id,
+                    product_name=str(product["name"]),
+                    amount=sum(float(entry["amount"]) for entry in entries),
+                    amount_opened=sum(float(entry["amount"]) for entry in entries if _entry_is_open(entry)),
+                    qu_name=catalog.unit_names.get(unit_id, f"id={unit_id}"),
+                    location_name=catalog.location_name(location_id),
+                    best_before_date=min(filter(None, dates), default=None),
                 )
             )
         return result
@@ -753,19 +759,24 @@ def register_batch_tools(
         if (products is None) == (entry_ids is None):
             raise ValueError("Provide exactly one of 'products' or 'entry_ids', not both or neither.")
 
+        if not products and not entry_ids:
+            return []
         if products is not None:
             _check_batch_size(products, "products")
-            enrich = await _load_stock_entry_enricher(client)
+        elif entry_ids is not None:
+            _check_batch_size(entry_ids, "entry_ids")
+        catalog = await _StockEntryCatalog.load(client)
+
+        if products is not None:
             all_results: list[StockEntryOk | StockEntryError] = []
             for product_ref in products:
-                resolved = await client.resolve_entity(EntityType.PRODUCT, product_ref)
                 try:
-                    r = await _retry(functools.partial(client.get, f"/stock/products/{resolved.id}/entries"))
-                    r.raise_for_status()
+                    resolved = resolve_entity_ref(EntityType.PRODUCT, product_ref, catalog.products)
+                    r = await _get_with_retry(client, f"/stock/products/{resolved.id}/entries")
                     entries_data: list[dict[str, Any]] = r.json()
                     for entry_data in entries_data:
                         try:
-                            all_results.append(StockEntryOk(entry=enrich(entry_data)))
+                            all_results.append(StockEntryOk(entry=catalog.describe(entry_data)))
                         except Exception as e:
                             all_results.append(
                                 StockEntryError(entry_id=int(entry_data.get("id", 0)), error=_format_exc(e))
@@ -776,15 +787,10 @@ def register_batch_tools(
 
         # Entry ID mode: batch GET /stock/entry/{id}
         assert entry_ids is not None
-        enrich = await _load_stock_entry_enricher(client)
 
         async def _fetch(entry_id: int) -> StockEntryOk:
-            async def _do() -> StockEntryOk:
-                r = await client.get(f"/stock/entry/{entry_id}")
-                r.raise_for_status()
-                return StockEntryOk(entry=enrich(r.json()))
-
-            return await _retry(_do)
+            r = await _get_with_retry(client, f"/stock/entry/{entry_id}")
+            return StockEntryOk(entry=catalog.describe(r.json()))
 
         return await _ordered_batch(
             entry_ids,
@@ -825,8 +831,8 @@ def register_batch_tools(
                 updated_r = await client.get(f"/stock/entry/{item.entry_id}")
                 updated_r.raise_for_status()
                 updated = updated_r.json()
-                enrich = await _load_stock_entry_enricher(client)
-                return StockEntryEditOk(entry=enrich(updated), changes=changes or None)
+                catalog = await _StockEntryCatalog.load(client)
+                return StockEntryEditOk(entry=catalog.describe(updated), changes=changes or None)
             except Exception as e:
                 return StockEntryError(entry_id=item.entry_id, error=_format_exc(e))
 
@@ -1363,8 +1369,7 @@ def register_batch_tools(
 
     async def _fetch_volatile(client: GrocyClient, *, days_ahead: int | None = None) -> dict[str, Any]:
         params = {"due_soon_days": days_ahead} if days_ahead is not None else {}
-        r = await _retry(lambda: client.get("/stock/volatile", params=params))
-        r.raise_for_status()
+        r = await _get_with_retry(client, "/stock/volatile", params=params)
         data: dict[str, Any] = r.json()
         return data
 
