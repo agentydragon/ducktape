@@ -518,6 +518,7 @@ lean_axiom_test(
         "CoreJS.reachFrame_observeGlobalTypeof",
         "CoreJS.reachFrame_readHostRef",
         "CoreJS.DeclarationArtifacts.check_sound",
+        "CoreJS.DeclarationArtifacts.prepare?",
         "CoreJS.DeclarationArtifacts.order_kept",
         "CoreJS.DeclarationArtifacts.moves",
         "CoreJS.DeclarationInput.matches_sound",
