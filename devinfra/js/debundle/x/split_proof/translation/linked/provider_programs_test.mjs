@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  assertCertified,
   root,
   id,
   literal,
@@ -196,8 +197,7 @@ function eagerProvider() {
   });
   const out = path.join(dir, "out");
   const { verdict, log } = lower(files.sourceFile, files.specFile, out);
-  assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", log);
+  assertCertified(verdict, log);
   for (const file of [files.sourceFile, path.join(out, "entry.mjs")]) {
     const namespace = await import(pathToFileURL(file).href);
     assert.deepEqual(Object.keys(namespace), ["getValue", "value"]);

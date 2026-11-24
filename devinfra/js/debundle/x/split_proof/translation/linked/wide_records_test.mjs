@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  assertCertified,
   exportNamed,
   id,
   literal,
@@ -51,8 +52,7 @@ const dir = path.join(root, "wide-records");
 const { sourceFile, specFile } = prepare(dir, { source, provider: "", spec });
 const out = path.join(dir, "out");
 const { verdict, log } = lower(sourceFile, specFile, out);
-assert.equal(verdict.status, "certified", log);
-assert.equal(verdict.guarantee, "normal-completion", log);
+assertCertified(verdict, log);
 assert.deepEqual(moduleEvaluationOrder(out, entry), [...order, entry]);
 assert.deepEqual(lower(sourceFile, specFile, out, ["--check-output"]).verdict, verdict);
 

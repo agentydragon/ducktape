@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  assertCertified,
   array,
   arrow,
   assertCertifiedResult,
@@ -69,8 +70,7 @@ function observedProgram(initializer, result) {
     'const worker = [50, { name: "item" }]; const value = () => [0, ...worker, worker[1], ...[4]]; export { value as result };',
     entryUnits
   );
-  assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", log);
+  assertCertified(verdict, log);
   assert.deepEqual(lower(files.sourceFile, files.specFile, out, ["--check-output"]).verdict, verdict);
 
   const emitted = path.join(out, "entry.mjs");
@@ -192,8 +192,7 @@ for (const dependent of [false, true]) {
     candidate = path.join(dir, "preview");
     forcePreview(files, candidate);
   } else {
-    assert.equal(verdict.status, "certified", log);
-    assert.equal(verdict.guarantee, "normal-completion", log);
+    assertCertified(verdict, log);
   }
   assert.deepEqual(moduleEvaluationOrder(candidate, spec.entry), [...spec.order, spec.entry]);
   assert.deepEqual(observe(path.join(candidate, spec.entry), "result"), { result: dependent ? "object" : "string" });
@@ -268,8 +267,7 @@ for (const elements of [[], [literal(2), array([literal(null)])]]) {
       candidate = path.join(dir, "preview");
       forcePreview(files, candidate);
     } else {
-      assert.equal(verdict.status, "certified", log);
-      assert.equal(verdict.guarantee, "normal-completion", log);
+      assertCertified(verdict, log);
     }
     assert.deepEqual(moduleEvaluationOrder(candidate, spec.entry), [...spec.order, spec.entry]);
     for (const [file, target] of [

@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { parse } from "acorn";
 import { generate } from "astring";
 import {
+  assertCertified,
   array,
   exportNamed,
   expression,
@@ -110,8 +111,7 @@ async function expectExports(file, expected) {
   const out = path.join(test.dir, "out");
   const { sourceFile, specFile } = test.files;
   const { verdict, log } = lower(sourceFile, specFile, out);
-  assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", log);
+  assertCertified(verdict, log);
   assert.deepEqual(moduleEvaluationOrder(out, entry), [...order, entry]);
   assert.deepEqual(lower(sourceFile, specFile, out, ["--check-output"]).verdict, verdict);
   await expectExports(sourceFile, test.expected());

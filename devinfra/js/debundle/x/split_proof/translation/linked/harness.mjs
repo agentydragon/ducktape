@@ -251,9 +251,13 @@ export function workerSplit(name, source, entryUnits = ["#1"]) {
   });
 }
 
-export function assertCertifiedResult({ files, out, verdict, log }, result) {
+export function assertCertified(verdict, log) {
   assert.equal(verdict.status, "certified", log);
   assert.equal(verdict.guarantee, "normal-completion", log);
+}
+
+export function assertCertifiedResult({ files, out, verdict, log }, result) {
+  assertCertified(verdict, log);
   for (const file of [files.sourceFile, path.join(out, entry)]) {
     assert.deepEqual(observe(file, "result"), { result }, file);
   }

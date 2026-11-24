@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import {
+  assertCertified,
   block,
   call,
   exportNamed,
@@ -89,8 +90,7 @@ for (const [name, body, expected] of [
   const { files, out, verdict, log } = sequentialSplit(name, source, { "run.mjs": ["#0"], [entry]: ["#1"] }, [
     "run.mjs",
   ]);
-  assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", log);
+  assertCertified(verdict, log);
   for (const file of [files.sourceFile, path.join(out, entry)]) {
     assert.deepEqual(observe(file, "result"), { result: expected });
   }
@@ -134,8 +134,7 @@ for (const [seed, value] of ["value", 42].entries()) {
       candidate = path.join(dir, "preview");
       forcePreview(files, candidate);
     } else {
-      assert.equal(verdict.status, "certified", log);
-      assert.equal(verdict.guarantee, "normal-completion", log);
+      assertCertified(verdict, log);
     }
     assert.deepEqual(moduleEvaluationOrder(candidate, entry), [...order, entry]);
     assert.deepEqual(

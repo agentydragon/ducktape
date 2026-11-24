@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  assertCertified,
   array,
   arrow,
   binary,
@@ -47,8 +48,7 @@ function fixture(name, source, unitCount, moved) {
 }
 
 async function requireCertified({ verdict, log, files, out }, expected) {
-  assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", log);
+  assertCertified(verdict, log);
   const original = await load(files.sourceFile);
   const emitted = await load(path.join(out, entry));
   assert.deepEqual(Object.keys(emitted), ["result"]);

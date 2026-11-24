@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  assertCertified,
   arrow,
   assertCertifiedResult,
   assertRejected,
@@ -27,8 +28,7 @@ const worker = "worker.mjs";
 const load = (file) => import(pathToFileURL(file).href);
 
 function requireCertified({ verdict, log }) {
-  assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", log);
+  assertCertified(verdict, log);
 }
 
 // The setter is deferred until after entry initialization. Its write must still
