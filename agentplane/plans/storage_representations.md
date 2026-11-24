@@ -57,6 +57,20 @@ already removed. Response logging and cross-representation body sharing remain o
 
 ## November 24 recurrence and storage decision
 
+History accumulation predates block packing. On October 11 the staging dry run found **12.8 million
+streamed-delta rows and 2.68 GB of payload** eligible for settlement across 50 of 62 Sessions.
+This measured redundant payload that completions could replace. It excluded indexes and other event
+kinds. [Staging settlement measurements](https://github.com/agentydragon/ducktape/pull/10061)
+
+On November 11, before the first History block writer, `session_event` alone occupied **4,937 MiB**
+(1,836 MiB heap, 780 MiB indexes, 2,321 MiB TOAST). After intervening cleanup, the November 13
+03:13 UTC pre-packing snapshot counted **4,173,159 logical events and zero blocks**. History
+occupied 5.75 GB and `session_event` occupied 4.41 GB. The first packing pass converted 2,953,091
+historical events. After packing and full vacuum, History occupied 4.32 GB, a 24.9% reduction.
+These are dated snapshots across maintenance, so their difference cannot establish an ingestion
+rate. [November 11 relation inventory](../debug/2026_11_11_staging_storage_exhaustion.md#storage-measurements)
+and [November 13 packing and vacuum measurements](../history_service/debug/2026_11_12_event_packing_rollout.md#historical-maintenance).
+
 On November 11 the staging PostgreSQL volume filled at 16 GiB. History event rows, sampler
 events and intents, and GitHub deliveries were the largest measured relations. On November 24
 the operator reported another exhaustion and a volume expansion from 24 to 48 GiB. Across the
