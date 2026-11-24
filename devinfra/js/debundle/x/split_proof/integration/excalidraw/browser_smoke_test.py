@@ -53,6 +53,14 @@ def certify_editor_split(runfiles: Runfiles, source: Path, origin: str) -> dict[
     # Use esbuild's public entry URL. Keep every Rust unit assignment and the
     # validated execution order from the selected graph.
     modules = placement["modules"]
+    canonical = json.loads(resolve(runfiles, os.environ["CANONICAL_EDITOR_SPEC"]).read_text())
+    assert placement["entry"] == canonical["entry"]
+    assert {unit for units in modules.values() for unit in units} == {
+        unit for units in canonical["modules"].values() for unit in units
+    }
+    for owner, units in modules.items():
+        if owner != placement["entry"]:
+            assert set(units) <= set(canonical["modules"][owner]), owner
     assert source.name not in modules
     assert source.read_bytes() == (bundled_file(runfiles, "EXCALIDRAW_INPUTS", "chunks") / "editor.js").read_bytes()
     modules[source.name] = modules.pop(placement["entry"])
@@ -86,7 +94,7 @@ def certify_editor_split(runfiles: Runfiles, source: Path, origin: str) -> dict[
         assert verdict["status"] == "certified", verdict
         assert verdict["requested"] == "normal-completion", verdict
         assert verdict["guarantee"] == "normal-completion", verdict
-        assert verdict["scope"] == os.environ["EXPECTED_SCOPE"], verdict
+        assert verdict["scope"] == "linked-structural-moves", verdict
         assert verdict["hostProfile"] == "browser-page", verdict
         assert isinstance(verdict["assumptions"], list), verdict
         verdicts.append(verdict)
@@ -211,7 +219,7 @@ async def smoke(
             expected_files.update(overlay)
         for name, file in expected_files.items():
             assert await responses[f"{origin}/{name}"].body() == file.read_bytes(), name
-        if overlay and SCROLL in overlay:
+        if overlay is not None:
             assert await page.evaluate(
                 """async ([editor, scroll]) =>
                     Object.values(await import(scroll)).includes((await import(editor)).Bg)""",

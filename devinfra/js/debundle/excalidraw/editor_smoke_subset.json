@@ -2,6 +2,30 @@
   "modules": [
     {
       "chunk": "editor",
+      "module": "packages/math/utils"
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/math/angle",
+      "bindings": ["normalizeRadians"]
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/element/typechecks",
+      "bindings": [
+        "isInitializedImageElement",
+        "isImageElement",
+        "isEmbeddableElement",
+        "isIframeElement",
+        "isIframeLikeElement",
+        "isTextElement",
+        "isFrameElement",
+        "isMagicFrameElement",
+        "isFrameLikeElement"
+      ]
+    },
+    {
+      "chunk": "editor",
       "module": "packages/excalidraw/scene/scroll",
       "bindings": ["centerScrollOn"],
       "anonymous_statements": []
