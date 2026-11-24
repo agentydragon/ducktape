@@ -368,6 +368,37 @@ func TestSecondCompactionSummarizesPriorHandoff(t *testing.T) {
 	}
 }
 
+func TestCompactionReplacesGeneratedEnvironmentAfterTail(t *testing.T) {
+	state := &Context{messages: []message{
+		{Role: "assistant", Content: "previous handoff", CompactionGenerated: true},
+		{Role: "user", Content: "recent task"},
+		{Role: "system", Content: "regular notice"},
+		{Role: "system", Content: strings.Repeat("old environment ", 100), CompactionGenerated: true},
+	}}
+	config := CompactionConfig{MaxTokens: 64, KeepRecentTokens: new(32)}
+	if state.CanCompact(config.RecentTokenBudget()) {
+		t.Fatal("generated environment alone triggered another compaction")
+	}
+	state.messages = slices.Insert(state.messages, 1, message{Role: "user", Content: strings.Repeat("old work ", 100)})
+	plan, err := state.PrepareCompaction(config, "current environment")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.prefix) != 2 || plan.prefix[0].Content != "previous handoff" {
+		t.Fatal("summary must include the old handoff and newly compactable message")
+	}
+	result, err := plan.Apply([]json.RawMessage{json.RawMessage(`{"role":"assistant","content":"updated handoff"}`)}, Audit{FinishReason: "stop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.messages) != 4 ||
+		result.messages[1].Content != "current environment" ||
+		result.messages[2].Content != "recent task" ||
+		result.messages[3].Content != "regular notice" {
+		t.Fatal("replacement must refresh the generated environment and keep ordinary messages")
+	}
+}
+
 func TestCompactionSummarizesAnOversizeNewestUserMessage(t *testing.T) {
 	context := &Context{}
 	user := strings.Repeat("user-provided data ", 100)

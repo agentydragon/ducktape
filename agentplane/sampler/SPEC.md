@@ -429,9 +429,11 @@ replaced, and appends a user message requesting a handoff. It sets `tool_choice:
 text summary replaces the active prefix only if it reduces serialized context. An upstream context
 limit or incomplete summary leaves the original active context intact. After a successful
 compaction, the retained tail keeps assistant text, tool calls and results, and omits
-`reasoning_content`. The summary source, normal sampling and the append-only transcript retain
-the provider's reasoning. Enable compaction on routes that accept retained assistant messages
-without reasoning, including messages with tool calls.
+`reasoning_content`. The summary request uses the prefix as it stood before that compaction.
+Newly sampled messages and the append-only transcript retain the provider's reasoning.
+A compaction-generated environment notice consumes no tail budget and is refreshed on
+replacement. Enable compaction on routes that accept retained assistant messages without
+reasoning, including messages with tool calls.
 [Staging TabbyAPI replay evidence](../../cluster/cdk8s/litellm/README.md#tabbyapi-reasoning-replay).
 
 The sampler freezes the request body before dispatch and reuses it on retry. Changes to the tail

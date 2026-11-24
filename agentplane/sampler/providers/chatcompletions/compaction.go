@@ -130,6 +130,10 @@ func (c *Context) compactablePrefix(tokens int) int {
 		for start > 0 && c.messages[start].Role == "tool" {
 			start--
 		}
+		if c.messages[start].isCompactionEnvironment() {
+			end = start
+			continue
+		}
 		if c.messages[start].CompactionGenerated {
 			// Everything after the previous handoff fits. There is no new prefix to summarize.
 			return 0
@@ -143,6 +147,10 @@ func (c *Context) compactablePrefix(tokens int) int {
 		end = start
 	}
 	return 0
+}
+
+func (m message) isCompactionEnvironment() bool {
+	return m.CompactionGenerated && m.Role == "system"
 }
 
 func (m message) estimatedTokens() int {
@@ -167,9 +175,14 @@ func (c *Context) PrepareCompaction(config CompactionConfig, environment string)
 	if cut == 0 {
 		return nil, rejectCompaction("no older messages remain outside the recent token budget")
 	}
-	suffix := slices.Clone(c.messages[cut:])
-	for i := range suffix {
-		suffix[i].Reasoning = ""
+	suffix := make([]message, 0, len(c.messages)-cut)
+	for _, m := range c.messages[cut:] {
+		// Completion adds a current environment notice.
+		if m.isCompactionEnvironment() {
+			continue
+		}
+		m.Reasoning = ""
+		suffix = append(suffix, m)
 	}
 	return &CompactionPlan{prefix: slices.Clone(c.messages[:cut]), suffix: suffix, environment: environment, config: config}, nil
 }
