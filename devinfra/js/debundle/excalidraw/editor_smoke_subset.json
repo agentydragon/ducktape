@@ -8,26 +8,43 @@
     },
     {
       "chunk": "editor",
+      "module": "packages/math/angle",
+      "bindings": ["normalizeRadians", "degreesToRadians", "radiansToDegrees", "isRightAngleRads"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/math/vector",
+      "bindings": [
+        "vector",
+        "vectorFromPoint",
+        "vectorCross",
+        "vectorDot",
+        "vectorAdd",
+        "vectorSubtract",
+        "vectorScale",
+        "vectorMagnitudeSq",
+        "vectorMagnitude"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
       "module": "packages/math/point",
-      "bindings": ["isPointWithinBounds"],
-      "anonymous_statements": []
-    },
-    {
-      "chunk": "editor",
-      "module": "packages/excalidraw/store",
-      "bindings": ["hiddenObservedAppStateProp", "isObservedAppState", "CaptureUpdateAction", "StoreIncrementEvent"],
-      "anonymous_statements": []
-    },
-    {
-      "chunk": "editor",
-      "module": "packages/excalidraw/element/newelement",
-      "bindings": ["getTextElementPositionOffsets", "regenerateId"],
-      "anonymous_statements": []
-    },
-    {
-      "chunk": "editor",
-      "module": "packages/excalidraw/element/textmeasurements",
-      "bindings": ["getMinTextElementWidth", "getApproxMinLineHeight"],
+      "bindings": [
+        "pointFrom",
+        "pointFromArray",
+        "pointFromVector",
+        "isPoint",
+        "pointsEqual",
+        "pointRotateRads",
+        "pointTranslate",
+        "pointCenter",
+        "pointDistance",
+        "pointDistanceSq",
+        "pointScaleFromOrigin",
+        "isPointWithinBounds"
+      ],
       "anonymous_statements": []
     },
     {
@@ -63,76 +80,8 @@
     },
     {
       "chunk": "editor",
-      "module": "packages/excalidraw/clipboard",
-      "bindings": [
-        "clipboardContainsElements",
-        "createPasteEvent",
-        "serializeAsClipboardJSON",
-        "copyToClipboard",
-        "copyBlobToClipboardAsPng"
-      ],
-      "anonymous_statements": []
-    },
-    {
-      "chunk": "editor",
-      "module": "packages/excalidraw/data/json",
-      "bindings": [
-        "filterOutDeletedFiles",
-        "saveAsJSON",
-        "loadFromJSON",
-        "isValidExcalidrawData",
-        "isValidLibrary",
-        "serializeLibraryAsJSON",
-        "saveLibraryAsJSON"
-      ],
-      "anonymous_statements": []
-    },
-    {
-      "chunk": "editor",
-      "module": "packages/excalidraw/data/blob",
-      "bindings": [
-        "isImageFileHandleType",
-        "parseLibraryJSON",
-        "getDataURL",
-        "dataURLToFile",
-        "SVGStringToFile",
-        "ImageURLToFile",
-        "getActualMimeTypeFromImage"
-      ],
-      "anonymous_statements": []
-    },
-    {
-      "chunk": "editor",
-      "module": "packages/excalidraw/scene/scroll",
-      "bindings": ["centerScrollOn"],
-      "anonymous_statements": []
-    },
-    {
-      "chunk": "editor",
-      "module": "packages/excalidraw/data/restore",
-      "bindings": [
-        "AllowedExcalidrawActiveTools",
-        "getFontFamilyByName",
-        "repairContainerElement",
-        "repairBoundElement",
-        "repairFrameMembership",
-        "coalesceAppStateValue",
-        "LegacyAppStateMigrations",
-        "restoreLibraryItem",
-        "restoreLibraryItems"
-      ],
-      "anonymous_statements": []
-    },
-    {
-      "chunk": "editor",
-      "module": "packages/excalidraw/scene/normalize",
-      "bindings": ["getNormalizedZoom", "getNormalizedGridSize", "getNormalizedGridStep"],
-      "anonymous_statements": []
-    },
-    {
-      "chunk": "editor",
-      "module": "packages/excalidraw/data/encode",
-      "bindings": ["byteStringToArrayBuffer", "byteStringToString"],
+      "module": "packages/excalidraw/element/textmeasurements",
+      "bindings": ["getMinTextElementWidth", "getApproxMinLineHeight"],
       "anonymous_statements": []
     },
     {
@@ -155,33 +104,33 @@
     },
     {
       "chunk": "editor",
-      "module": "packages/math/angle",
-      "bindings": ["normalizeRadians"],
-      "anonymous_statements": []
-    },
-    {
-      "chunk": "editor",
-      "module": "packages/excalidraw/renderer/staticscene",
-      "bindings": ["GridLineColor", "strokeGrid", "frameClip", "linkIconCanvasCache"],
-      "anonymous_statements": []
-    },
-    {
-      "chunk": "editor",
-      "module": "packages/excalidraw/renderer/staticsvgscene",
-      "bindings": ["roughSVGDrawWithPrecision", "maybeWrapNodesInFrameClipPath"],
-      "anonymous_statements": []
-    },
-    {
-      "chunk": "editor",
-      "module": "packages/excalidraw/snapping",
+      "module": "packages/excalidraw/scene/comparisons",
       "bindings": [
-        "isGridModeEnabled",
-        "isSnappingEnabled",
-        "areRoughlyEqual",
-        "getPointSnaps",
-        "dedupePoints",
-        "isActiveToolNonLinearSnappable"
+        "hasBackground",
+        "hasStrokeColor",
+        "hasStrokeWidth",
+        "hasStrokeStyle",
+        "toolIsArrow",
+        "canHaveArrowheads"
       ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/element/bounds",
+      "bindings": ["getVisibleSceneBounds", "doBoundsIntersect"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/scene/scroll",
+      "bindings": ["centerScrollOn"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/scene/normalize",
+      "bindings": ["getNormalizedZoom", "getNormalizedGridSize", "getNormalizedGridStep"],
       "anonymous_statements": []
     },
     {
@@ -200,21 +149,110 @@
     },
     {
       "chunk": "editor",
-      "module": "packages/excalidraw/element/bounds",
-      "bindings": ["getVisibleSceneBounds", "doBoundsIntersect"],
+      "module": "packages/excalidraw/snapping",
+      "bindings": [
+        "isGridModeEnabled",
+        "isSnappingEnabled",
+        "areRoughlyEqual",
+        "getPointSnaps",
+        "dedupePoints",
+        "isActiveToolNonLinearSnappable"
+      ],
       "anonymous_statements": []
     },
     {
       "chunk": "editor",
-      "module": "packages/excalidraw/scene/comparisons",
+      "module": "packages/excalidraw/element/newelement",
+      "bindings": ["getTextElementPositionOffsets", "_deepCopyElement", "deepCopyElement", "regenerateId"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/emitter",
+      "bindings": ["Emitter"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/store",
+      "bindings": ["hiddenObservedAppStateProp", "isObservedAppState", "CaptureUpdateAction", "StoreIncrementEvent"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/renderer/staticsvgscene",
+      "bindings": ["roughSVGDrawWithPrecision", "maybeWrapNodesInFrameClipPath"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/data/json",
       "bindings": [
-        "hasBackground",
-        "hasStrokeColor",
-        "hasStrokeWidth",
-        "hasStrokeStyle",
-        "toolIsArrow",
-        "canHaveArrowheads"
+        "filterOutDeletedFiles",
+        "saveAsJSON",
+        "loadFromJSON",
+        "isValidExcalidrawData",
+        "isValidLibrary",
+        "serializeLibraryAsJSON",
+        "saveLibraryAsJSON"
       ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/renderer/staticscene",
+      "bindings": ["GridLineColor", "strokeGrid", "frameClip", "linkIconCanvasCache"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/data/restore",
+      "bindings": [
+        "AllowedExcalidrawActiveTools",
+        "getFontFamilyByName",
+        "repairContainerElement",
+        "repairBoundElement",
+        "repairFrameMembership",
+        "coalesceAppStateValue",
+        "LegacyAppStateMigrations",
+        "restoreLibraryItem",
+        "restoreLibraryItems"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/clipboard",
+      "bindings": [
+        "clipboardContainsElements",
+        "createPasteEvent",
+        "serializeAsClipboardJSON",
+        "copyToClipboard",
+        "parseHTMLTree",
+        "maybeParseHTMLPaste",
+        "parseClipboardEventTextData",
+        "copyBlobToClipboardAsPng"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/data/blob",
+      "bindings": [
+        "isImageFileHandleType",
+        "parseLibraryJSON",
+        "getDataURL",
+        "dataURLToFile",
+        "SVGStringToFile",
+        "ImageURLToFile",
+        "getActualMimeTypeFromImage"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/data/encode",
+      "bindings": ["byteStringToArrayBuffer", "byteStringToString"],
       "anonymous_statements": []
     }
   ]
