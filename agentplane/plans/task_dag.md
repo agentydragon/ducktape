@@ -1403,8 +1403,10 @@ a bounded continuation with a tool call on a route without native compaction.
 
 **Unscheduled; Nov 24 staging regression.** A Chat Completions session exceeded its 192K
 compaction threshold and reached 261,181 input tokens without recording a compaction intent.
-Trace the decision at each sampling boundary: last usage, active context, eligible prefix,
-live cells, and retry state. Reserve enough space for the summary request as well as the next
+At all 59 sampling boundaries with a known previous usage above threshold, the sampler saw one
+live Code Mode cell, at least three user messages and no retry. The live-cell guard suppressed
+compaction while sampling continued. Cover a cell that stays live across the threshold: preserve
+its handle and eventual result without executing it twice. Reserve room for the summary and the next
 ordinary completion. Repeating the same nearly full prompt can exhaust even a bounded retry budget.
 
 Use the last N items as the retention unit. Move the cut to keep a parallel tool-call batch and
