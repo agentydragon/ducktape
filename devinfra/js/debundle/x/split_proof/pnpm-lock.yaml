@@ -198,6 +198,8 @@ snapshots:
   shift-fuzzer@3.0.0:
     dependencies:
       shift-ast: 7.0.0
+      # shift-fuzzer imports shift-parser/src/utils.js but omits it from its manifest.
+      shift-parser: 8.0.0
 
   shift-parser@8.0.0:
     dependencies:
