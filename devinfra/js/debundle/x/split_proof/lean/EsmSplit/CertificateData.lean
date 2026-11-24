@@ -34,6 +34,10 @@ def quote (name : String) (expr : Expr) : Quotes ε String := do
   modify (·.push (Name.mkSimple name, expr))
   return s!"(certificate_data% {name})"
 
+/-- Reconstruct a JSON object from the raw tree stored in certificate data. -/
+def jsonFromTree (tree : Std.DTreeMap.Internal.Impl String (fun _ => Json)) : Json :=
+  .obj ⟨⟨tree⟩⟩
+
 open Elab Term in
 def elaborate (expr : Expr) (expectedType : Expr) : TermElabM Expr := do
   let ids := (collectFVars {} expr).fvarIds
