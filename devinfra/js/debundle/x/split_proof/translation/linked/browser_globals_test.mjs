@@ -82,6 +82,33 @@ const entry = "entry.mjs";
   }
 }
 
+{
+  const names = [
+    "MozWebSocket",
+    "__MOBX_DEVTOOLS_GLOBAL_HOOK__",
+    "__SENTRY_DEBUG__",
+    "firebaseui",
+    "regeneratorRuntime",
+  ];
+  const reads = names.map((name) => `typeof ${name} === "undefined" || ${name}`);
+  const test = fixture(
+    "optional-vendor-globals",
+    `const read = () => [${reads.join(", ")}]; const result = read(); export { result };`
+  );
+  const verdict = test.run("--host-contract", profile);
+  assert.equal(verdict.status, "certified", JSON.stringify(verdict));
+  assert.deepEqual(
+    [...verdict.assumptions].sort(),
+    names.map((name) => `typeof ${name} is undefined without observable effects throughout initialization`).sort()
+  );
+  for (const file of [test.sourceFile, path.join(test.out, entry)]) {
+    assert.deepEqual(
+      (await import(pathToFileURL(file).href)).result,
+      names.map(() => true)
+    );
+  }
+}
+
 for (const deferred of [false, true]) {
   const test = fixture(
     deferred ? "deferred-page-error" : "read-page-error",
