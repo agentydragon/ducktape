@@ -254,6 +254,10 @@ private partial def patternEq : MatchEq BindingPattern
   | .name a, .name b => (scalarEq a b).map fun h => ⟨congrArg BindingPattern.name h.down⟩
   | .object a, .object b =>
     (listEq objectBindingEq a b).map fun h => ⟨congrArg BindingPattern.object h.down⟩
+  | .array items rest, .array items' rest' => do
+    let ⟨elements⟩ ← listEq (optionEq patternEq) items items'
+    let ⟨tail⟩ ← optionEq patternEq rest rest'
+    return ⟨elements ▸ tail ▸ rfl⟩
   | .defaultValue p e, .defaultValue p' e' => do
     let ⟨pattern⟩ ← patternEq p p'
     let ⟨fallback⟩ ← exprEq e e'
@@ -281,6 +285,13 @@ partial def stmtEq : MatchEq Stmt
     let ⟨b⟩ ← stmtEq body body'
     return ⟨i ▸ t ▸ u ▸ b ▸ rfl⟩
   | .breakScope a, .breakScope b => (stmtEq a b).map fun h => ⟨congrArg Stmt.breakScope h.down⟩
+
+  | .forOf kind pattern source body, .forOf kind' pattern' source' body' => do
+    let ⟨k⟩ ← scalarEq kind kind'
+    let ⟨p⟩ ← patternEq pattern pattern'
+    let ⟨s⟩ ← exprEq source source'
+    let ⟨b⟩ ← stmtEq body body'
+    return ⟨k ▸ p ▸ s ▸ b ▸ rfl⟩
   | .tryCatch body param handler, .tryCatch body' param' handler' => do
     let ⟨b⟩ ← stmtEq body body'
     let ⟨p⟩ ← scalarEq param param'

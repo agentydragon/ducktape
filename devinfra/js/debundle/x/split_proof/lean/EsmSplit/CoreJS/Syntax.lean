@@ -187,6 +187,8 @@ evaluate their keys and bind their values from left to right. -/
 inductive BindingPattern where
   | name (x : Name)
   | object (properties : List (Expr × BindingPattern))
+  /-- An absent entry is an elision. The optional trailing pattern receives a new array. -/
+  | array (elements : List (Option BindingPattern)) (rest : Option BindingPattern)
   | defaultValue (pattern : BindingPattern) (fallback : Expr)
 
 inductive Stmt where
@@ -204,6 +206,7 @@ inductive Stmt where
   | loop (init : List Stmt) (test update : Expr) (body : Stmt)
   /-- A switch boundary consumes an unlabeled break. Other completions leave the switch. -/
   | breakScope (body : Stmt)
+  | forOf (kind : DeclKind) (pattern : BindingPattern) (source : Expr) (body : Stmt)
   | brk
   | cont
   | throw (e : Expr)
@@ -274,11 +277,18 @@ mutual
 def BindingPattern.names : BindingPattern → List Name
   | .name x => [x]
   | .object ps => objectBindingNames ps
+  | .array elements rest =>
+    arrayBindingNames elements ++ (match rest with | none => [] | some target => target.names)
   | .defaultValue pattern _ => pattern.names
 
 def objectBindingNames : List (Expr × BindingPattern) → List Name
   | [] => []
   | (_, pattern) :: rest => pattern.names ++ objectBindingNames rest
+
+def arrayBindingNames : List (Option BindingPattern) → List Name
+  | [] => []
+  | none :: rest => arrayBindingNames rest
+  | some pattern :: rest => pattern.names ++ arrayBindingNames rest
 end
 
 mutual
@@ -291,6 +301,7 @@ def Stmt.varNames : Stmt → List Name
   | .block ss => varNamesOf ss
   | .loop init _ _ body => varNamesOf init ++ body.varNames
   | .breakScope body => body.varNames
+  | .forOf kind pattern _ body => (if kind == .var then pattern.names else []) ++ body.varNames
   | .tryCatch body _ handler => body.varNames ++ handler.varNames
   | .tryFinally body finalizer => body.varNames ++ finalizer.varNames
   | .opaque _ decls _ _ _ => decls.filterMap fun (x, kind) => if kind == .var then some x else none
@@ -410,11 +421,18 @@ def Func.free : Func → List Name
 def BindingPattern.free : BindingPattern → List Name
   | .name x => [x]
   | .object ps => freeObjectBindings ps
+  | .array elements rest =>
+    freeArrayBindings elements ++ (match rest with | none => [] | some target => target.free)
   | .defaultValue pattern e => pattern.free ++ e.free
 
 def freeObjectBindings : List (Expr × BindingPattern) → List Name
   | [] => []
   | (key, pattern) :: rest => key.free ++ pattern.free ++ freeObjectBindings rest
+
+def freeArrayBindings : List (Option BindingPattern) → List Name
+  | [] => []
+  | none :: rest => freeArrayBindings rest
+  | some pattern :: rest => pattern.free ++ freeArrayBindings rest
 
 def Stmt.free : Stmt → List Name
   | .expr e | .ret e | .throw e => e.free
@@ -427,6 +445,9 @@ def Stmt.free : Stmt → List Name
   | .loop init test update body =>
     (freeStmts init ++ (test.free ++ (update.free ++ body.free))).filter fun x => !(lexNames init).contains x
   | .breakScope body => body.free
+  | .forOf kind pattern source body =>
+    let own := if kind == .var then [] else pattern.names
+    (source.free ++ pattern.free ++ body.free).filter fun x => !own.contains x
   | .brk | .cont => []
   | .tryCatch body param handler => body.free ++ handler.free.filter fun x => !(param == some x)
   | .tryFinally body finalizer => body.free ++ finalizer.free

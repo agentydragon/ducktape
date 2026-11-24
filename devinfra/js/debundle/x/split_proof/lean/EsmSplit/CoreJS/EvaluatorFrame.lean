@@ -50,6 +50,7 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
     unfold Func.intrinsicProto
     cases f.kind <;> exact Ne.symm hr
   have arrayRoot : A (.obj arrayProto) := Ne.symm hr
+  have arrayIteratorRoot : A (.obj arrayIteratorProto) := Ne.symm hr
   have regexpRoot : A (.obj regexpProto) := Ne.symm hr
   have allocate (cells : List (Option Addr)) (o : Obj) (ho : ∀ node ∈ o.nodes, A node) :
       ReachFrame r R cells A (fun a => A (.obj a)) (alloc o : M W Addr) :=
@@ -143,10 +144,18 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
       · intro cells env kind p v safe hv
         exact bindPattern_reachFrame_step away env safe (fun e => prev.expr cells env e safe)
           (reachFrame_getProp away (callFn n) (prev.call cells).getter objectRoot)
-          (fun kind p v hv => prev.binding cells env kind p v safe hv) kind p v hv
+          (fun kind p v hv => prev.binding cells env kind p v safe hv)
+          (fun kind items rest value hv =>
+            bindArrayPattern_reachFrame away (callFn n) (prev.call cells) objectRoot arrayIteratorRoot arrayRoot
+              (allocate cells) n (bindPattern n env kind) (fun p v hv => prev.binding cells env kind p v safe hv)
+              items rest value hv) kind p v hv
       · intro cells env st safe
         exact execStmt_reachFrame_step away cell (fun e env h => prev.expr cells env e h)
           (prev.stmt cells) (prev.binding cells) (prev.stmts cells) (prev.loop cells) (enter cells)
+          (fun e kind pattern source body he =>
+            forOf_reachFrame_step away (prev.call cells) objectRoot arrayIteratorRoot
+              (fun exp env h => prev.expr cells env exp h) (prev.binding cells) (prev.stmt cells) (enter cells)
+              e he kind pattern source body)
           (execOpaque_reachFrame_step away object objectRoot functionRoot convo) env safe st
       · intro cells env ss safe
         exact execStmts_reachFrame_step (prev.stmt cells) (prev.stmts cells) env safe ss

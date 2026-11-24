@@ -68,6 +68,7 @@ _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean
         "if_test",
         "import_cells_test",
         "initializer_moves_test",
+        "iterators_test",
         "literal_records_test",
         "logical_test",
         "loops_test",

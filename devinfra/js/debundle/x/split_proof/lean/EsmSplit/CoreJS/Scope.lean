@@ -323,13 +323,13 @@ macro_rules
     (intro x hx
      first
      | (simp only [Expr.free, Target.free, PropDef.free, ClassMember.free, Stmt.free, freeExprs, freeProps,
-          freeMembers, freeStmts, BindingPattern.free, freeObjectBindings, List.flatMap_cons, List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hx
+          freeMembers, freeStmts, BindingPattern.free, freeObjectBindings, freeArrayBindings, List.flatMap_cons, List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hx
         done)
      | (try simp only [Expr.free, Target.free, PropDef.free, ClassMember.free, Stmt.free, freeExprs, freeProps,
-          freeMembers, freeStmts, BindingPattern.free, freeObjectBindings, List.flatMap_cons, List.mem_append, List.mem_cons, List.not_mem_nil,
+          freeMembers, freeStmts, BindingPattern.free, freeObjectBindings, freeArrayBindings, List.flatMap_cons, List.mem_append, List.mem_cons, List.not_mem_nil,
           or_false] at hx
         try simp only [Expr.free, Target.free, PropDef.free, ClassMember.free, Stmt.free, freeExprs, freeProps,
-          freeMembers, freeStmts, BindingPattern.free, freeObjectBindings, List.flatMap_cons, List.mem_append, List.mem_cons, List.not_mem_nil, or_false]
+          freeMembers, freeStmts, BindingPattern.free, freeObjectBindings, freeArrayBindings, List.flatMap_cons, List.mem_append, List.mem_cons, List.not_mem_nil, or_false]
         first | exact hx | simp only [hx, true_or, or_true])))
 
 /-- This name is among the free names of the code that mentions it. -/
@@ -623,6 +623,38 @@ theorem Same.binding_succ (env env' : Env) (kind : DeclKind) (p : BindingPattern
   cases p with
   | name x => simp only [bindPattern]; cases kind <;> same ih hN
   | defaultValue target fallback => simp only [bindPattern]; same ih hN
+  | array elements rest =>
+    have elementScopes : ∀ elements cursor, Agree (freeArrayBindings elements) env env' →
+        (bindArrayElements (callFn n) (bindPattern n env kind) elements cursor : M W _) =
+        bindArrayElements (callFn n) (bindPattern n env' kind) elements cursor := by
+      intro elements
+      induction elements with
+      | nil => exact fun _ _ => rfl
+      | cons pattern tail step =>
+        intro cursor agree
+        simp only [bindArrayElements]
+        refine M.bind_congr rfl fun result => ?_
+        cases pattern with
+        | none =>
+          exact step _ agree
+        | some target =>
+          simp only [Option.elim]
+          rw [ih.binding _ _ _ _ _ (agree.mono fun x hx => by simp [freeArrayBindings, hx])]
+          refine M.bind_congr rfl fun bound => ?_
+          cases bound
+          · rfl
+          · exact step _ (agree.mono fun x hx => by simp [freeArrayBindings, hx])
+    simp only [bindPattern, bindArrayPattern]
+    refine M.bind_congr rfl fun cursor => ?_
+    refine M.bind_congr (elementScopes elements (some cursor) (hN.mono fun x hx => ?_)) fun next => ?_
+    · cases rest <;> simp [BindingPattern.free, hx]
+    · cases rest with
+      | none => rfl
+      | some target =>
+        refine M.bind_congr rfl fun values => M.bind_congr rfl fun a => ?_
+        exact ih.binding _ _ _ _ _ (hN.mono fun x hx => by
+          change x ∈ freeArrayBindings elements ++ target.free
+          exact List.mem_append_right _ hx)
   | object props =>
     simp only [bindPattern]
     have fields : ∀ props : List (Expr × BindingPattern), Agree (freeObjectBindings props) env env' →
@@ -677,6 +709,33 @@ theorem Same.stmt_succ (env env' : Env) (s : Stmt) (hN : Agree s.free env env') 
   | breakScope body =>
     simp only [execStmt]
     rw [ih.stmt _ _ body hN]
+
+  | forOf kind pattern source body =>
+    let head := [Stmt.bind kind pattern .undef]
+    have lex : lexNames head = if kind == .var then [] else pattern.names := by
+      cases kind <;> simp [head, lexNames, lexDecls, List.map_map, Function.comp_def]
+    let needed := source.free ++ pattern.free ++ body.free
+    have enter {β : Type} {k k' : Env → M W β} (hk : ∀ e e', Agree needed e e' → k e = k' e') :
+        enterBlock env head >>= k = enterBlock env' head >>= k' := by
+      apply enterBlock_congr head hN (fun x hx => ?_) (fun f hf => by simp [head, funDecls] at hf) hk
+      by_cases h : (lexNames head).contains x
+      · exact Or.inr (List.contains_iff_mem.mp h)
+      · exact Or.inl (by
+          simp only [Stmt.free, List.mem_filter]
+          refine ⟨hx, ?_⟩
+          simpa only [← lex, Bool.not_eq_true'] using Bool.eq_false_iff.2 h)
+    simp only [execStmt]
+    apply enter
+    intro sourceEnv sourceEnv' sourceAgree
+    refine M.bind_congr (ih.expr _ _ _ (sourceAgree.mono (fun x hx => by simp [needed, hx]))) fun v => ?_
+    refine M.bind_congr rfl fun cursor => ?_
+    apply congrArg (fun iteration => loopIterator (callFn n) iteration n cursor)
+    funext value
+    apply enter
+    intro iterationEnv iterationEnv' iterationAgree
+    refine M.bind_congr (ih.binding _ _ _ _ _
+      (iterationAgree.mono fun x hx => by simp [needed, hx])) fun _ => ?_
+    exact ih.stmt _ _ _ (iterationAgree.mono fun x hx => by simp [needed, hx])
   | tryCatch body param handler =>
     unfold execStmt
     dsimp only

@@ -150,6 +150,12 @@ private def declaratorWith (binder : Json → Except String Name) (initializer :
   | "const", e => return (x, .decl .const x (← initializer x e))
   | kind, _ => throw s!"unsupported declaration {kind}"
 
+private def parseDeclKind : String → Except String DeclKind
+  | "var" => pure .var
+  | "let" => pure .let_
+  | "const" => pure .const
+  | kind => throw s!"unsupported declaration {kind}"
+
 private def declarationWith (binder : Json → Except String Name) (initializer : Name → Json → Except String Expr)
     (j : Json) : Except String (Name × Stmt) := do
   unless (← field j "type") == "VariableDeclaration" do throw "expected a variable declaration"
@@ -801,7 +807,7 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
       unless ["const", "let"].contains (← field stmt "kind") do throw "expected a lexical declaration before super"
       for d in ← stmt.getObjValAs? (Array Json) "declarations" do
         discard <| localBinding (← d.getObjVal? "id")
-      before := before ++ (← linkedBlockDeclarations profile imports .function before.size (← prepareBeforeSuper stmt true))
+      before := before ++ (← linkedBlockDeclarations profile imports .function (← prepareBeforeSuper stmt true))
     | "ExpressionStatement" =>
       let expr ← prepareBeforeSuper (← stmt.getObjVal? "expression") true
       before := before.push (.expr (← linkedExpr profile imports true "" expr))
@@ -879,49 +885,55 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
   if parent == .null then return .cls name (id != .null) ctor members.toList
   return .derived name (id != .null) (← linkedExpr profile imports inFunction "" parent) members.toList derivedCtor
 
+private partial def linkedBindingPattern (lower : Name → Json → Except String Expr)
+    (binder : Json → Except String Name) (j : Json) : Except String BindingPattern := do
+  match ← field j "type" with
+  | "Identifier" => return .name (← binder j)
+  | "ObjectPattern" =>
+    let props ← j.getObjValAs? (List Json) "properties"
+    return .object (← props.mapM fun p => do
+      unless (← field p "type") == "Property" do throw "unsupported object binding property"
+      unless (← field p "kind") == "init" && !(← p.getObjValAs? Bool "method") do
+        throw "expected an object binding property initializer"
+      let key ← p.getObjVal? "key"
+      let key ← if ← p.getObjValAs? Bool "computed" then lower "" key else .str <$> staticPropertyName key
+      let target ← p.getObjVal? "value" >>= linkedBindingPattern lower binder
+      return (key, target))
+  | "ArrayPattern" =>
+    let mut items := #[]
+    let mut rest := none
+    for elem in ← j.getObjValAs? (Array Json) "elements" do
+      if rest.isSome then throw "array binding rest element must be last"
+      if elem == .null then items := items.push none
+      else if (← field elem "type") == "RestElement" then
+        rest := some (← elem.getObjVal? "argument" >>= linkedBindingPattern lower binder)
+      else items := items.push (some (← linkedBindingPattern lower binder elem))
+    return .array items.toList rest
+  | "AssignmentPattern" =>
+    let target ← j.getObjVal? "left" >>= linkedBindingPattern lower binder
+    let name := if let .name name := target then name else ""
+    return .defaultValue target (← lower name (← j.getObjVal? "right"))
+  | other => throw s!"unsupported binding pattern {other}"
+
+private partial def linkedDeclarator (lower : Name → Json → Except String Expr)
+    (binder : Json → Except String Name) (kind : String) (d : Json) : Except String (List Name × Stmt) := do
+  let id ← d.getObjVal? "id"
+  if !["ObjectPattern", "ArrayPattern"].contains (← field id "type") then
+    let (name, stmt) ← declaratorWith binder lower kind d
+    return ([name], stmt)
+  unless (← field d "type") == "VariableDeclarator" do throw "expected a variable declarator"
+  let pattern ← linkedBindingPattern lower binder id
+  let init ← d.getObjVal? "init"
+  if init == .null then throw "binding pattern declaration needs an initializer"
+  return (pattern.names, .bind (← parseDeclKind kind) pattern (← lower "" init))
+
 private partial def linkedBlockDeclarations (profile : HostProfile) (imports : List Name) (scope : LinkedScope)
-    (offset : Nat) (j : Json) : Except String (Array Stmt) := do
+    (j : Json) : Except String (Array Stmt) := do
   let declarations ← j.getObjValAs? (Array Json) "declarations"
   if declarations.isEmpty then throw "expected at least one declarator"
   let kind ← field j "kind"
-  let binder := scope.varBinder kind
-  let mut result := #[]
-  for d in declarations do
-    let id ← d.getObjVal? "id"
-    if (← field id "type") == "ObjectPattern" then
-      unless (← field d "type") == "VariableDeclarator" do throw "expected a variable declarator"
-      let declKind ← match kind with
-        | "var" => pure DeclKind.var
-        | "let" => pure DeclKind.let_
-        | "const" => pure DeclKind.const
-        | _ => throw s!"unsupported declaration {kind}"
-      let patternIdentifier := linkedPatternIdentifier binder
-      let bindings ← linkedObjectPattern id fun target => do
-        if (← field target "type") != "AssignmentPattern" then
-          return (← patternIdentifier target, none)
-        let name ← target.getObjVal? "left" >>= patternIdentifier
-        let fallback ← linkedExpr profile imports true name (← target.getObjVal? "right")
-        return (name, some fallback)
-      let initializer ← d.getObjVal? "init"
-      if initializer == .null then throw "object pattern declaration needs an initializer"
-      let value ← linkedExpr profile imports true "" initializer
-      if let [(key, (bound, none))] := bindings then
-        result := result.push (.decl declKind bound (.get value (.str key)))
-      else
-        -- Keep the initializer value while each read and binding runs in source order.
-        let source := s!":destructure:{offset + result.size}"
-        result := result.push (.decl .const source value)
-        for (key, bound, fallback) in bindings do
-          let property := Expr.get (.var source) (.str key)
-          if fallback.isSome then
-            let saved := s!":destructure:value:{offset + result.size}"
-            result := result.push (.decl .const saved property)
-            result := result.push (.decl declKind bound (withBindingDefault saved fallback))
-          else
-            result := result.push (.decl declKind bound property)
-    else
-      result := result.push (← Prod.snd <$> declaratorWith binder (linkedExpr profile imports true) kind d)
-  return result
+  declarations.mapM fun d =>
+    Prod.snd <$> linkedDeclarator (linkedExpr profile imports true) (scope.varBinder kind) kind d
 
 /-- Keep every declarator in its enclosing statement list. Linking or function
 instantiation hoists its vars, and block instantiation creates its lexical bindings. -/
@@ -931,7 +943,7 @@ private partial def linkedBlockBody (profile : HostProfile) (imports : List Name
   for stmt in ← block.getObjValAs? (Array Json) "body" do
     let kind ← field stmt "type"
     if kind == "VariableDeclaration" then
-      result := result ++ (← linkedBlockDeclarations profile imports scope result.size stmt)
+      result := result ++ (← linkedBlockDeclarations profile imports scope stmt)
     else if allowFunctions && kind == "FunctionDeclaration" then
       let name ← stmt.getObjVal? "id" >>= localBinding
       result := result.push (.funDecl (← linkedFunction profile imports .normal name false stmt))
@@ -985,7 +997,7 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
     Except String Stmt := do
   let kind ← field j "type"
   let nested := scope != .module
-  if nested || ["IfStatement", "TryStatement", "ForStatement"].contains kind then
+  if nested || ["IfStatement", "TryStatement", "ForStatement", "ForOfStatement"].contains kind then
     let blockScope := if nested then scope else LinkedScope.moduleBlock
     match kind with
     | "BlockStatement" => return ← linkedBlock profile imports scope j
@@ -1003,7 +1015,7 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
     | "VariableDeclaration" =>
       -- An unbraced branch can declare vars, which already belong to the enclosing module or function.
       unless (← field j "kind") == "var" do throw "expected a var declaration in statement position"
-      return .block (← linkedBlockDeclarations profile imports scope 0 j).toList
+      return .block (← linkedBlockDeclarations profile imports scope j).toList
     | "WhileStatement" =>
       let test ← linkedExpr profile imports true "" (← j.getObjVal? "test")
       return .loop [] test .undef (← linkedStatement profile imports scope (← j.getObjVal? "body"))
@@ -1013,13 +1025,29 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
       let initializer ← if init == .null then pure [] else do
         if (← field init "type") == "VariableDeclaration" then
           -- All declarations share the header scope. Fresh let cells are copied together for each iteration.
-          pure (← linkedBlockDeclarations profile imports scope 0 init).toList
+          pure (← linkedBlockDeclarations profile imports scope init).toList
         else pure [.expr (← lower init)]
       let test ← j.getObjVal? "test"
       let test ← if test == .null then pure (.bool true) else lower test
       let update ← j.getObjVal? "update"
       let update ← if update == .null then pure .undef else lower update
       return .loop initializer test update (← linkedStatement profile imports blockScope (← j.getObjVal? "body"))
+    | "ForOfStatement" =>
+      if ← j.getObjValAs? Bool "await" then throw "unsupported for-await-of"
+      let lower := linkedExpr profile imports true
+      let left ← j.getObjVal? "left"
+      let source ← lower "" (← j.getObjVal? "right")
+      let body ← linkedStatement profile imports blockScope (← j.getObjVal? "body")
+      if (← field left "type") != "VariableDeclaration" then
+        let target ← linkedTarget imports true true (lower "") left
+        let slot := ":for-of"
+        return .forOf .const (.name slot) source (.block [.expr (.assign target (.var slot)), body])
+      let #[d] ← left.getObjValAs? (Array Json) "declarations" | throw "expected one for-of binding declarator"
+      unless (← field d "type") == "VariableDeclarator" && (← d.getObjVal? "init") == .null do
+        throw "expected a for-of binding without an initializer"
+      let kind ← field left "kind"
+      let pattern ← linkedBindingPattern lower (scope.varBinder kind) (← d.getObjVal? "id")
+      return .forOf (← parseDeclKind kind) pattern source body
     | "BreakStatement" | "ContinueStatement" =>
       unless (← j.getObjVal? "label") == .null do throw "unsupported labeled loop control"
       return if (← field j "type") == "BreakStatement" then .brk else .cont
@@ -1042,27 +1070,6 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
 
 end
 
-private partial def moduleObjectBinding (profile : HostProfile) (imports : List Name) (j : Json) :
-    Except String BindingPattern := do
-  let lower := linkedExpr profile imports false
-  match ← field j "type" with
-  | "Identifier" => return .name (← moduleBinding j)
-  | "ObjectPattern" =>
-    let props ← j.getObjValAs? (List Json) "properties"
-    return .object (← props.mapM fun p => do
-      unless (← field p "type") == "Property" do throw "unsupported object binding property"
-      unless (← field p "kind") == "init" && !(← p.getObjValAs? Bool "method") do
-        throw "expected an object binding property initializer"
-      let key ← p.getObjVal? "key"
-      let key ← if ← p.getObjValAs? Bool "computed" then lower "" key else .str <$> staticPropertyName key
-      let target ← p.getObjVal? "value" >>= moduleObjectBinding profile imports
-      return (key, target))
-  | "AssignmentPattern" =>
-    let target ← j.getObjVal? "left" >>= moduleObjectBinding profile imports
-    let name := if let .name name := target then name else ""
-    return .defaultValue target (← lower name (← j.getObjVal? "right"))
-  | other => throw s!"unsupported module binding pattern {other}"
-
 /-- Lower one module declaration and list its declared names in binding order.
 Function declarations initialize their cells at link time. -/
 def linkedDeclaration (imports : List Name) (j : Json) (profile : HostProfile := .empty) :
@@ -1076,22 +1083,7 @@ def linkedDeclaration (imports : List Name) (j : Json) (profile : HostProfile :=
     return ([name], .decl .let_ name (← linkedClass profile imports false name j))
   | "VariableDeclaration" =>
     let #[d] ← j.getObjVal? "declarations" >>= Json.getArr? | throw "expected a single declarator"
-    let kind ← field j "kind"
-    let id ← d.getObjVal? "id"
-    if (← field id "type") != "ObjectPattern" then
-      let (name, s) ← declaratorWith moduleBinding (linkedExpr profile imports false) kind d
-      return ([name], s)
-    unless (← field d "type") == "VariableDeclarator" do throw "expected a variable declarator"
-    let kind ← match kind with
-      | "var" => pure DeclKind.var
-      | "let" => pure DeclKind.let_
-      | "const" => pure DeclKind.const
-      | _ => throw s!"unsupported declaration {kind}"
-    let pattern ← moduleObjectBinding profile imports id
-    let init ← d.getObjVal? "init"
-    if init == .null then throw "object pattern declaration needs an initializer"
-    let value ← linkedExpr profile imports false "" init
-    return (pattern.names, .bind kind pattern value)
+    linkedDeclarator (linkedExpr profile imports false) moduleBinding (← field j "kind") d
   | _ => throw "expected a module declaration"
 
 /-- A top-level executable statement of the linked fragment. -/
