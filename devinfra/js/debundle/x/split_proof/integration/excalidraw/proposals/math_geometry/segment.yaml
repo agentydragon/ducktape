@@ -1,0 +1,21 @@
+# Upstream: packages/math/segment.ts (v0.18.1).
+source_matches:
+  - match: |
+      function lineSegment(a, b) { return [a, b]; }
+      var pointOnLineSegment = (p, segment, threshold = 1e-4) => {
+        let distance = distanceToLineSegment(p, segment);
+        return distance === 0 ? !0 : distance < threshold;
+      }, distanceToLineSegment = (point, segment) => {
+        let [x, y] = point, [[x1, y1], [x2, y2]] = segment,
+          dx = x - x1, dy = y - y1, sx = x2 - x1, sy = y2 - y1,
+          dot = dx * sx + dy * sy, lengthSq = sx * sx + sy * sy, param = -1;
+        STMT_LIST;
+        return Math.sqrt(EXPR);
+      };
+    bindings: [lineSegment, pointOnLineSegment, distanceToLineSegment]
+  - match: |
+      function lineSegmentIntersectionPoints(l, s) {
+        let candidate = linesIntersectAt(line(l[0], l[1]), line(s[0], s[1]));
+        return !candidate || !pointOnLineSegment(candidate, s) || !pointOnLineSegment(candidate, l) ? null : candidate;
+      }
+    bindings: [lineSegmentIntersectionPoints]

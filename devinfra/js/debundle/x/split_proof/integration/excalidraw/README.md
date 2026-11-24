@@ -155,14 +155,14 @@ the existing local host-binding proof.
 
 ### Browser smoke
 
-The smoke extracts **327 bindings into 36 upstream modules** from the canonical
+The smoke extracts **336 bindings into 41 upstream modules** from the canonical
 [Excalidraw editor spec](../../../../excalidraw/spec/modules/editor/packages).
 The [Rust ownership subset](../../../../excalidraw/editor_smoke_subset.json) lists
 the retained names. See the [recovery notes](recovery.md) for the candidate
 selection, remaining blockers and checked placements.
 The smoke uses the browser-page contract with `Math.PI@1` for the shift-locking
 angle. Both certification verdicts report this premise. The
-[combined replay](https://app.buildbuddy.io/invocation/d70c9190-b6e9-440e-b47f-24bea32a4efc)
+[combined replay](https://app.buildbuddy.io/invocation/d9a99730-6907-455f-b609-fc2c90beeb42)
 compares the original and certified editor in Chromium.
 To change the placement, edit the subset's module paths and readable member names. To identify a new owner,
 read the pinned upstream declaration and its uses, then match the production

@@ -1,0 +1,14 @@
+# Upstream: packages/math/line.ts (v0.18.1).
+source_matches:
+  - match: |
+      function line(a, b) { return [a, b]; }
+      function linesIntersectAt(a, b) {
+        let a1 = a[1][1] - a[0][1],
+          b1 = a[0][0] - a[1][0],
+          a2 = b[1][1] - b[0][1],
+          b2 = b[0][0] - b[1][0],
+          determinant = a1 * b2 - a2 * b1;
+        if (determinant !== 0) { STMT_LIST; }
+        return null;
+      }
+    bindings: [line, linesIntersectAt]
