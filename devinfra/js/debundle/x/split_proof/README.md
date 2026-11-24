@@ -178,7 +178,7 @@ necessary check; Lean still proves the guarantee for every modeled world.
 When both linked graphs run their units in the same order, Lean can reuse the
 source’s normal execution. It checks the state after hoisting and compares each
 unit’s original ordinal, full statement, receiver and free-name binding cells.
-The entry’s public names must resolve to the same cells in both graphs.
+The entry’s public names must resolve to the same cells in both graphs. A mismatch reports the counts of extra, missing, and retargeted names, with up to three examples of each. An address `@region.index` identifies a live cell: top-level unit `i` allocates its bindings in region `i + 1`. For a retargeted name, the two addresses show which declarations to inspect in the original and candidate graphs.
 
 The checker starts at 16 fuel and retries at 32 and 64 on fuel exhaustion. For a
 top-level record initializer it can make one more attempt with 64 plus the largest

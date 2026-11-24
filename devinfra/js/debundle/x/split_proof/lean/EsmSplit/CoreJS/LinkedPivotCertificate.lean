@@ -227,7 +227,10 @@ def checkStructuralSchedule (source candidate : Program) :
     throw "the linked initial states differ"
   let ⟨exportsEqual⟩ ←
     if checked : exportsMatchFrom before after = true then pure (PLift.up checked)
-    else throw "the linked entry exports differ"
+    else do
+      let a ← (EntryExports.resolve source.entry before.linked).mapError ("original entry: " ++ ·)
+      let b ← (EntryExports.resolve candidate.entry after.linked).mapError ("candidate entry: " ++ ·)
+      throw (EntryExports.mismatch a b)
   have sameExports : SameExports source candidate := sameExports_of_match fun w => by
     rw [exportsMatch_from_checked (before.forWorld w) (after.forWorld w)]
     exact exportsEqual

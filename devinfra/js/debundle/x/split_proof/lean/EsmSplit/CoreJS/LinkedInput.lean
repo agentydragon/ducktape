@@ -1,3 +1,4 @@
+import EsmSplit.CoreJS.EntryExports
 import EsmSplit.CoreJS.LinkedDeployment
 import EsmSplit.CoreJS.Eval
 import EsmSplit.CoreJS.ModuleInput
@@ -168,17 +169,12 @@ private def scopes (p : Program) : Except String (List (Module × Env)) := do
         throw s!"{m.name}: unbound export {publicName}"
   return linked
 
-private def entryExports (entry : String) (linked : List (Module × Env)) : Except String (List (Name × Addr)) := do
-  let some (m, env) := linked.find? (fun (m, _) => m.name == entry) | throw "missing linked entry"
-  m.exports.mapM fun (publicName, localName) => do
-    let some cell := env.vars.lookup localName | throw s!"unbound entry export {publicName}"
-    return (publicName, cell)
-
 private def checkScopes (before after : Program) : Except String Unit := do
-  let a ← scopes before
-  let b ← scopes after
-  let exports ← entryExports before.entry a
-  unless exports.Perm (← entryExports after.entry b) do throw "entry exports resolve to different linked cells"
+  let a ← (scopes before).mapError ("original linker: " ++ ·)
+  let b ← (scopes after).mapError ("candidate linker: " ++ ·)
+  let original ← (EntryExports.resolve before.entry a).mapError ("original entry: " ++ ·)
+  let candidate ← (EntryExports.resolve after.entry b).mapError ("candidate entry: " ++ ·)
+  unless original.Perm candidate do throw (EntryExports.mismatch original candidate)
   -- Placement is checked in decodePair. Provider ordinals follow the
   -- source and use disjoint ranges, so each ordinal has only one linked unit.
   let bs := Std.HashMap.ofList (unitsOf b)

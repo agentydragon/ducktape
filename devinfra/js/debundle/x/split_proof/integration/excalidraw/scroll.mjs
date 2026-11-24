@@ -155,6 +155,32 @@ writeFileSync(spec, JSON.stringify(strictPlacement, null, 2));
 const profile = path.join(artifacts, "host.json");
 writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
 const out = path.join(process.env.TEST_TMPDIR, "modules");
+// Moving calculateScrollCenter as well as centerScrollOn would expose private
+// entry bindings through glue exports. Check the actual linked editor graph.
+if (strictSelection.length === 2) {
+  const pair = spawnSync(
+    process.env.LOWERSPLIT,
+    [
+      strictSource,
+      spec,
+      out,
+      "--structural",
+      "--host-contract",
+      profile,
+      "--deployment-origin",
+      "https://example.test",
+    ],
+    { encoding: "utf8" }
+  );
+  if (pair.error) throw pair.error;
+  assert.equal(pair.status, 1, pair.stdout + pair.stderr);
+  const refused = JSON.parse(pair.stdout.trimEnd().split("\n").at(-1));
+  assert.equal(refused.scope, "linked-structural");
+  assert.match(refused.reason, /; extra 3: .*; missing 0; retargeted 0$/);
+  report.entryMismatch = refused.reason;
+  assert(!existsSync(out));
+}
+
 const run = spawnSync(
   process.env.LOWERSPLIT,
   [strictSource, spec, out, "--require", "normal-completion", "--host-contract", profile],
@@ -235,6 +261,10 @@ writeFileSync(
 const [pair, single] = surfaces;
 assert.deepEqual(pair.extra, ["Eb$1", "Lm", "qb$1"]);
 assert.deepEqual(pair.missing, []);
+if (report.entryMismatch) {
+  const witnesses = [...report.entryMismatch.matchAll(/"([^"]+)" \(candidate cell @\d+\.\d+\)/g)];
+  assert.deepEqual(witnesses.map((m) => m[1]).sort(), pair.extra);
+}
 assert.deepEqual(single.extra, []);
 assert.deepEqual(single.missing, []);
 const conflicts = single.orderConflicts.pairs;
