@@ -4,11 +4,7 @@ load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load(":splitter_launcher.bzl", "splitter_launcher")
 
-_CERTIFICATE = "//devinfra/js/debundle/x/split_proof/lean/EsmSplit/CoreJS/LinkedCertificate"
-
 _EXAMPLE = "//devinfra/js/debundle/x/split_proof:example/"
-
-_LOWERSPLIT_WORKFLOWS = "//devinfra/js/debundle/x/split_proof/lean/EsmSplit/LowerSplit"
 
 lean_library(
     name = "plan",
@@ -259,7 +255,6 @@ lean_library(
         "EsmSplit/CoreJS/StateMatch.lean",
         "EsmSplit/CoreJS/WriteExpr.lean",
     ],
-    visibility = [_CERTIFICATE + ":__pkg__"],
     deps = [
         ":corejs_runtime",
         ":effects",
@@ -273,7 +268,6 @@ lean_library(
         "EsmSplit/CertificateData.lean",
         "EsmSplit/CoreJS/LinkedInput.lean",
     ],
-    visibility = [_CERTIFICATE + ":__pkg__"],
     deps = [
         ":corejs_certificate_support",
         ":corejs_runtime",
@@ -282,11 +276,32 @@ lean_library(
     ],
 )
 
+# Generated certificates import the proof layer on its own.
+lean_library(
+    name = "corejs_certificate_proof",
+    srcs = ["EsmSplit/CoreJS/LinkedCertificate/Proof.lean"],
+    deps = [
+        ":corejs_certificate_support",
+        ":corejs_linked_input",
+    ],
+)
+
+lean_library(
+    name = "corejs_certificate_generation_support",
+    srcs = [
+        "EsmSplit/CoreJS/LinkedCertificate/Probe.lean",
+        "EsmSplit/CoreJS/LinkedCertificate/QuoteCoreJS.lean",
+        "EsmSplit/CoreJS/LinkedCertificate/QuoteJson.lean",
+        "EsmSplit/CoreJS/LinkedCertificate/QuoteRecords.lean",
+        "EsmSplit/CoreJS/LinkedCertificate/QuoteWrites.lean",
+    ],
+    deps = [":corejs_certificate_proof"],
+)
+
 lean_library(
     name = "corejs_certificates",
     srcs = ["EsmSplit/CoreJS/LinkedCertificate.lean"],
-    visibility = [_LOWERSPLIT_WORKFLOWS + ":__pkg__"],
-    deps = [_CERTIFICATE + ":generation_support"],
+    deps = [":corejs_certificate_generation_support"],
 )
 
 lean_library(
@@ -310,7 +325,6 @@ lean_library(
         "EsmSplit/CoreJS/StatementFrame.lean",
         "EsmSplit/CoreJS/StructuralCertificate.lean",
     ],
-    visibility = [_LOWERSPLIT_WORKFLOWS + ":__pkg__"],
     deps = [
         ":corejs_certificate_support",
         ":corejs_linked_input",
@@ -327,11 +341,25 @@ lean_library(
         "EsmSplit/ReadDeployment.lean",
         "EsmSplit/SplitFiles.lean",
     ],
-    visibility = [_LOWERSPLIT_WORKFLOWS + ":__pkg__"],
     deps = [
         ":corejs_certificate_support",
         ":effects",
         ":planner",
+    ],
+)
+
+lean_library(
+    name = "lowersplit_workflows",
+    srcs = [
+        "EsmSplit/LowerSplit/Certified.lean",
+        "EsmSplit/LowerSplit/Diagnostic.lean",
+        "EsmSplit/LowerSplit/Input.lean",
+    ],
+    deps = [
+        ":corejs_certificates",
+        ":corejs_runtime",
+        ":corejs_structural",
+        ":lowersplit_support",
     ],
 )
 
@@ -343,7 +371,7 @@ lean_binary(
     ],
     entry = "EsmSplit/LowerSplitMain.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
-    deps = [_LOWERSPLIT_WORKFLOWS + ":workflows"],
+    deps = [":lowersplit_workflows"],
 )
 
 lean_binary(
@@ -391,7 +419,6 @@ lean_library(
         "EsmSplit/CoreJS/SyntaxMatch.lean",
         "EsmSplit/CoreJS/Value.lean",
     ],
-    visibility = [_LOWERSPLIT_WORKFLOWS + ":__pkg__"],
     deps = [":estree"],
 )
 
