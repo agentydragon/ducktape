@@ -57,7 +57,7 @@ esbuild(
     sourcemap = False,
     splitting = True,
     target = ["es2022"],
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
     deps = [":app"],
 )
 
@@ -114,7 +114,7 @@ run_binary(
     tool = ":gen_inputs_bin",
     visibility = [
         "//devinfra/js/debundle/perf:__pkg__",
-        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
     ],
 )
 
@@ -167,7 +167,7 @@ filegroup(
     name = "spec_graphs",
     srcs = [":debundle"],
     output_group = "dependency_graphs",
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
 )
 
 py_test(

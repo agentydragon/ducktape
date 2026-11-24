@@ -3,11 +3,10 @@ import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import * as acorn from "acorn";
-import * as eslintScope from "eslint-scope";
-import { parseModule, topLevelStatements } from "../../scope_metadata.mjs";
-import { walk } from "../../syntax_inventory.mjs";
-import { dumpParsed } from "../../../lowering/dump_core.mjs";
+import { acorn, eslintScope } from "../../translation/bazel_parser.mjs";
+import { parseModule, topLevelStatements } from "../../translation/scope_metadata.mjs";
+import { walk } from "../../translation/syntax_inventory.mjs";
+import { dumpParsed } from "../../lowering/dump_core.mjs";
 
 const chunks = process.env.EXCALIDRAW_INPUTS.split(" ").find((file) => file.endsWith("/chunks"));
 assert(chunks);

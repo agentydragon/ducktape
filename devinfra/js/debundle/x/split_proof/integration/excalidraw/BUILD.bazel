@@ -1,0 +1,208 @@
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_run_binary", "js_test")
+load("//devinfra/lint:linters.bzl", "eslint_test")
+load("//devinfra/python:defs.bzl", "py_test")
+
+# The original and certified browser tests select different cases and runfiles.
+# gazelle:exclude browser_smoke_test.py
+
+_DUMP_DATA = [
+    "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+    "//devinfra/js/debundle/x/split_proof/translation:split_dump",
+]
+
+_LOWERSPLIT_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"}
+
+# Bounded public-workload investigation; reports refusals without treating them as proof failures.
+js_test(
+    name = "excalidraw_certificate_census",
+    size = "large",
+    timeout = "long",
+    data = _DUMP_DATA + [
+        "//devinfra/js/debundle/excalidraw:bundle",
+        "//devinfra/js/debundle/x/split_proof/lean:lower",
+    ],
+    entry_point = "run.mjs",
+    env = dict(
+        _LOWERSPLIT_ENV,
+        EXCALIDRAW_OUTPUTS = "$(rootpaths //devinfra/js/debundle/excalidraw:bundle)",
+        LOWER = "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
+    ),
+    tags = ["manual"],
+)
+
+_EXCALIDRAW_GRAPHS = "//devinfra/js/debundle/excalidraw:spec_graphs"
+
+_EXCALIDRAW_SPEC_DIR = "excalidraw_lean_specs"
+
+_EXCALIDRAW_EDITOR_SPEC = _EXCALIDRAW_SPEC_DIR + "/editor.json"
+
+_EXCALIDRAW_MAIN_SPEC = _EXCALIDRAW_SPEC_DIR + "/main.json"
+
+js_binary(
+    name = "generate_excalidraw_lean_specs",
+    entry_point = "generate_specs.mjs",
+)
+
+js_run_binary(
+    name = "excalidraw_lean_specs",
+    testonly = True,
+    srcs = [_EXCALIDRAW_GRAPHS],
+    outs = [
+        _EXCALIDRAW_EDITOR_SPEC,
+        _EXCALIDRAW_MAIN_SPEC,
+    ],
+    args = [
+        "$(execpath " + _EXCALIDRAW_GRAPHS + ")",
+        "$(RULEDIR)/" + _EXCALIDRAW_SPEC_DIR,
+    ],
+    tool = ":generate_excalidraw_lean_specs",
+)
+
+js_test(
+    name = "excalidraw_lean_specs_test",
+    data = [":generate_specs"],
+    entry_point = "generate_specs_test.mjs",
+)
+
+js_test(
+    name = "excalidraw_authored_placements",
+    size = "large",
+    data = _DUMP_DATA + [
+        "//devinfra/js/debundle/x/split_proof/translation/testing:ast_assertions",
+        ":" + _EXCALIDRAW_EDITOR_SPEC,
+        ":" + _EXCALIDRAW_MAIN_SPEC,
+        "//devinfra/js/debundle/excalidraw:inputs",
+        _EXCALIDRAW_GRAPHS,
+    ],
+    entry_point = "authored.mjs",
+    env = dict(
+        _LOWERSPLIT_ENV,
+        EDITOR_LEAN_SPEC = "$(rootpath :" + _EXCALIDRAW_EDITOR_SPEC + ")",
+        EXCALIDRAW_INPUTS = "$(rootpaths //devinfra/js/debundle/excalidraw:inputs)",
+        MAIN_LEAN_SPEC = "$(rootpath :" + _EXCALIDRAW_MAIN_SPEC + ")",
+        SPEC_GRAPHS = "$(rootpath " + _EXCALIDRAW_GRAPHS + ")",
+    ),
+    tags = ["manual"],
+)
+
+_EXCALIDRAW_SCROLL_DATA = [
+    ":" + _EXCALIDRAW_EDITOR_SPEC,
+    "//devinfra/js/debundle/x/split_proof/translation:bazel_parser",
+    "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+    "//devinfra/js/debundle/x/split_proof/translation:syntax_inventory",
+    "//devinfra/js/debundle/excalidraw:bundle",
+    "//devinfra/js/debundle/excalidraw:inputs",
+    "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+    "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+]
+
+_EXCALIDRAW_SCROLL_ENV = {
+    "EDITOR_LEAN_SPEC": "$(rootpath :" + _EXCALIDRAW_EDITOR_SPEC + ")",
+    "EXCALIDRAW_INPUTS": "$(rootpaths //devinfra/js/debundle/excalidraw:inputs)",
+    "EXCALIDRAW_OUTPUTS": "$(rootpaths //devinfra/js/debundle/excalidraw:bundle)",
+    "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+}
+
+js_test(
+    name = "excalidraw_scroll_certificate",
+    size = "medium",
+    data = _EXCALIDRAW_SCROLL_DATA,
+    entry_point = "scroll.mjs",
+    env = _EXCALIDRAW_SCROLL_ENV,
+)
+
+js_test(
+    name = "excalidraw_scroll_single_certificate",
+    size = "medium",
+    args = ["--strict-single"],
+    data = _EXCALIDRAW_SCROLL_DATA,
+    entry_point = "scroll.mjs",
+    env = _EXCALIDRAW_SCROLL_ENV,
+    tags = ["manual"],
+)
+
+_EXCALIDRAW_BROWSER_PY = "browser_smoke_test.py"
+
+_EXCALIDRAW_BROWSER_DATA = [
+    "//:node_modules/@excalidraw/excalidraw/dir",
+    "//devinfra/js/debundle/excalidraw:bundle",
+    "//devinfra/js/debundle/excalidraw:inputs",
+]
+
+_EXCALIDRAW_BROWSER_ENV = {
+    "EXCALIDRAW_INPUTS": "$(rlocationpaths //devinfra/js/debundle/excalidraw:inputs)",
+    "EXCALIDRAW_OUTPUTS": "$(rlocationpaths //devinfra/js/debundle/excalidraw:bundle)",
+    "EXCALIDRAW_PACKAGE": "$(rlocationpath //:node_modules/@excalidraw/excalidraw/dir)",
+}
+
+_EXCALIDRAW_BROWSER_DEPS = [
+    "//:conftest",
+    "//devinfra/testing:undeclared_outputs",
+    "//testing:asgi",
+    "//testing/frontend_visual:context",
+    "//testing/frontend_visual:fixtures",
+    "@pypi//httpx",
+    "@pypi//playwright",
+    "@pypi//pytest",
+    "@pypi//pytest_bazel",
+    "@pypi//starlette",
+    "@rules_python//python/runfiles",
+]
+
+py_test(
+    name = "excalidraw_original_editor_browser_smoke",
+    srcs = [_EXCALIDRAW_BROWSER_PY],
+    args = [
+        "-k",
+        "test_original_editor",
+    ],
+    data = _EXCALIDRAW_BROWSER_DATA,
+    env = _EXCALIDRAW_BROWSER_ENV,
+    main = _EXCALIDRAW_BROWSER_PY,
+    tags = ["manual"],
+    deps = _EXCALIDRAW_BROWSER_DEPS,
+)
+
+[
+    py_test(
+        name = "excalidraw_certified_" + placement + "_browser_smoke",
+        size = "medium",
+        srcs = [_EXCALIDRAW_BROWSER_PY],
+        args = [
+            "-k",
+            "test_certified_editor_split[" + placement + "]",
+        ],
+        data = _EXCALIDRAW_BROWSER_DATA + [
+            ":" + _EXCALIDRAW_EDITOR_SPEC,
+            "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        ],
+        env = dict(
+            _EXCALIDRAW_BROWSER_ENV,
+            EDITOR_LEAN_SPEC = "$(rlocationpath :" + _EXCALIDRAW_EDITOR_SPEC + ")",
+            LOWERSPLIT = "$(rlocationpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+        ),
+        main = _EXCALIDRAW_BROWSER_PY,
+        tags = ["manual"],
+        deps = _EXCALIDRAW_BROWSER_DEPS,
+    )
+    for placement in [
+        "scroll",
+        "startup",
+    ]
+]
+
+js_library(
+    name = "generate_specs",
+    srcs = ["generate_specs.mjs"],
+)
+
+js_library(
+    name = "lint_sources",
+    testonly = True,
+    srcs = glob(["*.mjs"]),
+)
+
+eslint_test(
+    name = "eslint_test",
+    srcs = [":lint_sources"],
+)
