@@ -858,6 +858,9 @@ async def test_clear_shopping_list_keeps_list_and_other_lists_items(
     control.raise_for_status()
     control_id = control.json()["created_object_id"]
 
+    selected = await call_tool(mcp_client, "shopping_list_get", {"shopping_list": list_name})
+    assert {(item["note"], item["done"]) for item in selected["items"]} == {("Done=0", False), ("Done=1", True)}
+
     for ref in (list_name.lower(), list_id):
         assert await call_tool(mcp_client, "shopping_list_clear", {"shopping_list": ref}) == {"kind": "ok"}
         kept = await call_tool(mcp_client, "shopping_list_get", {"shopping_list": list_id})

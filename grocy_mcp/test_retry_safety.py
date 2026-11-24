@@ -279,7 +279,7 @@ async def test_shopping_list_catalogs_are_read_once_per_report(mcp_client: tuple
     client, router = mcp_client
     shopping_list = {"id": 1, "name": "Weekly"}
     router.get("/objects/shopping_lists").respond(json=[shopping_list])
-    items = router.get("/objects/shopping_list")
+    items = router.get("/objects/shopping_list", params={"query[]": "shopping_list_id=1"})
     items.respond(json=[{"id": 10 + i, "product_id": p} for i, p in enumerate(["1", 1, 2, 3, None])])
     products = router.get("/objects/products").respond(json=[*PRODUCTS, {"id": 2, "name": "Sugar", "qu_id_stock": 9}])
     units = router.get("/objects/quantity_units").respond(json=QUS)
