@@ -218,7 +218,7 @@ pub struct ProgramAnalysis {
     pub imports: Vec<ImportRecord>,
     pub import_local_names: HashSet<String>,
     pub export_aliases: Vec<ExportAliasRecord>,
-    pub declarations: Vec<DeclarationRecord>,
+    pub declarations: Vec<KeptTopLevelDeclarationRecord>,
     pub side_effect_count: usize,
     pub dynamic_import_count: usize,
     pub observable_module_effect: bool,
@@ -232,12 +232,6 @@ pub struct ProgramAnalysis {
     /// full-tree visit.
     pub has_rewritable_specifier: bool,
     pub runtime_facts: ChunkRuntimeFacts,
-}
-
-pub struct DeclarationRecord {
-    pub line: Option<usize>,
-    pub names: Vec<String>,
-    pub kind: TopLevelDeclarationKind,
 }
 
 enum PrimitiveExportSource {
@@ -730,7 +724,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         }
 
         if let Some((kind, names)) = classify_top_level_decl(item) {
-            declarations.push(DeclarationRecord {
+            declarations.push(KeptTopLevelDeclarationRecord {
                 line: item_line(&line_index, item),
                 names,
                 kind,
@@ -793,7 +787,7 @@ pub fn build_chunk_manifest_from_analysis(
     chunk_id: &str,
     entry_file: &str,
     source_path: &str,
-    analysis: &ProgramAnalysis,
+    analysis: ProgramAnalysis,
 ) -> ChunkAnalysisReport {
     let declared_names: HashSet<&String> = analysis
         .declarations
@@ -810,16 +804,6 @@ pub fn build_chunk_manifest_from_analysis(
         })
         .cloned()
         .collect::<Vec<_>>();
-    let kept_top_level_declarations = analysis
-        .declarations
-        .iter()
-        .map(|declaration| KeptTopLevelDeclarationRecord {
-            line: declaration.line,
-            names: declaration.names.clone(),
-            kind: declaration.kind,
-        })
-        .collect::<Vec<_>>();
-
     ChunkAnalysisReport {
         chunk_id: chunk_id.to_string(),
         source_path: source_path.to_string(),
@@ -842,11 +826,11 @@ pub fn build_chunk_manifest_from_analysis(
             file: entry_file.to_string(),
             role: FileRole::Entry,
         }],
-        imports: analysis.imports.clone(),
-        export_aliases: analysis.export_aliases.clone(),
+        imports: analysis.imports,
+        export_aliases: analysis.export_aliases,
         unresolved_exports,
-        kept_top_level_declarations,
-        runtime_facts: analysis.runtime_facts.clone(),
+        kept_top_level_declarations: analysis.declarations,
+        runtime_facts: analysis.runtime_facts,
     }
 }
 

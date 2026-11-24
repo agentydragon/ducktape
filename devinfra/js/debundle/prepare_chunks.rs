@@ -113,11 +113,12 @@ fn prepare_chunk(job: PrepareChunkJob<'_>) -> Result<(ChunkArtifact, bool)> {
         job.entry_source,
     )?;
     let analysis = analyze_program_shallow(&parsed);
+    let has_rewritable_specifier = analysis.has_rewritable_specifier;
     let manifest = build_chunk_manifest_from_analysis(
         job.chunk_name,
         CANONICAL_CHUNK_ENTRY_FILE,
         &job.source_path,
-        &analysis,
+        analysis,
     );
     Ok((
         ChunkArtifact {
@@ -135,7 +136,7 @@ fn prepare_chunk(job: PrepareChunkJob<'_>) -> Result<(ChunkArtifact, bool)> {
             },
             analysis: manifest,
         },
-        analysis.has_rewritable_specifier,
+        has_rewritable_specifier,
     ))
 }
 

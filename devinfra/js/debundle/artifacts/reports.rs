@@ -398,7 +398,7 @@ pub struct KeptTopLevelDeclarationRecord {
 
 /// The three top-level declaration variants we anchor extraction on.
 /// Mirrors the SWC `Decl` arms where `analyze_program_shallow` produces
-/// an `DeclarationRecord`.
+/// a `KeptTopLevelDeclarationRecord`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TopLevelDeclarationKind {
