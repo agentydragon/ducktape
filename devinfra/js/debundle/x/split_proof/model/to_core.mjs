@@ -206,6 +206,10 @@ export function coreFromParsed(
   const imports = [];
   const exports = [];
   const importedNames = new Set();
+  const importsSymbol = ast.body.some(
+    (node) =>
+      node.type === "ImportDeclaration" && node.specifiers.some((specifier) => specifier.local.name === "Symbol")
+  );
   /** Does `name` mean a binding that an `import` made? The module's scope is the outermost one. */
   const isImport = (name) => importedNames.has(name) && !scopes.slice(1).some((scope) => scope.has(name));
   const within = (names, body) => {
@@ -230,6 +234,22 @@ export function coreFromParsed(
     return refuse(node, "a property key");
   };
   const key = (node, computed) => (computed ? expr(node) : string(node, staticKey(node)));
+  // This is a host observation at execution time. A lexical or imported Symbol uses an ordinary lookup.
+  const iteratorMember = (node) =>
+    node.type === "MemberExpression" &&
+    !node.computed &&
+    !node.optional &&
+    node.object.type === "Identifier" &&
+    node.object.name === "Symbol" &&
+    !declared("Symbol") &&
+    !importsSymbol &&
+    node.property.type === "Identifier" &&
+    node.property.name === "iterator";
+  const methodKey = (node) => {
+    if (!node.computed) return staticKey(node.key);
+    if (iteratorMember(node.key)) return "[Symbol.iterator]";
+    return refuse(node, "a method named by a computed key");
+  };
   const isAnonymousFunction = (node) =>
     (node.type === "FunctionExpression" ||
       node.type === "ArrowFunctionExpression" ||
@@ -313,9 +333,8 @@ export function coreFromParsed(
           else emit("undef");
           emit("field", member.static);
         } else {
-          if (member.computed) refuse(member, "a method named by a computed key");
-          const k = staticKey(member.key);
-          key(member.key, false);
+          const k = methodKey(member);
+          key(member.key, member.computed);
           if (member.kind === "method") {
             func(member.value, k, "method", true);
             emit("method", member.static);
@@ -440,11 +459,11 @@ export function coreFromParsed(
             expr(p.value);
             emit("proto");
           } else {
-            if (p.computed && (p.method || isAnonymousFunction(p.value)))
+            if (p.computed && !p.method && isAnonymousFunction(p.value))
               refuse(p, "a function named by a computed key");
             key(p.key, p.computed);
             if (p.method) {
-              func(p.value, staticKey(p.key), "method");
+              func(p.value, methodKey(p), "method");
               emit("funcExpr");
             } else named(p.value, p.computed ? "" : staticKey(p.key));
             emit("init");
@@ -461,8 +480,11 @@ export function coreFromParsed(
         emit("arr", node.elements.length);
         break;
       case "MemberExpression":
-        member(node);
-        emit("get");
+        if (iteratorMember(node)) emit("prim", "iteratorSymbol", 0);
+        else {
+          member(node);
+          emit("get");
+        }
         break;
       case "CallExpression": {
         if (node.optional) refuse(node, "an optional call");

@@ -137,6 +137,16 @@ assert.equal(hostNames.status, 0, `corejs --host-names failed: ${hostNames.stder
 const host = JSON.parse(hostNames.stdout);
 const isPrimitive = (v) => v === null || ["undefined", "boolean", "number", "string"].includes(typeof v);
 const isWellFormed = String.prototype.isWellFormed;
+const symbolConstructor = Symbol;
+const iteratorSymbol = Symbol.iterator;
+
+function observesIteratorSymbol() {
+  const binding = Object.getOwnPropertyDescriptor(globalThis, "Symbol");
+  const member = Object.getOwnPropertyDescriptor(symbolConstructor, "iterator");
+  return (
+    binding?.value === symbolConstructor && member?.value === iteratorSymbol && !member.writable && !member.configurable
+  );
+}
 /** A primitive as `Decode.recordedPrimitive` of `Run.lean` reads it. */
 const encode = (v) => {
   if (v === undefined) return ["u"];
@@ -181,11 +191,13 @@ const wrapped = [...host.methods.map((name) => [name, true]), ...host.functions.
           try {
             const result = Reflect.apply(target, receiver, args);
             if (isPrimitive(result)) call.ret = encode(result);
+            else if (typeof result === "symbol") call.unknown = "the host returns an unsupported symbol";
             else
               failures.push(`${name} returned an object for primitives: the model's list of host functions is wrong`);
             return result;
           } catch (e) {
             if (isPrimitive(e)) call.throw = encode(e);
+            else if (typeof e === "symbol") call.unknown = "the host throws an unsupported symbol";
             else call.error = e.constructor.name;
             throw e;
           }
@@ -198,7 +210,7 @@ const wrapped = [...host.methods.map((name) => [name, true]), ...host.functions.
   }
 );
 
-/** What the module `file` does in Node: `{ out, end, detail, world }`, `world` being the host calls it made. */
+/** Run a Node module and record its host calls. */
 async function runFileInNode(file) {
   const out = [];
   const log = console.log;
@@ -208,6 +220,7 @@ async function runFileInNode(file) {
     out.push(format(...args));
     inHost = before;
   };
+  const stableIteratorSymbol = observesIteratorSymbol();
   recording = [];
   for (const w of wrapped) Object.defineProperty(w.owner, w.key, { ...w.descriptor, value: w.proxy });
   let ending;
@@ -222,7 +235,13 @@ async function runFileInNode(file) {
   recording = null;
   console.log = log;
   if (ending.thrown !== undefined || ending.detail === null) ending.detail = describe(ending.thrown);
-  return { out, end: ending.end, detail: ending.detail, world };
+  return {
+    out,
+    end: ending.end,
+    detail: ending.detail,
+    world,
+    iteratorSymbol: stableIteratorSymbol && observesIteratorSymbol(),
+  };
 }
 
 let directories = 0;
@@ -263,7 +282,10 @@ let modelSeconds = 0;
 function runModel(jobs) {
   if (jobs.length === 0) return;
   const input = path.join(work, "programs.jsonl");
-  writeFileSync(input, jobs.map((j) => JSON.stringify({ ...j.program, world: j.node.world })).join("\n") + "\n");
+  const recordings = jobs.map(({ program, node }) =>
+    JSON.stringify({ ...program, world: node.world, iteratorSymbol: node.iteratorSymbol })
+  );
+  writeFileSync(input, recordings.join("\n") + "\n");
   checkpoint(`CoreJS batch: ${jobs.map((j) => j.label).join("; ")}`);
   const started = Date.now();
   const model = spawnSync(corejs, [input], { encoding: "utf8", maxBuffer: 1 << 28 });

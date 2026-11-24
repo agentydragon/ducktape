@@ -625,6 +625,41 @@ export const cases = [
     `,
   },
   {
+    name: "the iterator symbol is a distinct inherited method key",
+    source: `
+      class Box {
+        value = 7;
+        [Symbol.iterator]() { return this.value; }
+        "Symbol.iterator"() { return "string"; }
+      }
+      const box = new Box();
+      const sym = Symbol.iterator;
+      const record = { ...{ [sym]: 3, "Symbol.iterator": 5 }, [Symbol.iterator]() { return this["Symbol.iterator"]; } };
+      console.log(typeof sym, Symbol.iterator === sym, sym === "Symbol.iterator", sym in []);
+      console.log(sym in box, box[sym](), box[sym].name, box["Symbol.iterator"]());
+      console.log(record[sym](), record[sym].name, record["Symbol.iterator"]);
+      box[sym] = 8;
+      console.log(box[sym], box["Symbol.iterator"](), delete box[sym], box[sym]());
+      function local() {
+        const Symbol = { iterator: "plain" };
+        return ({ [Symbol.iterator]: 4 }).plain;
+      }
+      console.log(local());
+    `,
+    end: "normal",
+  },
+  {
+    name: "a thrown iterator symbol stays distinct from a string",
+    source: `throw Symbol.iterator;`,
+    end: "throw",
+  },
+  {
+    name: "a native host call with an iterator symbol argument stops at the boundary",
+    source: `console.log("before"); Boolean(Symbol.iterator);`,
+    end: "unknown",
+    expectedStop: { detail: "host function Boolean is called", left: 0, out: ["before"] },
+  },
+  {
     name: "the host is handed an object",
     source: `console.log("abc".slice(1)); console.log("abc".replace("b", () => "x"));`,
     end: "unknown",

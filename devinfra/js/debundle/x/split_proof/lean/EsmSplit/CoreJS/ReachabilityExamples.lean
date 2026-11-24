@@ -159,10 +159,12 @@ theorem keys_without_callback :
     simp [arrayIndex?, String.toNat?, String.Slice.toNat?, String.Slice.isNat]
   have ha : arrayIndex? "a" = none := by
     simp [arrayIndex?, String.toNat?, String.Slice.toNat?, String.Slice.isNat]
-  have hkeys : ownPropertyKeys keysObject.props = ["z", "accessor", "a"] := by
-    simp [ownPropertyKeys, keysObject, hz, haccessor, ha]
-  change Res.ok (Told.keys (ownPropertyKeys keysObject.props)) (objectState keysObject) = _
-  rw [hkeys]
+  have hkeys : ownPropertyKeys keysObject.props = [.str "z", .str "accessor", .str "a"] := by
+    simp [ownPropertyKeys, keysObject, PropertyKey.string?, hz, haccessor, ha]
+  have get : fromW (.handle 0) (objectState keysObject) = .ok (.obj external) (objectState keysObject) := rfl
+  have own : ownKeys (.obj external) (objectState keysObject) =
+      .ok (ownPropertyKeys keysObject.props) (objectState keysObject) := rfl
+  simp only [perform, M.bind_apply, get, own, hkeys] <;> rfl
 
 private def aliasState (initialized : Bool) : State readOnceWorld where
   heap := #[#[{ proto := none, props := [] }], #[]]

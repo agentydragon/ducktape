@@ -14,14 +14,14 @@ private theorem descriptorNone_safe {A : HeapNode → Prop} :
     ∀ a, a ∈ (none : Option Val) → SafeVal A a := fun _ h => by cases h
 
 private theorem reachFrame_createData {r R cells A} (away : Away r R A) {a : Addr} (ha : A (.obj a))
-    (k : String) (v : Val) (safe : SafeVal A v) :
+    (k : PropertyKey) (v : Val) (safe : SafeVal A v) :
     ReachFrame r R cells A (fun _ => True) (createData a k v : M W Unit) :=
   reachFrame_defineOwn away ha k _
     ⟨descriptorField_safe safe, descriptorNone_safe, descriptorNone_safe⟩
 
 private theorem reachFrame_copySpreadKeys {r R cells A} (away : Away r R A) (call : Call W)
     (getter : ∀ f base, SafeVal A f → SafeVal A base → ReachFrame r R cells A (SafeVal A) (call f base []))
-    {target source : Addr} (ht : A (.obj target)) (hs : A (.obj source)) (keys : List String) :
+    {target source : Addr} (ht : A (.obj target)) (hs : A (.obj source)) (keys : List PropertyKey) :
     ReachFrame r R cells A (fun _ => True) (copySpreadKeys call target source keys) := by
   induction keys with
   | nil => exact reachFrame_pure r R cells A () trivial
@@ -79,7 +79,7 @@ theorem evalFields_reachFrame_step {r R cells A n} (away : Away r R A) (env : En
     (ha : A (.obj a))
     (eval : ∀ e, ReachFrame r R cells A (SafeVal A) (evalExpr n env e : M W Val))
     (rest : ∀ fs, ReachFrame r R cells A (fun _ => True) (evalFields n env a fs : M W Unit))
-    (fs : List (String × Expr)) :
+    (fs : List (PropertyKey × Expr)) :
     ReachFrame r R cells A (fun _ => True) (evalFields (n + 1) env a fs : M W Unit) := by
   cases fs with
   | nil => exact reachFrame_pure r R cells A () trivial
@@ -234,7 +234,7 @@ private theorem reachFrame_constructorLink {r R cells A} (away : Away r R A) (pr
 
 private theorem reachFrame_constructorCode {r R cells A} (away : Away r R A) (c : Addr)
     (hc : A (.obj c)) (ctor : Func) (closed : Env) (safe : ∀ node ∈ closed.nodes, A node)
-    (fields : List (String × Expr)) :
+    (fields : List (PropertyKey × Expr)) :
     ReachFrame r R cells A (fun _ => True)
       (modifyObj c fun o => { o with code := some (.closure ctor closed fields) } : M W Unit) := by
   apply reachFrame_modifyObj away c hc
@@ -340,7 +340,7 @@ private theorem reachFrame_finishDerived {r R cells A} (away : Away r R A)
     (name : Name) (self : Bool) (members : List ClassMember) (parents : Addr × Option Addr)
     (ctor : Option (List Stmt × List Expr × Func))
     (guard : A (.obj parents.1) ∧ ∀ a ∈ parents.2, A (.obj a))
-    (runMembers : Env → Addr → Addr → List ClassMember → M W (List (Bool × String)))
+    (runMembers : Env → Addr → Addr → List ClassMember → M W (List (Bool × PropertyKey)))
     (framed : ∀ proto c, A (.obj proto) → A (.obj c) →
       ReachFrame r R cells A (fun _ => True) (runMembers env proto c members)) :
     ReachFrame r R cells A (SafeVal A) (finishDerived runMembers env name self members parents ctor) := by

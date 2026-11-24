@@ -113,7 +113,7 @@ theorem frames_talk (r : Nat) (R : Addr → Prop) (told : Told) : Frames r R (ta
   ⟨fun _ _ _ _ => rfl, fun _ _ => ⟨rfl, rfl, fun _ _ => rfl, rfl⟩⟩
 
 theorem frames_toW (r : Nat) (R : Addr → Prop) (v : Val) : Frames r R (toW v : M W WVal) := by
-  cases v <;> try exact frames_pure r R _
+  cases v <;> try first | exact frames_pure r R _ | exact frames_unknown r R _
   case obj a =>
     constructor
     · intro s H C hr

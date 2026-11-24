@@ -99,6 +99,7 @@ def logOp : String → D LogOp
 def primOf : String → D Prim
   | "log" => pure .log | "defineProperty" => pure .defineProperty | "create" => pure .create
   | "getPrototypeOf" => pure .getPrototypeOf | "setPrototypeOf" => pure .setPrototypeOf
+  | "iteratorSymbol" => pure .iteratorSymbol
   | p => fail s!"unknown primitive {p}"
 
 def funcKind : String → D FuncKind

@@ -11,15 +11,16 @@ namespace CoreJS
 when lookup misses throughout the prototype chain of an ordinary object. -/
 theorem setProp_fresh_data {s : State W} {a : Addr} {o : Obj} {key : String}
     (obj : s.objAt a = some o) (ordinary : o.array = false)
-    (absent : findProp s s.objectCount a key = none)
-    (own : o.props.lookup key = none) (call : Call W) (value : Val) :
+    (absent : findProp s s.objectCount a (.str key) = none)
+    (own : o.props.lookup (PropertyKey.str key) = none) (call : Call W) (value : Val) :
     setProp call (.obj a) (.str key) value s =
-      modifyObj a (fun obj => { obj with props := setOwn obj.props key (.data value true true true) }) s := by
-  simp [setProp, toKey, toStr, lift, lookupProp, getState, bind, pure, Except.pure, absent,
+      modifyObj a (fun obj => { obj with props := setOwn obj.props (.str key) (.data value true true true) }) s := by
+  have converted : (toKey (.str key) : M W PropertyKey) = pure (.str key) := rfl
+  simp [setProp, converted, lift, lookupProp, getState, bind, pure, Except.pure, absent,
     getObj, obj, defineOwn, ordinary, own, applyDesc]
 
 
-private theorem key_absent (props : List (String × Property)) (key : String)
+private theorem key_absent (props : List (PropertyKey × Property)) (key : PropertyKey)
     (h : key ∉ props.map Prod.fst) :
     props.lookup key = none ∧ props.any (·.1 == key) = false := by
   refine ⟨lookup_none_iff_not_mem_keys.mpr h, List.any_eq_false.mpr ?_⟩
@@ -65,10 +66,11 @@ theorem setProp_many_fresh {s : State W} (call : Call W) (fields : List (String 
     (proto : o.proto = some parent) (hne : parent ≠ a)
     (root : s.objAt parent = some p) (top : p.proto = none)
     (unique : (fields.map Prod.fst).Nodup)
-    (fresh : ∀ f ∈ fields, f.1 ∉ o.props.map Prod.fst)
-    (inherited : ∀ f ∈ fields, p.props.lookup f.1 = none) :
+    (fresh : ∀ f ∈ fields, PropertyKey.str f.1 ∉ o.props.map Prod.fst)
+    (inherited : ∀ f ∈ fields, p.props.lookup (PropertyKey.str f.1) = none) :
     (fields.forM fun (k, v) => setProp call (.obj a) (.str k) v) s =
-      modifyObj a (fun old => { old with props := old.props ++ fields.map (fun (k, v) => (k, .data v true true true)) }) s := by
+      modifyObj a (fun old =>
+        { old with props := old.props ++ fields.map (fun (k, v) => (PropertyKey.str k, Property.data v true true true)) }) s := by
   induction fields generalizing s o with
   | nil =>
     simp only [modifyObj, List.map_nil, List.append_nil]
@@ -79,15 +81,15 @@ theorem setProp_many_fresh {s : State W} (call : Call W) (fields : List (String 
   | cons head rest ih =>
     rcases head with ⟨k, v⟩
     simp only [List.map_cons, List.nodup_cons] at unique
-    obtain ⟨absent, noKey⟩ := key_absent o.props k (fresh (k, v) (by simp))
+    obtain ⟨absent, noKey⟩ := key_absent o.props (.str k) (fresh (k, v) (by simp))
     have miss := findProp_absent obj proto root top absent (inherited (k, v) (by simp)) s.objectCount
-    let add := fun (old : Obj) => { old with props := setOwn old.props k (.data v true true true)}
+    let add := fun (old : Obj) => { old with props := setOwn old.props (.str k) (.data v true true true)}
     let u := { s with heap := s.heap.modify a.region (·.modify a.index add)}
     have first : setProp call (.obj a) (.str k) v s = .ok () u := setProp_fresh_data obj ordinary miss absent call v
     have changed : u.objAt a = some (add o) := modifyObj_self obj (show modifyObj a add s = .ok () u from rfl)
     have other (b : Addr) (ne : b ≠ a) : u.objAt b = s.objAt b := objAt_modify _ _ _ _ ne
-    have props : (add o).props = o.props ++ [(k, Property.data v true true true)] := by simp [add, setOwn, noKey]
-    have stillFresh : ∀ f ∈ rest, f.1 ∉ (add o).props.map Prod.fst := by
+    have props : (add o).props = o.props ++ [(PropertyKey.str k, Property.data v true true true)] := by simp [add, setOwn, noKey]
+    have stillFresh : ∀ f ∈ rest, PropertyKey.str f.1 ∉ (add o).props.map Prod.fst := by
       intro f hf
       have diff : f.1 ≠ k := fun eq => unique.1 (eq ▸ List.mem_map.mpr ⟨f, hf, rfl⟩)
       simpa [props, diff] using fresh f (by simp [hf])

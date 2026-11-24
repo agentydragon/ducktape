@@ -89,6 +89,13 @@ theorem reachFrame_prim {r R cells A} (away : Away r R A) (call : Call W) (hf : 
   | regExpGet getter => exact reachFrame_readRegExp away call hf root getter _ (safe_arg safe 0)
   | globalTypeof name => exact reachFrame_observeGlobalTypeof r R cells A name
   | globalRef name => exact reachFrame_readHostRef r R cells A (.binding name)
+  | iteratorSymbol =>
+    apply (reachFrame_readHostRef r R cells A (.property "Symbol" "iterator")).bind
+    intro value _
+    cases value <;> try exact reachFrame_unknown r R cells A _ _
+    split
+    · exact reachFrame_pure r R cells A (P := SafeVal A) Val.iteratorSymbol (by simp [SafeVal, Val.nodes])
+    · exact reachFrame_unknown r R cells A _ _
   | opaqueAmbientRef name | opaqueConstructorRef name => exact reachFrame_unknown r R cells A _ _
   | opaqueAmbientMemberRef receiver member => exact reachFrame_unknown r R cells A _ _
   | log => exact reachFrame_prim_log call args

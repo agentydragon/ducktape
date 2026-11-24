@@ -285,7 +285,7 @@ theorem local_setCell {c : Addr} (hc : c.region = r) (v : Val) : Local r R (setC
   · rw [modify_eq_set! _ _ _ #[], hc, State.with_cells]
   · rw [modify_eq_set! _ _ _ #[], hc, State.with_cells, hst.heap, hst.cells]
 
-theorem local_defineOwn {a : Addr} (ha : a.region = r) (k : String) (d : Desc) :
+theorem local_defineOwn {a : Addr} (ha : a.region = r) (k : PropertyKey) (d : Desc) :
     Local r R (defineOwn a k d : M W Unit) := by
   unfold defineOwn
   refine (local_getObj ha).bind' fun o => ?_
@@ -372,7 +372,7 @@ theorem local_evalExpr_str (n : Nat) (env : Env) (key : String) :
 
 theorem local_evalMembers_plain (n : Nat) (env : Env) (proto c : Addr) (ms : List ClassMember)
     (h : plainClassMembers ms = true) (hp : proto.region = r) (hc : c.region = r) :
-    Local r R (evalMembers n env proto c ms : M W (List (Bool × String))) := by
+    Local r R (evalMembers n env proto c ms : M W (List (Bool × PropertyKey))) := by
   induction n generalizing ms with
   | zero => exact local_outOfFuel
   | succ n ih =>

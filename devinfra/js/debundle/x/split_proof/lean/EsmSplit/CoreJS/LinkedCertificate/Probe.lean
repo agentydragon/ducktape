@@ -80,9 +80,13 @@ structure Refusal where
   observation : Option Lean.Json := none
 
 private structure ValuePair where
-  path : List String
+  path : List Lean.Json
   original : Val
   candidate : Val
+
+private def pathKey : PropertyKey → Lean.Json
+  | .str name => .str name
+  | .iteratorSymbol => Lean.Json.mkObj [("symbol", .str "Symbol.iterator")]
 
 private def displayValue : Val → String
   | .undef => "undefined"
@@ -90,6 +94,7 @@ private def displayValue : Val → String
   | .bool b => toString b
   | .num n => if n.toBits == 0x8000000000000000 then "-0" else toString n
   | .str s => (s.take 160).toString.quote
+  | .iteratorSymbol => "Symbol.iterator"
   | .obj _ => "object"
   | .host n => "host value " ++ n
   | .error k msg => s!"{repr k}: {(msg.take 160).toString.quote}"
@@ -104,23 +109,23 @@ private def observeExports (profile : HostPremises) (source candidate : Program)
   for (name, addr) in a do
     let some left := (original.cellAt addr).bind (·.value) | continue
     let some right := ((b.lookup name).bind split.cellAt).bind (·.value) | continue
-    values := ⟨[name], left, right⟩ :: values
+    values := ⟨[.str name], left, right⟩ :: values
     if let (.obj l, .obj r) := (left, right) then
       if let (some l, some r) := (original.objAt l, split.objAt r) then
         let properties := Std.HashMap.ofList r.props
         for (key, value) in l.props do
           if let (.data a .., some (.data b ..)) := (value, properties[key]?) then
-            values := ⟨[name, key], a, b⟩ :: values
+            values := ⟨[.str name, pathKey key], a, b⟩ :: values
   return values.reverse
 
 private def firstExportDifference (values : List ValuePair) : Option Lean.Json := Id.run do
-  let mut seenOriginal : Std.HashMap (Nat × Nat) ((Nat × Nat) × List String) := {}
-  let mut seenSplit : Std.HashMap (Nat × Nat) ((Nat × Nat) × List String) := {}
+  let mut seenOriginal : Std.HashMap (Nat × Nat) ((Nat × Nat) × List Lean.Json) := {}
+  let mut seenSplit : Std.HashMap (Nat × Nat) ((Nat × Nat) × List Lean.Json) := {}
   for ⟨path, original, split⟩ in values do
     if let (.obj a, .obj b) := (original, split) then
       let l := (a.region, a.index)
       let r := (b.region, b.index)
-      let detail (earlier : List String) (aliased : Bool) := Lean.Json.mkObj [
+      let detail (earlier : List Lean.Json) (aliased : Bool) := Lean.Json.mkObj [
         ("kind", Lean.toJson "alias"), ("paths", Lean.toJson [earlier, path]),
         ("original_alias", Lean.toJson aliased), ("split_alias", Lean.toJson (!aliased))]
       if let some (previous, earlier) := seenOriginal[l]? then

@@ -11,7 +11,7 @@ structure ParentAt (s : State W) (env : Env) (base : Name) (cell ctor proto : Ad
   binding : ∃ mutable, s.cellAt cell = some ⟨some (.obj ctor), mutable⟩
   object : ∃ o f closed fields w e c, s.objAt ctor = some o ∧
     o.code = some (.closure f closed fields) ∧ f.kind = .classCtor ∧
-    o.props.lookup "prototype" = some (.data (.obj proto) w e c)
+    o.props.lookup (.str "prototype") = some (.data (.obj proto) w e c)
 
 theorem ParentAt.in_region {s : State W} (h : ParentAt s env base cell ctor proto) (r : Nat) :
     ParentAt { s with region := r } env base cell ctor proto := ⟨h.lookup, h.binding, h.object⟩

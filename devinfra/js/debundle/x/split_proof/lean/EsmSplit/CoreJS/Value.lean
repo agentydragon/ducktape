@@ -38,10 +38,31 @@ inductive Val where
   | bool (b : Bool)
   | num (n : Float)
   | str (s : String)
+  | iteratorSymbol
   | obj (a : Addr)
   | error (kind : ErrorKind) (msg : String)
   | host (name : String)
   deriving DecidableEq
+
+inductive PropertyKey where
+  | str (name : String)
+  | iteratorSymbol
+  deriving DecidableEq, Hashable, Repr
+
+instance : Coe String PropertyKey := ⟨.str⟩
+
+@[simp] theorem PropertyKey.str_beq (a b : String) : (PropertyKey.str a == .str b) = (a == b) := by
+  rw [Bool.eq_iff_iff]
+  simp only [beq_iff_eq, PropertyKey.str.injEq]
+
+def PropertyKey.string? : PropertyKey → Option String
+  | .str name => some name
+  | .iteratorSymbol => none
+
+instance : ToString PropertyKey where
+  toString
+    | .str name => name
+    | .iteratorSymbol => "Symbol.iterator"
 
 inductive Property where
   | data (value : Val) (writable enumerable configurable : Bool)
@@ -73,7 +94,7 @@ inductive Code where
   | derived
   /-- Execute the prefix, evaluate super arguments, then run the remaining body with the returned receiver. -/
   | derivedBody (before : List Stmt) (superArgs : List Expr) (body : Func) (closed : Env)
-  | closure (f : Func) (env : Env) (fields : List (String × Expr))
+  | closure (f : Func) (env : Env) (fields : List (PropertyKey × Expr))
   | host (name : String)
   /-- Part of the code the world runs with the supplied cells. The constructor capability is
   independent of changes to the function's public `prototype` property. -/
@@ -81,7 +102,7 @@ inductive Code where
 
 structure Obj where
   proto : Option Addr
-  props : List (String × Property)
+  props : List (PropertyKey × Property)
   code : Option Code := none
   /-- An array: defining a property on it changes `length`, which is not modelled. -/
   array : Bool := false
@@ -114,7 +135,7 @@ def Val.primitive? : Val → Option Primitive
   | .bool b => some (.bool b)
   | .num n => some (.num n)
   | .str s => some (.str s)
-  | .obj _ | .error .. | .host _ => none
+  | .iteratorSymbol | .obj _ | .error .. | .host _ => none
 
 /-- What the world holds of a value: an object only as its position in the list of the objects it was handed
 (`Host.handed`), so the world can name no other object. -/
@@ -344,24 +365,28 @@ def arrayProtoNames : List String :=
     "entries", "values", "forEach", "filter", "flat", "flatMap", "map", "every", "some", "reduce", "reduceRight",
     "toReversed", "toSorted", "toSpliced", "with", "toLocaleString", "toString"]
 
-private def hostMembers (owner : String) (names : List String) : List (String × Property) :=
-  names.map fun k => (k, .data (.host s!"{owner}.{k}") true false true)
+private def hostMembers (owner : String) (names : List String) : List (PropertyKey × Property) :=
+  names.map fun k => (.str k, .data (.host s!"{owner}.{k}") true false true)
 
-private def hostAccessor (owner k : String) : String × Property :=
-  (k, .accessor (.host s!"get {owner}.{k}") (.host s!"set {owner}.{k}") false true)
+private def hostAccessor (owner k : String) : PropertyKey × Property :=
+  (.str k, .accessor (.host s!"get {owner}.{k}") (.host s!"set {owner}.{k}") false true)
+
+private def hostIterator (name : String) : PropertyKey × Property :=
+  (.iteratorSymbol, .data (.host name) true false true)
 
 /-- String-keyed own properties of %AsyncFunction.prototype%. -/
 def asyncFunctionPrototype : Obj :=
   { proto := some functionProto, props := [("constructor", .data (.host "AsyncFunction") false false true)] }
 
-/-- The string-keyed properties on the synchronous generator prototype chain. -/
+/-- The modeled properties on the synchronous generator prototype chain. -/
 def iteratorPrototype : Obj :=
   { proto := some objectProto, props := [hostAccessor "Iterator.prototype" "constructor"] ++
       hostMembers "Iterator.prototype" ["reduce", "toArray", "forEach", "some", "every", "find", "map",
-        "filter", "take", "drop", "flatMap"] }
+        "filter", "take", "drop", "flatMap"] ++ [hostIterator "Iterator.prototype[Symbol.iterator]"] }
 
 def generatorPrototype : Obj :=
-  { proto := some iteratorProto, props := [("constructor", .data (.obj generatorFunctionProto) false false true)] ++
+  { proto := some iteratorProto,
+    props := [(PropertyKey.str "constructor", Property.data (.obj generatorFunctionProto) false false true)] ++
       hostMembers "Generator.prototype" ["next", "return", "throw"] }
 
 def generatorFunctionPrototype : Obj :=
@@ -377,7 +402,7 @@ def regexpGetters : List (String × RegExpGetter) := [
 
 def regexpPrototype : Obj :=
   let getters := regexpGetters.zipIdx.map fun ((name, _), i) =>
-    (name, Property.accessor (.obj ⟨0, regexpProto.index + 1 + i⟩) .undef false true)
+    (PropertyKey.str name, Property.accessor (.obj ⟨0, regexpProto.index + 1 + i⟩) .undef false true)
   { proto := some objectProto, props := hostMembers "RegExp.prototype" ["constructor", "exec"] ++ getters ++
       hostMembers "RegExp.prototype" ["compile", "toString", "test"] }
 
@@ -394,11 +419,12 @@ def regexpObject (data : RegExpData) : Obj :=
 def builtins : Array Obj := #[
   { proto := none, props := hostMembers "Object.prototype" objectProtoNames ++ [hostAccessor "Object.prototype" "__proto__"] },
   { proto := some objectProto, code := some (.host "Function.prototype"),
-    props := [("length", .data (.num 0) false false true), ("name", .data (.str "") false false true),
+    props := [(PropertyKey.str "length", Property.data (.num 0) false false true), ("name", .data (.str "") false false true),
       hostAccessor "Function.prototype" "arguments", hostAccessor "Function.prototype" "caller"] ++
       hostMembers "Function.prototype" functionProtoNames },
   { proto := some objectProto, array := true,
-    props := ("length", .data (.num 0) true false false) :: hostMembers "Array.prototype" arrayProtoNames },
+    props := ("length", .data (.num 0) true false false) ::
+      (hostMembers "Array.prototype" arrayProtoNames ++ [hostIterator "Array.prototype.values"]) },
   asyncFunctionPrototype, iteratorPrototype, generatorPrototype, generatorFunctionPrototype, regexpPrototype] ++ (regexpGetters.map fun (k, g) => regexpGetterObject k g).toArray
 
 /-! ## The host functions the world answers for -/
@@ -483,7 +509,7 @@ def toBoolean : Val → Except Abort Bool
   | .bool b => pure b
   | .num n => pure (!(n == 0.0 || n.isNaN))
   | .str s => pure (!s.isEmpty)
-  | .obj _ | .error .. => pure true
+  | .iteratorSymbol | .obj _ | .error .. => pure true
   | .host name => inspectsHost name
 
 def toNumber : Val → Except Abort Float
@@ -492,6 +518,7 @@ def toNumber : Val → Except Abort Float
   | .bool b => pure (if b then 1.0 else 0.0)
   | .num n => pure n
   | .str s => pure (Num.ofString s)
+  | .iteratorSymbol => .error (.error .type "cannot convert a symbol to a number")
   | .obj _ | .error .. => needsPrimitive
   | .host name => inspectsHost name
 
@@ -501,6 +528,7 @@ def toStr : Val → Except Abort String
   | .bool b => pure (if b then "true" else "false")
   | .num n => pure (Num.toString n)
   | .str s => pure s
+  | .iteratorSymbol => .error (.error .type "cannot convert a symbol to a string")
   | .obj _ | .error .. => needsPrimitive
   | .host name => inspectsHost name
 
@@ -514,6 +542,7 @@ def typeOf (s : State W) : Val → Except Abort String
   | .bool _ => pure "boolean"
   | .num _ => pure "number"
   | .str _ => pure "string"
+  | .iteratorSymbol => pure "symbol"
   | .obj a => pure (if isCallable s (.obj a) then "function" else "object")
   | .error .. => pure "object"
   | .host name => inspectsHost name
@@ -522,7 +551,7 @@ def typeOf (s : State W) : Val → Except Abort String
 def strictEq : Val → Val → Except Abort Bool
   | .host name, _ | _, .host name => inspectsHost name
   | .error .., .error .. => .error (.unknown "two engine errors are compared")
-  | .undef, .undef | .null, .null => pure true
+  | .undef, .undef | .null, .null | .iteratorSymbol, .iteratorSymbol => pure true
   | .bool a, .bool b => pure (a == b)
   | .num a, .num b => pure (a == b)
   | .str a, .str b => pure (a == b)
@@ -545,11 +574,13 @@ def looseEq (a b : Val) : Except Abort Bool :=
   | .obj x, .obj y => pure (x == y)
   | .error .., .error .. => .error (.unknown "two engine errors are compared")
   | .str x, .str y => pure (x == y)
+  | .iteratorSymbol, .iteratorSymbol => pure true
   | _, _ =>
     if isNullish a || isNullish b then pure (isNullish a && isNullish b) else
     match a, b with
     | .obj _, .error .. | .error .., .obj _ => pure false
     | .obj _, _ | _, .obj _ | .error .., _ | _, .error .. => needsPrimitive
+    | .iteratorSymbol, _ | _, .iteratorSymbol => pure false
     | _, _ => do pure ((← toNumber a) == (← toNumber b))
 
 private def utf16CodeUnits (s : String) : List Nat :=
@@ -563,6 +594,8 @@ private def utf16CodeUnits (s : String) : List Nat :=
 primitive operands to numbers. IEEE comparisons all return false for an unordered pair. -/
 def relational (num : Float → Float → Bool) (str : Ordering → Bool) : Val → Val → Except Abort Bool
   | .str a, .str b => pure (str (compare (utf16CodeUnits a) (utf16CodeUnits b)))
+  | .iteratorSymbol, .obj _ | .iteratorSymbol, .error .. => needsPrimitive
+  | .iteratorSymbol, .host name => inspectsHost name
   | a, b => do pure (num (← toNumber a) (← toNumber b))
 
 /-- An int32 as its 32 bits, and back. -/
@@ -582,6 +615,7 @@ def binop (op : BinOp) (a b : Val) : Except Abort Val :=
   | .add =>
     match a, b with
     | .obj _, _ | _, .obj _ | .error .., _ | _, .error .. => needsPrimitive
+    | .iteratorSymbol, .host name => inspectsHost name
     | .str x, _ => do pure (.str (x ++ (← toStr b)))
     | _, .str y => do pure (.str ((← toStr a) ++ y))
     | _, _ => arith (· + ·)
@@ -635,11 +669,11 @@ def shortCircuits (op : LogOp) (v : Val) : Except Abort Bool :=
 
 /-! ## Properties -/
 
-def setOwn (props : List (String × Property)) (k : String) (p : Property) : List (String × Property) :=
+def setOwn (props : List (PropertyKey × Property)) (k : PropertyKey) (p : Property) : List (PropertyKey × Property) :=
   if props.any (·.1 == k) then props.map fun (k', p') => if k' == k then (k', p) else (k', p') else props ++ [(k, p)]
 
 /-- The first property named `k` on `a` and its prototypes. `steps` bounds the walk: a chain has no cycle, so the count of objects is enough. -/
-def findProp (s : State W) : Nat → Addr → String → Option Property
+def findProp (s : State W) : Nat → Addr → PropertyKey → Option Property
   | 0, _, _ => none
   | steps + 1, a, k =>
     match s.objAt a with
@@ -651,12 +685,15 @@ def findProp (s : State W) : Nat → Addr → String → Option Property
 
 def State.objectCount (s : State W) : Nat := s.heap.foldl (· + ·.size) 0
 
-def lookupProp (a : Addr) (k : String) : M W (Option Property) := do
+def lookupProp (a : Addr) (k : PropertyKey) : M W (Option Property) := do
   let s ← getState
   pure (findProp s s.objectCount a k)
 
-/-- A property key: a string, or a number as `ToString` writes it. -/
-def toKey (k : Val) : M W String := lift (toStr k)
+/-- Preserve the well-known symbol. Other supported keys use `ToString`. -/
+def toKey (k : Val) : M W PropertyKey :=
+  lift (match k with
+    | .iteratorSymbol => .ok .iteratorSymbol
+    | k => .str <$> toStr k)
 
 /-- The fields a property descriptor may have. -/
 structure Desc where
@@ -697,15 +734,15 @@ def applyDesc (current : Option Property) (d : Desc) : Except Abort (Option Prop
       else pure (some (.accessor (d.get.getD g) (d.set.getD st) e c))
 
 /-- `DefinePropertyOrThrow` on the object at `a`. -/
-def defineOwn (a : Addr) (k : String) (d : Desc) : M W Unit := do
+def defineOwn (a : Addr) (k : PropertyKey) (d : Desc) : M W Unit := do
   let o ← getObj a
-  if o.array then unknown "a property is defined on an array" else
+  if o.array && k.string?.isSome then unknown "a property is defined on an array" else
   match ← lift (applyDesc (o.props.lookup k) d) with
   | some p => modifyObj a fun o => { o with props := setOwn o.props k p }
   | none => throwErr .type s!"cannot redefine property: {k}"
 
 /-- `CreateDataPropertyOrThrow`. -/
-def createData (a : Addr) (k : String) (v : Val) : M W Unit :=
+def createData (a : Addr) (k : PropertyKey) (v : Val) : M W Unit :=
   defineOwn a k { value := some v, writable := some true, enumerable := some true, configurable := some true }
 
 /-- What a call does: the callee, `this`, the arguments. The operations below take it as a parameter. -/
@@ -713,16 +750,18 @@ abbrev Call (W : World) := Val → Val → List Val → M W Val
 
 /-- String own properties are `length` and canonical indices into its UTF-16 code units.
 An indexed property exists even when its value is an isolated surrogate. -/
-def stringOwn (s : String) (k : String) : Option (Except Abort Val) :=
-  if k == "length" then some (.ok (.num (Float.ofNat (utf16CodeUnits s).length))) else do
-    let i ← k.toNat?.filter (toString · == k)
-    let unit ← (utf16CodeUnits s)[i]?
-    return if 0xd800 ≤ unit ∧ unit ≤ 0xdfff then
-      .error (.unknown "string index reads an isolated UTF-16 surrogate")
-    else .ok (.str (String.singleton (Char.ofNat unit)))
+def stringOwn (s : String) : PropertyKey → Option (Except Abort Val)
+  | .iteratorSymbol => none
+  | .str k =>
+    if k == "length" then some (.ok (.num (Float.ofNat (utf16CodeUnits s).length))) else do
+      let i ← k.toNat?.filter (toString · == k)
+      let unit ← (utf16CodeUnits s)[i]?
+      return if 0xd800 ≤ unit ∧ unit ≤ 0xdfff then
+        .error (.unknown "string index reads an isolated UTF-16 surrogate")
+      else .ok (.str (String.singleton (Char.ofNat unit)))
 
 /-- The property `k` of the object at `a`, read for `base`: a getter runs with `base` as `this`. -/
-def getFrom (call : Call W) (a : Addr) (base : Val) (k : String) : M W Val := do
+def getFrom (call : Call W) (a : Addr) (base : Val) (k : PropertyKey) : M W Val := do
   match ← lookupProp a k with
   | none => pure .undef
   | some (.data v ..) => pure v
@@ -731,8 +770,11 @@ def getFrom (call : Call W) (a : Addr) (base : Val) (k : String) : M W Val := do
 
 /-- A property of a primitive that it does not have itself: a member of its prototype `owner`, which is a value of
 the host, or else what `Object.prototype` has. -/
-def protoProp (call : Call W) (owner : String) (names : List String) (base : Val) (k : String) : M W Val :=
-  if names.contains k then pure (.host s!"{owner}.{k}") else getFrom call objectProto base k
+def protoProp (call : Call W) (owner : String) (names : List String) (base : Val) : PropertyKey → M W Val
+  | .str k => if names.contains k then pure (.host s!"{owner}.{k}") else getFrom call objectProto base (.str k)
+  | .iteratorSymbol =>
+    if owner == "String.prototype" then unknown "String.prototype[Symbol.iterator] is a host method"
+    else getFrom call objectProto base .iteratorSymbol
 
 def readHostRef (ref : HostRef) : M W Val := fun s =>
   match W.hostRef ref s.world.state with
@@ -761,8 +803,12 @@ def getProp (call : Call W) (base key : Val) : M W Val := do
     | none => protoProp call "String.prototype" stringProtoNames base k
   | .num _ => protoProp call "Number.prototype" numberProtoNames base (← toKey key)
   | .bool _ => protoProp call "Boolean.prototype" booleanProtoNames base (← toKey key)
+  | .iteratorSymbol => unknown "a property of a symbol primitive"
   | .error .. => unknown "a property of an engine error"
-  | .host name => hostMember name (← toKey key)
+  | .host name =>
+    match ← toKey key with
+    | .str k => hostMember name k
+    | .iteratorSymbol => unknown s!"a symbol property of host value {name}"
 
 /-- `base[key] = v` in strict code. A setter runs with `base` as `this`. -/
 def setProp (call : Call W) (base key v : Val) : M W Unit := do
@@ -782,7 +828,7 @@ def setProp (call : Call W) (base key v : Val) : M W Unit := do
     let k ← toKey key
     if (stringOwn s k).isSome then throwErr .type s!"cannot assign to read only property {k}"
     else unknown "a property is set on a primitive"
-  | .num _ | .bool _ => unknown "a property is set on a primitive"
+  | .num _ | .bool _ | .iteratorSymbol => unknown "a property is set on a primitive"
   | .error .. => unknown "a property of an engine error"
   | .host name => unknown s!"a property of host value {name}"
 
@@ -803,7 +849,7 @@ def deleteProp (base key : Val) : M W Val := do
     let k ← toKey key
     if (stringOwn s k).isSome then throwErr .type s!"cannot delete property {k}"
     else pure (.bool true)
-  | .num _ | .bool _ => unknown "a property of a primitive is deleted"
+  | .num _ | .bool _ | .iteratorSymbol => unknown "a property of a primitive is deleted"
   | .error .. => unknown "a property of an engine error"
   | .host name => unknown s!"a property of host value {name}"
 
@@ -850,6 +896,7 @@ def toDesc (call : Call W) (v : Val) : M W Desc := do
 /-- How `console.log` writes a primitive. An object is written by the host. -/
 def logArg : Val → Except Abort String
   | .num n => pure (if Num.isNegZero n then "-0" else Num.toString n)
+  | .iteratorSymbol => .error (.unknown "console.log writes a symbol")
   | .obj _ | .error .. => .error (.unknown "console.log writes an object")
   | v => toStr v
 
@@ -897,6 +944,10 @@ def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
   | .regExpGet getter => readRegExp call getter (arg 0)
   | .globalTypeof name => observeGlobalTypeof name
   | .globalRef name => readHostRef (.binding name)
+  | .iteratorSymbol =>
+    match ← readHostRef (.property "Symbol" "iterator") with
+    | .host "Symbol.iterator" => pure .iteratorSymbol
+    | _ => unknown "ambient Symbol.iterator has an unsupported identity"
   | .opaqueAmbientRef name => unknown s!"ambient binding {name} is reached"
   | .opaqueConstructorRef name => unknown s!"ambient constructor {name} is reached"
   | .opaqueAmbientMemberRef receiver member => unknown s!"ambient member {receiver}.{member} is reached"
@@ -964,6 +1015,7 @@ def toW (v : Val) : M W WVal :=
   | .bool b => pure (.prim (.bool b))
   | .num n => pure (.prim (.num n))
   | .str x => pure (.prim (.str x))
+  | .iteratorSymbol => unknown "Symbol.iterator crosses the opaque host boundary"
 
 /-- The value the world names. -/
 def fromW : WVal → M W Val
@@ -1013,21 +1065,24 @@ def arrayIndex? (key : String) : Option Nat := do
   let index ← key.toNat?
   if index < 4294967295 ∧ toString index = key then some index else none
 
-/-- Own string keys: array indices in numeric order, then the other keys in insertion order. The model has no symbols. -/
-def ownPropertyKeys (props : List (String × Property)) : List String :=
-  let indexed : List (Nat × String) := props.filterMap fun (key, _) => (arrayIndex? key).map (·, key)
+/-- Own keys in order: array indices numerically, other strings in insertion order, then symbols. -/
+def ownPropertyKeys (props : List (PropertyKey × Property)) : List PropertyKey :=
+  let indexed : List (Nat × PropertyKey) := props.filterMap fun (key, _) =>
+    (key.string? >>= arrayIndex?).map (·, key)
   (indexed.mergeSort fun a b => decide (a.1 ≤ b.1)).map (·.2) ++
-    props.filterMap fun (key, _) => if (arrayIndex? key).isNone then some key else none
+    props.filterMap (fun (key, _) =>
+      if key.string?.any (fun name => (arrayIndex? name).isNone) then some key else none) ++
+    props.filterMap fun (key, _) => if key == .iteratorSymbol then some key else none
 
 /-- The names of the own properties of an object, in ECMAScript enumeration order. -/
-def ownKeys (v : Val) : M W (List String) :=
+def ownKeys (v : Val) : M W (List PropertyKey) :=
   match v with
   | .obj a => do pure (ownPropertyKeys (← getObj a).props)
   | _ => unknown "the own keys of a value that is not an object of the program"
 
 /-- Copy enumerable own properties in key order. A getter can delete or redefine later keys,
 so each own descriptor is read when its turn arrives. -/
-def copySpreadKeys (call : Call W) (target source : Addr) : List String → M W Unit
+def copySpreadKeys (call : Call W) (target source : Addr) : List PropertyKey → M W Unit
   | [] => pure ()
   | key :: rest => do
     if ((← getObj source).props.lookup key).any Property.enumerable then
@@ -1038,7 +1093,7 @@ def copySpreadKeys (call : Call W) (target source : Addr) : List String → M W 
 def copySpread (call : Call W) (target : Addr) : Val → M W Unit
   | .obj source => do
     copySpreadKeys call target source (← ownKeys (.obj source))
-  | .undef | .null | .num _ | .bool _ => pure ()
+  | .undef | .null | .num _ | .bool _ | .iteratorSymbol => pure ()
   | .str s => do
     unless s.toList.all (·.toNat ≤ 0xffff) do
       unknown "object spread would copy an isolated UTF-16 surrogate"

@@ -66,13 +66,13 @@ macro_rules
     | with_reducible refine M.le_discard ?_
     | split)
 
-theorem getFrom_le {call call' : Call W} (h : Call.le call call') (a : Addr) (base : Val) (k : String) :
+theorem getFrom_le {call call' : Call W} (h : Call.le call call') (a : Addr) (base : Val) (k : PropertyKey) :
     getFrom call a base k ⊑ getFrom call' a base k := by
   unfold getFrom
   repeat' mono_step
   exact h _ _ _
 
-theorem copySpreadKeys_le {call call' : Call W} (h : Call.le call call') (target source : Addr) (keys : List String) :
+theorem copySpreadKeys_le {call call' : Call W} (h : Call.le call call') (target source : Addr) (keys : List PropertyKey) :
     copySpreadKeys call target source keys ⊑ copySpreadKeys call' target source keys := by
   induction keys with
   | nil => exact M.le_refl _
@@ -85,11 +85,9 @@ theorem copySpread_le {call call' : Call W} (h : Call.le call call') (target : A
   cases v <;> unfold copySpread <;> repeat' first | exact copySpreadKeys_le h _ _ _ | mono_step
 
 theorem protoProp_le {call call' : Call W} (h : Call.le call call') (owner : String) (names : List String) (base : Val)
-    (k : String) : protoProp call owner names base k ⊑ protoProp call' owner names base k := by
-  unfold protoProp
-  split
-  · exact M.le_refl _
-  · exact getFrom_le h _ _ _
+    (k : PropertyKey) : protoProp call owner names base k ⊑ protoProp call' owner names base k := by
+  cases k <;> simp only [protoProp] <;> split
+  all_goals first | exact M.le_refl _ | exact getFrom_le h _ _ _
 
 theorem getProp_le {call call' : Call W} (h : Call.le call call') (base key : Val) :
     getProp call base key ⊑ getProp call' base key := by
@@ -220,7 +218,7 @@ theorem Mono.members_succ (env : Env) (proto c : Addr) (ms : List ClassMember) :
     (evalMembers (n + 1) env proto c ms : M W _) ⊑ evalMembers (m + 1) env proto c ms := by
   cases ms <;> unfold evalMembers <;> mono ih
 
-theorem Mono.fields_succ (env : Env) (a : Addr) (fs : List (String × Expr)) :
+theorem Mono.fields_succ (env : Env) (a : Addr) (fs : List (PropertyKey × Expr)) :
     (evalFields (n + 1) env a fs : M W _) ⊑ evalFields (m + 1) env a fs := by
   cases fs <;> unfold evalFields <;> mono ih
 

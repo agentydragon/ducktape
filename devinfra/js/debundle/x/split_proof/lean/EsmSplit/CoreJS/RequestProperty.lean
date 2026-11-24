@@ -174,7 +174,7 @@ private theorem PrototypePath.transfer {cells A} {s t : State W} (hs : Access ce
   | inherited ho hk hproto _ ih =>
     exact .inherited ((same _ ha).symm.trans ho) hk hproto (ih (hs.prototype ha ho hproto))
 
-private theorem findProp_eq_findOnPrototype (s : State W) (n : Nat) (a : Addr) (key : String) :
+private theorem findProp_eq_findOnPrototype (s : State W) (n : Nat) (a : Addr) (key : PropertyKey) :
     findProp s n a key = findOnPrototype s (fun _ o => o.props.lookup key) n a := by
   induction n generalizing a with
   | zero => rfl
@@ -224,7 +224,7 @@ private theorem findProp_same {cells A} {s t : State W} (hs : Access cells A s) 
 
 /-- Prototype lookup stays within the capability envelope, including when a
 replacement changes the total heap size used as the walk's budget. -/
-theorem reachFrame_lookupProp {r R cells A} (away : Away r R A) {a : Addr} (ha : A (.obj a)) (key : String) :
+theorem reachFrame_lookupProp {r R cells A} (away : Away r R A) {a : Addr} (ha : A (.obj a)) (key : PropertyKey) :
     ReachFrame r R cells A (fun result => ∀ p, result = some p → ∀ node ∈ p.nodes, A node)
       (lookupProp a key : M W (Option Property)) := by
   constructor
@@ -249,8 +249,8 @@ private theorem reachFrame_throwErr {α : Type} (r R cells A) (P : α → Prop) 
     fun _ hs _ => ⟨by simp [SafeVal, Val.nodes], hs⟩⟩
 
 theorem reachFrame_toKey (r R cells A) (v : Val) :
-    ReachFrame r R cells A (fun _ => True) (toKey v : M W String) :=
-  reachFrame_lift (toStr v) (fun _ _ => trivial)
+    ReachFrame r R cells A (fun _ => True) (toKey v : M W PropertyKey) :=
+  reachFrame_lift _ (fun _ _ => trivial)
 
 theorem reachFrame_hasProp {r R cells A} (away : Away r R A) (key base : Val) (hb : SafeVal A base) :
     ReachFrame r R cells A (SafeVal A) (hasProp key base : M W Val) := by
@@ -276,7 +276,7 @@ theorem perform_has {r R cells A} (away : Away r R A) (call : Call W)
 theorem reachFrame_getFrom {r R cells A} (away : Away r R A) (call : Call W)
     (framed : ∀ f base, SafeVal A f → SafeVal A base →
       ReachFrame r R cells A (SafeVal A) (call f base []))
-    {a} (ha : A (.obj a)) (base : Val) (hb : SafeVal A base) (key : String) :
+    {a} (ha : A (.obj a)) (base : Val) (hb : SafeVal A base) (key : PropertyKey) :
     ReachFrame r R cells A (SafeVal A) (getFrom call a base key) := by
   unfold getFrom
   apply (reachFrame_lookupProp away ha key).bind
@@ -297,12 +297,13 @@ private theorem reachFrame_protoProp {r R cells A} (away : Away r R A) (call : C
     (framed : ∀ f base, SafeVal A f → SafeVal A base →
       ReachFrame r R cells A (SafeVal A) (call f base []))
     (root : A (.obj objectProto)) (owner : String) (names : List String)
-    (base : Val) (hb : SafeVal A base) (key : String) :
+    (base : Val) (hb : SafeVal A base) (key : PropertyKey) :
     ReachFrame r R cells A (SafeVal A) (protoProp call owner names base key) := by
-  unfold protoProp
-  split
-  · exact reachFrame_pure r R cells A _ (by simp [SafeVal, Val.nodes])
-  · exact reachFrame_getFrom away call framed root base hb key
+  cases key <;> simp only [protoProp] <;> split
+  all_goals first
+  | exact reachFrame_pure r R cells A _ (by simp [SafeVal, Val.nodes])
+  | exact reachFrame_getFrom away call framed root base hb _
+  | exact reachFrame_unknown r R cells A _ _
 
 private theorem reachFrame_hostMember {r R cells A} (name key : String) :
     ReachFrame r R cells A (SafeVal A) (hostMember name key : M W Val) := by
@@ -314,19 +315,22 @@ private theorem reachFrame_hostMember {r R cells A} (name key : String) :
     · exact reachFrame_unknown r R cells A _ _
 
 private theorem stringOwn_safe {A s key v} (h : stringOwn s key = some (.ok v)) : SafeVal A v := by
-  unfold stringOwn at h
-  split at h
-  · cases h
-    simp [SafeVal, Val.nodes]
-  · simp only [bind, Option.bind, pure] at h
+  cases key with
+  | iteratorSymbol => cases h
+  | str key =>
+    simp only [stringOwn] at h
     split at h
     · cases h
-    · dsimp only at h
+      simp [SafeVal, Val.nodes]
+    · simp only [bind, Option.bind, pure] at h
       split at h
       · cases h
       · dsimp only at h
-        split at h <;> cases h
-        simp [SafeVal, Val.nodes]
+        split at h
+        · cases h
+        · dsimp only at h
+          split at h <;> cases h
+          simp [SafeVal, Val.nodes]
 
 theorem reachFrame_getProp {r R cells A} (away : Away r R A) (call : Call W)
     (framed : ∀ f base, SafeVal A f → SafeVal A base →
@@ -354,7 +358,11 @@ theorem reachFrame_getProp {r R cells A} (away : Away r R A) (call : Call W)
     exact (reachFrame_toKey r R cells A key).bind fun k _ =>
       reachFrame_protoProp away call framed root _ _ _ hb k
   case host name =>
-    exact (reachFrame_toKey r R cells A key).bind fun k _ => reachFrame_hostMember name k
+    apply (reachFrame_toKey r R cells A key).bind
+    intro k _
+    cases k with
+    | str k => exact reachFrame_hostMember name k
+    | iteratorSymbol => exact reachFrame_unknown r R cells A _ _
 
 /-- Reading a property preserves reachability when calls to retrieved getters do. -/
 theorem perform_get {r R cells A} (away : Away r R A) (call : Call W)
@@ -368,7 +376,7 @@ theorem perform_get {r R cells A} (away : Away r R A) (call : Call W)
       (reachFrame_getProp away call framed root o k ho).bind fun result safe =>
         (reachFrame_toW r R cells A result safe).bind fun w _ => reachFrame_pure r R cells A (Told.value w) trivial
 
-private theorem deleteProps_keeps_edges (o : Obj) (key : String) :
+private theorem deleteProps_keeps_edges (o : Obj) (key : PropertyKey) :
     ∀ node ∈ ({ o with props := o.props.filter (·.1 != key) }).nodes, node ∈ o.nodes := by
   intro node hn
   simp only [Obj.nodes, List.mem_append] at hn ⊢
@@ -463,7 +471,7 @@ private theorem applyDesc_nodes {A : HeapNode → Prop} (d : Desc) (hd : SafeDes
         | exact data .undef _ _ _ undef
         | exact accessor _ _ _ _ gg ss
 
-private theorem setOwn_nodes (o : Obj) (k : String) (p : Property) :
+private theorem setOwn_nodes (o : Obj) (k : PropertyKey) (p : Property) :
     ∀ node ∈ ({ o with props := setOwn o.props k p }).nodes, node ∈ o.nodes ∨ node ∈ p.nodes := by
   intro node h
   simp only [Obj.nodes, List.mem_append] at h ⊢
@@ -497,7 +505,7 @@ private theorem reachFrame_applyDesc {r R cells A} (old : Option Property) (d : 
   exact applyDesc_nodes d safe oldSafe h
 
 theorem reachFrame_defineOwn {r R cells A} (away : Away r R A) {a : Addr} (ha : A (.obj a))
-    (key : String) (d : Desc) (safe : SafeDesc A d) :
+    (key : PropertyKey) (d : Desc) (safe : SafeDesc A d) :
     ReachFrame r R cells A (fun _ => True) (defineOwn a key d : M W Unit) := by
   unfold defineOwn
   apply (reachFrame_getObj away ha).bind
@@ -518,7 +526,7 @@ theorem reachFrame_defineOwn {r R cells A} (away : Away r R A) {a : Addr} (ha : 
         (setOwn_nodes o key p node edge).imp id (guard p rfl node)
 
 private theorem reachFrame_setValue {r R cells A} (away : Away r R A) {a : Addr} (ha : A (.obj a))
-    (key : String) (value : Val) (safe : SafeVal A value) :
+    (key : PropertyKey) (value : Val) (safe : SafeVal A value) :
     ReachFrame r R cells A (fun _ => True) (do
       defineOwn a key (if ((← getObj a).props.lookup key).isSome then { value := some value } else
         { value := some value, writable := some true, enumerable := some true, configurable := some true }) : M W Unit) := by
