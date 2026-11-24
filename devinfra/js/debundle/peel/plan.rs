@@ -1516,23 +1516,6 @@ fn resolve_module_path_source_unit_ids(
     module_files: &[PathBuf],
     diagnostics: &analysis::diagnostics::Diagnostics,
 ) -> Result<(Vec<String>, Vec<String>)> {
-    let yaml_path = common.modules_root.join(format!("{module_path}.yaml"));
-    let claims = read_module_claims(&yaml_path)
-        .with_context(|| format!("reading module YAML {}", yaml_path.display()))?;
-    if claims.is_empty() {
-        bail!("module {module_path:?} has no members or anonymous_statements; nothing to describe");
-    }
-
-    let binding_to_source_units = binding_to_source_units(graph);
-    let mut source_unit_ids = BTreeSet::<String>::new();
-    let mut unknown_binding_ids = Vec::<String>::new();
-    for binding in claims.binding_pins().collect::<BTreeSet<_>>() {
-        if let Some(binding_source_unit_ids) = binding_to_source_units.get(binding) {
-            source_unit_ids.extend(binding_source_unit_ids.iter().cloned());
-        } else {
-            unknown_binding_ids.push(binding.to_owned());
-        }
-    }
     // The module's claims resolve jointly with every other module's, as in
     // `run`.
     let all_claims = module_files
@@ -1543,6 +1526,11 @@ fn resolve_module_path_source_unit_ids(
         .iter()
         .position(|file| module_path_from_file(file, &common.modules_root) == module_path)
         .with_context(|| format!("module {module_path:?} is not in the modules tree"))?;
+    let claims = &all_claims[index];
+    if claims.is_empty() {
+        bail!("module {module_path:?} has no members or anonymous_statements; nothing to describe");
+    }
+
     let resolved = resolve_source_claims_of(
         anonymous_resolution::SourceClaimsContext {
             graph,
@@ -1564,11 +1552,18 @@ fn resolve_module_path_source_unit_ids(
             .collect::<Vec<_>>(),
         index,
     )?;
-    for binding in &resolved.bindings {
+    let binding_to_source_units = binding_to_source_units(graph);
+    let mut source_unit_ids = BTreeSet::<String>::new();
+    let mut unknown_binding_ids = Vec::<String>::new();
+    let pins = claims.binding_pins().collect::<BTreeSet<_>>();
+    for binding in pins
+        .into_iter()
+        .chain(resolved.bindings.iter().map(String::as_str))
+    {
         if let Some(binding_source_unit_ids) = binding_to_source_units.get(binding) {
             source_unit_ids.extend(binding_source_unit_ids.iter().cloned());
         } else {
-            unknown_binding_ids.push(binding.clone());
+            unknown_binding_ids.push(binding.to_owned());
         }
     }
     for source_unit in &resolved.anonymous_source_units {
