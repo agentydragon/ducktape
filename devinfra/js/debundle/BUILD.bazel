@@ -331,6 +331,7 @@ rust_library(
         ":source_identity",
         ":source_match",
         ":spec",
+        ":spec_modules",
         ":spec_resolution",
         "@crates//:anyhow",
         "@crates//:swc_ecma_ast",

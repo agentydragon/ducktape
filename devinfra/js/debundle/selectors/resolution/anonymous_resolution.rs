@@ -18,7 +18,7 @@ use selector_resolve::{
     DirectBindingSourceEvidence, EntityIndex, SourceMatchReferenceOrigin, SpecModule,
 };
 use source_identity::SourceUnitId;
-use spec::{AnonymousStatementSelector, BindingSourceKind, MemberSelectorSpec, SourceMatchClaim};
+use spec::{AnonymousStatementSelector, BindingSourceKind, MemberSelectorSpec};
 use spec_resolution::{
     anonymous_statement, member_from_source_match, member_from_spec, parse_anonymous_selector,
     resolve_chunks, spec_module as build_spec_module,
@@ -29,9 +29,7 @@ use spec_resolution::{
 #[derive(Debug, Clone, Copy)]
 pub struct SourceClaimSet<'a> {
     pub module_path: &'a Path,
-    pub member_selectors: &'a [(String, MemberSelectorSpec)],
-    pub source_matches: &'a [SourceMatchClaim],
-    pub anonymous_selectors: &'a BTreeSet<AnonymousStatementSelector>,
+    pub module: &'a spec_modules::ModuleClaims,
 }
 
 /// What one module's resolved claims contribute to the source unit assignment.
@@ -50,7 +48,7 @@ pub struct ResolvedSourceClaims {
     /// authored selector entries addressable when a CLI edit moves claims.
     pub anonymous_selector_source_units: BTreeMap<AnonymousStatementSelector, SourceUnitId>,
     /// Exact source evidence for typed direct binding pins. The vector is
-    /// aligned with `SourceClaimSet::member_selectors`; untyped name pins do
+    /// aligned with `ModuleClaims::member_selectors`; untyped name pins do
     /// not require source-kind evidence here.
     pub direct_binding_checks: Vec<Option<DirectBindingSourceCheck>>,
 }
@@ -191,12 +189,12 @@ fn resolve_claim_sets(
         .collect::<Vec<Result<ResolvedClaimSet>>>();
     let has_anonymous = claim_sets
         .iter()
-        .any(|claims| !claims.anonymous_selectors.is_empty());
+        .any(|claims| !claims.module.anonymous_selectors.is_empty());
     if !has_anonymous
         && claim_sets.iter().all(|claims| {
-            claims.source_matches.is_empty()
+            claims.module.source_matches.is_empty()
                 && claims
-                    .member_selectors
+                    .module.member_selectors
                     .iter()
                     .all(|(_, selector)| {
                         matches!(selector, MemberSelectorSpec::Binding(binding) if binding.kind.is_none())
@@ -207,14 +205,15 @@ fn resolve_claim_sets(
     }
     let direct_binding_claims = !claim_sets.is_empty()
         && claim_sets.iter().any(|claims| {
-            claims.member_selectors.iter().any(|(_, selector)| {
+            claims.module.member_selectors.iter().any(|(_, selector)| {
                 matches!(selector, MemberSelectorSpec::Binding(binding) if binding.kind.is_some())
             })
         })
         && claim_sets.iter().all(|claims| {
-            claims.anonymous_selectors.is_empty()
-                && claims.source_matches.is_empty()
+            claims.module.anonymous_selectors.is_empty()
+                && claims.module.source_matches.is_empty()
                 && claims
+                    .module
                     .member_selectors
                     .iter()
                     .all(|(_, selector)| matches!(selector, MemberSelectorSpec::Binding(_)))
@@ -232,7 +231,7 @@ fn resolve_claim_sets(
                 no_sources,
                 |parsed_by_source| {
                     let needs_local_declarations = claim_sets.iter().any(|claims| {
-                        claims.member_selectors.iter().any(|(_, selector)| {
+                        claims.module.member_selectors.iter().any(|(_, selector)| {
                             matches!(selector, MemberSelectorSpec::Binding(binding)
                                 if binding.kind.is_some_and(|kind| kind != BindingSourceKind::ImportSpecifier))
                         })
@@ -265,9 +264,9 @@ fn resolve_claim_sets(
                         };
                         set.claims
                             .direct_binding_checks
-                            .resize(claims.member_selectors.len(), None);
+                            .resize(claims.module.member_selectors.len(), None);
                         for (member_index, (_, selector)) in
-                            claims.member_selectors.iter().enumerate()
+                            claims.module.member_selectors.iter().enumerate()
                         {
                             let MemberSelectorSpec::Binding(binding) = selector else {
                                 continue;
@@ -356,8 +355,9 @@ fn resolve_claim_sets(
                     };
                     set.claims
                         .direct_binding_checks
-                        .resize(claims.member_selectors.len(), None);
-                    for (member_index, (_, selector)) in claims.member_selectors.iter().enumerate()
+                        .resize(claims.module.member_selectors.len(), None);
+                    for (member_index, (_, selector)) in
+                        claims.module.member_selectors.iter().enumerate()
                     {
                         let MemberSelectorSpec::Binding(binding) = selector else {
                             continue;
@@ -448,8 +448,8 @@ fn resolve_claim_sets(
                     // Name pins are already accounted for as static claims.
                     // Keep them in the joint solve as relational anchors.
                     if matches!(entity, EntityIndex::Member(index)
-                        if index < claim_sets[module_index].member_selectors.len()
-                            && matches!(claim_sets[module_index].member_selectors[index].1,
+                        if index < claim_sets[module_index].module.member_selectors.len()
+                            && matches!(claim_sets[module_index].module.member_selectors[index].1,
                                 MemberSelectorSpec::Binding(_)))
                     {
                         continue;
@@ -594,11 +594,12 @@ fn claim_entity(
 fn spec_module(claims: &SourceClaimSet<'_>) -> Result<SpecModule> {
     let request_id = claims.module_path.to_string_lossy().to_string();
     let mut members = claims
+        .module
         .member_selectors
         .iter()
         .map(|(name, selector)| member_from_spec(name.clone(), selector.clone()))
         .collect::<Vec<_>>();
-    for claim in claims.source_matches {
+    for claim in &claims.module.source_matches {
         for expanded in source_match::source_match_claim_member_selectors(&request_id, claim)? {
             members.push(member_from_source_match(
                 expanded.export_name,
@@ -607,6 +608,7 @@ fn spec_module(claims: &SourceClaimSet<'_>) -> Result<SpecModule> {
         }
     }
     let anonymous_statements = claims
+        .module
         .anonymous_selectors
         .iter()
         .enumerate()
