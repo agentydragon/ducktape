@@ -85,6 +85,7 @@ structure Obj where
   code : Option Code := none
   /-- An array: defining a property on it changes `length`, which is not modelled. -/
   array : Bool := false
+  regexp : Option RegExpData := none
 
 /-- A binding: `value` is `none` until it is initialized (the temporal dead zone). -/
 structure Binding where
@@ -317,6 +318,7 @@ def objectProto : Addr := ⟨0, 0⟩
 def functionProto : Addr := ⟨0, 1⟩
 def arrayProto : Addr := ⟨0, 2⟩
 def asyncFunctionProto : Addr := ⟨0, 3⟩
+def regexpProto : Addr := ⟨0, 4⟩
 
 def Func.intrinsicProto (f : Func) : Addr :=
   if f.kind == .asyncFn then asyncFunctionProto else functionProto
@@ -344,6 +346,28 @@ private def hostAccessor (owner k : String) : String × Property :=
 def asyncFunctionPrototype : Obj :=
   { proto := some functionProto, props := [("constructor", .data (.host "AsyncFunction") false false true)] }
 
+/-- Getters in the string-key order of the modeled realm. Their function objects
+follow %RegExp.prototype% in the intrinsic heap. -/
+def regexpGetters : List (String × RegExpGetter) := [
+  ("dotAll", .flag 's'), ("flags", .flags), ("global", .flag 'g'), ("hasIndices", .flag 'd'),
+  ("ignoreCase", .flag 'i'), ("multiline", .flag 'm'), ("source", .source), ("sticky", .flag 'y'),
+  ("unicode", .flag 'u'), ("unicodeSets", .flag 'v')]
+
+def regexpPrototype : Obj :=
+  let getters := regexpGetters.zipIdx.map fun ((name, _), i) =>
+    (name, Property.accessor (.obj ⟨0, regexpProto.index + 1 + i⟩) .undef false true)
+  { proto := some objectProto, props := hostMembers "RegExp.prototype" ["constructor", "exec"] ++ getters ++
+      hostMembers "RegExp.prototype" ["compile", "toString", "test"] }
+
+private def regexpGetterObject (name : String) (getter : RegExpGetter) : Obj :=
+  let label := "get " ++ name
+  let f := Func.mk label .method false [] [.ret (.prim (.regExpGet getter) [.this])]
+  { proto := some functionProto, code := some (.closure f ⟨[], .undef⟩ []),
+    props := [("length", .data (.num 0) false false true), ("name", .data (.str label) false false true)] }
+
+def regexpObject (data : RegExpData) : Obj :=
+  { proto := some regexpProto, regexp := some data, props := [("lastIndex", .data (.num 0) true false false)] }
+
 /-- The intrinsic prototypes, with every member a value of the host. `Function.prototype` is itself callable. -/
 def builtins : Array Obj := #[
   { proto := none, props := hostMembers "Object.prototype" objectProtoNames ++ [hostAccessor "Object.prototype" "__proto__"] },
@@ -353,7 +377,7 @@ def builtins : Array Obj := #[
       hostMembers "Function.prototype" functionProtoNames },
   { proto := some objectProto, array := true,
     props := ("length", .data (.num 0) true false false) :: hostMembers "Array.prototype" arrayProtoNames },
-  asyncFunctionPrototype]
+  asyncFunctionPrototype, regexpPrototype] ++ (regexpGetters.map fun (k, g) => regexpGetterObject k g).toArray
 
 /-! ## The host functions the world answers for -/
 
@@ -809,9 +833,40 @@ def observeGlobalTypeof (name : String) : M W Val := fun s =>
   | some (result, state) => fromWorld { s with world := { s.world with state } } result
   | none => .unknown s!"unsupported host typeof {name}" s
 
+/-- The generic flags getter performs observable property reads in ECMAScript order. -/
+def regexpFlagOrder : List (String × String) := [
+  ("hasIndices", "d"), ("global", "g"), ("ignoreCase", "i"), ("multiline", "m"),
+  ("dotAll", "s"), ("unicode", "u"), ("unicodeSets", "v"), ("sticky", "y")]
+
+def regexpFlags (call : Call W) (receiver : Val) : List (String × String) → M W String
+  | [] => pure ""
+  | (key, letter) :: rest => do
+    let enabled ← lift (toBoolean (← getProp call receiver (.str key)))
+    let tail ← regexpFlags call receiver rest
+    return if enabled then letter ++ tail else tail
+
+/-- %RegExp.prototype% has no matcher slots. Its accessors have special results. -/
+def regexpSlot (a : Addr) (data : Option RegExpData) (letter : Option Char) : M W Val :=
+  match data, letter with
+  | some rx, some c => pure (.bool (rx.flags.contains c))
+  | some rx, none =>
+    if (Primitive.str rx.pattern).inModel then pure (.str rx.pattern)
+    else unknown "RegExp source outside the Basic Multilingual Plane"
+  | none, _ =>
+    if a == regexpProto then pure (if letter.isNone then .str "(?:)" else .undef)
+    else throwErr .type "RegExp getter called on an incompatible receiver"
+
+def readRegExp (call : Call W) (getter : RegExpGetter) (receiver : Val) : M W Val := do
+  let a ← requireObj "RegExp getter receiver" receiver
+  match getter with
+  | .source => regexpSlot a (← getObj a).regexp none
+  | .flag c => regexpSlot a (← getObj a).regexp (some c)
+  | .flags => .str <$> regexpFlags call receiver regexpFlagOrder
+
 def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
   let arg (i : Nat) : Val := args.getD i .undef
   match p with
+  | .regExpGet getter => readRegExp call getter (arg 0)
   | .globalTypeof name => observeGlobalTypeof name
   | .globalRef name => readHostRef (.binding name)
   | .opaqueAmbientRef name => unknown s!"ambient binding {name} is reached"

@@ -120,6 +120,9 @@ theorem evalExpr_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env)
     (construct : ∀ f vs, SafeVal A f → (∀ v ∈ vs, SafeVal A v) →
       ReachFrame r R cells A (SafeVal A) (construct n f vs : M W Val))
     (make : ∀ f, ReachFrame r R cells A (SafeVal A) (makeFunc env f : M W Val))
+    (regexpRoot : A (.obj regexpProto))
+    (allocate : ∀ o : Obj, (∀ node ∈ o.nodes, A node) →
+      ReachFrame r R cells A (fun a => A (.obj a)) (alloc o : M W Addr))
     (makeObject : ∀ ps, ReachFrame r R cells A (SafeVal A) (evalExpr (n + 1) env (.obj ps) : M W Val))
     (makeArray : ∀ es, ReachFrame r R cells A (SafeVal A) (evalExpr (n + 1) env (.arr es) : M W Val))
     (makeClass : ∀ name self f members,
@@ -142,6 +145,10 @@ theorem evalExpr_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env)
   | var x => exact reachFrame_readVar away env x safe
   | this => exact reachFrame_pure r R cells A env.this (Env.nodes_this safe)
   | func f => exact make f
+  | regexp data =>
+    have edges : ∀ node ∈ (regexpObject data).nodes, A node := by
+      simpa [regexpObject, Obj.nodes, Property.nodes, Val.nodes] using regexpRoot
+    exact (allocate _ edges).bind fun a ha => reachFrame_pure r R cells A (Val.obj a) (safeVal_obj.2 ha)
   | obj ps => exact makeObject ps
   | arr es => exact makeArray es
   | cls name self f members => exact makeClass name self f members

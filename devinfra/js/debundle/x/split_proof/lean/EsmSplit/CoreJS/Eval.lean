@@ -223,6 +223,7 @@ def evalExpr : Nat → Env → Expr → M W Val
     | .bool b => pure (.bool b)
     | .num x => pure (.num x)
     | .str s => pure (.str s)
+    | .regexp data => .obj <$> alloc (regexpObject data)
     | .var x => readVar env x
     | .host name => pure (.host name)
     | .this => pure env.this

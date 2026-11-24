@@ -20,6 +20,7 @@ def listEq (item : MatchEq α) : MatchEq (List α)
 mutual
 partial def exprEq : MatchEq Expr
   | .undef, .undef | .null, .null | .this, .this => some ⟨rfl⟩
+  | .regexp a, .regexp b => (scalarEq a b).map fun h => ⟨congrArg Expr.regexp h.down⟩
   | .str a, .str b => (scalarEq a b).map fun h => ⟨congrArg Expr.str h.down⟩
   | .num a, .num b => (scalarEq a b).map fun h => ⟨congrArg Expr.num h.down⟩
   | .bool a, .bool b => (scalarEq a b).map fun h => ⟨congrArg Expr.bool h.down⟩

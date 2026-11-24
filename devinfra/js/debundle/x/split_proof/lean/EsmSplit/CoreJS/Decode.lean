@@ -118,6 +118,7 @@ def token (tag : String) (args : List Json) : D Unit := do
   | "null", [] => push (.expr .null)
   | "bool", [b] => do push (.expr (.bool (← bool b)))
   | "num", [bits] => do push (.expr (.num (← float bits)))
+  | "regexp", [pattern, flags] => do push (.expr (.regexp ⟨← str pattern, ← str flags⟩))
   | "str", [s] => do push (.expr (.str (← str s)))
   | "var", [x] => do push (.expr (.var (← str x)))
   | "host", [x] => do push (.expr (.host (← str x)))

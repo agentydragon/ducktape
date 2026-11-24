@@ -288,7 +288,7 @@ def showCode : Code → String
   | .opaque code part cells ctor => s!"opaque {code} {part} {cells.map (·.map showAddr)} {ctor}"
 
 def showObj (o : Obj) : String :=
-  s!"{o.proto.map showAddr} {o.props.map fun (k, p) => (k, showProperty p)} {o.code.map showCode} {o.array}"
+  s!"{o.proto.map showAddr} {o.props.map fun (k, p) => (k, showProperty p)} {o.code.map showCode} {o.array} {repr o.regexp}"
 
 def showBinding (b : Binding) : String := s!"{b.value.map showVal} {b.mutable}"
 
@@ -402,6 +402,7 @@ def main (args : List String) : IO UInt32 := do
         ("Object.prototype", strings ("__proto__" :: objectProtoNames)),
         ("Function.prototype", strings (["length", "name", "arguments", "caller"] ++ functionProtoNames)),
         ("Array.prototype", strings ("length" :: arrayProtoNames)),
+        ("RegExp.prototype", strings (regexpPrototype.props.map Prod.fst)),
         ("AsyncFunction.prototype", strings (asyncFunctionPrototype.props.map Prod.fst)),
         ("String.prototype", strings stringProtoNames),
         ("Number.prototype", strings numberProtoNames),

@@ -181,6 +181,25 @@ function roundingBoundaryStrings() {
 
 export const cases = [
   {
+    name: "RegExp slots survive prototype changes while flags observes overridden properties",
+    source: `
+      const rx = /ab/dgimsy;
+      const proto = Object.getPrototypeOf(rx);
+      console.log(rx.source, rx.flags, rx.hasIndices, rx.unicode, rx.unicodeSets, rx.lastIndex);
+      console.log(proto === Object.getPrototypeOf(/z/u), proto.source, proto.flags, proto.global);
+      Object.defineProperty(rx, "global", { get() { this.visits = 1; return false; } });
+      Object.defineProperty(rx, "ignoreCase", { get() { this.visits += 1; return true; } });
+      console.log(rx.flags, rx.visits);
+      try { delete rx.lastIndex; } catch (e) { console.log("nonconfigurable"); }
+      const plain = Object.create(proto);
+      try { console.log(plain.source); } catch (e) { console.log("brand check"); }
+      Object.setPrototypeOf(rx, null);
+      console.log(rx.source, rx.lastIndex);
+      Object.setPrototypeOf(rx, proto);
+      console.log(rx.source);
+    `,
+  },
+  {
     name: "object spread snapshots own keys, then checks each descriptor before reading",
     end: "normal",
     source: `

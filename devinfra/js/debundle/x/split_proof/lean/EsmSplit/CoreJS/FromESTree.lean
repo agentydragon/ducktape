@@ -410,7 +410,14 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     (j : Json) : Except String Expr := do
   let kind ← field j "type"
   match kind with
-  | "Literal" => literal (← field j "lit")
+  | "Literal" =>
+    let key ← field j "lit"
+    if let .ok rx := j.getObjVal? "regex" then
+      let pattern ← field rx "pattern"
+      let flags ← field rx "flags"
+      unless key == "r:" ++ pattern ++ "/" ++ flags do throw "regexp literal differs from its annotation"
+      return .regexp ⟨pattern, flags⟩
+    literal key
   | "Identifier" => reference imports inFunction j profile
   | "ThisExpression" => return .this
   | "MemberExpression" =>

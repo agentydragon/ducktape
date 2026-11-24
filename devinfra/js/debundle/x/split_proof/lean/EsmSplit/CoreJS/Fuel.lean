@@ -106,10 +106,19 @@ theorem toDesc_le {call call' : Call W} (h : Call.le call call') (v : Val) : toD
   unfold toDesc
   repeat' first | exact getProp_le h _ _ | mono_step
 
+theorem regexpFlags_le {call call' : Call W} (h : Call.le call call') (v : Val) (keys : List (String × String)) :
+    regexpFlags call v keys ⊑ regexpFlags call' v keys := by
+  induction keys with
+  | nil => exact M.le_refl _
+  | cons pair rest ih =>
+    rcases pair with ⟨k, flag⟩
+    unfold regexpFlags
+    repeat' first | exact ih | exact getProp_le h _ _ | mono_step
+
 theorem prim_le {call call' : Call W} (h : Call.le call call') (p : Prim) (args : List Val) :
     prim call p args ⊑ prim call' p args := by
   unfold prim
-  repeat' first | exact toDesc_le h _ | mono_step
+  repeat' first | exact toDesc_le h _ | exact regexpFlags_le h _ _ | unfold readRegExp | mono_step
 
 theorem getRef_le {call call' : Call W} (h : Call.le call call') (env : Env) (r : Ref) :
     getRef call env r ⊑ getRef call' env r := by

@@ -38,8 +38,19 @@ inductive LogOp where
   | and | or | nullish
   deriving DecidableEq, Repr
 
+/-- [[OriginalSource]] and [[OriginalFlags]] of a parsed literal. -/
+structure RegExpData where
+  pattern : String
+  flags : String
+  deriving DecidableEq, Repr
+
+inductive RegExpGetter where
+  | source | flags | flag (letter : Char)
+  deriving DecidableEq, Repr
+
 /-- Primitive operations and opaque ambient references used by the interpreter. -/
 inductive Prim where
+  | regExpGet (getter : RegExpGetter)
   | globalTypeof (binding : String)
   | globalRef (binding : String)
   | opaqueAmbientRef (binding : String)
@@ -85,6 +96,7 @@ inductive Expr where
   | bool (b : Bool)
   | num (n : Float)
   | str (s : String)
+  | regexp (data : RegExpData)
   /-- A name: a binding in scope, or one that does not resolve (a `ReferenceError` when read). -/
   | var (x : Name)
   /-- A global of the host. `Value.lean` has the few the model has a rule for; the others are opaque. -/
@@ -290,7 +302,7 @@ def lexNames (ss : List Stmt) : List Name := (lexDecls ss).map (·.1)
 mutual
 
 def Expr.free : Expr → List Name
-  | .undef | .null | .bool _ | .num _ | .str _ | .host _ | .this => []
+  | .undef | .null | .bool _ | .num _ | .str _ | .regexp _ | .host _ | .this => []
   | .var x => [x]
   | .func f => f.free
   | .obj props => freeProps props

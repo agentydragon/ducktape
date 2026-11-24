@@ -378,7 +378,11 @@ export function coreFromParsed(
   function expr(node) {
     switch (node.type) {
       case "Literal":
-        if (node.regex || node.bigint) refuse(node, "a regular expression or a BigInt");
+        if (node.regex) {
+          emit("regexp", node.regex.pattern, node.regex.flags);
+          break;
+        }
+        if (node.bigint !== undefined) refuse(node, "a BigInt");
         if (node.value === null) emit("null");
         else if (typeof node.value === "boolean") emit("bool", node.value);
         else if (typeof node.value === "number") emit("num", bits(node.value));
