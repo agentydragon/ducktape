@@ -319,3 +319,26 @@ The [combined 344-binding replay](https://app.buildbuddy.io/invocation/460d6629-
 then certified all eight previously omitted segment, rectangle and Bézier helpers
 together. The proof does not require an additional host assumption or a different
 module order.
+
+## Transform handles and the resize hit tests
+
+The [353-binding replay](https://app.buildbuddy.io/invocation/b8bd7863-1139-4bf2-ac9f-eb005e5c2f18)
+adds nine declarations from upstream [transformHandles.ts](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/excalidraw/element/transformHandles.ts):
+handle sizes, the rotation gap, three omission masks, three handle builders,
+and `shouldShowBoundingBox`. Chromium constructs handles for a desktop
+rectangle and checks its northwest corner and east side through the editor's
+public hit-test functions.
+
+The resize hit tests themselves still need private entry bindings. Including
+`getSelectionBorders` and `canResizeFromSides` leaves `isAndroid` in entry.
+[Separate hit-test placements](https://app.buildbuddy.io/invocation/0c429b2e-0fc7-4121-8826-a7e0cdfd1651).
+A stable user-agent string alone does not justify moving the regex test that
+initializes this flag. In a [Chromium control](https://app.buildbuddy.io/invocation/61053222-ff13-406a-9b44-61c9278006c5),
+exchanging two native matches changes the realm's legacy match captures even
+when the initializer returns the same boolean and leaves the same `lastIndex`.
+
+A separate trial assigned `deconstructDiamondElement` to `element/utils` and
+`getDiamondPoints` to its upstream `element/bounds` module. Both selectors
+resolved. Lean refused before emission because the linked initial state already
+exposes the region of `getDiamondPoints` (unit 1252).
+[Diamond placement refusal](https://app.buildbuddy.io/invocation/6636793f-2c68-4853-ae8b-f3175fcb3d8a).

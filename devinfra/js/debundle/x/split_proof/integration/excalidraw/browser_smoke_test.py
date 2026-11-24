@@ -246,6 +246,24 @@ async def smoke(
             )
             assert curves == []
             assert sides == [[[8, 18], [42, 18]], [[42, 18], [42, 62]], [[8, 62], [42, 62]], [[8, 62], [8, 18]]]
+        probe = await page.evaluate(
+            """async ([entry, moved]) => {
+                const editor = await import(entry);
+                const rect = {id: "box", type:"rectangle", x:0, y:0, width:100, height:80, angle:0, locked:false};
+                const map = new Map([[rect.id, rect]]), zoom = {value:1}, device = {viewport:{isMobile:false}, isTouchScreen:false};
+                const handles = editor.Gj(rect, zoom, map, "mouse", {});
+                const [x,y,w,h] = handles.nw;
+                const at = (state) => editor.Ij([rect], {selectedElementIds:state}, x+w/2,y+h/2,zoom,"mouse",map,device);
+                const hit = at({box:true});
+                const fromCoords = (sx,sy) => editor.Jj([0,0,100,80],sx,sy,zoom,"mouse",device);
+                const same = moved ? Object.values(await import("/packages/excalidraw/element/transformhandles.mjs")) : Object.values(editor);
+                return [same.includes(editor.Fj), same.includes(editor.Gj), same.includes(editor.Hj), w,h,
+                    hit?.transformHandleType,hit?.element === rect,at({}) === null,fromCoords(x+w/2,y+h/2),
+                    fromCoords(50,40),fromCoords(104,40),editor.Ij([rect],{selectedElementIds:{box:true}},104,40,zoom,"mouse",map,device)?.transformHandleType,editor.Hj([rect],{editingLinearElement:false})];
+            }""",
+            [f"/{editor}", overlay is not None],
+        )
+        assert probe == [True, True, True, 8, 8, "nw", True, True, "nw", False, "e", "e", True]
         return list(namespace["names"])
 
 
