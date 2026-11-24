@@ -1,10 +1,10 @@
 {
-  "source_devel_commit": "b7e76ee81df6f7d9f5c6115c32dd18ad30faf63b",
+  "source_devel_commit": "1916bcf8e954323b23d69faf6a59466ec434b947",
   "window_start_utc": "2026-11-22T00:00:00Z",
-  "window_end_utc": "2026-11-24T00:10:00Z",
-  "published_at_utc": "2026-11-24T00:50:48.055632+00:00",
-  "attribution": "not collected",
-  "previous_report_commit": "b6e32be8b1f4b06e00850878beae3902f0846a24",
-  "report_sha256": "6937c48e9afc6f0c4e2d61cd9c25ddd3fcde2665fecc449606af9dfed1fe303f",
-  "evidence_sha256": "0a6fcee82d3276070078723cfaf5db52814a947a8191de72733e11ee6c3e9fe2"
+  "window_end_utc": "2026-11-24T00:50:00Z",
+  "published_at_utc": "2026-11-24T01:14:34.903418+00:00",
+  "attribution": "Exact original job and profile; pinned Rust compiler download markers, cache restart and targeted recovery",
+  "previous_report_commit": "7d3f886e27b8fb07a3299c51c1d3beb21f8410b4",
+  "report_sha256": "83305252baac9f56b31ee48f3f691e1fcd6082e4e8e67e587f69acfdc5beb3f3",
+  "evidence_sha256": "f804324badff4d5cb13d4bfacaa08caabf19c3c0aacf70b9548ec3ee8a2cf1dc"
 }

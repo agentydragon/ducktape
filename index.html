@@ -178,13 +178,12 @@
                 <${Anchor} href=${"latency/"}> ${"Latency"} <//>
               <//>
               <${Text} component="p" my="sm"
-                >22–24 November UTC. The latest fixed window had five green
-                heads out of 11 and fell short of the 30% feedback speedup goal.
-                Pre-commit finished last on three greens. A${" "}
-                <${Anchor} href="latency/#paired-precommit"
-                  >later matched trial<//
-                >${" "} shortened one Nix-only PR's all-green clock from 374 s
-                to 152 s.<//
+                >22–24 November UTC. The latest fixed window had 12 green heads
+                out of 16 and missed the 30% speedup goal. Pre-commit finished
+                last on ten greens during a public Nix cache incident.
+                ${" "}<${Anchor} href="latency/#latest-drivers"
+                  >Cache recovery and gate timing<//
+                ><//
               >
               <${ManifestStamp} src=${"latency/manifest.json"} />
               <${Text} component="p" my="sm">
