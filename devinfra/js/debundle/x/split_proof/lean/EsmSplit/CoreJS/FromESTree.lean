@@ -204,12 +204,6 @@ private def withBindingDefault (name : Name) (fallback : Option Expr) : Expr :=
   | none => .var name
   | some init => .cond (.binary .strictEq (.var name) .undef) init (.var name)
 
-/-- These expressions produce strings whenever they complete normally. Loose equality and inequality
-between two such operands never invoke numeric or object coercion. -/
-private def stringOperand : Expr → Bool
-  | .str _ | .unary .typeof _ | .prim (.globalTypeof _) [] => true
-  | _ => false
-
 /-- A numeric property name uses the string form of the parsed Number, independent of its source spelling. -/
 private def staticPropertyName (key : Json) : Except String Name := do
   if (← field key "type") == "Literal" then
@@ -582,10 +576,8 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     | "===" => return .binary .strictEq left right
     | "!==" => return .binary .strictNe left right
     | "in" => return .hasProp left right
-    | "==" | "!=" =>
-      unless stringOperand left && stringOperand right do
-        throw s!"linked {op} requires two string operands (string literals or typeof expressions)"
-      return .binary (if op == "==" then .eq else .ne) left right
+    | "==" => return .binary .eq left right
+    | "!=" => return .binary .ne left right
     | _ => throw s!"unsupported linked binary operator {op}"
   | "LogicalExpression" =>
     let op : LogOp ← match ← field j "operator" with
