@@ -36,14 +36,24 @@ func runCompactHistory(ctx context.Context, args []string) error {
 	if !options.all {
 		return run(options.session)
 	}
+	busySessions := 0
 	for position := uint64(0); ; {
 		sessions, err := history.RecordedSessions(ctx, position, 100)
-		if err != nil || len(sessions) == 0 {
+		if err != nil {
 			return err
+		}
+		if len(sessions) == 0 {
+			slog.InfoContext(ctx, "historical compaction pass finished", "apply", options.apply, "skipped_busy_sessions", busySessions)
+			return nil
 		}
 		for _, session := range sessions {
 			position = session.Position
 			if err := run(session.SessionID); err != nil {
+				if errors.Is(err, storage.ErrCompactionSessionBusy) {
+					busySessions++
+					slog.WarnContext(ctx, "skipping busy Session for this compaction pass", "session_id", session.SessionID)
+					continue
+				}
 				return fmt.Errorf("compacting Session %s: %w", session.SessionID, err)
 			}
 		}

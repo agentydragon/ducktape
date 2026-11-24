@@ -19,6 +19,7 @@ import (
 	historypb "github.com/agentydragon/ducktape/agentplane/history_service/api/history/history_servicepb"
 	session_ingresspb "github.com/agentydragon/ducktape/agentplane/history_service/api/ingress/session_ingresspb"
 	"github.com/agentydragon/ducktape/agentplane/history_service/internal/projection"
+	"github.com/agentydragon/ducktape/agentplane/history_service/internal/storage"
 	"github.com/agentydragon/ducktape/agentplane/history_service/testing/spans"
 	"github.com/agentydragon/ducktape/agentplane/identity/auth"
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
@@ -483,5 +484,54 @@ func TestRunServesTheReadAPIAndTheIngressOnOneConfiguredListener(t *testing.T) {
 	}
 	if got := status.Code(push(readTarget)); got != codes.Unauthenticated {
 		t.Errorf("Push without a client certificate: %v, want Unauthenticated", got)
+	}
+}
+
+func TestCompactHistoryAllContinuesPastLockedSession(t *testing.T) {
+	dsn := integrationDatabase.Clone(t)
+	t.Setenv(settingPrefix+"DATABASE_URL", dsn)
+	db := postgres.Open(t, dsn)
+	store := storage.NewStore(db, storage.Options{})
+	busy, available := uuid.New(), uuid.New()
+	for _, id := range []uuid.UUID{busy, available} {
+		if _, err := store.BindWriter(t.Context(), id, storage.ServiceAccountWriter{Namespace: "testing", Name: "writer", UID: "fixture"}, ""); err != nil {
+			t.Fatal(err)
+		}
+		var entries []*eventlogpb.EventEntry
+		for i := range 64 {
+			entry := journalEntry(uint64(i + 1))
+			entry.Event.Observation = &eventpb.Event_Native{Native: &eventpb.Native{Line: "fixture"}}
+			entries = append(entries, entry)
+		}
+		if _, err := store.Append(t.Context(), id, entries); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tx, err := db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(t.Context(), "SELECT id FROM session_history WHERE id=$1 FOR UPDATE", busy); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCompactHistory(t.Context(), []string{"--all", "--apply"}); err != nil {
+		t.Fatal(err)
+	}
+	blocks := func(id uuid.UUID) int {
+		return postgres.Count(t, db, "SELECT count(*) FROM session_event_block WHERE session_id=$1", id)
+	}
+	if blocks(busy) != 0 || blocks(available) != 1 {
+		t.Fatal("all-session pass should have packed only the unlocked Session")
+	}
+	one := []string{"--session", busy.String(), "--apply"}
+	if err := runCompactHistory(t.Context(), one); !errors.Is(err, storage.ErrCompactionSessionBusy) {
+		t.Fatalf("single-session lock timeout: %v", err)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if err := runCompactHistory(t.Context(), one); err != nil || blocks(busy) != 1 {
+		t.Fatalf("retry after releasing Session lock: %v", err)
 	}
 }
