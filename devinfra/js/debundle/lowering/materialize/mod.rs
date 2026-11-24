@@ -1084,6 +1084,10 @@ pub(super) fn finish_logical_chunk(
     // and every chunk's bounded summary use the unchanged full input.
     let effect_conflicts_jsonl = effect_conflicts_jsonl
         && (effect_conflicts_chunks.is_empty() || effect_conflicts_chunks.contains(chunk_id));
+    let full_report = |kind| {
+        full_reports.contains(&kind)
+            && (full_report_chunks.is_empty() || full_report_chunks.contains(chunk_id))
+    };
     let report_context = ChunkReportContext {
         ownership_subset: ownership_subset.as_ref(),
         chunk_id,
@@ -1091,14 +1095,9 @@ pub(super) fn finish_logical_chunk(
         graph_reports,
         policy: gate_rejection_policy,
         effect_conflicts_jsonl,
-        full_export_reentry: full_reports.contains(&super::FullReportKind::ExportReentry)
-            && (full_report_chunks.is_empty() || full_report_chunks.contains(chunk_id)),
-        full_translation_validation: full_reports
-            .contains(&super::FullReportKind::TranslationValidation)
-            && (full_report_chunks.is_empty() || full_report_chunks.contains(chunk_id)),
-        full_residual_atomic_groups: full_reports
-            .contains(&super::FullReportKind::ResidualAtomicGroups)
-            && (full_report_chunks.is_empty() || full_report_chunks.contains(chunk_id)),
+        full_export_reentry: full_report(super::FullReportKind::ExportReentry),
+        full_translation_validation: full_report(super::FullReportKind::TranslationValidation),
+        full_residual_atomic_groups: full_report(super::FullReportKind::ResidualAtomicGroups),
     };
     let (evaluation, report_out_dir) =
         evaluate_chunk_candidate(report_context, preflight, &analysis.facts)?;
