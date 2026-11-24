@@ -45,19 +45,15 @@ _single_tree = rule(
     },
 )
 
-def _checked_tree(name, src, testonly = None):
+def _checked_tree(name, src, testonly):
     target = name + "__tree"
-    kwargs = {
-        "name": target,
-        "src": src,
-        "visibility": ["//visibility:private"],
-    }
-    if testonly != None:
-        kwargs["testonly"] = testonly
-    _single_tree(
-        **kwargs
-    )
+    _single_tree(name = target, src = src, testonly = testonly, visibility = ["//visibility:private"])
     return ":" + target
+
+def _runfile_arg(data, label):
+    """Declare the runfile that Bazel substitutes into the launcher's arguments."""
+    data.append(label)
+    return "$(rlocationpath {})".format(label)
 
 def debundle_cli(
         name,
@@ -107,47 +103,36 @@ def debundle_cli(
         fail("modules_path must be nonempty")
 
     graph_output = name + "__graph_output"
-    graph_kwargs = {
-        "name": graph_output,
-        "srcs": [debundle],
-        "output_group": "dependency_graphs",
-        "visibility": ["//visibility:private"],
-    }
-    if testonly != None:
-        graph_kwargs["testonly"] = testonly
-    native.filegroup(**graph_kwargs)
+    native.filegroup(
+        name = graph_output,
+        srcs = [debundle],
+        output_group = "dependency_graphs",
+        testonly = testonly,
+        visibility = ["//visibility:private"],
+    )
     graph_tree = _checked_tree(name + "__graph", ":" + graph_output, testonly)
     debundler_tool = name + "__debundler"
-    debundler_kwargs = {
-        "name": debundler_tool,
-        "debundler": debundler,
-        "visibility": ["//visibility:private"],
-    }
-    if testonly != None:
-        debundler_kwargs["testonly"] = testonly
-    _debundler_tool(**debundler_kwargs)
-    debundler_tool = ":" + debundler_tool
+    _debundler_tool(name = debundler_tool, debundler = debundler, testonly = testonly, visibility = ["//visibility:private"])
 
+    data = []
     args = [
         "--debundler",
-        "$(rlocationpath {})".format(debundler_tool),
+        _runfile_arg(data, ":" + debundler_tool),
         "--graph",
-        "$(rlocationpath {})".format(graph_tree),
+        _runfile_arg(data, graph_tree),
         "--graph-relpath",
         graph_relpath,
         "--modules-path",
         modules_path,
     ]
-    data = [debundler_tool, graph_tree]
-    graph_source_tree = None
+    graph_source_runfile = None
     if graph_source_data:
         graph_source_tree = _checked_tree(name + "__relocatable_source", graph_source_data, testonly)
-        data.append(graph_source_tree)
+        graph_source_runfile = _runfile_arg(data, graph_source_tree)
 
     if source_data:
         source_tree = _checked_tree(name + "__source", source_data, testonly)
-        args.extend(["--source-root", "runfile", "$(rlocationpath {})".format(source_tree)])
-        data.append(source_tree)
+        args.extend(["--source-root", "runfile", _runfile_arg(data, source_tree)])
     elif graph_source_data:
         args.extend(["--source-root", "graph-source", source_root])
     else:
@@ -156,13 +141,12 @@ def debundle_cli(
     if spec_root:
         args.extend(["--spec-root", spec_root])
 
-    if graph_source_tree:
-        args.extend(["--graph-source-root", "$(rlocationpath {})".format(graph_source_tree)])
+    if graph_source_runfile:
+        args.extend(["--graph-source-root", graph_source_runfile])
 
     if ownership_subset:
         subset_file = native.package_relative_label(str(ownership_subset))
-        args.extend(["--ownership-subset-root", "$(rlocationpath {})".format(subset_file)])
-        data.append(subset_file)
+        args.extend(["--ownership-subset-root", _runfile_arg(data, subset_file)])
 
     package_names = {}
     for index, (package_root, package_name) in enumerate(package_roots.items()):
@@ -175,24 +159,17 @@ def debundle_cli(
         args.extend([
             "--package-root",
             package_name,
-            "$(rlocationpath {})".format(root_tree),
+            _runfile_arg(data, root_tree),
         ])
-        data.append(root_tree)
 
     args.append("--")
-    kwargs = {}
-    if visibility != None:
-        kwargs["visibility"] = visibility
-    if tags != None:
-        kwargs["tags"] = tags
-    if testonly != None:
-        kwargs["testonly"] = testonly
-
     sh_binary(
         name = name,
         srcs = [_LAUNCHER],
         args = [shell.quote(arg) for arg in args],
         data = data,
         use_bash_launcher = True,
-        **kwargs
+        tags = tags,
+        testonly = testonly,
+        visibility = visibility,
     )

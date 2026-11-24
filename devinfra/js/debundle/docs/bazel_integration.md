@@ -10,43 +10,31 @@ analysis when adding a spec variant.
 ```python
 load("@ducktape//devinfra/js/debundle:pipeline.bzl", "debundle_analysis", "debundle_apply")
 
-debundle_analysis(
-    name = "analysis",
-    analysis_threads = 2,
-    input_data = ["//path/to:bundle_inputs"],
-    package_roots = {"//:node_modules/react/dir": "react"},
-    tree_source_root = "//path/to:bundle_inputs",
-    tree_config = "spec/spec_config.yaml",
-    tree_modules = "spec/modules",
-    tree_vendor_marks = "spec/sources/vendor/vendor_marks.yaml",
-    spec_tree_inputs = [":spec_data"],
-)
+_TREE = {
+    "input_data": ["//path/to:bundle_inputs"],
+    "package_roots": {"//:node_modules/react/dir": "react"},
+    "tree_source_root": "//path/to:bundle_inputs",
+    "tree_config": "spec/spec_config.yaml",
+    "tree_modules": "spec/modules",
+    "tree_vendor_marks": "spec/sources/vendor/vendor_marks.yaml",
+    "spec_tree_inputs": [":spec_data"],
+}
+
+debundle_analysis(name = "analysis", analysis_threads = 2, **_TREE)
 
 debundle_apply(
     name = "debundle",
     analysis = ":analysis",
-    input_data = ["//path/to:bundle_inputs"],
-    package_roots = {"//:node_modules/react/dir": "react"},
-    tree_source_root = "//path/to:bundle_inputs",
-    tree_config = "spec/spec_config.yaml",
-    tree_modules = "spec/modules",
-    tree_vendor_marks = "spec/sources/vendor/vendor_marks.yaml",
-    spec_tree_inputs = [":spec_data"],
+    split_dependency_graphs = True,
+    **_TREE
 )
 
 debundle_apply(
     name = "debundle_passing",
     analysis = ":analysis",
     ownership_subset = "passing_subset.json",
-    input_data = ["//path/to:bundle_inputs"],
-    package_roots = {"//:node_modules/react/dir": "react"},
-    tree_source_root = "//path/to:bundle_inputs",
-    tree_config = "spec/spec_config.yaml",
-    tree_modules = "spec/modules",
-    tree_vendor_marks = "spec/sources/vendor/vendor_marks.yaml",
-    spec_tree_inputs = [":spec_data"],
+    **_TREE
 )
-
 ```
 
 | Rule                | Registered actions                                                                            | Default output                                               |
@@ -81,8 +69,7 @@ package input labels do not prevent projection sharing; each apply action still
 declares its own source/package inputs and checks native analysis compatibility.
 A distinct spec keeps its own `DebundleProjectApply` action, even when its
 semantic analysis is compatible. `DebundleProjectApply` compiles the typed spec
-without parsing JavaScript. The canonical apply projection
-canonical output omits YAML comments, whitespace, and module-level `note` only.
+without parsing JavaScript. The apply projection omits YAML comments, whitespace, and module-level `note` only.
 The projection action reads the flat spec or tree config, vendor marks, and
 declared module YAML files; source and package paths are serialized as paths,
 without opening their contents. Package-root arguments are used by analysis
@@ -155,31 +142,23 @@ the build. A gate-rejected output is marked by `GATE_REJECTED` at its
 `write_js_tree` root and is never a runnable bundle (<../SPEC.md> § Reading-only
 output on gate rejection); name such targets `<name>_readable`.
 
-Default builds write small reports and emitted modules without full graph
-serialization, including when `split_dependency_graphs = True`. That attr
-registers a separate `DebundleExportGraphs` action and the `dependency_graphs`
-output group (`--output_groups=+dependency_graphs`). The action consumes the
-same projection/Analyze artifact as the normal pipeline, with the same source,
-spec and census inputs; it does not rerun interpreter/fact analysis. Its
-`<target>.dependency_graphs/reports/tree/` contains full graphs and run diagnostics.
-It uses `--emit-on-rejection` only with `--reports-only`, so a typed gate-only
-rejection still lets the action finish exporting every configured chunk. The
-reports-only marker is retained, no JavaScript is emitted, and other failures
-still fail the action. Exact gate counts remain in each `graph_summary.json`;
-the detailed rejection report follows the materializer's existing selection.
-Graph selection does not enable full effect-conflict JSONL or other full-detail
-evidence. The default output group never depends on this export action.
+Set `split_dependency_graphs = True` on an apply target to register a separate
+`DebundleExportGraphs` action. Request its `dependency_graphs` output group
+with `--output_groups=+dependency_graphs` or a filegroup. The default build
+writes emitted modules and bounded reports.
 
-A filegroup can select that group for graph refresh/query work; normal
-validation and source regeneration remain small. Gate-rejected reading trees
-retain their `GATE_REJECTED` marker and exit-3 contract. Without an exported
-graph their diagnostics explain how to request one instead of naming a
-nonexistent graph file.
+Graph export reads the same saved analysis as emission, along with original spec
+files, source and package inputs, and any ownership subset. It requests full graphs with
+`--graphs`, `--reports-only <dir>` and `--emit-on-rejection`, writing graphs and
+diagnostics under `<target>.dependency_graphs/reports/tree/`. A gate-only
+rejection succeeds when the CLI exits 3 and writes `GATE_REJECTED`. Other errors
+fail the action. Each `graph_summary.json` retains exact gate counts. Full-detail
+diagnostic streams belong to normal emission.
 
 ### Graph command launchers
 
-Use `debundle_cli.bzl` to run graph-backed commands with the graph output and
-relocation roots in runfiles (the family declares these as `<name>_cli*`):
+Declare a `debundle_cli` target for the graph you want to inspect. Its runfiles
+carry the exported graph and any generated relocation roots.
 
 ```python
 load("@ducktape//devinfra/js/debundle:debundle_cli.bzl", "debundle_cli")
@@ -194,7 +173,7 @@ debundle_cli(
     spec_root = "spec",
     graph_source_data = ":relocatable_inputs",
     package_roots = {
-        "//:node_modules/example_package/dir": "example_package",
+        "//:node_modules/react/dir": "react",
     },
 )
 ```
