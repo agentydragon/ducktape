@@ -192,14 +192,15 @@ for (const [name, expression, reason] of [
   assert(!existsSync(out));
 }
 
+// A BigInt literal keeps these bodies on the deferred-code path.
 const retained = sequentialSplit(
   "deferred-body-defaults-and-methods",
-  `const input = "value";
-   function matches(x, text = input) { return /value/.test(text) && x; }
+  `const input = "123";
+   function matches(x, text = input) { return text === (123n).toString() && x; }
    class Record {
-     constructor(text = input) { this.value = /value/.test(text); }
-     get matches() { return /value/.test(input); }
-     read(text = input) { return /value/.test(text); }
+     constructor(text = input) { this.value = text === (123n).toString(); }
+     get matches() { return input === (123n).toString(); }
+     read(text = input) { return text === (123n).toString(); }
    }
    export { matches, Record };`,
   { "input.mjs": ["#0"], [worker]: ["#1", "#2"], [entry]: ["#3"] },
@@ -215,9 +216,9 @@ for (const file of [retained.files.sourceFile, path.join(retained.out, entry)]) 
   assert.deepEqual([matches(true), record.value, record.matches, record.read("other")], [true, true, true, false]);
 }
 for (const [name, declaration, invocation] of [
-  ["defaults", "function read(x = 1) { return /x/; }", "read()"],
-  ["getter", "const box = { get value() { return /x/; } };", "box.value"],
-  ["constructor", "class Box { constructor() { this.pattern = /x/; } }", "new Box()"],
+  ["defaults", "function read(x = 1) { return 1n; }", "read()"],
+  ["getter", "const box = { get value() { return 1n; } };", "box.value"],
+  ["constructor", "class Box { constructor() { this.value = 1n; } }", "new Box()"],
 ]) {
   assertRejected(
     workerSplit(`invoked-deferred-${name}`, `${declaration} export const result = ${invocation};`),
