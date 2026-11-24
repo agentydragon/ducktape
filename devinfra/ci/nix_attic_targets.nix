@@ -85,6 +85,7 @@ let
       "bbapi"
       "devtools"
       "precommit"
+      "precommit-ci"
       "agent-haku"
       "pr-visuals"
     ] (n: self.packages.${system}.${n})

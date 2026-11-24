@@ -26,7 +26,7 @@ let
   buildBuddyRunnerTools = builtins.attrValues buildBuddyRunnerPackages;
 
   # All hooks in .pre-commit-config.yaml use this shared Nix tool environment.
-  preCommitPackages = [
+  preCommitBasePackages = [
     buildBuddyRunnerPackages.bb
     ducktapePkgs.bbr
     ducktapePkgs.ducktape-git-hooks
@@ -46,9 +46,29 @@ let
     pkgs.kubeconform
     pkgs.tflint
     pkgs.checkov
-    rustToolchain.rustfmt
-    pkgs.ansible
   ];
+  preCommitPackagesWithRustfmt =
+    rustfmtPackages: preCommitBasePackages ++ rustfmtPackages ++ [ pkgs.ansible ];
+
+  preCommitRustfmt = rustToolchain.rustfmt;
+  preCommitPackages = preCommitPackagesWithRustfmt [ preCommitRustfmt ];
+
+  # Most PRs do not invoke Rustfmt. Keep its pinned compiler closure out of the
+  # initial CI install and realize the exact formatter on the first invocation.
+  preCommitCiPackages = preCommitPackagesWithRustfmt (
+    map
+      (
+        command:
+        pkgs.writeShellScriptBin command ''
+          formatter="$(nix build --no-link --no-write-lock-file --print-out-paths "''${GITHUB_WORKSPACE:?}#precommit-rustfmt")" || exit "$?"
+          exec "$formatter/bin/${command}" "$@"
+        ''
+      )
+      [
+        "rustfmt"
+        "cargo-fmt"
+      ]
+  );
 
   # Shared developer tool core used by `.#devtools` and Claude Code web's
   # Home Manager profile. The devShell and `.#devtools` also include
@@ -122,6 +142,8 @@ in
     buildBuddyRunnerTools
     localOnlyPackages
     preCommitPackages
+    preCommitCiPackages
+    preCommitRustfmt
     systemLibs
     devToolPackages
     ;
