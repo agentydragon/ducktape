@@ -443,78 +443,246 @@ private def profileVerdict (selected : CoreJS.HostProfile) (used : CoreJS.HostPr
   | .empty => []
   | .browserPage => [("hostProfile", toJson "browser-page"), ("assumptions", toJson used.assumptions)]
 
-private def runInDir (profile : CoreJS.HostProfile) (structural : Bool) (deploymentOrigin : Option String) (work : System.FilePath) (required : Option Guarantee) (checkOnly : Bool) (args : List String) : IO UInt32 := do
-  let (replicate?, args) := Effects.takeFlag "--replicate" args
-  let (premPath?, args) := Effects.takeFlag "--premises" args
-  let (fpPath?, args) := Effects.takeFlag "--footprints" args
-  let (planPath?, args) := Effects.takeFlag "--plan" args
-  let (corejsPath?, args) := Effects.takeFlag "--corejs" args
-  let (moveReportPath?, args) := Effects.takeFlag "--move-report" args
-  if premPath?.isSome && fpPath?.isSome then
-    throw (IO.userError "--footprints and --premises: the footprints rest on the premises `lower` ran under")
-  let prem ← Effects.loadPremises premPath?
-  let force := args.contains "--force"
-  let allConflicts := args.contains "--all-conflicts"
-  if allConflicts && planPath?.isNone then throw (IO.userError "--all-conflicts requires --plan")
-  let args := args.filter fun a => a != "--force" && a != "--all-conflicts"
-  let (bundlePath, specPath, out, leanOut?) ← match args with
-    | [b, s, o] => pure (b, s, o, none)
-    | b :: s :: o :: "--lean" :: l :: options => do
-      pure (b, s, o, some (l, ← InstanceSource.parseOptions {} options))
-    | _ => do IO.eprintln "usage: lowersplit --diagnostic <bundle.mjs|bundle.json> <spec.json> <outdir> [--lean <file> [--namespace NAME] [--variant SPEC]... [--control SPEC]...] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]"; throw (IO.userError "usage")
-  let timings := required.isSome && (← IO.getEnv "SPLIT_PROOF_TIMINGS") == some "1"
-  let tStart ← IO.monoMsNow
-  let lap (what : String) (t0 : Nat) : IO Nat := do
-    let t ← IO.monoMsNow
-    if required.isNone then
-      IO.println s!"  [time] {what}: {t - t0} ms"; (← IO.getStdout).flush
-    return t
-  let program ← timePhase timings "input_parse" fun _ => do
-    loadProgram bundlePath work required.isSome
+private structure SplitPaths where
+  bundle : System.FilePath
+  spec : System.FilePath
+  out : System.FilePath
+
+private structure BundleInput where
+  program : Json
+  source : String
+  input : System.FilePath
+
+private def readBundle (bundlePath work : System.FilePath) (validateSnapshot timings : Bool) : IO BundleInput := do
+  let program ← timePhase timings "input_parse" fun _ => loadProgram bundlePath work validateSnapshot
   let source ← IO.ofExcept (program.getObjValAs? String "sourceText")
   let input := work / "source.mjs"
   IO.FS.writeFile input source
+  return { program, source, input }
+
+private def unsupportedStatement (s : Json) : Option String :=
+  -- `export * from` publishes names that only the other module knows: a glue export could shadow one.
+  if Lower.typ s == "ExportAllDeclaration" then
+    some "unsupported top-level statement: ExportAllDeclaration"
+  else if Lower.typ s == "ImportDeclaration" && Lower.isNull (Lower.fld (Lower.fld s "source") "lit") then
+    some "unsupported top-level statement: an ImportDeclaration whose source has no literal annotation"
+  else (Lower.outsideModel false s).map fun what => s!"unsupported: {what}"
+
+private def analyzeFootprints (asts units : Array Json) (prem : Effects.Premises) (timings : Bool) :
+    IO (Array Lower.Footprint × Effects.Result) :=
+  let exported := units.toList.flatMap Lower.exportedBindings
+  timePhase timings "footprints" fun _ =>
+    IO.lazyPure fun _ => Effects.footprints units (Effects.importsOf asts) prem exported.toArray
+
+private def bundleOfFootprints (asts : Array Json) (fps : Array Lower.Footprint) (texts : Array String) : Bundle :=
+  (asts.zip fps).toList.zipIdx.map fun ((ast, f), i) => toStmt (texts.getD i "") ast f
+
+/-- The entry module keeps the published interface and loads outside imports before the rest of the bundle. -/
+private def entryPlacementProblem (B : Bundle) (S : Spec) (ast : Json) (i : Nat) : Option String :=
+  let t := Lower.typ ast
+  if (t == "ImportDeclaration" || t == "ExportNamedDeclaration" || t == "ExportDefaultDeclaration")
+      && S.moduleOf B i != some S.entry then
+    some s!"statement {i} is an `{t}` outside the entry module"
+  else none
+
+private def planSplit (B : Bundle) (S : Spec) (timings : Bool) : IO Plan := do
+  let P ← timePhase timings "placement" fun _ => IO.lazyPure fun _ => mkPlan B S
+  let _ ← IO.lazyPure fun _ => P.mods.length + (P.mods.map (·.imports.length)).sum
+  return P
+
+private structure CertifiedOptions where
+  request : Guarantee
+  profile : CoreJS.HostProfile
+  structural : Bool
+  deploymentOrigin : Option String
+  checkOnly : Bool
+
+private def parseCertifiedOptions (label : String) (args : List String) : IO (SplitPaths × CertifiedOptions) := do
+  let request ← match label with
+    | "all-outcomes" => pure Guarantee.allOutcomes
+    | "normal-completion" => pure Guarantee.normalCompletion
+    | _ => throw (IO.userError "--require expects all-outcomes or normal-completion")
+  let (contract?, args) := Effects.takeFlag "--host-contract" args
+  let profile ← match contract? with
+    | none => pure CoreJS.HostProfile.empty
+    | some path => do
+      let j ← IO.ofExcept (Json.parse (← IO.FS.readFile path))
+      IO.ofExcept (CoreJS.HostProfile.read j)
+  let structural := args.contains "--structural"
+  let args := args.filter (· != "--structural")
+  let (deploymentOrigin, args) := Effects.takeFlag "--deployment-origin" args
+  if deploymentOrigin.isSome && !structural then
+    throw (IO.userError "--deployment-origin requires --structural")
+  let checkOnly := args.contains "--check-output"
+  let args := args.filter (· != "--check-output")
+  let usage := IO.userError "usage: lowersplit <bundle.mjs|bundle.json> spec.json outdir [--require LEVEL] [--check-output] [--host-contract PROFILE.json] [--structural [--deployment-origin ORIGIN]]; use --diagnostic for plan and preview options"
+  let [bundle, spec, out] := args | throw usage
+  if args.any (·.startsWith "--") then throw usage
+  return (⟨bundle, spec, out⟩, { request, profile, structural, deploymentOrigin, checkOnly })
+
+private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work : System.FilePath) : IO UInt32 := do
+  let { request, profile, structural, deploymentOrigin, checkOnly } := options
+  let { bundle := bundlePath, spec := specPath, out } := paths
+  let timings := (← IO.getEnv "SPLIT_PROOF_TIMINGS") == some "1"
+  let ⟨program, source, input⟩ ← readBundle bundlePath work true timings
+  let asts ← IO.ofExcept (ESTreeUnits.checkedNodes program source)
+  if let some reason := asts.findSome? unsupportedStatement then throw (IO.userError reason)
+  let units := Effects.footprintUnits asts
+  let declarations := (CoreJS.DeclarationInput.decode program).toOption
+  let B ← if declarations.isSome then do
+      let (fps, _) ← analyzeFootprints asts units {} timings
+      pure (bundleOfFootprints asts fps #[])
+    else timePhase timings "layout_scan" fun _ => IO.lazyPure fun _ => linkedLayoutBundle asts units
+  let S ← loadSpec specPath
+  for name in S.entry :: S.modules.map Prod.fst do
+    let moduleExtension := name.endsWith ".mjs" || (profile == .browserPage && name.endsWith ".js")
+    unless CoreJS.ModuleInput.supportedFilename name && moduleExtension do
+      throw (IO.userError s!"certified output requires a safe relative .mjs path (.js is supported for browser-page modules), got {name}")
+  for (ast, i) in asts.zipIdx do
+    if let some reason := entryPlacementProblem B S ast i then throw (IO.userError reason)
+  let P ← planSplit B S timings
+  let layoutOk ← timePhase timings "plan_checks" fun _ => checkLayout B P (some S) false
+  -- Only the closed-declaration theorem needs the footprint-based order check.
+  let declaration := if !structural && layoutOk then declarations.bind (declarationProof? · B P) else none
+  if let some (level, ss) := declaration.filter (fun _ => decide (OrderOk B P)) then
+    try
+      if request == .allOutcomes && level != .allOutcomes then
+        throw (IO.userError "the checked reorder proves only normal-completion")
+      certifyOutput (Json.mkObj []) B P out work input checkOnly timings asts source fun files =>
+        timePhase timings "closed_declarations" fun _ => do
+          IO.ofExcept (CoreJS.DeclarationArtifacts.check program files ss B P)
+      return ← emitVerdict request.label (.ok level) "closed-declarations" (profileVerdict profile {})
+    catch e => return ← emitVerdict request.label (.error e.toString) "closed-declarations"
+  if structural then
+    try
+      unless request == .normalCompletion do
+        throw (IO.userError "the structural schedule certificate proves only normal-completion")
+      unless layoutOk do
+        throw (IO.userError "source placement or module linkage checks failed")
+      let providers ← timePhase timings "provider_loading" fun _ => loadProviders program bundlePath work
+      let deployment ← deploymentOrigin.mapM fun origin =>
+        timePhase timings "deployment_loading" fun _ => readDeployment program providers bundlePath work origin P
+      let proof ← certifyOutput providers B P out work input checkOnly timings asts source fun files =>
+        timePhase timings "structural_certificate" fun _ => do
+          let result ← IO.lazyPure fun _ =>
+            CoreJS.LinkedBehavior.certifyStructuralASTs profile program providers files P deployment
+          IO.ofExcept (result.map Prod.fst)
+      let scope := match proof with
+        | .preservedOrder => "linked-structural-order"
+        | .singlePivot => "linked-structural-pivot"
+      let assumptions :=
+        ["Retained source units use the same capability-closed opaque world in both layouts."] ++
+        (deploymentOrigin.toList.flatMap fun origin => [
+          s!"The static deployment at {origin} overlays only the planned module paths.",
+          "The native ESM loader uses one module record per effective URL and resolves dynamic dependencies through the checked live cells."
+        ])
+      let host := if profile == .browserPage then [("hostProfile", toJson "browser-page")] else []
+      return ← emitVerdict request.label (.ok .normalCompletion) scope (host ++ [("assumptions", toJson assumptions)])
+    catch e => return ← emitVerdict request.label (.error e.toString) "linked-structural"
+  let errorFields ← IO.mkRef ([] : List (String × Json))
+  try
+    unless layoutOk do throw (IO.userError "source placement or module linkage checks failed")
+    let providers ← timePhase timings "provider_loading" fun _ => do
+      loadProviders program bundlePath work
+    let used ← IO.mkRef ({} : CoreJS.HostPremises)
+    certifyOutput providers B P out work input checkOnly timings asts source fun files => do
+      let decoded ← timePhase timings "linked_lowering" fun _ =>
+        IO.lazyPure fun _ => CoreJS.LinkedInput.decodePair program providers files P profile
+      let (original, candidate) ← match decoded with
+        | .ok pair => pure pair
+        | .error reason =>
+          errorFields.set [("reason_code", toJson "linked_input")]
+          throw (IO.userError reason)
+      unless request == .normalCompletion do
+        throw (IO.userError "linked execution proves only normal-completion")
+      let prepared ← timePhase timings "certificate_preparation" fun _ => do
+        let result ← IO.lazyPure fun _ =>
+          CoreJS.LinkedBehavior.certificate profile program providers files P original candidate
+        match result with
+        | .error refusal => pure (Except.error refusal)
+        | .ok (cert, terms) =>
+          try
+            return .ok (cert, ← writeCertificateData work terms)
+          catch err =>
+            return .error { code := .proofPreparation, reason := err.toString }
+      let (cert, dataArts) ← match prepared with
+        | .ok result => pure result
+        | .error refusal =>
+          let detail := (refusal.observation.map fun value => ("observation", value)).toList
+          errorFields.set (("reason_code", toJson refusal.code.label) :: detail)
+          throw (IO.userError refusal.reason)
+      used.set (← verifyExecution timings work cert dataArts)
+    let active ← used.get
+    return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs" (profileVerdict profile active)
+  catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs" (← errorFields.get)
+
+private structure DiagnosticOptions where
+  replicate : Option String
+  prem : Effects.Premises
+  footprintPath : Option String
+  planPath : Option String
+  corejsPath : Option String
+  moveReportPath : Option String
+  force : Bool
+  allConflicts : Bool
+  leanOutput : Option (String × InstanceSource.Options)
+
+private def parseDiagnosticOptions (args : List String) : IO (SplitPaths × DiagnosticOptions) := do
+  let (replicate, args) := Effects.takeFlag "--replicate" args
+  let (premPath, args) := Effects.takeFlag "--premises" args
+  let (footprintPath, args) := Effects.takeFlag "--footprints" args
+  let (planPath, args) := Effects.takeFlag "--plan" args
+  let (corejsPath, args) := Effects.takeFlag "--corejs" args
+  let (moveReportPath, args) := Effects.takeFlag "--move-report" args
+  if premPath.isSome && footprintPath.isSome then
+    throw (IO.userError "--footprints and --premises: the footprints rest on the premises `lower` ran under")
+  let prem ← Effects.loadPremises premPath
+  let force := args.contains "--force"
+  let allConflicts := args.contains "--all-conflicts"
+  if allConflicts && planPath.isNone then throw (IO.userError "--all-conflicts requires --plan")
+  let args := args.filter fun a => a != "--force" && a != "--all-conflicts"
+  let (paths, leanOutput) ← match args with
+    | [b, s, o] => pure ((⟨b, s, o⟩ : SplitPaths), none)
+    | b :: s :: o :: "--lean" :: l :: options => do
+      pure (⟨b, s, o⟩, some (l, ← InstanceSource.parseOptions {} options))
+    | _ => do
+      IO.eprintln "usage: lowersplit --diagnostic <bundle.mjs|bundle.json> <spec.json> <outdir> [--lean <file> [--namespace NAME] [--variant SPEC]... [--control SPEC]...] [--replicate <K>] [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]"
+      throw (IO.userError "usage")
+  return (paths, { replicate, prem, footprintPath, planPath, corejsPath, moveReportPath, force, allConflicts, leanOutput })
+
+private def runDiagnostic (paths : SplitPaths) (options : DiagnosticOptions) (work : System.FilePath) : IO UInt32 := do
+  let tStart ← IO.monoMsNow
+  let lap (what : String) (t0 : Nat) : IO Nat := do
+    let t ← IO.monoMsNow
+    IO.println s!"  [time] {what}: {t - t0} ms"
+    (← IO.getStdout).flush
+    return t
+  let ⟨program, source, input⟩ ← readBundle paths.bundle work false false
   let t1 ← lap "read + parse JSON" tStart
   let asts ← IO.ofExcept (ESTreeUnits.checkedNodes program source)
-  let unsupported (reason : String) : IO UInt32 := do
-    if required.isSome then throw (IO.userError reason)
+  if let some reason := asts.findSome? unsupportedStatement then
     IO.eprintln reason
     return 3
-  for s in asts do
-    -- `export * from` publishes names that only the other module knows: a glue export could shadow one
-    if Lower.typ s == "ExportAllDeclaration" then
-      return ← unsupported "unsupported top-level statement: ExportAllDeclaration"
-    if Lower.typ s == "ImportDeclaration" && Lower.isNull (Lower.fld (Lower.fld s "source") "lit") then
-      return ← unsupported "unsupported top-level statement: an ImportDeclaration whose source has no literal annotation"
-    if let some what := Lower.outsideModel false s then
-      return ← unsupported s!"unsupported: {what}"
   let units := Effects.footprintUnits asts
-  let declarations := required.bind fun _ => (CoreJS.DeclarationInput.decode program).toOption
-  let fps? ← if required.isSome && declarations.isNone then pure none else
-    match fpPath? with
+  let fps ← match options.footprintPath with
     | some p => do
       IO.println s!"  footprints read from {p}: the premises printed by `lower` when it wrote them apply"
-      some <$> loadFootprints p units
+      loadFootprints p units
     | none => do
-      let exported := units.toList.flatMap Lower.exportedBindings
-      let (fps, analysis) ← timePhase timings "footprints" fun _ => do
-        IO.lazyPure fun _ => Effects.footprints units (Effects.importsOf asts) prem exported.toArray
-      if required.isNone then
-        for line in Effects.premiseLines prem analysis do IO.println line
-      pure (some fps)
+      let (fps, analysis) ← analyzeFootprints asts units options.prem false
+      for line in Effects.premiseLines options.prem analysis do IO.println line
+      pure fps
   let t2 ← lap "footprints (Lean analysis)" t1
   -- The legacy standalone Lean instance embeds printable source for each unit.
-  let texts ← if leanOut?.isSome then do
+  let texts ← if options.leanOutput.isSome then do
       let unitsFile := work / "units.json"
       let reply := work / "texts.json"
       IO.FS.writeFile unitsFile (Json.arr asts).compress
       javascript #["--print-units"] #[unitsFile, input, reply]
       IO.ofExcept (fromJson? (α := Array String) (← readJson reply))
     else pure #[]
-  let B0 : Bundle ← match fps? with
-    | some fps => pure ((asts.zip fps).toList.zipIdx.map fun ((ast, f), i) => toStmt (texts.getD i "") ast f)
-    | none => timePhase timings "layout_scan" fun _ => IO.lazyPure fun _ => linkedLayoutBundle asts units
-  let copies := replicate?.bind String.toNat?
+  let B0 := bundleOfFootprints asts fps texts
+  let copies := options.replicate.bind String.toNat?
   let B := match copies with
     | some K => replicateBundle K B0
     | none => B0
@@ -522,128 +690,40 @@ private def runInDir (profile : CoreJS.HostProfile) (structural : Bool) (deploym
   let outputAsts := match copies with
     | none => asts
     | some k => (Array.replicate k asts).flatten
-  let S ← loadSpec specPath
-  if required.isSome then
-    for name in S.entry :: S.modules.map Prod.fst do
-      let moduleExtension := name.endsWith ".mjs" || (profile == .browserPage && name.endsWith ".js")
-      unless CoreJS.ModuleInput.supportedFilename name && moduleExtension do
-        throw (IO.userError s!"certified output requires a safe relative .mjs path (.js is supported for browser-page modules), got {name}")
+  let S ← loadSpec paths.spec
   let t3 ← lap "load spec" t2
-  if required.isNone then
-    if let some fps := fps? then
-      IO.println s!"{B.length} statements; footprints computed in Lean; {(fps.filter (·.effect)).size} touch the world; {(fps.filter (·.fallback ≠ [])).size} with fallback nodes"
-  -- A rule Lean does not check. It talks about the original statements, so `--replicate` skips it.
+  IO.println s!"{B.length} statements; footprints computed in Lean; {(fps.filter (·.effect)).size} touch the world; {(fps.filter (·.fallback ≠ [])).size} with fallback nodes"
   let mut bad := false
-  if replicate?.isNone then
-    -- An `export` is the entry module's interface, and an `import` loads an outside module before any statement
-    -- of the bundle runs: both stay in the entry module, which places the outside requests first.
-    for (ast, i) in asts.toList.zipIdx do
-      let t := Lower.typ ast
-      if (t == "ImportDeclaration" || t == "ExportNamedDeclaration" || t == "ExportDefaultDeclaration")
-          && S.moduleOf B i != some S.entry then
-        if required.isSome then throw (IO.userError s!"statement {i} is an `{t}` outside the entry module")
-        IO.println s!"  FAIL  statement {i} is an `{t}` outside the entry module"; bad := true
-  let P ← timePhase timings "placement" fun _ => do
-    IO.lazyPure fun _ => mkPlan B S
-  let _ ← IO.lazyPure fun _ => P.mods.length + (P.mods.map (·.imports.length)).sum
+  -- Source placement refers to the original statements, so `--replicate` skips it.
+  if options.replicate.isNone then
+    for (ast, i) in asts.zipIdx do
+      if let some reason := entryPlacementProblem B S ast i then
+        IO.println s!"  FAIL  {reason}"
+        bad := true
+  let P ← planSplit B S false
   let t4 ← lap "mkPlan" t3
-  if let some request := required then
-    let layoutOk ← timePhase timings "plan_checks" fun _ => checkLayout B P (some S) false
-    -- Only the closed-declaration theorem needs the footprint-based order check.
-    let declaration := if !structural && layoutOk && !bad then declarations.bind (declarationProof? · B P) else none
-    if let some (level, ss) := declaration.filter (fun _ => decide (OrderOk B P)) then
-      try
-        if request == .allOutcomes && level != .allOutcomes then
-          throw (IO.userError "the checked reorder proves only normal-completion")
-        certifyOutput (Json.mkObj []) B P out work input checkOnly timings outputAsts source fun files =>
-          timePhase timings "closed_declarations" fun _ => do
-            IO.ofExcept (CoreJS.DeclarationArtifacts.check program files ss B P)
-        return ← emitVerdict request.label (.ok level) "closed-declarations" (profileVerdict profile {})
-      catch e => return ← emitVerdict request.label (.error e.toString) "closed-declarations"
-    if structural then
-      try
-        unless request == .normalCompletion do
-          throw (IO.userError "the structural schedule certificate proves only normal-completion")
-        unless layoutOk && !bad do
-          throw (IO.userError "source placement or module linkage checks failed")
-        let providers ← timePhase timings "provider_loading" fun _ => loadProviders program bundlePath work
-        let deployment ← deploymentOrigin.mapM fun origin =>
-          timePhase timings "deployment_loading" fun _ => readDeployment program providers bundlePath work origin P
-        let proof ← certifyOutput providers B P out work input checkOnly timings outputAsts source fun files =>
-          timePhase timings "structural_certificate" fun _ => do
-            let result ← IO.lazyPure fun _ =>
-              CoreJS.LinkedBehavior.certifyStructuralASTs profile program providers files P deployment
-            IO.ofExcept (result.map Prod.fst)
-        let scope := match proof with
-          | .preservedOrder => "linked-structural-order"
-          | .singlePivot => "linked-structural-pivot"
-        let assumptions :=
-          ["Retained source units use the same capability-closed opaque world in both layouts."] ++
-          (deploymentOrigin.toList.flatMap fun origin => [
-            s!"The static deployment at {origin} overlays only the planned module paths.",
-            "The native ESM loader uses one module record per effective URL and resolves dynamic dependencies through the checked live cells."
-          ])
-        let host := if profile == .browserPage then [("hostProfile", toJson "browser-page")] else []
-        return ← emitVerdict request.label (.ok .normalCompletion) scope (host ++ [("assumptions", toJson assumptions)])
-      catch e => return ← emitVerdict request.label (.error e.toString) "linked-structural"
-    let errorFields ← IO.mkRef ([] : List (String × Json))
-    try
-      unless layoutOk && !bad do throw (IO.userError "source placement or module linkage checks failed")
-      let providers ← timePhase timings "provider_loading" fun _ => do
-        loadProviders program bundlePath work
-      let used ← IO.mkRef ({} : CoreJS.HostPremises)
-      certifyOutput providers B P out work input checkOnly timings outputAsts source fun files => do
-        let decoded ← timePhase timings "linked_lowering" fun _ =>
-          IO.lazyPure fun _ => CoreJS.LinkedInput.decodePair program providers files P profile
-        let (original, candidate) ← match decoded with
-          | .ok pair => pure pair
-          | .error reason =>
-            errorFields.set [("reason_code", toJson "linked_input")]
-            throw (IO.userError reason)
-        unless request == .normalCompletion do
-          throw (IO.userError "linked execution proves only normal-completion")
-        let prepared ← timePhase timings "certificate_preparation" fun _ => do
-          let result ← IO.lazyPure fun _ =>
-            CoreJS.LinkedBehavior.certificate profile program providers files P original candidate
-          match result with
-          | .error refusal => pure (Except.error refusal)
-          | .ok (cert, terms) =>
-            try
-              return .ok (cert, ← writeCertificateData work terms)
-            catch err =>
-              return .error { code := .proofPreparation, reason := err.toString }
-        let (cert, dataArts) ← match prepared with
-          | .ok result => pure result
-          | .error refusal =>
-            let detail := (refusal.observation.map fun value => ("observation", value)).toList
-            errorFields.set (("reason_code", toJson refusal.code.label) :: detail)
-            throw (IO.userError refusal.reason)
-        used.set (← verifyExecution timings work cert dataArts)
-      let active ← used.get
-      return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs" (profileVerdict profile active)
-    catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs" (← errorFields.get)
   let ok ← reportPlanChecks B S P
   let t5 ← lap "all checks" t4
-  let model ← modelBody asts corejsPath?
-  if let some path := moveReportPath? then
+  let model ← modelBody asts options.corejsPath
+  if let some path := options.moveReportPath then
     let report := model >>= moveReport asts B S P
     IO.FS.writeFile path ((match report with
       | .ok value => value
       | .error reason => Json.mkObj [("error", toJson reason)]).compress ++ "\n")
-  for line in modelDiagnostics program asts B S P (ok && !bad) replicate?.isSome model do IO.println line
-  if let some (l, options) := leanOut? then
+  for line in modelDiagnostics program asts B S P (ok && !bad) options.replicate.isSome model do IO.println line
+  if let some (l, options) := options.leanOutput then
     if bad then
       IO.println "  skipped structural plan proof: source placement failed"
     else
       IO.FS.writeFile l (InstanceSource.render B S options)
       IO.println s!"  wrote structural plan proof source to {l}"
-  if force || (ok && !bad) then
+  if options.force || (ok && !bad) then
     match ESTreeEmit.programs outputAsts B P source with
     | .error message => IO.eprintln s!"cannot write output: {message}"; return 3
-    | .ok programs => javascript #["--print"] #[← writeProgramManifest programs work, out, input]
-    if let some planPath := planPath? then
-      let (count, sample, every) := if ok then (0, #[], #[]) else conflictInversions B P allConflicts
-      let pairs := if allConflicts then
+    | .ok programs => javascript #["--print"] #[← writeProgramManifest programs work, paths.out, input]
+    if let some planPath := options.planPath then
+      let (count, sample, every) := if ok then (0, #[], #[]) else conflictInversions B P options.allConflicts
+      let pairs := if options.allConflicts then
           [("pairs", toJson (every.map fun (later, earlier, _) => #[earlier, later]))]
         else []
       let examples := sample.map fun (later, earlier) =>
@@ -655,10 +735,7 @@ private def runInDir (profile : CoreJS.HostProfile) (structural : Bool) (deploym
     let _ ← lap "render + write" t5
     IO.println s!"  [time] total: {(← IO.monoMsNow) - tStart} ms"
   if ok && !bad then return 0
-  IO.eprintln (if force then "rejected; written anyway (--force)" else "rejected; nothing written"); return 1
-
-private def runSplitter (profile : CoreJS.HostProfile) (structural : Bool) (deploymentOrigin : Option String) (required : Option Guarantee) (checkOnly : Bool) (args : List String) : IO UInt32 :=
-  IO.FS.withTempDir fun work => runInDir profile structural deploymentOrigin work required checkOnly args
+  IO.eprintln (if options.force then "rejected; written anyway (--force)" else "rejected; nothing written"); return 1
 
 def EsmSplit.LowerSplit.main (args : List String) : IO UInt32 := do
   if let "--diagnostic" :: rest := args then
@@ -666,28 +743,12 @@ def EsmSplit.LowerSplit.main (args : List String) : IO UInt32 := do
       IO.eprintln "certification options cannot be combined with --diagnostic"
       return 1
     IO.println "Diagnostic run. Any emitted files are an uncertified preview."
-    return ← runSplitter .empty false none none false rest
+    return ← IO.FS.withTempDir fun work => do
+      let (paths, options) ← parseDiagnosticOptions rest
+      runDiagnostic paths options work
   let (level?, args) := Effects.takeFlag "--require" args
   let label := level?.getD Guarantee.normalCompletion.label
   try
-    let level ← match label with
-      | "all-outcomes" => pure Guarantee.allOutcomes
-      | "normal-completion" => pure Guarantee.normalCompletion
-      | _ => throw (IO.userError "--require expects all-outcomes or normal-completion")
-    let (contract?, args) := Effects.takeFlag "--host-contract" args
-    let profile ← match contract? with
-      | none => pure CoreJS.HostProfile.empty
-      | some path => do
-        let j ← IO.ofExcept (Json.parse (← IO.FS.readFile path))
-        IO.ofExcept (CoreJS.HostProfile.read j)
-    let structural := args.contains "--structural"
-    let args := args.filter (· != "--structural")
-    let (deploymentOrigin, args) := Effects.takeFlag "--deployment-origin" args
-    if deploymentOrigin.isSome && !structural then
-      throw (IO.userError "--deployment-origin requires --structural")
-    let checkOnly := args.contains "--check-output"
-    let args := args.filter (· != "--check-output")
-    unless args.length == 3 && !args.any (·.startsWith "--") do
-      throw (IO.userError "usage: lowersplit <bundle.mjs|bundle.json> spec.json outdir [--require LEVEL] [--check-output] [--host-contract PROFILE.json] [--structural [--deployment-origin ORIGIN]]; use --diagnostic for plan and preview options")
-    runSplitter profile structural deploymentOrigin (some level) checkOnly args
+    let (paths, options) ← parseCertifiedOptions label args
+    IO.FS.withTempDir fun work => runCertified paths options work
   catch e => emitVerdict label (.error e.toString)
