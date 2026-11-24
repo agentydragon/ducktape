@@ -1460,7 +1460,10 @@ rust_library(
     name = "package_args",
     srcs = ["package_args.rs"],
     edition = "2024",
-    deps = ["@crates//:anyhow"],
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:clap",
+    ],
 )
 
 rust_library(
