@@ -4,6 +4,8 @@ load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load(":splitter_launcher.bzl", "splitter_launcher")
 
+_CERTIFICATE = "//devinfra/js/debundle/x/split_proof/lean/EsmSplit/CoreJS/LinkedCertificate"
+
 _EXAMPLE = "//devinfra/js/debundle/x/split_proof:example/"
 
 _LOWERSPLIT_WORKFLOWS = "//devinfra/js/debundle/x/split_proof/lean/EsmSplit/LowerSplit"
@@ -257,6 +259,7 @@ lean_library(
         "EsmSplit/CoreJS/StateMatch.lean",
         "EsmSplit/CoreJS/WriteExpr.lean",
     ],
+    visibility = [_CERTIFICATE + ":__pkg__"],
     deps = [
         ":corejs_runtime",
         ":effects",
@@ -265,19 +268,25 @@ lean_library(
 )
 
 lean_library(
-    name = "corejs_certificates",
+    name = "corejs_linked_input",
     srcs = [
         "EsmSplit/CertificateData.lean",
-        "EsmSplit/CoreJS/LinkedCertificate.lean",
         "EsmSplit/CoreJS/LinkedInput.lean",
     ],
-    visibility = [_LOWERSPLIT_WORKFLOWS + ":__pkg__"],
+    visibility = [_CERTIFICATE + ":__pkg__"],
     deps = [
         ":corejs_certificate_support",
         ":corejs_runtime",
         ":effects",
         ":planner",
     ],
+)
+
+lean_library(
+    name = "corejs_certificates",
+    srcs = ["EsmSplit/CoreJS/LinkedCertificate.lean"],
+    visibility = [_LOWERSPLIT_WORKFLOWS + ":__pkg__"],
+    deps = [_CERTIFICATE + ":generation_support"],
 )
 
 lean_library(
@@ -304,7 +313,7 @@ lean_library(
     visibility = [_LOWERSPLIT_WORKFLOWS + ":__pkg__"],
     deps = [
         ":corejs_certificate_support",
-        ":corejs_certificates",
+        ":corejs_linked_input",
         ":corejs_runtime",
         ":planner",
     ],
@@ -346,7 +355,7 @@ lean_binary(
     entry = "LinkedInputTest.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
     deps = [
-        ":corejs_certificates",
+        ":corejs_linked_input",
         ":corejs_runtime",
         ":effects",
         ":planner",

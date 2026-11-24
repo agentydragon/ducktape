@@ -170,7 +170,7 @@ top-level record initializer it can make one more attempt with 64 plus the large
 property count, capped at 2048. Exhausting the budget, unsupported syntax or an
 all-world proof that fails to reduce yields a rejection. A successful comparison
 reports `"scope":"linked-programs"`.
-[AST certificate](lean/EsmSplit/CoreJS/LinkedCertificate.lean) · [Linked behavior theorem](lean/EsmSplit/CoreJS/LinkedBehavior.lean)
+[AST certificate](lean/EsmSplit/CoreJS/LinkedCertificate/Proof.lean) · [Linked behavior theorem](lean/EsmSplit/CoreJS/LinkedBehavior.lean)
 
 ### Read a linked refusal
 
