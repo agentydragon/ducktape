@@ -63,7 +63,7 @@
       import { html, mount } from "../report.js";
 
       const evidenceSha =
-        "0a6fcee82d3276070078723cfaf5db52814a947a8191de72733e11ee6c3e9fe2";
+        "f804324badff4d5cb13d4bfacaa08caabf19c3c0aacf70b9548ec3ee8a2cf1dc";
       const response = await fetch(`./evidence.json?v=${evidenceSha}`);
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const bytes = await response.arrayBuffer();
@@ -129,15 +129,23 @@
         Goal: Math.round(e.baseline.summary[key].green_s.p50 * 0.7),
       }));
       const latestHeads = e.fixed_windows.at(-1).heads;
+      const headCounts = (summary) =>
+        summary ? `${summary.n} (${summary.outcomes.cancelled ?? 0})` : "0 (0)";
+      const driver = e.latest_gate_breakdown;
+      const recovery = e.public_cache_recovery;
+      const gateNames = [
+        ["Pre-commit", "precommit"],
+        ["Bazel", "bazel"],
+        ["Artifacts and imports", "artifacts_and_imports"],
+      ];
       const outcomeTime = (r) =>
         r.required_green_s ?? r.actionable_red_s ?? null;
       const traceRows = latestHeads.map((r) => [
         html`${pr(r.pr)} <${Code}>${r.sha.slice(0, 8)}<//>`,
         r.stratum.endsWith("_open") ? "Opening" : "Update",
-        r.required_outcome === "incomplete"
-          ? "Superseded before ordinary CI"
-          : r.required_outcome,
+        r.superseded_by ? "Superseded / canceled" : r.required_outcome,
         outcomeTime(r) == null ? "—" : `${outcomeTime(r)} s`,
+        html`<${Code}>${r.tested_merge.slice(0, 8)}<//> ${r.precommit_profile}`,
         html`<${Group} gap="xs"
           >${r.gates.map((g) => link(g.url, g.gate === "Pre-commit checks" ? "Pre-commit" : g.gate.startsWith("bazel-ci") ? "Bazel" : "Artifacts"))}<//
         >`,
@@ -155,31 +163,31 @@
               ${link("../", "Ducktape reports")}
               <${Title} order=${1} my="sm">CI feedback latency<//>
               <${Text} size="lg"
-                >The measured PRs fell short of the 30% speedup goal. In the
-                latest fixed window, five of 11 heads passed all three required
-                checks. Median green took 452.5 s for four openings and 465 s
-                for one update. The comparable baseline medians were 199.5 s and
-                259 s.<//
+                >The latest production window fell short of the 30% goal. Twelve
+                of 16 heads reached required green. Median green took 330 s for
+                seven openings and 445 s for five updates, versus 199.5 s and
+                259 s in the baseline. Pre-commit finished last on ten greens
+                during a public Nix cache incident.<//
               >
               <${Text} mt="sm" size="sm" c="dimmed"
-                >Latest arrivals from 23 November 23:56 through 24 November
-                00:10 UTC. Baseline from 22 November 00:00 through 23 November
-                22:49:59 UTC. Inspected devel
-                <${Code}>${e.source_devel_commit}<//><//
+                >Latest arrivals on 24 November, 00:10:01–00:50:00 UTC. Baseline
+                from 22 November 00:00 through 23 November 22:49:59 UTC.
+                Inspected devel <${Code}>${e.source_devel_commit}<//><//
               >
               <${Text} mt="sm" size="sm"
-                >${link("#paired-precommit", "Later matched pre-commit trial")}<//
+                >${link("#paired-precommit", "Matched pre-commit trial during the incident")}<//
               >
             </header>
 
             <section id="latest">
               <${Title} order=${2}>Required green by head type<//>
               <${Text} my="sm"
-                >The latest census covers six same-repo openings and five
-                updates targeting devel. Two heads were canceled and one opening
-                was superseded before ordinary CI. No fork heads arrived in this
-                window. All 11 heads had aged at least ten minutes by the final
-                readback.<//
+                >The census covers 11 same-repo openings and five updates. One
+                opening reached actionable red at 191 s and required red at 198
+                s. Three original opening heads were canceled as replacements
+                arrived. No eligible head lacked ordinary CI and no fork heads
+                arrived. Five stacked heads were outside the devel census.
+                ${" "}${inv("ca9cbbb6-87d6-5283-86bf-5c57bce8c4a2", "CoreJS axiom-audit failure")}<//
               >
               <${Text} size="sm" c="dimmed"
                 >Median required-green time (seconds)<//
@@ -203,14 +211,14 @@
                 />
               <//>
               <${Text} my="sm"
-                >No head reached green or actionable red within five minutes.
-                Five reached green within ten minutes. After weighting by the
-                baseline opening and update proportions, green by five minutes
-                was 0% versus 39.4% in the baseline. Green by ten minutes was
-                45.7% versus 54.6%. Small cohorts and changing workloads limit
-                attribution to the rollout.<//
+                >Three heads were green by five minutes and nine by ten. Using
+                the baseline's opening and update proportions, the share green
+                by five minutes was 15.0% versus 39.4%. By ten minutes it was
+                61.0% versus 54.6%. All 16 heads had aged into both horizons.
+                The small samples and different workloads limit rollout
+                attribution.<//
               >
-              ${disclosure("Exact heads and required checks", table(["PR head", "Kind", "Outcome", "Time to signal", "Job links"], traceRows, 620))}
+              ${disclosure("Exact heads and required checks", table(["PR head", "Kind", "Outcome", "Time to signal", "Tested merge and profile", "Job links"], traceRows, 740))}
             </section>
 
             <section id="cohorts">
@@ -227,18 +235,18 @@
               ${table(
                 [
                   "PR class",
-                  "Baseline heads",
+                  "Baseline heads (canceled)",
                   "Baseline green p50/p90 (n)",
-                  "Latest heads",
+                  "Latest heads (canceled)",
                   "Latest green p50/p90 (n)",
                   "Baseline red p50/p90 (n)",
                   "Latest red p50/p90 (n)",
                 ],
                 classes.map(([label, k]) => [
                   label,
-                  e.baseline.summary[k].n,
+                  headCounts(e.baseline.summary[k]),
                   values(e.baseline.summary[k].green_s),
-                  e.latest[k]?.n ?? 0,
+                  headCounts(e.latest[k]),
                   values(e.latest[k]?.green_s),
                   values(e.baseline.summary[k].actionable_red_s),
                   values(e.latest[k]?.actionable_red_s),
@@ -251,16 +259,23 @@
                 measured openings out of 337 and 24 measured updates out of 276,
                 with the sampled heads and original selection weights preserved.
                 Baseline opening red includes two heads that published failure
-                and were later canceled. The latest update-green value is one
-                observation. The three later samples are separate fixed windows.
-                Each has a fork-coverage gap.<//
+                and were later canceled.<//
+              >
+              <${Text} my="sm" size="sm"
+                >Exact tested merges show that all 16 heads used sparse checkout
+                and the Nix launcher. Fifteen installed ${" "}
+                <${Code}>.#precommit<//>. Only the Rustfmt proposal's own check
+                installed <${Code}>.#precommit-ci<//>. Excluding that head
+                raises the opening-green median to 353 s. The direct installer
+                and the combined scanner proposal had yet to roll out.${" "}
+                ${pr(19578)} · ${pr(19640)} · ${pr(19653)}<//
               >
               ${disclosure(
                 "Earlier fixed rollout windows",
                 html`<${Stack} gap="sm">
                   ${table(
                     [
-                      "23 November UTC",
+                      "Arrival window (UTC)",
                       "Heads and outcomes",
                       "Green or red clocks",
                     ],
@@ -279,6 +294,11 @@
                         "23:50:26–23:55:25",
                         "7 · all green",
                         "Open green at 418, 492 and 578 s. Update green at 376, 383, 448 and 617 s.",
+                      ],
+                      [
+                        "23 Nov 23:56:00–24 Nov 00:10:00",
+                        "11 · 5 green, 3 red, 2 canceled, 1 superseded",
+                        "Open green 452.5 / 498 s (4). Update green at 465 s (1), and update red 394 / 460 s (3). p50 / p90.",
                       ],
                     ],
                     600,
@@ -305,14 +325,15 @@
 
             <section id="latest-drivers">
               <${Title} order=${2}
-                >Pre-commit setup finished last on three of five greens<//
+                >The Nix cache stalled pre-commit on ten greens<//
               >
               <${Text} my="sm"
-                >Within the latest window, pre-commit's median setup took 370 s
-                and the hooks took 11 s. It was last by 109, 321 and 339 s.
-                Bazel was last on the other two greens, by 23 and 292 s. Only
-                improvements before the next gate finishes can move the
-                required-green time for a head.<//
+                >Pre-commit finished a median of 173.5 s after the next gate on
+                those ten heads. Setup took a median of 368 s and hooks took 15
+                s. Nix installation took 3.79 s and the evaluation and
+                realization plan took 17.49 s. The interval from the compiler
+                copy announcement to the dependent Rustfmt copy or stream error
+                was 335.44 s at the median. Rustfmt skipped on all ten heads.<//
               >
               ${table(
                 [
@@ -321,32 +342,41 @@
                   "Median job runtime",
                   "Last on green",
                 ],
-                [
-                  ["Pre-commit", "15 s", "401 s", "3 / 5"],
-                  ["Bazel", "5 s", "166 s", "2 / 5"],
-                  ["Artifacts and imports", "38 s", "87 s", "0 / 5"],
-                ],
+                gateNames.map(([label, key]) => [
+                  label,
+                  `${driver.runner_admission_median_s[key]} s`,
+                  `${driver.job_duration_median_s[key]} s`,
+                  `${driver.last[key]} / ${driver.greens}`,
+                ]),
                 540,
               )}
               <${Text} my="sm"
-                >On five Bazel-limited greens or reds, the inner critical-path
-                queue was 0.07–0.18%. The two greens included generated Lean
-                proof fixtures. The three red attempts all identified the CoreJS
-                axiom audit as the failed build action. Provider tests were also
-                on two red critical paths for 168 s and 194 s. The inner queue
-                omits hosted and outer BuildBuddy admission.
-                ${" "}${inv("cc3ecf66-8fa6-5264-b31a-97f2d460c542", "Green proof path")}
-                ·
-                ${inv("0cf05c30-6bfe-51b6-9137-191e3602e638", "Provider path")}
-                ·
-                ${inv("d5195aaa-89d8-565c-9e96-a07ea2105857", "Axiom audit path")}<//
+                >The public cache process was OOM-killed at 00:49:12 UTC with an
+                8 GiB limit. At 00:48:30 its working set was 7.989 GiB. The
+                ordinary PR and independent full replay reported HTTP/2 framing
+                errors for the same pinned Rust compiler stream within 13 ms of
+                each other in the restart second. The memory measurements do not
+                identify which operations consumed that memory.${" "}
+                ${job(45299462842, 138128057878, "Ordinary pre-commit log")}
+                ·${" "} ${job(45299454803, 138128032136, "Full replay log")}<//
+              >
+              <${Text} my="sm"
+                >After restart, four successful ordinary devel-targeting jobs
+                used the same full profile and pinned compiler. The median
+                interval to the dependent Rustfmt copy fell to${" "}
+                ${recovery.transfer_median_s.toFixed(2)} s (10.34–16.79 s). The
+                entire pre-commit job took ${recovery.job_median_s} s at the
+                median. This targeted job-log read through 01:08 UTC measures
+                cache recovery. All-gates timing was not collected for those
+                heads.${" "}
+                ${job(45301879131, 138136133865, "Full-profile recovery log")}<//
               >
               <${Text} size="sm"
-                >The first 31-head window finished 22 of 29 greens at Bazel,
-                four at pre-commit and three at artifacts/imports. In the
-                138-green baseline Bazel was last on 136. The critical gate
-                shifts across samples.
-                ${" "}${job(45293937490, 138109437589, "Latest pre-commit-limited job")}<//
+                >Even with pre-commit finishing before both other gates on every
+                green, the measured other gates leave optimistic medians of 168
+                s for openings and 216 s for updates. The historical 30% targets
+                are about 140 s and 181 s. Bazel was last on 136 of 138 baseline
+                greens.<//
               >
             </section>
 
@@ -362,8 +392,8 @@
                   gates spent 309 s and 383 s in setup. Their logs stalled
                   between announcing the compiler and its dependent formatter.
                   Those and the one hosted candidate are unmatched observations.
-                  None of the fixed cohorts exercised the candidate.
-                  ${" "}${pr(19640)} ·
+                  Its own proposed change was the sole treated head in the
+                  latest devel-targeting window. ${" "}${pr(19640)} ·
                   ${job(45295577252, 138114986539, "Hosted candidate")}<//
                 >
                 <${Text} size="sm"
@@ -419,7 +449,7 @@
 
             <section id="paired-precommit">
               <${Title} order=${2}
-                >On one matched Nix-only PR, all gates passed 222 s earlier<//
+                >The slim profile avoided the cache stall in a matched replay<//
               >
               <${Text} my="sm">
                 A separate dispatch at 00:43:22 UTC on 24 November used the same
@@ -430,7 +460,7 @@
                 +69 s. The last required gate moved from pre-commit to
                 artifacts/imports. Relative to dispatch, all three gates passed
                 at +152 s with slim pre-commit, down from +374 s with full
-                pre-commit (59.36% earlier).${" "}
+                pre-commit (59.4% earlier).${" "}
                 ${run(45299454803, "Matched dispatch")} ·${" "}
                 ${link(repo + "/commit/8ec08d64147f8a7babc19e763575ec66ea48b299", "Tested merge")}
               <//>
@@ -441,10 +471,10 @@
                 framing error. Nix retried and the job passed. The slim job
                 avoided fetching rustc. Fresh Ubuntu 26.04 hosts used different
                 image revisions and regions (westus and us-west-2). This elapsed
-                comparison captures avoidance of a specific cache stall on one
-                stacked workload after the 00:10 UTC census cutoff. It leaves
-                normal-cache savings and the 30% production goal
-                unverified.${" "}
+                comparison captures avoidance of the shared cache incident on
+                one stacked workload. The recovered full-profile jobs supply no
+                evidence of an ongoing 335 s per-job saving. A matched
+                healthy-cache comparison remains unmeasured.${" "}
                 ${job(45299454803, 138128032136, "Full pre-commit log")}
               <//>
             </section>
@@ -521,9 +551,9 @@
                     >1. Measure the pre-commit and direct-installer rollout on
                     consecutive heads.</strong
                   >
-                  Anchor to real merge times and verify the actual installer in
-                  each job log. Compare exact last-gate times separately for
-                  openings, updates and forks. Keep Rust-using heads visible
+                  Anchor to merge times and verify the installer and profile in
+                  each job log. Record cache health alongside required feedback
+                  on openings, updates and forks. Keep Rust-using heads visible
                   because they realize the deferred closure.<//
                 >
                 <${Text}
@@ -623,7 +653,7 @@
               <${Group} gap="md">
                 ${link("./evidence.json", "Reviewed evidence")}
                 ${link("./manifest.json", "Manifest")}
-                ${prior("", "Previous snapshot")}
+                ${link(`${repo}/blob/${e.prior_snapshot_commit}/latency/index.html`, "Previous snapshot")}
                 ${link(`${repo}/rules?ref=refs%2Fheads%2Fdevel`, "Current branch rules")}
                 ${source(".github/workflows/bazel-ci.yml", "Inspected Bazel workflow")}
               <//>
