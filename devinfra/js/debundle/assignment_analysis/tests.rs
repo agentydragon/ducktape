@@ -430,6 +430,48 @@ fn dependency_graph_report_names_the_callee_source_unit_on_a_promoted_at_init_ed
 }
 
 #[test]
+fn quotient_report_keeps_scc_ids_in_graph_traversal_order() {
+    let assignment = assignment_analysis_for(
+        "function c() { return d; } function d() { return c; }
+         function a() { return b; } function b() { return a; }",
+        &[
+            ("c", logical(3)),
+            ("d", logical(2)),
+            ("a", logical(1)),
+            ("b", logical(0)),
+        ],
+    );
+    let report = dependency_graph_report(&assignment);
+    let cycles: Vec<_> = report
+        .quotient
+        .sccs
+        .iter()
+        .filter(|scc| scc.is_cycle)
+        .collect();
+    let [first, second] = cycles.as_slice() else {
+        panic!("expected two separate structural SCCs, got {cycles:?}");
+    };
+    assert_eq!(first.id, "scc:0");
+    assert_eq!(
+        first.modules,
+        [
+            reports::module_key(ModuleId(2)),
+            reports::module_key(ModuleId(3))
+        ]
+    );
+    assert_eq!(first.module_edge_ids, ["module_edge:2", "module_edge:3"]);
+    assert_eq!(second.id, "scc:1");
+    assert_eq!(
+        second.modules,
+        [
+            reports::module_key(ModuleId(0)),
+            reports::module_key(ModuleId(1))
+        ]
+    );
+    assert_eq!(second.module_edge_ids, ["module_edge:0", "module_edge:1"]);
+}
+
+#[test]
 fn atomic_graph_collapses_constraining_eager_cycle() {
     let assignment_analysis = assignment_analysis_with_unassigned_module(
         "const A = B + 1; const B = A + 1;",
