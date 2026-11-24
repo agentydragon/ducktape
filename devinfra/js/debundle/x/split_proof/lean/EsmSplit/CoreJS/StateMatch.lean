@@ -21,12 +21,17 @@ private def fieldMatch : MatchEq (PropertyKey × Expr)
 
 private def codeMatch : MatchEq Code
   | .derived, .derived => some ⟨rfl⟩
-  | .derivedBody before args f env, .derivedBody before' args' g env' => do
+  | .derivedFields env fields, .derivedFields env' fields' => do
+    let ⟨c⟩ ← scalarEq env env'
+    let ⟨inits⟩ ← listEq fieldMatch fields fields'
+    return ⟨c ▸ inits ▸ rfl⟩
+  | .derivedBody before args f env fields, .derivedBody before' args' g env' fields' => do
     let ⟨p⟩ ← listEq SyntaxMatch.stmtEq before before'
     let ⟨a⟩ ← listEq SyntaxMatch.exprEq args args'
     let ⟨b⟩ ← SyntaxMatch.funcEq f g
     let ⟨c⟩ ← scalarEq env env'
-    return ⟨p ▸ a ▸ b ▸ c ▸ rfl⟩
+    let ⟨inits⟩ ← listEq fieldMatch fields fields'
+    return ⟨p ▸ a ▸ b ▸ c ▸ inits ▸ rfl⟩
   | .host a, .host b => (scalarEq a b).map fun h => ⟨congrArg Code.host h.down⟩
   | .closure f e fields, .closure g e' fields' => do
     let ⟨function⟩ ← SyntaxMatch.funcEq f g

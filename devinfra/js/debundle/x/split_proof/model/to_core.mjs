@@ -310,11 +310,10 @@ export function coreFromParsed(
   }
 
   function classTree(node, name) {
-    if (node.superClass && node.body.body.some((m) => m.kind === "constructor" || m.type === "PropertyDefinition"))
-      refuse(node, "a derived class with an explicit constructor or fields");
+    const ctor = node.body.body.find((m) => m.type === "MethodDefinition" && m.kind === "constructor");
+    if (node.superClass && ctor) refuse(node, "a derived class with an explicit constructor");
     const self = node.id !== null;
     within(self ? [node.id.name] : [], () => {
-      const ctor = node.body.body.find((m) => m.type === "MethodDefinition" && m.kind === "constructor");
       if (node.superClass) expr(node.superClass);
       else if (ctor) func(ctor.value, name, "classCtor", true);
       else emit("func", name, "classCtor", false, [], 0);
@@ -325,6 +324,7 @@ export function coreFromParsed(
         if (member.key.type === "PrivateIdentifier") refuse(member, "a private name");
         count++;
         if (member.type === "PropertyDefinition") {
+          if (node.superClass && member.static) refuse(member, "a static field on a derived class");
           if (member.computed && member.value && isAnonymousFunction(member.value))
             refuse(member, "a function named by a computed key");
           key(member.key, member.computed);

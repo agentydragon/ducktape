@@ -41,7 +41,7 @@ private def withParent (fuel : Nat) (env : Env) (name : Name) (ms : List ClassMe
 private theorem eval_withParent (h : ParentAt s env base cell ctor proto)
     (hm : plainClassMembers ms = true) (n : Nat) :
     evalExpr n env (.derived name false (.var base) ms none) s = withParent n env name ms ctor proto s := by
-  have hf := plainClassMembers_fieldInits hm
+  have hf := hasStaticField_false_of_fieldInits_nil (plainClassMembers_fieldInits hm)
   cases n with
   | zero => rfl
   | succ n =>

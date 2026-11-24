@@ -159,7 +159,7 @@ def isConstructor (v : Val) : M W Bool := do
   match v with
   | .obj a =>
     match (← getObj a).code with
-    | some .derived | some (.derivedBody ..) => pure true
+    | some .derived | some (.derivedFields ..) | some (.derivedBody ..) => pure true
     | some (.closure f _ _) => pure (f.kind == .normal || f.kind == .classCtor)
     | some (.host name) => if name == "Function.prototype" then pure false else unknown "host constructor capability"
     | some (.opaque _ _ _ constructor) => pure constructor
@@ -185,10 +185,13 @@ def classParents (call : Call W) : Val → M W (Addr × Option Addr)
   | .null => pure (functionProto, none)
   | base => classParentsNonNull call base
 
-def derivedCtorCode (env : Env) : Option (List Stmt × List Expr × Func) → Code × Nat
-  | none => (.derived, 0)
-  | some (before, args, body) =>
-    (.derivedBody before args body (env.capture (derivedCtorFree (some (before, args, body)))), body.length)
+def derivedCtorCode (env : Env) (ctor : Option (List Stmt × List Expr × Func))
+    (fields : List (PropertyKey × Expr)) : Code × Nat :=
+  let closed := env.capture (derivedCtorFree ctor ++ fields.flatMap (·.2.free))
+  match ctor, fields with
+  | none, [] => (.derived, 0)
+  | none, _ => (.derivedFields closed fields, 0)
+  | some (before, args, body), _ => (.derivedBody before args body closed fields, body.length)
 
 /-- The parameters and declarations are entered once for both parts of the constructor. -/
 def derivedScope (before : List Stmt) (body : Func) : Func :=
@@ -199,13 +202,17 @@ def finishDerived (runMembers : Env → Addr → Addr → List ClassMember → M
     (env : Env) (name : Name) (self : Bool) (members : List ClassMember) (parents : Addr × Option Addr)
     (ctor : Option (List Stmt × List Expr × Func) := none) : M W Val := do
   let proto ← alloc { proto := parents.2, props := [] }
-  let (code, arity) := derivedCtorCode env ctor
+  let (code, arity) := derivedCtorCode env ctor []
   let c ← alloc {
     proto := some parents.1, code := some code,
     props := [("length", .data (.num (Float.ofNat arity)) false false true),
       ("name", .data (.str name) false false true), ("prototype", .data (.obj proto) false false false)] }
   modifyObj proto fun o => { o with props := [("constructor", .data (.obj c) true false true)] }
-  let _ ← runMembers env proto c members
+  let keys ← runMembers env proto c members
+  let fields := (keys.zip (fieldInits members)).filterMap fun ((static, k), init) =>
+    if static then none else some (k, init)
+  unless fields.isEmpty do
+    modifyObj c fun o => { o with code := some (derivedCtorCode env ctor fields).1 }
   initSelf env self name (.obj c)
   pure (.obj c)
 
@@ -217,6 +224,14 @@ def constructParent (construct : Val → List Val → M W Val) (parent : Option 
   | some parent =>
     if ← isConstructor (.obj parent) then construct (.obj parent) args
     else throwErr .type "superclass is not a constructor"
+
+/-- Initialize derived fields on the superclass's result, which may be a replacement object. -/
+def initDerivedFields (runFields : Env → Addr → List (PropertyKey × Expr) → M W Unit)
+    (closed : Env) (receiver : Val) (fields : List (PropertyKey × Expr)) : M W Unit :=
+  if fields.isEmpty then pure () else
+  match receiver with
+  | .obj a => runFields { closed with this := receiver } a fields
+  | _ => unknown "derived fields require a modeled superclass result object"
 
 /-- The descriptors of a freshly allocated dense array, in element order. -/
 def arrayObject (vs : List Val) : Obj :=
@@ -268,7 +283,7 @@ def evalExpr : Nat → Env → Expr → M W Val
         (fields.filterMap fun ((static, k), init) => if static then some (k, init) else none)
       pure (.obj c)
     | .derived name self parent members ctor => do
-      if !(fieldInits members).isEmpty then unknown "derived class fields" else do
+      if hasStaticField members then unknown "static fields on derived classes" else do
       let env ← selfScope env self name
       let base ← evalExpr n env parent
       let parents ← classParents (callFn n) base
@@ -437,7 +452,8 @@ def callFn : Nat → Val → Val → List Val → M W Val
     match callee with
     | .obj a => do
       match (← getObj a).code with
-      | some .derived | some (.derivedBody ..) => throwErr .type "class constructor cannot be invoked without 'new'"
+      | some .derived | some (.derivedFields ..) | some (.derivedBody ..) =>
+        throwErr .type "class constructor cannot be invoked without 'new'"
       | some (.closure f closed _) =>
         if f.kind == .classCtor then throwErr .type "class constructor cannot be invoked without 'new'" else do
         match f.opaqueBody with
@@ -467,7 +483,11 @@ def constructTarget : Nat → Val → Val → List Val → M W Val
       match (← getObj a).code with
       | some .derived =>
         constructParent (constructTarget n newTarget) (← getObj a).proto args
-      | some (.derivedBody before superArgs body closed) => do
+      | some (.derivedFields closed fields) => do
+        let receiver ← constructParent (constructTarget n newTarget) (← getObj a).proto args
+        initDerivedFields (evalFields n) closed receiver fields
+        pure receiver
+      | some (.derivedBody before superArgs body closed fields) => do
         let env ← enterFunction (derivedScope before body) closed .undef args
         match ← execStmts n env before with
         | .normal => do
@@ -477,6 +497,7 @@ def constructTarget : Nat → Val → Val → List Val → M W Val
           if (← getObj a).proto != parent then unknown "superclass changed while evaluating super arguments"
           else do
             let receiver ← constructParent (constructTarget n newTarget) parent argv
+            initDerivedFields (evalFields n) closed receiver fields
             match ← execStmts n { env with this := receiver } body.body with
             | .ret (.obj r) => pure (.obj r)
             | .ret (.error k msg) => pure (.error k msg)

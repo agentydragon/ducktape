@@ -137,7 +137,7 @@ theorem callFn_reachFrame_of_steps {r R cells A n} (away : Away r R A)
     | some code =>
       have caps := objectCode_safe safe kind
       cases code with
-      | derived | derivedBody => exact reachFrame_typeError "class constructor cannot be invoked without 'new'"
+      | derived | derivedFields | derivedBody => exact reachFrame_typeError "class constructor cannot be invoked without 'new'"
       | host name => exact reachFrame_hostCall r R cells A name this args
       | «opaque» code part inner _ =>
         exact reachFrame_invokesOpaque conversation _ _ _ hc ht ha code part inner
@@ -176,7 +176,7 @@ theorem reachFrame_isConstructor {r R cells A} (away : Away r R A) (v : Val)
     | none => exact no
     | some code =>
       cases code with
-      | derived | derivedBody => exact yes
+      | derived | derivedFields | derivedBody => exact yes
       | closure f env fields => exact reachFrame_pure r R cells A _ trivial
       | host name =>
         simp only []
@@ -206,6 +206,18 @@ private theorem reachFrame_constructorReceiver {r R cells A}
     exact safeVal_obj.1 safe
   apply allocate
   simpa [Obj.nodes] using parent
+
+private theorem reachFrame_initDerivedFields {r R cells A n}
+    (run : ∀ env a fs, (∀ node ∈ Env.nodes env, A node) → A (.obj a) →
+      ReachFrame r R cells A (fun _ => True) (evalFields n env a fs : M W Unit))
+    (closed : Env) (safe : ∀ node ∈ closed.nodes, A node) (receiver : Val) (hr : SafeVal A receiver)
+    (fields : List (PropertyKey × Expr)) :
+    ReachFrame r R cells A (fun _ => True) (initDerivedFields (evalFields n) closed receiver fields : M W Unit) := by
+  unfold initDerivedFields
+  split
+  · exact reachFrame_pure r R cells A () trivial
+  · cases receiver <;> try exact reachFrame_unknown r R cells A _ _
+    exact run _ _ _ (Env.nodes_setThis safe hr) (safeVal_obj.1 hr)
 
 /-- Constructor dispatch preserves reachability through allocation, argument evaluation and smaller calls. -/
 theorem constructTarget_reachFrame_of_steps {r R cells A n} (away : Away r R A)
@@ -257,7 +269,14 @@ theorem constructTarget_reachFrame_of_steps {r R cells A n} (away : Away r R A)
       cases code with
       | host name => exact reachFrame_unknown r R cells A _ _
       | derived => exact active.bind fun original safeObj => parentRun original safeObj args safeArgs
-      | derivedBody before superArgs body closed =>
+      | derivedFields closed fs =>
+        apply active.bind
+        intro original safeObj
+        apply (parentRun original safeObj args safeArgs).bind
+        intro receiver hr
+        exact (reachFrame_initDerivedFields fields closed caps receiver hr fs).bind fun _ _ =>
+          reachFrame_pure r R cells A receiver hr
+      | derivedBody before superArgs body closed fs =>
         apply (enter (derivedScope before body) closed .undef args caps (fun _ h => by cases h) safeArgs).bind
         intro env he
         apply (stmts env before he).bind
@@ -274,6 +293,8 @@ theorem constructTarget_reachFrame_of_steps {r R cells A n} (away : Away r R A)
           · exact reachFrame_unknown r R cells A _ _
           · apply (parentRun original safeObj argv hargv).bind
             intro receiver hr
+            apply (reachFrame_initDerivedFields fields closed caps receiver hr fs).bind
+            intro _ _
             apply (stmts { env with this := receiver } body.body (Env.nodes_setThis he hr)).bind
             intro flow hflow
             cases flow

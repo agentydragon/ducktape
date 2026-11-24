@@ -464,20 +464,30 @@ theorem Same.derived_succ (env env' : Env) (name : String) (self : Bool) (parent
       refine M.bind_congr (ih.expr _ _ _ (h2.mono fun x hx => List.mem_append_left _ hx)) fun base => ?_
       refine M.bind_congr rfl fun parents => ?_
       unfold finishDerived
-      have sameCode : derivedCtorCode env1 ctor = derivedCtorCode env1' ctor := by
-        cases ctor with
-        | none => rfl
-        | some pair =>
-          rcases pair with ⟨before, args, body⟩
-          simp only [derivedCtorCode]
-          have captured : Agree (derivedCtorFree (some (before, args, body))) env1 env1' :=
-            both.mono fun _ hx => List.mem_append_right _ hx
-          rw [capture_agree captured]
-      simp only [sameCode]
+      have sameCode (fields : List (PropertyKey × Expr))
+          (hfree : ∀ x ∈ fields.flatMap (·.2.free), x ∈ freeMembers members) :
+          derivedCtorCode env1 ctor fields = derivedCtorCode env1' ctor fields := by
+        have agree : Agree (derivedCtorFree ctor ++ fields.flatMap (·.2.free)) env1 env1' :=
+          both.mono fun x hx => by
+            rcases List.mem_append.1 hx with hc | hf
+            · exact List.mem_append_right _ hc
+            · exact List.mem_append_left _ (List.mem_append_right _ (hfree x hf))
+        unfold derivedCtorCode
+        rw [capture_agree agree]
+      rw [sameCode [] (by simp)]
       refine M.bind_congr rfl fun proto => M.bind_congr rfl fun c => M.bind_congr rfl fun _ => ?_
-      refine M.bind_congr (ih.members _ _ _ _ _ (h2.mono fun x hx => List.mem_append_right _ hx)) fun _ => ?_
-      refine M.bind_congr ?_ fun _ => rfl
-      exact initSelf_agree self (.obj c) fun hs => h1.vars name (by simp [hs])
+      refine M.bind_congr (ih.members _ _ _ _ _ (h2.mono fun x hx => List.mem_append_right _ hx)) fun keys => ?_
+      let fields := (keys.zip (fieldInits members)).filterMap fun ((static, k), init) =>
+        if static then none else some (k, init)
+      have hcode := sameCode fields fun x hx => by
+        obtain ⟨⟨k, init⟩, hmem, hx⟩ := List.mem_flatMap.1 hx
+        obtain ⟨⟨⟨static, k'⟩, init'⟩, hzip, hsome⟩ := List.mem_filterMap.1 hmem
+        cases static <;> simp at hsome
+        obtain ⟨rfl, rfl⟩ := hsome
+        exact fieldInits_free members _ (List.of_mem_zip hzip).2 x hx
+      have hself := initSelf_agree (W := W) self (.obj c) fun hs => h1.vars name (by simp [hs])
+      dsimp only
+      rw [hcode, hself]
 
 set_option maxHeartbeats 1000000 in
 theorem Same.expr_succ (env env' : Env) (e : Expr) (hN : Agree e.free env env') :

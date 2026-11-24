@@ -323,8 +323,11 @@ def showProperty : Property → String
 
 def showCode : Code → String
   | .derived => "derived"
-  | .derivedBody before args f env =>
-    s!"derived {f.name} {f.params} {before.length} {args.length} {env.vars.map fun (x, a) => (x, showAddr a)}"
+  | .derivedFields env fields =>
+    s!"derived fields {env.vars.map fun (x, a) => (x, showAddr a)} {fields.map fun (key, _) => showKey key}"
+  | .derivedBody before args f env fields =>
+    let base := s!"derived {f.name} {f.params} {before.length} {args.length} {env.vars.map fun (x, a) => (x, showAddr a)}"
+    if fields.isEmpty then base else s!"{base} {fields.map fun (key, _) => showKey key}"
   | .closure f env fields =>
     s!"closure {f.name} {f.params} {env.vars.map fun (x, a) => (x, showAddr a)} {showVal env.this} {fields.map fun (k, _) => showKey k}"
   | .host name => s!"host {name}"
