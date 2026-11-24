@@ -14,6 +14,19 @@ from cluster.cdk8s.monitoring.dashboards.foundation import (
 
 _CNPG_BYTES = 'max by (node, namespace, job, datname) (cnpg_pg_database_size_bytes{datname!~"template0|template1"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{node=~"$node"}))'
 
+_CNPG_TABLE_LABELS = "namespace, job, datname, schemaname, relname"
+_CNPG_TABLE_SELECTOR = 'cnpg_pg_table_total_bytes{namespace=~"$pg_namespace", job=~"$pg_job", datname=~"$pg_database", schemaname=~"$pg_schema"}'
+# This is a primary-only gauge. Collapsing scrape labels makes the logical table key
+# stable and prevents a primary transition from temporarily counting two pods.
+_CNPG_TABLE_BYTES = f"max by ({_CNPG_TABLE_LABELS}) ({_CNPG_TABLE_SELECTOR})"
+_CNPG_TABLE_BYTES_AT_END = f"max by ({_CNPG_TABLE_LABELS}) ({_CNPG_TABLE_SELECTOR} @ end())"
+_CNPG_TABLE_BYTES_TOP_TEN = f"topk(10, {_CNPG_TABLE_BYTES_AT_END})"
+_CNPG_TABLE_BYTES_OVER_TIME = f"({_CNPG_TABLE_BYTES} and on ({_CNPG_TABLE_LABELS}) {_CNPG_TABLE_BYTES_TOP_TEN})"
+_CNPG_TABLE_GROWTH_1H = f"delta(({_CNPG_TABLE_BYTES})[1h:])"
+_CNPG_TABLE_GROWTH_1H_AT_END = f"delta(({_CNPG_TABLE_BYTES})[1h:] @ end())"
+_CNPG_TABLE_GROWTH_TOP_TEN = f"topk(10, {_CNPG_TABLE_GROWTH_1H_AT_END} > 0)"
+_CNPG_TABLE_GROWTH_OVER_TIME = f"({_CNPG_TABLE_GROWTH_1H} and on ({_CNPG_TABLE_LABELS}) {_CNPG_TABLE_GROWTH_TOP_TEN})"
+
 _COLLECTION_BYTES = 'sum by (node, collection) (max by (node, collection, pod) (SeaweedFS_volumeServer_total_disk_size{namespace="seaweedfs",type="normal",collection!=""} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="seaweedfs",node=~"$node"})))'
 
 _LOGICAL_BUCKET_BYTES = 'max by (bucket) (SeaweedFS_s3_bucket_size_bytes{namespace="seaweedfs",bucket!=""})'
@@ -65,7 +78,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 title="How to read this dashboard",
                 grid_pos=dashboard.GridPos(h=6, w=24),
                 options=text.Options(
-                    content="These are workload and collector measurements, not a third layer to add to host filesystem or Piraeus pool totals. CNPG database size is not total PGDATA filesystem use. SeaweedFS logical bucket bytes omit replicas; physical bucket and collection values overlap. ClickHouse MergeTree bytes are per-pod collector values.\n\nMachine and Storage tier filter node-owned panels. SeaweedFS S3 bucket panels are cluster-wide and are not filtered by node ownership.\n\nThe Storage tier selector filters by node labels; Machine filters node-owned panels. This is node-level filtering. If a node later has both SSD and HDD, per-device media labels will be needed to separate those disks."
+                    content="These are workload and collector measurements, not a third layer to add to host filesystem or Piraeus pool totals. CNPG database size is not total PGDATA filesystem use. SeaweedFS logical bucket bytes omit replicas; physical bucket and collection values overlap. ClickHouse MergeTree bytes are per-pod collector values.\n\nMachine and Storage tier filter node-owned panels. SeaweedFS S3 bucket panels are cluster-wide and are not filtered by node ownership. CNPG table panels are also cluster-wide; their filters use namespace, job, database, and schema.\n\nThe Storage tier selector filters by node labels; Machine filters node-owned panels. This is node-level filtering. If a node later has both SSD and HDD, per-device media labels will be needed to separate those disks."
                 ),
             ),
             dashboard.RowPanel(title="CNPG database detail", grid_pos=dashboard.GridPos(h=1, w=24, y=6), id_val=24),
@@ -87,7 +100,35 @@ def build_dashboard() -> dashboard.Dashboard:
                 position=dashboard.GridPos(x=12, y=7),
             ),
             dashboard.RowPanel(
-                title="SeaweedFS volume-server detail", grid_pos=dashboard.GridPos(h=1, w=24, y=16), id_val=40
+                title="CNPG table detail · cluster-wide", grid_pos=dashboard.GridPos(h=1, w=24, y=16), id_val=25
+            ),
+            _bytes_panel(
+                18,
+                "Largest CNPG tables now",
+                f"sort_desc(topk(10, {_CNPG_TABLE_BYTES}))",
+                legend="{{job}} {{datname}}.{{schemaname}}.{{relname}}",
+                description="Current allocated bytes for the ten largest tables and materialized views across the selected CNPG namespaces and jobs. The exporter reports the primary only. Grouping by namespace, job, database, schema, and relation collapses pod labels and avoids counting overlapping primary scrapes twice. The Machine and Storage tier selectors do not apply.",
+                position=dashboard.GridPos(y=17, w=24, h=8),
+                table_view=True,
+            ),
+            _bytes_panel(
+                19,
+                "Largest CNPG tables over time",
+                _CNPG_TABLE_BYTES_OVER_TIME,
+                legend="{{job}} {{datname}}.{{schemaname}}.{{relname}}",
+                description="Allocated bytes over time for the ten largest tables at the end of the selected time range. The end-ranked set stays fixed for the whole graph. The exporter reports the primary only; grouping by the logical table labels collapses pod labels and avoids counting overlapping primary scrapes twice.",
+                position=dashboard.GridPos(x=0, y=26, w=12, h=8),
+            ),
+            _bytes_panel(
+                20,
+                "Fastest-growing CNPG tables · 1h byte change",
+                _CNPG_TABLE_GROWTH_OVER_TIME,
+                legend="{{job}} {{datname}}.{{schemaname}}.{{relname}}",
+                description="One-hour change in allocated table bytes, calculated with delta because the source is a gauge. The ten fastest growers at the end of the selected range stay fixed for the whole graph; earlier points for those tables may be flat or negative. The metric is newly collected, so until a full hour is available this rolling estimate uses the samples collected so far and extrapolates across the one-hour window. The exporter reports the primary only; grouping by logical table labels avoids counting overlapping primary scrapes twice.",
+                position=dashboard.GridPos(x=12, y=26, w=12, h=8),
+            ),
+            dashboard.RowPanel(
+                title="SeaweedFS volume-server detail", grid_pos=dashboard.GridPos(h=1, w=24, y=36), id_val=40
             ),
             _bytes_panel(
                 8,
@@ -95,7 +136,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 'sort_desc(max by (node, pod, name, type) (SeaweedFS_volumeServer_resource{namespace="seaweedfs",type=~"all|avail|used"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="seaweedfs",node=~"$node"})))',
                 legend="{{node}} {{pod}} {{name}} {{type}}",
                 description="Volume-server all/available/used resource gauges from pods on the selected machine. These per-server values are collector detail and are not additive to the filesystem or Piraeus pool totals.",
-                position=dashboard.GridPos(y=17),
+                position=dashboard.GridPos(y=37),
                 table_view=True,
             ),
             _bytes_panel(
@@ -104,7 +145,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 'max by (node, pod, name) (SeaweedFS_volumeServer_resource{namespace="seaweedfs",type="used"} * on (namespace, pod) group_left (node) max by (namespace, pod, node) (kube_pod_info{namespace="seaweedfs",node=~"$node"}))',
                 legend="{{node}} {{pod}} {{name}}",
                 description="Volume-server reported used bytes per selected storage node and server disk. This is a per-collector view; do not add it to the independent pool and filesystem accounting layers.",
-                position=dashboard.GridPos(x=12, y=17),
+                position=dashboard.GridPos(x=12, y=37),
             ),
             _bytes_panel(
                 14,
@@ -112,7 +153,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 f"sort_desc({_COLLECTION_BYTES})",
                 legend="{{node}} {{collection}}",
                 description="Collection bytes reported by volume-server pods on the selected machine. Each replica is counted on its storage node; these collector values overlap physical bucket bytes.",
-                position=dashboard.GridPos(y=26),
+                position=dashboard.GridPos(y=46),
                 table_view=True,
             ),
             _bytes_panel(
@@ -121,11 +162,11 @@ def build_dashboard() -> dashboard.Dashboard:
                 f"topk(10, {_COLLECTION_BYTES})",
                 legend="{{node}} {{collection}}",
                 description="Collection bytes reported by volume-server pods on the selected machine over time. Each replica is counted on its storage node; these collector values overlap physical bucket bytes.",
-                position=dashboard.GridPos(x=12, y=26),
+                position=dashboard.GridPos(x=12, y=46),
             ),
             dashboard.RowPanel(
                 title="SeaweedFS S3 bucket detail · cluster-wide",
-                grid_pos=dashboard.GridPos(h=1, w=24, y=35),
+                grid_pos=dashboard.GridPos(h=1, w=24, y=55),
                 id_val=41,
             ),
             _bytes_panel(
@@ -134,7 +175,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 f"sort_desc({_LOGICAL_BUCKET_BYTES})",
                 legend="{{bucket}}",
                 description="Logical S3 object bytes by bucket across the cluster. The Machine selector does not apply because this metric has no storage-node ownership.",
-                position=dashboard.GridPos(y=36),
+                position=dashboard.GridPos(y=56),
                 table_view=True,
             ),
             _bytes_panel(
@@ -143,7 +184,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 f"topk(10, {_LOGICAL_BUCKET_BYTES})",
                 legend="{{bucket}}",
                 description="Logical S3 object bytes by bucket across the cluster. The Machine selector does not apply because this metric has no storage-node ownership; logical bytes omit replicas.",
-                position=dashboard.GridPos(x=12, y=36),
+                position=dashboard.GridPos(x=12, y=56),
             ),
             _bytes_panel(
                 12,
@@ -151,7 +192,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 f"sort_desc({_PHYSICAL_BUCKET_BYTES})",
                 legend="{{bucket}}",
                 description="S3-reported physical bucket bytes across the cluster. The Machine selector does not apply because this metric has no storage-node ownership.",
-                position=dashboard.GridPos(y=45),
+                position=dashboard.GridPos(y=65),
                 table_view=True,
             ),
             _bytes_panel(
@@ -160,10 +201,10 @@ def build_dashboard() -> dashboard.Dashboard:
                 f"topk(10, {_PHYSICAL_BUCKET_BYTES})",
                 legend="{{bucket}}",
                 description="S3-reported physical bucket bytes across the cluster. The Machine selector does not apply because this metric has no storage-node ownership; these overlap with collection-level replica bytes.",
-                position=dashboard.GridPos(x=12, y=45),
+                position=dashboard.GridPos(x=12, y=65),
             ),
             dashboard.RowPanel(
-                title="ClickHouse MergeTree detail", grid_pos=dashboard.GridPos(h=1, w=24, y=54), id_val=42
+                title="ClickHouse MergeTree detail", grid_pos=dashboard.GridPos(h=1, w=24, y=74), id_val=42
             ),
             _bytes_panel(
                 16,
@@ -171,7 +212,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 f"sort_desc({_CLICKHOUSE_BYTES})",
                 legend="{{node}} {{pod}}",
                 description="MergeTree bytes reported by ClickHouse pods on the selected machine, including the existing system-table metric. This per-pod collector detail is separate from host filesystem and Piraeus pool use.",
-                position=dashboard.GridPos(y=55),
+                position=dashboard.GridPos(y=75),
                 table_view=True,
             ),
             _bytes_panel(
@@ -180,7 +221,7 @@ def build_dashboard() -> dashboard.Dashboard:
                 _CLICKHOUSE_BYTES,
                 legend="{{node}} {{pod}}",
                 description="MergeTree bytes reported by ClickHouse pods on the selected machine, including the existing system-table metric. This per-pod collector detail is separate from host filesystem and Piraeus pool use.",
-                position=dashboard.GridPos(x=12, y=55),
+                position=dashboard.GridPos(x=12, y=75),
             ),
         ],
         templating=dashboard.DashboardDashboardTemplating(
@@ -190,6 +231,26 @@ def build_dashboard() -> dashboard.Dashboard:
                     name="node",
                     label="Machine",
                     query='label_values(kube_node_labels{label_storage_allegedly_works_tier=~"$storage_tier"}, node)',
+                ),
+                mimir_multi_variable(
+                    name="pg_namespace",
+                    label="PG namespace",
+                    query="label_values(cnpg_pg_table_total_bytes, namespace)",
+                ),
+                mimir_multi_variable(
+                    name="pg_job",
+                    label="PG cluster job",
+                    query='label_values(cnpg_pg_table_total_bytes{namespace=~"$pg_namespace"}, job)',
+                ),
+                mimir_multi_variable(
+                    name="pg_database",
+                    label="Database",
+                    query='label_values(cnpg_pg_table_total_bytes{namespace=~"$pg_namespace",job=~"$pg_job"}, datname)',
+                ),
+                mimir_multi_variable(
+                    name="pg_schema",
+                    label="Schema",
+                    query='label_values(cnpg_pg_table_total_bytes{namespace=~"$pg_namespace",job=~"$pg_job",datname=~"$pg_database"}, schemaname)',
                 ),
             ]
         ),
