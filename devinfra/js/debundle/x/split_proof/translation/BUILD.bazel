@@ -498,9 +498,9 @@ js_test(
     entry_point = "modern_syntax_test.mjs",
 )
 
-_ANALYSIS_INVENTORY = "//devinfra/js/debundle/x/split_proof/lean:analysis_inventory_sources"
+_ANALYSIS_INVENTORY = "//devinfra/js/debundle/x/split_proof/lean:analysis_inventory"
 
-# Sample the generator coverage report against the same Lean sources the standalone audit reads.
+# Exercise the compiled analyzer and the generator coverage report.
 js_test(
     name = "coverage_audit_test",
     data = _FUZZ_SOURCES + [
@@ -516,7 +516,7 @@ js_test(
         _ANALYSIS_INVENTORY,
     ],
     entry_point = "coverage_audit_test.mjs",
-    no_copy_to_bin = [_ANALYSIS_INVENTORY],
+    env = {"ANALYSIS_INVENTORY": "$(rootpath " + _ANALYSIS_INVENTORY + ")"},
 )
 
 # The host inventory: which standard and host features a set of JavaScript files uses.
@@ -1010,6 +1010,12 @@ js_library(
 js_library(
     name = "analysis_inventory",
     srcs = ["analysis_inventory.mjs"],
+    deps = [
+        ":node_modules/acorn",
+        ":node_modules/eslint-scope",
+        ":syntax_inventory",
+        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+    ],
 )
 
 js_library(

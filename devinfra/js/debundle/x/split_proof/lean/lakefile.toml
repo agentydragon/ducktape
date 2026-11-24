@@ -30,3 +30,7 @@ root = "EsmSplit.TranslateMain"
 [[lean_exe]]
 name = "corejs"
 root = "EsmSplit.CoreJSMain"
+
+[[lean_exe]]
+name = "analysis_inventory"
+root = "AnalysisInventory"
