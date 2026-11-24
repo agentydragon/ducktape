@@ -117,7 +117,7 @@ oci.pull(
 oci.pull(
     name = "mcp_everything",
     digest = "sha256:96c4aa07420dd2a8dee0315763a8ea27de72fd054483c781894f6280cd3f56e7",
-    image = "docker.io/tzolov/mcp-everything-server",
+    image = "mirror.gcr.io/tzolov/mcp-everything-server",
     platforms = ["linux/amd64"],
 )
 
