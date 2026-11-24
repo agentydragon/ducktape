@@ -24,7 +24,7 @@ Bazel supplies Lean, Node, Python, and the JavaScript dependencies. For focused 
 | Audit axioms and check the lowered example certificate       | `bbr test "$p/lean:axioms_test" "$p/lean:lowered_example_certificate_test"`           |
 | Compile the extra Lean proofs                                | `bbr test "$p/lean:experiments_test"`                                                 |
 | Compare module evaluation order across 500 graphs            | `bbr test "$p/es_order:es_order_sweep_test"`                                          |
-| Fuzz the example renderer                                    | `bb run "$p:render_fuzz" -- 600 1`                                                    |
+| Fuzz the example renderer                                    | `bb run "$p/fuzz:render_fuzz" -- 600 1`                                               |
 | Check translation fixtures and effect cases                  | `bbr test "$p/translation:fixtures_test" "$p/effects:effects_cases_test"`             |
 | Run a larger translation fuzz sample                         | `bb run "$p/translation:translation_fuzz" -- --count 150 --seed 1 --require-accepted` |
 | Run the extended CoreJS comparison                           | `bbr test "$p/model:corejs_differential_sweep_test"`                                  |
@@ -390,7 +390,7 @@ Specs and plans that must fail. Each failure is a Lean theorem (`¬ OrderOk …`
 
 ## Checking the trusted parts
 
-These are tests, not proofs. The Bazel target `:render_fuzz` runs [`fuzz/fuzz.py`](fuzz/fuzz.py):
+These are tests, not proofs. The Bazel target `fuzz:render_fuzz` runs [`fuzz/fuzz.py`](fuzz/fuzz.py):
 510 random placements of the 12 statements, each rendered and run in Node.
 
 - 157 accepted. All 157 print what the bundle prints. 95 of them run statements in a different order than the bundle.
