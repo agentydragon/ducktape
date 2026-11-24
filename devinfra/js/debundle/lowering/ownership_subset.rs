@@ -115,7 +115,7 @@ impl OwnershipSubset {
         Ok((subset, bytes))
     }
 
-    pub(super) fn validate(
+    pub fn validate(
         &self,
         logical_modules: &BTreeMap<String, BTreeMap<String, LogicalModule>>,
         chunk_ids: &[String],
@@ -257,7 +257,7 @@ impl OwnershipSubset {
         Ok(placements)
     }
 
-    pub(super) fn modules_for_chunk(&self, chunk: &str) -> BTreeSet<SelectedModule> {
+    pub fn modules_for_chunk(&self, chunk: &str) -> BTreeSet<SelectedModule> {
         self.modules
             .iter()
             .filter(|entry| entry.chunk == chunk)

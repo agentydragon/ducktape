@@ -8,7 +8,8 @@ mod elaboration;
 pub mod source_ast;
 
 pub use elaboration::{
-    FrontendChunk, FrontendChunkInput, FrontendElaboration, FrontendSpecInputs, MemberClaimInput,
-    MemberClaimProjection, ResolvedMemberSite, complete_analysis_spec, elaborate,
-    eligible_member_indices, project_analysis, project_member_claims, select_one_declared_binding,
+    CanonicalOwnership, ClaimSelector, FrontendChunk, FrontendChunkInput, FrontendElaboration,
+    FrontendSpecInputs, MemberClaimInput, MemberClaimProjection, OwnershipClaim,
+    ResolvedMemberSite, complete_analysis_spec, elaborate, eligible_member_indices,
+    project_analysis, project_member_claims, resolve_ownership, select_one_declared_binding,
 };

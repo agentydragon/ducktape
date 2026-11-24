@@ -45,6 +45,36 @@ impl ProjectAnalysisArgs {
     }
 }
 
+/// Export one chunk's resolved ownership without invoking a split backend.
+#[derive(Debug, ClapArgs)]
+pub struct ResolvePlacementArgs {
+    #[command(flatten)]
+    context: TransformContextArgs,
+    /// Materialized chunk ID from the canonical spec.
+    #[arg(long)]
+    chunk: String,
+    /// Retain only these canonical modules, member names and anonymous indices.
+    #[arg(long)]
+    ownership_subset: Option<PathBuf>,
+    /// Destination JSON file.
+    #[arg(long)]
+    out: PathBuf,
+}
+
+impl ResolvePlacementArgs {
+    pub fn run(self, stderr: &mut (dyn std::io::Write + Send)) -> Result<()> {
+        command_diagnostics::run(stderr, |diagnostics| {
+            pipeline::resolve_placement(
+                &self.context.resolve()?,
+                &self.chunk,
+                self.ownership_subset.as_deref(),
+                &self.out,
+                diagnostics,
+            )
+        })
+    }
+}
+
 /// Project the inputs of a default apply action without parsing JavaScript.
 #[derive(Debug, ClapArgs)]
 pub struct ProjectApplyArgs {
