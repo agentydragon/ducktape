@@ -254,9 +254,28 @@ mod from_report_tests {
     fn from_report_errors_on_unresolvable_edge_endpoint() {
         let err =
             DependencyGraphInput::from_report(report_with_edge("unit:999", None)).unwrap_err();
-        assert_eq!(err.endpoint, "unit:999");
-        assert_eq!(err.edge_id, "dependency_edge:0");
+        assert_eq!(
+            err,
+            crate::GraphReportIdError::MissingEndpoint {
+                endpoint: "unit:999".into(),
+                edge_id: "dependency_edge:0".into(),
+            }
+        );
         assert!(err.to_string().contains("unit:999"), "{err}");
+    }
+
+    #[test]
+    fn repeated_node_id_cannot_redirect_an_edge() {
+        let mut report = report_with_edge("unit:0", None);
+        report.nodes[0].id = "unit:0".into();
+        report.nodes[1].id = "unit:0".into();
+        let err = DependencyGraphInput::from_report(report).unwrap_err();
+        assert_eq!(
+            err,
+            crate::GraphReportIdError::DuplicateNode {
+                id: "unit:0".into()
+            }
+        );
     }
 
     #[test]

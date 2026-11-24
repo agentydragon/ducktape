@@ -62,8 +62,8 @@ pub use graph::{
     ChunkConstrainingEdgeSet, CommutingStatementsDiagnostic, CommutingStatementsUnused,
     DependencyEdge, DependencyEdgeId, DependencyGraph, DependencyGraphBuildError,
     DependencyGraphInput, DuplicateTopLevelDeclaration, EdgeReason, EdgeRole, EffectCellReport,
-    GraphOptions, HeapBarrierCause, KnownConflict, PremiseVerdict, SequencedCause, SourceUnit,
-    SourceUnitClass, UnresolvedDependencyEdgeEndpoint, build_dependency_graph_with,
+    GraphOptions, GraphReportIdError, HeapBarrierCause, KnownConflict, PremiseVerdict,
+    SequencedCause, SourceUnit, SourceUnitClass, build_dependency_graph_with,
     chunk_constraining_module_edges, position_lookup,
 };
 pub use ids::{
