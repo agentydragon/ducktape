@@ -140,9 +140,11 @@ the existing local host-binding proof.
 
 ### Browser smoke
 
-The smoke uses a [Rust ownership subset](../../../excalidraw/editor_smoke_subset.json):
-it keeps `centerScrollOn` from the canonical
-[scroll spec](../../../excalidraw/spec/modules/editor/packages/excalidraw/scene/scroll.yaml).
+The smoke extracts members from the canonical
+[Excalidraw editor spec](../../../../excalidraw/spec/modules/editor/packages):
+the five `math/utils` bindings, `math/angle::normalizeRadians`, element type
+predicates and `scene/scroll::centerScrollOn`. The
+[Rust ownership subset](../../../../excalidraw/editor_smoke_subset.json) lists them.
 To change the placement, edit the subset's module paths and readable member names.
 Rust resolves selectors in the full spec before applying the subset. Unselected
 units stay in the entry; selected owners retain their relative import priority.
@@ -161,15 +163,9 @@ app and the certified overlay. The test compares the served module bytes and
 all 611 editor exports, draws a rectangle, checks Undo, and calls the moved
 scroll helper through the editor's public binding.
 
-The separate `:excalidraw_synthetic_editor_stress` test retains the pinned
-454-unit, ten-module schedule for multiple-move proof and browser coverage.
-Its positional fixture exercises the checker at scale; those module boundaries
-are synthetic. The original-only baseline and the order-preserving synthetic
-startup stress case are also available:
-
-```sh
-bbr test "${p}:excalidraw_original_editor_browser_smoke" "${p}:excalidraw_synthetic_startup_stress"
-```
+The test checks every moved unit against the full Rust placement: its destination
+must be the same upstream module. All omitted units stay in the editor entry.
+Run `:excalidraw_original_editor_browser_smoke` for the original-only baseline.
 
 [Smoke test](browser_smoke_test.py)
 
