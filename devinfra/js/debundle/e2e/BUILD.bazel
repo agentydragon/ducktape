@@ -1390,3 +1390,8 @@ exports_files(
     ],
     visibility = ["//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__"],
 )
+
+debundle_e2e_test(
+    name = "resolve_placement_test",
+    deps = ["@crates//:serde_json"],
+)

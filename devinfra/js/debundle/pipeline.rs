@@ -1,5 +1,7 @@
 #[path = "apply_projection_codec.rs"]
 mod apply_projection_codec;
+mod resolved_placement;
+pub use resolved_placement::resolve_placement;
 
 use artifact::load_js_chunks;
 use serde::{Deserialize, Serialize};

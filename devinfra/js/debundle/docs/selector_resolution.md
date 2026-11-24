@@ -30,6 +30,33 @@ path for existing name-pin rewrites and fresh residual claims. It never adds
 omitted declarations, crosses module destinations, or searches subwindows of
 an ambiguous run.
 
+## Exporting resolved ownership
+
+Use `debundle spec resolve-placement --chunk CHUNK --out resolved.json` with the
+ordinary `--spec` or tree inputs to feed an independent split checker. The
+command solves the canonical selectors jointly across all configured chunks.
+An optional `--ownership-subset FILE` retains named modules, readable members,
+and authored anonymous statement indices **after** resolution. Unknown,
+ambiguous and conflicting claims fail the command even if the subset omits
+them. This command accepts canonical owners only; fresh subset placements are
+a different resolver scope.
+
+The JSON object contains:
+
+- `chunk_id` and `source_sha256`: the chunk ID and lowercase SHA-256 of the exact input bytes.
+- `units`: one row per source unit in order, with a zero-based `ordinal` and
+  `owner` (a canonical chunk-local module path, or `null` for entry). Each
+  top-level variable declarator is one unit, including a whole destructuring
+  pattern. Named claims carry `members`, a map from source binding to readable
+  member; anonymous claims have an owner but no member map.
+- `import_order`: the authored priority restricted to owners with retained
+  units, in authored order. It is not a computed evaluation schedule.
+
+Success establishes which units the selectors identify. A consumer must check
+the fingerprint, assignment and its own execution and emission semantics.
+This path does not build a dependency graph, apply vendor swaps, compute
+residual groups, schedule the modules, emit JavaScript, or run the Rust gate.
+
 ## Placement-only resolution
 
 `Chunk::resolve_placement` is a separate resolver scope for a new ownership
