@@ -2,12 +2,91 @@
   "modules": [
     {
       "chunk": "editor",
-      "module": "packages/excalidraw/constants"
+      "module": "packages/excalidraw/constants",
+      "bindings": [
+        "APP_NAME",
+        "TEXT_AUTOWRAP_THRESHOLD",
+        "DRAGGING_THRESHOLD",
+        "LINE_CONFIRM_THRESHOLD",
+        "ELEMENT_SHIFT_TRANSLATE_AMOUNT",
+        "ELEMENT_TRANSLATE_AMOUNT",
+        "TEXT_TO_CENTER_SNAP_THRESHOLD",
+        "SHIFT_LOCKING_ANGLE",
+        "DEFAULT_LASER_COLOR",
+        "CURSOR_TYPE",
+        "POINTER_BUTTON",
+        "POINTER_EVENTS",
+        "YOUTUBE_STATES",
+        "ENV",
+        "CLASSES",
+        "CJK_HAND_DRAWN_FALLBACK_FONT",
+        "WINDOWS_EMOJI_FALLBACK_FONT",
+        "FONT_FAMILY",
+        "getFontFamilyFallbacks",
+        "THEME",
+        "FRAME_STYLE",
+        "MIN_FONT_SIZE",
+        "DEFAULT_FONT_SIZE",
+        "DEFAULT_TEXT_ALIGN",
+        "DEFAULT_VERTICAL_ALIGN",
+        "DEFAULT_TRANSFORM_HANDLE_SPACING",
+        "COLOR_WHITE",
+        "COLOR_CHARCOAL_BLACK",
+        "COLOR_VOICE_CALL",
+        "DEFAULT_GRID_SIZE",
+        "DEFAULT_GRID_STEP",
+        "IMAGE_MIME_TYPES",
+        "EXPORT_IMAGE_TYPES",
+        "EXPORT_DATA_TYPES",
+        "IMAGE_RENDER_TIMEOUT",
+        "TAP_TWICE_TIMEOUT",
+        "TOUCH_CTX_MENU_TIMEOUT",
+        "SCROLL_TIMEOUT",
+        "ZOOM_STEP",
+        "MIN_ZOOM",
+        "MAX_ZOOM",
+        "HYPERLINK_TOOLTIP_DELAY",
+        "THEME_FILTER",
+        "DEFAULT_UI_OPTIONS",
+        "MQ_MAX_WIDTH_PORTRAIT",
+        "MQ_MAX_WIDTH_LANDSCAPE",
+        "MQ_MAX_HEIGHT_LANDSCAPE",
+        "MQ_RIGHT_SIDEBAR_MIN_WIDTH",
+        "MAX_DECIMALS_FOR_SVG_EXPORT",
+        "EXPORT_SCALES",
+        "DEFAULT_EXPORT_PADDING",
+        "DEFAULT_MAX_IMAGE_WIDTH_OR_HEIGHT",
+        "MAX_ALLOWED_FILE_BYTES",
+        "SVG_NS",
+        "VERSIONS",
+        "BOUND_TEXT_PADDING",
+        "ARROW_LABEL_WIDTH_FRACTION",
+        "ARROW_LABEL_FONT_SIZE_TO_MIN_WIDTH_RATIO",
+        "VERTICAL_ALIGN",
+        "TEXT_ALIGN",
+        "ELEMENT_READY_TO_ERASE_OPACITY",
+        "DEFAULT_PROPORTIONAL_RADIUS",
+        "DEFAULT_ADAPTIVE_RADIUS",
+        "ROUNDNESS",
+        "ROUGHNESS",
+        "STROKE_WIDTH",
+        "LIBRARY_SIDEBAR_TAB",
+        "CANVAS_SEARCH_TAB",
+        "TOOL_TYPE",
+        "EDITOR_LS_KEYS",
+        "DEFAULT_FILENAME",
+        "STATS_PANELS",
+        "MIN_WIDTH_OR_HEIGHT",
+        "ARROW_TYPE",
+        "DEFAULT_REDUCED_GLOBAL_ALPHA",
+        "ELEMENT_LINK_KEY"
+      ],
+      "anonymous_statements": []
     },
     {
       "chunk": "editor",
       "module": "packages/math/utils",
-      "bindings": ["clamp", "round", "roundToStep", "isFiniteNumber", "isCloseTo"],
+      "bindings": ["clamp", "round", "roundToStep", "average", "isFiniteNumber", "isCloseTo"],
       "anonymous_statements": []
     },
     {
@@ -65,9 +144,13 @@
         "isFrameElement",
         "isMagicFrameElement",
         "isFrameLikeElement",
+        "isFreeDrawElement",
+        "isFreeDrawElementType",
+        "isLinearElement",
         "isArrowElement",
         "isElbowArrow",
         "isBindingElement",
+        "isBindingElementType",
         "isBindableElement",
         "isRectanguloidElement",
         "isTextBindableContainer",
@@ -79,11 +162,7 @@
         "isUsingProportionalRadius",
         "canApplyRoundnessTypeToElement",
         "getDefaultRoundnessTypeForElement",
-        "isFixedPointBinding",
-        "isFreeDrawElement",
-        "isFreeDrawElementType",
-        "isLinearElement",
-        "isBindingElementType"
+        "isFixedPointBinding"
       ],
       "anonymous_statements": []
     },
@@ -112,9 +191,9 @@
         "isPendingImageElement",
         "shouldResetImageFilter",
         "getCanvasPadding",
-        "renderSelectionElement",
         "getRenderOpacity",
-        "cappedElementCanvasSize"
+        "cappedElementCanvasSize",
+        "renderSelectionElement"
       ],
       "anonymous_statements": []
     },
@@ -134,13 +213,21 @@
     {
       "chunk": "editor",
       "module": "packages/excalidraw/element/bounds",
-      "bindings": ["getVisibleSceneBounds", "doBoundsIntersect"],
+      "bindings": [
+        "getBezierValueForT",
+        "solveQuadratic",
+        "getCubicBezierCurveBound",
+        "getMinMaxXYFromCurvePathOps",
+        "generateLinearElementShape",
+        "getVisibleSceneBounds",
+        "doBoundsIntersect"
+      ],
       "anonymous_statements": []
     },
     {
       "chunk": "editor",
       "module": "packages/excalidraw/scene/scroll",
-      "bindings": ["centerScrollOn", "isOutsideViewPort"],
+      "bindings": ["isOutsideViewPort", "centerScrollOn"],
       "anonymous_statements": []
     },
     {
@@ -154,13 +241,14 @@
       "module": "packages/excalidraw/groups",
       "bindings": [
         "isSelectedViaGroup",
+        "getSelectedGroupForElement",
         "getSelectedGroupIds",
         "editGroupForSelectedElement",
         "getSelectedGroupIdForElement",
+        "getNewGroupIdsForDuplication",
         "addToGroup",
         "removeFromSelectedGroups",
-        "isInGroup",
-        "getSelectedGroupForElement"
+        "isInGroup"
       ],
       "anonymous_statements": []
     },
@@ -232,10 +320,10 @@
         "repairFrameMembership",
         "coalesceAppStateValue",
         "LegacyAppStateMigrations",
-        "restoreLibraryItem",
-        "restoreLibraryItems",
         "restoreAppState",
-        "restore"
+        "restore",
+        "restoreLibraryItem",
+        "restoreLibraryItems"
       ],
       "anonymous_statements": []
     },
@@ -264,9 +352,9 @@
         "dataURLToFile",
         "SVGStringToFile",
         "ImageURLToFile",
-        "getActualMimeTypeFromImage",
         "getFileFromEvent",
-        "getFileHandle"
+        "getFileHandle",
+        "getActualMimeTypeFromImage"
       ],
       "anonymous_statements": []
     },
@@ -280,6 +368,24 @@
       "chunk": "editor",
       "module": "packages/excalidraw/element/textwrapping",
       "bindings": ["COMMON", "EMOJI"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/colors",
+      "bindings": ["ELEMENTS_PALETTE_SHADE_INDEXES", "getSpecificColorShades"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/random",
+      "bindings": ["testIdBase", "randomId"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/scene/shape",
+      "bindings": ["getDashArrayDashed", "getDashArrayDotted", "adjustRoughness", "generateRoughOptions"],
       "anonymous_statements": []
     },
     {
@@ -300,6 +406,8 @@
         "viewportCoordsToSceneCoords",
         "sceneCoordsToViewportCoords",
         "getGlobalCSSVariable",
+        "RS_LTR_CHARS",
+        "RS_RTL_CHARS",
         "tupleToCoors",
         "muteFSAbortError",
         "findIndex",
@@ -333,12 +441,19 @@
         "cloneJSON",
         "updateStable",
         "addEventListener",
+        "getSvgPathFromStroke",
         "normalizeEOL",
         "promiseTry",
         "isAnyTrue",
         "escapeDoubleQuotes",
         "castArray"
       ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/utils/geometry/shape",
+      "bindings": ["getCurvePathOps"],
       "anonymous_statements": []
     }
   ]

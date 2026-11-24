@@ -1,0 +1,13 @@
+# packages/math/utils.ts; average shares this declarator list with the existing math utilities.
+source_matches:
+  - match: |
+      var DECLARATORS_BEFORE = null,
+        roundToStep = (value, step, func = "round") => {
+          let factor = 1 / step;
+          return Math[func](value * factor) / factor;
+        },
+        average = (a, b) => (a + b) / 2,
+        isFiniteNumber = (value) => typeof value == "number" && Number.isFinite(value),
+        DECLARATORS_AFTER = null;
+    bindings:
+      - average

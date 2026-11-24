@@ -180,6 +180,13 @@ debundle_resolve_placement(
     ownership_subset = "editor_smoke_subset.json",
     package_roots = _PACKAGE_ROOTS,
     proposal_fragments = {
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/library_helpers:average.yaml": "packages/math/utils",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/library_helpers:rtl_strings.yaml": "packages/excalidraw/utils",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/library_helpers:shift_locking_angle.yaml": "packages/excalidraw/constants",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/new_element:packages/excalidraw/colors.yaml": "packages/excalidraw/colors",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/new_element:packages/excalidraw/constants.yaml": "packages/excalidraw/constants",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/new_element:packages/excalidraw/groups.yaml": "packages/excalidraw/groups",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/new_element:packages/excalidraw/random.yaml": "packages/excalidraw/random",
         _PROPOSALS + "packages/excalidraw/element/bounds.yaml": "packages/excalidraw/element/bounds",
         _PROPOSALS + "packages/excalidraw/scene/Shape.yaml": "packages/excalidraw/scene/shape",
         _PROPOSALS + "packages/utils/geometry/shape.yaml": "packages/utils/geometry/shape",

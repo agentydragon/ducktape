@@ -73,7 +73,7 @@ def certify_editor_split(runfiles: Runfiles, source: Path, origin: str) -> dict[
     spec = artifacts / "placement.json"
     spec.write_text(json.dumps(placement))
     profile = artifacts / "host.json"
-    profile.write_text(json.dumps({"profile": "browser-page"}))
+    profile.write_text(json.dumps({"profile": "browser-page", "stableIntrinsicValues": ["Math.PI@1"]}))
     out = artifacts / "certified-editor"
     command: list[str | Path] = [
         resolve(runfiles, os.environ["LOWERSPLIT"]),
@@ -99,7 +99,7 @@ def certify_editor_split(runfiles: Runfiles, source: Path, origin: str) -> dict[
         assert verdict["guarantee"] == "normal-completion", verdict
         assert verdict["scope"] == "linked-structural-moves", verdict
         assert verdict["hostProfile"] == "browser-page", verdict
-        assert isinstance(verdict["assumptions"], list), verdict
+        assert any(premise.startswith("Math.PI@1:") for premise in verdict["assumptions"]), verdict
         verdicts.append(verdict)
     assert verdicts[0] == verdicts[1]
     return {name: out / name for name in modules}

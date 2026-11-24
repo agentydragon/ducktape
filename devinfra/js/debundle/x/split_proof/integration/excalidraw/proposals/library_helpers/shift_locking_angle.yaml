@@ -1,0 +1,9 @@
+# packages/excalidraw/constants.ts; consumes the browser's Math.PI@1 contract.
+source_matches:
+  - match: |
+      var DECLARATORS_BEFORE = null,
+        SHIFT_LOCKING_ANGLE = Math.PI / 12,
+        DEFAULT_LASER_COLOR = "red",
+        DECLARATORS_AFTER = null;
+    bindings:
+      - SHIFT_LOCKING_ANGLE
