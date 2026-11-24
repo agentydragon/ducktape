@@ -37,6 +37,11 @@ lean_library(
 )
 
 lean_library(
+    name = "effects_domain",
+    srcs = ["EsmSplit/Effects/Domain.lean"],
+)
+
+lean_library(
     name = "effects",
     srcs = [
         "EsmSplit/Effects.lean",
@@ -46,7 +51,10 @@ lean_library(
         "EsmSplit/TranslateInput.lean",
     ],
     visibility = ["//devinfra/js/debundle/x/split_proof/lean/mutants:__subpackages__"],
-    deps = [":estree"],
+    deps = [
+        ":effects_domain",
+        ":estree",
+    ],
 )
 
 lean_binary(
@@ -172,7 +180,10 @@ lean_binary(
         "//devinfra/js/debundle/x/split_proof/model:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
     ],
-    deps = [":effects"],
+    deps = [
+        ":effects",
+        ":planner",
+    ],
 )
 
 exports_files(
@@ -359,6 +370,7 @@ lean_library(
         ":corejs_runtime",
         ":corejs_structural",
         ":lowersplit_support",
+        ":planner",
     ],
 )
 

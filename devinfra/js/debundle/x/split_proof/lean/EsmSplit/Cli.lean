@@ -15,6 +15,12 @@ def reportElapsed (what : String) (t0 : Nat) : IO Nat := do
   (← IO.getStdout).flush
   return t
 
+/-- Remove the first `--name value` pair from command-line arguments. -/
+def takeFlag (name : String) : List String → Option String × List String
+  | a :: v :: rest =>
+    if a == name then (some v, rest) else let (r, l) := takeFlag name (v :: rest); (r, a :: l)
+  | l => (none, l)
+
 /-- Evaluate a check and print how long it took. `lazyPure` makes sure the work happens between the clocks. -/
 def timedCheck (label : String) (p : Unit → Bool) : IO Bool := do
   let t0 ← IO.monoMsNow

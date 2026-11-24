@@ -398,9 +398,9 @@ def bundleOfFootprints (fps : Array Lower.Footprint) : Bundle :=
 
 /-- `translate <bundle.json> <output.json> <cert.json> [--table <file>] [--premises <file>] [--obligations <file>]` -/
 def main (args : List String) : IO UInt32 := do
-  let (table?, args) := Effects.takeFlag "--table" args
-  let (premPath?, args) := Effects.takeFlag "--premises" args
-  let (obligationsPath?, args) := Effects.takeFlag "--obligations" args
+  let (table?, args) := EsmSplit.takeFlag "--table" args
+  let (premPath?, args) := EsmSplit.takeFlag "--premises" args
+  let (obligationsPath?, args) := EsmSplit.takeFlag "--obligations" args
   let [bundlePath, outPath, certPath] := args | IO.eprintln "usage: translate <bundle.json> <output.json> <cert.json> [--table <file>] [--premises <file>] [--obligations <file>]"; return 2
   let prem ← Effects.loadPremises premPath?
   let t0 ← IO.monoMsNow

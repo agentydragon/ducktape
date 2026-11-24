@@ -1,3 +1,4 @@
+import EsmSplit.Cli
 import EsmSplit.CoreJS.Declaration.Certificate
 import EsmSplit.CoreJS.Decode
 import EsmSplit.CoreJS.FromESTree
@@ -281,11 +282,11 @@ private structure DiagnosticOptions where
   leanOutput : Option (String × InstanceSource.Options)
 
 private def parseDiagnosticOptions (args : List String) : IO (SplitPaths × DiagnosticOptions) := do
-  let (premPath, args) := Effects.takeFlag "--premises" args
-  let (footprintPath, args) := Effects.takeFlag "--footprints" args
-  let (planPath, args) := Effects.takeFlag "--plan" args
-  let (corejsPath, args) := Effects.takeFlag "--corejs" args
-  let (moveReportPath, args) := Effects.takeFlag "--move-report" args
+  let (premPath, args) := EsmSplit.takeFlag "--premises" args
+  let (footprintPath, args) := EsmSplit.takeFlag "--footprints" args
+  let (planPath, args) := EsmSplit.takeFlag "--plan" args
+  let (corejsPath, args) := EsmSplit.takeFlag "--corejs" args
+  let (moveReportPath, args) := EsmSplit.takeFlag "--move-report" args
   if premPath.isSome && footprintPath.isSome then
     throw (IO.userError "--footprints and --premises: the footprints rest on the premises `lower` ran under")
   let prem ← Effects.loadPremises premPath

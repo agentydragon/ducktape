@@ -1,3 +1,4 @@
+import EsmSplit.Cli
 import EsmSplit.CoreJS.Declaration.Artifacts
 import EsmSplit.CoreJS.LinkedCertificate
 import EsmSplit.CoreJS.LinkedInput
@@ -119,7 +120,7 @@ private def parseCertifiedOptions (label : String) (args : List String) : IO (Sp
     | "all-outcomes" => pure Guarantee.allOutcomes
     | "normal-completion" => pure Guarantee.normalCompletion
     | _ => throw (IO.userError "--require expects all-outcomes or normal-completion")
-  let (contract?, args) := Effects.takeFlag "--host-contract" args
+  let (contract?, args) := EsmSplit.takeFlag "--host-contract" args
   let (profile, intrinsics) ← match contract? with
     | none => pure (CoreJS.HostProfile.empty, [])
     | some path => do
@@ -134,10 +135,10 @@ private def parseCertifiedOptions (label : String) (args : List String) : IO (Sp
   unless structural || intrinsics.isEmpty do
     throw (IO.userError "stableIntrinsicValues requires --structural")
   let args := args.filter (· != "--structural")
-  let (deploymentOrigin, args) := Effects.takeFlag "--deployment-origin" args
+  let (deploymentOrigin, args) := EsmSplit.takeFlag "--deployment-origin" args
   if deploymentOrigin.isSome && !structural then
     throw (IO.userError "--deployment-origin requires --structural")
-  let (resolvedChunk, args) := Effects.takeFlag "--resolved-placement" args
+  let (resolvedChunk, args) := EsmSplit.takeFlag "--resolved-placement" args
   let checkOnly := args.contains "--check-output"
   let args := args.filter (· != "--check-output")
   let usage := IO.userError "usage: lowersplit <bundle.mjs|bundle.json> spec.json outdir [--require LEVEL] [--resolved-placement CHUNK] [--check-output] [--host-contract PROFILE.json] [--structural [--deployment-origin ORIGIN]]; use --diagnostic for plan and preview options"
@@ -266,7 +267,7 @@ private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work
   catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs"
 
 def certified (args : List String) : IO UInt32 := do
-  let (level?, args) := Effects.takeFlag "--require" args
+  let (level?, args) := EsmSplit.takeFlag "--require" args
   let label := level?.getD Guarantee.normalCompletion.label
   try
     let (paths, options) ← parseCertifiedOptions label args
