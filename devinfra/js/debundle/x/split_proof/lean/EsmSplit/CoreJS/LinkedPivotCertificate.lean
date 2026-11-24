@@ -5,7 +5,7 @@ import EsmSplit.CoreJS.StateMatch
 
 namespace CoreJS.LinkedBehavior
 
-private theorem runUnits_move {W : World} {ready : State W} {pre crossed suffix} {pivot : Nat × Stmt × Env}
+private theorem runUnits_move {W : World} {ready : State W} {pre crossed suffix} {pivot : LinkedUnit}
     (n : Nat) (final : State W) (localStep : PivotLocal W n pivot) (checks : CheckedPivot ready pre crossed pivot) :
     runUnits n (pre ++ crossed ++ [pivot] ++ suffix) ready = .ok () final ↔
       runUnits n (pre ++ [pivot] ++ crossed ++ suffix) ready = .ok () final := by
@@ -14,14 +14,14 @@ private theorem runUnits_move {W : World} {ready : State W} {pre crossed suffix}
   intro u hu
   obtain ⟨away, scope⟩ := checks.scope u hu
   refine ⟨fun eq => away (congrArg (· + 1) eq), [], by simp, ?_⟩
-  rw [← capture_faithful n u.2.2 u.2.1 u.2.1.free (fun _ h => h)]
-  have frames := evaluatorFrames W (r := pivot.1 + 1) (by omega)
+  rw [← capture_faithful n u.env u.stmt u.stmt.free (fun _ h => h)]
+  have frames := evaluatorFrames W (r := pivot.id + 1) (by omega)
     (R := fun _ => False) (fun _ _ h => h) n
-  have step := frames.stmt [] (u.2.2.capture u.2.1.free) u.2.1 scope
+  have step := frames.stmt [] (u.env.capture u.stmt.free) u.stmt scope
   refine ⟨step.replace, step.preserves, ?_⟩
   intro s access away
   have result := step.accessible s access away
-  cases h : execStmt n (u.2.2.capture u.2.1.free) u.2.1 s <;> rw [h] at result
+  cases h : execStmt n (u.env.capture u.stmt.free) u.stmt s <;> rw [h] at result
   case ok v t => exact ⟨trivial, result.2⟩
   all_goals exact result
 
@@ -43,9 +43,6 @@ private theorem Access.linkState {w cells A} {s : State World.probe} (access : A
   cases edge with
   | obj ho hm => exact access.closed _ _ hsrc (.obj ho hm)
   | cell hc hm => exact access.closed _ _ hsrc (.cell hc hm)
-
-private abbrev LinkedUnit := Nat × Stmt × Env
-
 
 private theorem CheckedPivot.forWorld {ready pre crossed pivot}
     (checks : CheckedPivot ready pre crossed pivot) (w : World) :
@@ -106,7 +103,7 @@ private def checkMove (intrinsics : List StableIntrinsic) (ready : State World.p
     Except String (PLift (∀ w, StableIntrinsic.Worlds intrinsics w → ∀ n (final : State w),
       runUnits n ((pre ++ crossed ++ [pivot] ++ suffix).map (·.unit)) (linkState w ready) = .ok () final ↔
         runUnits n ((pre ++ [pivot] ++ crossed ++ suffix).map (·.unit)) (linkState w ready) = .ok () final)) := do
-  if inert : pivot.unit.2.1.inert = true then
+  if inert : pivot.unit.stmt.inert = true then
     return ⟨by
       intro w hw n final
       simp only [List.map_append, List.map_cons, List.map_nil]
@@ -115,14 +112,14 @@ private def checkMove (intrinsics : List StableIntrinsic) (ready : State World.p
         (fun _ _ => trivial) (fun _ _ _ _ _ _ _ => trivial)
       intro u _
       exact ⟨fun s _ => inert_commute inert s, fun s _ => commute_inert inert s⟩⟩
-  let some ⟨localStep⟩ := checkedLocal? intrinsics pivot.unit | throw s!"unit {pivot.unit.1} is not a local allocating declaration"
+  let some ⟨localStep⟩ := checkedLocal? intrinsics pivot.unit | throw s!"unit {pivot.unit.id} is not a local allocating declaration"
   match checkPivot ready pre crossed pivot.unit with
   | .ok ⟨checks⟩ => return ⟨by
       intro w hw n final
       simpa only [List.map_append, List.map_cons, List.map_nil] using
         runUnits_move (suffix := original suffix) n final (localStep w hw n) (checks.forWorld w)⟩
   | .error why =>
-    let qs := observerRegions ready (pivot.unit.1 + 1)
+    let qs := observerRegions ready (pivot.unit.id + 1)
     if qs.isEmpty then throw why
     let some ⟨move⟩ := checkMaskedMove? intrinsics ready pre crossed pivot localStep qs | throw why
     return ⟨by simpa only [original, List.map_append, List.map_cons, List.map_nil] using move (original suffix)⟩
@@ -148,7 +145,7 @@ private def checkRun? (intrinsics : List StableIntrinsic) (ready : State World.p
 /-- Rotate a local initializer across other local steps in distinct regions;
 their stored captures may mention each other. -/
 private theorem rotateLocal (n : Nat) (s final : State w) (pre group suffix : List LinkedUnit) (b : LinkedUnit)
-    (hb : PivotLocal w n b) (locals : ∀ a ∈ group, b.1 ≠ a.1 ∧ PivotLocal w n a) :
+    (hb : PivotLocal w n b) (locals : ∀ a ∈ group, b.id ≠ a.id ∧ PivotLocal w n a) :
     runUnits n (pre ++ [b] ++ group ++ suffix) s = .ok () final ↔
       runUnits n (pre ++ group ++ [b] ++ suffix) s = .ok () final := by
   apply runUnits_pivot n pre group suffix b (fun _ => True) _ _ (fun _ _ => trivial) (fun _ _ _ _ _ _ _ => trivial)
@@ -166,12 +163,12 @@ private def checkGroup? (intrinsics : List StableIntrinsic) (ready : State World
       runUnits n (original (pre ++ crossed ++ group ++ [b] ++ suffix)) (linkState w ready) = .ok () final ↔
         runUnits n (original (pre ++ group ++ [b] ++ crossed ++ suffix)) (linkState w ready) = .ok () final)) := do
   let ⟨hb⟩ ← checkedLocal? intrinsics b.unit
-  if checked : group.all (fun a => b.unit.1 != a.unit.1 && (checkedLocal? intrinsics a.unit).isSome) then
+  if checked : group.all (fun a => b.unit.id != a.unit.id && (checkedLocal? intrinsics a.unit).isSome) then
     let ⟨moveB⟩ ← (checkMove intrinsics ready pre crossed (group ++ suffix) b).toOption
     let ⟨moveGroup⟩ ← checkRun? intrinsics ready (pre ++ [b]) crossed suffix group
     return ⟨by
       intro w hw n final
-      have locals : ∀ a ∈ original group, b.unit.1 ≠ a.1 ∧ PivotLocal w n a := by
+      have locals : ∀ a ∈ original group, b.unit.id ≠ a.id ∧ PivotLocal w n a := by
         intro a ha
         obtain ⟨u, hu, rfl⟩ := List.mem_map.mp ha
         have ok := List.all_eq_true.mp checked u hu
@@ -192,7 +189,7 @@ private def checkGroup? (intrinsics : List StableIntrinsic) (ready : State World
 the source and requested schedules agree through that initializer. -/
 private def forwardGap? (regions : List Nat) : List PreparedUnit → List Nat → Option Nat
   | u :: us, id :: ids => do
-    guard (u.unit.1 == id)
+    guard (u.unit.id == id)
     if regions.contains (id + 1) then return 0
     return (← forwardGap? regions us ids) + 1
   | _, _ => none
@@ -207,20 +204,20 @@ private def checkSchedule (intrinsics : List StableIntrinsic) (ready : State Wor
   | id :: rest => do
     match h : remaining with
     | u :: tail =>
-      if u.unit.1 == id then
+      if u.unit.id == id then
         let next ← checkSchedule intrinsics ready (u :: prefixRev) tail rest
         return ⟨next.units, next.moves, by
           simpa only [h, List.reverse_cons, List.append_assoc, List.singleton_append] using next.equivalent⟩
     | [] => pure ()
-    let crossed := remaining.takeWhile (fun u => u.unit.1 != id)
-    match h : remaining.dropWhile (fun u => u.unit.1 != id) with
+    let crossed := remaining.takeWhile (fun u => u.unit.id != id)
+    match h : remaining.dropWhile (fun u => u.unit.id != id) with
     | [] => throw s!"unit {id} is missing from the remaining linked schedule"
     | pivot :: suffix =>
       have split : remaining = crossed ++ pivot :: suffix := by
-        have joined := List.takeWhile_append_dropWhile (p := fun u : PreparedUnit => u.unit.1 != id) (l := remaining)
+        have joined := List.takeWhile_append_dropWhile (p := fun u : PreparedUnit => u.unit.id != id) (l := remaining)
         rw [h] at joined
         exact joined.symm
-      let regions := (pivot.nodes.get.map (·.addr.region)).filter (· != pivot.unit.1 + 1)
+      let regions := (pivot.nodes.get.map (·.addr.region)).filter (· != pivot.unit.id + 1)
       if !regions.isEmpty then
         if let some k := forwardGap? regions suffix rest then
           let middle := suffix.take k
@@ -275,7 +272,7 @@ def checkStructuralSchedule (intrinsics : List StableIntrinsic) (source candidat
     exact exportsEqual
   let sourceUnits := unitsOf before.linked
   let candidateUnits := unitsOf after.linked
-  let schedule ← checkSchedule intrinsics before.ready [] (sourceUnits.map PreparedUnit.ofUnit) (candidateUnits.map (·.1))
+  let schedule ← checkSchedule intrinsics before.ready [] (sourceUnits.map PreparedUnit.ofUnit) (candidateUnits.map LinkedUnit.id)
   let some ⟨same⟩ := sameUnits? schedule.units candidateUnits |
     throw "the linked schedules differ in unit order, syntax, or scope"
   have equivalent : NormalEquivalent (StableIntrinsic.Worlds intrinsics) source candidate := normalEquivalent_of_bounded fun w hw n final => by

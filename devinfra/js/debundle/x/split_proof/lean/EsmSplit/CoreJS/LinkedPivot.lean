@@ -22,10 +22,10 @@ theorem normalEquivalent_of_bounded {worlds : World → Prop} {source candidate 
     exact ⟨n, (run w hw n final).mpr after, existsOutcome⟩
 
 def FramedUnits (w : World) (fuel pivotId : Nat) (R : Addr → Prop) (A : HeapNode → Prop)
-    (steps : List (Nat × Stmt × Env)) : Prop :=
-  ∀ u ∈ steps, u.1 ≠ pivotId ∧ ∃ cells,
+    (steps : List LinkedUnit) : Prop :=
+  ∀ u ∈ steps, u.id ≠ pivotId ∧ ∃ cells,
     (∀ a, some a ∈ cells → A (.cell a)) ∧
-    ReachFrame (pivotId + 1) R cells A (fun _ => True) (execStmt fuel u.2.2 u.2.1 : M w Flow)
+    ReachFrame (pivotId + 1) R cells A (fun _ => True) (execStmt fuel u.env u.stmt : M w Flow)
 
 private theorem Access.afterUnits {w : World} {n i R A units} {s t : State w}
     (frames : FramedUnits w n i R A units) (ready : Access [] A s)
@@ -36,24 +36,24 @@ private theorem Access.afterUnits {w : World} {n i R A units} {s t : State w}
     obtain ⟨id, st, env⟩ := u
     obtain ⟨flow, mid, step, tail⟩ := bind_ok run
     obtain ⟨different, cells, roots, hf⟩ := frames _ List.mem_cons_self
-    have access := hf.runUnit_access (show id + 1 ≠ i + 1 by omega) (s := s)
+    have access := hf.runUnit_access (show id + 1 ≠ i + 1 from fun h => different (Nat.succ.inj h)) (s := s)
       ⟨ready.handed, roots, ready.closed⟩ step
     exact ih (fun x hx => frames x (List.mem_cons_of_mem _ hx)) ⟨access.handed, by simp, access.closed⟩ tail
 
 /-- An earlier move preserves successful final states from the given linked state. -/
 theorem runUnits_pivot_normal {W : World} {s : State W}
-    {pre crossed suffix : List (Nat × Stmt × Env)} {pivot : Nat × Stmt × Env}
+    {pre crossed suffix : List LinkedUnit} {pivot : LinkedUnit}
     (n : Nat) (final : State W) (reads : Addr → Prop) (allowed : HeapNode → Prop)
     (access : Access [] allowed s)
-    (localPivot : Local (pivot.1 + 1) reads (execStmt n pivot.2.2 pivot.2.1 : M W Flow))
-    (unchanged : FramedUnits W n pivot.1 reads allowed (pre ++ crossed)) :
+    (localPivot : Local (pivot.id + 1) reads (execStmt n pivot.env pivot.stmt : M W Flow))
+    (unchanged : FramedUnits W n pivot.id reads allowed (pre ++ crossed)) :
     runUnits n (pre ++ crossed ++ [pivot] ++ suffix) s = .ok () final ↔
       runUnits n (pre ++ [pivot] ++ crossed ++ suffix) s = .ok () final := by
-  have beforeFrames : FramedUnits W n pivot.1 reads allowed pre :=
+  have beforeFrames : FramedUnits W n pivot.id reads allowed pre :=
     fun u hu => unchanged u (List.mem_append_left _ hu)
-  have crossedFrames : FramedUnits W n pivot.1 reads allowed crossed :=
+  have crossedFrames : FramedUnits W n pivot.id reads allowed crossed :=
     fun u hu => unchanged u (List.mem_append_right _ hu)
-  have frame := runUnits_reachFrame_pivot n pivot.1 pivot.2.2 pivot.2.1 reads allowed
+  have frame := runUnits_reachFrame_pivot n pivot.id pivot.env pivot.stmt reads allowed
     pre crossed suffix s final localPivot (fun _ hs => Access.afterUnits beforeFrames access hs)
   apply (frame ?_).symm
   intro unit hu

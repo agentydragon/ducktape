@@ -6,10 +6,10 @@ row is restored before the suffix, where the observer may be called. -/
 
 namespace CoreJS.LinkedBehavior
 
-private theorem unit_restore {w : World} {n q} (hq : q ≠ 0) {u : Nat × Stmt × Env}
+private theorem unit_restore {w : World} {n q} (hq : q ≠ 0) {u : LinkedUnit}
     (safe : IsolatedUnit q u) {s : State w} (access : Access [] (Outside q) s) (H C) :
-    runUnit n u.2.2 u.1 u.2.1 (s.put q H C) = (runUnit n u.2.2 u.1 u.2.1 s).put q H C ∧
-    (∀ f t, runUnit n u.2.2 u.1 u.2.1 s = .ok f t → Access [] (Outside q) t) := by
+    runUnit n u.env u.id u.stmt (s.put q H C) = (runUnit n u.env u.id u.stmt s).put q H C ∧
+    (∀ f t, runUnit n u.env u.id u.stmt s = .ok f t → Access [] (Outside q) t) := by
   obtain ⟨id, st, env⟩ := u
   let e := env.capture st.free
   have frames := evaluatorFrames w hq (R := fun _ => False) (fun _ _ h => h) n
@@ -33,7 +33,7 @@ private theorem unit_restore {w : World} {n q} (hq : q ≠ 0) {u : Nat × Stmt �
 
 /-- Run the checked segment with the observer region omitted, then restore it
 before the unchecked suffix. This concerns successful completions in both directions. -/
-theorem runUnits_restore {w : World} {q} (hq : q ≠ 0) (n : Nat) (us suffix : List (Nat × Stmt × Env))
+theorem runUnits_restore {w : World} {q} (hq : q ≠ 0) (n : Nat) (us suffix : List LinkedUnit)
     (safe : ∀ u ∈ us, IsolatedUnit q u) (s final : State w) (access : Access [] (Outside q) s) (H C) :
     runUnits n (us ++ suffix) (s.put q H C) = .ok () final ↔
       ∃ t, runUnits n us s = .ok () t ∧ runUnits n suffix (t.put q H C) = .ok () final := by

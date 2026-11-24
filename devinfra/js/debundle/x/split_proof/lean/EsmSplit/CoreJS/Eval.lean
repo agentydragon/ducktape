@@ -759,9 +759,16 @@ def Program.scopes (P : Program) (frames : List (Nat × List (Name × Addr))) : 
     let imported ← P.imported frames m.imports
     pure ((m, { vars := m.scope frames ++ imported, this := .undef }) :: (← P.scopes frames rest))
 
+/-- A top-level statement paired with its original identity and linked module scope. -/
+abbrev LinkedUnit := Nat × Stmt × Env
+
+abbrev LinkedUnit.id (u : LinkedUnit) : Nat := u.1
+abbrev LinkedUnit.stmt (u : LinkedUnit) : Stmt := u.2.1
+abbrev LinkedUnit.env (u : LinkedUnit) : Env := u.2.2
+
 /-- The statements of linked modules, each with its identity and the scope of its module, in the order they run:
 module after module, and the statements of a module in order. -/
-def unitsOf (linked : List (Module × Env)) : List (Nat × Stmt × Env) :=
+def unitsOf (linked : List (Module × Env)) : List LinkedUnit :=
   linked.flatMap fun (m, env) => m.body.map fun (id, s) => (id, s, env)
 
 /-- The functions an opaque statement declares get their values: function `k` is part `k` of its code. -/
@@ -775,12 +782,12 @@ def initOpaque (code : Nat) (cells : List (Option Addr)) (env : Env) : List Opaq
     initOpaque code cells env rest (part + 1)
 
 /-- A declared function gets its value, in the region of its declaration and the scope of its module. -/
-def initFunction : Nat × Stmt × Env → M W Unit
+def initFunction : LinkedUnit → M W Unit
   | (id, .funDecl f, env) => inRegion id (do initVar env f.name (← makeFunc env f))
   | (id, .opaque code decls funs free _, env) => inRegion id (initOpaque code (opaqueCells env decls funs free) env funs 1)
   | _ => pure ()
 
-def initFunctions : List (Nat × Stmt × Env) → M W Unit
+def initFunctions : List LinkedUnit → M W Unit
   | [] => pure ()
   | u :: rest => do
     initFunction u
@@ -796,14 +803,14 @@ def link (P : Program) : M W (List (Module × Env)) := do
   checkIdentities tops
   let frames ← declareTops tops
   let linked ← lift (P.scopes frames P.loaded)
-  initFunctions ((unitsOf linked).mergeSort fun a b => decide (a.1 ≤ b.1))
+  initFunctions ((unitsOf linked).mergeSort fun a b => decide (a.id ≤ b.id))
   pure linked
 
 /-- Run a top-level statement in its region. -/
 def runUnit (fuel : Nat) (env : Env) (id : Nat) (s : Stmt) : M W Flow := inRegion id (execStmt fuel env s)
 
 /-- Run the statements in order, each in the scope of its module. Each has `fuel` for itself. -/
-def runUnits (fuel : Nat) : List (Nat × Stmt × Env) → M W Unit
+def runUnits (fuel : Nat) : List LinkedUnit → M W Unit
   | [] => pure ()
   | (id, s, env) :: rest => do
     let _ ← runUnit fuel env id s

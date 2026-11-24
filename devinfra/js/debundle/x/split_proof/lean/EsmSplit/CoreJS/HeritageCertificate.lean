@@ -176,7 +176,7 @@ private theorem swap_resolved {s : State W} {crossed : Stmt}
     exact hread (heq ▸ hz)
 
 end Linked
-private theorem runUnits_preserve {P : State W → Prop} (n : Nat) (units : List (Nat × Stmt × Env))
+private theorem runUnits_preserve {P : State W → Prop} (n : Nat) (units : List LinkedUnit)
     (keep : ∀ u ∈ units, ∀ s t f, P s → unitStep n u s = .ok f t → P t)
     (hs : P s) (run : runUnits n units s = .ok () t) : P t := by
   induction units generalizing s with
@@ -186,7 +186,7 @@ private theorem runUnits_preserve {P : State W → Prop} (n : Nat) (units : List
     obtain ⟨f, u, hr, rest⟩ := bind_ok run
     exact ih (fun z hz => keep z (List.mem_cons_of_mem _ hz)) (keep _ List.mem_cons_self _ _ _ hs hr) rest
 
-private theorem runUnits_after {P : State W → Prop} (n : Nat) (pre tail : List (Nat × Stmt × Env))
+private theorem runUnits_after {P : State W → Prop} (n : Nat) (pre tail : List LinkedUnit)
     (proveTail : ∀ s t, runUnits n tail s = .ok () t → P t)
     (run : runUnits n (pre ++ tail) s = .ok () t) : P t := by
   induction pre generalizing s with

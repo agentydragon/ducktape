@@ -304,7 +304,7 @@ theorem mono : ∀ n m, n ≤ m → Mono W n m := by
       exact ⟨ih.expr_succ, ih.args_succ, ih.target_succ, ih.props_succ, ih.members_succ, ih.fields_succ, ih.call_succ,
         ih.construct_succ, ih.stmt_succ, ih.stmts_succ, ih.loop_succ, ih.converse_succ⟩
 
-theorem runUnits_le {n m : Nat} (h : n ≤ m) (units : List (Nat × Stmt × Env)) :
+theorem runUnits_le {n m : Nat} (h : n ≤ m) (units : List LinkedUnit) :
     (runUnits n units : M W _) ⊑ runUnits m units := by
   induction units with
   | nil => exact M.le_refl _

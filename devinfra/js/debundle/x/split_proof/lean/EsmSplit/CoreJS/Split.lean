@@ -25,15 +25,15 @@ namespace CoreJS
 variable {W : World} {β : Type}
 
 /-- The same statement under the same identity, in two scopes that agree on the names it mentions. -/
-def SameUnit (u u' : Nat × Stmt × Env) : Prop := u.1 = u'.1 ∧ u.2.1 = u'.2.1 ∧ Agree u.2.1.free u.2.2 u'.2.2
+def SameUnit (u u' : LinkedUnit) : Prop := u.id = u'.id ∧ u.stmt = u'.stmt ∧ Agree u.stmt.free u.env u'.env
 
 /-- Two lists of statements with their scopes that are the same place by place. -/
-inductive SameUnits : List (Nat × Stmt × Env) → List (Nat × Stmt × Env) → Prop
+inductive SameUnits : List LinkedUnit → List LinkedUnit → Prop
   | nil : SameUnits [] []
-  | cons {u u' : Nat × Stmt × Env} {us us' : List (Nat × Stmt × Env)} :
+  | cons {u u' : LinkedUnit} {us us' : List LinkedUnit} :
     SameUnit u u' → SameUnits us us' → SameUnits (u :: us) (u' :: us')
 
-theorem runUnits_same (n : Nat) {us us' : List (Nat × Stmt × Env)} (h : SameUnits us us') :
+theorem runUnits_same (n : Nat) {us us' : List LinkedUnit} (h : SameUnits us us') :
     (runUnits n us : M W Unit) = runUnits n us' := by
   induction h with
   | nil => rfl
@@ -41,7 +41,7 @@ theorem runUnits_same (n : Nat) {us us' : List (Nat × Stmt × Env)} (h : SameUn
     obtain ⟨id, s, env⟩ := u
     obtain ⟨id', s', env'⟩ := u'
     obtain ⟨hid, hs, hagree⟩ := hu
-    dsimp only at hid hs hagree
+    dsimp only [LinkedUnit.id, LinkedUnit.stmt, LinkedUnit.env] at hid hs hagree
     subst hid
     subst hs
     unfold runUnits
@@ -55,7 +55,7 @@ theorem initOpaque_agree (code : Nat) (cells : List (Option Addr)) {env env' : E
     cases kind <;> unfold initOpaque <;> exact M.bind_congr rfl fun v => M.bind_congr (initVar_agree (h x (by simp)) v) fun _ =>
       initOpaque_agree code cells rest (part + 1) fun y hy => h y (by simp [hy])
 
-theorem initFunctions_same {us us' : List (Nat × Stmt × Env)} (h : SameUnits us us') :
+theorem initFunctions_same {us us' : List LinkedUnit} (h : SameUnits us us') :
     (initFunctions us : M W Unit) = initFunctions us' := by
   induction h with
   | nil => rfl
@@ -63,7 +63,7 @@ theorem initFunctions_same {us us' : List (Nat × Stmt × Env)} (h : SameUnits u
     obtain ⟨id, s, env⟩ := u
     obtain ⟨id', s', env'⟩ := u'
     obtain ⟨hid, hs, hagree⟩ := hu
-    dsimp only at hid hs hagree
+    dsimp only [LinkedUnit.id, LinkedUnit.stmt, LinkedUnit.env] at hid hs hagree
     subst hid
     subst hs
     unfold initFunctions
@@ -83,7 +83,7 @@ theorem initFunctions_same {us us' : List (Nat × Stmt × Env)} (h : SameUnits u
         hagree.vars x (by simp only [Stmt.free, opaqueNames]; exact List.mem_append_right _ (List.mem_append_left _ hx)))
     | _ => rfl
 
-theorem sameUnit_ids {us us' : List (Nat × Stmt × Env)} (h : SameUnits us us') :
+theorem sameUnit_ids {us us' : List LinkedUnit} (h : SameUnits us us') :
     us.map (·.1) = us'.map (·.1) := by
   induction h with
   | nil => rfl
@@ -130,7 +130,7 @@ theorem link_bind (P : Program) (k : List (Module × Env) → M W β) :
   simp only [M.bind_assoc]
   rfl
 
-theorem sorted_units {us : List (Nat × Stmt × Env)} (h : us.Pairwise fun a b => a.1 ≤ b.1) :
+theorem sorted_units {us : List LinkedUnit} (h : us.Pairwise fun a b => a.1 ≤ b.1) :
     (us.mergeSort fun a b => decide (a.1 ≤ b.1)) = us :=
   List.mergeSort_of_pairwise (h.imp fun hab => by simpa using hab)
 
@@ -144,7 +144,7 @@ theorem run_same {P P' : Program} (hregions : P.regions = P'.regions) (htops : P
   refine M.bind_congr rfl fun _ => M.bind_congr_ok fun s frames s' hframes => ?_
   obtain ⟨L, L', hL, hL', hsame, hsorted⟩ := hscopes frames (declareTops_names _ hframes)
   have hsorted' : (unitsOf L').Pairwise fun a b => a.1 ≤ b.1 := by
-    have h := (List.pairwise_map (f := fun u : Nat × Stmt × Env => u.1) (R := fun a b => a ≤ b)).2 hsorted
+    have h := (List.pairwise_map (f := fun u : LinkedUnit => u.1) (R := fun a b => a ≤ b)).2 hsorted
     rw [sameUnit_ids hsame] at h
     exact List.pairwise_map.1 h
   rw [hL, hL']
@@ -682,13 +682,13 @@ theorem unitsOf_keys : ∀ (L : List (Module × Env)),
     simp only [List.flatMap_cons, List.map_append, ih, List.map_map, Function.comp_def]
     simp
 
-theorem mem_unitsOf {L : List (Module × Env)} {u : Nat × Stmt × Env} (h : u ∈ unitsOf L) :
+theorem mem_unitsOf {L : List (Module × Env)} {u : LinkedUnit} (h : u ∈ unitsOf L) :
     ∃ p ∈ L, (u.1, u.2.1) ∈ p.1.body ∧ u.2.2 = p.2 := by
   obtain ⟨⟨M, env⟩, hp, hu⟩ := List.mem_flatMap.1 h
   obtain ⟨⟨id, s⟩, hb, rfl⟩ := List.mem_map.1 hu
   exact ⟨(M, env), hp, hb, rfl⟩
 
-theorem sameUnits_of : ∀ {us us' : List (Nat × Stmt × Env)},
+theorem sameUnits_of : ∀ {us us' : List LinkedUnit},
     us.map (fun u => (u.1, u.2.1)) = us'.map (fun u => (u.1, u.2.1)) →
     (∀ u ∈ us, ∀ u' ∈ us', u.1 = u'.1 → u.2.1 = u'.2.1 → Agree u.2.1.free u.2.2 u'.2.2) → SameUnits us us'
   | [], [], _, _ => .nil
@@ -859,7 +859,7 @@ theorem split_scopes_agree {ss : List Stmt} {B : EsmSplit.Bundle} {S : EsmSplit.
       exact hagree u' hu'
   · have h := zip_range_sorted ss
     rw [← hkeys0] at h
-    exact (List.pairwise_map (R := fun a b => a.1 ≤ b.1) (f := fun u : Nat × Stmt × Env => (u.1, u.2.1))).1 h
+    exact (List.pairwise_map (R := fun a b => a.1 ≤ b.1) (f := fun u : LinkedUnit => (u.1, u.2.1))).1 h
 
 /-- **A split that `Valid` accepts and that keeps the order ends as its bundle does**, in every world, when the
 footprints say what the text says. -/

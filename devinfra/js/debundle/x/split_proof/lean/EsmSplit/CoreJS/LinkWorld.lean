@@ -141,7 +141,7 @@ private theorem wi_initOpaque (w : World) (code : Nat) (cells : List (Option Add
       exact (wi_makeOpaque w code part cells name length false asyncFunctionProto).bind fun value =>
         (wi_initVar w env name value).bind fun _ => ih (part + 1)
 
-private theorem wi_initFunctions (w : World) (units : List (Nat × Stmt × Env)) :
+private theorem wi_initFunctions (w : World) (units : List LinkedUnit) :
     WorldIndependent w (initFunctions units) (initFunctions units) := by
   induction units with
   | nil => exact wi_pure _ _

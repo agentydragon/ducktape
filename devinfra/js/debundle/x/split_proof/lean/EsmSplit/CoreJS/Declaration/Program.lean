@@ -90,7 +90,7 @@ theorem run_eq_single (W : World) (fuel : Nat) (groups : List DeclarationGroup) 
     rw [scope_eq, single_loaded]
     rfl
   rw [linked, lift, M.pure_bind]
-  let attach : Nat × Stmt → Nat × Stmt × Env := fun (id, s) => (id, s, env)
+  let attach : Nat × Stmt → LinkedUnit := fun (id, s) => (id, s, env)
   have sameUnits : unitsOf [(bundleModule (statements groups), env)] = (compileGroups 0 groups).map attach := by
     rw [body_eq]
     simp [unitsOf, bundleModule, attach]

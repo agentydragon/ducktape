@@ -162,7 +162,7 @@ theorem declareGroups_eq (start : Nat) (gs : List DeclarationGroup) :
   | cons g gs ih => simp only [declareGroups, compileGroups, compile, ih, declareList_append]
 
 private theorem runList_append {kind : DeclKind} (fuel : Nat) (env : Env) (start : Nat) (ds : List (Declarator kind))
-    (units : List (Nat × Stmt × Env)) :
+    (units : List LinkedUnit) :
     (runList fuel env (runUnits fuel units) start ds : M W Unit) =
       runUnits fuel (((compileList start ds).map fun (id, s) => (id, s, env)) ++ units) := by
   induction ds generalizing start with
@@ -178,7 +178,7 @@ theorem runGroups_eq (fuel : Nat) (env : Env) (start : Nat) (gs : List Declarati
   | cons g gs ih => simp only [runGroups, compileGroups, compile, ih, List.map_append, runList_append]
 
 private theorem initFunctions_compileList {kind : DeclKind} (env : Env) (start : Nat) (ds : List (Declarator kind))
-    (units : List (Nat × Stmt × Env)) :
+    (units : List LinkedUnit) :
     (initFunctions (((compileList start ds).map fun (id, s) => (id, s, env)) ++ units) : M W Unit) = initFunctions units := by
   induction ds generalizing start with
   | nil => rfl

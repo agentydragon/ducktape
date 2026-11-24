@@ -58,7 +58,7 @@ theorem ReachFrame.local_commuteOn {n i j : Nat} {e1 e2 : Env} {st1 st2 : Stmt} 
 /-- Move a local unit across a block with one closed heap envelope. Each crossed
 unit may receive different binding cells, all of which must lie inside the envelope. -/
 theorem runUnits_reachFrame_pivot (n i : Nat) (env : Env) (st : Stmt) (R : Addr → Prop) (A : HeapNode → Prop)
-    (pre crossed suffix : List (Nat × Stmt × Env)) (s s' : State W)
+    (pre crossed suffix : List LinkedUnit) (s s' : State W)
     (localUnit : Local (i + 1) R (execStmt n env st : M W Flow))
     (hprefix : ∀ t, runUnits n pre s = .ok () t → Access [] A t)
     (framed : ∀ u ∈ crossed, i ≠ u.1 ∧ ∃ cells,
