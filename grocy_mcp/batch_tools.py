@@ -1192,11 +1192,6 @@ def register_batch_tools(
             qu_name=_row_name(unit) or (f"id={unit_id}" if unit_id is not None else None),
         )
 
-    async def _shopping_list_items(client: GrocyClient, list_id: int) -> list[dict[str, Any]]:
-        r = await client.get("/objects/shopping_list")
-        r.raise_for_status()
-        return [item for item in r.json() if int(item.get("shopping_list_id", 1)) == list_id]
-
     @mcp.tool()
     async def shopping_list_get(
         shopping_list: Annotated[int | str, Field(description="Shopping list. Name or ID.")],
@@ -1211,7 +1206,9 @@ def register_batch_tools(
         the list with `shopping_list_clear`.
         """
         list_data = await client.resolve_entity(EntityType.SHOPPING_LIST, shopping_list)
-        items = await _shopping_list_items(client, int(list_data["id"]))
+        response = await client.get("/objects/shopping_list", params={"query[]": f"shopping_list_id={list_data['id']}"})
+        response.raise_for_status()
+        items: list[dict[str, Any]] = response.json()
 
         product_ids = [int(item["product_id"]) if item.get("product_id") is not None else None for item in items]
         products = await _shopping_products(client, {pid for pid in product_ids if pid is not None})
