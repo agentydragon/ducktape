@@ -1,0 +1,138 @@
+{
+  "source_sha256": "fa1cfc7930fe3c0e2b4d95e6cb14ebde21068014cd92db303622509d9a0d455c",
+  "canonical_sha256": "5b8d0c56d4fc00ac9a7f65bd9b58c30340b711aa3116afb3850e0e4afb1a7d1d",
+  "selected_sha256": "51e6c5ab05462169184b972b65354a80474933a45a01e530337578dd75a2a5a1",
+  "baseline_evidence": "https://app.buildbuddy.io/invocation/06adc7df-16c6-49b6-b80f-1082a9c6fefa",
+  "trials": {
+    "heading_query": {
+      "add": {
+        "packages/excalidraw/element/heading": ["headingForPointIsHorizontal"]
+      },
+      "status": "rejected",
+      "reason": "entry exports resolve to different linked cells; extra 1: \"Qt\" (candidate cell @1235.0); missing 0; retargeted 0",
+      "evidence": "https://app.buildbuddy.io/invocation/07a9571a-ca1d-48ef-add8-44d9d13fa971"
+    },
+    "heading_horizontal": {
+      "add": {
+        "packages/excalidraw/element/heading": ["headingIsHorizontal"]
+      },
+      "status": "rejected",
+      "reason": "unit 1232 has access to the moved region of unit 1234",
+      "evidence": "https://app.buildbuddy.io/invocation/07a9571a-ca1d-48ef-add8-44d9d13fa971"
+    },
+    "linear_editor_closure": {
+      "add": {
+        "packages/excalidraw/element/heading": ["headingForPointIsHorizontal", "headingIsHorizontal"],
+        "packages/excalidraw/element/linearelementeditor": ["LinearElementEditor"]
+      },
+      "status": "rejected",
+      "reason": "entry exports resolve to different linked cells; extra 6: \"Ku\" (candidate cell @1179.0), \"$s\" (candidate cell @1175.0), \"qu\" (candidate cell @1180.0), \u2026; missing 0; retargeted 0",
+      "evidence": "https://app.buildbuddy.io/invocation/07a9571a-ca1d-48ef-add8-44d9d13fa971"
+    },
+    "clipboard_leaf": {
+      "add": {
+        "packages/excalidraw/clipboard": ["copyTextViaExecCommand"]
+      },
+      "status": "rejected",
+      "evidence": "https://app.buildbuddy.io/invocation/d8696c96-4878-49f2-8db6-cb991dd638bb",
+      "reason": "unit 1634 has access to the moved region of unit 1635"
+    },
+    "crop_width": {
+      "add": {
+        "packages/excalidraw/element/cropelement": ["getUncroppedWidthAndHeight"]
+      },
+      "status": "rejected",
+      "evidence": "https://app.buildbuddy.io/invocation/d8696c96-4878-49f2-8db6-cb991dd638bb",
+      "reason": "unit 1185 has access to the moved region of unit 1188"
+    },
+    "wrap_cache": {
+      "add": {
+        "packages/excalidraw/element/textwrapping": [
+          "cachedCjkRegex",
+          "cachedLineBreakRegex",
+          "cachedEmojiRegex",
+          "containsCJK",
+          "getLineBreakRegex",
+          "getEmojiRegex",
+          "CJK",
+          "getLineBreakRegexSimple",
+          "getLineBreakRegexAdvanced",
+          "getEmojiRegexUnicode",
+          "Regex",
+          "Break",
+          "parseTokens"
+        ]
+      },
+      "status": "rejected",
+      "evidence": "https://app.buildbuddy.io/invocation/d8696c96-4878-49f2-8db6-cb991dd638bb",
+      "reason": "unit 657 has access to the moved region of unit 662"
+    },
+    "resize_step": {
+      "add": {
+        "packages/excalidraw/element/resizeelements": ["getNextMultipleWidthAndHeightFromPointer"]
+      },
+      "status": "rejected",
+      "evidence": "https://app.buildbuddy.io/invocation/d8696c96-4878-49f2-8db6-cb991dd638bb",
+      "reason": "unit 1724 has access to the moved region of unit 1736"
+    },
+    "blob_encode": {
+      "add": {
+        "packages/excalidraw/data/blob": ["dataURLToString"],
+        "packages/excalidraw/data/encode": ["base64ToString"]
+      },
+      "status": "rejected",
+      "evidence": "https://app.buildbuddy.io/invocation/d8696c96-4878-49f2-8db6-cb991dd638bb",
+      "reason": "unit 1548 has access to the moved region of unit 1780"
+    },
+    "store_snapshot": {
+      "add": {
+        "packages/excalidraw/store": ["getObservedAppState", "Snapshot"]
+      },
+      "status": "rejected",
+      "evidence": "https://app.buildbuddy.io/invocation/d8696c96-4878-49f2-8db6-cb991dd638bb",
+      "reason": "unit 1463 has access to the moved region of unit 1469"
+    },
+    "orig_id": {
+      "add": {
+        "packages/excalidraw/constants": ["ORIG_ID"],
+        "packages/excalidraw/element/newelement": ["__test__defineOrigId"]
+      },
+      "status": "rejected",
+      "evidence": "https://app.buildbuddy.io/invocation/d8696c96-4878-49f2-8db6-cb991dd638bb",
+      "reason": "unit 472 is not a local allocating declaration"
+    },
+    "snap_lines": {
+      "add": {
+        "packages/excalidraw/snapping": ["round", "createPointSnapLines", "dedupeGapSnapLines"]
+      },
+      "status": "rejected",
+      "evidence": "https://app.buildbuddy.io/invocation/d8696c96-4878-49f2-8db6-cb991dd638bb",
+      "reason": "unit 1368 has access to the moved region of unit 1375"
+    },
+    "cjk_cluster": {
+      "add": {
+        "packages/excalidraw/element/textwrapping": ["cachedCjkRegex", "containsCJK", "CJK", "Regex"]
+      },
+      "status": "rejected",
+      "evidence": "https://app.buildbuddy.io/invocation/6d98b177-200a-4079-8dfa-360e85600d0b",
+      "reason": "unit 656 has access to the moved region of unit 660"
+    },
+    "delta_class": {
+      "add": {
+        "packages/excalidraw/change": ["Delta"]
+      },
+      "status": "certified",
+      "evidence": "https://app.buildbuddy.io/invocation/6d98b177-200a-4079-8dfa-360e85600d0b"
+    },
+    "own_color_props": {
+      "add": {
+        "packages/excalidraw/colors": ["COLOR_PALETTE"],
+        "packages/excalidraw/constants": ["DEFAULT_ELEMENT_PROPS"],
+        "packages/excalidraw/element/newelement": ["_newElementBase"]
+      },
+      "status": "rejected",
+      "evidence": "https://app.buildbuddy.io/invocation/6d98b177-200a-4079-8dfa-360e85600d0b",
+      "reason": "unit 367 is not a local allocating declaration"
+    }
+  }
+}
