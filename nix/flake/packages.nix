@@ -14,7 +14,7 @@
   localOnlyPackages,
   buildBuddyRunnerTools,
   preCommitPackages,
-  preCommitCiPackages,
+  preCommitBootstrapPackages,
   preCommitRustfmt,
   devToolPackages,
 }:
@@ -29,11 +29,7 @@ ducktapePkgs
   # Focused PATH for running .pre-commit-config.yaml hooks via `nix shell` or CI.
   precommit = pkgs.symlinkJoin {
     name = "ducktape-precommit";
-    paths = preCommitPackages;
-  };
-  precommit-ci = pkgs.symlinkJoin {
-    name = "ducktape-precommit-ci";
-    paths = preCommitCiPackages;
+    paths = preCommitBootstrapPackages;
   };
   precommit-rustfmt = preCommitRustfmt;
   # Pinned nixpkgs has nix-fast-build 1.4.0, which lacks --stream-json-lines.

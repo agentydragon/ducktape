@@ -19,8 +19,9 @@ Ruff, Prettier and Buildifier hooks can rewrite files. Stage the result and reru
 - [.bazelrc](../../.bazelrc) enables build-time lint/typecheck aspects and their output groups;
   [linters.bzl](../lint/linters.bzl) owns the Ruff, mypy and ESLint integrations.
 - [.pre-commit-config.yaml](../../.pre-commit-config.yaml) owns commit-time checks,
-  formatters and file filters. Its tools come from the shared Nix
-  [preCommitPackages](../../nix/flake/devtools.nix), also exposed as `.#precommit`.
+  formatters and file filters. `.#precommit` installs the common tools. Hooks can
+  request a pinned flake package when matching files need it. Developer and agent
+  profiles also preinstall those packages for offline use.
 - [ruff.toml](../../ruff.toml), [mypy.ini](../../mypy.ini),
   [eslint.config.js](../../eslint.config.js) and [.prettierrc.cjs](../../.prettierrc.cjs)
   own each tool's rules. Do not add package-level Ruff or mypy configuration.

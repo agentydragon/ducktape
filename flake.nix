@@ -419,7 +419,7 @@
         localOnlyPackages
         buildBuddyRunnerTools
         preCommitPackages
-        preCommitCiPackages
+        preCommitBootstrapPackages
         preCommitRustfmt
         systemLibs
         devToolPackages
@@ -501,7 +501,7 @@
             localOnlyPackages
             buildBuddyRunnerTools
             preCommitPackages
-            preCommitCiPackages
+            preCommitBootstrapPackages
             preCommitRustfmt
             devToolPackages
             ;
