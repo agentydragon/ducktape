@@ -108,13 +108,13 @@ func (s *Store) CreateSession(ctx context.Context, request *sessionconfig.Config
 			opened.ID, opened.ConversationID, legacyAccountUID(opened.OwnerKey), opened.Configuration, opened.Model, opened.Effort, opened.SourceID, int32(setupState), serviceSPIFFEID(opened.OwnerKey)); err != nil {
 			return err
 		}
-		if _, err := appendEvent(ctx, tx, opened, &eventpb.Event{Observation: &eventpb.Event_ExecutionProgress{
+		if _, err := s.appendEvent(ctx, tx, opened, &eventpb.Event{Observation: &eventpb.Event_ExecutionProgress{
 			ExecutionProgress: &eventpb.ExecutionProgress{OperationId: opened.ID, Kind: eventpb.ExecutionProgress_KIND_SESSION, Phase: eventpb.ExecutionProgress_PHASE_OPENED},
 		}}); err != nil {
 			return err
 		}
 		if setupState != sessionpb.SetupState_SETUP_STATE_RUNNING {
-			if _, err := appendEvent(ctx, tx, opened, &eventpb.Event{Observation: &eventpb.Event_HarnessStarted{HarnessStarted: &eventpb.HarnessStarted{}}}); err != nil {
+			if _, err := s.appendEvent(ctx, tx, opened, &eventpb.Event{Observation: &eventpb.Event_HarnessStarted{HarnessStarted: &eventpb.HarnessStarted{}}}); err != nil {
 				return err
 			}
 		} else {

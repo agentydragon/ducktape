@@ -52,7 +52,7 @@ func (s *Store) BindInitialExecutorSession(ctx context.Context, owner Owner, san
 			return err
 		}
 		// Advance History's metadata snapshot together with the new incarnation fence.
-		return appendProgress(ctx, tx, session, &eventpb.ExecutionProgress{
+		return s.appendProgress(ctx, tx, session, &eventpb.ExecutionProgress{
 			OperationId: sessionID, Kind: eventpb.ExecutionProgress_KIND_EXECUTOR, Phase: eventpb.ExecutionProgress_PHASE_OPENED,
 		})
 	})
@@ -133,7 +133,7 @@ func (s *Store) PreparedWorkspace(ctx context.Context, owner Owner, sessionID st
 			return err
 		}
 		session.WorkspacePrepared = true
-		if err := appendProgress(ctx, tx, session, &eventpb.ExecutionProgress{OperationId: sessionID, Kind: eventpb.ExecutionProgress_KIND_WORKSPACE, Phase: eventpb.ExecutionProgress_PHASE_PREPARED}); err != nil {
+		if err := s.appendProgress(ctx, tx, session, &eventpb.ExecutionProgress{OperationId: sessionID, Kind: eventpb.ExecutionProgress_KIND_WORKSPACE, Phase: eventpb.ExecutionProgress_PHASE_PREPARED}); err != nil {
 			return err
 		}
 		return persistSession(ctx, tx, session)
@@ -155,7 +155,7 @@ func (s *Store) StartSetup(ctx context.Context, owner Owner, sessionID string) (
 			return s.settleSetup(ctx, tx, conversation, session, nil)
 		}
 		session.SetupStarted = true
-		if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_SetupStarted{SetupStarted: &eventpb.SetupStarted{}}}); err != nil {
+		if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_SetupStarted{SetupStarted: &eventpb.SetupStarted{}}}); err != nil {
 			return err
 		}
 		started = true
@@ -182,7 +182,7 @@ func (s *Store) SetupOutput(ctx context.Context, owner Owner, sessionID, stream 
 		} else {
 			output.Stream = &eventpb.SetupOutput_Stderr{Stderr: append([]byte(nil), data...)}
 		}
-		_, err = appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_SetupOutput{SetupOutput: output}})
+		_, err = s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_SetupOutput{SetupOutput: output}})
 		if err != nil {
 			return err
 		}
@@ -212,7 +212,7 @@ func (s *Store) settleSetup(ctx context.Context, tx *sql.Tx, conversation *Conve
 	session.BlockedReason = nil
 	if exitCode == nil {
 		session.SetupState = sessionpb.SetupState_SETUP_STATE_INTERRUPTED
-		if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_SetupInterrupted{SetupInterrupted: &eventpb.SetupInterrupted{}}}); err != nil {
+		if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_SetupInterrupted{SetupInterrupted: &eventpb.SetupInterrupted{}}}); err != nil {
 			return err
 		}
 	} else {
@@ -221,14 +221,14 @@ func (s *Store) settleSetup(ctx context.Context, tx *sql.Tx, conversation *Conve
 		} else {
 			session.SetupState = sessionpb.SetupState_SETUP_STATE_FAILED
 		}
-		if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_SetupFinished{
+		if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_SetupFinished{
 			SetupFinished: &eventpb.SetupFinished{ExitCode: int32(*exitCode)},
 		}}); err != nil {
 			return err
 		}
 	}
 	if exitCode != nil && *exitCode == 0 {
-		if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_HarnessStarted{HarnessStarted: &eventpb.HarnessStarted{}}}); err != nil {
+		if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_HarnessStarted{HarnessStarted: &eventpb.HarnessStarted{}}}); err != nil {
 			return err
 		}
 	} else {
@@ -251,7 +251,7 @@ func (s *Store) settleSetup(ctx context.Context, tx *sql.Tx, conversation *Conve
 	return persistSession(ctx, tx, session)
 }
 
-func appendProgress(ctx context.Context, tx *sql.Tx, session *Session, progress *eventpb.ExecutionProgress) error {
-	_, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_ExecutionProgress{ExecutionProgress: progress}})
+func (s *Store) appendProgress(ctx context.Context, tx *sql.Tx, session *Session, progress *eventpb.ExecutionProgress) error {
+	_, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_ExecutionProgress{ExecutionProgress: progress}})
 	return err
 }

@@ -37,6 +37,7 @@ type Settings struct {
 	DirectExecutorTarget                   string                      `json:"direct_executor_target"`
 	DirectExecutorInsecureLocaltest        bool                        `json:"direct_executor_insecure_localtest"`
 	MaxLiveSessions                        int                         `json:"max_live_sessions"`
+	EventBlockWrites                       bool                        `json:"event_block_writes,omitempty"`
 	ProviderResponseHeaderTimeoutSeconds   *int                        `json:"provider_response_header_timeout_seconds,omitempty"`
 	ProviderIdleTimeoutSeconds             *int                        `json:"provider_idle_timeout_seconds,omitempty"`
 	ProviderProgressLeaseCoalescingSeconds *int                        `json:"provider_progress_lease_coalescing_seconds,omitempty"`

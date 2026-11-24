@@ -73,7 +73,7 @@ func (s *Store) NextCommand(ctx context.Context, owner Owner, sessionID string) 
 			conversation.Stopped = false
 			session.ActiveTurn = &next.ID
 			session.ActiveCommand = &next.ID
-			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_HarnessUserMessageConfirmed{
+			if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_HarnessUserMessageConfirmed{
 				HarnessUserMessageConfirmed: &eventpb.HarnessUserMessageConfirmed{
 					HarnessMessageId: next.ID,
 					Text:             text, OriginCommandIds: []string{next.ID}, TurnId: next.ID,
@@ -81,7 +81,7 @@ func (s *Store) NextCommand(ctx context.Context, owner Owner, sessionID string) 
 			}}); err != nil {
 				return err
 			}
-			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_TurnStarted{
+			if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_TurnStarted{
 				TurnStarted: &eventpb.TurnStarted{TurnId: next.ID, Model: session.Model},
 			}}); err != nil {
 				return err
@@ -93,7 +93,7 @@ func (s *Store) NextCommand(ctx context.Context, owner Owner, sessionID string) 
 			if err := setCommandOutcome(ctx, tx, sessionID, next.ID, next.Outcome, nil); err != nil {
 				return err
 			}
-			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_ModelChanged{
+			if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_ModelChanged{
 				ModelChanged: &eventpb.ModelChanged{CommandId: next.ID, PreviousModel: previous, Model: session.Model},
 			}}); err != nil {
 				return err
@@ -108,7 +108,7 @@ func (s *Store) NextCommand(ctx context.Context, owner Owner, sessionID string) 
 			if err := setCommandOutcome(ctx, tx, sessionID, next.ID, next.Outcome, nil); err != nil {
 				return err
 			}
-			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_ReasoningEffortChanged{
+			if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_ReasoningEffortChanged{
 				ReasoningEffortChanged: &eventpb.ReasoningEffortChanged{CommandId: next.ID, PreviousEffort: previous, Effort: session.Effort},
 			}}); err != nil {
 				return err
@@ -118,7 +118,7 @@ func (s *Store) NextCommand(ctx context.Context, owner Owner, sessionID string) 
 			if err := setCommandOutcome(ctx, tx, sessionID, next.ID, next.Outcome, nil); err != nil {
 				return err
 			}
-			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandNoop{
+			if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandNoop{
 				CommandNoop: &eventpb.CommandNoop{CommandId: next.ID, Reason: "target turn has ended"},
 			}}); err != nil {
 				return err
@@ -235,7 +235,7 @@ func (s *Store) DrainSteeringInput(ctx context.Context, owner Owner, sessionID s
 			if err := setCommandOutcome(ctx, tx, sessionID, command.ID, samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED, nil); err != nil {
 				return err
 			}
-			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_HarnessUserMessageConfirmed{
+			if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_HarnessUserMessageConfirmed{
 				HarnessUserMessageConfirmed: &eventpb.HarnessUserMessageConfirmed{
 					HarnessMessageId: command.ID,
 					Text:             text, OriginCommandIds: []string{command.ID}, TurnId: *session.ActiveTurn,
@@ -368,7 +368,7 @@ func (s *Store) FinishCommand(ctx context.Context, owner Owner, sessionID, comma
 					return err
 				}
 				if result == TurnDone {
-					if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandNoop{
+					if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandNoop{
 						CommandNoop: &eventpb.CommandNoop{CommandId: id, Reason: "turn completed before interrupt was applied"},
 					}}); err != nil {
 						return err
@@ -381,13 +381,13 @@ func (s *Store) FinishCommand(ctx context.Context, owner Owner, sessionID, comma
 			if result == TurnDone {
 				turnStatus = eventpb.TurnStatus_TURN_STATUS_COMPLETED
 			}
-			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_TurnCompleted{
+			if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_TurnCompleted{
 				TurnCompleted: &eventpb.TurnCompleted{TurnId: commandID, Status: turnStatus, InterruptedByCommandId: interruptID},
 			}}); err != nil {
 				return err
 			}
 			session.ActiveTurn = nil
-		} else if err := appendProgress(ctx, tx, session, &eventpb.ExecutionProgress{OperationId: commandID, Kind: eventpb.ExecutionProgress_KIND_COMMAND, Phase: eventpb.ExecutionProgress_PHASE_COMPLETED}); err != nil {
+		} else if err := s.appendProgress(ctx, tx, session, &eventpb.ExecutionProgress{OperationId: commandID, Kind: eventpb.ExecutionProgress_KIND_COMMAND, Phase: eventpb.ExecutionProgress_PHASE_COMPLETED}); err != nil {
 			return err
 		}
 		if session.Blocked {
@@ -474,7 +474,7 @@ func (s *Store) blockQueue(ctx context.Context, tx *sql.Tx, session *Session, re
 		if err := setCommandOutcome(ctx, tx, command.SessionID, command.ID, outcome, &reason); err != nil {
 			return err
 		}
-		if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandFailed{
+		if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandFailed{
 			CommandFailed: &eventpb.CommandFailed{CommandId: command.ID, Reason: reason},
 		}}); err != nil {
 			return err
@@ -627,7 +627,7 @@ func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, conversation *Con
 		}
 		// Confirmation already settles this command in History; retain only the sampler's run outcome.
 		if !confirmedInput {
-			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandFailed{
+			if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandFailed{
 				CommandFailed: &eventpb.CommandFailed{CommandId: command.ID, Reason: reason},
 			}}); err != nil {
 				return err
@@ -639,7 +639,7 @@ func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, conversation *Con
 	if session.Blocked {
 		phase = eventpb.ExecutionProgress_PHASE_BLOCKED
 	}
-	if err := appendProgress(ctx, tx, session, &eventpb.ExecutionProgress{
+	if err := s.appendProgress(ctx, tx, session, &eventpb.ExecutionProgress{
 		OperationId: session.ID, Kind: eventpb.ExecutionProgress_KIND_SESSION, Phase: phase,
 		Detail: &eventpb.ExecutionProgress_SessionStopped_{SessionStopped: &eventpb.ExecutionProgress_SessionStopped{Reason: reason}},
 	}); err != nil {
@@ -657,13 +657,13 @@ func (s *Store) settleFailure(ctx context.Context, tx *sql.Tx, conversation *Con
 			if err := setCommandOutcome(ctx, tx, session.ID, id, samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED, nil); err != nil {
 				return err
 			}
-			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandNoop{
+			if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandNoop{
 				CommandNoop: &eventpb.CommandNoop{CommandId: id, Reason: "target turn failed"},
 			}}); err != nil {
 				return err
 			}
 		}
-		if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_TurnCompleted{
+		if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_TurnCompleted{
 			TurnCompleted: &eventpb.TurnCompleted{TurnId: *session.ActiveTurn, Status: eventpb.TurnStatus_TURN_STATUS_FAILED, Error: reason},
 		}}); err != nil {
 			return err

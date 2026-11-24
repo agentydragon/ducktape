@@ -24,6 +24,7 @@ import (
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/sampler/historyexport"
+	"github.com/agentydragon/ducktape/agentplane/sampler/internal/eventcodec"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -227,14 +228,19 @@ func TestCommitCheckpointMissingSession(t *testing.T) {
 
 func TestHistoryExportReconcilesLostAcknowledgementAndConcurrentCommits(t *testing.T) {
 	store := newTestStore(t)
+	store.eventBlockWrites = true
 	session := exportFixtureSession(t, store)
-	for i := 0; i < 40; i++ {
-		if err := admitExportEvent(t.Context(), store, session.ID, i); err != nil {
+	const sealAt = 2 * eventcodec.MaxBlockEntries
+	for cursor := session.Cursor; cursor < sealAt-1; cursor++ {
+		if err := admitExportEvent(t.Context(), store, session.ID, int(cursor)); err != nil {
 			t.Fatal(err)
 		}
 	}
+	if count := postgres.Count(t, store.DB(), `SELECT count(*) FROM sampler_event_block WHERE session_id=$1`, session.ID); count == 0 {
+		t.Fatal("export fixture produced no event blocks")
+	}
 	history := &fixtureHistory{entries: map[uint64]*eventlogpb.EventEntry{}, loseAcknowledgement: true, received: make(chan uint64, 1024)}
-	history.onEntry = func() error { return admitExportEvent(t.Context(), store, session.ID, 40) }
+	history.onEntry = func() error { return admitExportEvent(t.Context(), store, session.ID, sealAt) }
 	target, token := startFixtureHistory(t, history)
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()

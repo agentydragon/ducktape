@@ -73,6 +73,17 @@ For an explicit migration-only run, set `AGENTPLANE_CENTRAL_SAMPLER_DATABASE_URL
 `--migrate-only` as the sole argument. Normal service startup performs the same migration before
 it serves.
 
+Migration 21 adds the sampler journal's block table. With `event_block_writes` enabled, the
+writer seals completed 32-cursor windows in the append transaction. Each block compresses up to
+32 consecutive exact event frames and decodes to at most 2 MiB. The live tail, oversized frames,
+and groups that do not benefit from compression stay in standalone rows. Standalone rows before
+the current window stay readable without a backfill. The exporter and recovery read both forms.
+
+Deploy the block-capable image across all replicas with `event_block_writes` omitted before
+enabling it. To roll back block writes, remove the setting and roll the block-capable image
+again. Check sampler event follow, provider recovery, and History export checkpoints after the
+roll. Keep migration 21 and the block-capable reader as the rollback floor while blocks exist.
+
 Migration 16 adds required durable provider-attempt metadata to every sampling and compaction intent.
 It preserves existing Sessions, conversations, raw evidence, and History export checkpoints, but the
 new constraint prevents an older sampler image from inserting provider intents. Staging uses its

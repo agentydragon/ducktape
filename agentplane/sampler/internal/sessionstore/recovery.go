@@ -246,7 +246,7 @@ func (s *Store) ReconcileCodeHostLoss(ctx context.Context, owner Owner, instance
 			if err != nil {
 				return err
 			}
-			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{
+			if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{
 				ItemId: call.CallID, Outcome: &eventpb.ItemCompleted_Tool{Tool: &eventpb.ToolResult{Output: protocol.DisplayText(string(encoded)), Succeeded: false}},
 			}}}); err != nil {
 				return err
@@ -340,7 +340,7 @@ func (s *Store) abandonIntent(ctx context.Context, tx *sql.Tx, conversation *Con
 	}
 	if reconciliation != nil {
 		reconciliation.SourceSequences = append(reconciliation.SourceSequences, sources...)
-		if _, err := appendEvent(ctx, tx, session, reconciliation); err != nil {
+		if _, err := s.appendEvent(ctx, tx, session, reconciliation); err != nil {
 			return err
 		}
 	}
@@ -508,7 +508,7 @@ func (s *Store) RecoverSession(ctx context.Context, id, ownerKey string, expecte
 			if err != nil {
 				return err
 			}
-			if _, err := appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{
+			if _, err := s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_ItemCompleted{ItemCompleted: &eventpb.ItemCompleted{
 				ItemId: call.CallID, Outcome: &eventpb.ItemCompleted_Tool{Tool: &eventpb.ToolResult{Output: protocol.DisplayText(string(encoded)), Succeeded: false}},
 			}}}); err != nil {
 				return err

@@ -11,7 +11,6 @@ import (
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
 	samplerpb "github.com/agentydragon/ducktape/agentplane/sampler/api/samplerpb"
-	"github.com/agentydragon/ducktape/agentplane/sampler/internal/eventcodec"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -57,12 +56,8 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 			if !bytes.Equal(payload, wire) {
 				return ErrConflict
 			}
-			var entryBytes []byte
-			if err := tx.QueryRowContext(ctx, `SELECT entry FROM sampler_event WHERE session_id=$1 AND sequence=$2`, id, sequence).Scan(&entryBytes); err != nil {
-				return err
-			}
-			admission = &eventlogpb.EventEntry{}
-			if err := eventcodec.Decode(entryBytes, admission); err != nil {
+			admission, err = journalEntry(ctx, tx, id, sequence)
+			if err != nil {
 				return err
 			}
 			return notifyWork(ctx, tx)
@@ -128,7 +123,7 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 				return err
 			}
 		}
-		admission, err = appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandAdmitted{
+		admission, err = s.appendEvent(ctx, tx, session, &eventpb.Event{Observation: &eventpb.Event_CommandAdmitted{
 			CommandAdmitted: &eventpb.CommandAdmitted{Command: command},
 		}})
 		if err != nil {
@@ -148,7 +143,6 @@ func (s *Store) Admit(ctx context.Context, id string, command *commandpb.Command
 func (s *Store) GetCommand(ctx context.Context, id, commandID string) (*samplerpb.GetCommandResponse, error) {
 	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
 	defer cancel()
-	var wire []byte
 	var outcome int32
 	var failure sql.NullString
 	var sequence uint64
@@ -158,11 +152,8 @@ func (s *Store) GetCommand(ctx context.Context, id, commandID string) (*samplerp
 		}
 		return nil, err
 	}
-	if err := s.db.QueryRowContext(ctx, `SELECT entry FROM sampler_event WHERE session_id=$1 AND sequence=$2`, id, sequence).Scan(&wire); err != nil {
-		return nil, err
-	}
-	entry := &eventlogpb.EventEntry{}
-	if err := eventcodec.Decode(wire, entry); err != nil {
+	entry, err := journalEntry(ctx, s.db, id, sequence)
+	if err != nil {
 		return nil, err
 	}
 	response := &samplerpb.GetCommandResponse{Admission: entry, Outcome: samplerpb.CommandOutcome(outcome)}
@@ -170,32 +161,6 @@ func (s *Store) GetCommand(ctx context.Context, id, commandID string) (*samplerp
 		response.FailureReason = failure.String
 	}
 	return response, nil
-}
-
-func (s *Store) Events(ctx context.Context, id string, after uint64, limit int) ([]*eventlogpb.EventEntry, error) {
-	ctx, cancel := context.WithTimeout(ctx, s.operationTimeout)
-	defer cancel()
-	if limit <= 0 || limit > 4096 {
-		return nil, protocol.ErrInvalid
-	}
-	rows, err := s.db.QueryContext(ctx, `SELECT entry FROM sampler_event WHERE session_id=$1 AND sequence>$2 ORDER BY sequence LIMIT $3`, id, after, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var entries []*eventlogpb.EventEntry
-	for rows.Next() {
-		var wire []byte
-		if err := rows.Scan(&wire); err != nil {
-			return nil, err
-		}
-		entry := &eventlogpb.EventEntry{}
-		if err := eventcodec.Decode(wire, entry); err != nil {
-			return nil, err
-		}
-		entries = append(entries, entry)
-	}
-	return entries, rows.Err()
 }
 
 // Checkpoint is the last snapshot whose entries and metadata completed export to target.

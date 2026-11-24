@@ -290,6 +290,9 @@ class Settings(BaseModel):
     direct_executor_target: str | None = None
     direct_executor_insecure_localtest: bool = False
     max_live_sessions: int = Field(gt=0)
+    event_block_writes: bool = Field(
+        default=False, exclude_if=lambda value: not value, description="Seal sampler evidence into journal blocks."
+    )
     provider_response_header_timeout_seconds: int | None = Field(
         default=None,
         gt=0,
