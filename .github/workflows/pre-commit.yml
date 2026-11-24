@@ -56,8 +56,7 @@ jobs:
       - name: Install Ansible Galaxy roles
         if: steps.changed-files.outputs.needs_ansible_roles == 'true'
         run: |
-          cd ansible
-          ansible-galaxy role install -r requirements.yaml
+          nix shell --no-update-lock-file .#precommit-ansible --command ansible-galaxy role install -r ansible/requirements.yaml
 
       # ============================================================================
       # PRE-COMMIT RUN
