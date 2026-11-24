@@ -1104,27 +1104,33 @@ py_test(
     deps = _EXCALIDRAW_BROWSER_DEPS,
 )
 
-py_test(
-    name = "excalidraw_certified_scroll_browser_smoke",
-    size = "medium",
-    srcs = [_EXCALIDRAW_BROWSER_PY],
-    args = [
-        "-k",
-        "test_certified_scroll",
-    ],
-    data = _EXCALIDRAW_BROWSER_DATA + [
-        ":" + _EXCALIDRAW_EDITOR_SPEC,
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
-    ],
-    env = dict(
-        _EXCALIDRAW_BROWSER_ENV,
-        EDITOR_LEAN_SPEC = "$(rlocationpath :" + _EXCALIDRAW_EDITOR_SPEC + ")",
-        LOWERSPLIT = "$(rlocationpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
-    ),
-    main = _EXCALIDRAW_BROWSER_PY,
-    tags = ["manual"],
-    deps = _EXCALIDRAW_BROWSER_DEPS,
-)
+[
+    py_test(
+        name = "excalidraw_certified_" + placement + "_browser_smoke",
+        size = "medium",
+        srcs = [_EXCALIDRAW_BROWSER_PY],
+        args = [
+            "-k",
+            "test_certified_editor_split[" + placement + "]",
+        ],
+        data = _EXCALIDRAW_BROWSER_DATA + [
+            ":" + _EXCALIDRAW_EDITOR_SPEC,
+            "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        ],
+        env = dict(
+            _EXCALIDRAW_BROWSER_ENV,
+            EDITOR_LEAN_SPEC = "$(rlocationpath :" + _EXCALIDRAW_EDITOR_SPEC + ")",
+            LOWERSPLIT = "$(rlocationpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+        ),
+        main = _EXCALIDRAW_BROWSER_PY,
+        tags = ["manual"],
+        deps = _EXCALIDRAW_BROWSER_DEPS,
+    )
+    for placement in [
+        "scroll",
+        "startup",
+    ]
+]
 
 js_binary(
     name = "translation_fuzz",
