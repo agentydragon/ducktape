@@ -227,20 +227,20 @@ Run one library variant or the whole corpus from the repository root:
 
 ```sh
 p=//devinfra/js/debundle/x/split_proof
-bbr test "$p/experiments/splits:real_split_zod_test"
-bbr test "$p/experiments/splits:real_split_zod_min_test" --test_arg=--sample
-bbr test "$p/experiments/splits:real_split_sweep"
+bbr test "$p/integration/library_splits:real_split_zod_test"
+bbr test "$p/integration/library_splits:real_split_zod_min_test" --test_arg=--sample
+bbr test "$p/integration/library_splits:real_split_sweep"
 ```
 
 The other labels are `real_split_acorn_test`, `real_split_acorn_min_test`,
 `real_split_lodash_test`, and `real_split_semver_test`. Each test consumes its bundle and AST from a cacheable build action, computes
 its footprints once, and publishes JSONL and a summary as Bazel test outputs. Use `--test_arg=--sample` for one halves split instead of all strategies.
 
-For every split, the diagnostic invocation `lowersplit --diagnostic … --force` checks it and writes an uncertified preview even when a check rejects it. Then [`splits/smoke.mjs`](splits/smoke.mjs) calls the
+For every split, the diagnostic invocation `lowersplit --diagnostic … --force` checks it and writes an uncertified preview even when a check rejects it. Then [`smoke.mjs`](../integration/library_splits/smoke.mjs) calls the
 entry module's exported API and prints the result as JSON. The split behaves like the bundle when that line equals the bundle's own.
 The calls: lodash `chunk`, `get`, `set`, `merge`, `cloneDeep`, `groupBy`, `sortBy`, `uniqBy`; acorn `parse` of ES2022 programs, tokens and four syntax errors;
 semver `valid`, `compare`, `satisfies`, `inc`, `coerce`, `Range`; zod `parse` and the issues for bad input.
-One JSON line per split is in [`splits/results/`](splits/results); [`results/summary.md`](splits/results/summary.md) has the per-bundle table.
+One JSON line per split is in [split results](../integration/library_splits/results); [`results/summary.md`](../integration/library_splits/results/summary.md) has the per-bundle table.
 
 | Strategy                                                                           | Splits    | Accepted  | Accepted, Node differs | Rejected, Node breaks | Rejected, Node fine | Failing checks (splits)                                  |
 | ---------------------------------------------------------------------------------- | --------- | --------- | ---------------------- | --------------------- | ------------------- | -------------------------------------------------------- |

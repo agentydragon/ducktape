@@ -36,7 +36,7 @@ js_library(
     srcs = ["reporting.mjs"],
     visibility = [
         "//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__",
-        "//devinfra/js/debundle/x/split_proof/experiments/splits:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/integration/library_splits:__pkg__",
     ],
 )
 

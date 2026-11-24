@@ -28,7 +28,7 @@ def real_bundle_artifacts():
             args = ["real_bundles", variant],
             chdir = native.package_name(),
             outs = ["real_bundles/" + variant + ext for ext in [".mjs", ".json"]],
-            visibility = [_SPLIT_PROOF + "/experiments/splits:__pkg__"],
+            visibility = [_SPLIT_PROOF + "/integration/library_splits:__pkg__"],
         )
 
 def _real_split_test(bundle, cut_step = 1, entry_first_step = 10, smoke = False):

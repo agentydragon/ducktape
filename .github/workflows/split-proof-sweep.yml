@@ -26,5 +26,5 @@ jobs:
       - uses: ./.github/actions/bb-remote
         with:
           args: >-
-            test //devinfra/js/debundle/x/split_proof/experiments/splits:real_split_${{ matrix.bundle }}_test
+            test //devinfra/js/debundle/x/split_proof/integration/library_splits:real_split_${{ matrix.bundle }}_test
             --test_tag_filters= --test_timeout=3600 --nocache_test_results --test_output=errors
