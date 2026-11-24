@@ -4,7 +4,6 @@ use anyhow::{Context, Result};
 use rayon::prelude::*;
 use swc_common::GLOBALS;
 
-use artifact::reports::{ArtifactChunkRecord, ArtifactCounts, ChunkAnalysisReport};
 use artifact::{
     CANONICAL_CHUNK_ENTRY_FILE, ChunkArtifact, ChunkBundle, ChunkMetadata, FileMetadata, FileRole,
     JsChunk, JsFile, JsFileBody, LoadedJsChunks, SourceProgram,
@@ -19,13 +18,6 @@ const CANONICALIZE_HEADER_LINES: &[&str] = &[
     "// Executable chunk entry.",
 ];
 
-#[derive(Clone)]
-pub struct SourcePreparation {
-    pub program: SourceProgram,
-    pub counts: ArtifactCounts,
-    pub chunk_records: Vec<ArtifactChunkRecord>,
-}
-
 /// `materialized_chunk_ids` is `TransformSpec::materialize_chunk_ids`: the
 /// chunks whose modules are planned keep their AST, and their static import
 /// closure keeps read-only syntax for program analysis. `analysis_provider_chunk_ids`
@@ -36,7 +28,7 @@ pub fn prepare_js_chunks(
     analysis_provider_chunk_ids: &BTreeSet<String>,
     vendor: &BTreeMap<String, VendorMark>,
     loaded: LoadedJsChunks,
-) -> Result<SourcePreparation> {
+) -> Result<SourceProgram> {
     let LoadedJsChunks {
         chunks,
         chunk_table,
@@ -47,7 +39,7 @@ pub fn prepare_js_chunks(
         .enumerate()
         .map(|(index, mut chunk)| {
             let chunk_id = ChunkId(index);
-            let chunk_name = chunk_table.name(chunk_id).to_string();
+            let chunk_name = chunk_table.name(chunk_id);
             let entry_file = chunk.entry_file.clone();
             let entry_artifact_file = chunk.remove_file(&entry_file).with_context(|| {
                 format!(
@@ -61,7 +53,7 @@ pub fn prepare_js_chunks(
                 chunk_id,
                 chunk_name,
                 entry_file,
-                source_path: chunk.metadata.source_path.clone(),
+                source_path: chunk.metadata.source_path,
                 entry_source,
             })
         })
@@ -74,107 +66,78 @@ pub fn prepare_js_chunks(
     // closure to give `Mark::new()` an arena to mint into.
     let parsed_chunks = GLOBALS.with(|globals| {
         jobs.into_par_iter()
-            .map(|job| {
-                GLOBALS.set(globals, || {
-                    let chunk_id = job.chunk_id;
-                    let chunk_name = job.chunk_name.clone();
-                    let parsed = prepare_chunk(job)?;
-                    Ok((chunk_id, chunk_name, parsed))
-                })
-            })
+            .map(|job| GLOBALS.set(globals, || prepare_chunk(job)))
             .collect::<Result<Vec<_>>>()
     })?;
 
-    // Build set of vendor target chunk ids
-    let vendor_target_chunk_ids: BTreeSet<String> = vendor
-        .keys()
-        .filter_map(|chunk_path| {
-            // Vendor marks use .js paths, convert to chunk ids
-            chunk_path.strip_suffix(".js").map(|s| s.to_string())
+    // Retain emission syntax for planned chunks, vendor targets and chunks
+    // with rewritable specifiers, using the existing shallow analysis.
+    let mut emission_asts = materialized_chunk_ids.clone();
+    emission_asts.extend(
+        vendor
+            .keys()
+            .filter_map(|path| path.strip_suffix(".js").map(str::to_owned)),
+    );
+    let chunks = parsed_chunks
+        .into_iter()
+        .map(|(chunk, has_rewritable_specifier)| {
+            if has_rewritable_specifier {
+                emission_asts.insert(chunk_table.name(chunk.chunk_id).to_owned());
+            }
+            chunk
         })
         .collect();
-
-    // Retention uses the prepared request manifests, without another AST walk.
-    // Relative specifiers still need an emission AST for canonicalization.
-    let emission_asts = parsed_chunks
-        .iter()
-        .filter(|(_, name, prepared)| {
-            materialized_chunk_ids.contains(name)
-                || vendor_target_chunk_ids.contains(name)
-                || prepared.has_rewritable_specifier
-        })
-        .map(|(_, name, _)| name.clone())
-        .collect();
-
     let artifact = ChunkBundle {
-        chunks: parsed_chunks
-            .into_iter()
-            .map(|(chunk_id, _, prepared)| ChunkArtifact {
-                chunk_id,
-                js: JsChunk {
-                    entry_file: CANONICAL_CHUNK_ENTRY_FILE.to_string(),
-                    files: prepared.files,
-                    metadata: prepared.metadata,
-                },
-                analysis: prepared.analysis,
-            })
-            .collect(),
+        chunks,
         chunk_table,
     };
 
-    let (counts, chunk_records) = build_prepare_output(&artifact.chunks);
-    Ok(SourcePreparation {
-        program: SourceProgram::new(artifact)?.retain_entry_asts(
-            materialized_chunk_ids,
-            analysis_provider_chunk_ids,
-            &emission_asts,
-        )?,
-        counts,
-        chunk_records,
-    })
+    SourceProgram::new(artifact)?.retain_entry_asts(
+        materialized_chunk_ids,
+        analysis_provider_chunk_ids,
+        &emission_asts,
+    )
 }
 
-struct PrepareChunkJob {
+struct PrepareChunkJob<'a> {
     chunk_id: ChunkId,
-    chunk_name: String,
+    chunk_name: &'a str,
     entry_file: String,
     source_path: String,
     entry_source: String,
 }
 
-struct PreparedChunk {
-    files: Vec<JsFile>,
-    metadata: ChunkMetadata,
-    analysis: ChunkAnalysisReport,
-    /// Captured from the fused `analyze_program_shallow` walk so the
-    /// second pass can decide AST retention without re-visiting the
-    /// AST.
-    has_rewritable_specifier: bool,
-}
-
-fn prepare_chunk(job: PrepareChunkJob) -> Result<PreparedChunk> {
+fn prepare_chunk(job: PrepareChunkJob<'_>) -> Result<(ChunkArtifact, bool)> {
     let parsed = parse_js_module_consuming(
         &format!("{}/{}", job.chunk_name, job.entry_file),
         job.entry_source,
     )?;
     let analysis = analyze_program_shallow(&parsed);
-    Ok(PreparedChunk {
-        files: vec![canonical_parsed_file(
-            &job.chunk_name,
-            &job.source_path,
-            parsed,
-        )],
-        analysis: build_chunk_manifest_from_analysis(
-            &job.chunk_name,
-            CANONICAL_CHUNK_ENTRY_FILE,
-            &job.source_path,
-            &analysis,
-        ),
-        has_rewritable_specifier: analysis.has_rewritable_specifier,
-        metadata: ChunkMetadata {
-            source_path: job.source_path,
+    let has_rewritable_specifier = analysis.has_rewritable_specifier;
+    let manifest = build_chunk_manifest_from_analysis(
+        job.chunk_name,
+        CANONICAL_CHUNK_ENTRY_FILE,
+        &job.source_path,
+        analysis,
+    );
+    Ok((
+        ChunkArtifact {
+            chunk_id: job.chunk_id,
+            js: JsChunk {
+                entry_file: CANONICAL_CHUNK_ENTRY_FILE.to_owned(),
+                files: vec![canonical_parsed_file(
+                    job.chunk_name,
+                    &job.source_path,
+                    parsed,
+                )],
+                metadata: ChunkMetadata {
+                    source_path: job.source_path,
+                },
+            },
+            analysis: manifest,
         },
-    })
+        has_rewritable_specifier,
+    ))
 }
 
 fn canonical_parsed_file(chunk_id: &str, source_path: &str, parsed: ParsedJsModule) -> JsFile {
@@ -194,28 +157,6 @@ fn canonical_parsed_file(chunk_id: &str, source_path: &str, parsed: ParsedJsModu
             source_path: source_path.to_string(),
         },
     }
-}
-
-fn build_prepare_output(chunks: &[ChunkArtifact]) -> (ArtifactCounts, Vec<ArtifactChunkRecord>) {
-    let mut counts = ArtifactCounts {
-        kept_top_level_declarations: 0,
-        top_level_side_effects: 0,
-        export_aliases: 0,
-        unresolved_exports: 0,
-    };
-    let mut chunk_records = Vec::with_capacity(chunks.len());
-    for chunk in chunks {
-        let analysis = &chunk.analysis;
-        counts.kept_top_level_declarations += analysis.counts.kept_top_level_declarations;
-        counts.top_level_side_effects += analysis.counts.top_level_side_effects;
-        counts.export_aliases += analysis.counts.export_aliases;
-        counts.unresolved_exports += analysis.counts.unresolved_exports;
-        chunk_records.push(ArtifactChunkRecord {
-            chunk_id: analysis.chunk_id.clone(),
-            source_path: analysis.source_path.clone(),
-        });
-    }
-    (counts, chunk_records)
 }
 
 #[cfg(test)]
@@ -259,7 +200,7 @@ mod tests {
                     loaded,
                 )
                 .unwrap();
-                let artifact = prepared.program.artifact();
+                let artifact = prepared.artifact();
                 for chunk in &artifact.chunks {
                     let name = artifact.chunk_table.name(chunk.chunk_id);
                     let file = chunk.js.get_file(CANONICAL_CHUNK_ENTRY_FILE).unwrap();
@@ -288,7 +229,7 @@ mod tests {
                 // storage before eager mutation passes can enroll the provider.
                 let emissions = [
                     artifact::EmissionFiles::new(artifact.clone()).unwrap(),
-                    artifact::EmissionFiles::from_prepared(prepared.program),
+                    artifact::EmissionFiles::from_prepared(prepared),
                 ];
                 for emission in emissions {
                     for chunk in &emission.files().chunks {
@@ -345,8 +286,8 @@ mod tests {
                 loaded,
             )
             .unwrap();
-            let emission = artifact::EmissionFiles::from_prepared(prepared.program.clone());
-            for artifact in [prepared.program.artifact(), emission.files()] {
+            let emission = artifact::EmissionFiles::from_prepared(prepared.clone());
+            for artifact in [prepared.artifact(), emission.files()] {
                 for chunk in &artifact.chunks {
                     let name = artifact.chunk_table.name(chunk.chunk_id);
                     let has_ast = chunk

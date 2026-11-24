@@ -39,11 +39,7 @@ impl SourceProgram {
         emission_asts: &BTreeSet<String>,
     ) -> Result<Self> {
         let (indexed, ()) = self.indexed.update_file_bodies(|artifact, indexes| {
-            let closure = selected_static_import_closure(
-                artifact,
-                indexes,
-                &materialized.iter().cloned().collect::<Vec<_>>(),
-            )?;
+            let closure = selected_static_import_closure(artifact, indexes, materialized)?;
             for chunk in &mut artifact.chunks {
                 let name = artifact.chunk_table.name(chunk.chunk_id);
                 if emission_asts.contains(name) {
@@ -78,11 +74,13 @@ impl SourceProgram {
 }
 
 /// Chunk ids normalized, first occurrence kept.
-pub fn normalized_chunk_ids(chunk_ids: &[String]) -> Result<Vec<String>> {
+pub fn normalized_chunk_ids(
+    chunk_ids: impl IntoIterator<Item = impl AsRef<str>>,
+) -> Result<Vec<String>> {
     let mut seen = BTreeSet::new();
     let mut normalized_ids = Vec::new();
     for chunk_id in chunk_ids {
-        let normalized = normalize_module_path(chunk_id)?;
+        let normalized = normalize_module_path(chunk_id.as_ref())?;
         if seen.insert(normalized.clone()) {
             normalized_ids.push(normalized);
         }
@@ -133,11 +131,12 @@ pub fn prune_artifact_to_chunk_ids(artifact: &mut ChunkBundle, selected: &[Strin
 pub fn selected_static_import_closure(
     artifact: &ChunkBundle,
     indexes: &ArtifactIndexes,
-    selected_chunk_ids: &[String],
+    selected_chunk_ids: impl IntoIterator<Item = impl AsRef<str>>,
 ) -> Result<BTreeSet<ChunkId>> {
     let mut closure = BTreeSet::new();
     let mut pending = Vec::new();
     for chunk_id in selected_chunk_ids {
+        let chunk_id = chunk_id.as_ref();
         let interned = artifact
             .chunk_table
             .get(chunk_id)
