@@ -1,0 +1,4 @@
+exports_files(
+    ["packages/excalidraw/element/heading.yaml"],
+    visibility = ["//devinfra/js/debundle/excalidraw:__pkg__"],
+)

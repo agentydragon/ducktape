@@ -147,6 +147,7 @@
         "isFreeDrawElement",
         "isFreeDrawElementType",
         "isLinearElement",
+        "isLinearElementType",
         "isArrowElement",
         "isElbowArrow",
         "isBindingElement",
@@ -163,6 +164,22 @@
         "canApplyRoundnessTypeToElement",
         "getDefaultRoundnessTypeForElement",
         "isFixedPointBinding"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/element/heading",
+      "bindings": [
+        "HEADING_RIGHT",
+        "HEADING_DOWN",
+        "HEADING_LEFT",
+        "HEADING_UP",
+        "headingForDiamond",
+        "vectorToHeading",
+        "headingForPoint",
+        "compareHeading",
+        "flipHeading"
       ],
       "anonymous_statements": []
     },
