@@ -181,6 +181,31 @@ assert.deepEqual(
   continuation.verdict
 );
 
+const commaPrefix = sequentialSplit(
+  "super-comma-prefix",
+  `const trace = { value: "" };
+   const mark = (step, value) => { trace.value += step; return value; };
+   const check = (ok) => { if (!ok) throw 5; };
+   class Base { constructor(value) { trace.value += value; } }
+   class Child extends Base {
+     field = "field;";
+     constructor(ok) {
+       if ((mark("before;"), check(ok), super(mark("argument;", "base;")), mark(this.field), ok))
+         mark("body;");
+     }
+   }
+   new Child(true);
+   try { new Child(false); } catch (error) { if (error !== 5) throw error; mark("caught;"); }
+   export const result = trace.value;`,
+  { "base.mjs": ["#0", "#1", "#2", "#3"], "entry.mjs": ["#4", "#5", "#6", "#7"] },
+  ["base.mjs"]
+);
+assertCertifiedResult(commaPrefix, "before;argument;base;field;body;before;caught;");
+assert.deepEqual(
+  lower(commaPrefix.files.sourceFile, commaPrefix.files.specFile, commaPrefix.out, ["--check-output"]).verdict,
+  commaPrefix.verdict
+);
+
 const conditional = sequentialSplit(
   "conditional-super-refused",
   `class Base {}
@@ -250,6 +275,7 @@ for (const [name, body] of [
   ["captured-super", "const read = () => super.x; super(read);"],
   ["argument-receiver", "super(this.x);"],
   ["object-method-computed-key", "super({ [this.x]() {} });"],
+  ["comma-prefix-receiver", "(this.x, super());"],
 ]) {
   const refused = sequentialSplit(
     `pre-super-${name}`,
