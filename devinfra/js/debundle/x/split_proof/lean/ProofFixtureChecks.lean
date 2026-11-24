@@ -1,44 +1,23 @@
 import ProofFixture.Instance
-import Experiments.MiniJSSource
-import Experiments.FixtureRender
+import FixtureRender
+import EsmSplit.CoreJS.Move
 
-open EsmSplit MJS
+open EsmSplit
 
 namespace ProofFixture
 
-/-- Derived from the exact source strings in the generated diagnostic instance. -/
-def program : List MStmt := (sourceBundle Example.bundle).getD []
+/-- Exact source spelling and CoreJS interpretation of the three statements in this fixture. -/
+private def statements : List (String × CoreJS.Stmt) := [
+  ("const unused = 2;", .decl .const "unused" (.num 2)),
+  ("const one = 1;", .decl .const "one" (.num 1)),
+  ("const copy = one;", .decl .const "copy" (.var "one"))
+]
 
-theorem source_accepted : sourceBundle Example.bundle = some program := by decide +kernel
+def program := statements.map Prod.snd
 
-theorem program_value : program = [
-    ⟨["unused"], .num 2, false⟩,
-    ⟨["one"], .num 1, false⟩,
-    ⟨["copy"], .gvar "one", false⟩
-  ] := by decide +kernel
+theorem source_matches : Example.bundle.map (·.src) = statements.map Prod.fst := by decide +kernel
 
-theorem unsupported_nonconst : sourceStmt "let x = 1;" = none := by decide +kernel
-theorem unsupported_extra_tokens : sourceStmt "const x = 1;alert(1);" = none := by decide +kernel
-theorem unsupported_call : sourceStmt "const x = f();" = none := by decide +kernel
-theorem unsupported_coercion : sourceStmt "const x = y+1;" = none := by decide +kernel
-theorem unsupported_number : sourceStmt "const x = 9007199254740993;" = none := by decide +kernel
-theorem unsupported_escape : sourceStmt "const x = \\u0061;" = none := by decide +kernel
-theorem unsupported_keyword : sourceStmt "const x = true;" = none := by decide +kernel
-theorem unsupported_reserved_name : sourceStmt "const new = 1;" = none := by decide +kernel
-theorem unsupported_strict_name : sourceStmt "const eval = 1;" = none := by decide +kernel
-
-/-- `Stmt.binds` already includes the defined names. Drop the redundant initialization writes
-when comparing to MiniJS and keep every write to another binding. -/
-theorem extracted_footprints : Example.bundle.map (fun s =>
-    { s with src := "", writes := s.writes.filter (fun name => !s.defs.contains name) }) = toBundle program := by
-  rfl
-
-theorem well_formed : WF program := by
-  intro st hst hh
-  simp [program_value] at hst
-  rcases hst with rfl | rfl | rfl <;> simp_all
-
-theorem reads_closed : ReadsClosed (toBundle program) := by decide +kernel
+theorem extracted_footprints : CoreJS.FootprintsOfSyntax program Example.bundle := by decide +kernel
 
 theorem execution_order : Example.plan.execOrder = [1, 0, 2] := by decide +kernel
 
@@ -78,15 +57,11 @@ theorem unsafe_inversion_rejected : ¬ OrderOk Example.bundle (mkPlan Example.bu
   apply inverted_conflict_rejected Example.bundle (mkPlan Example.bundle Example.control_bad) 1 2
   all_goals decide +kernel
 
-theorem preserves_model (fuel : Nat) :
-    Example.plan.execOrder.foldl (fun s j => cstep program fuel j s) (G0 program, []) =
-      (List.range program.length).foldl (fun s j => cstep program fuel j s) (G0 program, []) := by
-  apply mjs_reorder reads_closed well_formed fuel
-  · decide +kernel
-  · intro x
-    simp [execution_order, program_value]
-    omega
-  · decide +kernel
+/-- Successful executions reach the same state at every fuel in every CoreJS world. -/
+theorem preserves_model {W : CoreJS.World} (fuel : Nat) (state : CoreJS.State W) :
+    CoreJS.runProgram W fuel (.single program) = .ok () state ↔
+    CoreJS.runProgram W fuel (CoreJS.splitProgram program Example.bundle Example.plan) = .ok () state :=
+  CoreJS.moves_preserve_run Example.plan_valid extracted_footprints (by decide +kernel) fuel state
 
 /-- The same plan passed to the renderer is the plan checked by the generated instance. -/
 theorem accepted : Valid Example.bundle Example.spec Example.plan := Example.plan_valid

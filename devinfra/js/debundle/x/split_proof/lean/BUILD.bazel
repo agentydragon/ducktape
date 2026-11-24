@@ -99,15 +99,21 @@ lean_axiom_test(
     deps = [":example_proof"],
 )
 
+lean_library(
+    name = "fixture_renderer",
+    srcs = ["FixtureRender.lean"],
+    deps = [":planner"],
+)
+
 lean_binary(
     name = "render",
-    srcs = [
-        "Experiments/FixtureRender.lean",
-        "Main.lean",
-    ],
+    srcs = ["Main.lean"],
     entry = "Main.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof:__pkg__"],
-    deps = [":example_proof"],
+    deps = [
+        ":example_proof",
+        ":fixture_renderer",
+    ],
 )
 
 sh_test(
@@ -680,33 +686,30 @@ lean_axiom_test(
 lean_library(
     name = "proof_fixture",
     srcs = [
-        "Experiments/FixtureRender.lean",
-        "Experiments/MiniJS.lean",
-        "Experiments/MiniJSSource.lean",
-        "Experiments/ProofFixture.lean",
+        "CustomMoveExample.lean",
+        "ProofFixtureChecks.lean",
         "//devinfra/js/debundle/x/split_proof/lean/generated:generate_proof_fixture",
     ],
-    deps = [":planner"],
+    deps = [
+        ":corejs_certificate_support",
+        ":fixture_renderer",
+        ":planner",
+    ],
 )
 
 lean_axiom_test(
     name = "proof_fixture_axioms_test",
-    imports = ["Experiments.ProofFixture"],
+    imports = [
+        "CustomMoveExample",
+        "ProofFixtureChecks",
+    ],
     theorems = [
         "Example.plan_valid",
         "Example.control_bad_rejected",
+        "CoreJS.CustomMoveExample.syntax_refuses",
+        "CoreJS.CustomMoveExample.swapped",
         "ProofFixture.extracted_footprints",
-        "ProofFixture.source_accepted",
-        "ProofFixture.program_value",
-        "ProofFixture.unsupported_nonconst",
-        "ProofFixture.unsupported_extra_tokens",
-        "ProofFixture.unsupported_call",
-        "ProofFixture.unsupported_coercion",
-        "ProofFixture.unsupported_number",
-        "ProofFixture.unsupported_escape",
-        "ProofFixture.unsupported_keyword",
-        "ProofFixture.unsupported_reserved_name",
-        "ProofFixture.unsupported_strict_name",
+        "ProofFixture.source_matches",
         "ProofFixture.execution_order",
         "ProofFixture.safe_inversion",
         "ProofFixture.hoisted_read_both_directions",

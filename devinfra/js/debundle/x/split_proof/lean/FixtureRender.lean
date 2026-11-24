@@ -2,7 +2,7 @@ import Lean.Data.Json
 import EsmSplit.Plan
 import EsmSplit.ModulePath
 
-/-! Render the statement text embedded in the kernel example and MiniJS proof fixture. -/
+/-! Render the statement text embedded in the kernel example and reordering proof fixture. -/
 open EsmSplit
 
 namespace FixtureRender

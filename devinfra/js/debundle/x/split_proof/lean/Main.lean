@@ -1,4 +1,4 @@
-import Experiments.FixtureRender
+import FixtureRender
 import EsmSplit.Cli
 import EsmSplit.Controls
 

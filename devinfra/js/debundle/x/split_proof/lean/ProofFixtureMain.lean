@@ -1,5 +1,5 @@
-import Experiments.FixtureRender
-import Experiments.ProofFixture
+import FixtureRender
+import ProofFixtureChecks
 import EsmSplit.Cli
 
 open EsmSplit
