@@ -42,11 +42,18 @@ def bindingIdentity (profile : HostProfile) (name : String) : Option String := d
   guard (BrowserGlobals.functions.contains name || BrowserGlobals.objects.contains name)
   return "window." ++ name
 
+/-- Absence is an independent host observation, even when a typeof test is available. -/
+def mayResolveMissingBinding (profile : HostProfile) (name : String) : Bool :=
+  profile == .browserPage && name == "regeneratorRuntime"
+
 def identity (profile : HostProfile) : HostRef → Option String
   | .binding name => profile.bindingIdentity name
   | .nativeErrorConstructor => do
     guard (profile == .browserPage)
     return "intrinsic.Error"
+  | .unresolvableBinding name => do
+    guard (profile.mayResolveMissingBinding name)
+    return "unresolvable"
   | .property "window" name => do
     guard (profile == .browserPage)
     profile.bindingIdentity name
@@ -84,13 +91,16 @@ def assumptions (p : HostPremises) : List String :=
   (p.typeofBindings.map fun (name, value) =>
     s!"typeof {name} is {value} without observable effects throughout initialization") ++
   (p.refs.map fun (ref, identity) =>
-    if ref == .nativeErrorConstructor && identity == "intrinsic.Error" then
+    if let .unresolvableBinding name := ref then
+      s!"resolving the global identifier {name} finds no binding and has no observable effects throughout initialization"
+    else if ref == .nativeErrorConstructor && identity == "intrinsic.Error" then
       "the selected page Error is the intrinsic Error constructor and construction with no options and an omitted, undefined, or string message has no observable effects beyond the fresh Error"
     else
     let read := match ref with
       | .binding name => name
       | .property receiver key => receiver ++ "." ++ key
       | .nativeErrorConstructor => "the native Error constructor observation"
+      | .unresolvableBinding name => name
     let result := if ref == .property "Symbol" "iterator" && identity == "Symbol.iterator" then
       "the well-known iterator symbol"
     else if ref == .property "Symbol" "toStringTag" && identity == "Symbol.toStringTag" then

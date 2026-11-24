@@ -83,6 +83,88 @@ const entry = "entry.mjs";
 }
 
 {
+  const test = fixture(
+    "strict-unresolvable-assignment",
+    `const read = () => {
+      let effect = 0, caught = false, rhsThrow;
+      try { regeneratorRuntime = (effect = 1, 42); } catch { caught = true; }
+      try { regeneratorRuntime = (() => { throw 23; })(); } catch (reason) { rhsThrow = reason; }
+      const local = regeneratorRuntime => (regeneratorRuntime = 5);
+      return [effect, caught, rhsThrow, local(0)];
+    };
+    const result = read();
+    export { result };`
+  );
+  assert.match(test.run().reason, /unsupported global regeneratorRuntime/);
+  const verdict = test.run("--host-contract", profile);
+  assert.equal(verdict.status, "certified", JSON.stringify(verdict));
+  assert.deepEqual(verdict.assumptions, [
+    "resolving the global identifier regeneratorRuntime finds no binding and has no observable effects throughout initialization",
+  ]);
+  assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
+  for (const file of [test.sourceFile, path.join(test.out, entry)]) {
+    assert.deepEqual((await import(pathToFileURL(file).href)).result, [1, true, 23, 5]);
+  }
+
+  const original = Object.getOwnPropertyDescriptor(globalThis, "regeneratorRuntime");
+  try {
+    for (const file of [test.sourceFile, path.join(test.out, entry)]) {
+      globalThis.regeneratorRuntime = undefined;
+      const rebound = pathToFileURL(file);
+      rebound.searchParams.set("existingBinding", "1");
+      assert.equal(typeof globalThis.regeneratorRuntime, "undefined");
+      assert.deepEqual((await import(rebound.href)).result, [1, false, 23, 5]);
+    }
+  } finally {
+    if (original) Object.defineProperty(globalThis, "regeneratorRuntime", original);
+    else delete globalThis.regeneratorRuntime;
+  }
+}
+
+{
+  const test = fixture(
+    "unresolvable-assignment-with-host-fallback",
+    `const read = () => {
+      try { regeneratorRuntime = 1; }
+      catch {
+        typeof globalThis === "object" ? (globalThis.regeneratorRuntime = 1) : Function("r", "regeneratorRuntime = r")(1);
+      }
+      return 1;
+    };
+    const result = read();
+    export { result };`
+  );
+  assert.match(test.run("--host-contract", profile).reason, /property of host value window/);
+}
+
+{
+  const test = fixture(
+    "unresolvable-assignment-with-rhs-host-write",
+    `const read = () => {
+      try { regeneratorRuntime = (globalThis.regeneratorRuntime = undefined, 42); }
+      catch { return "caught"; }
+      return "assigned";
+    };
+    const result = read();
+    export { result };`
+  );
+  assert.match(test.run("--host-contract", profile).reason, /property of host value window/);
+}
+
+{
+  const test = fixture(
+    "typeof-does-not-prove-unresolvable-assignment",
+    `const read = () => {
+      if (typeof MozWebSocket === "undefined") MozWebSocket = 1;
+      return 1;
+    };
+    const result = read();
+    export { result };`
+  );
+  assert.match(test.run("--host-contract", profile).reason, /unsupported global MozWebSocket/);
+}
+
+{
   const names = [
     "MozWebSocket",
     "__MOBX_DEVTOOLS_GLOBAL_HOOK__",

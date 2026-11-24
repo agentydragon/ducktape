@@ -68,6 +68,8 @@ inductive Prim where
   | regExpGet (getter : RegExpGetter)
   | globalTypeof (binding : String)
   | globalRef (binding : String)
+  | resolveMissingBinding (name : String)
+  | putMissingBinding (name : String)
   | wellKnownSymbol (sym : WellKnownSymbol)
   | freshSymbol
   | opaqueAmbientRef (binding : String)
