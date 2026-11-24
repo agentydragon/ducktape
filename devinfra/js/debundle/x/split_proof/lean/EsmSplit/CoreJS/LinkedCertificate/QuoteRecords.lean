@@ -67,7 +67,7 @@ private def recordDefinitions (index : Nat) (fields : StringFields) (keys : Arra
   let stem := s!"record{index}"
   -- Many static reads amortize quoting a tree. Its projection must retain the
   -- exact source syntax, so keep the ordered pairs when a key occurs twice.
-  let positions := Std.HashMap.ofList (fields.zipIdx.map fun ((k, _), i) => (k, i))
+  let positions := Std.HashMap.ofList (fields.zipIdx.map fun ((k, value), i) => (k, (i, value)))
   let indexed := fields.length ≥ wideRecordMinFields && keys.size ≥ 8 && positions.size == fields.length
   let data ← if indexed then do
     let names ← EsmSplit.CertificateData.quote (stem ++ "Keys") (Lean.toExpr (fields.map Prod.fst))
@@ -119,7 +119,10 @@ private def recordDefinitions (index : Nat) (fields : StringFields) (keys : Arra
       | none => "none"
     let proof := if !indexed then s!"rw [CoreJS.lookupLiteralProperty, {stem}Eq] <;> rfl" else
       match positions[key]? with
-      | some pos => s!"rw [{stem}Eq]; exact CoreJS.LiteralFieldIndex.hit (tree := {stem}Tree) (keys := {stem}Keys) (i := {pos}) rfl rfl"
+      | some (pos, value) =>
+          -- Checking each concrete tree lookup by rfl dominates elaboration on wide records.
+          s!"rw [{stem}Eq]; exact CoreJS.LiteralFieldIndex.hit (tree := {stem}Tree) (keys := {stem}Keys) " ++
+          s!"(i := {pos}) (key := {key.quote}) (value := {value.quote}) rfl (by cbv)"
       | none => s!"rw [{stem}Eq]; exact CoreJS.LiteralFieldIndex.miss (tree := {stem}Tree) rfl"
     definitions := definitions ++
       s!"@[cbv_eval] private theorem {stem}Read{i} :\n" ++
