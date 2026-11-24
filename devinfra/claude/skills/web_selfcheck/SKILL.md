@@ -297,9 +297,8 @@ Pass: exit 0, no "which remote" prompt, no `Unable to resolve host`, no
 docker info >/dev/null 2>&1 && echo "present" || echo "absent (expected)"
 ```
 
-The web profiles dropped their `setup_docker` key because the Rust daemon
-ignores it (see the note in
-`devinfra/claude/claude_hook/profiles/web/profile.yaml`). So an
+`setup_docker` is ignored: serde drops unknown profile fields, and only the retired
+Python daemon honored it (`devinfra/claude/claude_hook/config.rs`). So an
 absent local Docker daemon is **expected, not a failure**: Docker-dependent
 tests run on BuildBuddy RBE workers, not locally. Report `present`/`absent`
 informationally; only flag if a workflow genuinely needs local Docker.
