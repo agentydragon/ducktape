@@ -50,7 +50,10 @@ pub(super) fn run_prepared(
 }
 
 struct SelectedViewChange<'a> {
-    context: &'a VerifiedGraphSourceContext,
+    chunk_id: &'a str,
+    config_path: &'a Path,
+    config_bytes: &'a [u8],
+    view_path: &'a Path,
     graph: DependencyGraphInput,
     view: OwnershipSubset,
     destination: ModulePath,
@@ -72,7 +75,7 @@ fn prepare_change<'a>(
         tree_config,
         assignments,
         import_order,
-        readable_names,
+        mut readable_names,
         mut selector_overrides,
         dry_run,
         effect_assessment_context,
@@ -93,10 +96,10 @@ fn prepare_change<'a>(
         config_path == graph_provenance::absolute(requested_config)?.as_path(),
         "selected-view editing must update the verified graph's tree configuration"
     );
-    context
+    let config_bytes = context
         .tree_config()
         .context("graph lacks a captured tree configuration")?;
-    let (_, view_bytes) = context
+    let (view_path, view_bytes) = context
         .ownership_subset_input()
         .context("graph lacks a captured selected-view input")?;
     let view: OwnershipSubset = serde_json::from_slice(view_bytes)?;
@@ -176,7 +179,6 @@ fn prepare_change<'a>(
     let mut bindings = Vec::new();
     let mut anonymous_ordinals = Vec::new();
     let mut selected_names = BTreeSet::new();
-    let mut used_names = BTreeSet::new();
     for assignment in &assignments {
         let unit = graph
             .source_unit_id(&assignment.unit_id)
@@ -191,16 +193,12 @@ fn prepare_change<'a>(
                 continue; // Shared var sites are addressed by one binding claim.
             }
             let readable = readable_names
-                .get(&runtime)
-                .cloned()
+                .remove(&runtime)
                 .unwrap_or_else(|| binding.export_name.to_string());
             ensure!(
                 !readable.is_empty(),
                 "readable name for {runtime:?} is empty"
             );
-            if readable_names.contains_key(&runtime) {
-                used_names.insert(runtime.clone());
-            }
             let selector = selector_overrides
                 .get_mut(&assignment.unit_id)
                 .and_then(|selectors| selectors.remove(&runtime));
@@ -208,7 +206,7 @@ fn prepare_change<'a>(
         }
     }
     ensure!(
-        used_names.len() == readable_names.len(),
+        readable_names.is_empty(),
         "readable_names must name only newly claimed bindings"
     );
     selector_overrides.retain(|_, selectors| !selectors.is_empty());
@@ -219,7 +217,10 @@ fn prepare_change<'a>(
     drop(problem);
 
     Ok(SelectedViewChange {
-        context,
+        chunk_id: context.chunk_id(),
+        config_path,
+        config_bytes,
+        view_path,
         graph,
         view,
         destination,
@@ -238,7 +239,10 @@ fn realize_change(
     session: &mut lowering::SelectedOwnershipPreflightSession<'_>,
 ) -> Result<SourceUnitApplyOutcome> {
     let SelectedViewChange {
-        context,
+        chunk_id,
+        config_path,
+        config_bytes,
+        view_path,
         graph,
         mut view,
         destination,
@@ -250,16 +254,7 @@ fn realize_change(
         dry_run,
         residual_source_units_claimed,
     } = change;
-    let config_path = context
-        .tree_config_path()
-        .context("graph lacks a captured tree configuration path")?;
-    let config_bytes = context
-        .tree_config()
-        .context("graph lacks a captured tree configuration")?;
-    let (view_path, _) = context
-        .ownership_subset_input()
-        .context("graph lacks a captured selected-view input")?;
-    let source = session.source(context.chunk_id())?;
+    let source = session.source(chunk_id)?;
     let body_statements =
         js_ast::statements_for_source_unit_ordinals(&source.module.body, &anonymous_ordinals);
     let mut module = selector_codemod::with_source_unit_selector_synthesizer(
@@ -346,16 +341,13 @@ fn realize_change(
         },
     )?;
     spec_modules::coalesce_source_match_claims(&mut module);
-    let placements = view
-        .placements
-        .entry(context.chunk_id().to_owned())
-        .or_default();
+    let placements = view.placements.entry(chunk_id.to_owned()).or_default();
     ensure!(
         !placements.contains_key(destination.as_str()),
         "selected-view placement destination already exists"
     );
     placements.insert(destination.to_string(), module.clone());
-    let realized = session.check(context.chunk_id(), &view, &import_order, graph)?;
+    let realized = session.check(chunk_id, &view, &import_order, graph)?;
     realized.ensure_accepted()?;
     ensure!(
         realized.source_unit_modules == expected,
@@ -383,8 +375,7 @@ fn realize_change(
     // persistent write. Semantic failures leave every authoring input intact.
     let mut next_view = serde_json::to_vec_pretty(&view)?;
     next_view.push(b'\n');
-    let next_config =
-        spec_tree::update_chunk_import_order(config_bytes, context.chunk_id(), import_order)?;
+    let next_config = spec_tree::update_chunk_import_order(config_bytes, chunk_id, import_order)?;
     ensure!(
         view_path != config_path,
         "selected view and tree configuration must be different files"

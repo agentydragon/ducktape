@@ -113,7 +113,7 @@ pub fn run_source_unit_apply(
         tree_config,
         assignments,
         import_order,
-        readable_names,
+        mut readable_names,
         mut selector_overrides,
         dry_run,
         effect_assessment_context,
@@ -286,7 +286,6 @@ pub fn run_source_unit_apply(
         std::path::PathBuf,
         BTreeMap<String, Vec<source_identity::SourceUnitOrdinal>>,
     >::new();
-    let mut used_names = BTreeSet::new();
     let mut selected_binding_names = BTreeSet::new();
     let mut provided_selectors = Vec::new();
     let existing_destinations = physical_modules_by_logical_destination(&docs, scope.as_ref())?;
@@ -323,16 +322,12 @@ pub fn run_source_unit_apply(
                         "binding {runtime:?} is declared by several selected source units"
                     );
                     let readable = readable_names
-                        .get(&runtime)
-                        .cloned()
+                        .remove(&runtime)
                         .unwrap_or_else(|| binding.export_name.to_string());
                     anyhow::ensure!(
                         !readable.is_empty(),
                         "readable name for {runtime:?} is empty"
                     );
-                    if readable_names.contains_key(&runtime) {
-                        used_names.insert(runtime.clone());
-                    }
                     if let Some(selector) = selector_overrides
                         .get_mut(source_unit_id)
                         .and_then(|selectors| selectors.remove(&runtime))
@@ -414,7 +409,7 @@ pub fn run_source_unit_apply(
     }
 
     anyhow::ensure!(
-        used_names.len() == readable_names.len(),
+        readable_names.is_empty(),
         "readable_names must name only newly claimed bindings"
     );
     selector_overrides.retain(|_, selectors| !selectors.is_empty());
