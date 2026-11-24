@@ -116,7 +116,7 @@ const leanSource = readFileSync(leanCertificate, "utf8");
 assert.match(leanSource, /kernel checks this supplied bundle and plan, not the source-to-footprint analysis/);
 assert.match(leanSource, /theorem plan_valid/);
 
-// A diagnostic instance gives MiniJS the original spelling of whole statements
+// A diagnostic instance retains the original spelling of whole statements
 // and standalone declarations for units split out of a declaration list.
 {
   const source = path.join(temp, "instance-source.mjs");
