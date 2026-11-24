@@ -1,0 +1,12 @@
+source_matches:
+  - match: |
+      var getNewGroupIdsForDuplication = (groupIds, editingGroupId, mapper) => {
+        let copy = [...groupIds],
+          position = editingGroupId ? groupIds.indexOf(editingGroupId) : -1,
+          end = position > -1 ? position : groupIds.length;
+        for (let index = 0; index < end; index++)
+          copy[index] = mapper(copy[index]);
+        return copy;
+      };
+    bindings:
+      - getNewGroupIdsForDuplication

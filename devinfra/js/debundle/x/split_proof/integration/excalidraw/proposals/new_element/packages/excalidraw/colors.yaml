@@ -1,0 +1,12 @@
+# Upstream owner: packages/excalidraw/colors.ts (Excalidraw v0.18.1)
+source_matches:
+  - match: |
+      var DECLARATORS_BEFORE = null,
+        ELEMENTS_PALETTE_SHADE_INDEXES = [0, 2, 4, 6, 8],
+        getSpecificColorShades = (color, indices) => indices.map(index => oc[color][index]),
+        COLOR_PALETTE = AST_CONTAINS_STRING("#1e1e1e"),
+        DECLARATORS_AFTER = null;
+    bindings:
+      - ELEMENTS_PALETTE_SHADE_INDEXES
+      - getSpecificColorShades
+      - COLOR_PALETTE
