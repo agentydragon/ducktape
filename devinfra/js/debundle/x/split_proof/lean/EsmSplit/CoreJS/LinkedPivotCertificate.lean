@@ -296,6 +296,8 @@ def checkStructuralSchedule (intrinsics : List StableIntrinsic) (source candidat
     | .error why => do
       unless sourceUnits.any (fun u => match u.stmt with
         | .decl _ _ (.get (.var _) (.str _)) => true
+        | .decl _ _ (.obj fields) => fields.any fun field =>
+          field matches .init (.var _) _ | .init _ (.var _)
         | .decl _ _ (.binary op _ _) => op.numberArithmetic
         | _ => false) do throw why
       let ⟨beforeUnits, ⟨left⟩⟩ := PrefixProjection.prepare before.ready sourceUnits

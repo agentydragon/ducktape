@@ -114,54 +114,78 @@ private theorem createData_cells {s t : State w} (run : createData a k v s = .ok
   | none => contradiction
   | some prop => cases act; rfl
 
+/-- A field value admitted during creation of a fresh record. Both the
+literal and the source leaf cost one evaluator step. Only string reads and
+numeric literals are needed here. -/
+private structure Leaf (p : Facts) (env : Env) (e : Expr) where
+  literal : Expr
+  value : Val
+  allocs : literal.allocOnly = true
+  fixed : ∀ {w} n (s : State w), evalExpr (n + 1) env literal s = .ok value s
+  run : ∀ {w} n (base s : State w), Holds p base → s.cells = base.cells →
+    evalExpr (n + 1) env e s = .ok value s
+
+private def leaf? (p : Facts) (env : Env) : (e : Expr) → Option (Leaf p env e)
+  | .num x => some ⟨.num x, .num x, rfl, fun _ _ => rfl, fun _ _ _ _ _ => rfl⟩
+  | e => do
+    let value ← key? p env e
+    return ⟨.str value.text, .str value.text, rfl, fun _ _ => rfl, value.run⟩
+
 private structure Cooked (p : Facts) (env : Env) (raw : List PropDef) where
-  fields : List (String × Float)
-  run : ∀ {w} n a (base s t : State w), Holds p base → s.cells = base.cells →
-    evalProps n env a raw s = .ok () t →
-    evalProps n env a (fields.map RecordOrigin.numericField) s = .ok () t
+  fields : List PropDef
+  allocs : allocOnlyProps fields = true
+  same : ∀ {w} n a (base s : State w), Holds p base → s.cells = base.cells →
+    evalProps n env a raw s = evalProps n env a fields s
 
 private def cooked? (p : Facts) (env : Env) : (raw : List PropDef) → Option (Cooked p env raw)
-  | [] => some ⟨[], fun _ _ _ _ _ _ _ h => h⟩
-  | .init e (.num x) :: raw => do
-    let key ← key? p env e
+  | [] => some ⟨[], rfl, fun _ _ _ _ _ _ => rfl⟩
+  | .init k v :: raw => do
+    let key ← key? p env k
+    let value ← leaf? p env v
     let tail ← cooked? p env raw
-    return ⟨(key.text, x) :: tail.fields, by
-      intro w fuel a base s t hs same run
+    return ⟨.init (.str key.text) value.literal :: tail.fields,
+      by simp only [allocOnlyProps, value.allocs, tail.allocs, Bool.true_and], by
+      intro w fuel a base s hs same
       cases fuel with
-      | zero => cases run
+      | zero => rfl
       | succ n =>
         cases n with
-        | zero => cases run
+        | zero => rfl
         | succ n =>
-          have useKey := key.run n base s hs same
-          simp only [evalProps, M.bind_apply, useKey] at run
-          change (createData a (.str key.text) (.num x) >>= fun _ => evalProps (n + 1) env a raw) s = .ok () t at run
-          obtain ⟨_, mid, put, rest⟩ := bind_ok run
-          change (createData a (.str key.text) (.num x) >>= fun _ =>
-            evalProps (n + 1) env a (tail.fields.map RecordOrigin.numericField)) s = .ok () t
-          rw [bind_of_ok put]
-          exact tail.run _ _ base mid t hs ((createData_cells put).trans same) rest⟩
+          have evalKey := key.run n base s hs same
+          have evalValue := value.run n base s hs same
+          have literalKey : evalExpr (n + 1) env (.str key.text) s = .ok (.str key.text) s := rfl
+          have keyAsString : toKey (.str key.text) s = .ok (.str key.text) s := rfl
+          rw [evalProps, evalProps]
+          simp only [M.bind_apply, evalKey, literalKey, keyAsString, evalValue, value.fixed]
+          cases h : createData (W := w) a (.str key.text) value.value s with
+          | ok _ mid => exact tail.same _ _ _ _ hs ((createData_cells h).trans same)
+          | _ => rfl⟩
   | _ => none
 
-private theorem cookedObject {s t : State w} (c : Cooked p env ps) (hs : Holds p s)
-    (run : evalExpr n env (.obj ps) s = .ok v t) :
-    evalExpr n env (.obj (c.fields.map RecordOrigin.numericField)) s = .ok v t := by
+private theorem cookedObject {s : State w} (c : Cooked p env ps) (hs : Holds p s) (n : Nat) :
+    evalExpr n env (.obj ps) s = evalExpr n env (.obj c.fields) s := by
   cases n with
-  | zero => cases run
+  | zero => rfl
   | succ n =>
-    rw [evalExpr] at run ⊢
-    obtain ⟨a, mid, allocates, rest⟩ := bind_ok run
-    obtain ⟨_, last, fields, result⟩ := bind_ok rest
-    have cells : mid.cells = s.cells := by
-      unfold alloc at allocates; split at allocates <;> cases allocates; rfl
-    rw [bind_of_ok allocates, bind_of_ok (c.run n a s mid last hs cells fields)]
-    exact result
+    rw [evalExpr, evalExpr]
+    simp only [M.bind_apply]
+    cases h : alloc (W := w) {proto := some objectProto, props := []} s with
+    | ok a mid =>
+      have cells : mid.cells = s.cells := by
+        unfold alloc at h; split at h <;> cases h; rfl
+      simp only [c.same n a s mid hs cells]
+    | _ => rfl
 
-private theorem numberFields_alloc (fs : List (String × Float)) :
-    allocOnlyProps (fs.map RecordOrigin.numericField) = true := by
-  induction fs with
-  | nil => rfl
-  | cons f rest ih => exact ih
+/-- Numeric records additionally yield exact own descriptor facts for later
+reads. Mixed records require no descriptor facts to justify their creation. -/
+private def numbers? : (ps : List PropDef) →
+    Option ((fs : List (String × Float)) × PLift (ps = fs.map RecordOrigin.numericField))
+  | [] => some ⟨[], ⟨rfl⟩⟩
+  | .init (.str k) (.num x) :: ps => do
+    let ⟨fs, ⟨eq⟩⟩ ← numbers? ps
+    return ⟨(k, x) :: fs, ⟨by rw [eq]; rfl⟩⟩
+  | _ => none
 
 /-- Substitute only initialized Number cells. The proof expression retains
 the operator tree and its fuel cost; the recorded result is available to a
@@ -257,20 +281,23 @@ private def infer? (p : Facts) (env : Env) (e : Expr) : Option (ExprStep p env e
         exact ⟨Extends.refl _, fun _ h => by cases h; exact hv⟩⟩
   | .obj ps =>
     let c ← cooked? p env ps
-    if fresh : (c.fields.map Prod.fst).Nodup then
-      return ⟨e, some (.numbers c.fields), fun _ _ _ => rfl, by
-        intro w n s t v hs run
-        rw [he] at run
-        have actual := cookedObject c hs run
-        have preserves := allocOnly_extends (fuel := n) (env := env) (s := s)
-          (e := .obj (c.fields.map RecordOrigin.numericField)) (numberFields_alloc c.fields)
-        change (evalExpr n env (.obj (c.fields.map RecordOrigin.numericField)) s).Keeps s at preserves
-        rw [actual] at preserves
-        refine ⟨preserves, ?_⟩
-        intro sh eq
-        cases eq
-        exact RecordOrigin.numericRecord_origin c.fields fresh actual⟩
-    none
+    have same {w} n (s : State w) (hs : Holds p s) : evalExpr n env e s = evalExpr n env (.obj c.fields) s :=
+      he ▸ cookedObject c hs n
+    let basic := keep p env (.obj c.fields) c.allocs
+    if let some ⟨fs, ⟨eq⟩⟩ := numbers? c.fields then
+      if fresh : (fs.map Prod.fst).Nodup then
+        return ⟨.obj c.fields, some (.numbers fs), @same, by
+          intro w n s t v hs run
+          rw [same n s hs] at run
+          refine ⟨(basic.result n s t v hs run).1, ?_⟩
+          intro sh shapeEq
+          cases shapeEq
+          rw [eq] at run
+          exact RecordOrigin.numericRecord_origin fs fresh run⟩
+    return ⟨.obj c.fields, none, @same, by
+      intro w n s t v hs run
+      rw [same n s hs] at run
+      exact ⟨(basic.result n s t v hs run).1, by simp⟩⟩
   | .get (.var x) (.str key) =>
     let ⟨c, ⟨lk⟩⟩ ← found? (env.vars.lookup x)
     let ⟨.numbers fs, ⟨fact⟩⟩ ← found? (p.entries.lookup c) | none
