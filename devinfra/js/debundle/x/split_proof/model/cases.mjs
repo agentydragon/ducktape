@@ -47,6 +47,46 @@ export const inheritanceCases = [
     `,
   },
   {
+    name: "default derived construction initializes each class's own fields after its superclass",
+    source: `
+      let key = "items";
+      const seed = 5;
+      class Base {
+        constructor(value) {
+          this.value = value;
+          this.before = this.items;
+        }
+        set ready(value) { throw value; }
+      }
+      class Middle extends Base {
+        [key] = [this.value, seed];
+        ready = this.items[0] + this.items[1];
+      }
+      key = "renamed";
+      class Leaf extends Middle { total = this.ready + 1; }
+      const first = new Leaf(2);
+      const second = new Leaf(3);
+      console.log(first.before === undefined, first.items !== second.items, first.total, second.total,
+        "renamed" in first, Object.getPrototypeOf(first) === Leaf.prototype);
+    `,
+    end: "normal",
+  },
+  {
+    name: "derived fields initialize on a replacement object but skip a throwing superclass",
+    source: `
+      let runs = 0;
+      const replacement = {};
+      class Base {
+        constructor(value) { if (value < 0) throw value; return replacement; }
+      }
+      class Derived extends Base { marker = ++runs; }
+      try { new Derived(-1); } catch (error) { console.log(error, runs, "marker" in replacement); }
+      const instance = new Derived(1);
+      console.log(instance === replacement, instance.marker, runs);
+    `,
+    end: "normal",
+  },
+  {
     name: "null heritage and null superclass prototype have distinct construction behavior",
     source: `
       class Empty extends null {}

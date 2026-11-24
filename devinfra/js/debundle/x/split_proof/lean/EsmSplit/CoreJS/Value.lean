@@ -96,8 +96,11 @@ def Env.capture (env : Env) (names : List Name) : Env where
 inductive Code where
   /-- An implicit derived constructor forwards to its current internal prototype. -/
   | derived
-  /-- Execute the prefix, evaluate super arguments, then run the remaining body with the returned receiver. -/
+  /-- An implicit derived constructor with public instance fields initialized on the superclass result. -/
+  | derivedFields (closed : Env) (fields : List (PropertyKey × Expr))
+  /-- Execute the prefix, call super, initialize fields, then run the remaining body. -/
   | derivedBody (before : List Stmt) (superArgs : List Expr) (body : Func) (closed : Env)
+      (fields : List (PropertyKey × Expr))
   | closure (f : Func) (env : Env) (fields : List (PropertyKey × Expr))
   | host (name : String)
   /-- Part of the code the world runs with the supplied cells. The constructor capability is

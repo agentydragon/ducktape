@@ -233,13 +233,12 @@ private theorem reachFrame_constructorLink {r R cells A} (away : Away r R A) (pr
   · exact Or.inl (Or.inr (Or.inr h))
 
 private theorem reachFrame_constructorCode {r R cells A} (away : Away r R A) (c : Addr)
-    (hc : A (.obj c)) (ctor : Func) (closed : Env) (safe : ∀ node ∈ closed.nodes, A node)
-    (fields : List (PropertyKey × Expr)) :
+    (hc : A (.obj c)) (code : Code) (safe : ∀ node ∈ code.nodes, A node) :
     ReachFrame r R cells A (fun _ => True)
-      (modifyObj c fun o => { o with code := some (.closure ctor closed fields) } : M W Unit) := by
+      (modifyObj c fun o => { o with code := some code } : M W Unit) := by
   apply reachFrame_modifyObj away c hc
   intro o node hn
-  simp [Obj.nodes, Code.nodes] at hn ⊢
+  simp [Obj.nodes] at hn ⊢
   rcases hn with h | h | h
   · exact Or.inl (Or.inl h)
   · exact Or.inl (Or.inr (Or.inl h))
@@ -281,7 +280,7 @@ theorem evalClass_reachFrame_step {r R cells A n} (away : Away r R A)
     intro keys _
     let fields := keys.zip (fieldInits members)
     let perInstance := fields.filterMap fun ((static, k), init) => if static then none else some (k, init)
-    apply (reachFrame_constructorCode away c hc ctor closed safeClosed perInstance).bind
+    apply (reachFrame_constructorCode away c hc (.closure ctor closed perInstance) safeClosed).bind
     intro _ _
     apply (reachFrame_initSelf away localEnv self name (.obj c) hlocal (safeVal_obj.2 hc)).bind
     intro _ _
@@ -335,6 +334,19 @@ private theorem reachFrame_classParents {r R cells A} (away : Away r R A) (call 
       ⟨functionRoot, fun _ h => by cases h⟩
   all_goals exact nonNull
 
+private theorem derivedCtorCode_safe {A : HeapNode → Prop} {env : Env}
+    (safe : ∀ node ∈ env.nodes, A node) (ctor : Option (List Stmt × List Expr × Func))
+    (fields : List (PropertyKey × Expr)) :
+    ∀ node ∈ (derivedCtorCode env ctor fields).1.nodes, A node := by
+  cases ctor with
+  | none =>
+    cases fields with
+    | nil => simp [derivedCtorCode, Code.nodes]
+    | cons f fs => exact Env.nodes_capture safe _
+  | some parts =>
+    rcases parts with ⟨before, args, body⟩
+    exact Env.nodes_capture safe _
+
 private theorem reachFrame_finishDerived {r R cells A} (away : Away r R A)
     (objects : ∀ a : Addr, a.region ≠ r → A (.obj a)) (env : Env) (safe : ∀ node ∈ env.nodes, A node)
     (name : Name) (self : Bool) (members : List ClassMember) (parents : Addr × Option Addr)
@@ -352,19 +364,19 @@ private theorem reachFrame_finishDerived {r R cells A} (away : Away r R A)
       apply (reachFrame_constructorLink away proto c hp hc).bind
       intro _ _
       apply (framed proto c hp hc).bind
-      intro _ _
-      exact (reachFrame_initSelf away env self name (.obj c) safe (safeVal_obj.2 hc)).bind fun _ _ =>
+      intro keys _
+      dsimp only
+      have done := (reachFrame_initSelf (W := W) away env self name (.obj c) safe (safeVal_obj.2 hc)).bind fun _ _ =>
         reachFrame_pure r R cells A (Val.obj c) (safeVal_obj.2 hc)
+      split
+      · exact done
+      · exact (reachFrame_constructorCode away c hc _ (derivedCtorCode_safe safe ctor _)).bind fun _ _ => done
     · intro node h
       simp [Obj.nodes, Property.nodes, Val.nodes] at h
       rcases h with rfl | rfl | capture
       · exact guard.1
       · exact hp
-      · cases ctor with
-        | none => cases capture
-        | some pair =>
-          rcases pair with ⟨before, args, body⟩
-          exact Env.nodes_capture safe (derivedCtorFree (some (before, args, body))) node capture
+      · exact derivedCtorCode_safe safe ctor [] node (by simpa [derivedCtorCode] using capture)
   · intro node h
     simp [Obj.nodes] at h
     obtain ⟨p, hp, rfl⟩ := h

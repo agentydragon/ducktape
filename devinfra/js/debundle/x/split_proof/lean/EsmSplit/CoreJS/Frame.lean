@@ -364,6 +364,7 @@ theorem finishDerived_plain_keeps (n : Nat) (env : Env) (name : Name) (members :
     (parents : Addr × Option Addr) (h : plainClassMembers members = true) {base s : State W} (hb : Extends base s) :
     (finishDerived (evalMembers n) env name false members parents none s).Keeps base := by
   unfold finishDerived
+  simp only [plainClassMembers_fieldInits h, List.zip_nil_right, List.filterMap_nil, List.isEmpty_nil]
   refine keeps_bind (alloc_keeps _ hb) fun proto s1 h1 hb1 => ?_
   have hp : base.objAt proto = none := hb.fresh (alloc_ok h1).1
   refine keeps_bind (alloc_keeps _ hb1) fun c s2 h2 hb2 => ?_

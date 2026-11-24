@@ -24,7 +24,7 @@ the target's arguments.
 | Objects, descriptors, getters/setters, prototypes                 | `cases.mjs`: inherited accessors, descriptor validation, prototype changes                                                                             | Getter/setter mutation, deletion, inherited membership, prototype replacement.                                                                       |
 | Arrays                                                            | `cases.mjs`: nested literals, reads, length, deletion                                                                                                  | Nested reads, identity, bounds and membership. Writes still end `unknown`.                                                                           |
 | Plain classes                                                     | `cases.mjs`: constructor, fields, statics, methods, accessors, names, errors                                                                           | Instance/static fields, constructor, getters/setters, captured `this`.                                                                               |
-| Default derived classes                                           | `cases.mjs`: prototype links, dynamic superclass, null heritage, TDZ, returns/throws; `opaque_cases.mjs`: opaque base body                             | Varied depth and arity, both prototype chains, base receiver and fields, method overrides, and retargeting, returns, and throws.                     |
+| Default derived classes                                           | `cases.mjs`: prototype links, dynamic superclass, null heritage, TDZ, instance fields, returns/throws; `opaque_cases.mjs`: opaque base body            | Varied depth and arity, both prototype chains, base receiver and fields, method overrides, and retargeting, returns, and throws.                     |
 | Control flow and exceptions                                       | `cases.mjs`: loops, jumps, abrupt `finally`, TDZ, engine errors, thrown values                                                                         | Finite loops; caught primitive, engine and host exceptions; `finally` on return.                                                                     |
 | Primitive host calls                                              | `cases.mjs`: string/number/boolean methods, `Math`, parsing, throws, unknown boundaries                                                                | Primitive calls and chains; a caught host exception. Selected functions only.                                                                        |
 | Linked modules                                                    | [`module_cases.mjs`](module_cases.mjs): live bindings, cycles, hoisting/TDZ, import assignment, aliases, defaults, missing exports, evaluation failure | Live diamond, caught TDZ, dependency throw. Default expression, alias, function or class. Import assignment, update and compound assignment.         |
@@ -110,21 +110,23 @@ preserves both the Node observations and the final model-state hash.
 
 ## Default derived classes
 
-The frontend models `class Derived extends Base { … }` when it has no explicit
-constructor or fields. Fixed-name methods/accessors may have opaque bodies under
-the same restrictions as plain classes. Heritage evaluates in the class-name TDZ;
+The standalone frontend models default derived constructors with public instance
+fields. Fixed-name methods and accessors may have opaque bodies under the same
+restrictions as plain classes. Heritage evaluates in the class-name TDZ and
 constructor validation precedes the `prototype` read. Null heritage and a null
 superclass prototype remain distinct.
 
 The implicit constructor follows its current internal prototype and forwards the
 original arguments and `newTarget` through the chain. The eventual base constructor
 allocates the receiver using `newTarget.prototype`, initializes its fields, and runs
-its body. Opaque bodies still receive the actual callee; body fallback refuses
+its body. Each derived constructor then initializes its own fields on the object
+returned by its superclass, in declaration order. A throw from the superclass
+skips those initializers. Opaque bodies still receive the actual callee. Body fallback refuses
 `new.target` because the world protocol does not carry it. Opaque/host superclass
 capabilities not represented by the model end `unknown`.
 
 Handwritten cases cover chains, both prototype links, constructor-prototype mutation,
-invalid heritage/prototypes, null heritage, TDZ, returned objects, exceptions,
+invalid heritage/prototypes, null heritage, TDZ, derived field order, returned objects, exceptions,
 invocation restrictions, and opaque base bodies. The separate
 `corejs_inheritance_differential_test` (`--inheritance-only`) also generates
 default-constructor chains with varying depth, argument count, and override

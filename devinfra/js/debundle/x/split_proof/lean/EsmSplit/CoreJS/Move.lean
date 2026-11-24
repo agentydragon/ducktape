@@ -406,6 +406,7 @@ theorem local_finishDerived_plain (n : Nat) (env : Env) (name : Name) (members :
     (parents : Addr × Option Addr) (h : plainClassMembers members = true) :
     Local r R (finishDerived (evalMembers n) env name false members parents : M W Val) := by
   unfold finishDerived
+  simp only [plainClassMembers_fieldInits h, List.zip_nil_right, List.filterMap_nil, List.isEmpty_nil]
   refine (local_alloc _).bind fun proto ⟨s1, s1', hr1, h1⟩ => ?_
   have hp : proto.region = r := (alloc_region h1).trans hr1
   refine (local_alloc _).bind fun c ⟨s2, s2', hr2, h2⟩ => ?_

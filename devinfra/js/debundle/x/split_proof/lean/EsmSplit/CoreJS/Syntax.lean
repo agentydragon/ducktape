@@ -111,7 +111,7 @@ inductive Expr where
   | arrWithSpread (elems : List (ArrayElementKind × Expr))
   /-- `class name { … }`; `self` when the body sees the name. -/
   | cls (name : String) (self : Bool) (ctor : Func) (members : List ClassMember)
-  /-- A fieldless derived class. An explicit constructor splits its body at the direct super call. -/
+  /-- A derived class. An explicit constructor splits its body at the direct super call. -/
   | derived (name : String) (self : Bool) (parent : Expr) (members : List ClassMember)
       (ctor : Option (List Stmt × List Expr × Func))
   | get (o k : Expr)
@@ -289,6 +289,11 @@ def fieldInits : List ClassMember → List Expr
   | [] => []
   | .field _ _ init :: ms => init :: fieldInits ms
   | _ :: ms => fieldInits ms
+
+def hasStaticField : List ClassMember → Bool
+  | [] => false
+  | .field true _ _ :: _ => true
+  | _ :: ms => hasStaticField ms
 
 /-! ## Free names: the names of the scope around it that a piece of code can mean
 
