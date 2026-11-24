@@ -1,4 +1,4 @@
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_test")
 load("//devinfra/lint:linters.bzl", "eslint_test")
 load(":sweep.bzl", "real_split_sweeps")
 
@@ -28,6 +28,29 @@ js_binary(
 )
 
 real_split_sweeps()
+
+_LIBRARY_SOURCES = [
+    "//devinfra/js/debundle/x/split_proof/translation:real_bundles/" + library + ".mjs"
+    for library in [
+        "acorn",
+        "semver",
+    ]
+]
+
+js_test(
+    name = "library_certificate_test",
+    size = "medium",
+    args = ["$(rootpath " + src + ")" for src in _LIBRARY_SOURCES],
+    data = _LIBRARY_SOURCES + [src.removesuffix(".mjs") + ".json" for src in _LIBRARY_SOURCES] + [
+        "gen_spec.mjs",
+        "smoke.mjs",
+        "//devinfra/js/debundle/x/split_proof:seeded_random",
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+    ],
+    entry_point = "certificate_test.mjs",
+    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+)
 
 js_library(
     name = "lint_sources",
