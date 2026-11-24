@@ -208,19 +208,6 @@ theorem evalMembers_reachFrame_step {r R cells A n} (away : Away r R A) (env : E
     | staticBlock _ =>
       exact (rest tail).bind fun xs _ => reachFrame_pure r R cells A xs trivial
 
-theorem literalArray_nodes {A : HeapNode → Prop} (root : A (.obj arrayProto))
-    (vs : List Val) (h : ∀ v ∈ vs, SafeVal A v) : ∀ node ∈ (arrayObject vs).nodes, A node := by
-  intro node hn
-  simp only [arrayObject, Obj.nodes, List.mem_append, List.mem_flatMap, List.mem_map,
-    Option.toList_some, List.mem_singleton, Option.toList_none, List.flatMap_nil, List.mem_nil_iff, or_false] at hn
-  rcases hn with hroot | ⟨p, hmem, hnode⟩
-  · obtain ⟨_, rfl, rfl⟩ := hroot
-    exact root
-  · rcases hmem with ⟨item, hitem, rfl⟩ | hlength
-    · exact h item.1 (List.fst_mem_of_mem_zipIdx hitem) node hnode
-    · subst p
-      cases hnode
-
 theorem evalArray_reachFrame_step {r R cells A n} (env : Env) (root : A (.obj arrayProto))
     (args : ∀ es, ReachFrame r R cells A (fun vs => ∀ v ∈ vs, SafeVal A v) (evalArgs n env es : M W _))
     (allocate : ∀ o : Obj, (∀ node ∈ o.nodes, A node) →

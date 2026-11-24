@@ -185,6 +185,8 @@ inductive Func where
   the named parameters in a lexical scope around the original function body. -/
   | withDefaults (name : String) (kind : FuncKind) (self : Bool)
     (params : List Name) (arity : Nat) (body : List Stmt)
+  | withRest (name : String) (kind : FuncKind) (self : Bool)
+    (fixed : List Name) (rest : Name) (body : List Stmt)
   /-- Deferred code: creation captures `free` cells. Invocation either refuses for the given
   reason or gives the world the callee, receiver and raw arguments. `code` is the containing
   source unit's stable ID; `part` identifies a lexical function within it. -/
@@ -236,22 +238,24 @@ is handed their bindings in this order. -/
 def opaqueNames (decls : List (Name × DeclKind)) (funs : List OpaqueHoist) (free : List Name) : List Name :=
   decls.map (·.1) ++ (funs.map (·.1) ++ free)
 
-def Func.name : Func → String | .mk n .. | .withDefaults n .. | .opaque n .. => n
-def Func.kind : Func → FuncKind | .mk _ k .. | .withDefaults _ k .. | .opaque _ k .. => k
-def Func.self : Func → Bool | .mk _ _ s .. | .withDefaults _ _ s .. | .opaque _ _ s .. => s
+def Func.name : Func → String | .mk n .. | .withDefaults n .. | .withRest n .. | .opaque n .. => n
+def Func.kind : Func → FuncKind | .mk _ k .. | .withDefaults _ k .. | .withRest _ k .. | .opaque _ k .. => k
+def Func.self : Func → Bool | .mk _ _ s .. | .withDefaults _ _ s .. | .withRest _ _ s .. | .opaque _ _ s .. => s
 /-- Modeled parameter bindings; an opaque invocation receives raw arguments instead. -/
 def Func.params : Func → List Name
   | .mk _ _ _ ps _ | .withDefaults _ _ _ ps _ _ => ps
+  | .withRest _ _ _ fixed rest _ => fixed ++ [rest]
   | .opaque .. => []
 def Func.length : Func → Nat
   | .mk _ _ _ ps _ => ps.length
   | .withDefaults _ _ _ _ arity _ => arity
+  | .withRest _ _ _ fixed _ _ => fixed.length
   | .opaque _ _ _ n .. => n
 /-- Modeled statements; opaque functions dispatch to the world before this accessor is used. -/
-def Func.body : Func → List Stmt | .mk _ _ _ _ b | .withDefaults _ _ _ _ _ b => b | .opaque .. => []
+def Func.body : Func → List Stmt | .mk _ _ _ _ b | .withDefaults _ _ _ _ _ b | .withRest _ _ _ _ _ b => b | .opaque .. => []
 def Func.opaqueBody : Func → Option (Nat × Nat × List Name × Option String)
   | .opaque _ _ _ _ code part free refusal => some (code, part, free, refusal)
-  | .mk .. | .withDefaults .. => none
+  | .mk .. | .withDefaults .. | .withRest .. => none
 
 /-! ## Modules -/
 
@@ -419,6 +423,9 @@ The prefix, super arguments and remaining body share the constructor's scope. -/
 def derivedCtorFree : Option (List Stmt × Option (List Expr) × Func) → List Name
   | some (before, args, .mk _ _ _ params body) | some (before, args, .withDefaults _ _ _ params _ body) =>
     freeFunctionNames (derivedReceiverName :: params) (before ++ body) (freeStmts before ++ freeSuperArgs args ++ freeStmts body)
+  | some (before, args, .withRest _ _ _ fixed rest body) =>
+    freeFunctionNames (derivedReceiverName :: fixed ++ [rest]) (before ++ body)
+      (freeStmts before ++ freeSuperArgs args ++ freeStmts body)
   | some (before, args, .opaque ..) => freeFunctionNames [] before (freeStmts before ++ freeSuperArgs args)
   | none => []
 
@@ -427,6 +434,8 @@ def Func.free : Func → List Name
   | .opaque name _ self _ _ _ free _ => free.filter fun x => !(self && x == name)
   | .mk name _ self params body | .withDefaults name _ self params _ body =>
     freeFunctionNames (if self then name :: params else params) body (freeStmts body)
+  | .withRest name _ self fixed rest body =>
+    freeFunctionNames ((if self then name :: fixed else fixed) ++ [rest]) body (freeStmts body)
 
 def BindingPattern.free : BindingPattern → List Name
   | .name x => [x]

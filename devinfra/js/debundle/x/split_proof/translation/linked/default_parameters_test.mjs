@@ -149,7 +149,7 @@ for (const [name, expression, args, length, expected] of [
   ["mixed-destructuring", "(x = offset, { y }) => x + y", [undefined, { y: 3 }], 0, 10],
   ["nested-object", "({ x: { y = offset } }) => y", [{ x: {} }], 1, 7],
   ["array-pattern", "([x, y], z = offset) => x + y + z", [[1, 2]], 1, 10],
-  ["rest", "(x, ...rest) => x + rest.length", [7, 4, 3], 1, 9],
+  ["rest-pattern", "(...[x, y]) => x + y", [4, 3], 0, 7],
 ]) {
   if (!includesCase(`parameter-${name}`)) continue;
   const source = `const offset = 7; const pick = ${expression}; export { pick };`;
