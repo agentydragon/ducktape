@@ -1066,13 +1066,9 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
                 R::merge_with_scratch(&key, &mut fact.value, contribution, &mut self.merge_scratch)
             }
         };
-        let mut change = FactChange {
-            value: value_changed,
-            proof: false,
-        };
         if let Some(metrics) = &mut self.metrics {
             metrics.add(
-                if change.value {
+                if value_changed {
                     Operation::ChangedProposal
                 } else {
                     Operation::UnchangedProposal
@@ -1080,17 +1076,19 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
                 1,
             );
         }
-        if change.value {
+        if value_changed {
             self.changed.insert(id);
         }
         #[cfg(test)]
         {
             self.proposals += 1;
-            self.value_changes += usize::from(change.value);
+            self.value_changes += usize::from(value_changed);
             self.peak_facts = self.peak_facts.max(self.facts.len());
         }
-        change.proof = self.attach_proof(id, &key);
-        change
+        FactChange {
+            value: value_changed,
+            proof: self.attach_proof(id, &key),
+        }
     }
 
     fn propose_delta(
@@ -1121,22 +1119,6 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
                 self.delta_deliveries += R::delta_atoms(&delta);
             }
             self.propose(key, delta)
-        } else if let Some(id) = self
-            .facts
-            .id(&key)
-            .filter(|&id| self.facts.fact(id).is_some())
-        {
-            if let Some(metrics) = &mut self.metrics {
-                metrics.add(Operation::UnchangedProposal, 1);
-            }
-            #[cfg(test)]
-            {
-                self.proposals += 1;
-            }
-            FactChange {
-                value: false,
-                proof: self.attach_proof(id, &key),
-            }
         } else {
             if let Some(metrics) = &mut self.metrics {
                 metrics.add(Operation::UnchangedProposal, 1);
@@ -1145,9 +1127,16 @@ impl<R: IterativeRules, const RETAIN_PREMISES: bool> FactContext<R::Key, R::Fact
             {
                 self.proposals += 1;
             }
-            // No value has crossed this edge and there is no target judgment
-            // to certify. A later nonempty delivery installs its proof edges.
-            FactChange::default()
+            // An existing target can acquire proof edges even without new
+            // value atoms. A missing target waits for a nonempty delivery.
+            let target = self
+                .facts
+                .id(&key)
+                .filter(|&id| self.facts.fact(id).is_some());
+            FactChange {
+                value: false,
+                proof: target.is_some_and(|id| self.attach_proof(id, &key)),
+            }
         }
     }
 
