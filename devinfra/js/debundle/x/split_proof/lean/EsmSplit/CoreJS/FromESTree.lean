@@ -439,6 +439,12 @@ private inductive LinkedScope where
 private def LinkedScope.varBinder (scope : LinkedScope) (kind : String) : Json → Except String Name :=
   if scope == .function || kind != "var" then localBinding else moduleBinding
 
+/-- Named defaults initialize lexical parameter cells in order from the raw argument slots.
+Ordinary functions then enter a body block; derived constructors run their prefix before super. -/
+private inductive LinkedFunctionParts where
+  | complete (fn : Func)
+  | defaults (slots : List Name) (arity : Nat) (initializers body : List Stmt)
+
 mutual
 
 private partial def linkedExpr (profile : HostProfile) (imports : List Name) (inFunction : Bool) (nameHint : Name)
@@ -639,17 +645,24 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
 
 private partial def linkedFunction (profile : HostProfile) (imports : List Name) (kind : FuncKind) (name : Name) (self : Bool)
     (j : Json) : Except String Func := do
+  match ← linkedFunctionParts profile imports kind name self j with
+  | .complete fn => return fn
+  | .defaults slots arity initializers body =>
+    return .withDefaults name kind self slots arity (initializers ++ [.block body])
+
+private partial def linkedFunctionParts (profile : HostProfile) (imports : List Name) (kind : FuncKind)
+    (name : Name) (self : Bool) (j : Json) : Except String LinkedFunctionParts := do
   let async ← j.getObjValAs? Bool "async"
   let parameters ← j.getObjValAs? (Array Json) "params"
   let tags ← parameters.mapM fun param => field param "type"
   let arity := (tags.toList.takeWhile fun t => t != "AssignmentPattern" && t != "RestElement").length
   if ← j.getObjValAs? Bool "generator" then
     if async then throw "unsupported async generator function"
-    return ← deferredFunction j .generator name self arity "generator invocation requires suspension semantics"
+    return .complete (← deferredFunction j .generator name self arity "generator invocation requires suspension semantics")
   if async then
     -- makeFunc captures the enclosing this as well as named cells. No async
     -- callable enters the ordinary function evaluator.
-    return ← deferredFunction j .asyncFn name self arity "async invocation requires Promise semantics"
+    return .complete (← deferredFunction j .asyncFn name self arity "async invocation requires Promise semantics")
   let deferPattern := deferredFunction j kind name self arity (checkPrivateNames := true)
   let hasDefaults := tags.contains "AssignmentPattern"
   let mut params : Array (Name × Option Expr) := #[]
@@ -664,22 +677,22 @@ private partial def linkedFunction (profile : HostProfile) (imports : List Name)
     | "AssignmentPattern" =>
       let target ← param.getObjVal? "left"
       unless (← field target "type") == "Identifier" do
-        return ← deferPattern "expected an identifier in a default parameter"
+        return .complete (← deferPattern "expected an identifier in a default parameter")
       let x ← localBinding target
       let value ← linkedExpr profile imports true x (← param.getObjVal? "right")
       params := params.push (x, some value)
       bound := bound.push x
     | "ObjectPattern" =>
-      if hasDefaults then return ← deferPattern "unsupported object pattern alongside default parameters"
+      if hasDefaults then return .complete (← deferPattern "unsupported object pattern alongside default parameters")
       let fields ← match linkedObjectPattern param (linkedPatternIdentifier localBinding) with
         | .ok fields => pure fields
-        | .error reason => return ← deferPattern reason
+        | .error reason => return .complete (← deferPattern reason)
       let arg := s!":parameter:{i}"
       params := params.push (arg, none)
       for (key, x) in fields do
         bound := bound.push x
         bindings := bindings.push (.decl .var x (.get (.var arg) (.str key)))
-    | "ArrayPattern" | "RestElement" => return ← deferPattern s!"unsupported function parameter {tag}"
+    | "ArrayPattern" | "RestElement" => return .complete (← deferPattern s!"unsupported function parameter {tag}")
     | other => throw s!"unsupported function parameter {other}"
   unless bound.toList.Nodup do throw "duplicate function parameter"
   let body ← j.getObjVal? "body"
@@ -689,8 +702,8 @@ private partial def linkedFunction (profile : HostProfile) (imports : List Name)
     linkedExpr profile imports true "" body |>.map (fun e => [.ret e])
   else throw "expected a function body block"
   if let .error reason := lowered then
-    return ← deferredFunction j kind name self arity reason
-      (checkPrivateNames := hasDefaults || kind == .method || kind == .classCtor)
+    return .complete (← deferredFunction j kind name self arity reason
+      (checkPrivateNames := hasDefaults || kind == .method || kind == .classCtor))
   let stmts ← lowered
   let functions := (funDecls stmts).map Func.name
   let bodyVars := if hasDefaults || !functions.isEmpty then varNamesOf stmts else []
@@ -708,16 +721,20 @@ private partial def linkedFunction (profile : HostProfile) (imports : List Name)
     let slots := params.zipIdx.toList.map fun (_, i) => s!":parameter:{i}"
     let initializers := (params.toList.zip slots).map fun ((x, defaultValue), slot) =>
       Stmt.decl .let_ x (withBindingDefault slot defaultValue)
-    return .withDefaults name kind self slots arity (initializers ++ [.block stmts])
+    return .defaults slots arity initializers stmts
   -- Static keys and identifier targets have no parameter expressions. The reads
   -- run before the body, using the same mutable cells as any body var redeclarations.
-  return .mk name kind self (params.toList.map Prod.fst) (bindings.toList ++ stmts)
+  return .complete (.mk name kind self (params.toList.map Prod.fst) (bindings.toList ++ stmts))
 
 /-- Split a derived constructor at its direct super call, including a call at the head
 of a comma expression. All three parts run with the same parameter and local cells. -/
 private partial def linkedDerivedConstructor (profile : HostProfile) (imports : List Name)
     (name : Name) (fn : Json) : Except String (List Stmt × List Expr × Func) := do
-  for param in ← fn.getObjValAs? (Array Json) "params" do discard <| localBinding param
+  for param in ← fn.getObjValAs? (Array Json) "params" do
+    if (← field param "type") == "AssignmentPattern" then
+      discard <| localBinding (← param.getObjVal? "left")
+      checkBeforeSuper (← param.getObjVal? "right")
+    else discard <| localBinding param
   let block ← fn.getObjVal? "body"
   let statements ← block.getObjValAs? (List Json) "body"
   let (prefixStmts, remaining) := statements.span (fun stmt => (leadingSuper? stmt).isNone)
@@ -742,10 +759,18 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
     linkedExpr profile imports true "" arg
   let stmts := rest.map (fun e => Json.mkObj [("type", .str "ExpressionStatement"), ("expression", e)]) ++ tail
   let post := Json.obj ((← block.getObj?).insert "body" (.arr stmts.toArray))
-  let body ← linkedFunction profile imports .classCtor name false (.obj ((← fn.getObj?).insert "body" post))
-  -- An opaque body may depend on the derived constructor's home object or new.target.
-  if let some (_, _, _, why) := body.opaqueBody then throw (why.getD "unsupported derived constructor body")
-  return (before.toList, args, body)
+  match ← linkedFunctionParts profile imports .classCtor name false (.obj ((← fn.getObj?).insert "body" post)) with
+  | .complete body =>
+    -- An opaque body may depend on the derived constructor's home object or new.target.
+    if let some (_, _, _, why) := body.opaqueBody then throw (why.getD "unsupported derived constructor body")
+    return (before.toList, args, body)
+  | .defaults slots arity initializers body =>
+    -- derivedScope enters both halves of the body at once. A body lexical binding must
+    -- not hide an outer name used by a default. linkedFunctionParts already checks hoisted vars.
+    let reads := freeStmts initializers
+    if (lexNames (before.toList ++ body)).any reads.contains then
+      throw "derived constructor body binding shadows a default parameter reference"
+    return (initializers ++ before.toList, args, .withDefaults name .classCtor false slots arity body)
 
 /-- Public, static-name class elements with default or explicit derived constructors. -/
 private partial def linkedClass (profile : HostProfile) (imports : List Name) (inFunction : Bool) (hint : Name) (j : Json) :

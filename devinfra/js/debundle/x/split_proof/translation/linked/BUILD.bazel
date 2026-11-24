@@ -54,6 +54,7 @@ _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean
         "bitwise_test",
         "browser_globals_test",
         "classes_test",
+        "derived_defaults_test",
         "derived_fields_test",
         "composition_test",
         "default_parameters_test",
