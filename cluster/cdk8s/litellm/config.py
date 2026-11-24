@@ -41,6 +41,8 @@ def model_entry(entry: Route | RouteAlias) -> dict:
         # retry at num_batch after a runner rejects a longer input.
         params["truncate"] = False
     if upstream == TABBYAPI_CHAT:
+        # Use the openai adapter: hosted_vllm strips assistant reasoning_content before
+        # Tabby can render it. See README.md#tabbyapi-reasoning-replay for the probe.
         params.update(
             allowed_openai_params=["reasoning_effort"],
             # TabbyAPI implements Chat Completions; let LiteLLM translate Responses.
