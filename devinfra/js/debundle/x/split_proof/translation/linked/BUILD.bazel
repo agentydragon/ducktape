@@ -5,8 +5,8 @@ package(default_testonly = True)
 
 # Sources resolve the parser and printer through the parent package's isolated npm links.
 js_library(
-    name = "linked_programs",
-    srcs = ["linked_programs.mjs"],
+    name = "harness",
+    srcs = ["harness.mjs"],
     deps = [
         "//devinfra/js/debundle/x/split_proof/translation:node_modules/acorn",
         "//devinfra/js/debundle/x/split_proof/translation:node_modules/astring",
@@ -14,140 +14,140 @@ js_library(
 )
 
 js_test(
-    name = "linked_input_test",
+    name = "input_test",
     data = [
         "//devinfra/js/debundle/x/split_proof/lean:linked_input_test_runner",
         "//devinfra/js/debundle/x/split_proof/lowering:dump_core",
         "//devinfra/js/debundle/x/split_proof/translation:node_modules/acorn",
         "//devinfra/js/debundle/x/split_proof/translation:node_modules/eslint-scope",
     ],
-    entry_point = "linked_input_test.mjs",
+    entry_point = "input_test.mjs",
     env = {"LINKED_INPUT_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:linked_input_test_runner)"},
 )
 
-_LINKED_PROGRAMS_TEST_DATA = [
-    ":linked_programs",
+_TEST_DATA = [
+    ":harness",
     "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
 ]
 
-_LINKED_PROGRAMS_TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"}
+_TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"}
 
 [
     js_test(
         name = name,
         size = "medium",
-        data = _LINKED_PROGRAMS_TEST_DATA,
+        data = _TEST_DATA,
         entry_point = name + ".mjs",
-        env = _LINKED_PROGRAMS_TEST_ENV,
+        env = _TEST_ENV,
     )
     for name in [
-        "linked_arithmetic_observer_test",
-        "linked_arithmetic_test",
-        "linked_arrays_test",
-        "linked_async_methods_test",
-        "linked_bitwise_test",
-        "linked_browser_globals_test",
-        "linked_classes_test",
-        "linked_composition_test",
-        "linked_default_parameters_test",
-        "linked_dense_array_batch_test",
-        "linked_flat_patterns_test",
-        "linked_function_declaration_test",
-        "linked_generator_test",
-        "linked_identifier_assignment_test",
-        "linked_if_test",
-        "linked_import_cells_test",
-        "linked_literal_records_test",
-        "linked_logical_test",
-        "linked_loops_test",
-        "linked_member_test",
-        "linked_module_graph_test",
-        "linked_object_elements_test",
-        "linked_object_spread_test",
-        "linked_optional_callee_test",
-        "linked_optional_chain_test",
-        "linked_pre_super_test",
-        "linked_provider_programs_test",
-        "linked_realm_constructors_test",
-        "linked_record_values_test",
-        "linked_relational_test",
-        "linked_reordering_test",
-        "linked_sequence_test",
-        "linked_regexp_test",
-        "linked_small_records_test",
-        "linked_structural_pivot_test",
-        "linked_switch_test",
-        "linked_templates_test",
-        "linked_wide_records_test",
-        "linked_wide_table_reversal_test",
+        "arithmetic_observer_test",
+        "arithmetic_test",
+        "arrays_test",
+        "async_methods_test",
+        "bitwise_test",
+        "browser_globals_test",
+        "classes_test",
+        "composition_test",
+        "default_parameters_test",
+        "dense_array_batch_test",
+        "flat_patterns_test",
+        "function_declaration_test",
+        "generator_test",
+        "identifier_assignment_test",
+        "if_test",
+        "import_cells_test",
+        "literal_records_test",
+        "logical_test",
+        "loops_test",
+        "member_test",
+        "module_graph_test",
+        "object_elements_test",
+        "object_spread_test",
+        "optional_callee_test",
+        "optional_chain_test",
+        "pre_super_test",
+        "provider_programs_test",
+        "realm_constructors_test",
+        "record_values_test",
+        "relational_test",
+        "reordering_test",
+        "sequence_test",
+        "regexp_test",
+        "small_records_test",
+        "structural_pivot_test",
+        "switch_test",
+        "templates_test",
+        "wide_records_test",
+        "wide_table_reversal_test",
     ]
 ]
 
 js_test(
-    name = "linked_programs_test",
+    name = "programs_test",
     size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_programs_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
+    data = _TEST_DATA,
+    entry_point = "programs_test.mjs",
+    env = _TEST_ENV,
     shard_count = 3,
 )
 
 js_test(
-    name = "linked_host_profile_test",
+    name = "host_profile_test",
     size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_host_profile_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
+    data = _TEST_DATA,
+    entry_point = "host_profile_test.mjs",
+    env = _TEST_ENV,
     shard_count = 3,
 )
 
 # Preserve the 48-reader reduction-budget regression for explicit runs.
 js_test(
-    name = "linked_module_graph_scale_test",
+    name = "module_graph_scale_test",
     size = "medium",
     args = ["--full-graph"],
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_module_graph_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
+    data = _TEST_DATA,
+    entry_point = "module_graph_test.mjs",
+    env = _TEST_ENV,
     tags = ["manual"],
 )
 
 js_test(
-    name = "linked_mutations_test",
+    name = "mutations_test",
     size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_mutations_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
+    data = _TEST_DATA,
+    entry_point = "mutations_test.mjs",
+    env = _TEST_ENV,
     shard_count = 3,
 )
 
 js_test(
-    name = "linked_property_assignment_test",
+    name = "property_assignment_test",
     size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_property_assignment_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
+    data = _TEST_DATA,
+    entry_point = "property_assignment_test.mjs",
+    env = _TEST_ENV,
     shard_count = 3,
 )
 
 js_test(
-    name = "linked_table_lookups_test",
+    name = "table_lookups_test",
     size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA + [
+    data = _TEST_DATA + [
         "//devinfra/js/debundle/x/split_proof/translation:node_modules/acorn",
         "//devinfra/js/debundle/x/split_proof/translation:node_modules/astring",
     ],
-    entry_point = "linked_table_lookups_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
+    entry_point = "table_lookups_test.mjs",
+    env = _TEST_ENV,
 )
 
 js_test(
-    name = "linked_record_fuel_test",
+    name = "record_fuel_test",
     size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_wide_table_reversal_test.mjs",
+    data = _TEST_DATA,
+    entry_point = "wide_table_reversal_test.mjs",
     # Cross the old probe ceiling without repeating the 44-row scaling workload.
-    env = _LINKED_PROGRAMS_TEST_ENV | {
+    env = _TEST_ENV | {
         "LINKED_TABLE_FIELDS": "1410",
         "LINKED_TABLE_ROWS": "3",
     },
