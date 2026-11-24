@@ -3174,6 +3174,7 @@ data:
       sampler_service_actor: spiffe://agentplane/central-sampler
       settle_deltas: true
       compact_deltas: true
+      compact_execution_evidence: true
     fold_concurrency: 4
     fold_page_size: 1000
     fold_interval_s: 2
