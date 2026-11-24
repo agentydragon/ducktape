@@ -90,9 +90,7 @@ mkdir -p "${profile_dir}"
   echo "#!/usr/bin/env bash"
   echo "set -euo pipefail"
   printf 'exec'
-  for arg in "$@"; do
-    printf ' %q' "${arg}"
-  done
+  printf ' %q' "$@"
   printf '\n'
 } >"${profile_dir}/command.sh"
 chmod +x "${profile_dir}/command.sh"
@@ -174,9 +172,7 @@ run_perf_command() {
     echo "status=${status}"
     echo "timeout=${timeout_value}"
     printf 'command=%q' "${perf_cmd}"
-    for arg in "$@"; do
-      printf ' %q' "${arg}"
-    done
+    printf ' %q' "$@"
     printf '\n'
     if [[ -s "${tmp_stderr}" ]]; then
       echo
@@ -212,7 +208,8 @@ run_perf_stack_slice() {
     "${callgraph_timeout}" \
     "perf stack-slice command failed" \
     "" \
-    "$@"
+    script --input "${profile_dir}/perf.data" \
+    --max-stack "${callgraph_max_stack}" "$@"
 }
 
 extract_stack_slices() {
@@ -225,9 +222,7 @@ extract_stack_slices() {
     last_sample="$(awk -F': ' '/# time of last sample/ { print $2 }' "${header}")"
   fi
   if [[ -z "${first_sample}" || -z "${last_sample}" ]]; then
-    run_perf_stack_slice "${profile_dir}/perf_script_stacks_head.txt" \
-      script --input "${profile_dir}/perf.data" \
-      --max-stack "${callgraph_max_stack}"
+    run_perf_stack_slice "${profile_dir}/perf_script_stacks_head.txt"
     return 0
   fi
 
@@ -254,18 +249,12 @@ extract_stack_slices() {
   )
 
   run_perf_stack_slice "${profile_dir}/perf_script_stacks_head.txt" \
-    script --input "${profile_dir}/perf.data" \
-    --max-stack "${callgraph_max_stack}" \
     --time "${head_start},${head_end}"
 
   run_perf_stack_slice "${profile_dir}/perf_script_stacks_mid.txt" \
-    script --input "${profile_dir}/perf.data" \
-    --max-stack "${callgraph_max_stack}" \
     --time "${mid_start},${mid_end}"
 
   run_perf_stack_slice "${profile_dir}/perf_script_stacks_late.txt" \
-    script --input "${profile_dir}/perf.data" \
-    --max-stack "${callgraph_max_stack}" \
     --time "${late_start},${late_end}"
 }
 

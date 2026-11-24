@@ -53,21 +53,26 @@ where
                 .write_all(buffer.as_bytes())
                 .map_err(ReportOutputError::Write)?;
         }
-        OutputFormat::Json => {
-            let mut bytes =
-                serde_json::to_vec_pretty(value).map_err(ReportOutputError::Serialize)?;
-            bytes.push(b'\n');
-            output.write_all(&bytes).map_err(ReportOutputError::Write)?;
-        }
-        OutputFormat::Ndjson => {
-            // For ndjson on a non-array shape, fall back to one compact JSON
-            // document per call. Array commands use `write_ndjson_list`.
-            let mut bytes = serde_json::to_vec(value).map_err(ReportOutputError::Serialize)?;
-            bytes.push(b'\n');
-            output.write_all(&bytes).map_err(ReportOutputError::Write)?;
+        OutputFormat::Json | OutputFormat::Ndjson => {
+            write_json_line(output, value, format == OutputFormat::Json)?;
         }
     }
     output.flush().map_err(ReportOutputError::Flush)
+}
+
+fn write_json_line<T: Serialize, W: Write + ?Sized>(
+    output: &mut W,
+    value: &T,
+    pretty: bool,
+) -> std::result::Result<(), ReportOutputError> {
+    let mut bytes = if pretty {
+        serde_json::to_vec_pretty(value)
+    } else {
+        serde_json::to_vec(value)
+    }
+    .map_err(ReportOutputError::Serialize)?;
+    bytes.push(b'\n');
+    output.write_all(&bytes).map_err(ReportOutputError::Write)
 }
 
 /// Adapt a renderer that cannot fail to `write_report`'s fallible signature.
@@ -119,9 +124,7 @@ pub fn write_ndjson_list<T: Serialize, W: Write + ?Sized>(
         return Ok(false);
     }
     for item in items {
-        let mut bytes = serde_json::to_vec(item).map_err(ReportOutputError::Serialize)?;
-        bytes.push(b'\n');
-        output.write_all(&bytes).map_err(ReportOutputError::Write)?;
+        write_json_line(output, item, false)?;
     }
     output.flush().map_err(ReportOutputError::Flush)?;
     Ok(true)

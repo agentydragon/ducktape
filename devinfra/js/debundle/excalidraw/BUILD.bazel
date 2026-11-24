@@ -7,13 +7,20 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_testonly = True)
 
+_ENTRY_POINTS = [
+    "app/main.js",
+    "app/vendor/clsx.js",
+    "app/vendor/roughjs.js",
+]
+
+_PACKAGE_ROOTS = {
+    "//:node_modules/clsx/dir": "clsx",
+    "//:node_modules/roughjs/dir": "roughjs",
+}
+
 js_library(
     name = "app",
-    srcs = [
-        "app/main.js",
-        "app/vendor/clsx.js",
-        "app/vendor/roughjs.js",
-    ],
+    srcs = _ENTRY_POINTS,
     deps = [
         "//:node_modules/@excalidraw/excalidraw",
         "//:node_modules/clsx",
@@ -37,11 +44,7 @@ esbuild(
         "loader": {".woff2": "file"},
     },
     define = {"process.env.NODE_ENV": "\"production\""},
-    entry_points = [
-        "app/main.js",
-        "app/vendor/clsx.js",
-        "app/vendor/roughjs.js",
-    ],
+    entry_points = _ENTRY_POINTS,
     # The text-to-diagram dialog's lazy mermaid closure (~170 chunks, d3,
     # cytoscape, katex) would dominate the corpus; it stays an unresolved
     # dynamic import, so only that dialog fails to load.
@@ -132,20 +135,15 @@ filegroup(
     visibility = ["//devinfra/js/debundle/perf:__pkg__"],
 )
 
-filegroup(
-    name = "spec_vendor_marks",
-    srcs = ["spec/vendor_marks.yaml"],
+exports_files(
+    ["spec/vendor_marks.yaml"],
     visibility = ["//devinfra/js/debundle/perf:__pkg__"],
 )
 
-# The spec: a few source-anchored modules and vendor swaps (README.md § Spec).
+# Both stages use the same authored spec and generated sources.
 debundle_analysis(
     name = "analysis",
-    input_data = [":source"],
-    package_roots = {
-        "//:node_modules/clsx/dir": "clsx",
-        "//:node_modules/roughjs/dir": "roughjs",
-    },
+    package_roots = _PACKAGE_ROOTS,
     spec_tree_inputs = [":spec"],
     tree_config = "config.yaml",
     tree_modules = "spec/modules",
@@ -156,11 +154,7 @@ debundle_analysis(
 debundle_apply(
     name = "debundle",
     analysis = ":analysis",
-    input_data = [":source"],
-    package_roots = {
-        "//:node_modules/clsx/dir": "clsx",
-        "//:node_modules/roughjs/dir": "roughjs",
-    },
+    package_roots = _PACKAGE_ROOTS,
     spec_tree_inputs = [":spec"],
     split_dependency_graphs = True,
     tree_config = "config.yaml",
@@ -243,15 +237,13 @@ py_test(
     data = [
         ":debundle",
         "//:node_modules/@excalidraw/excalidraw/dir",
-        "//:node_modules/clsx/dir",
-        "//:node_modules/roughjs/dir",
-    ],
+    ] + _PACKAGE_ROOTS.keys(),
     env = {
         "DEBUNDLE_OUT": "$(rlocationpath :debundle)",
         "EXCALIDRAW_PACKAGE": "$(rlocationpath //:node_modules/@excalidraw/excalidraw/dir)",
         "PACKAGE_ROOTS": json.encode({
-            "clsx": "$(rlocationpath //:node_modules/clsx/dir)",
-            "roughjs": "$(rlocationpath //:node_modules/roughjs/dir)",
+            package: "$(rlocationpath {})".format(label)
+            for label, package in _PACKAGE_ROOTS.items()
         }),
     },
     shard_count = 4,
