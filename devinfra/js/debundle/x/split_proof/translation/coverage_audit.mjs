@@ -3,12 +3,11 @@
 // occurs:
 //
 //   - ESTree node types and syntax forms of ES2024 (`syntax_inventory.mjs`), next to how the effect analysis treats the
-//     node type (an arm of `eval`, `exec`, `evalClass` or `bindPattern`, a part of such a construct, or none: a give-up
-//     that makes the unit touch the world);
+//     standalone witness during module initialization;
 //   - the rows of the table of standard functions (`Intrinsics.lean`): programs that call the function;
 //   - calls of standard functions the table has no row for (each is a call into the world for the analysis).
 //
-//   node coverage_audit.mjs [--samples N] [--seed S] [--jobs J] [--only id,id] [--lean DIR] [--out COVERAGE.md]
+//   node coverage_audit.mjs [--samples N] [--seed S] [--jobs J] [--only id,id] [--analyzer FILE] [--out COVERAGE.md]
 //
 // Only programs that complete count: premise P4 drops the rest from every oracle, so a construct that occurs only in
 // programs that throw is as good as missing. The table is a measurement of the sampled seeds, not a proof that a
@@ -17,7 +16,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { DEFAULT_LEAN_DIR, readAnalysisInventory } from "./analysis_inventory.mjs";
+import { readAnalysisInventory } from "./analysis_inventory.mjs";
 import { shiftCandidate } from "./shift_candidate.mjs";
 import { FORMS, NODE_TYPES, featuresOf, parseModule } from "./syntax_inventory.mjs";
 import { spawnAndWait } from "./spawn_and_wait.mjs";
@@ -170,73 +169,12 @@ export async function sampleGenerator(gen, { count, seed, work, jobs, keysFile }
 
 // ---- the report
 
-/** Node types the interpreter handles as part of a parent construct, with no arm of their own. */
-const STRUCTURAL = {
-  Program: "`analyze`: each top-level statement is a unit",
-  VariableDeclarator: "`exec` `VariableDeclaration`",
-  Property: "`evalObject`",
-  SpreadElement: "`ArrayExpression`, `evalObject`, `evalArgs`",
-  TemplateElement: "`TemplateLiteral`",
-  SwitchCase: "`exec` `SwitchStatement`",
-  CatchClause: "`exec` `TryStatement`",
-  ClassBody: "`evalClass`",
-  Super: "`MemberExpression`, `evalCall`",
-  RestElement: "`bindPattern`, parameters, `evalObject`",
-  ImportDeclaration: "front end: not a unit",
-  ImportSpecifier: "front end: not a unit",
-  ImportDefaultSpecifier: "front end: not a unit",
-  ImportNamespaceSpecifier: "front end: not a unit",
-  ImportAttribute: "front end: not a unit",
-  ExportSpecifier: "front end: not a unit",
-  ExportAllDeclaration: "front end: refused",
-};
-
-/** How the analysis treats a node type. */
-export function analysisOf(type, inventory) {
-  const arms = Object.entries(inventory.arms)
-    .filter(([, set]) => set.has(type))
-    .map(([fn]) => `\`${fn}\``);
-  if (arms.length > 0) return arms.join(", ");
-  if (STRUCTURAL[type]) return `part of ${STRUCTURAL[type]}`;
-  return "**gives up**: the unit touches the world";
+function witnessOutcome({ effectUnits, unknown, outOfBudget }) {
+  const details = [effectUnits.length ? `world effect in unit ${effectUnits.join(", ")}` : "no world effect"];
+  if (unknown.length) details.push(`unknown: ${unknown.join(", ")}`);
+  if (outOfBudget) details.push(`out of budget: ${outOfBudget}`);
+  return details.join("; ");
 }
-
-/** Notes on how the analysis treats a syntax form, each with a string that must occur in `Effects.lean`. */
-const FORM_NOTES = [
-  [
-    "function:generator",
-    'flag code "generator"',
-    "a call is a call into the world; the body does not run in the unit that calls it",
-  ],
-  ["function:async-generator", 'flag code "generator"', "as a generator"],
-  ["method:generator", 'flag code "generator"', "as a generator"],
-  ["function:async", 'flag code "async"', "returns a promise; the `then` of a thenable it returns runs"],
-  ["await", "awaitValue", "the unit is an effect (the continuation runs after the program)"],
-  ["await:top-level", "awaitValue", "refused by the checker"],
-  ["for-await", 'flag s "await"', "as `await`"],
-  ["using", 'giveUp "using"', "gives up"],
-  ["import()", "ImportExpression", "a call into the world"],
-  ["new.target", "MetaProperty", "any value"],
-  ["member:super", "super member", "gives up and escapes `this`"],
-  ["call:super", "superCall", "constructs the parent on the same `this`"],
-  ["object:getter", 'kind == "get"', "run where read"],
-  ["object:setter", 'kind == "set"', "run where assigned"],
-  ["object:proto", "__proto__", "sets the prototype"],
-  ["member:private", "PrivateIdentifier", "`#x` is a property key"],
-  ["private-in", "PrivateIdentifier", "no arm for the `#x` in `#x in o`: gives up"],
-  ["delete:member", '"delete"', "assigns the property"],
-  ["tagged-template", "TaggedTemplateExpression", "calls the tag with the strings array"],
-  ["static-block", "StaticBlock", "runs in order with the static fields"],
-  ["label", "LabeledStatement", "the body runs"],
-  ["switch", "SwitchStatement", "every case runs, in order"],
-  ["for", "fixLoop", "the body runs until the state stops growing"],
-];
-
-const noteFor = (form, effectsText) => {
-  const note = FORM_NOTES.find(([name]) => name === form);
-  if (!note) return "";
-  return effectsText.includes(note[1]) ? note[2] : `${note[2]} (stale: \`${note[1]}\` is gone from \`Effects.lean\`)`;
-};
 
 const cell = (n) => (n === 0 ? "·" : String(n));
 
@@ -272,7 +210,7 @@ const isModeled = (key, tableKeys) =>
   tableKeys.has(key) || /^(String|Number|Boolean|BigInt|Symbol)\.prototype\./.test(key);
 
 /** The Markdown report. */
-export function renderReport({ inventory, samples, count, seed, effectsText }) {
+export function renderReport({ inventory, samples, count, seed }) {
   const out = [];
   const cols = samples.map((s) => `\`${s.id}\``);
   const align = ["l", "l", ...samples.map(() => "r")];
@@ -360,29 +298,25 @@ export function renderReport({ inventory, samples, count, seed, effectsText }) {
 
   // node types
   out.push("## ESTree node types", "");
-  out.push(
-    `Edition of ES2024 or earlier, and how \`Effects.lean\` treats the type: the function whose \`match\` has an arm for it, or a part of a parent construct, or a give-up (the unit then touches the world).`,
-    ""
-  );
+  out.push("Each count includes occurrences anywhere in a completed generated program, including deferred bodies.", "");
   const typeRows = NODE_TYPES.map(([type, since]) => [
     `\`${type}\``,
-    `${since}; ${analysisOf(type, inventory)}`,
+    since,
     ...samples.map((s) => cell(s.types.get(type) ?? 0)),
   ]);
-  out.push(table(["node type", "since; analysis", ...cols], typeRows, align), "");
+  out.push(table(["node type", "since", ...cols], typeRows, align), "");
 
-  // forms
   out.push("## Syntax forms", "");
   out.push(
-    `Forms of the same node type that differ in meaning. A note says what the analysis does, where it is not the plain rule of its node type.`,
+    "Lean analyzes each form’s witness snippet as a separate module under the default premises. The observation covers the whole snippet during initialization. A form inside a deferred body may have no initialization effect.",
     ""
   );
   const formRows = FORMS.map((f) => [
     `\`${f.name}\``,
-    [f.since, noteFor(f.name, effectsText)].filter(Boolean).join("; "),
+    `${f.since}; ${witnessOutcome(inventory.witnesses[f.name])}`,
     ...samples.map((s) => cell(s.forms.get(f.name) ?? 0)),
   ]);
-  out.push(table(["form", "since; note", ...cols], formRows, align), "");
+  out.push(table(["form", "since; witness observation", ...cols], formRows, align), "");
 
   // rows
   const tableKeys = new Set(inventory.tableKeys);
@@ -465,11 +399,6 @@ export function renderReport({ inventory, samples, count, seed, effectsText }) {
     `**Rows of the table no generator called** (${missingRows.length} of ${inventory.tableKeys.filter((k) => !notProbeable(k)).length}): ${missingRows.map((k) => `\`${k}\``).join(", ") || "none"}.`,
     ""
   );
-  const giveUps = NODE_TYPES.map(([t]) => t).filter((t) => analysisOf(t, inventory).startsWith("**gives up"));
-  out.push(
-    `**Node types the analysis gives up on** (${giveUps.length}): ${giveUps.map((t) => `\`${t}\``).join(", ")}. A generator that produces them tests that the analysis treats the unit as touching the world, never as pure.`,
-    ""
-  );
   for (const s of samples) {
     const onlyThrowing = [...s.formsInThrowing].filter((f) => !s.forms.has(f));
     if (onlyThrowing.length > 0)
@@ -491,10 +420,10 @@ async function main() {
   const seed = Number(option("seed", 1));
   const jobs = Number(option("jobs", 2));
   const only = option("only", undefined)?.split(",");
-  const leanDir = path.resolve(option("lean", DEFAULT_LEAN_DIR));
+  const leanDir = option("lean", undefined);
+  const executable = option("analyzer", leanDir && path.resolve(leanDir, "../.lake/build/bin/analysis_inventory"));
   const out = option("out", undefined);
-  const inventory = readAnalysisInventory(leanDir);
-  const effectsText = readFileSync(path.join(leanDir, "Effects.lean"), "utf8");
+  const inventory = readAnalysisInventory(executable);
   const work = mkdtempSync(path.join(process.env.TMPDIR ?? os.tmpdir(), "coverage_audit_"));
   try {
     const keysFile = path.join(work, "keys.json");
@@ -504,7 +433,7 @@ async function main() {
       console.error(`sampling ${gen.id}`);
       samples.push(await sampleGenerator(gen, { count, seed, work, jobs, keysFile }));
     }
-    const report = renderReport({ inventory, samples, count, seed, effectsText });
+    const report = renderReport({ inventory, samples, count, seed });
     if (out) writeFileSync(out, report);
     else console.log(report);
   } finally {

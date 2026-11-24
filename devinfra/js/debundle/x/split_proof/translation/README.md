@@ -197,13 +197,16 @@ object identity are outside that comparison.
 
 ## What the generators cover
 
-[`COVERAGE.md`](COVERAGE.md) says, for each generator above, which ES2024 node types and syntax forms its programs contain, and which standard functions they call, next to how [`Effects.lean`](../lean/EsmSplit/Effects.lean) treats each (an arm of `eval`, `exec`, `evalClass` or `bindPattern`, or a give-up) and which rows [`Intrinsics.lean`](../lean/EsmSplit/Intrinsics.lean) has. Only programs that complete count, because premise P4 drops the others. The audit is a script, not a test of the checker; it reads the Lean sources, so the table is out of date after a change to them:
+[`COVERAGE.md`](COVERAGE.md) records a historical generator sample. New reports count the syntax and standard function calls of programs that complete. They also report how the compiled Lean analyzer classifies each standalone syntax witness during module initialization, including unknown operations and exhausted analysis budgets.
+
+From `translation/` with its standalone dependencies installed:
 
 ```sh
+(cd ../lean && lake build analysis_inventory)
 node coverage_audit.mjs --samples 150 --seed 1 --out COVERAGE.md && prettier --write COVERAGE.md
 ```
 
-[`syntax_inventory.mjs`](syntax_inventory.mjs) lists the node types and forms (each with a witness snippet that `coverage_audit_test` parses), [`analysis_inventory.mjs`](analysis_inventory.mjs) reads the analysis's inventory from the Lean sources, and [`intrinsics_probe.mjs`](intrinsics_probe.mjs) counts the standard functions a program calls from its own code (`node --import`). `node fuzz.mjs --emit DIR` writes the bundles of a corpus mode without running them.
+[`syntax_inventory.mjs`](syntax_inventory.mjs) defines the forms and witness snippets. [`AnalysisInventory.lean`](../lean/AnalysisInventory.lean) runs each witness separately and exports the actual intrinsic keys and member paths. Pass `--analyzer FILE` to select a built executable. [`intrinsics_probe.mjs`](intrinsics_probe.mjs) counts the standard functions a sampled program calls from its own code. `node fuzz.mjs --emit DIR` writes the bundles of a corpus mode without running them.
 
 ### Protocol combinations outside the general fuzz corpus
 

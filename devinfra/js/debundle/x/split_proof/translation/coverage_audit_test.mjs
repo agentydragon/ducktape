@@ -6,8 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
-import { GENERATORS, analysisOf, renderReport, sampleGenerator } from "./coverage_audit.mjs";
-import { memberPaths, nodeTypeArms, readAnalysisInventory, tableKeys } from "./analysis_inventory.mjs";
+import { GENERATORS, renderReport, sampleGenerator } from "./coverage_audit.mjs";
+import { readAnalysisInventory } from "./analysis_inventory.mjs";
 import { FORMS, NODE_TYPES, featuresOf, parseModule } from "./syntax_inventory.mjs";
 
 const work = realpathSync(mkdtempSync(path.join(process.env.TEST_TMPDIR ?? os.tmpdir(), "coverage_audit_test_")));
@@ -32,61 +32,6 @@ const work = realpathSync(mkdtempSync(path.join(process.env.TEST_TMPDIR ?? os.tm
     ["WithStatement"]
   );
   assert.equal(new Set(FORMS.map((f) => f.name)).size, FORMS.length, "duplicate form names");
-}
-
-// ---- the readers of the Lean sources, on small samples of the shapes they read
-{
-  const effects = `
-partial def evalIdent (fr : Fr) (n : String) : M AV := do
-  | "NotThisOne" => pure ()
-
-partial def eval (fr : Fr) (j : Json) : M AV := do
-  match typ j with
-  | "Literal" =>
-    return AV.prim
-  | "FunctionExpression" | "ArrowFunctionExpression" =>
-    match typ x with
-    | some "__proto__" => pure ()
-    return AV.prim
-  | t =>
-    giveUp t j
-
-partial def exec (fr : Fr) (s : Json) : M Unit := do
-  | "IfStatement" => pure ()
-`;
-  assert.deepEqual([...nodeTypeArms(effects, "eval")].sort(), [
-    "ArrowFunctionExpression",
-    "FunctionExpression",
-    "Literal",
-  ]);
-  assert.deepEqual([...nodeTypeArms(effects, "exec")], ["IfStatement"]);
-  assert.throws(() => nodeTypeArms(effects, "missing"));
-
-  const intrinsics = `
-def iteratorHelperRows : List (String × Summary) :=
-  ["map", "filter"].flatMap fun m =>
-    ["Map", "Set"].map fun c => (c ++ ".prototype." ++ m, { world := true })
-
-def table : Std.HashMap String Summary := Std.HashMap.ofList (([
-  ("Object.keys", { ret := freshPrims }),
-  ("Math.abs", {}), ("Math.max", {}),
-  ("env:console.log", { world := true })
-] : List (String × Summary)) ++ iteratorHelperRows)
-`;
-  assert.deepEqual(tableKeys(intrinsics), [
-    "Object.keys",
-    "Math.abs",
-    "Math.max",
-    "env:console.log",
-    "Map.prototype.map",
-    "Map.prototype.filter",
-    "Set.prototype.map",
-    "Set.prototype.filter",
-  ]);
-  assert.deepEqual(memberPaths('def memberPaths : List String := [\n  "Array.from",\n  "Array.of"\n]\n'), [
-    "Array.from",
-    "Array.of",
-  ]);
 }
 
 // ---- the probe counts the calls of the program's own code, through callbacks too, and not the engine's or Node's
@@ -160,6 +105,9 @@ def table : Std.HashMap String Summary := Std.HashMap.ofList (([
 // ---- a sample of two generators renders a report with the tables
 {
   const inventory = readAnalysisInventory();
+  assert(inventory.tableKeys.includes("Object.keys"));
+  assert(inventory.memberPaths.includes("Array.prototype.map"));
+  assert.deepEqual(Object.keys(inventory.witnesses).sort(), FORMS.map((f) => f.name).sort());
   const keysFile = path.join(work, "audit_keys.json");
   writeFileSync(keysFile, JSON.stringify([...inventory.tableKeys, ...inventory.memberPaths]));
   const samples = [];
@@ -179,12 +127,13 @@ def table : Std.HashMap String Summary := Std.HashMap.ofList (([
     assert(s.types.get("Program") === 4 && s.types.get("FunctionDeclaration") > 0, `${s.id}: node types`);
     assert(s.rows.get("env:console.log") > 0, `${s.id}: the probe saw no console.log`);
   }
-  const report = renderReport({ inventory, samples, count: 4, seed: 1, effectsText: "" });
-  assert.match(report, /\| `ExpressionStatement` \| ES5; `exec` \|/);
-  assert.match(report, /\| `YieldExpression` \| ES2015; \*\*gives up\*\*/);
+  const report = renderReport({ inventory, samples, count: 4, seed: 1 });
+  assert.match(report, /\| `ExpressionStatement` \| ES5 \|/);
   assert.match(report, /\| `Object\.assign` \|/);
   assert.match(report, /\| `JSON\.stringify` \|/);
-  assert.equal(analysisOf("Property", inventory), "part of `evalObject`");
+  assert.match(report, /since; witness observation/);
+  assert.deepEqual(inventory.witnesses["function:generator"].effectUnits, []);
+  assert.deepEqual(inventory.witnesses["import()"].effectUnits, [0]);
 }
 
 rmSync(work, { recursive: true, force: true });
