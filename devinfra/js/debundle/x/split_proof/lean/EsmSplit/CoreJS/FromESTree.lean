@@ -599,6 +599,7 @@ private partial def linkedFunction (profile : HostProfile) (imports : List Name)
     -- makeFunc captures the enclosing this as well as named cells. No async
     -- callable enters the ordinary function evaluator.
     return ← deferredFunction j .asyncFn name self arity "async invocation requires Promise semantics"
+  let deferPattern := deferredFunction j kind name self arity (checkPrivateNames := true)
   let hasDefaults := tags.contains "AssignmentPattern"
   let mut params : Array (Name × Option Expr) := #[]
   let mut bound : Array Name := #[]
@@ -612,19 +613,22 @@ private partial def linkedFunction (profile : HostProfile) (imports : List Name)
     | "AssignmentPattern" =>
       let target ← param.getObjVal? "left"
       unless (← field target "type") == "Identifier" do
-        throw "expected an identifier in a default parameter"
+        return ← deferPattern "expected an identifier in a default parameter"
       let x ← localBinding target
       let value ← linkedExpr profile imports true x (← param.getObjVal? "right")
       params := params.push (x, some value)
       bound := bound.push x
     | "ObjectPattern" =>
-      if hasDefaults then throw "unsupported object pattern alongside default parameters"
-      let fields ← linkedObjectPattern param (linkedPatternIdentifier localBinding)
+      if hasDefaults then return ← deferPattern "unsupported object pattern alongside default parameters"
+      let fields ← match linkedObjectPattern param (linkedPatternIdentifier localBinding) with
+        | .ok fields => pure fields
+        | .error reason => return ← deferPattern reason
       let arg := s!":parameter:{i}"
       params := params.push (arg, none)
       for (key, x) in fields do
         bound := bound.push x
         bindings := bindings.push (.decl .var x (.get (.var arg) (.str key)))
+    | "ArrayPattern" | "RestElement" => return ← deferPattern s!"unsupported function parameter {tag}"
     | other => throw s!"unsupported function parameter {other}"
   unless bound.toList.Nodup do throw "duplicate function parameter"
   let body ← j.getObjVal? "body"

@@ -181,9 +181,10 @@ for (const [name, param] of [
   ["default", "{a=1}"],
   ["rest", "{...props}"],
 ]) {
-  const source = `function read(${param}) {} export {read};`;
-  const result = sequentialSplit(name, source, { [entry]: ["#0", "#1"] }, []);
+  const source = `function read(${param}) {} read({}); export {read};`;
+  const result = sequentialSplit(name, source, { [entry]: ["#0", "#1", "#2"] }, []);
   assert.equal(result.verdict.status, "rejected", result.log);
+  assert.match(result.verdict.reason, /deferred function read:/, result.log);
   assert(!existsSync(result.out));
 }
 
