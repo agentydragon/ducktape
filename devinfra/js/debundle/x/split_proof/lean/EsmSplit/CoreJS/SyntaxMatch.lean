@@ -33,8 +33,7 @@ partial def exprEq : MatchEq Expr
   | .host a, .host b => (scalarEq a b).map fun h => ⟨congrArg Expr.host h.down⟩
   | .obj a, .obj b => (listEq propEq a b).map fun h => ⟨congrArg Expr.obj h.down⟩
   | .arr a, .arr b => (listEq exprEq a b).map fun h => ⟨congrArg Expr.arr h.down⟩
-  | .arrWithSpread a, .arrWithSpread b =>
-    (listEq arrayElementEq a b).map fun h => ⟨congrArg Expr.arrWithSpread h.down⟩
+  | .spreadArg a, .spreadArg b => (exprEq a b).map fun h => ⟨congrArg Expr.spreadArg h.down⟩
   | .prim op args, .prim op' args' => do
     let ⟨operator⟩ ← scalarEq op op'
     let ⟨arguments⟩ ← listEq exprEq args args'
@@ -70,6 +69,9 @@ partial def exprEq : MatchEq Expr
     let ⟨base⟩ ← exprEq o o'
     let ⟨key⟩ ← exprEq k k'
     return ⟨base ▸ key ▸ rfl⟩
+  | .getSuper k, .getSuper k' => do
+    let ⟨key⟩ ← exprEq k k'
+    return ⟨key ▸ rfl⟩
   | .getOptional o k, .getOptional o' k' => do
     let ⟨base⟩ ← exprEq o o'
     let ⟨key⟩ ← exprEq k k'
@@ -102,16 +104,26 @@ partial def exprEq : MatchEq Expr
     let ⟨key⟩ ← exprEq k k'
     let ⟨arguments⟩ ← listEq exprEq args args'
     return ⟨base ▸ key ▸ arguments ▸ rfl⟩
+  | .callSuper k args optional, .callSuper k' args' optional' => do
+    let ⟨key⟩ ← exprEq k k'
+    let ⟨xs⟩ ← listEq exprEq args args'
+    let ⟨opt⟩ ← scalarEq optional optional'
+    return ⟨key ▸ xs ▸ opt ▸ rfl⟩
   | .callOptionalReceiver o k args, .callOptionalReceiver o' k' args' => do
     let ⟨base⟩ ← exprEq o o'
     let ⟨key⟩ ← exprEq k k'
     let ⟨arguments⟩ ← listEq exprEq args args'
     return ⟨base ▸ key ▸ arguments ▸ rfl⟩
-  | .callOptionalCallee o k args, .callOptionalCallee o' k' args' => do
+  | .callOptionalCallee o k args p, .callOptionalCallee o' k' args' p' => do
     let ⟨base⟩ ← exprEq o o'
     let ⟨key⟩ ← exprEq k k'
     let ⟨arguments⟩ ← listEq exprEq args args'
-    return ⟨base ▸ key ▸ arguments ▸ rfl⟩
+    let property : Option (PLift (p = p')) := match p, p' with
+      | none, none => some ⟨rfl⟩
+      | some prop, some prop' => (exprEq prop prop').map fun h => ⟨congrArg some h.down⟩
+      | _, _ => none
+    let ⟨tail⟩ ← property
+    return ⟨base ▸ key ▸ arguments ▸ tail ▸ rfl⟩
   | .cls n self ctor ms, .cls n' self' ctor' ms' => do
     let ⟨k⟩ ← scalarEq n n'
     let ⟨s⟩ ← scalarEq self self'
@@ -144,12 +156,6 @@ private partial def targetEq : MatchEq Target
     let ⟨key⟩ ← exprEq k k'
     return ⟨base ▸ key ▸ rfl⟩
   | _, _ => none
-
-private partial def arrayElementEq : MatchEq (ArrayElementKind × Expr)
-  | (kind, e), (kind', e') => do
-    let ⟨tag⟩ ← scalarEq kind kind'
-    let ⟨value⟩ ← exprEq e e'
-    return ⟨tag ▸ value ▸ rfl⟩
 
 private partial def derivedCtorEq : MatchEq (Option (List Stmt × Option (List Expr) × Func))
   | none, none => some ⟨rfl⟩
@@ -190,6 +196,9 @@ partial def funcEq : MatchEq Func
   | _, _ => none
 
 private partial def classMemberEq : MatchEq ClassMember
+  | .staticBlock body, .staticBlock body' => do
+    let ⟨eq⟩ ← funcEq body body'
+    return ⟨eq ▸ rfl⟩
   | .field s k v, .field s' k' v' => do
     let ⟨st⟩ ← scalarEq s s'
     let ⟨key⟩ ← exprEq k k'
@@ -217,6 +226,10 @@ private partial def propEq : MatchEq PropDef
     let ⟨key⟩ ← exprEq k k'
     let ⟨value⟩ ← exprEq v v'
     return ⟨key ▸ value ▸ rfl⟩
+  | .method k f, .method k' f' => do
+    let ⟨key⟩ ← exprEq k k'
+    let ⟨method⟩ ← funcEq f f'
+    return ⟨key ▸ method ▸ rfl⟩
   | .getter k f, .getter k' f' => do
     let ⟨key⟩ ← exprEq k k'
     let ⟨fn⟩ ← funcEq f f'
@@ -227,6 +240,26 @@ private partial def propEq : MatchEq PropDef
     return ⟨key ▸ fn ▸ rfl⟩
   | .proto v, .proto v' => (exprEq v v').map fun h => ⟨congrArg PropDef.proto h.down⟩
   | .spread a, .spread b => (exprEq a b).map fun h => ⟨congrArg PropDef.spread h.down⟩
+  | _, _ => none
+
+private partial def objectBindingEq : MatchEq (Expr × BindingPattern)
+  | (k, p), (k', p') => do
+    let ⟨key⟩ ← exprEq k k'
+    let ⟨pattern⟩ ← patternEq p p'
+    return ⟨key ▸ pattern ▸ rfl⟩
+
+private partial def patternEq : MatchEq BindingPattern
+  | .name a, .name b => (scalarEq a b).map fun h => ⟨congrArg BindingPattern.name h.down⟩
+  | .object a, .object b =>
+    (listEq objectBindingEq a b).map fun h => ⟨congrArg BindingPattern.object h.down⟩
+  | .array items rest, .array items' rest' => do
+    let ⟨elements⟩ ← listEq (optionEq patternEq) items items'
+    let ⟨tail⟩ ← optionEq patternEq rest rest'
+    return ⟨elements ▸ tail ▸ rfl⟩
+  | .defaultValue p e, .defaultValue p' e' => do
+    let ⟨pattern⟩ ← patternEq p p'
+    let ⟨fallback⟩ ← exprEq e e'
+    return ⟨pattern ▸ fallback ▸ rfl⟩
   | _, _ => none
 
 /-- A match returns a proof of statement equality. -/
@@ -244,11 +277,19 @@ partial def stmtEq : MatchEq Stmt
   | .block a, .block b => (listEq stmtEq a b).map fun h => ⟨congrArg Stmt.block h.down⟩
   | .brk, .brk | .cont, .cont => some ⟨rfl⟩
   | .loop init test update body, .loop init' test' update' body' => do
-    let ⟨i⟩ ← stmtEq init init'
+    let ⟨i⟩ ← listEq stmtEq init init'
     let ⟨t⟩ ← exprEq test test'
     let ⟨u⟩ ← exprEq update update'
     let ⟨b⟩ ← stmtEq body body'
     return ⟨i ▸ t ▸ u ▸ b ▸ rfl⟩
+  | .breakScope a, .breakScope b => (stmtEq a b).map fun h => ⟨congrArg Stmt.breakScope h.down⟩
+
+  | .forOf kind pattern source body, .forOf kind' pattern' source' body' => do
+    let ⟨k⟩ ← scalarEq kind kind'
+    let ⟨p⟩ ← patternEq pattern pattern'
+    let ⟨s⟩ ← exprEq source source'
+    let ⟨b⟩ ← stmtEq body body'
+    return ⟨k ▸ p ▸ s ▸ b ▸ rfl⟩
   | .tryCatch body param handler, .tryCatch body' param' handler' => do
     let ⟨b⟩ ← stmtEq body body'
     let ⟨p⟩ ← scalarEq param param'
@@ -263,6 +304,11 @@ partial def stmtEq : MatchEq Stmt
     let ⟨n⟩ ← scalarEq name name'
     let ⟨v⟩ ← exprEq init init'
     return ⟨k ▸ n ▸ v ▸ rfl⟩
+  | .bind kind pattern init, .bind kind' pattern' init' => do
+    let ⟨k⟩ ← scalarEq kind kind'
+    let ⟨p⟩ ← patternEq pattern pattern'
+    let ⟨v⟩ ← exprEq init init'
+    return ⟨k ▸ p ▸ v ▸ rfl⟩
   | .opaque code decls funs free run, .opaque code' decls' funs' free' run' => do
     let ⟨c⟩ ← scalarEq code code'
     let ⟨d⟩ ← scalarEq decls decls'

@@ -82,11 +82,67 @@ const generated = program([
 ]);
 assertCertifiedResult(ownerReaderSplit("switch-generated-evaluation-order", generated), "dnsb");
 
+const grouped = ownerReaderSplit(
+  "switch-grouped-labels",
+  `function choose(value) {
+    let trace = "";
+    switch ((trace += "d", value)) {
+      case (trace += "a", "a"):
+      case (trace += "b", "b"): {
+        trace += "m";
+        if (value === "a") { break; }
+        trace += "b";
+        break;
+      }
+      case (trace += "z", "z"):
+      default: trace += "x";
+    }
+    return trace + "!";
+  }
+  const result = [choose("a"), choose("b"), choose("x"), choose("z")];
+  export { result };`
+);
+assertCertifiedResult(grouped, ["dam!", "dabmb!", "dabzx!", "dabzx!"]);
+assert.equal(
+  lower(grouped.files.sourceFile, grouped.files.specFile, grouped.out, ["--check-output"]).verdict.status,
+  "certified"
+);
+
+const enclosing = ownerReaderSplit(
+  "switch-keeps-loop-control",
+  `function choose() {
+    let trace = "";
+    for (let i = 0; i < 3; i++) {
+      switch (i) {
+        case 0: {
+          try { continue; } finally { trace += "f"; }
+          break;
+        }
+        case 1: {
+          for (let j = 0; j < 1; j++) { trace += "i"; break; }
+          switch (1) { case 1: { trace += "s"; break; } }
+          trace += "o";
+          break;
+        }
+        default: {
+          try { break; } finally { trace += "b"; }
+          trace += "unreachable";
+        }
+      }
+      trace += "a";
+    }
+    return trace;
+  }
+  const result = choose();
+  export { result };`
+);
+assertCertifiedResult(enclosing, "fisoaba");
+
 for (const [name, cases, reason] of [
   ["fallthrough", "case 0: 1; case 1: return 2;", /unsupported switch fallthrough/],
   ["default-order", "default: return 0; case 1: return 1;", /unsupported nontrailing switch default/],
   ["shared-lexical", "case 0: let shared = 1; break; case 1: return shared;", /unsupported switch lexical declaration/],
-  ["nested-break", "case 0: if (n === 0) break; break; default: return 1;", /unsupported nested switch break/],
+  ["inner-break-falls-through", "case 0: { while (true) break; } case 1: return 2;", /unsupported switch fallthrough/],
 ]) {
   const refused = ownerReaderSplit(
     `switch-${name}`,

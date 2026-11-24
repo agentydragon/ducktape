@@ -50,32 +50,25 @@ _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean
         "arrays_test",
         "async_methods_test",
         "bitwise_test",
-        "browser_globals_test",
         "classes_test",
         "derived_defaults_test",
+        "derived_object_parameters_test",
         "derived_fields_test",
         "composition_test",
-        "default_parameters_test",
-        "flat_patterns_test",
         "function_declaration_test",
-        "generator_test",
         "hoisted_moves_test",
-        "identifier_assignment_test",
         "if_test",
         "import_cells_test",
         "initializer_moves_test",
         "literal_records_test",
         "logical_test",
-        "loops_test",
         "member_test",
         "module_graph_test",
         "module_metadata_test",
         "numeric_prefix_test",
-        "numeric_property_keys_test",
         "object_elements_test",
         "object_spread_test",
         "optional_callee_test",
-        "optional_chain_test",
         "pre_super_test",
         "realm_constructors_test",
         "record_prefix_test",
@@ -84,20 +77,53 @@ _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean
         "reordering_test",
         "resolved_placement_test",
         "schedule_moves_test",
-        "sequence_test",
         "regexp_test",
         "small_records_test",
         "structural_intrinsic_number_test",
+        "static_blocks_test",
         "string_initializer_test",
         "structural_object_method_test",
         "switch_test",
         "symbol_brand_test",
         "symbol_iterator_test",
-        "templates_test",
+        "symbol_tag_test",
         "weakmap_constructor_test",
         "wide_records_test",
     ]
 ]
+
+[
+    js_test(
+        name = name,
+        size = "medium",
+        data = _TEST_DATA,
+        entry_point = name + ".mjs",
+        env = _TEST_ENV,
+        shard_count = shards,
+    )
+    for name, shards in [
+        ("browser_globals_test", 4),
+        ("default_parameters_test", 3),
+        ("flat_patterns_test", 6),
+        ("generator_test", 4),
+        ("identifier_assignment_test", 3),
+        ("loops_test", 4),
+        ("numeric_property_keys_test", 2),
+        ("optional_chain_test", 3),
+        ("sequence_test", 3),
+        ("super_members_test", 3),
+        ("templates_test", 3),
+    ]
+]
+
+js_test(
+    name = "iterators_test",
+    size = "medium",
+    data = _TEST_DATA,
+    entry_point = "iterators_test.mjs",
+    env = _TEST_ENV,
+    shard_count = 3,
+)
 
 js_test(
     name = "dense_array_batch_test",
@@ -113,6 +139,15 @@ js_test(
     size = "medium",
     data = _TEST_DATA,
     entry_point = "wide_table_reversal_test.mjs",
+    env = _TEST_ENV,
+    shard_count = 3,
+)
+
+js_test(
+    name = "spread_arguments_test",
+    size = "medium",
+    data = _TEST_DATA,
+    entry_point = "spread_arguments_test.mjs",
     env = _TEST_ENV,
     shard_count = 3,
 )
@@ -181,7 +216,7 @@ js_test(
     data = _TEST_DATA,
     entry_point = "property_assignment_test.mjs",
     env = _TEST_ENV,
-    shard_count = 3,
+    shard_count = 8,
 )
 
 js_test(
@@ -205,6 +240,7 @@ js_test(
         "LINKED_TABLE_FIELDS": "1410",
         "LINKED_TABLE_ROWS": "3",
     },
+    shard_count = 3,
 )
 
 js_test(

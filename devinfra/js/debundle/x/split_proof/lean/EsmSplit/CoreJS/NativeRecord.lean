@@ -24,10 +24,10 @@ theorem initial_heap (url : String) (id : Nat) (vars : List (Name × Addr))
       ("url", .data (.str url) true true true), ("resolve", .data (.obj f) true true true)]}
     let fn : Obj := {
       proto := some functionProto
-      code := some (.closure (resolver id) ⟨[], .undef⟩ [])
+      code := some (.closure (resolver id) ⟨[], .undef, none⟩ [])
       props := [("length", .data (.num (Float.ofNat 1)) false false true),
         ("name", .data (.str "resolve") false false true)]}
-    evalExpr 10 ⟨vars, .undef⟩ (initial url id) s =
+    evalExpr 10 ⟨vars, .undef, none⟩ (initial url id) s =
       .ok (.obj a) {s with heap := #[realm, #[record, fn]]} := by
   rfl
 

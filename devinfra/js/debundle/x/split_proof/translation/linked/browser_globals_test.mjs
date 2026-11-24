@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { root, threeUnitFixture as fixture } from "./harness.mjs";
+import { caseShard, root, threeUnitFixture as fixture } from "./harness.mjs";
 
 const profile = path.join(root, "page.json");
 writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
 const entry = "entry.mjs";
+const includesCase = caseShard();
 
-{
+if (includesCase("page-reference")) {
   const test = fixture(
     "page-reference",
     "const read = () => { const pass = (window) => window; return [pass(window), window, pass(17)]; }; const result = read(); export { result };"
@@ -36,7 +37,7 @@ const entry = "entry.mjs";
   }
 }
 
-{
+if (includesCase("page-aliases")) {
   const test = fixture(
     "page-aliases",
     "const read = () => [typeof self, typeof globalThis, self, globalThis, ((self) => self)(17)]; const result = read(); export { result };"
@@ -64,7 +65,7 @@ const entry = "entry.mjs";
   }
 }
 
-{
+if (includesCase("guarded-global")) {
   const test = fixture(
     "guarded-global",
     'const read = () => typeof global !== "undefined" ? global : 17; const result = read(); export { result };'
@@ -83,6 +84,7 @@ const entry = "entry.mjs";
 }
 
 for (const deferred of [false, true]) {
+  if (!includesCase(deferred ? "deferred-page-error" : "read-page-error")) continue;
   const test = fixture(
     deferred ? "deferred-page-error" : "read-page-error",
     `const read = (page) => page.Error; const result = ${deferred ? "() => read(globalThis)" : "read(globalThis)"}; export { result };`
@@ -115,12 +117,13 @@ for (const [name, body, reason] of [
   ["other-global", "return typeof applicationSpecific;", /unsupported global applicationSpecific/],
   ["tdz", "return typeof window; let window;", /threw during linked initialization/],
 ]) {
+  if (!includesCase(name)) continue;
   const test = fixture(name, `const read = () => { ${body} }; const result = read(); export { result };`);
   assert.match(test.run("--host-contract", profile).reason, reason);
   assert(!existsSync(test.out));
 }
 
-{
+if (includesCase("module-try-typed-array")) {
   const test = fixture(
     "module-try-typed-array",
     "try { new Uint8Array(1); } catch {} const result = 1; export { result };"
@@ -131,7 +134,7 @@ for (const [name, body, reason] of [
   assert(!existsSync(test.out));
 }
 
-{
+if (includesCase("bulk-browser-bindings")) {
   const test = fixture(
     "bulk-browser-bindings",
     "const read = () => [typeof document, typeof fetch, typeof process, Object.defineProperty, globalThis.Object.defineProperty, URL, (() => FileReader)]; const result = read(); export { result };"
@@ -158,6 +161,7 @@ for (const [name, body, reason] of [
 
 // A method can retain the clock lookup without promising a time or a host effect.
 for (const reached of [false, true]) {
+  if (!includesCase(`clock-method-${reached}`)) continue;
   const test = fixture(
     `clock-method-${reached}`,
     `class Clock { read() { return Date.now(); } } const result = ${reached ? "new Clock().read()" : "42"}; export { result };`

@@ -149,7 +149,6 @@ assert.deepEqual(observe(path.join(preview, entry), "result"), { result: "missin
 for (const [name, body, reason, expected] of [
   ["bare-callee", "const invoke = () => 42; return invoke?.();", /unsupported optional call/, 42],
   ["computed-callee", 'return target["method"]?.();', /unsupported computed optional method call/, { value: 42 }],
-  ["continued-callee", "return target.method?.().value;", /unsupported optional chain/, 42],
 ]) {
   const test = ownerReaderSplit(
     name,
@@ -160,6 +159,46 @@ for (const [name, body, reason, expected] of [
   assert.deepEqual(observe(test.files.sourceFile, "result"), { result: expected });
   assertRejected(test, reason);
 }
+
+const continued = ownerReaderSplit(
+  "optional-callee-continuation",
+  `const run = (present) => {
+    let trace = "";
+    const arg = () => { trace += "a"; return "!"; };
+    const key = () => { trace += "k"; return "value"; };
+    const target = {
+      name: "receiver",
+      get method() {
+        trace += "g";
+        return present ? function (value) {
+          trace += "c";
+          return { value: this.name + value };
+        } : undefined;
+      },
+    };
+    const value = target.method?.(arg())[key()];
+    return [value, trace];
+  };
+  const result = [run(true), run(false)];
+  export { result };`
+);
+assertCertifiedResult(continued, [
+  ["receiver!", "gack"],
+  [null, "g"],
+]);
+assert.deepEqual(
+  lower(continued.files.sourceFile, continued.files.specFile, continued.out, ["--check-output"]).verdict,
+  continued.verdict
+);
+
+const returnedUndefined = ownerReaderSplit(
+  "optional-callee-continuation-undefined",
+  `const run = (target) => target.method?.().value;
+   const result = run({ method() { return undefined; } });
+   export { result };`
+);
+assertRejected(returnedUndefined, /original threw during linked initialization/);
+assert.deepEqual(observe(returnedUndefined.files.sourceFile, "result"), { error: "TypeError" });
 
 const host = ownerReaderSplit(
   "optional-callee-opaque-host-value",

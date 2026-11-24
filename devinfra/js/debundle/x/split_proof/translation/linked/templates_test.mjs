@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   root,
+  caseShard,
   id,
   literal,
   call,
@@ -24,6 +25,8 @@ import {
   observedProgram,
 } from "./harness.mjs";
 
+const runCase = caseShard();
+
 // Vary substitution count and value type. The helper's parameter shadows the
 // outer binding, and the escaped newline must come from the cooked segment.
 for (const [value, expressions, expected] of [
@@ -31,6 +34,7 @@ for (const [value, expressions, expected] of [
   [false, [id("input")], "head\nfalse/"],
   ["middle", [id("prefix"), id("input"), literal(null)], "head\ncaptured/middle/null/"],
 ]) {
+  if (!runCase(`generated-template-${value}`)) continue;
   const quasis = Array.from({ length: expressions.length + 1 }, (_, i) => ({
     type: "TemplateElement",
     value: i === 0 ? { raw: "head\\n", cooked: "head\n" } : { raw: "/", cooked: "/" },
@@ -69,6 +73,7 @@ for (const values of [
   ["first", "second"],
   ["second", "first"],
 ]) {
+  if (!runCase(`throwing-template-${values[0]}`)) continue;
   const expressions = values.map((value) => call(arrow([], block([throws(literal(value))]))));
   const template = {
     type: "TemplateLiteral",
@@ -94,6 +99,7 @@ for (const [name, source, reason] of [
   ],
   ["tagged-template", "const worker = value => value; export const result = worker`raw`;", /TaggedTemplateExpression/],
 ]) {
+  if (!runCase(name)) continue;
   const { verdict, out } = workerSplit(name, source);
   assert.equal(verdict.status, "rejected");
   assert.match(verdict.reason, reason);
