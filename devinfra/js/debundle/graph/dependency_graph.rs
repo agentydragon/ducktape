@@ -146,18 +146,13 @@ impl DependencyGraph {
 }
 
 impl DependencyGraph {
-    /// Reconstruct a typed `DependencyGraph` from a JSON-deserialized
-    /// `crate::DependencyGraphReport`. Used by the peel planner CLI so the
-    /// realizability gate consults the same IR shape the materializer
-    /// gate does, instead of re-deriving cycle detection over the
-    /// JSON-flattened edge list.
+    /// Reconstruct the dependency graph and return the ID lookup used to
+    /// resolve its endpoints. The report-backed input retains this lookup
+    /// for subsequent source-unit queries.
     ///
-    /// The result is "gate-grade": it carries edge endpoints,
-    /// `DepKind`, the residual marker, and the per-edge `binding` and
-    /// per-node `kind` / `purity` the JSON wire shape mirrors. Every
-    /// node's [`SourceUnit::declared`] is empty — the report has no
-    /// hygienic `Id`s — so the graph cannot feed
-    /// [`crate::assignment_assembly::assemble_assignment`].
+    /// Edges retain their endpoints, kinds, promotion roles and commuting
+    /// premises. Rows lack hygienic declaration IDs, so the input must
+    /// restore [`SourceUnit::declared`] before assignment assembly.
     ///
     /// `DependencyEdgeId`s in the reconstructed graph are assigned in the
     /// order edges appear in `report.edges`; they don't necessarily
@@ -170,48 +165,43 @@ impl DependencyGraph {
     /// a malformed or version-skewed `dependency_graph.json.gz`. Silently
     /// dropping such edges would hand the planner-side gate a weaker
     /// graph than the one the report described.
-    pub(crate) fn from_report(
+    pub(super) fn from_report(
         report: &crate::DependencyGraphReport,
-    ) -> Result<Self, UnresolvedDependencyEdgeEndpoint> {
-        let by_id: HashMap<String, SourceUnitId> = report
-            .nodes
-            .iter()
-            .enumerate()
-            .map(|(i, n)| (n.id.clone(), SourceUnitId(i)))
-            .collect();
-
-        let nodes: Vec<SourceUnit> = report
-            .nodes
-            .iter()
-            .enumerate()
-            .map(|(i, n)| SourceUnit {
-                id: SourceUnitId(i),
-                statement_ordinal: n.statement_ordinal,
-                source_location: n.source_location.clone(),
+    ) -> Result<(Self, HashMap<String, SourceUnitId>), UnresolvedDependencyEdgeEndpoint> {
+        let mut by_id = HashMap::with_capacity(report.nodes.len());
+        let mut nodes = Vec::with_capacity(report.nodes.len());
+        for row in &report.nodes {
+            let id = SourceUnitId(nodes.len());
+            by_id.insert(row.id.clone(), id);
+            nodes.push(SourceUnit {
+                id,
+                statement_ordinal: row.statement_ordinal,
+                source_location: row.source_location.clone(),
                 declared: BTreeSet::new(),
-                kind: n.statement_kind,
-                purity: n.purity.clone(),
+                kind: row.statement_kind,
+                purity: row.purity.clone(),
                 callback_factory_barriers: Vec::new(),
-                heap_native_integrity_uses: n.heap_native_integrity_uses.clone(),
+                heap_native_integrity_uses: row.heap_native_integrity_uses.clone(),
                 synchronous_execution: None,
                 callback_factory_uses: Vec::new(),
                 returned_record_uses: Vec::new(),
-            })
-            .collect();
+            });
+        }
+
+        let resolve = |endpoint: &str, row_id: &str| {
+            by_id
+                .get(endpoint)
+                .copied()
+                .ok_or_else(|| UnresolvedDependencyEdgeEndpoint {
+                    edge_id: row_id.to_owned(),
+                    endpoint: endpoint.to_owned(),
+                })
+        };
 
         let mut edges: Vec<DependencyEdge> = Vec::with_capacity(report.edges.len());
         for edge in &report.edges {
-            let resolve = |endpoint: &String| {
-                by_id
-                    .get(endpoint)
-                    .copied()
-                    .ok_or_else(|| UnresolvedDependencyEdgeEndpoint {
-                        edge_id: edge.id.clone(),
-                        endpoint: endpoint.clone(),
-                    })
-            };
-            let from = resolve(&edge.source)?;
-            let to = resolve(&edge.target)?;
+            let from = resolve(&edge.source, &edge.id)?;
+            let to = resolve(&edge.target, &edge.id)?;
             // Round-trip the edge role so the planner-side gate runs
             // the same cross-module-promotion filter as the
             // materializer.
@@ -233,28 +223,24 @@ impl DependencyGraph {
                 reason,
             });
         }
-        let edge_by_report_id: HashMap<&str, DependencyEdgeId> = report
-            .edges
-            .iter()
-            .enumerate()
-            .map(|(i, edge)| (edge.id.as_str(), DependencyEdgeId(i)))
-            .collect();
+        let edge_by_report_id: HashMap<&str, DependencyEdgeId> =
+            if report.commuting_statements.is_empty() {
+                HashMap::new()
+            } else {
+                report
+                    .edges
+                    .iter()
+                    .zip(&edges)
+                    .map(|(row, edge)| (row.id.as_str(), edge.id))
+                    .collect()
+            };
         let mut commuting_premises = Vec::with_capacity(report.commuting_statements.len());
         for premise in &report.commuting_statements {
-            let resolve = |endpoint: &String| {
-                by_id
-                    .get(endpoint)
-                    .copied()
-                    .ok_or_else(|| UnresolvedDependencyEdgeEndpoint {
-                        edge_id: premise.spec_location.clone(),
-                        endpoint: endpoint.clone(),
-                    })
-            };
             commuting_premises.push(AppliedCommutingPremise {
                 reference: premise.reference.clone(),
                 spec_location: premise.spec_location.clone(),
-                a: resolve(&premise.a)?,
-                b: resolve(&premise.b)?,
+                a: resolve(&premise.a, &premise.spec_location)?,
+                b: resolve(&premise.b, &premise.spec_location)?,
                 inerted_edges: premise
                     .inerted_edge_ids
                     .iter()
@@ -264,7 +250,7 @@ impl DependencyGraph {
             });
         }
 
-        Ok(Self::from_parts(nodes, edges, commuting_premises))
+        Ok((Self::from_parts(nodes, edges, commuting_premises), by_id))
     }
 
     /// Assemble the graph from `nodes` and `edges` (`edges[i].id` is
@@ -294,8 +280,8 @@ impl DependencyGraph {
     }
 }
 
-/// An `dependency_graph.json.gz` edge references a source unit id absent from the
-/// report's node table. See [`DependencyGraph::from_report`].
+/// A dependency graph report references a source unit absent from its node
+/// table. See [`super::DependencyGraphInput::from_report`].
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error(
     "dependency-graph edge {edge_id} references source-unit ID {endpoint} which is not in the report's node table \

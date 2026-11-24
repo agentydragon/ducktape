@@ -7,7 +7,7 @@
 //!   [`DependencyEdge`], [`DependencyEdgeId`]).
 //! - [`dependency_graph`] — the [`DependencyGraph`] IR and [`SourceUnit`] rows;
 //!   their dense IDs are `source_identity::SourceUnitId`. It also provides JSON
-//!   recovery ([`DependencyGraph::from_report`], [`UnresolvedDependencyEdgeEndpoint`]).
+//!   recovery ([`DependencyGraphInput`], [`UnresolvedDependencyEdgeEndpoint`]).
 //! - [`build`] — dependency-graph construction ([`build_dependency_graph_with`],
 //!   at-init call promotion, the S-chain).
 //! - [`quotient`] — module-level edge projection ([`EndpointView`],
