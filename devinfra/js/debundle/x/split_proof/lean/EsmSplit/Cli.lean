@@ -8,6 +8,13 @@ open EsmSplit Lean
 
 namespace EsmSplit
 
+/-- Report elapsed milliseconds and return the start time for the next phase. -/
+def reportElapsed (what : String) (t0 : Nat) : IO Nat := do
+  let t ← IO.monoMsNow
+  IO.println s!"  [time] {what}: {t - t0} ms"
+  (← IO.getStdout).flush
+  return t
+
 /-- Evaluate a check and print how long it took. `lazyPure` makes sure the work happens between the clocks. -/
 def timedCheck (label : String) (p : Unit → Bool) : IO Bool := do
   let t0 ← IO.monoMsNow

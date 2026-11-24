@@ -37,3 +37,7 @@ root = "EsmSplit.CoreJSMain"
 [[lean_exe]]
 name = "analysis_inventory"
 root = "AnalysisInventory"
+
+[[lean_exe]]
+name = "replicate_plan"
+root = "Experiments.ReplicatePlan"

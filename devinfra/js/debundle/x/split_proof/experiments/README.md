@@ -48,17 +48,16 @@ pinned in [`lean-toolchain`](../lean/lean-toolchain).
 ```sh
 p=devinfra/js/debundle/x/split_proof
 (cd "$p/translation" && cp package.json.in package.json && npm ci --no-audit --no-fund)
-(cd "$p/lean" && lake build lowersplit)
+(cd "$p/lean" && lake build lowersplit replicate_plan)
 BUNDLES_DIR="$out" "$p/lowering/scale.sh"
 BUNDLES_DIR="$out" "$p/lowering/scale.sh" replicate
 ```
 
 [`scale.sh`](../lowering/scale.sh) measures diagnostic checks on contiguous
 blocks. It derives unit counts from the staged ASTs and caps each run at 240 s.
-The normal mode includes lodash prefixes. The replication mode measures renamed
-copies of the bundle and discards their output. The table distinguishes checker
-refusals, timeouts and execution errors. Set `LOWERSPLIT` to select another
-compiled checker.
+The normal mode includes lodash prefixes. The replication mode runs the [planner benchmark](../lean/Experiments/ReplicatePlan.lean)
+on renamed copies of the original footprints. It does not emit modules. The table distinguishes checker
+refusals, timeouts and execution errors. Override `LOWERSPLIT` or `REPLICATE_PLAN` to select a different binary.
 
 ### Historical results
 

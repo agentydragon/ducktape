@@ -813,6 +813,14 @@ lean_test(
     entry = "EsmSplit/CoreJS/Uint8Examples.lean",
 )
 
+lean_binary(
+    name = "replicate_plan",
+    testonly = True,
+    srcs = ["Experiments/ReplicatePlan.lean"],
+    entry = "Experiments/ReplicatePlan.lean",
+    deps = [":lowersplit_workflows"],
+)
+
 lean_test(
     name = "experiments_test",
     srcs = [
