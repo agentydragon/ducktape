@@ -606,7 +606,8 @@ classified as model input errors.
 
 Provider sampling and compaction use at most `provider_attempt_budget` attempts per prepared step (default 3, range 1–16). HTTP 408, 429 and
 5xx, upstream transport/truncated-stream failures, response-head/semantic-idle timeouts, and a
-Chat Completions stream that reports `tool_calls` without emitting any calls are transient.
+Chat Completions sample that reaches `finish_reason: length` or emits an empty or malformed
+function call are transient. No tool from the rejected sample has run.
 The sampler logs a warning for the empty tool-call response. After the joined call ends, the
 owner abandons its exact intent, retains raw evidence,
 and records retry due time using PostgreSQL. Backoff starts at `provider_retry_initial_backoff_seconds` (default 1) and doubles, honoring

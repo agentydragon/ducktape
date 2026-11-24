@@ -285,6 +285,8 @@ func (s *stream) finish(ctx context.Context, evidence protocol.EvidenceSink) (*R
 			slog.WarnContext(ctx, "Chat Completions finished with tool_calls but sent no tool calls", "response_id", s.audit.ID)
 			return nil, &protocol.ProviderTransientError{Cause: errors.New("invalid Chat Completions stream: tool_calls finish without any tool calls")}
 		}
+	case "length":
+		return nil, &protocol.ProviderTransientError{Cause: errors.New("Chat Completions reached its output token limit before completing the sample")}
 	case "stop":
 		if len(s.calls) > 0 {
 			return nil, malformed("finish reason does not match tool calls")
@@ -293,6 +295,11 @@ func (s *stream) finish(ctx context.Context, evidence protocol.EvidenceSink) (*R
 		return nil, &protocol.KnownFailureError{Evidence: map[string]any{"finish_reason": s.audit.FinishReason}}
 	}
 	if _, _, err := inspect([]message{m}); err != nil {
+		// The model may have reached its limit inside a tool argument even when
+		// the provider reports tool_calls. No call from this sample has run.
+		if errors.Is(err, protocol.ErrInvalid) {
+			return nil, &protocol.ProviderTransientError{Cause: malformed(err.Error())}
+		}
 		return nil, malformed(err.Error())
 	}
 	record, err := json.Marshal(m)

@@ -1120,6 +1120,8 @@ flowchart LR
     STRUCTURED_TOOL_OUTPUT -. multi-block output .-> CODEX_CODE_MODE_CELLS[Unscheduled: Codex code-mode cells as runner items]
     CENTRAL_SAMPLER_MODEL_CAPABILITIES[Unscheduled: live route check for standard-mode routes]
     CENTRAL_SAMPLER_PROMPT_COMPACTION[Unscheduled: client-side compaction prompt for routes without server compaction]
+    CENTRAL_SAMPLER_COMPACTION_HEADROOM[Unscheduled: compact long tool loops before output starvation]
+    CENTRAL_SAMPLER_COMPACTION_TIMELINE[Unscheduled: surface sampler compaction in the timeline]
     CENTRAL_SAMPLER_BACKGROUND_COMPACTION[Unscheduled: compact a prefix while sampling continues]
     CENTRAL_SAMPLER_DRAIN_BUDGET[Unscheduled: consider longer sampling drain]
     CENTRAL_SAMPLER_DYNAMIC_TOOLS[Deferred: dynamic tool definitions when needed]
@@ -1396,6 +1398,33 @@ tool exchanges, and reuse the existing compaction intent, journaling and context
 Compare cache reuse, latency and summary quality if offering it alongside provider-native
 compaction. **Exit:** deterministic request, context-replacement and failed-summary coverage, plus
 a bounded continuation with a tool call on a route without native compaction.
+
+### `CENTRAL_SAMPLER_COMPACTION_HEADROOM` — keep room for reasoning and tool calls
+
+**Unscheduled; Nov 24 staging regression.** A Chat Completions session exceeded its 192K
+compaction threshold and reached 261,181 input tokens without recording a compaction intent.
+Trace the decision at each sampling boundary: last usage, active context, eligible prefix,
+live cells, and retry state. Reserve enough space for the summary request as well as the next
+ordinary completion. Repeating the same nearly full prompt can exhaust even a bounded retry budget.
+
+Use the last N items as the retention unit. Move the cut to keep a parallel tool-call batch and
+all its results together. Preserve the current task when a cut falls inside a user turn.
+Evaluate omitting historical reasoning **only from messages copied into a compacted context**;
+keep ordinary replay, new reasoning and History intact. Compare with
+[Aider's token-budgeted tail](https://github.com/Aider-AI/aider/blob/main/aider/history.py)
+and another open-source tool-using harness on the same workload.
+
+**Exit:** stress one user turn with hundreds of tool exchanges, oversized reasoning and results,
+multiple compactions, a live cell and a failed summary. Measure actual rendered input tokens,
+available output tokens and whether the agent resumes the original task without losing a result
+or repeating an effect. Verify historical reasoning at the tokenizer on the deployed model route
+with a paired prompt-token measurement; include both a tool follow-up and a new user turn.
+
+### `CENTRAL_SAMPLER_COMPACTION_TIMELINE` — show when the sampler compacts context
+
+**Unscheduled.** Render sampler compaction as a timeline activity with start and terminal
+outcome. It can use the tool-row presentation, but must not count as a model-issued tool call.
+Verify successful and failed compaction in both the live stream and reloaded History.
 
 ### `CENTRAL_SAMPLER_BACKGROUND_COMPACTION` — summarize while sampling continues
 
@@ -2639,6 +2668,10 @@ ended and why, and what ended it. Where they are on devel (a428a59):
 
 Examples to settle, not the whole scope:
 
+- The operator saw the timeline report a failed Chat Completions turn while the Session indicator
+  still said active. Cover output exhaustion and a rejected streamed tool call. Compare the host's
+  active turn and command with Dispatcher watch updates and the App badge, live and after reload.
+  With no subsequent work, the terminal turn must cease displaying as active without another input.
 - Whether readers need a pointer to the ending event (`{turn_id, status, cursor}` in place of the
   bare status).
 - A sampler interrupt that cannot confirm its cleanup journals an ordinary INTERRUPTED and blocks the
