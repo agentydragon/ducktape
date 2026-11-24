@@ -269,3 +269,10 @@ The earlier [consumer trials](https://app.buildbuddy.io/invocation/1e01909b-5cc5
 still required additional entry exports for `newTextElement` (its
 `_newElementBase` dependency) and `getDefaultAppState` (two private cells).
 Certifying the font-family read does not recover those dependencies.
+
+The [combined size, resize and change replay](https://app.buildbuddy.io/invocation/4b46901a-e613-4f07-942e-ff1ad7b08739)
+selects 324 bindings in 36 owners. It moves `Delta` back to
+[`change.ts`](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/excalidraw/change.ts)
+and the [six size and resize bindings](proposals/size_resize/README.md)
+to their original modules. Chromium checks line and square sizing and the
+cursor returned for rotation, a rotated element, and a reflected element.

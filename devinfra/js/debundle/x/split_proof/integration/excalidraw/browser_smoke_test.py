@@ -222,6 +222,21 @@ async def smoke(
                     Object.values(await import(scroll)).includes((await import(editor)).Bg)""",
                 [f"/{editor}", f"/{SCROLL}"],
             )
+            assert await page.evaluate(
+                """async entry => {
+                  const size = await import("/packages/excalidraw/element/sizehelpers.mjs");
+                  const resize = await import("/packages/excalidraw/element/resizetest.mjs");
+                  const editor = await import(entry);
+                  const cursor = editor.Kj;
+                  const visible = editor.Bj;
+                  return Object.values(resize).includes(cursor) && Object.values(size).includes(visible)
+                    && cursor({transformHandleType: "rotation"}) === "grab"
+                    && cursor({element: {width: 20, height: 10, angle: Math.PI / 2}, transformHandleType: "n"}) === "ew-resize"
+                    && cursor({element: {width: -20, height: 10, angle: 0}, transformHandleType: "nw"}) === "nesw-resize"
+                    && size.B0("line", 149, 10).height === 0 && size.B0("rectangle", 13, -2).height === -13;
+                }""",
+                f"/{editor}",
+            )
         return list(namespace["names"])
 
 

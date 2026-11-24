@@ -480,6 +480,24 @@
       "module": "packages/utils/geometry/shape",
       "bindings": ["getCurvePathOps"],
       "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/element/sizehelpers",
+      "bindings": ["isElementCompletelyInViewport", "getPerfectElementSize"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/element/resizetest",
+      "bindings": ["isInsideTransformHandle", "RESIZE_CURSORS", "rotateResizeCursor", "getCursorForResizingElement"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/change",
+      "bindings": ["Delta"],
+      "anonymous_statements": []
     }
   ]
 }
