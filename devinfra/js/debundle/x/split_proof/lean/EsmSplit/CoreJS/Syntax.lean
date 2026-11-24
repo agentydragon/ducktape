@@ -58,6 +58,9 @@ inductive Prim where
   | opaqueAmbientRef (binding : String)
   | opaqueConstructorRef (binding : String)
   | opaqueAmbientMemberRef (receiver member : String)
+  /-- A checked literal request retained in deferred code. The names are the
+  linked cells its target can acquire through the static dependency graph. -/
+  | dynamicImport (request : String) (captures : List Name)
   | log | defineProperty | create | getPrototypeOf | setPrototypeOf
   deriving DecidableEq, Repr
 
@@ -360,6 +363,7 @@ def Expr.free : Expr → List Name
     o.free ++ (k.free ++ freeExprs args)
   | .callSuper k args _ => k.free ++ freeExprs args
   | .new f args => f.free ++ freeExprs args
+  | .prim (.dynamicImport _ captures) args => captures ++ freeExprs args
   | .prim _ args => freeExprs args
   | .unary _ e => e.free
   | .binary _ a b => a.free ++ b.free

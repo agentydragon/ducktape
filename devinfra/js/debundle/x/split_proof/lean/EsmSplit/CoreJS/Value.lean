@@ -1063,6 +1063,7 @@ def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
   | .opaqueAmbientRef name => unknown s!"ambient binding {name} is reached"
   | .opaqueConstructorRef name => unknown s!"ambient constructor {name} is reached"
   | .opaqueAmbientMemberRef receiver member => unknown s!"ambient member {receiver}.{member} is reached"
+  | .dynamicImport request _ => unknown s!"dynamic import {request.quote} is reached"
   | .log =>
     match args with
     | .str format :: _ :: _ => if format.contains '%' then unknown "console.log with a format string" else pure ()

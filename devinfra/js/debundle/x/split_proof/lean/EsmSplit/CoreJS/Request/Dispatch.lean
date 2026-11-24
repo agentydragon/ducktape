@@ -109,6 +109,7 @@ theorem reachFrame_prim {r R cells A} (away : Away r R A) (call : Call W) (hf : 
       | split
   | opaqueAmbientRef name | opaqueConstructorRef name => exact reachFrame_unknown r R cells A _ _
   | opaqueAmbientMemberRef receiver member => exact reachFrame_unknown r R cells A _ _
+  | dynamicImport request captures => exact reachFrame_unknown r R cells A _ _
   | log => exact reachFrame_prim_log call args
   | create => exact reachFrame_create call args (safe_arg safe 0) objects
   | getPrototypeOf => exact reachFrame_prim_getPrototypeOf away call args safe
