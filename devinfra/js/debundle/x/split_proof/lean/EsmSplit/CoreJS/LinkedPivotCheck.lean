@@ -46,6 +46,11 @@ theorem localPivotOk_sound {W : World} {pivot : Nat × Stmt × Env} (ok : localP
       exact inRegion_owns (List.all_eq_true.mp ok _ member) found
   all_goals contradiction
 
+abbrev Outside (q : Nat) := Unprotected q (fun _ => False)
+
+def IsolatedUnit (q : Nat) (u : Nat × Stmt × Env) : Prop :=
+  u.1 + 1 ≠ q ∧ ∀ node ∈ (u.2.2.capture u.2.1.free).nodes, Outside q node
+
 private def outsideRegion (r : Nat) (node : HeapNode) : Bool := node.addr.region != r
 
 private theorem outsideRegion_iff (r : Nat) (node : HeapNode) :
@@ -66,9 +71,12 @@ def PreparedUnit.ofUnit (u : Nat × Stmt × Env) : PreparedUnit :=
 private def unitEnvOk (r : Nat) (u : PreparedUnit) : Bool :=
   u.unit.1 + 1 != r && u.nodes.get.all (outsideRegion r)
 
-private theorem unitEnvOk_sound {r} {u : PreparedUnit} (ok : unitEnvOk r u = true) :
-    u.unit.1 + 1 ≠ r ∧ ∀ node ∈ (u.unit.2.2.capture u.unit.2.1.free).nodes, Unprotected r (fun _ => False) node := by
-  simpa only [unitEnvOk, Bool.and_eq_true, bne_iff_ne, u.exactNodes, List.all_eq_true, outsideRegion_iff] using ok
+private theorem isolatedUnits_of_check {r} {units : List PreparedUnit}
+    (ok : units.all (unitEnvOk r) = true) : ∀ u ∈ units.map PreparedUnit.unit, IsolatedUnit r u := by
+  intro u hu
+  obtain ⟨v, hv, rfl⟩ := List.mem_map.mp hu
+  simpa only [IsolatedUnit, Outside, unitEnvOk, Bool.and_eq_true, bne_iff_ne, v.exactNodes,
+    List.all_eq_true, outsideRegion_iff] using List.all_eq_true.mp ok v hv
 
 private theorem accessOk_outsideRegion {r : Nat} {W : World} {s : State W} {cells : List (Option Addr)}
     (ok : accessOk s cells (outsideRegion r) = true) : Access cells (Unprotected r (fun _ => False)) s := by
@@ -111,8 +119,7 @@ structure CheckedPivot {w : World} (ready : State w)
     (pre crossed : List (Nat × Stmt × Env)) (pivot : Nat × Stmt × Env) : Prop where
   access : Access [] (Unprotected (pivot.1 + 1) (fun _ => False)) ready
   localFlag : localPivotOk pivot = true
-  scope : ∀ u ∈ pre ++ crossed, u.1 + 1 ≠ pivot.1 + 1 ∧
-    ∀ node ∈ (u.2.2.capture u.2.1.free).nodes, Unprotected (pivot.1 + 1) (fun _ => False) node
+  scope : ∀ u ∈ pre ++ crossed, IsolatedUnit (pivot.1 + 1) u
 
 def checkPivot {w : World} (ready : State w)
     (pre crossed : List PreparedUnit) (pivot : Nat × Stmt × Env) :
@@ -125,11 +132,7 @@ def checkPivot {w : World} (ready : State w)
         return ⟨{
           access := accessOk_outsideRegion accessible
           localFlag := localStep
-          scope := by
-            intro u hu
-            rw [← List.map_append] at hu
-            obtain ⟨v, hv, rfl⟩ := List.mem_map.mp hu
-            exact unitEnvOk_sound (List.all_eq_true.mp unchanged v hv)
+          scope := by simpa only [List.map_append] using isolatedUnits_of_check unchanged
         }⟩
       else
         let offender := (pre ++ crossed).find? (fun u => !(unitEnvOk r u))
@@ -145,14 +148,11 @@ def observerRegion? {w} (ready : State w) (r : Nat) : Option Nat :=
 
 def checkIsolated? {w} (s : State w) (q : Nat) (units : List PreparedUnit) :
     Option (PLift (q ≠ 0 ∧ Access [] (Unprotected q (fun _ => False)) s ∧
-      ∀ u ∈ units.map (·.unit), u.1 + 1 ≠ q ∧ ∀ node ∈ (u.2.2.capture u.2.1.free).nodes, Unprotected q (fun _ => False) node)) := do
+      ∀ u ∈ units.map PreparedUnit.unit, IsolatedUnit q u)) := do
   if hq : q ≠ 0 then
     if access : accessOk s [] (outsideRegion q) = true then
       if scopes : units.all (unitEnvOk q) = true then
-        return ⟨hq, accessOk_outsideRegion access, by
-          intro u hu
-          obtain ⟨v, hv, rfl⟩ := List.mem_map.mp hu
-          exact unitEnvOk_sound (List.all_eq_true.mp scopes v hv)⟩
+        return ⟨hq, accessOk_outsideRegion access, isolatedUnits_of_check scopes⟩
   none
 
 end CoreJS.LinkedBehavior

@@ -6,11 +6,6 @@ row is restored before the suffix, where the observer may be called. -/
 
 namespace CoreJS.LinkedBehavior
 
-abbrev Outside (q : Nat) := Unprotected q (fun _ => False)
-
-def IsolatedUnit (q : Nat) (u : Nat × Stmt × Env) : Prop :=
-  u.1 + 1 ≠ q ∧ ∀ node ∈ (u.2.2.capture u.2.1.free).nodes, Outside q node
-
 private theorem unit_restore {w : World} {n q} (hq : q ≠ 0) {u : Nat × Stmt × Env}
     (safe : IsolatedUnit q u) {s : State w} (access : Access [] (Outside q) s) (H C) :
     runUnit n u.2.2 u.1 u.2.1 (s.put q H C) = (runUnit n u.2.2 u.1 u.2.1 s).put q H C ∧
