@@ -169,6 +169,17 @@ alone cannot justify that write.
 The [306-binding audit](audits/editor_306/README.md) accounts for every editor unit by canonical
 owner and records nine retries. The largest passing addition on that baseline was `isLinearElementType`.
 
+## Heading helpers and the linear-element predicate
+
+The [pinned heading source](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/excalidraw/element/heading.ts)
+defines the four direction vectors and the functions that use them. The
+[production selector](proposals/heading/packages/excalidraw/element/heading.yaml)
+pins the direction order and the diamond angle boundaries. Nine heading
+bindings retain that owner; the smoke also selects `isLinearElementType` in
+the canonical type-check module. [All 316 bindings in one placement](https://app.buildbuddy.io/invocation/06adc7df-16c6-49b6-b80f-1082a9c6fefa)
+passed the direct selector handoff, structural certificate, disk recheck and
+Chromium replay.
+
 ## What limited the candidate set
 
 To select a trial, join the canonical Rust graph to the scope-annotated original
