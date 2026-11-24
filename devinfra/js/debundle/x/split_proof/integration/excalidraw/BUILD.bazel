@@ -207,3 +207,21 @@ eslint_test(
     name = "eslint_test",
     srcs = [":lint_sources"],
 )
+
+js_binary(
+    name = "mapped_bindings",
+    data = ["//devinfra/js/debundle/x/split_proof/translation:bazel_parser"],
+    entry_point = "mapped_bindings.mjs",
+)
+
+js_test(
+    name = "mapped_bindings_test",
+    data = [
+        "mapped_bindings.mjs",
+        "//:node_modules/@excalidraw/excalidraw/dir",
+        "//devinfra/js/debundle/x/split_proof/translation:bazel_parser",
+    ],
+    entry_point = "mapped_bindings_test.mjs",
+    env = {"EXCALIDRAW_PACKAGE": "$(rootpath //:node_modules/@excalidraw/excalidraw/dir)"},
+    tags = ["manual"],
+)
