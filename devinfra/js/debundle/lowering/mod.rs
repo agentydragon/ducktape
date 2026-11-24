@@ -76,7 +76,6 @@ pub struct MaterializeLogicalModulesResult {
     /// run yet; only the draft's own `finalize` can run them.
     pub output: CandidateEmissionDraft,
     pub decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput>,
-    pub selected_lowerings: Vec<SelectedModuleLowering>,
     /// Spec claims that named a binding for which no top-level
     /// declaration exists in the source chunk, collected across every chunk
     /// so reconstruction can diagnose all claims (the chunk lowers as if the
@@ -940,7 +939,7 @@ pub fn materialize_logical_modules(
             .collect::<Result<Vec<_>>>()?;
         return Ok(Materialized::Assessed(assessments));
     }
-    let chunk_results = chunk_results
+    let mut chunk_results = chunk_results
         .into_iter()
         .map(|result| match result {
             FinishedLogicalChunk::Lowered(chunk) => Ok(*chunk),
@@ -954,7 +953,7 @@ pub fn materialize_logical_modules(
     let mut unmatched_spec_claims = Vec::<UnmatchedSpecClaim>::new();
     let mut gate_rejections = Vec::<ChunkGateRejection>::new();
     let mut vendor_reference_rewrites = BTreeMap::<(ChunkId, String), usize>::new();
-    for chunk_result in &chunk_results {
+    for chunk_result in &mut chunk_results {
         if let Some(report_out_dir) = options.report_emission.full_dir() {
             write_chunk_report_json(
                 report_out_dir,
@@ -964,10 +963,10 @@ pub fn materialize_logical_modules(
             )?;
         }
         applied.extend(chunk_result.applied.iter().cloned());
-        unmatched_spec_claims.extend(chunk_result.unmatched_spec_claims.iter().cloned());
-        gate_rejections.extend(chunk_result.gate_rejection.iter().cloned());
-        for (key, count) in &chunk_result.vendor_reference_rewrites {
-            *vendor_reference_rewrites.entry(key.clone()).or_insert(0) += count;
+        unmatched_spec_claims.append(&mut chunk_result.unmatched_spec_claims);
+        gate_rejections.extend(chunk_result.gate_rejection.take());
+        for (key, count) in std::mem::take(&mut chunk_result.vendor_reference_rewrites) {
+            *vendor_reference_rewrites.entry(key).or_insert(0) += count;
         }
     }
     let EmissionChunkOutputs {
@@ -977,7 +976,7 @@ pub fn materialize_logical_modules(
     let output = CandidateEmissionDraft::materialized(
         files,
         Arc::clone(vendor_plan),
-        applied.clone(),
+        applied,
         options.chunk_ids.iter().cloned().collect(),
         vendor_reference_rewrites,
     );
@@ -986,7 +985,6 @@ pub fn materialize_logical_modules(
         MaterializeLogicalModulesResult {
             output,
             decomposition_by_chunk,
-            selected_lowerings: applied,
             unmatched_spec_claims,
             gate_rejections,
         },

@@ -69,8 +69,10 @@ impl CandidateEmissionDraft {
         }
     }
 
-    /// Run the fixed whole-program rewrite sequence.
-    pub fn finalize(self) -> Result<FinalizedCandidateEmissionDraft> {
+    /// Run the whole-program rewrites, then return the lowering records for reporting.
+    pub fn finalize(
+        self,
+    ) -> Result<(FinalizedCandidateEmissionDraft, Vec<SelectedModuleLowering>)> {
         let Self {
             files,
             vendor_plan,
@@ -125,12 +127,15 @@ impl CandidateEmissionDraft {
             Ok(())
         })?;
 
-        Ok(FinalizedCandidateEmissionDraft {
-            files,
-            vendor_plan,
-            references_by_symbol,
-            global_use_elisions: emission_rewrites.global_use_elisions,
-        })
+        Ok((
+            FinalizedCandidateEmissionDraft {
+                files,
+                vendor_plan,
+                references_by_symbol,
+                global_use_elisions: emission_rewrites.global_use_elisions,
+            },
+            selected_lowerings,
+        ))
     }
 }
 
