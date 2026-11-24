@@ -89,8 +89,8 @@
       "sha256": "1FaSuGEmIxLc3Q48lq3HJfyNUszQEbXnzCRruVm4lgk="
     },
     "skill-web_selfcheck": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-web_selfcheck-e7fb78487b49/web_selfcheck.skill",
-      "sha256": "5/t4SHtJ4FhdZHTSJYX/UH0KKRCOBQimdR5aqQndR9w="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-web_selfcheck-aeb8604a7e10/web_selfcheck.skill",
+      "sha256": "rrhgSn4QVjlG08mTjltTjvg1fYKGkef36hcMpOvQ25E="
     },
     "skill-workspace-gc": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-workspace-gc-4f16f68ca482/workspace-gc.skill",
