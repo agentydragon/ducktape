@@ -1,10 +1,10 @@
 {
-  "source_devel_commit": "0e01c263631747272c38ebb2792651914d02884d",
-  "window_start_utc": "2026-11-15T00:00:00Z",
-  "window_end_utc": "2026-11-22T11:40:00Z",
-  "published_at_utc": "2026-11-22T11:47:07.112651+00:00",
+  "source_devel_commit": "b7e76ee81df6f7d9f5c6115c32dd18ad30faf63b",
+  "window_start_utc": "2026-11-22T00:00:00Z",
+  "window_end_utc": "2026-11-24T00:10:00Z",
+  "published_at_utc": "2026-11-24T00:36:12.760748+00:00",
   "attribution": "not collected",
-  "previous_report_commit": "a274f390bd49894f2f57b9d075193953560cece2",
-  "report_sha256": "c91cf7eeb20e1fdec1a58db019b278ec7692ae4d31519e77206ffece0c23801f",
-  "evidence_sha256": "ab50921cef71126bfc0016f1e0da1d74553ad59766dc95a3313dba93fb199aa9"
+  "previous_report_commit": "b6e32be8b1f4b06e00850878beae3902f0846a24",
+  "report_sha256": "60690c4b1a6dd3ea81ecdde89d282b873910a998059472bbc50ec5d987f7e675",
+  "evidence_sha256": "17b2f7295478d2a77383426c8501b6eb7325488401b0b5722b8a860b11e8d94d"
 }
