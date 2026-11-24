@@ -1,4 +1,4 @@
-"""Run the pinned Excalidraw editor with the original or certified scroll module."""
+"""Run the original and certified splits of the pinned Excalidraw editor."""
 
 # gazelle:include_dep //testing/frontend_visual:fixtures
 
@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import subprocess
+from collections.abc import Mapping, Sequence
 from pathlib import Path, PurePosixPath
 
 import httpx
@@ -28,6 +29,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 SCROLL = "packages/excalidraw/scene/scroll.mjs"
 STARTUP = "packages/excalidraw/editor/startup.mjs"
+STARTUP_UNITS = range(5, 19)
 
 
 def resolve(runfiles: Runfiles, path: str) -> Path:
@@ -50,7 +52,7 @@ def editor_source(runfiles: Runfiles) -> Path:
 
 
 def certify_editor_split(
-    runfiles: Runfiles, source: Path, origin: str, module: str, ordinals: tuple[int, ...], expected_scope: str
+    runfiles: Runfiles, source: Path, origin: str, placement: Mapping[str, Sequence[int]], expected_scope: str
 ) -> dict[str, Path]:
     authored = json.loads(resolve(runfiles, os.environ["EDITOR_LEAN_SPEC"]).read_text())
     assert authored["modules"][SCROLL] == ["#1337", "#1338"]
@@ -60,15 +62,16 @@ def certify_editor_split(
     assert set(selectors) == set(source_order)
     artifacts = undeclared_outputs_dir()
     (artifacts / "browser-origin.txt").write_text(f"{origin}\n")
-    spec = artifacts / f"{PurePosixPath(module).stem}.json"
-    moved = [f"#{index}" for index in ordinals]
+    spec = artifacts / "placement.json"
+    modules = {name: [f"#{index}" for index in ordinals] for name, ordinals in placement.items()}
+    moved = {unit for units in modules.values() for unit in units}
     # Keep the public URL of the editor so main.js can use its original imports.
     spec.write_text(
         json.dumps(
             {
                 "entry": source.name,
-                "modules": {source.name: [unit for unit in source_order if unit not in moved], module: moved},
-                "order": [module],
+                "modules": {source.name: [unit for unit in source_order if unit not in moved], **modules},
+                "order": list(modules),
                 "sequential": True,
             }
         )
@@ -103,7 +106,7 @@ def certify_editor_split(
         assert isinstance(verdict["assumptions"], list), verdict
         verdicts.append(verdict)
     assert verdicts[0] == verdicts[1]
-    return {name: out / name for name in (source.name, module)}
+    return {name: out / name for name in (source.name, *modules)}
 
 
 def serve_file(url: str, file: Path) -> Route:
@@ -272,10 +275,20 @@ async def test_original_editor(
 
 
 @pytest.mark.parametrize(
-    ("module", "ordinals", "expected_scope"),
+    ("placement", "expected_scope"),
     [
-        pytest.param(SCROLL, (1337,), "linked-structural-pivot", id="scroll"),
-        pytest.param(STARTUP, tuple(range(5, 19)), "linked-structural-order", id="startup"),
+        pytest.param({SCROLL: (1337,)}, "linked-structural-pivot", id="scroll"),
+        pytest.param({STARTUP: STARTUP_UNITS}, "linked-structural-order", id="startup"),
+        pytest.param(
+            {
+                STARTUP: STARTUP_UNITS,
+                "packages/excalidraw/editor/codecs.mjs": range(19, 301),
+                "packages/excalidraw/editor/utilities.mjs": range(301, 354),
+                SCROLL: (1337,),
+            },
+            "linked-structural-pivot",
+            id="editor",
+        ),
     ],
 )
 async def test_certified_editor_split(
@@ -284,13 +297,12 @@ async def test_certified_editor_split(
     editor_app: Starlette,
     editor_source: Path,
     editor_providers: list[str],
-    module: str,
-    ordinals: tuple[int, ...],
+    placement: Mapping[str, Sequence[int]],
     expected_scope: str,
 ) -> None:
     async with serve_app_in_loop(editor_app) as origin:
         files = await asyncio.to_thread(
-            certify_editor_split, runfiles, editor_source, origin, module, ordinals, expected_scope
+            certify_editor_split, runfiles, editor_source, origin, placement, expected_scope
         )
         original = await smoke(playwright_driver, origin, editor_source, editor_providers)
         # The first browser context has closed. Switch only the certified routes on the running server.

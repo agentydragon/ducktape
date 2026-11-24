@@ -140,28 +140,39 @@ the existing local host-binding proof.
 
 ### Browser smoke
 
-Run these opt-in targets on RBE:
+CI runs the certified editor smoke on RBE.
 
 ```sh
 p=//devinfra/js/debundle/x/split_proof/integration/excalidraw
+bbr test --config=ci "${p}:excalidraw_certified_editor_browser_smoke"
+```
+
+The placement extracts 350 units from the pinned editor.
+
+| Module          | Source units |
+| --------------- | ------------ |
+| `startup.mjs`   | `#5–18`      |
+| `codecs.mjs`    | `#19–300`    |
+| `utilities.mjs` | `#301–353`   |
+| `scroll.mjs`    | `#1337`      |
+
+The prefix keeps its execution order and the scroll helper moves ahead of
+the residual entry. The checker selects the single-move proof with
+`--structural`, the `browser-page` profile and the live HTTP origin. The test
+repeats certification with `--check-output`, then runs the original and
+certified editor in separate Chromium contexts at the same origin. It checks the
+served entry, provider and extracted module bytes, compares all 611 entry
+export names, draws a rectangle, checks that Undo is enabled and checks the
+`Bg` scene-centering result.
+
+The baseline and isolated scroll and startup placements are opt-in diagnostic
+targets.
+
+```sh
 bbr test "${p}:excalidraw_original_editor_browser_smoke"
 bbr test "${p}:excalidraw_certified_scroll_browser_smoke" "${p}:excalidraw_certified_startup_browser_smoke"
 ```
 
-The baseline loads the pinned editor. The split test certifies the single move
-with `--structural`, the `browser-page` profile and the live HTTP
-origin. It repeats certification with `--check-output`. It runs the original
-and certified editor in separate Chromium contexts at the same origin, checks
-the served entry and provider bytes, draws a rectangle, waits for Undo to
-become enabled and checks the `Bg` scene-centering result. The split test also
-checks the served `scroll.mjs` bytes and compares all 611 entry export names
-with the baseline.
-The startup replay extracts the 14 initialization units `#5` through `#18`
-into `packages/excalidraw/editor/startup.mjs`. These define the CommonJS
-wrappers used by the editor, including the React entry. The checker selects
-the order-preserving proof and checks that the units run in the original
-order immediately after the five provider imports. The startup replay compares the same 611-name namespace and
-browser behavior while checking the new module's served bytes.
 [Smoke test](browser_smoke_test.py)
 
 ### Direct AST lowering for negated initializers
