@@ -231,7 +231,9 @@ func TestParseInvocationExportRejectsAmbiguousProvenance(t *testing.T) {
 }
 
 func TestParseInvocationExportRejectsNonListInput(t *testing.T) {
-	if _, err := parseInvocationExport([]byte(`{"event":true}`)); err == nil {
-		t.Fatal("expected non-list stream to be rejected")
+	for _, raw := range []string{`{"event":true}`, "null"} {
+		if _, err := parseInvocationExport([]byte(raw)); err == nil {
+			t.Fatalf("expected non-list stream %q to be rejected", raw)
+		}
 	}
 }

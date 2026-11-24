@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	publicpb "github.com/buildbuddy-io/buildbuddy/proto/api/v1/invocation"
+	bespb "github.com/buildbuddy-io/buildbuddy/proto/build_event_stream"
 	invocationpb "github.com/buildbuddy-io/buildbuddy/proto/invocation"
 	"github.com/spf13/cobra"
 )
@@ -35,6 +36,30 @@ func getInvocationStatus(c *client, id string) (*publicpb.GetInvocationResponse,
 func readInvocationEvents(c *client, invocationID string) ([]byte, error) {
 	params := url.Values{"invocation_id": {invocationID}, "artifact": {"raw_json"}}
 	return c.fetchURL(c.baseURL + "/file/download?" + params.Encode())
+}
+
+type decodedBuildEvent struct {
+	*bespb.BuildEvent
+	rawJSON json.RawMessage
+}
+
+func decodeBuildEvents(data []byte) ([]decodedBuildEvent, error) {
+	var rawEvents []json.RawMessage
+	if err := json.Unmarshal(data, &rawEvents); err != nil {
+		return nil, fmt.Errorf("parse BES event stream: %w", err)
+	}
+	if rawEvents == nil {
+		return nil, nil
+	}
+	events := make([]decodedBuildEvent, 0, len(rawEvents))
+	for i, raw := range rawEvents {
+		var event bespb.BuildEvent
+		if err := unmarshalJSON(raw, &event); err != nil {
+			return nil, fmt.Errorf("parse BES event %d: %w", i, err)
+		}
+		events = append(events, decodedBuildEvent{BuildEvent: &event, rawJSON: raw})
+	}
+	return events, nil
 }
 
 func invocationEventsCmd() *cobra.Command {
