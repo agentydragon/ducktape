@@ -89,8 +89,8 @@ checks that all 13 `import()` and
 to existing bundle files, and the scroll module uses a new asset path.
 The decoder retains the React factory in statement 5, lowers the `Uint8Array`
 constructor reference in statement 41 and accepts the flat object bindings in
-statements 104 and 105. Both trials reject the module-level `try` in statement
-176 and leave the output directory absent.
+statements 104 and 105. The recorded concrete-checker trials reject the
+module-level `try` in statement 176 and leave the output directory absent.
 Each target records the source filename, placement spec and verdict.
 
 One target needs the existing editor module record. Unit `#1751` imports
@@ -147,13 +147,14 @@ bbr test "$p:excalidraw_original_editor_browser_smoke"
 bbr test "$p:excalidraw_certified_scroll_browser_smoke"
 ```
 
-The baseline loads the pinned editor. The split test records its listening
-origin, certifies the single move with the `browser-page` profile and repeats
-certification with `--check-output`. It runs the original and certified editor
-in separate Chromium contexts at the same origin. Both runs draw a rectangle,
-call the scroll export and check the bytes served for the entry and its static
-providers. The split test also checks the scroll module bytes and compares the
-entry's exported names with the baseline.
+The baseline loads the pinned editor. The split test certifies the single move
+with `--structural-pivot 1337`, the `browser-page` profile and the live HTTP
+origin. It repeats certification with `--check-output`. It runs the original
+and certified editor in separate Chromium contexts at the same origin, checks
+the served entry and provider bytes, draws a rectangle, waits for Undo to
+become enabled and checks the `Bg` scene-centering result. The split test also
+checks the served `scroll.mjs` bytes and compares all 611 entry export names
+with the baseline.
 [Smoke test](browser_smoke_test.py)
 
 ### Direct AST lowering for negated initializers

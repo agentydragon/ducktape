@@ -355,23 +355,48 @@ private partial def containsBreak (j : Json) : Bool :=
   | .arr items => items.any containsBreak
   | _ => false
 
-/-- A retained body has no model for its source module or a method's home object.
-Direct eval could also refer to cells absent from the static capture list. -/
-partial def needsOpaqueContext (j : Json) (checkPrivateNames := false) : Bool :=
+/-- Each entry identifies the object field through which the walk reached the child. Arrays
+of statements and class members preserve their owning field. Check the nearest function boundary. -/
+private def enclosedSuperCall (parents : List (String × Json)) : Bool := Id.run do
+  let ("callee", call) :: rest := parents | return false
+  unless (field call "type").toOption == some "CallExpression" do return false
+  let boundary (j : Json) := ["FunctionExpression", "ArrowFunctionExpression", "FunctionDeclaration",
+    "ClassExpression", "ClassDeclaration"].contains ((field j "type").toOption.getD "")
+  let ("body", fn) :: ("value", method) :: ("body", body) :: ("body", cls) :: _ :=
+    rest.dropWhile (fun (_, j) => !boundary j) | return false
+  return (field fn "type").toOption == some "FunctionExpression" &&
+    (field method "type").toOption == some "MethodDefinition" && (field method "kind").toOption == some "constructor" &&
+    (method.getObjValAs? Bool "static").toOption == some false &&
+    (method.getObjValAs? Bool "computed").toOption == some false &&
+    (field body "type").toOption == some "ClassBody" &&
+    ["ClassExpression", "ClassDeclaration"].contains ((field cls "type").toOption.getD "") &&
+    (cls.getObjVal? "superClass").toOption.any (· != .null)
+
+private partial def opaqueContext (checkPrivateNames wholeUnit moduleLocationChecked : Bool) (parents : List (String × Json)) (j : Json) : Bool :=
   match j with
   | .obj fields =>
     let kind := (field j "type").toOption.getD ""
-    ["Super", "MetaProperty", "ImportExpression"].contains kind || (checkPrivateNames && kind == "PrivateIdentifier") ||
+    (kind == "Super" && !(wholeUnit && enclosedSuperCall parents)) ||
+      (kind == "ImportExpression" && !moduleLocationChecked) ||
+      (kind == "MetaProperty" && !(moduleLocationChecked &&
+        (j.getObjVal? "meta" >>= identifier).toOption == some "import" &&
+        (j.getObjVal? "property" >>= identifier).toOption == some "meta")) || (checkPrivateNames && kind == "PrivateIdentifier") ||
       (kind == "CallExpression" && (j.getObjVal? "callee" >>= identifier).toOption == some "eval") ||
-      fields.toList.any (fun (_, child) => needsOpaqueContext child checkPrivateNames)
-  | .arr items => items.any (fun child => needsOpaqueContext child checkPrivateNames)
+      fields.toList.any (fun (key, child) => opaqueContext checkPrivateNames wholeUnit moduleLocationChecked (if wholeUnit then (key, j) :: parents else []) child)
+  | .arr items => items.any (opaqueContext checkPrivateNames wholeUnit moduleLocationChecked parents)
   | _ => false
+
+/-- Detached bodies require their source module and method context. When the entire statement is
+retained, a direct super call within the body of its own derived constructor retains its class.
+Direct eval can refer to cells absent from the static capture list in either case. -/
+def needsOpaqueContext (j : Json) (checkPrivateNames wholeUnit moduleLocationChecked : Bool := false) : Bool :=
+  opaqueContext checkPrivateNames false false [] j && (!wholeUnit || opaqueContext checkPrivateNames true moduleLocationChecked [] j)
 
 /-- LinkedInput numbers each callable by its original unit and lexical site and checks emitted syntax.
 The scope resolver supplies references to cells outside the retained callable. -/
 private def deferredFunction (j : Json) (kind : FuncKind) (name : Name) (self : Bool)
     (arity : Nat) (reason : String) (checkPrivateNames := true) : Except String Func := do
-  if needsOpaqueContext j checkPrivateNames then throw reason
+  if needsOpaqueContext j (checkPrivateNames := checkPrivateNames) then throw reason
   let .ok captures := j.getObjValAs? (List Name) "opaqueCaptures" | throw reason
   let .ok code := j.getObjValAs? Nat ":opaque-unit" | throw reason
   let .ok part := j.getObjValAs? Nat ":opaque-part" | throw reason

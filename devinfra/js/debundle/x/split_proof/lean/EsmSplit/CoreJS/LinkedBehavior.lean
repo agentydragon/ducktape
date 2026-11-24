@@ -103,6 +103,18 @@ structure CheckedLink (p : Program) (w : World) where
   ready : State w
   equation : link p (initialState w p.regions) = .ok linked ready
 
+/-- Match public names and live cells using previously checked linker output. -/
+def exportsMatchFrom {w : World} {source candidate : Program}
+    (before : CheckedLink source w) (after : CheckedLink candidate w) : Bool :=
+  compareExports (entryExports source.entry before.linked) (entryExports candidate.entry after.linked)
+
+theorem exportsMatch_from_checked {w : World} {source candidate : Program}
+    (before : CheckedLink source w) (after : CheckedLink candidate w) :
+    exportsMatch w source candidate = exportsMatchFrom before after := by
+  unfold exportsMatch exports
+  rw [before.equation, after.equation]
+  rfl
+
 theorem run_after_link {p : Program} {w : World} (fuel : Nat) (checked : CheckedLink p w) :
     runProgram w fuel p = runUnits fuel (unitsOf checked.linked) checked.ready := by
   unfold runProgram
