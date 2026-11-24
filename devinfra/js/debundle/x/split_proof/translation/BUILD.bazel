@@ -2,6 +2,7 @@ load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library", "js_test")
 load("@npm_split_proof//:defs.bzl", "npm_link_all_packages")
 load("//devinfra/lint:linters.bzl", "eslint_test")
 load("//devinfra/python:defs.bzl", "py_test")
+load(":fuzz_test_rules.bzl", "seed_pair_tests")
 
 # These Python diagnostics remain hand-run tools, as they were under experiments/.
 # gazelle:exclude fuzz_mutate.py
@@ -81,33 +82,33 @@ _SHIFT_FUZZ_DATA = [
     "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
 ]
 
-js_test(
-    name = "shift_fuzz_test",
-    size = "medium",
-    args = [
-        "--seed",
-        "1",
-        "--count",
-        "128",
+seed_pair_tests(
+    [
+        (
+            "shift_fuzz_test",
+            [
+                "--seed",
+                "1",
+                "--count",
+                "128",
+            ],
+            [],
+        ),
+        (
+            "shift_fuzz_second_seed_test",
+            [
+                "--seed",
+                "2026",
+                "--count",
+                "128",
+            ],
+            ["manual"],
+        ),
     ],
+    size = "medium",
     data = _SHIFT_FUZZ_DATA,
     entry_point = "shift_fuzz_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
-)
-
-js_test(
-    name = "shift_fuzz_second_seed_test",
-    size = "medium",
-    args = [
-        "--seed",
-        "2026",
-        "--count",
-        "128",
-    ],
-    data = _SHIFT_FUZZ_DATA,
-    entry_point = "shift_fuzz_test.mjs",
-    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
-    tags = ["manual"],
 )
 
 _TRANSLATE = "//devinfra/js/debundle/x/split_proof/lean:translate"
@@ -120,13 +121,20 @@ _CHECKER_RUNFILES = [
     _TRANSLATE,
 ]
 
-# What `fuzz.mjs` imports besides the front end: the AST corpus and the generator of `testing/gen/`.
+# The fuzzer's generator, corpora, marker renderer and their imports.
 _FUZZ_SOURCES = [
+    "fuzz_support.mjs",
     _SEEDED_RANDOM,
     "//devinfra/js/debundle/x/split_proof/translation/testing:ast_generator",
     ":node_modules/astring",
     "//devinfra/js/debundle/x/split_proof/translation/testing/gen:program_generator",
 ]
+
+js_test(
+    name = "fuzz_support_test",
+    data = _FUZZ_SOURCES,
+    entry_point = "fuzz_support_test.mjs",
+)
 
 js_test(
     name = "fixtures_test",
@@ -165,21 +173,16 @@ _LOWER_CALLBACK_FUZZ_DATA = [
     "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
 ]
 
-js_test(
-    name = "ast_emitter_fuzz_test",
-    size = "medium",
-    data = _LOWER_CALLBACK_FUZZ_DATA + [
-        _SEEDED_RANDOM,
-        "//devinfra/js/debundle/x/split_proof/translation/testing:ast_generator",
+seed_pair_tests(
+    [
+        ("ast_emitter_fuzz_test", [], []),
+        (
+            "ast_emitter_fuzz_seed_2027_test",
+            ["2027"],
+            [],
+        ),
     ],
-    entry_point = "ast_emitter_fuzz_test.mjs",
-    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
-)
-
-js_test(
-    name = "ast_emitter_fuzz_seed_2027_test",
     size = "medium",
-    args = ["2027"],
     data = _LOWER_CALLBACK_FUZZ_DATA + [
         _SEEDED_RANDOM,
         "//devinfra/js/debundle/x/split_proof/translation/testing:ast_generator",
@@ -302,90 +305,90 @@ js_test(
     },
 )
 
-js_test(
-    name = "ast_fuzz_test",
-    size = "medium",
-    args = [
-        "--ast-corpus",
-        "--count",
-        "12",
-        "--seed",
-        "1",
-        "--trees",
-        "4",
-        "--jobs",
-        "4",
-        "--require-accepted",
-        "--require-ast-coverage",
-        "--require-updates",
+seed_pair_tests(
+    [
+        (
+            "ast_fuzz_test",
+            [
+                "--ast-corpus",
+                "--count",
+                "12",
+                "--seed",
+                "1",
+                "--trees",
+                "4",
+                "--jobs",
+                "4",
+                "--require-accepted",
+                "--require-ast-coverage",
+                "--require-updates",
+            ],
+            [],
+        ),
+        (
+            "ast_fuzz_second_seed_test",
+            [
+                "--ast-corpus",
+                "--count",
+                "12",
+                "--seed",
+                "2026",
+                "--trees",
+                "4",
+                "--jobs",
+                "4",
+                "--require-accepted",
+                "--require-ast-coverage",
+                "--require-updates",
+            ],
+            ["manual"],
+        ),
     ],
+    size = "medium",
     data = _CHECKER_RUNFILES + _FUZZ_SOURCES,
     entry_point = "fuzz.mjs",
     env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
 )
 
-js_test(
-    name = "ast_fuzz_second_seed_test",
-    size = "medium",
-    args = [
-        "--ast-corpus",
-        "--count",
-        "12",
-        "--seed",
-        "2026",
-        "--trees",
-        "4",
-        "--jobs",
-        "4",
-        "--require-accepted",
-        "--require-ast-coverage",
-        "--require-updates",
+seed_pair_tests(
+    [
+        (
+            "callback_fuzz_test",
+            [
+                "--callback-corpus",
+                "--count",
+                "16",
+                "--seed",
+                "1",
+                "--trees",
+                "2",
+                "--jobs",
+                "4",
+                "--require-accepted",
+            ],
+            [],
+        ),
+        (
+            "callback_fuzz_second_seed_test",
+            [
+                "--callback-corpus",
+                "--count",
+                "16",
+                "--seed",
+                "2026",
+                "--trees",
+                "2",
+                "--jobs",
+                "4",
+                "--require-accepted",
+            ],
+            ["manual"],
+        ),
     ],
+    size = "medium",
     data = _CHECKER_RUNFILES + _FUZZ_SOURCES,
     entry_point = "fuzz.mjs",
     env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
-    tags = ["manual"],
-)
-
-js_test(
-    name = "callback_fuzz_test",
-    size = "medium",
-    args = [
-        "--callback-corpus",
-        "--count",
-        "16",
-        "--seed",
-        "1",
-        "--trees",
-        "2",
-        "--jobs",
-        "4",
-        "--require-accepted",
-    ],
-    data = _CHECKER_RUNFILES + _FUZZ_SOURCES,
-    entry_point = "fuzz.mjs",
-    env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
-)
-
-js_test(
-    name = "callback_fuzz_second_seed_test",
-    size = "medium",
-    args = [
-        "--callback-corpus",
-        "--count",
-        "16",
-        "--seed",
-        "2026",
-        "--trees",
-        "2",
-        "--jobs",
-        "4",
-        "--require-accepted",
-    ],
-    data = _CHECKER_RUNFILES + _FUZZ_SOURCES,
-    entry_point = "fuzz.mjs",
-    env = {"TRANSLATE": "$(rootpath " + _TRANSLATE + ")"},
-    tags = ["manual"],
 )
 
 js_test(
