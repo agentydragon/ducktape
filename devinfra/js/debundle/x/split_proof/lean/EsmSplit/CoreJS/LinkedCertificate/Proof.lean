@@ -13,6 +13,9 @@ namespace CoreJS.LinkedBehavior
 
 attribute [cbv_eval] DenseArray.reduce
 
+-- Reduce the string-key comparisons in ordinary property writes directly.
+attribute [cbv_eval] PropertyKey.str_beq
+
 /-- Quantify over worlds satisfying the host observations used by the certificate. -/
 def EquivalentFor (premises : HostPremises) (source candidate : Program) : Prop :=
   if premises = {} then Equivalent source candidate
