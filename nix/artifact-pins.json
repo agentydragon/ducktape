@@ -25,8 +25,8 @@
       "sha256": "E9iZxt1l78MzpRZcPpbOhkfqBaYZf6e4N05MSlHKy7s="
     },
     "difftree": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/difftree-3ec6bfed10a7/difftree-0.1.0-py3-none-any.whl",
-      "sha256": "Psa/7RCnNM8ot8vlJ8C61YRJJbXnXnfB9IchZ+kHyj8="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/difftree-7fe224ef38dc/difftree-0.1.0-py3-none-any.whl",
+      "sha256": "f+Ik7zjcLsfNyfVYpDAHh2OYvncl3Vr1xBWT65dsuRo="
     },
     "gmail-archiver": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/gmail-archiver-6939a50d9967/gmail_archiver-0.1.0-py3-none-any.whl",
@@ -81,8 +81,8 @@
       "sha256": "75Z20KluoDj4kwQanWM2WZb5G9qC06JMRKJrrx/HieM="
     },
     "skill-cpap": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cpap-aa29a7635d00/cpap.skill",
-      "sha256": "qimnY10Aku0YYGC8RVroDJHJyeD0cYK0TZCr3Tzrlqw="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cpap-f6000d80446c/cpap.skill",
+      "sha256": "9gANgERs8UD44YJEsp3PevcbpPg9qmShHMOibz+JLQ0="
     },
     "skill-cihealth": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cihealth-d45692b86126/cihealth.skill",
