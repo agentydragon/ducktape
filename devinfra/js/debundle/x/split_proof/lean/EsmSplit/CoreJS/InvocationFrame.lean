@@ -207,7 +207,7 @@ private theorem reachFrame_constructorReceiver {r R cells A}
   apply allocate
   simpa [Obj.nodes] using parent
 
-/-- The construction dispatch reduces to allocation, prototype lookup and smaller calls. -/
+/-- Constructor dispatch preserves reachability through allocation, argument evaluation and smaller calls. -/
 theorem constructTarget_reachFrame_of_steps {r R cells A n} (away : Away r R A)
     (root : A (.obj objectProto))
     (allocate : ∀ o : Obj, (∀ node ∈ o.nodes, A node) →
@@ -223,6 +223,8 @@ theorem constructTarget_reachFrame_of_steps {r R cells A n} (away : Away r R A)
       ReachFrame r R cells A (fun env => ∀ node ∈ env.nodes, A node) (enterFunction f closed this args : M W Env))
     (stmts : ∀ env ss, (∀ node ∈ Env.nodes env, A node) →
       ReachFrame r R cells A (fun flow => ∀ v, flow = .ret v → SafeVal A v) (execStmts n env ss : M W Flow))
+    (evalArgsFrame : ∀ env es, (∀ node ∈ Env.nodes env, A node) →
+      ReachFrame r R cells A (fun vs => ∀ v ∈ vs, SafeVal A v) (evalArgs n env es : M W (List Val)))
     (smaller : ∀ target callee args, SafeVal A target → SafeVal A callee → (∀ a ∈ args, SafeVal A a) →
       ReachFrame r R cells A (SafeVal A) (constructTarget n target callee args : M W Val))
     (target callee : Val) (args : List Val) (safeTarget : SafeVal A target)
@@ -238,11 +240,10 @@ theorem constructTarget_reachFrame_of_steps {r R cells A n} (away : Away r R A)
     | none => exact reachFrame_typeError "not a constructor"
     | some code =>
       have caps := objectCode_safe safe hc
-      have parentRun (vs : List Val) (hvs : ∀ v ∈ vs, SafeVal A v) :
-          ReachFrame r R cells A (SafeVal A) (constructParent (constructTarget n target) a vs : M W Val) := by
+      have parentRun (original : Obj) (safeObj : ∀ node ∈ original.nodes, A node)
+          (vs : List Val) (hvs : ∀ v ∈ vs, SafeVal A v) :
+          ReachFrame r R cells A (SafeVal A) (constructParent (constructTarget n target) original.proto vs : M W Val) := by
         unfold constructParent
-        apply (reachFrame_getObj away (safeVal_obj.1 safeCallee)).bind
-        intro original safeObj
         cases hp : original.proto with
         | none => exact reachFrame_typeError "superclass is not a constructor"
         | some p =>
@@ -252,35 +253,36 @@ theorem constructTarget_reachFrame_of_steps {r R cells A n} (away : Away r R A)
           cases test
           · exact reachFrame_typeError "superclass is not a constructor"
           · exact smaller target (.obj p) vs safeTarget parent hvs
+      have active := reachFrame_getObj (W := W) (cells := cells) away (safeVal_obj.1 safeCallee)
       cases code with
       | host name => exact reachFrame_unknown r R cells A _ _
-      | derived => exact parentRun args safeArgs
-      | derivedBody forward body closed =>
-        let forwarded := forward.map fun i => args.getD i .undef
-        have safeForwarded : ∀ v ∈ forwarded, SafeVal A v := by
-          intro v hv
-          obtain ⟨i, _, rfl⟩ := List.mem_map.mp hv
-          rw [List.getD_eq_getElem?_getD]
-          cases h : args[i]? with
-          | none => exact fun _ hn => by cases hn
-          | some x => exact safeArgs x (list_index_mem h)
-        apply (parentRun forwarded safeForwarded).bind
-        intro receiver hr
-        apply (enter body closed receiver args caps hr safeArgs).bind
+      | derived => exact active.bind fun original safeObj => parentRun original safeObj args safeArgs
+      | derivedBody before superArgs body closed =>
+        apply (enter (derivedScope before body) closed .undef args caps (fun _ h => by cases h) safeArgs).bind
         intro env he
-        apply (stmts env body.body he).bind
-        intro flow hflow
-        cases flow
-        case ret v =>
-          have hv := hflow v rfl
-          cases v <;> first
-          | exact reachFrame_pure r R cells A _ hv
+        apply (stmts env before he).bind
+        intro initialFlow _
+        cases initialFlow <;> try exact reachFrame_unknown r R cells A _ _
+        case normal =>
+          apply active.bind
+          intro original safeObj
+          apply (evalArgsFrame env superArgs he).bind
+          intro argv hargv
+          apply (parentRun original safeObj argv hargv).bind
+          intro receiver hr
+          apply (stmts { env with this := receiver } body.body (Env.nodes_setThis he hr)).bind
+          intro flow hflow
+          cases flow
+          case ret v =>
+            have hv := hflow v rfl
+            cases v <;> first
+            | exact reachFrame_pure r R cells A _ hv
+            | exact reachFrame_pure r R cells A _ hr
+            | exact reachFrame_typeError _
+            | exact reachFrame_unknown r R cells A _ _
+          all_goals first
           | exact reachFrame_pure r R cells A _ hr
-          | exact reachFrame_typeError _
           | exact reachFrame_unknown r R cells A _ _
-        all_goals first
-        | exact reachFrame_pure r R cells A _ hr
-        | exact reachFrame_unknown r R cells A _ _
       | «opaque» code part inner ctor =>
         cases ctor
         · exact reachFrame_typeError "not a constructor"

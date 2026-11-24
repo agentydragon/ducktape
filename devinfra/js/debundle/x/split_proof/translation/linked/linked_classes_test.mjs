@@ -184,14 +184,9 @@ for (const isStatic of [false, true]) {
 
 for (const [name, source, expectedReason] of [
   [
-    "pre-super-effects",
+    "pre-super-receiver",
     "const B = class extends null { constructor() { this.x = 1; super(); } }; export const result = 1;",
-    /leading super call/,
-  ],
-  [
-    "super-expression-argument",
-    "const B = class extends null { constructor(a) { super(a + 1); } }; export const result = 1;",
-    /identifier/,
+    /before super|leading super call/i,
   ],
   [
     "repeated-super",

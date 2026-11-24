@@ -337,7 +337,8 @@ private theorem reachFrame_classParents {r R cells A} (away : Away r R A) (call 
 
 private theorem reachFrame_finishDerived {r R cells A} (away : Away r R A)
     (objects : ∀ a : Addr, a.region ≠ r → A (.obj a)) (env : Env) (safe : ∀ node ∈ env.nodes, A node)
-    (name : Name) (self : Bool) (members : List ClassMember) (parents : Addr × Option Addr) (ctor : Option (List Nat × Func))
+    (name : Name) (self : Bool) (members : List ClassMember) (parents : Addr × Option Addr)
+    (ctor : Option (List Stmt × List Expr × Func))
     (guard : A (.obj parents.1) ∧ ∀ a ∈ parents.2, A (.obj a))
     (runMembers : Env → Addr → Addr → List ClassMember → M W (List (Bool × String)))
     (framed : ∀ proto c, A (.obj proto) → A (.obj c) →
@@ -362,8 +363,8 @@ private theorem reachFrame_finishDerived {r R cells A} (away : Away r R A)
       · cases ctor with
         | none => cases capture
         | some pair =>
-          rcases pair with ⟨_, body⟩
-          exact Env.nodes_capture safe body.free node capture
+          rcases pair with ⟨before, args, body⟩
+          exact Env.nodes_capture safe (derivedCtorFree (some (before, args, body))) node capture
   · intro node h
     simp [Obj.nodes] at h
     obtain ⟨p, hp, rfl⟩ := h
@@ -378,7 +379,7 @@ theorem evalDerived_reachFrame_step {r R cells A n} (away : Away r R A)
       ReachFrame r R cells A (SafeVal A) (evalExpr n e exp : M W Val))
     (evalMemberList : ∀ e proto c ms, (∀ node ∈ Env.nodes e, A node) → A (.obj proto) → A (.obj c) →
       ReachFrame r R cells A (fun _ => True) (evalMembers n e proto c ms : M W _))
-    (name : Name) (self : Bool) (base : Expr) (members : List ClassMember) (ctor : Option (List Nat × Func)) :
+    (name : Name) (self : Bool) (base : Expr) (members : List ClassMember) (ctor : Option (List Stmt × List Expr × Func)) :
     ReachFrame r R cells A (SafeVal A) (evalExpr (n + 1) env (.derived name self base members ctor) : M W Val) := by
   simp only [evalExpr]
   split

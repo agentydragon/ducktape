@@ -352,6 +352,31 @@ private partial def containsBreak (j : Json) : Bool :=
   | .arr items => items.any containsBreak
   | _ => false
 
+/-- A standalone super call or one followed by the other operands of a comma expression. -/
+private def leadingSuper? (stmt : Json) : Option (Json × List Json) := do
+  guard ((field stmt "type").toOption == some "ExpressionStatement")
+  let expr ← (stmt.getObjVal? "expression").toOption
+  let expressions ← if (field expr "type").toOption == some "SequenceExpression" then
+    (expr.getObjValAs? (List Json) "expressions").toOption else pure [expr]
+  let call :: rest := expressions | none
+  guard ((field call "type").toOption == some "CallExpression")
+  guard ((call.getObjVal? "callee" >>= (field · "type")).toOption == some "Super")
+  return (call, rest)
+
+/-- Until super initializes the receiver, the evaluator can run expressions that neither
+read the receiver nor create code that could later observe its uninitialized binding. -/
+private partial def checkBeforeSuper (j : Json) : Except String Unit := do
+  match j with
+  | .obj fields =>
+    let kind := (field j "type").toOption.getD ""
+    if ["ThisExpression", "Super", "MetaProperty", "ArrowFunctionExpression", "FunctionExpression",
+        "ClassExpression"].contains kind then throw s!"unsupported {kind} before super"
+    if kind == "CallExpression" && (j.getObjVal? "callee" >>= identifier).toOption == some "eval" then
+      throw "unsupported direct eval before super"
+    for (_, child) in fields.toList do checkBeforeSuper child
+  | .arr items => items.forM checkBeforeSuper
+  | _ => pure ()
+
 /-- Each entry identifies the object field through which the walk reached the child. Arrays
 of statements and class members preserve their owning field. Check the nearest function boundary. -/
 private def enclosedSuperCall (parents : List (String × Json)) : Bool := Id.run do
@@ -676,34 +701,41 @@ private partial def linkedFunction (profile : HostProfile) (imports : List Name)
   -- run before the body, using the same mutable cells as any body var redeclarations.
   return .mk name kind self (params.toList.map Prod.fst) (bindings.toList ++ stmts)
 
-/-- Split off a leading super call. With plain parameters and arguments read
-directly from those parameters, no pre-super expression can observe or escape
-the uninitialized receiver. The continuation runs with the parent's result. -/
+/-- Split a derived constructor at its direct super call, including a call at the head
+of a comma expression. All three parts run with the same parameter and local cells. -/
 private partial def linkedDerivedConstructor (profile : HostProfile) (imports : List Name)
-    (name : Name) (fn : Json) : Except String (List Nat × Func) := do
-  let params ← (← fn.getObjValAs? (List Json) "params").mapM localBinding
+    (name : Name) (fn : Json) : Except String (List Stmt × List Expr × Func) := do
+  for param in ← fn.getObjValAs? (Array Json) "params" do discard <| localBinding param
   let block ← fn.getObjVal? "body"
-  let first :: tail ← block.getObjValAs? (List Json) "body" | throw "expected a leading super call"
-  unless (← field first "type") == "ExpressionStatement" do throw "expected a leading super call"
-  let expr ← first.getObjVal? "expression"
-  let expressions ← if (← field expr "type") == "SequenceExpression" then expr.getObjValAs? (List Json) "expressions"
-                    else pure [expr]
-  let call :: rest := expressions | throw "expected a leading super call"
-  unless (← field call "type") == "CallExpression" do throw "expected a leading super call"
-  unless (← field (← call.getObjVal? "callee") "type") == "Super" do
-    throw "expected a leading super call"
-  let forward ← (← call.getObjValAs? (List Json) "arguments").mapM fun arg => do
-    let x ← localBinding arg
-    let some i := params.idxOf? x | throw "super argument must be a constructor parameter"
-    return i
+  let statements ← block.getObjValAs? (List Json) "body"
+  let (prefixStmts, remaining) := statements.span (fun stmt => (leadingSuper? stmt).isNone)
+  let first :: tail := remaining | throw "expected a direct super call"
+  let some (call, rest) := leadingSuper? first | throw "expected a direct super call"
+  let mut before := #[]
+  for stmt in prefixStmts do
+    match ← field stmt "type" with
+    | "VariableDeclaration" =>
+      unless ["const", "let"].contains (← field stmt "kind") do throw "expected a lexical declaration before super"
+      for d in ← stmt.getObjValAs? (Array Json) "declarations" do
+        discard <| localBinding (← d.getObjVal? "id")
+        checkBeforeSuper (← d.getObjVal? "init")
+      before := before ++ (← linkedBlockDeclarations profile imports .function before.size stmt)
+    | "ExpressionStatement" =>
+      let expr ← stmt.getObjVal? "expression"
+      checkBeforeSuper expr
+      before := before.push (.expr (← linkedExpr profile imports true "" expr))
+    | other => throw s!"unsupported {other} before super"
+  let args ← (← call.getObjValAs? (List Json) "arguments").mapM fun arg => do
+    checkBeforeSuper arg
+    linkedExpr profile imports true "" arg
   let stmts := rest.map (fun e => Json.mkObj [("type", .str "ExpressionStatement"), ("expression", e)]) ++ tail
   let post := Json.obj ((← block.getObj?).insert "body" (.arr stmts.toArray))
   let body ← linkedFunction profile imports .classCtor name false (.obj ((← fn.getObj?).insert "body" post))
   -- An opaque body may depend on the derived constructor's home object or new.target.
   if let some (_, _, _, why) := body.opaqueBody then throw (why.getD "unsupported derived constructor body")
-  return (forward, body)
+  return (before.toList, args, body)
 
-/-- Public, static-name class elements with default or leading-super derived constructors. -/
+/-- Public, static-name class elements with default or explicit derived constructors. -/
 private partial def linkedClass (profile : HostProfile) (imports : List Name) (inFunction : Bool) (hint : Name) (j : Json) :
     Except String Expr := do
   let id ← j.getObjVal? "id"

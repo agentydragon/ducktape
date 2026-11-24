@@ -146,12 +146,13 @@ private partial def arrayElementEq : MatchEq (ArrayElementKind × Expr)
     let ⟨value⟩ ← exprEq e e'
     return ⟨tag ▸ value ▸ rfl⟩
 
-partial def derivedCtorEq : MatchEq (Option (List Nat × Func))
+private partial def derivedCtorEq : MatchEq (Option (List Stmt × List Expr × Func))
   | none, none => some ⟨rfl⟩
-  | some (args, f), some (args', g) => do
-    let ⟨a⟩ ← scalarEq args args'
+  | some (before, args, f), some (before', args', g) => do
+    let ⟨p⟩ ← listEq stmtEq before before'
+    let ⟨a⟩ ← listEq exprEq args args'
     let ⟨b⟩ ← funcEq f g
-    return ⟨a ▸ b ▸ rfl⟩
+    return ⟨p ▸ a ▸ b ▸ rfl⟩
   | _, _ => none
 
 partial def funcEq : MatchEq Func

@@ -109,9 +109,9 @@ inductive Expr where
   | arrWithSpread (elems : List (ArrayElementKind × Expr))
   /-- `class name { … }`; `self` when the body sees the name. -/
   | cls (name : String) (self : Bool) (ctor : Func) (members : List ClassMember)
-  /-- A fieldless derived class. An explicit constructor forwards the listed parameter slots before running its body. -/
+  /-- A fieldless derived class. An explicit constructor splits its body at the direct super call. -/
   | derived (name : String) (self : Bool) (parent : Expr) (members : List ClassMember)
-      (ctor : Option (List Nat × Func))
+      (ctor : Option (List Stmt × List Expr × Func))
   | get (o k : Expr)
   /-- `o?.[k]`: evaluate the receiver once and skip the key on a nullish value. -/
   | getOptional (o k : Expr)
@@ -299,6 +299,9 @@ as a mention of the name it declares: it is the scope around it that holds the b
 /-- The names a statement list declares in its own scope. -/
 def lexNames (ss : List Stmt) : List Name := (lexDecls ss).map (·.1)
 
+private def freeFunctionNames (params : List Name) (body : List Stmt) (names : List Name) : List Name :=
+  names.filter fun x => !(params.contains x || (varNamesOf body).contains x || (lexNames body).contains x)
+
 mutual
 
 def Expr.free : Expr → List Name
@@ -342,16 +345,18 @@ def ClassMember.free : ClassMember → List Name
   | .method _ k f | .getter _ k f | .setter _ k f => k.free ++ f.free
   | .field _ k init => k.free ++ init.free
 
-/-- The names of the scope around a function that its code can mean. -/
-def derivedCtorFree : Option (List Nat × Func) → List Name
-  | some (_, f) => f.free
+/-- The prefix, super arguments and remaining body share the constructor's scope. -/
+def derivedCtorFree : Option (List Stmt × List Expr × Func) → List Name
+  | some (before, args, .mk _ _ _ params body) | some (before, args, .withDefaults _ _ _ params _ body) =>
+    freeFunctionNames params (before ++ body) (freeStmts before ++ freeExprs args ++ freeStmts body)
+  | some (before, args, .opaque ..) => freeFunctionNames [] before (freeStmts before ++ freeExprs args)
   | none => []
 
+/-- The names of the scope around a function that its code can mean. -/
 def Func.free : Func → List Name
   | .opaque name _ self _ _ _ free _ => free.filter fun x => !(self && x == name)
   | .mk name _ self params body | .withDefaults name _ self params _ body =>
-    (freeStmts body).filter fun x =>
-      !(params.contains x || (varNamesOf body).contains x || (lexNames body).contains x || (self && x == name))
+    freeFunctionNames (if self then name :: params else params) body (freeStmts body)
 
 def Stmt.free : Stmt → List Name
   | .expr e | .ret e | .throw e => e.free

@@ -440,7 +440,7 @@ theorem Same.cls_succ (env env' : Env) (name : String) (self : Bool) (ctor : Fun
       exact List.mem_append_right _ (fieldInits_free members _ (List.of_mem_zip hzip).2 x hx)
 
 theorem Same.derived_succ (env env' : Env) (name : String) (self : Bool) (parent : Expr) (members : List ClassMember)
-    (ctor : Option (List Nat × Func))
+    (ctor : Option (List Stmt × List Expr × Func))
     (hN : Agree (Expr.derived name self parent members ctor).free env env') :
     (evalExpr (n + 1) env (.derived name self parent members ctor) : M W _) =
       evalExpr (n + 1) env' (.derived name self parent members ctor) := by
@@ -468,10 +468,10 @@ theorem Same.derived_succ (env env' : Env) (name : String) (self : Bool) (parent
         cases ctor with
         | none => rfl
         | some pair =>
-          rcases pair with ⟨xs, f⟩
+          rcases pair with ⟨before, args, body⟩
           simp only [derivedCtorCode]
-          have captured : Agree f.free env1 env1' := both.mono fun x hx =>
-            List.mem_append_right _ (show x ∈ derivedCtorFree (some (xs, f)) by simpa [derivedCtorFree] using hx)
+          have captured : Agree (derivedCtorFree (some (before, args, body))) env1 env1' :=
+            both.mono fun _ hx => List.mem_append_right _ hx
           rw [capture_agree captured]
       simp only [sameCode]
       refine M.bind_congr rfl fun proto => M.bind_congr rfl fun c => M.bind_congr rfl fun _ => ?_
