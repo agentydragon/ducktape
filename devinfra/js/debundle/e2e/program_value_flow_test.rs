@@ -6,7 +6,7 @@ use analysis::{DependencyGraphReport, reports::schema::EdgeRoleReport};
 use analysis_model::DepKind;
 use debundle_e2e_graph_support::source_unit_for_binding;
 use debundle_e2e_support::saved_analysis::{
-    assert_same_invocation_trees, assert_staged_entry_output, path, staged as stage,
+    assert_same_invocation_trees, assert_staged_entry_output, staged as stage,
 };
 use debundle_e2e_support::*;
 
@@ -19,7 +19,7 @@ fn assert_flow_case(source: &str, peers: &[(&str, &str)], calls: &[(&str, &str)]
     let (staged, _fixture) = stage(opts());
     assert_node_output(&staged.root().join("snapshot/static/app.js"), "0 7\n", "");
     let direct = staged.run(&[]);
-    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    let saved = staged.run_saved(&[]);
     for invocation in [&direct, &saved] {
         assert!(
             invocation.result.status.success(),
@@ -61,7 +61,7 @@ fn assert_flow_case(source: &str, peers: &[(&str, &str)], calls: &[(&str, &str)]
         .with_unassigned_mode(unassigned_mode_inline()),
     );
     let direct = staged.run(&["--emit-on-rejection"]);
-    let saved = staged.run(&["--emit-on-rejection", "--analysis", path(&staged.artifact)]);
+    let saved = staged.run_saved(&["--emit-on-rejection"]);
     for invocation in [&direct, &saved] {
         assert_eq!(
             invocation.result.status.code(),
@@ -249,7 +249,7 @@ fn equal_offsets_and_names_in_two_providers_are_distinct() {
             .with_unassigned_mode(unassigned_mode_inline()),
     );
     let direct = staged.run(&[]);
-    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    let saved = staged.run_saved(&[]);
     for invocation in [&direct, &saved] {
         assert!(
             invocation.result.status.success(),

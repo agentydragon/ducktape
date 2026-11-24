@@ -3,7 +3,7 @@
 
 use super::{assert_unmoved_output, expect_single_binding_rejection};
 use debundle_e2e_graph_support::FixtureGraphExt;
-use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged};
+use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, staged};
 use debundle_e2e_support::*;
 use std::fmt::Write as _;
 
@@ -101,7 +101,7 @@ fn prefix_values_and_saved_analysis_are_rechecked_between_host_calls() {
         "",
     );
     let fresh = staged.run(&[]);
-    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    let saved = staged.run_saved(&[]);
     assert_same_invocation_trees(&fresh, &saved);
     for invocation in [&fresh, &saved] {
         assert!(

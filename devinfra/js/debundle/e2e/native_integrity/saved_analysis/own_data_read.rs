@@ -2,7 +2,7 @@
 
 use debundle_e2e_graph_support::FixtureGraphExt;
 use debundle_e2e_support::saved_analysis::{
-    assert_ok, assert_same_invocation_trees, graph_node_for_binding, path, staged,
+    assert_ok, assert_same_invocation_trees, graph_node_for_binding, staged,
 };
 use debundle_e2e_support::*;
 use serde_json::Value;
@@ -120,7 +120,7 @@ fn intrinsic_alias_relations_resolve_without_native_operation_inputs() {
     let (staged, _fixture) = staged(intrinsic_alias_opts(&source));
     let direct = staged.run(&[]);
     assert_ok(&direct.result, "direct relational-alias run");
-    let saved = staged.run(&["--analysis", path(&staged.artifact)]);
+    let saved = staged.run_saved(&[]);
     assert_ok(&saved.result, "saved-analysis relational-alias run");
     assert_same_invocation_trees(&direct, &saved);
 

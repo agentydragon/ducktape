@@ -148,7 +148,7 @@ fn staged_artifact_and_its_invocation_spec_replay_without_the_setup_owner() {
         catch_unwind(|| {
             let (staged, _fixture) =
                 saved_analysis::staged(FixtureOpts::new("console.log(10);", vec![]));
-            let run = staged.run(&["--analysis", saved_analysis::path(&staged.artifact)]);
+            let run = staged.run_saved(&[]);
             assert_node_output(
                 &run.output_root().join("app/static/app/entry.js"),
                 "incorrect\n",

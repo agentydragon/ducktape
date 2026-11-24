@@ -2,7 +2,7 @@
 //! error. It must not inherit deferred reads from the binding's initializer.
 
 use super::{assert_unmoved_output, expect_single_binding_rejection};
-use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, path, staged};
+use debundle_e2e_support::saved_analysis::{assert_same_invocation_trees, staged};
 use debundle_e2e_support::*;
 use std::fmt::Write as _;
 
@@ -60,7 +60,7 @@ fn assert_availability_parity(
     );
     assert_node_output(&staged.root().join("snapshot/static/app.js"), original, "");
     let direct = staged.run(&["--emit-on-rejection"]);
-    let saved = staged.run(&["--emit-on-rejection", "--analysis", path(&staged.artifact)]);
+    let saved = staged.run_saved(&["--emit-on-rejection"]);
     assert_same_invocation_trees(&direct, &saved);
     for invocation in [&direct, &saved] {
         assert_eq!(

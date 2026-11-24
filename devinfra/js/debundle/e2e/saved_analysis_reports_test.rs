@@ -166,7 +166,7 @@ fn default_reports_are_graph_free_and_full_export_reuses_the_analysis() {
         p.file_name()
             .is_some_and(|n| n == "dependency_graph.json.gz" || n == "program_graph.json.gz")
     }));
-    let full_run = staged.run(&["--analysis", path(&staged.artifact)]);
+    let full_run = staged.run_saved(&[]);
     assert_ok(&full_run.result, "full graphs from shared analysis");
     let full = tree(&full_run.output_root());
     let without_graphs = |files: BTreeMap<PathBuf, Vec<u8>>| {
@@ -273,13 +273,7 @@ fn reports_only_keeps_typed_rejection_without_emitting_a_program() {
             .exists()
     );
     let export = staged.root().join("rejected-export");
-    let result = staged.run(&[
-        "--analysis",
-        path(&staged.artifact),
-        "--reports-only",
-        path(&export),
-        "--emit-on-rejection",
-    ]);
+    let result = staged.run_saved(&["--reports-only", path(&export), "--emit-on-rejection"]);
     assert_eq!(
         result.result.status.code(),
         Some(3),
@@ -349,12 +343,7 @@ fn reports_only_requires_analysis_and_keeps_final_program_validation() {
         path(&export),
     ]);
     assert_eq!(no_analysis.status.code(), Some(2), "{}", no_analysis.stderr);
-    let result = staged.run(&[
-        "--analysis",
-        path(&staged.artifact),
-        "--reports-only",
-        path(&export),
-    ]);
+    let result = staged.run_saved(&["--reports-only", path(&export)]);
     assert_eq!(
         result.result.status.code(),
         Some(1),
