@@ -79,6 +79,13 @@ move. Such a page does not satisfy the contract. Neither a lexical `Math`
 binding nor an object operand requiring numeric coercion qualifies for this
 rule. The plain browser-page profile makes no such assertion.
 
+For the pinned Node semver bundle, `{"profile":"ecmascript","stableIntrinsicValues":["Object.defineProperty@1"]}`
+lets the structural checker move `var saved = Object.defineProperty;`. Throughout initialization,
+reading the ambient `Object` binding must return the same receiver, and reading its own data
+property `defineProperty` must return the same method reference. Both reads must preserve host
+state. Deployments that replace the method or install an observable getter can violate the premise.
+The contract grants no behavior for invoking the method and does not require browser globals.
+
 The experimental `--structural` checker selects a proof from the linked schedules. If the units keep their original order, it checks the exact unit sequence, source syntax, resolved capture cells, initial state and entry exports, then reports `scope: "linked-structural-order"`. For an order change, it brings units forward one at a time. A hoisted function is already in its declaration cell before either schedule runs. The initial states must agree on its object address, code, and captured cells; entry exports must resolve to the same live cells. Only the inert declaration step moves past earlier units, which may already use the function. Moving an allocating initializer still requires checks on the prefix and crossed units of the intermediate schedule. It reports `scope: "linked-structural-pivot"` for one move and `scope: "linked-structural-moves"` for multiple moves.
 
 A regex literal can move as a fresh allocation, including as the value of a named data property. Each evaluation creates a distinct object with its own `lastIndex` and the realm's `%RegExp.prototype%`. The intrinsic constructor's `prototype` is a non-writable, non-configurable data property; literal evaluation does not consult the global `RegExp` binding or invoke getters on the prototype. This rule needs no browser-page premise. Calling `new RegExp(...)`, reading `/a/.flags`, and running a matcher during initialization remain outside the allocation rule.

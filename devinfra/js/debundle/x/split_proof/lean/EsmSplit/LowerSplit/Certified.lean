@@ -105,10 +105,11 @@ private def emitVerdict (requested : String) (outcome : Except String Guarantee)
   IO.println (Json.mkObj ([("requested", toJson requested), ("scope", toJson scope)] ++ fields ++ extra)).compress
   return if outcome.isOk then 0 else 1
 
+private def profileFields (profile : CoreJS.HostProfile) : List (String × Json) :=
+  if profile == .empty then [] else [("hostProfile", toJson profile.label)]
+
 private def profileVerdict (selected : CoreJS.HostProfile) (used : CoreJS.HostPremises) : List (String × Json) :=
-  match selected with
-  | .empty => []
-  | .browserPage => [("hostProfile", toJson "browser-page"), ("assumptions", toJson used.assumptions)]
+  if selected == .empty then [] else profileFields selected ++ [("assumptions", toJson used.assumptions)]
 
 private structure CertifiedOptions where
   request : Guarantee
@@ -128,10 +129,12 @@ private def parseCertifiedOptions (label : String) (args : List String) : IO (Sp
     | none => pure (CoreJS.HostProfile.empty, [])
     | some path => do
       let j ← IO.ofExcept (Json.parse (← IO.FS.readFile path))
-      if j == Json.mkObj [("profile", toJson "browser-page"),
-          ("stableIntrinsicValues", toJson [CoreJS.StableIntrinsic.mathPI.id])] then
-        pure (.browserPage, [CoreJS.StableIntrinsic.mathPI])
-      else pure (← IO.ofExcept (CoreJS.HostProfile.read j), [])
+      let presets : List (CoreJS.HostProfile × CoreJS.StableIntrinsic) :=
+        [(.browserPage, .mathPI), (.ecmascript, .objectDefineProperty)]
+      match presets.find? (fun (p, d) => j == Json.mkObj [("profile", toJson p.label),
+          ("stableIntrinsicValues", toJson [d.id])]) with
+      | some (p, d) => pure (p, [d])
+      | none => pure (← IO.ofExcept (CoreJS.HostProfile.read j), [])
   let structural := args.contains "--structural"
   unless structural || intrinsics.isEmpty do
     throw (IO.userError "stableIntrinsicValues requires --structural")
@@ -205,8 +208,8 @@ private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work
           s!"The static deployment at {origin} overlays only the planned module paths.",
           "The native ESM loader uses one module record per effective URL and resolves dynamic dependencies through the checked live cells."
         ])
-      let host := if profile == .browserPage then [("hostProfile", toJson "browser-page")] else []
-      return ← emitVerdict request.label (.ok .normalCompletion) scope (host ++ [("assumptions", toJson assumptions)])
+      return ← emitVerdict request.label (.ok .normalCompletion) scope
+        (profileFields profile ++ [("assumptions", toJson assumptions)])
     catch e => return ← emitVerdict request.label (.error e.toString) "linked-structural"
   let errorFields ← IO.mkRef ([] : List (String × Json))
   try

@@ -124,6 +124,7 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   let profileTerm := fun (p : HostProfile) => match p with
     | .empty => "CoreJS.HostProfile.empty"
     | .browserPage => "CoreJS.HostProfile.browserPage"
+    | .ecmascript => "CoreJS.HostProfile.ecmascript"
   let ordinaryTactic := s!"verify_linked_programs {fuel}{strategy}"
   -- This only selects the proof attempt. The theorem checks the complete units,
   -- free-name cells, hoisted state and entry exports from the actual links.

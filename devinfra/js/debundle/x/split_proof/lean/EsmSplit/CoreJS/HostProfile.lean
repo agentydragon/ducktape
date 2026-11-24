@@ -5,10 +5,15 @@ import Lean.Data.Json
 namespace CoreJS
 
 inductive HostProfile where
-  | empty | browserPage
+  | empty | browserPage | ecmascript
   deriving DecidableEq, Repr
 
 namespace HostProfile
+
+def label : HostProfile → String
+  | .empty => "empty"
+  | .browserPage => "browser-page"
+  | .ecmascript => "ecmascript"
 
 def read (j : Lean.Json) : Except String HostProfile := do
   unless j == Lean.Json.mkObj [("profile", .str "browser-page")] do
@@ -28,13 +33,19 @@ def opaqueBinding (profile : HostProfile) (name : String) : Bool :=
   profile == .browserPage && (BrowserGlobals.opaqueBindings.contains name || BrowserGlobals.shims.contains name)
 
 def bindingIdentity (profile : HostProfile) (name : String) : Option String := do
+  if profile == .ecmascript then
+    guard (name == "Object")
+    return "intrinsic.Object"
   guard (profile == .browserPage)
   if aliases.contains name then return "window"
   guard (BrowserGlobals.functions.contains name || BrowserGlobals.objects.contains name)
   return "window." ++ name
 
 def identity (profile : HostProfile) : HostRef → Option String
-  | .binding name | .property "window" name => profile.bindingIdentity name
+  | .binding name => profile.bindingIdentity name
+  | .property "window" name => do
+    guard (profile == .browserPage)
+    profile.bindingIdentity name
   | .property "Symbol" "iterator" => do
     guard (profile == .browserPage)
     return "Symbol.iterator"
