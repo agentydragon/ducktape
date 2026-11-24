@@ -34,6 +34,14 @@ for (const member of ["url", "env.MODE"]) {
     assert.equal(verdict.status, "rejected", JSON.stringify(verdict));
     assert.match(verdict.reason, /unit 0: expected import.meta.url/);
     assert(!existsSync(out));
+    const preset = [...options, "--deployment-preset", "native-browser-record@1"];
+    const accepted = lower(sourceFile, specFile, out, preset, "linked-structural-pivot").verdict;
+    assert.equal(accepted.status, "certified", JSON.stringify(accepted));
+    assert(accepted.assumptions.some((p) => p.startsWith("native-browser-record@1:")));
+    assert.deepEqual(
+      lower(sourceFile, specFile, out, [...preset, "--check-output"], "linked-structural-pivot").verdict,
+      accepted
+    );
   }
 }
 
@@ -92,3 +100,46 @@ assert.deepEqual(Object.keys(split), Object.keys(original));
 const wrongRecord = instrument(split);
 assert.throws(() => split.read(), TypeError);
 assert.equal(wrongRecord.calls(), 0);
+
+const profile = path.join(root, "browser-profile.json");
+writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
+const preset = [
+  "--structural",
+  "--deployment-origin",
+  "https://example.org",
+  "--host-contract",
+  profile,
+  "--deployment-preset",
+  "native-browser-record@1",
+];
+
+// Relocating the reader changes its module record even if the initializer is identical.
+const changed = lower(files.sourceFile, files.specFile, path.join(dir, "checked"), preset, "linked-structural").verdict;
+assert.match(changed.reason, /URL-sensitive unit 0 moved/);
+
+// Native creation is complete before user code installs this getter. It now
+// reaches pivot's live cell; moving just its initializer changes the observation.
+const post = path.join(root, "post-init-getter");
+const later = prepare(post, {
+  source: `Object.defineProperty(import.meta, "env", { get() { return { MODE: pivot }; } });
+           var read = () => import.meta.env.MODE;
+           var observed = read();
+           var pivot = "ready";
+           export {observed, pivot};`,
+  sourceName: entry,
+  provider: "",
+  spec: placement("#3", ["#0", "#1", "#2", "#4"]),
+});
+const refused = lower(
+  later.sourceFile,
+  later.specFile,
+  path.join(post, "checked"),
+  preset,
+  "linked-structural"
+).verdict;
+assert.equal(refused.status, "rejected");
+assert.match(refused.reason, /unit 0 has access to the moved region of unit 3/);
+const forced = path.join(post, "preview");
+forcePreview(later, forced);
+assert.equal((await import(pathToFileURL(later.sourceFile))).observed, undefined);
+assert.equal((await import(pathToFileURL(path.join(forced, entry)))).observed, "ready");

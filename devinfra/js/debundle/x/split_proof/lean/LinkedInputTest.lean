@@ -27,6 +27,7 @@ private def location (input : Json) : Except String Json := do
   let sites ← CoreJS.ModuleLocation.check (← input.getObjVal? "source") originalName plan
     (← assets (← input.getObjVal? "before")) (← assets (← input.getObjVal? "after"))
   return .arr (sites.map fun (id, use) => match use with
+    | .metadata => .arr #[toJson id, toJson "import.meta"]
     | .metaUrl => .arr #[toJson id, toJson "import.meta.url"]
     | .dynamicImport request target => .arr #[toJson id, toJson request, toJson target])
 

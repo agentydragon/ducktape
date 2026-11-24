@@ -24,6 +24,12 @@ The [Chromium control](https://app.buildbuddy.io/invocation/3b5a4b1a-147d-4aab-a
 also observed a changed `MODE` at an unchanged URL. The original app mounted, drew a rectangle,
 and had an empty main namespace. There is no certified main output from this trial.
 
+## Native browser initialization
+
+With the `native-browser-record@1` deployment premise, the [reduced reader certifies on emission and from disk](https://app.buildbuddy.io/invocation/6e7fb1dd-5286-4df9-880e-1d9e3c942e2b). The [pinned Chromium measurement](https://app.buildbuddy.io/invocation/708fa6a9-9448-4574-b836-17dd8d170c5f) observed the fresh null prototype, native data descriptors, a distinct resolver per module, and a later getter returning two different results after a write. The preset concerns creation; it does not make `env.MODE` a stable read. The generic host counterexample below still applies outside that premise.
+
+The [main replay with the preset](https://app.buildbuddy.io/invocation/5d282780-a1a3-46be-bbcc-5c9f43c4fecb) matched the same source digest and selected only renderer unit 1486 through the neutral resolver. Deployment checking passed unit 23 and stopped at unit 1379: `expected a relative module request`. No full main output was published.
+
 ## What a retained-reader rule must prove
 
 [ModuleLocation.check](../../lean/EsmSplit/CoreJS/ModuleLocation.lean) checks the reader's source ordinal,

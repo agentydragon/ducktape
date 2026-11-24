@@ -192,6 +192,25 @@ py_test(
     deps = _EXCALIDRAW_BROWSER_DEPS,
 )
 
+py_test(
+    name = "native_metadata_browser_test",
+    size = "medium",
+    srcs = [_EXCALIDRAW_BROWSER_PY],
+    args = [
+        "-k",
+        "test_native_metadata_preset",
+    ],
+    data = _EXCALIDRAW_BROWSER_DATA + [
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+    ],
+    env = dict(
+        _EXCALIDRAW_BROWSER_ENV,
+        LOWERSPLIT = "$(rlocationpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+    ),
+    main = _EXCALIDRAW_BROWSER_PY,
+    deps = _EXCALIDRAW_BROWSER_DEPS,
+)
+
 js_library(
     name = "generate_specs",
     srcs = ["generate_specs.mjs"],

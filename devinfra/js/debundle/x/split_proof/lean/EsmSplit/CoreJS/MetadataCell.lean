@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.DataProjection
+import EsmSplit.CoreJS.NativeRecord
 
 /-! Evaluator-side obligation for a loader that represents a module's metadata
 by a hidden cell. The current linker does not produce this cell. -/
@@ -6,7 +7,7 @@ by a hidden cell. The current linker does not produce this cell. -/
 namespace CoreJS.MetadataCell
 
 /-- The internal name is not a JavaScript identifier or an entry export. -/
-def slot : Name := ":import.meta"
+abbrev slot := NativeRecord.slot
 
 def path (first second : String) : Expr :=
   .get (.get (.var slot) (.str first)) (.str second)
