@@ -223,8 +223,8 @@ func inspectForkPR(get githubReader, findSource func(string) (string, error), nu
 		// on GitHub's current merge and must still link to this exact attempt.
 		source = pull.Merge
 	}
-	report.Description = "Waiting for a live status for this workflow attempt."
 	if source == "" {
+		report.markMissingStatus()
 		return report, nil
 	}
 	if !gitCommitPattern.MatchString(source) {
@@ -243,31 +243,18 @@ func inspectForkPR(get githubReader, findSource func(string) (string, error), nu
 		return report, err
 	}
 	report.CurrentBase = base.Object.SHA
-	var combined struct {
-		Statuses []struct {
-			Context     string
-			State       string
-			Description string
-			Target      string    `json:"target_url"`
-			Published   time.Time `json:"created_at"`
-			Creator     struct{ Login string }
-		}
-	}
-	if err := get("commits/"+source+"/status", &combined); err != nil {
+	status, err := readLiveStatus(get, source)
+	if err != nil {
 		return report, err
 	}
-	for _, status := range combined.Statuses {
-		if status.Context != liveTestContext || status.Creator.Login != "github-actions[bot]" {
-			continue
-		}
-		if status.Target != defaultBaseURL+"/invocation/"+id && status.Target != run.url() {
+	if status.Target != "" {
+		if status.Target == defaultBaseURL+"/invocation/"+id || status.Target == run.url() {
+			report.TestedMerge, report.TestedBase = source, commit.Parents[0].SHA
+			report.State, report.Description = status.State, status.Description
+			report.StatusURL, report.PublishedAt = status.Target, &status.Published
+		} else {
 			report.State, report.Description = "stale", "The merge's live status belongs to a different workflow attempt."
-			break
 		}
-		report.TestedMerge, report.TestedBase = source, commit.Parents[0].SHA
-		report.State, report.Description = status.State, status.Description
-		report.StatusURL, report.PublishedAt = status.Target, &status.Published
-		break
 	}
 
 	// A fetch may race a synchronize event or a rerun. Recheck both current
@@ -288,5 +275,44 @@ func inspectForkPR(get githubReader, findSource func(string) (string, error), nu
 	}
 	report.CurrentMerge = current.Merge
 	report.WorkflowState, report.WorkflowConclusion = latest.Status, latest.Conclusion
+	report.markMissingStatus()
 	return report, nil
+}
+
+type liveCommitStatus struct {
+	Context     string
+	State       string
+	Description string
+	Target      string    `json:"target_url"`
+	Published   time.Time `json:"created_at"`
+	Creator     struct{ Login string }
+}
+
+func readLiveStatus(get githubReader, source string) (liveCommitStatus, error) {
+	// Unlike the combined status endpoint, the status list includes the
+	// publisher and is ordered newest first.
+	for page := 1; ; page++ {
+		var statuses []liveCommitStatus
+		if err := get(fmt.Sprintf("commits/%s/statuses?per_page=100&page=%d", source, page), &statuses); err != nil {
+			return liveCommitStatus{}, err
+		}
+		for _, status := range statuses {
+			if status.Context == liveTestContext && status.Creator.Login == "github-actions[bot]" {
+				return status, nil
+			}
+		}
+		if len(statuses) < 100 {
+			return liveCommitStatus{}, nil
+		}
+	}
+}
+
+func (s *forkPRStatus) markMissingStatus() {
+	if s.State == "pending" && s.PublishedAt == nil {
+		if s.WorkflowState == "completed" {
+			s.State, s.Description = "unavailable", "No live status was found for this completed workflow attempt."
+		} else {
+			s.Description = "Waiting for a live status for this workflow attempt."
+		}
+	}
 }

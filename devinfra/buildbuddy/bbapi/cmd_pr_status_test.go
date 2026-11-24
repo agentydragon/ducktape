@@ -12,8 +12,8 @@ func TestForkPRStatus(t *testing.T) {
 		number     = 19256
 		runID      = 45099731016
 		head       = "33fb799c3611e7ec13640e2f85a2dd21eba5812d"
-		source     = "df4d55a17da92367ed0240c8f59292ebbf2fe36c"
-		base       = "32c5739fd5825f87a8be793304e30d07a5e14ecc"
+		source     = "a475f7bd41bde8c173e2c979cf5129d9c048b861"
+		base       = "ccd89a2d8ff306173b5d5cb702adab663010706e"
 		invocation = "32c5739f-d582-5f87-a8be-793304e30d07"
 	)
 	testCases := []struct {
@@ -23,6 +23,7 @@ func TestForkPRStatus(t *testing.T) {
 		statusTarget   string
 		statusState    string
 		statusCreator  string
+		completed      bool
 		currentBase    string
 		advanceHead    bool
 		advanceAttempt bool
@@ -35,6 +36,7 @@ func TestForkPRStatus(t *testing.T) {
 		{name: "finished retry", source: source, statusTarget: (forkRun{ID: runID, Attempt: 1}).url(), statusState: "success", wantState: "success", wantTested: true},
 		{name: "waiting for BuildBuddy", statusState: "pending", wantState: "pending", wantTested: true},
 		{name: "no status", source: source, wantState: "pending"},
+		{name: "completed without status", source: source, completed: true, wantState: "unavailable"},
 		{name: "different attempt", source: source, statusState: "failure", statusTarget: "https://app.buildbuddy.io/invocation/stale", wantState: "stale"},
 		{name: "untrusted creator", source: source, statusState: "failure", statusCreator: "unrelated", wantState: "pending"},
 		{name: "different head parent", source: source, statusState: "failure", parent: strings.Repeat("d", 40), wantState: "stale"},
@@ -60,10 +62,14 @@ func TestForkPRStatus(t *testing.T) {
 					if tc.advanceAttempt && runReads > 1 {
 						attempt = 2
 					}
+					workflowState := "in_progress"
+					if tc.completed {
+						workflowState = "completed"
+					}
 					body = fmt.Sprintf(`{"total_count":2,"workflow_runs":[
 						{"id":%d,"run_attempt":3,"head_sha":%q,"display_title":"Trusted PR #1 @ %s","created_at":"2026-11-23T02:21:26Z"},
-						{"id":%d,"run_attempt":%d,"head_sha":%q,"display_title":"Trusted PR #19256 @ %s","created_at":"2026-11-23T02:21:25Z","status":"in_progress"}
-					]}`, runID+1, head, head, runID, attempt, head, head)
+						{"id":%d,"run_attempt":%d,"head_sha":%q,"display_title":"Trusted PR #19256 @ %s","created_at":"2026-11-23T02:21:25Z","status":%q}
+					]}`, runID+1, head, head, runID, attempt, head, head, workflowState)
 				case path == "git/commits/"+source:
 					parent := tc.parent
 					if parent == "" {
@@ -76,8 +82,8 @@ func TestForkPRStatus(t *testing.T) {
 						currentBase = base
 					}
 					body = fmt.Sprintf(`{"object":{"sha":%q}}`, currentBase)
-				case path == "commits/"+source+"/status":
-					body = `{"statuses":[]}`
+				case path == "commits/"+source+"/statuses?per_page=100&page=1":
+					body = `[]`
 					if tc.statusState != "" {
 						target := tc.statusTarget
 						if target == "" {
@@ -87,7 +93,7 @@ func TestForkPRStatus(t *testing.T) {
 						if creator == "" {
 							creator = "github-actions[bot]"
 						}
-						body = fmt.Sprintf(`{"statuses":[{"context":%q,"state":%q,"description":"Ordinary test invocation failed","target_url":%q,"created_at":"2026-11-23T02:23:34Z","creator":{"login":%q}}]}`, liveTestContext, tc.statusState, target, creator)
+						body = fmt.Sprintf(`[{"context":%q,"state":%q,"description":"Ordinary test invocation failed","target_url":%q,"created_at":"2026-11-23T02:23:34Z","creator":{"login":%q}}]`, liveTestContext, tc.statusState, target, creator)
 					}
 				default:
 					t.Fatalf("unexpected GitHub request: %s", path)
