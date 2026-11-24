@@ -8,11 +8,12 @@ use anyhow::{Result, bail};
 use artifact::metrics::DecompositionMetrics;
 use artifact::reports::{
     ArtifactChunkRecord, ArtifactCounts, ArtifactManifest, ChunkDecompositionOutput, ChunksReport,
-    PackageManifest, RootLogicalModulesSummary, SelectedModuleLowering, write_json,
+    PackageManifest, RootLogicalModulesSummary, SelectedModuleLowering,
 };
 use identifier_rename_queue::compute_identifier_rename_queue;
 use output_layout::{DebundleOutputLayout, GATE_REJECTED_MARKER};
 use reconstruction::{EmittablePlan, RejectedPlan, ValidatedPlan};
+use report_io::write_json;
 
 mod script_output;
 

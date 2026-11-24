@@ -11,11 +11,10 @@ use swc_common::GLOBALS;
 
 use artifact::metrics::{OutputFileMetric, OutputMetrics, OutputRole, write_tree_reports};
 use artifact::paths::{join_module_path, path_from_module_path};
-use artifact::reports::{
-    ChunkDecompositionOutput, ChunkManifest, SelectedModuleLowering, write_json,
-};
+use artifact::reports::{ChunkDecompositionOutput, ChunkManifest, SelectedModuleLowering};
 use artifact::{ChunkBundle, EmissionFiles, FileRole, JsChunk, list_chunk_file_paths};
 use output_layout::CHUNK_REPORT;
+use report_io::write_json;
 
 pub struct MaterializedScripts {
     pub output_metrics: OutputMetrics,

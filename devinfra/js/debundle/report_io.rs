@@ -1,8 +1,8 @@
-//! Streaming JSON report files, either plain or gzip encoded.
+//! Streaming compact JSON, JSONL, and gzip reports.
 
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{BufReader, BufWriter, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use flate2::{Compression, GzBuilder, read::MultiGzDecoder};
@@ -38,11 +38,69 @@ pub fn read_json_report<T: DeserializeOwned>(path: &Path) -> Result<T> {
     }
 }
 
+/// Emit compact JSON for pipeline side outputs, creating parent directories.
+///
+/// These reports are usually consumed by tooling or `jq`; pretty printing is a
+/// measurable cost on large bundles.
+pub fn write_json(path: impl AsRef<Path>, data: &impl Serialize) -> Result<()> {
+    let path = path.as_ref();
+    write_json_to(create_report_file_with_parents(path)?, path, data)
+}
+
+fn write_json_to(mut writer: impl Write, path: &Path, data: &impl Serialize) -> Result<()> {
+    serde_json::to_writer(&mut writer, data)
+        .with_context(|| format!("writing {}", path.display()))?;
+    flush_report(&mut writer, path)
+}
+
+/// A complete-evidence stream. Call `finish` before writing its summary;
+/// drop alone cannot report the final buffered write's failure.
+pub struct JsonlReport {
+    path: PathBuf,
+    writer: BufWriter<File>,
+}
+
+impl JsonlReport {
+    pub fn create(path: PathBuf) -> Result<Self> {
+        let writer = create_report_file_with_parents(&path)?;
+        Ok(Self { path, writer })
+    }
+
+    pub fn write(&mut self, row: &impl Serialize) -> Result<()> {
+        serde_json::to_writer(&mut self.writer, row)
+            .with_context(|| format!("writing {}", self.path.display()))?;
+        self.writer
+            .write_all(b"\n")
+            .with_context(|| format!("writing {}", self.path.display()))
+    }
+
+    pub fn finish(mut self) -> Result<()> {
+        flush_report(&mut self.writer, &self.path)
+    }
+}
+
+fn flush_report(writer: &mut impl Write, path: &Path) -> Result<()> {
+    writer
+        .flush()
+        .with_context(|| format!("flushing {}", path.display()))
+}
+
+fn create_report_file_with_parents(path: &Path) -> Result<BufWriter<File>> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+    }
+    create_report_file(path)
+}
+
+fn create_report_file(path: &Path) -> Result<BufWriter<File>> {
+    let file = File::create(path).with_context(|| format!("creating {}", path.display()))?;
+    Ok(BufWriter::new(file))
+}
+
 /// Write compact JSON directly through a bounded gzip stream. Completion
 /// includes the compression footer and the underlying file's buffered flush.
 pub fn write_json_gzip<T: Serialize>(path: &Path, value: &T) -> Result<()> {
-    let file = File::create(path).with_context(|| format!("creating {}", path.display()))?;
-    write_gzip(BufWriter::new(file), value)
+    write_gzip(create_report_file(path)?, value)
         .with_context(|| format!("writing gzip JSON report {}", path.display()))
 }
 
@@ -62,6 +120,26 @@ fn write_gzip<T: Serialize>(output: impl Write, value: &T) -> Result<()> {
 mod tests {
     use super::*;
     use std::io::{self, Read};
+
+    struct FlushFailure;
+
+    impl Write for FlushFailure {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Err(io::Error::other("flush failed"))
+        }
+    }
+
+    #[test]
+    fn compact_report_propagates_final_flush_failure() {
+        let error =
+            write_json_to(FlushFailure, Path::new("full.json"), &Vec::<u8>::new()).unwrap_err();
+        assert!(error.to_string().contains("flushing full.json"));
+        assert!(error.chain().any(|cause| cause.is::<io::Error>()));
+    }
 
     #[test]
     fn gzip_is_deterministic_and_preserves_exact_compact_json() {

@@ -19,7 +19,7 @@ use staged_analysis::chunk_facts::{
 };
 
 use super::commuting_statements::resolve_chunk_commuting_statements;
-use super::io::{JsonlReport, ProgramGraphOutput, chunk_report_path, write_chunk_report_json};
+use super::io::{ProgramGraphOutput, chunk_report_path, write_chunk_report_json};
 use super::util::{render_atomic_group_cause_guidance, target_file_for_request};
 use crate::chunk_renames::collect_chunk_renames;
 use crate::exports::PublicExportSurface;
@@ -66,6 +66,7 @@ use output_layout::{
     EFFECT_TRANSLATION_VALIDATION_REPORT, EXPORT_REENTRY_REPORT, GATE_REJECTED_MARKER,
     SELECTOR_DIAGNOSTICS_REPORT, SPEC_LINT_REPORT, TRANSLATION_VALIDATION_REPORT,
 };
+use report_io::JsonlReport;
 use spec::{ChunkRenames, UnassignedMode};
 use spec_resolution::LogicalRequest;
 use std::borrow::Cow;

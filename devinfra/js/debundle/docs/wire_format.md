@@ -84,14 +84,22 @@ in memory, but the wire form is the string itself, which is portable.
 
 ## Program graph
 
-Full graph files use `.json.gz`: deterministic gzip level-1 streams containing
-the complete existing compact JSON payload. Writers finish the compression
-footer and flush the file before reporting success; no plaintext full graph
-is staged or emitted. Small JSON reports and JSONL are unchanged. Saved-graph
-readers require gzip streams and validate the complete stream, including
-checksums and trailing bytes. Graph consumers use the gzip-only reader; the
-generic JSON report reader accepts plain JSON for non-graph reports. For shell inspection, use
-`gzip -dc dependency_graph.json.gz | jq ...`.
+Full graph files use `.json.gz`. Debundle writes deterministic gzip level-1
+streams containing compact JSON, finishes the footer, and flushes the file
+before reporting success. It emits no plaintext copy. The gzip reader
+validates the complete stream, including checksums and trailing bytes. For
+shell inspection, use `gzip -dc dependency_graph.json.gz | jq ...`.
+
+The dependency-graph loader and provenance-header reader accept plain `.json`
+and gzip `.gz` files by extension. The discovery step of `modules propose
+--graphs` looks for `dependency_graph.json` and `dependency_graph.json.gz`.
+[Graph loader](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/graph/input.rs) · [Header reader](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/graph_provenance.rs) ·
+[Graph discovery](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/cli/module_proposals.rs)
+
+Residual placement loads the full program graph as gzip. `explain-integrity`
+reads its program graph as gzip and requires gzip for the chunk graph when
+invoked without `--slot`.
+[Residual placement](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/peel/plan.rs) · [Integrity explanation](https://github.com/agentydragon/ducktape/blob/devel/devinfra/js/debundle/cli/integrity_explanation.rs)
 
 Sections that are the same for every chunk are written once per run, as
 `program_graph.json.gz` at the report root (`reports/tree/` beside the chunk

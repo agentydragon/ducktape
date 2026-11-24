@@ -14,7 +14,6 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result, bail, ensure};
 use artifact::EmissionFiles;
-use artifact::reports::write_json;
 use final_global_resolution::{
     GlobalResolutionReason, GlobalResolutionReport, GlobalResolutionSources,
     assess_final_global_resolution,
@@ -22,6 +21,7 @@ use final_global_resolution::{
 use gate::{ChunkGateRejection, UnmatchedSpecClaim};
 use js_ast::GlobalUseElisions;
 use lowering::FinalizedCandidateEmissionDraft;
+use report_io::write_json;
 use validate_emitted_exports::validate_emitted_exports;
 use vendor::{
     VendorResolutionPlan, VendorSwapsReport, validate_partial_swap_consumers,
