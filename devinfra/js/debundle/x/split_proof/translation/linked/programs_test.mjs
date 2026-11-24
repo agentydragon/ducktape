@@ -203,11 +203,21 @@ checkWorkerResult(
   'const window = null; export const result = "undefined" != typeof window;',
   true
 );
+for (const [name, expr, expected] of [
+  ["mixed-equality", '"01" == 1', true],
+  ["mixed-inequality", '"01" != 1', false],
+  ["object-identity", "worker == worker", true],
+  ["nullish-equality", "undefined == null", true],
+  ["nullish-object", "({ valueOf() { throw 1; } }) != null", true],
+  ["boolean-conversion", 'true == "01"', true],
+  ["NaN-equality", "NaN == NaN", false],
+]) {
+  const source = `const worker = () => { if ((${expr}) !== ${expected}) throw "comparison"; return ${expected}; }; export const result = worker();`;
+  checkWorkerResult(name, source, expected);
+}
 for (const [name, expr, reason] of [
-  ["mixed-equality", '"01" == 1', /linked == requires two string operands/],
-  ["unguarded-equality", "worker == worker", /linked == requires two string operands/],
+  ["object-primitive-equality", "({ valueOf() { return 1; } }) == 1", /an object is converted to a primitive/],
   ["host-equality-typeof", '"undefined" == typeof window', /unsupported global window/],
-  ["mixed-inequality", '"01" != 1', /requires two string operands/],
   ["host-typeof", '"undefined" != typeof window', /unsupported global window/],
 ]) {
   if (!includesCase(name)) continue;

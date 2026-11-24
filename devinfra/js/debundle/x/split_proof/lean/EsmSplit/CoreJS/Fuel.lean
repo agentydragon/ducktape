@@ -229,8 +229,15 @@ theorem Mono.call_succ (callee this : Val) (args : List Val) :
 
 theorem Mono.construct_succ (target callee : Val) (args : List Val) :
     (constructTarget (n + 1) target callee args : M W _) ⊑ constructTarget (m + 1) target callee args := by
+  have superArgsMono (argExprs : Option (List Expr)) (env : Env) :
+      (argExprs.elim (forwardFreshArguments args) (evalArgs n env) : M W _) ⊑
+        argExprs.elim (forwardFreshArguments args) (evalArgs m env) := by
+    cases argExprs with
+    | none => exact M.le_refl _
+    | some es => exact ih.args env es
   unfold constructTarget constructParent initDerivedFields
   mono ih
+  exact superArgsMono _ _
 
 theorem Mono.stmt_succ (env : Env) (s : Stmt) : (execStmt (n + 1) env s : M W _) ⊑ execStmt (m + 1) env s := by
   cases s with

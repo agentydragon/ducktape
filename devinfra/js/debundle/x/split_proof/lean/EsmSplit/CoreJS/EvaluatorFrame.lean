@@ -131,7 +131,7 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
       · intro cells
         exact callFn_reachFrame_of_steps away convo (runBody cells)
       · intro cells
-        exact constructTarget_reachFrame_of_steps away objectRoot (allocate cells) (prev.call cells).getter convo
+        exact constructTarget_reachFrame_of_steps away (Ne.symm hr) objectRoot (allocate cells) (prev.call cells).getter convo
           (prev.fields cells) (enterCall cells) (prev.stmts cells) (prev.args cells) (prev.construct cells)
       · intro cells env st safe
         exact execStmt_reachFrame_step away cell (fun e env h => prev.expr cells env e h)

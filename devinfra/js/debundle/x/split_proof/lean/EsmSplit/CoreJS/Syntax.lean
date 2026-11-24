@@ -113,7 +113,7 @@ inductive Expr where
   | cls (name : String) (self : Bool) (ctor : Func) (members : List ClassMember)
   /-- A derived class. An explicit constructor splits its body at the direct super call. -/
   | derived (name : String) (self : Bool) (parent : Expr) (members : List ClassMember)
-      (ctor : Option (List Stmt × List Expr × Func))
+      (ctor : Option (List Stmt × Option (List Expr) × Func))
   | get (o k : Expr)
   /-- `o?.[k]`: evaluate the receiver once and skip the key on a nullish value. -/
   | getOptional (o k : Expr)
@@ -352,11 +352,16 @@ def ClassMember.free : ClassMember → List Name
   | .method _ k f | .getter _ k f | .setter _ k f => k.free ++ f.free
   | .field _ k init => k.free ++ init.free
 
-/-- The prefix, super arguments and remaining body share the constructor's scope. -/
-def derivedCtorFree : Option (List Stmt × List Expr × Func) → List Name
+def freeSuperArgs : Option (List Expr) → List Name
+  | some args => freeExprs args
+  | none => []
+
+/-- An absent argument list forwards the fresh strict arguments object through its intrinsic iterator.
+The prefix, super arguments and remaining body share the constructor's scope. -/
+def derivedCtorFree : Option (List Stmt × Option (List Expr) × Func) → List Name
   | some (before, args, .mk _ _ _ params body) | some (before, args, .withDefaults _ _ _ params _ body) =>
-    freeFunctionNames params (before ++ body) (freeStmts before ++ freeExprs args ++ freeStmts body)
-  | some (before, args, .opaque ..) => freeFunctionNames [] before (freeStmts before ++ freeExprs args)
+    freeFunctionNames params (before ++ body) (freeStmts before ++ freeSuperArgs args ++ freeStmts body)
+  | some (before, args, .opaque ..) => freeFunctionNames [] before (freeStmts before ++ freeSuperArgs args)
   | none => []
 
 /-- The names of the scope around a function that its code can mean. -/

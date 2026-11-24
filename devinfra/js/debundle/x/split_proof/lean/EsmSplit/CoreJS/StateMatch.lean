@@ -3,15 +3,10 @@ import EsmSplit.CoreJS.Value
 
 namespace CoreJS.StateMatch
 
-open SyntaxMatch (MatchEq scalarEq listEq)
+open SyntaxMatch (MatchEq scalarEq listEq optionEq)
 
 private def arrayMatch (element : MatchEq α) : MatchEq (Array α) := fun a b =>
   (listEq element a.toList b.toList).map fun h => ⟨Array.toList_inj.mp h.down⟩
-
-private def slotMatch (value : MatchEq α) : MatchEq (Option α)
-  | none, none => some ⟨rfl⟩
-  | some a, some b => (value a b).map fun h => ⟨congrArg some h.down⟩
-  | _, _ => none
 
 private def fieldMatch : MatchEq (PropertyKey × Expr)
   | (a, v), (b, w) => do
@@ -27,7 +22,7 @@ private def codeMatch : MatchEq Code
     return ⟨c ▸ inits ▸ rfl⟩
   | .derivedBody before args f env fields, .derivedBody before' args' g env' fields' => do
     let ⟨p⟩ ← listEq SyntaxMatch.stmtEq before before'
-    let ⟨a⟩ ← listEq SyntaxMatch.exprEq args args'
+    let ⟨a⟩ ← optionEq (listEq SyntaxMatch.exprEq) args args'
     let ⟨b⟩ ← SyntaxMatch.funcEq f g
     let ⟨c⟩ ← scalarEq env env'
     let ⟨inits⟩ ← listEq fieldMatch fields fields'
@@ -50,7 +45,7 @@ private def objMatch : MatchEq Obj
   | ⟨proto, props, code, array, rx⟩, ⟨proto', props', code', array', rx'⟩ => do
     let ⟨p⟩ ← scalarEq proto proto'
     let ⟨ps⟩ ← scalarEq props props'
-    let ⟨c⟩ ← slotMatch codeMatch code code'
+    let ⟨c⟩ ← optionEq codeMatch code code'
     let ⟨a⟩ ← scalarEq array array'
     let ⟨r⟩ ← scalarEq rx rx'
     return ⟨p ▸ ps ▸ c ▸ a ▸ r ▸ rfl⟩

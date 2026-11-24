@@ -221,7 +221,7 @@ private theorem reachFrame_initDerivedFields {r R cells A n}
 
 /-- Constructor dispatch preserves reachability through allocation, argument evaluation and smaller calls. -/
 theorem constructTarget_reachFrame_of_steps {r R cells A n} (away : Away r R A)
-    (root : A (.obj objectProto))
+    (iteratorRoot : A (.obj arrayIteratorProto)) (root : A (.obj objectProto))
     (allocate : ∀ o : Obj, (∀ node ∈ o.nodes, A node) →
       ReachFrame r R cells A (fun a => A (.obj a)) (alloc o : M W Addr))
     (getter : ∀ f base, SafeVal A f → SafeVal A base →
@@ -285,7 +285,15 @@ theorem constructTarget_reachFrame_of_steps {r R cells A n} (away : Away r R A)
         case normal =>
           apply active.bind
           intro original safeObj
-          apply (evalArgsFrame env superArgs he).bind
+          have argvFrame : ReachFrame r R cells A (fun vs => ∀ v ∈ vs, SafeVal A v)
+              (superArgs.elim (forwardFreshArguments args) (evalArgs n env) : M W (List Val)) := by
+            cases superArgs with
+            | some es => exact evalArgsFrame env es he
+            | none =>
+              apply (reachFrame_getObj away iteratorRoot).bind
+              intro proto _
+              split <;> first | exact reachFrame_pure r R cells A args safeArgs | exact reachFrame_unknown r R cells A _ _
+          apply argvFrame.bind
           intro argv hargv
           apply active.bind
           intro current _
