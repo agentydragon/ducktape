@@ -197,6 +197,7 @@ exports_files(
 splitter_launcher(
     name = "lowersplit_launcher",
     out = "lowersplit_launcher.sh",
+    diagnostic = ":lowersplit_diagnostic_core",
     interpreter = ":lowersplit_core",
     module_io = "//devinfra/js/debundle/x/split_proof/translation:module_io",
     template = "lowersplit.sh",
@@ -207,6 +208,7 @@ sh_binary(
     srcs = [":lowersplit_launcher"],
     data = [
         ":lowersplit_core",
+        ":lowersplit_diagnostic_core",
         "//devinfra/js/debundle/x/split_proof/translation:module_io",
     ],
     use_bash_launcher = True,
@@ -374,6 +376,15 @@ lean_library(
         ":lowersplit_support",
         ":planner",
     ],
+)
+
+# The interpreted launcher loads the entry's imports on every invocation.
+# Diagnostic runs need no linked certificate evaluator or structural proofs.
+lean_binary(
+    name = "lowersplit_diagnostic_core",
+    srcs = ["EsmSplit/LowerSplitDiagnosticMain.lean"],
+    entry = "EsmSplit/LowerSplitDiagnosticMain.lean",
+    deps = [":lowersplit_workflows"],
 )
 
 lean_binary(
