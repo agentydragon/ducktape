@@ -53,6 +53,27 @@ const entry = "entry.mjs";
   }
 }
 
+{
+  const source = `
+    const before = selected;
+    let outer = 2;
+    if (outer) {
+      const outer = 7;
+      var selected = () => outer;
+    } else throw "wrong branch";
+    if (false) var skipped = selected();
+    export const result = [before === undefined, selected(), outer, skipped === undefined];
+  `;
+  const { files, out, verdict, log } = sequentialSplit("module-if", source, {
+    "worker.mjs": ["#0", "#1", "#2", "#3"],
+    [entry]: ["#4"],
+  });
+  assertCertified(verdict, log);
+  for (const file of [files.sourceFile, path.join(out, entry)]) {
+    assert.deepEqual(observe(file, "result"), { result: [true, 7, 2, true] });
+  }
+}
+
 for (const [name, body, expected] of [
   [
     "var-hoist-and-lexical-scope",
