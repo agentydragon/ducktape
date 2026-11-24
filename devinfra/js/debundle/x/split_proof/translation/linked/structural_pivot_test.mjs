@@ -47,12 +47,12 @@ writeFileSync(arithmeticProfile, JSON.stringify({ profile: "browser-page" }));
 for (const [name, before, operand] of [
   ["coercion", "Object.prototype.valueOf = () => 3", "({})"],
   ["replaced-math", "globalThis.Math = { PI: 12 }", "Math.PI"],
-  ["shadowed-math", "const Math = { get PI() { return 12; } }", "Math.PI"],
+  ["shadowed-math", "export const Math = { get PI() { return 12; } }", "Math.PI"],
 ]) {
   const unsafe = fixture(name, `${before}; var value = ${operand} / 12; export { value };`, ["#1"], ["#0", "#2"]);
   const denied = unsafe.run(refusalScope, "--host-contract", arithmeticProfile);
   assert.equal(denied.status, "rejected", JSON.stringify(denied));
-  assert.match(denied.reason, /unit 1 is not a local allocating declaration/);
+  assert.match(denied.reason, /unit 1 is not a local allocating declaration/, name);
   assert(!existsSync(unsafe.out));
 }
 
