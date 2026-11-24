@@ -1,0 +1,11 @@
+# Upstream owner: packages/excalidraw/constants.ts (v0.18.1).
+source_matches:
+  - match: |
+      var DECLARATORS_BEFORE = null,
+        FRAME_STYLE = AST_CONTAINS_STRING("#bbb"),
+        MIN_FONT_SIZE = 1,
+        DEFAULT_FONT_SIZE = 20,
+        DEFAULT_FONT_FAMILY = FONT_FAMILY.Excalifont,
+        DECLARATORS_AFTER = null;
+    bindings:
+      - DEFAULT_FONT_FAMILY

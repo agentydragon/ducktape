@@ -257,3 +257,15 @@ copying an arbitrary constructor argument into its literal data would skip
 both syntax errors and escaping. A replacement constructor or callee getter
 can run code before or instead of native construction. The RTL placement
 does not justify treating the global name as a built-in.
+
+The [linked record-prefix rule](https://github.com/agentydragon/ducktape/pull/19813)
+now establishes that the `FONT_FAMILY.Excalifont` own data property has the
+same value at the two reads. `DEFAULT_FONT_FAMILY` therefore moves to its
+upstream [constants.ts](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/excalidraw/constants.ts#L181)
+owner alongside all 316 earlier bindings, with the same browser contract.
+[317-binding certificate, disk check, and Chromium replay](https://app.buildbuddy.io/invocation/32ce1694-d870-449f-ba52-2de1080bc4d1).
+
+The earlier [consumer trials](https://app.buildbuddy.io/invocation/1e01909b-5cc5-4816-a7f9-8de5a1d20b8a)
+still required additional entry exports for `newTextElement` (its
+`_newElementBase` dependency) and `getDefaultAppState` (two private cells).
+Certifying the font-family read does not recover those dependencies.
