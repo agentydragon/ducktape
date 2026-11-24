@@ -36,6 +36,22 @@ use spec::{
 #[path = "analysis_projection_wire.rs"]
 mod wire;
 
+/// The projection may store declared binding names, but not inputs resolved
+/// against a particular SWC hygiene context.
+fn validate_declared_assumptions(assumptions: &AnalysisAssumptions) -> Result<()> {
+    ensure!(
+        assumptions.captured_value_inputs.is_empty()
+            && assumptions.native_operation_inputs.is_empty()
+            && assumptions.initializer_call_effect_inputs.is_empty()
+            && assumptions
+                .imported_primitive_array_spread_inputs
+                .is_empty()
+            && assumptions.argument_inputs.is_empty(),
+        "declared assumptions carry source-resolved inputs"
+    );
+    Ok(())
+}
+
 /// Native premises after resolving layout-relative references at the selector boundary.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalysisNativeOperationInput {
@@ -546,18 +562,9 @@ impl AnalysisSpec {
     ) -> Result<Self> {
         // The canonical encoding carries no hygiene contexts: declared
         // assumptions are binding names, never `Id`s resolved by S2.
-        ensure!(
-            declared_assumptions.values().all(|assumptions| {
-                assumptions.captured_value_inputs.is_empty()
-                    && assumptions.native_operation_inputs.is_empty()
-                    && assumptions.initializer_call_effect_inputs.is_empty()
-                    && assumptions
-                        .imported_primitive_array_spread_inputs
-                        .is_empty()
-                    && assumptions.argument_inputs.is_empty()
-            }),
-            "declared assumptions carry source-resolved inputs"
-        );
+        for assumptions in declared_assumptions.values() {
+            validate_declared_assumptions(assumptions)?;
+        }
         self.declared_assumptions = declared_assumptions;
         self.source_sites = source_sites;
         self.native_operation_inputs = native_operation_inputs;

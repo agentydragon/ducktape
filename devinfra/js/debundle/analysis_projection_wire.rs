@@ -307,6 +307,7 @@ fn decode_bundle_globals(value: pb::BundleGlobalNames) -> Result<BundleGlobalNam
     })
 }
 fn encode_assumptions(value: &AnalysisAssumptions) -> Result<pb::AnalysisAssumptions> {
+    super::validate_declared_assumptions(value)?;
     let AnalysisAssumptions {
         retained_record_factories,
         reentry_free_operations,
@@ -333,20 +334,12 @@ fn encode_assumptions(value: &AnalysisAssumptions) -> Result<pb::AnalysisAssumpt
         no_reentry_record_members,
         namespace_independent_members,
         fluent_bindings,
-        captured_value_inputs,
-        native_operation_inputs,
-        initializer_call_effect_inputs,
-        imported_primitive_array_spread_inputs,
-        argument_inputs,
+        captured_value_inputs: _,
+        native_operation_inputs: _,
+        initializer_call_effect_inputs: _,
+        imported_primitive_array_spread_inputs: _,
+        argument_inputs: _,
     } = value;
-    ensure!(
-        captured_value_inputs.is_empty()
-            && native_operation_inputs.is_empty()
-            && initializer_call_effect_inputs.is_empty()
-            && imported_primitive_array_spread_inputs.is_empty()
-            && argument_inputs.is_empty(),
-        "declared assumptions carry source-resolved inputs"
-    );
     Ok(pb::AnalysisAssumptions {
         retained_record_factories: retained_record_factories.iter().cloned().collect(),
         reentry_free_operations: reentry_free_operations
