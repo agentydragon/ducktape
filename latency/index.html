@@ -63,7 +63,7 @@
       import { html, mount } from "../report.js";
 
       const evidenceSha =
-        "252e888dd45d0a2d78aa2fb592effc1647c167170e1745baf8f8d4ce309a24c1";
+        "8a882ee80a26fdc8dc7c44834350922b57a37d038adda146a799a2621d777578";
       const response = await fetch(`./evidence.json?v=${evidenceSha}`);
       if (!response.ok) throw new Error(`Evidence HTTP ${response.status}`);
       const bytes = await response.arrayBuffer();
@@ -126,9 +126,18 @@
         name: name.endsWith("opening") ? "Opening" : "Update",
         Baseline: e.baseline.summary[key].green_s.p50,
         Latest: e.latest[key].green_s.p50,
-        Goal: Math.round(e.baseline.summary[key].green_s.p50 * 0.7),
+        Goal: e.baseline.summary[key].green_goal_s,
       }));
       const latestHeads = e.fixed_windows.at(-1).heads;
+      const greenWithin = (key, seconds) => {
+        const before = e.baseline.summary[key];
+        const now = latestHeads.filter((head) => head.stratum === key);
+        const green = now.filter(
+          (head) =>
+            head.required_green_s != null && head.required_green_s <= seconds,
+        );
+        return `${green.length}/${now.length} versus ${before.sample_horizon_counts[seconds].green}/${before.n}`;
+      };
       const headCounts = (summary) =>
         summary ? `${summary.n} (${summary.outcomes.cancelled ?? 0})` : "0 (0)";
       const driver = e.latest_gate_breakdown;
@@ -165,9 +174,9 @@
               <${Text} size="lg"
                 >The latest production window fell short of the 30% goal. Twelve
                 of 16 heads reached required green. Median green took 330 s for
-                seven openings and 445 s for five updates, versus 199.5 s and
-                259 s in the baseline. Pre-commit finished last on ten greens
-                during a public Nix cache incident.<//
+                seven openings and 445 s for five updates, versus 197 s and 281
+                s in the audited baseline. Pre-commit finished last on ten
+                greens during a public Nix cache incident.<//
               >
               <${Text} mt="sm" size="sm" c="dimmed"
                 >Latest arrivals on 24 November, 00:10:01–00:50:00 UTC. Baseline
@@ -195,7 +204,7 @@
               <${Box}
                 role="img"
                 data-chart="required-green"
-                aria-label="Median required-green seconds before the rollout, in the latest window, and at the 30 percent improvement goal"
+                aria-label="Median required-green seconds in the audited baseline and latest window, with 30 percent targets of 137.9 for openings and 196.7 for updates"
               >
                 <${BarChart}
                   h=${245}
@@ -211,12 +220,14 @@
                 />
               <//>
               <${Text} my="sm"
-                >Three heads were green by five minutes and nine by ten. Using
-                the baseline's opening and update proportions, the share green
-                by five minutes was 15.0% versus 39.4%. By ten minutes it was
-                61.0% versus 54.6%. All 16 heads had aged into both horizons.
-                The small samples and different workloads limit rollout
-                attribution.<//
+                >At five minutes, openings reached green at${" "}
+                ${greenWithin("same_repo_open", 300)}, and at ten minutes
+                at${" "} ${greenWithin("same_repo_open", 600)}. The update
+                counts were${" "} ${greenWithin("same_repo_update", 300)}
+                and${" "} ${greenWithin("same_repo_update", 600)} respectively.
+                Each compares the latest window with its raw historical stratum,
+                including cancellations. These arrival windows do not isolate a
+                rollout effect.<//
               >
               ${disclosure("Exact heads and required checks", table(["PR head", "Kind", "Outcome", "Time to signal", "Tested merge and profile", "Job links"], traceRows, 740))}
             </section>
@@ -226,11 +237,10 @@
               <${Text} my="sm"
                 >Openings start at PR creation. Updates start at the first
                 matching workflow creation on the exact head. Green is the last
-                of the three required successes. Actionable red is the first
-                exact-head published failure or failed required check. The
-                historical fork rows below use required red because the earlier
-                signal attaches to the tested merge. Review, mergeability and
-                agent delivery are separate clocks.<//
+                of the three required successes. PR-visible red is the first
+                published failure on the head or the first failed required
+                check. Earlier statuses available through the exact fork merge
+                are measured separately. Delivery to agents is unmeasured.<//
               >
               ${table(
                 [
@@ -239,8 +249,8 @@
                   "Baseline green p50/p90 (n)",
                   "Latest heads (canceled)",
                   "Latest green p50/p90 (n)",
-                  "Baseline red p50/p90 (n)",
-                  "Latest red p50/p90 (n)",
+                  "Baseline PR-visible red p50/p90 (n)",
+                  "Latest PR-visible red p50/p90 (n)",
                 ],
                 classes.map(([label, k]) => [
                   label,
@@ -254,12 +264,19 @@
                 820,
               )}
               <${Text} my="sm" size="sm"
-                >The baseline sampled 195 of 1,228 heads. Recovering historical
-                synthetic merge refs corrected the same-repo classes to 51
-                measured openings out of 337 and 24 measured updates out of 276,
-                with the sampled heads and original selection weights preserved.
-                Baseline opening red includes two heads that published failure
-                and were later canceled.<//
+                >The run-time source audit retained 182 of 195 sampled heads. It
+                excluded 13 same-repo heads that merged onto a different base
+                and verified all 120 fork heads separately. The other historical
+                candidates are unaudited, so the earlier population weights and
+                weighted horizon comparisons are withdrawn.${" "} ${pr(19402)} ·
+                ${link("./evidence.json", "Per-head audit evidence")}<//
+              >
+              <${Text} my="sm" size="sm"
+                >The audited opening red median is 165 s from three head-visible
+                failures. Two excluded openings had published failure before
+                cancellation. The latest 191 s opening red is one observation.
+                The same-repo 30% red targets are 115.5 s for openings and
+                147.35 s for updates. There were no latest update reds.<//
               >
               <${Text} my="sm" size="sm"
                 >Exact tested merges show that all 16 heads used sparse checkout
@@ -271,7 +288,7 @@
                 ${pr(19578)} · ${pr(19640)} · ${pr(19653)}<//
               >
               ${disclosure(
-                "Earlier fixed rollout windows",
+                "Earlier fixed arrival windows",
                 html`<${Stack} gap="sm">
                   ${table(
                     [
@@ -314,10 +331,10 @@
                     ${pr(19603)} · ${pr(19596)} · ${pr(19623)}<//
                   >
                   <${Text} size="sm"
-                    >The evidence records each original attempt and its gates.
-                    These are bounded observations between 22 and 24 November,
-                    with unsampled intervals and no seven-day post-rollout
-                    series. ${link("./evidence.json", "Cohort evidence")}<//
+                    >These earlier windows retain their original sampled heads
+                    and clocks. They cover separate intervals and workloads and
+                    do not measure adoption effects.
+                    ${link("./evidence.json", "Cohort evidence")}<//
                   >
                 <//>`,
               )}
@@ -377,9 +394,10 @@
               <${Text} size="sm"
                 >Even with pre-commit finishing before both other gates on every
                 green, the measured other gates leave optimistic medians of 168
-                s for openings and 216 s for updates. The historical 30% targets
-                are about 140 s and 181 s. Bazel was last on 136 of 138 baseline
-                greens.<//
+                s for openings and 216 s for updates. The audited 30% thresholds
+                are 137.9 s and 196.7 s respectively. Both lower bounds still
+                exceed those thresholds. Bazel was last on 132 of 134 audited
+                baseline greens.<//
               >
             </section>
 
@@ -430,9 +448,7 @@
                   error whose structured abort events followed the failed-test
                   summary. This pair establishes launch savings. Its shared and
                   differing execution paths prevent an independent red estimate.
-                  The baseline's launcher-only replay bounded the weighted
-                  median at 192 → 168 s with all launcher time removed and other
-                  clocks fixed. ${run(45292001590, "Fixed-workload replay")} ·
+                  ${" "}${run(45292001590, "Fixed-workload replay")} ·
                   ${inv("1778e54a-0817-5797-a3ac-fe8474c7d50f", "Red control")}<//
                 >
                 <${Text}
@@ -525,24 +541,27 @@
                 >Earlier fork red was already published on the tested merge<//
               >
               <${Text} my="sm"
-                >All 17 Bazel-red fork heads in the baseline published earlier
-                live status on their exact tested merge. The lead was 4–315 s,
-                median 78 s. Fourteen statuses named a failed test. The other
-                eight red forks were merge conflicts and stopped before Bazel.
-                On an open fork GitHub’s Checks tab and CLI omitted the live
-                status even though the current potential merge carried it.
+                >All 17 Bazel-red fork heads published earlier live status on
+                their exact tested merge. The lead was 4–315 s, median 78 s.
+                Fourteen named a failed test. Eight other fork reds were devel
+                merge conflicts before checkout. Including merge-only signals,
+                fork opening red was 215 / 434 s (p50 / p90 over ten). Fork
+                update red was 227 / 513 s over 17, including one later
+                cancellation and one later green. The 30% targets for this
+                lookup clock are 150.5 s for openings and 158.9 s for updates.
+                GitHub's Checks tab and CLI omitted the live status on an
+                inspected fork.
                 ${" "}${link(`${repo}/pull/19357/checks`, "Fork check view")}<//
               >
               <${Text}
-                >${pr(19648)} adds the read-only
-                <${Code}>bbapi invocation pr-status<//> lookup. Replaying the 17
-                historical PR heads took median 2.28 s per read. It recovered 15
-                reds and selected the newer green attempt for the other two. It
-                identifies the tested merge and current base, and displays a
-                pending or stale signal explicitly. These are read-only queries
-                to existing GitHub and BuildBuddy APIs. The required Bazel check
-                retains the final verdict.
-                ${" "}${inv("85f63c62-c101-4c33-bf31-0fdb778c839f", "Focused tests")}<//
+                >The repository-specific lookup was a withdrawn prototype. It
+                took a median of 2.28 s per read across 17 historical heads,
+                recovering 15 original reds and selecting newer green attempts
+                for the other two. The PR closed unmerged. Current readback uses
+                the generic GitHub status and BuildBuddy invocation APIs. The
+                required Bazel check retains the final verdict.${" "}
+                ${pr(19648)} ·${" "}
+                ${inv("85f63c62-c101-4c33-bf31-0fdb778c839f", "Prototype validation")}<//
               >
             </section>
 
@@ -590,8 +609,9 @@
                 from 15–21 November, with a partial 22 November point. 126 of
                 168 heads reached required green in the seven complete days.
                 That median was 186 s and p90 was 576 s from CI workflow
-                creation. The earlier clock and sampling design form a separate
-                trend from the new baseline.
+                creation. This archived trend retains its original sampling and
+                eligibility rules. The run-time target audit covers the later
+                baseline only.
                 ${" "}${prior("#weekly-trend", "21 November trend and source")}<//
               >
               ${disclosure(
@@ -636,15 +656,14 @@
                   )}
                   <${Text}
                     >In that prior sample Bazel was last on 118 of 126 greens.
-                    Moving Bazel 60 s earlier in an offline replay lowered p90
-                    from 576 to 516 s. The six-hour 22 November KVM sample had
-                    room for another VM suite in 208 of 254 fully observed
-                    samples with queued reservations. The Firecracker packing
-                    comparison kept the final completion near 17 minutes but
-                    delayed the first result and failed a live-guest case on
-                    repeat. These observations still support keeping the
-                    two-to-eight worker range and one Firecracker test per 8 GiB
-                    worker. ${prior("#current-clocks", "Gate replay")} ·
+                    The separate six-hour 22 November KVM sample had room for
+                    another VM suite in 208 of 254 fully observed samples with
+                    queued reservations. The Firecracker packing comparison kept
+                    the final completion near 17 minutes but delayed the first
+                    result and failed a live-guest case on repeat. These
+                    observations still support keeping the two-to-eight worker
+                    range and one Firecracker test per 8 GiB worker.
+                    ${prior("#current-clocks", "Gate replay")} ·
                     ${prior("#kvm-capacity", "KVM sample")} ·
                     ${prior("#kvm-pilot-results", "Packing and seeding trials")}<//
                   >
@@ -656,7 +675,7 @@
               <${Group} gap="md">
                 ${link("./evidence.json", "Reviewed evidence")}
                 ${link("./manifest.json", "Manifest")}
-                ${link(`${repo}/blob/${e.prior_snapshot_commit}/latency/index.html`, "Previous snapshot")}
+                ${link(`${repo}/blob/${e.prior_snapshot_commit}/latency/index.html`, "Previous snapshot before the source audit")}
                 ${link(`${repo}/rules?ref=refs%2Fheads%2Fdevel`, "Current branch rules")}
                 ${source(".github/workflows/bazel-ci.yml", "Inspected Bazel workflow")}
               <//>
