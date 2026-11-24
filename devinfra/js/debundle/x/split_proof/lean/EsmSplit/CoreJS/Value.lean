@@ -318,10 +318,15 @@ def objectProto : Addr := ⟨0, 0⟩
 def functionProto : Addr := ⟨0, 1⟩
 def arrayProto : Addr := ⟨0, 2⟩
 def asyncFunctionProto : Addr := ⟨0, 3⟩
-def regexpProto : Addr := ⟨0, 4⟩
+def iteratorProto : Addr := ⟨0, 4⟩
+def generatorProto : Addr := ⟨0, 5⟩
+def generatorFunctionProto : Addr := ⟨0, 6⟩
+def regexpProto : Addr := ⟨0, 7⟩
 
 def Func.intrinsicProto (f : Func) : Addr :=
-  if f.kind == .asyncFn then asyncFunctionProto else functionProto
+  if f.kind == .asyncFn then asyncFunctionProto
+  else if f.kind == .generator then generatorFunctionProto
+  else functionProto
 
 /-- The string-keyed members of `Object.prototype`. A program reads one from any object that has no property of that name. -/
 def objectProtoNames : List String :=
@@ -345,6 +350,20 @@ private def hostAccessor (owner k : String) : String × Property :=
 /-- String-keyed own properties of %AsyncFunction.prototype%. -/
 def asyncFunctionPrototype : Obj :=
   { proto := some functionProto, props := [("constructor", .data (.host "AsyncFunction") false false true)] }
+
+/-- The string-keyed properties on the synchronous generator prototype chain. -/
+def iteratorPrototype : Obj :=
+  { proto := some objectProto, props := [hostAccessor "Iterator.prototype" "constructor"] ++
+      hostMembers "Iterator.prototype" ["reduce", "toArray", "forEach", "some", "every", "find", "map",
+        "filter", "take", "drop", "flatMap"] }
+
+def generatorPrototype : Obj :=
+  { proto := some iteratorProto, props := [("constructor", .data (.obj generatorFunctionProto) false false true)] ++
+      hostMembers "Generator.prototype" ["next", "return", "throw"] }
+
+def generatorFunctionPrototype : Obj :=
+  { proto := some functionProto, props := [("prototype", .data (.obj generatorProto) false false true),
+      ("constructor", .data (.host "GeneratorFunction") false false true)] }
 
 /-- Getters in the string-key order of the modeled realm. Their function objects
 follow %RegExp.prototype% in the intrinsic heap. -/
@@ -377,7 +396,7 @@ def builtins : Array Obj := #[
       hostMembers "Function.prototype" functionProtoNames },
   { proto := some objectProto, array := true,
     props := ("length", .data (.num 0) true false false) :: hostMembers "Array.prototype" arrayProtoNames },
-  asyncFunctionPrototype, regexpPrototype] ++ (regexpGetters.map fun (k, g) => regexpGetterObject k g).toArray
+  asyncFunctionPrototype, iteratorPrototype, generatorPrototype, generatorFunctionPrototype, regexpPrototype] ++ (regexpGetters.map fun (k, g) => regexpGetterObject k g).toArray
 
 /-! ## The host functions the world answers for -/
 

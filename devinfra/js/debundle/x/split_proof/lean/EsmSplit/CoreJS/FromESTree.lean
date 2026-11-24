@@ -606,11 +606,12 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
 private partial def linkedFunction (profile : HostProfile) (imports : List Name) (kind : FuncKind) (name : Name) (self : Bool)
     (j : Json) : Except String Func := do
   let async ← j.getObjValAs? Bool "async"
-  if ← j.getObjValAs? Bool "generator" then
-    throw "unsupported generator function"
   let parameters ← j.getObjValAs? (Array Json) "params"
   let tags ← parameters.mapM fun param => field param "type"
   let arity := (tags.toList.takeWhile fun t => t != "AssignmentPattern" && t != "RestElement").length
+  if ← j.getObjValAs? Bool "generator" then
+    if async then throw "unsupported async generator function"
+    return ← deferredFunction j .generator name self arity "generator invocation requires suspension semantics"
   if async then
     -- makeFunc captures the enclosing this as well as named cells. No async
     -- callable enters the ordinary function evaluator.
