@@ -137,7 +137,7 @@ theorem callFn_reachFrame_of_steps {r R cells A n} (away : Away r R A)
     | some code =>
       have caps := objectCode_safe safe kind
       cases code with
-      | derived => exact reachFrame_typeError "class constructor cannot be invoked without 'new'"
+      | derived | derivedBody => exact reachFrame_typeError "class constructor cannot be invoked without 'new'"
       | host name => exact reachFrame_hostCall r R cells A name this args
       | «opaque» code part inner _ =>
         exact reachFrame_invokesOpaque conversation _ _ _ hc ht ha code part inner
@@ -176,7 +176,7 @@ theorem reachFrame_isConstructor {r R cells A} (away : Away r R A) (v : Val)
     | none => exact no
     | some code =>
       cases code with
-      | derived => exact yes
+      | derived | derivedBody => exact yes
       | closure f env fields => exact reachFrame_pure r R cells A _ trivial
       | host name =>
         simp only []
@@ -238,9 +238,9 @@ theorem constructTarget_reachFrame_of_steps {r R cells A n} (away : Away r R A)
     | none => exact reachFrame_typeError "not a constructor"
     | some code =>
       have caps := objectCode_safe safe hc
-      cases code with
-      | host name => exact reachFrame_unknown r R cells A _ _
-      | derived =>
+      have parentRun (vs : List Val) (hvs : ∀ v ∈ vs, SafeVal A v) :
+          ReachFrame r R cells A (SafeVal A) (constructParent (constructTarget n target) a vs : M W Val) := by
+        unfold constructParent
         apply (reachFrame_getObj away (safeVal_obj.1 safeCallee)).bind
         intro original safeObj
         cases hp : original.proto with
@@ -251,7 +251,36 @@ theorem constructTarget_reachFrame_of_steps {r R cells A n} (away : Away r R A)
           intro test _
           cases test
           · exact reachFrame_typeError "superclass is not a constructor"
-          · exact smaller target (.obj p) args safeTarget parent safeArgs
+          · exact smaller target (.obj p) vs safeTarget parent hvs
+      cases code with
+      | host name => exact reachFrame_unknown r R cells A _ _
+      | derived => exact parentRun args safeArgs
+      | derivedBody forward body closed =>
+        let forwarded := forward.map fun i => args.getD i .undef
+        have safeForwarded : ∀ v ∈ forwarded, SafeVal A v := by
+          intro v hv
+          obtain ⟨i, _, rfl⟩ := List.mem_map.mp hv
+          rw [List.getD_eq_getElem?_getD]
+          cases h : args[i]? with
+          | none => exact fun _ hn => by cases hn
+          | some x => exact safeArgs x (list_index_mem h)
+        apply (parentRun forwarded safeForwarded).bind
+        intro receiver hr
+        apply (enter body closed receiver args caps hr safeArgs).bind
+        intro env he
+        apply (stmts env body.body he).bind
+        intro flow hflow
+        cases flow
+        case ret v =>
+          have hv := hflow v rfl
+          cases v <;> first
+          | exact reachFrame_pure r R cells A _ hv
+          | exact reachFrame_pure r R cells A _ hr
+          | exact reachFrame_typeError _
+          | exact reachFrame_unknown r R cells A _ _
+        all_goals first
+        | exact reachFrame_pure r R cells A _ hr
+        | exact reachFrame_unknown r R cells A _ _
       | «opaque» code part inner ctor =>
         cases ctor
         · exact reachFrame_typeError "not a constructor"

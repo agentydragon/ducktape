@@ -152,7 +152,7 @@ def isConstructor (v : Val) : M W Bool := do
   match v with
   | .obj a =>
     match (← getObj a).code with
-    | some .derived => pure true
+    | some .derived | some (.derivedBody ..) => pure true
     | some (.closure f _ _) => pure (f.kind == .normal || f.kind == .classCtor)
     | some (.host name) => if name == "Function.prototype" then pure false else unknown "host constructor capability"
     | some (.opaque _ _ _ constructor) => pure constructor
@@ -178,18 +178,33 @@ def classParents (call : Call W) : Val → M W (Addr × Option Addr)
   | .null => pure (functionProto, none)
   | base => classParentsNonNull call base
 
+def derivedCtorCode (env : Env) : Option (List Nat × Func) → Code × Nat
+  | none => (.derived, 0)
+  | some (forward, f) => (.derivedBody forward f (env.capture f.free), f.length)
+
 /-- Build the class after evaluating and checking its heritage. -/
 def finishDerived (runMembers : Env → Addr → Addr → List ClassMember → M W (List (Bool × String)))
-    (env : Env) (name : Name) (self : Bool) (members : List ClassMember) (parents : Addr × Option Addr) : M W Val := do
+    (env : Env) (name : Name) (self : Bool) (members : List ClassMember) (parents : Addr × Option Addr)
+    (ctor : Option (List Nat × Func) := none) : M W Val := do
   let proto ← alloc { proto := parents.2, props := [] }
+  let (code, arity) := derivedCtorCode env ctor
   let c ← alloc {
-    proto := some parents.1, code := some .derived,
-    props := [("length", .data (.num 0) false false true),
+    proto := some parents.1, code := some code,
+    props := [("length", .data (.num (Float.ofNat arity)) false false true),
       ("name", .data (.str name) false false true), ("prototype", .data (.obj proto) false false false)] }
   modifyObj proto fun o => { o with props := [("constructor", .data (.obj c) true false true)] }
   let _ ← runMembers env proto c members
   initSelf env self name (.obj c)
   pure (.obj c)
+
+/-- SuperConstructor is the active constructor's current internal prototype.
+The caller retains the original new target through every superclass dispatch. -/
+def constructParent (construct : Val → List Val → M W Val) (active : Addr) (args : List Val) : M W Val := do
+  match (← getObj active).proto with
+  | none => throwErr .type "superclass is not a constructor"
+  | some parent =>
+    if ← isConstructor (.obj parent) then construct (.obj parent) args
+    else throwErr .type "superclass is not a constructor"
 
 /-- The descriptors of a freshly allocated dense array, in element order. -/
 def arrayObject (vs : List Val) : Obj :=
@@ -239,12 +254,12 @@ def evalExpr : Nat → Env → Expr → M W Val
       evalFields n { env with this := .obj c } c
         (fields.filterMap fun ((static, k), init) => if static then some (k, init) else none)
       pure (.obj c)
-    | .derived name self parent members => do
+    | .derived name self parent members ctor => do
       if !(fieldInits members).isEmpty then unknown "derived class fields" else do
       let env ← selfScope env self name
       let base ← evalExpr n env parent
       let parents ← classParents (callFn n) base
-      finishDerived (evalMembers n) env name self members parents
+      finishDerived (evalMembers n) env name self members parents ctor
     | .get o k => do
       let base ← evalExpr n env o
       let key ← evalExpr n env k
@@ -409,7 +424,7 @@ def callFn : Nat → Val → Val → List Val → M W Val
     match callee with
     | .obj a => do
       match (← getObj a).code with
-      | some .derived => throwErr .type "class constructor cannot be invoked without 'new'"
+      | some .derived | some (.derivedBody ..) => throwErr .type "class constructor cannot be invoked without 'new'"
       | some (.closure f closed _) =>
         if f.kind == .classCtor then throwErr .type "class constructor cannot be invoked without 'new'" else do
         match f.opaqueBody with
@@ -438,11 +453,17 @@ def constructTarget : Nat → Val → Val → List Val → M W Val
     | .obj a => do
       match (← getObj a).code with
       | some .derived =>
-        match (← getObj a).proto with
-        | none => throwErr .type "superclass is not a constructor"
-        | some parent =>
-          if ← isConstructor (.obj parent) then constructTarget n newTarget (.obj parent) args
-          else throwErr .type "superclass is not a constructor"
+        constructParent (constructTarget n newTarget) a args
+      | some (.derivedBody forward body closed) => do
+        let receiver ← constructParent (constructTarget n newTarget) a (forward.map fun i => args.getD i .undef)
+        let env ← enterFunction body closed receiver args
+        match ← execStmts n env body.body with
+        | .ret (.obj r) => pure (.obj r)
+        | .ret (.error k msg) => pure (.error k msg)
+        | .ret (.host name) => unknown s!"host value {name} is inspected"
+        | .ret .undef | .normal => pure receiver
+        | .ret _ => throwErr .type "derived constructor returned a non-object"
+        | _ => unknown "invalid derived constructor control flow"
       | some (.closure f closed fields) =>
         if f.kind != .normal && f.kind != .classCtor then throwErr .type "not a constructor" else do
         let proto ← getProp (callFn n) newTarget (.str "prototype")

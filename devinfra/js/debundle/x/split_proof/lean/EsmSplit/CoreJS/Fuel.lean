@@ -222,7 +222,7 @@ theorem Mono.call_succ (callee this : Val) (args : List Val) :
 
 theorem Mono.construct_succ (target callee : Val) (args : List Val) :
     (constructTarget (n + 1) target callee args : M W _) ⊑ constructTarget (m + 1) target callee args := by
-  unfold constructTarget
+  unfold constructTarget constructParent
   mono ih
 
 theorem Mono.stmt_succ (env : Env) (s : Stmt) : (execStmt (n + 1) env s : M W _) ⊑ execStmt (m + 1) env s := by

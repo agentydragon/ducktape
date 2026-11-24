@@ -1,7 +1,7 @@
 /-!
 # CoreJS: the syntax of a core fragment of JavaScript
 
-Strict-mode module code: closures, objects with prototypes and accessors, plain/default-derived classes, exceptions.
+Strict-mode module code: closures, objects with prototypes and accessors, base and derived classes, exceptions.
 `model/to_core.mjs` produces these trees from acorn's ESTree and refuses the rest of the language.
 What the front end rewrites, so that one construct here has one rule:
 
@@ -97,8 +97,9 @@ inductive Expr where
   | arrWithSpread (elems : List (ArrayElementKind × Expr))
   /-- `class name { … }`; `self` when the body sees the name. -/
   | cls (name : String) (self : Bool) (ctor : Func) (members : List ClassMember)
-  /-- A derived class with its implicit forwarding constructor and no fields. -/
+  /-- A fieldless derived class. An explicit constructor forwards the listed parameter slots before running its body. -/
   | derived (name : String) (self : Bool) (parent : Expr) (members : List ClassMember)
+      (ctor : Option (List Nat × Func))
   | get (o k : Expr)
   /-- `o?.[k]`: evaluate the receiver once and skip the key on a nullish value. -/
   | getOptional (o k : Expr)
@@ -296,7 +297,8 @@ def Expr.free : Expr → List Name
   | .arr elems => freeExprs elems
   | .arrWithSpread elems => freeArrayElements elems
   | .cls name self ctor members => (ctor.free ++ freeMembers members).filter fun x => !(self && x == name)
-  | .derived name self parent members => (parent.free ++ freeMembers members).filter fun x => !(self && x == name)
+  | .derived name self parent members ctor =>
+    ((parent.free ++ freeMembers members) ++ derivedCtorFree ctor).filter fun x => !(self && x == name)
   | .get o k | .getOptional o k => o.free ++ k.free
   | .hasProp k o => k.free ++ o.free
   | .delete o k => o.free ++ k.free
@@ -329,6 +331,10 @@ def ClassMember.free : ClassMember → List Name
   | .field _ k init => k.free ++ init.free
 
 /-- The names of the scope around a function that its code can mean. -/
+def derivedCtorFree : Option (List Nat × Func) → List Name
+  | some (_, f) => f.free
+  | none => []
+
 def Func.free : Func → List Name
   | .opaque name _ self _ _ _ free _ => free.filter fun x => !(self && x == name)
   | .mk name _ self params body | .withDefaults name _ self params _ body =>

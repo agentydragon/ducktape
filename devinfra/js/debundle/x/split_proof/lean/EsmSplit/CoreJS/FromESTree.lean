@@ -662,8 +662,34 @@ private partial def linkedFunction (profile : HostProfile) (imports : List Name)
   -- run before the body, using the same mutable cells as any body var redeclarations.
   return .mk name kind self (params.toList.map Prod.fst) (bindings.toList ++ stmts)
 
-/-- Public, static-name class elements. Default derived constructors forward to the base
-with the original new target. Explicit derived constructors require super-call semantics. -/
+/-- Split off a leading super call. With plain parameters and arguments read
+directly from those parameters, no pre-super expression can observe or escape
+the uninitialized receiver. The continuation runs with the parent's result. -/
+private partial def linkedDerivedConstructor (profile : HostProfile) (imports : List Name)
+    (name : Name) (fn : Json) : Except String (List Nat × Func) := do
+  let params ← (← fn.getObjValAs? (List Json) "params").mapM localBinding
+  let block ← fn.getObjVal? "body"
+  let first :: tail ← block.getObjValAs? (List Json) "body" | throw "expected a leading super call"
+  unless (← field first "type") == "ExpressionStatement" do throw "expected a leading super call"
+  let expr ← first.getObjVal? "expression"
+  let expressions ← if (← field expr "type") == "SequenceExpression" then expr.getObjValAs? (List Json) "expressions"
+                    else pure [expr]
+  let call :: rest := expressions | throw "expected a leading super call"
+  unless (← field call "type") == "CallExpression" do throw "expected a leading super call"
+  unless (← field (← call.getObjVal? "callee") "type") == "Super" do
+    throw "expected a leading super call"
+  let forward ← (← call.getObjValAs? (List Json) "arguments").mapM fun arg => do
+    let x ← localBinding arg
+    let some i := params.idxOf? x | throw "super argument must be a constructor parameter"
+    return i
+  let stmts := rest.map (fun e => Json.mkObj [("type", .str "ExpressionStatement"), ("expression", e)]) ++ tail
+  let post := Json.obj ((← block.getObj?).insert "body" (.arr stmts.toArray))
+  let body ← linkedFunction profile imports .classCtor name false (.obj ((← fn.getObj?).insert "body" post))
+  -- An opaque body may depend on the derived constructor's home object or new.target.
+  if let some (_, _, _, why) := body.opaqueBody then throw (why.getD "unsupported derived constructor body")
+  return (forward, body)
+
+/-- Public, static-name class elements with default or leading-super derived constructors. -/
 private partial def linkedClass (profile : HostProfile) (imports : List Name) (inFunction : Bool) (hint : Name) (j : Json) :
     Except String Expr := do
   let id ← j.getObjVal? "id"
@@ -672,6 +698,7 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
   let body ← j.getObjVal? "body"
   unless (← field body "type") == "ClassBody" do throw "expected class body"
   let mut ctor := Func.mk name .classCtor false [] []
+  let mut derivedCtor := none
   let mut members := #[]
   for member in ← body.getObjValAs? (Array Json) "body" do
     let tag ← field member "type"
@@ -688,14 +715,14 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
     else
       match ← field member "kind" with
       | "constructor" =>
-        unless parent == .null do throw "unsupported explicit derived constructor"
-        ctor ← linkedFunction profile imports .classCtor name false value
+        if parent == .null then ctor ← linkedFunction profile imports .classCtor name false value
+        else derivedCtor := some (← linkedDerivedConstructor profile imports name value)
       | "method" => members := members.push (.method static keyExpr (← linkedFunction profile imports .method key false value))
       | "get" => members := members.push (.getter static keyExpr (← linkedFunction profile imports .method ("get " ++ key) false value))
       | "set" => members := members.push (.setter static keyExpr (← linkedFunction profile imports .method ("set " ++ key) false value))
       | other => throw s!"unsupported class method kind {other}"
   if parent == .null then return .cls name (id != .null) ctor members.toList
-  return .derived name (id != .null) (← linkedExpr profile imports inFunction "" parent) members.toList
+  return .derived name (id != .null) (← linkedExpr profile imports inFunction "" parent) members.toList derivedCtor
 
 private partial def linkedLocalDeclarations (profile : HostProfile) (imports : List Name) (offset : Nat) (j : Json) :
     Except String (Array Stmt) := do
