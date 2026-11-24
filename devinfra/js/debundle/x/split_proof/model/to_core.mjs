@@ -234,15 +234,14 @@ export function coreFromParsed(
     return refuse(node, "a property key");
   };
   const key = (node, computed) => (computed ? expr(node) : string(node, staticKey(node)));
-  // This is a host observation at execution time. A lexical or imported Symbol uses an ordinary lookup.
+  // These are host observations at execution time. A lexical or imported Symbol uses an ordinary lookup.
+  const ambientSymbol = (node) =>
+    node.type === "Identifier" && node.name === "Symbol" && !declared("Symbol") && !importsSymbol;
   const iteratorMember = (node) =>
     node.type === "MemberExpression" &&
     !node.computed &&
     !node.optional &&
-    node.object.type === "Identifier" &&
-    node.object.name === "Symbol" &&
-    !declared("Symbol") &&
-    !importsSymbol &&
+    ambientSymbol(node.object) &&
     node.property.type === "Identifier" &&
     node.property.name === "iterator";
   const methodKey = (node) => {
@@ -491,7 +490,15 @@ export function coreFromParsed(
         const callee = node.callee;
         const prim = primOf(callee);
         if (prim) emit("prim", prim, args(node.arguments));
-        else if (callee.type === "Identifier" && callee.name === "String" && !declared("String")) {
+        else if (ambientSymbol(callee)) {
+          const [description] = node.arguments;
+          if (
+            description &&
+            (node.arguments.length !== 1 || description.type !== "Literal" || typeof description.value !== "string")
+          )
+            refuse(node, "Symbol with an argument other than a string literal");
+          emit("prim", "freshSymbol", args(node.arguments));
+        } else if (callee.type === "Identifier" && callee.name === "String" && !declared("String")) {
           if (node.arguments.length !== 1 || node.arguments[0].type === "SpreadElement")
             refuse(node, "String with other than one argument");
           expr(node.arguments[0]);

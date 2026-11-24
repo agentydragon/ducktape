@@ -38,6 +38,7 @@ def bindingIdentity (profile : HostProfile) (name : String) : Option String := d
     return "intrinsic.Object"
   guard (profile == .browserPage)
   if aliases.contains name then return "window"
+  if name == "Symbol" then return "intrinsic.Symbol"
   guard (BrowserGlobals.functions.contains name || BrowserGlobals.objects.contains name)
   return "window." ++ name
 
@@ -85,6 +86,7 @@ def assumptions (p : HostPremises) : List String :=
       | .property receiver key => receiver ++ "." ++ key
     let result := if ref == .property "Symbol" "iterator" && identity == "Symbol.iterator" then
       "the well-known iterator symbol"
+    else if identity == "intrinsic.Symbol" then "the intrinsic Symbol function"
     else if identity == "window" then "the same page object" else s!"the stable host reference {identity}"
     s!"{read} returns {result} without observable effects throughout initialization")
 

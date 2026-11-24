@@ -649,6 +649,44 @@ export const cases = [
     end: "normal",
   },
   {
+    name: "fresh symbol brands with the same description have independent instance fields",
+    source: `
+      const brand = Symbol("brand");
+      const other = Symbol("brand");
+      let field = brand;
+      class Box {
+        [field] = true;
+        [other] = false;
+        "brand" = "string";
+      }
+      field = other;
+      const a = new Box();
+      const b = new Box();
+      a[brand] = 42;
+      console.log(typeof brand, brand === other, brand === "brand", Symbol() === Symbol());
+      console.log(brand in a, other in a, Symbol("brand") in a, Symbol.iterator in a);
+      console.log(a[brand], a[other], a.brand, b[brand]);
+      console.log(delete a[other], other in a, other in b);
+      function local() {
+        const Symbol = (description) => description;
+        return Symbol("shadowed");
+      }
+      console.log(local());
+    `,
+    end: "normal",
+  },
+  {
+    name: "a thrown fresh symbol is reported as a symbol",
+    source: `throw Symbol("brand");`,
+    end: "throw",
+  },
+  {
+    name: "a native host call with a fresh symbol stops at the boundary",
+    source: `console.log("before"); Boolean(Symbol());`,
+    end: "unknown",
+    expectedStop: { detail: "host function Boolean is called", left: 0, out: ["before"] },
+  },
+  {
     name: "a thrown iterator symbol stays distinct from a string",
     source: `throw Symbol.iterator;`,
     end: "throw",

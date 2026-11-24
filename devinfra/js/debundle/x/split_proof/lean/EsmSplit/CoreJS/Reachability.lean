@@ -21,6 +21,7 @@ inductive HeapNode where
 def HeapNode.addr : HeapNode → Addr
   | .obj a | .cell a => a
 
+/-- Only object values grant access to heap records. Symbol addresses carry identity only. -/
 def Val.nodes : Val → List HeapNode
   | .obj a => [.obj a]
   | _ => []
