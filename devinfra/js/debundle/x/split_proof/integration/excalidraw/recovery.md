@@ -276,3 +276,12 @@ selects 324 bindings in 36 owners. It moves `Delta` back to
 and the [six size and resize bindings](proposals/size_resize/README.md)
 to their original modules. Chromium checks line and square sizing and the
 cursor returned for rotation, a rotated element, and a reflected element.
+
+The [327-binding replay](https://app.buildbuddy.io/invocation/d70c9190-b6e9-440e-b47f-24bea32a4efc)
+adds `SIDE_RESIZING_THRESHOLD`, `EPSILON`, and `DEFAULT_COLLISION_THRESHOLD`
+in upstream [constants.ts](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/excalidraw/constants.ts#L185).
+The prefix establishes the numeric spacing before the first multiplication;
+the later subtraction uses the initialized side threshold and epsilon. The
+[proof for numeric cell reads](https://github.com/agentydragon/ducktape/pull/19831)
+uses the existing deployment contract. The production selector spells the
+epsilon literal `1e-5`, as it appears in the pinned bundle.
