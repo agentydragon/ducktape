@@ -21,22 +21,16 @@ debundle static-imports --spec spec.yaml --from main \
   --target dependency --target other --format json
 ```
 
-The command reports strict request-edge paths from `main` to each target,
-back to `main`, and from each target back to itself. A null witness means no
-path through resolved ordinary static ESM requests; `request_issues` identifies
-unresolved, nonordinary, or nonentry requests in the inspected closures.
-`--max-issues` limits displayed issues while `request_issue_count` retains the
-total. This is source-graph evidence, not a cache or runtime verdict.
+Read each target's path from `main`, return path and self-cycle separately.
+Inspect `request_issues` for gaps in the resolved ESM graph. `--max-issues`
+caps details while `request_issue_count` retains the total.
 
-Add `--include-host-loader-candidates --interop-census` to include all direct
-literal `import.meta.require(...)` calls as conditional graph edges and report
-typed interop sites across every chunk. Calls inside deferred functions are
-included in the union graph. Direct loader-value references, dynamic direct
-targets, global loader forms, and CommonJS export uses remain visible as sites
-without graph edges; calls through an alias are not traced. The command
-does not assert the original host-loader identity or clear runtime blockers.
-`--max-interop-sites` limits detailed site rows while per-chunk kind counts
-remain complete.
+Add `--include-host-loader-candidates` for conditional direct literal
+`import.meta.require(...)` edges, including calls in deferred functions.
+Use `--interop-census` to see loader forms outside that graph and
+`--max-interop-sites` to bound the detail. See the
+[query contract](../SPEC.md#static-import-and-host-loader-queries) for what
+a missing path establishes.
 
 ## Delegating with an input snapshot
 
@@ -183,32 +177,19 @@ Global options capture a JSON `ResolvedInvocation`:
 | `--invocation-out <path>` | Write the record before dispatch, preserving normal stdout/stderr; retain it even if the operation fails.     |
 | Both                      | Write and print the record, then skip the operation.                                                          |
 
-Resolution reads CLI metadata, cwd and executable path, not graph/source contents
-or unrelated ambient environment. The record contains:
-
-- `argv`: executable and resolved options; env-backed paths such as `DEBUNDLE_GRAPH`
-  become explicit flags, with CLI-over-env precedence. Relative paths remain relative
-  to the recorded cwd, enabling replay after caller environment changes.
-- `shell_command`: POSIX-quoted arguments plus a change to that cwd.
-- Effective arguments and their value sources, operation class, `requested_proof`
-  and `write_scope`. The latter lists possible writes, including the invocation file,
-  rather than files actually changed.
-
-Classes distinguish graph/diagnostic/source snapshot reads, fresh pipelines,
-snapshot creation/verification, validated/unverified edits, conditional comment
-operations and read-only analysis. Other shapes remain `unclassified`. Requested
-checks are not completed checks: an edit gate establishes neither fresh pipeline,
-reconstruction nor runtime success; saving a record does not prove success.
-
-Records neither fingerprint the spec/source/graph/other file inputs nor pin executable
-contents. Repeatable replay requires unchanged inputs; use graph/input provenance or an archived
-snapshot to prove file identity. For example, this records an explicit `--graph`
-without reading it or creating reports:
+Preview how a wrapper resolves its arguments before reading inputs or running
+a gate. For example:
 
 ```sh
 DEBUNDLE_GRAPH='reports/tree/main/dependency_graph.json.gz' \
   debundle gate list --print-invocation
 ```
+
+Replay `argv` from the recorded `cwd`, or use `shell_command`, which includes
+the directory change and shell quoting. Preserve the inputs and executable for
+repeatability. Save the actual exit status and output alongside the record
+when reporting a check. See the [invocation contract](../SPEC.md#resolved-cli-invocations)
+for argument provenance, requested proof and possible writes.
 
 With minimal remote downloads, request `--remote_download_outputs=all` to bring
 report side files local.
@@ -235,51 +216,21 @@ batch contents or fingerprint. Preserve the file alongside the worker input snap
 
 ## Output format
 
-Read-only commands accept `--format <text|json|ndjson>`:
-
-- `text` — human-readable default for interactive use.
-- `json` — single JSON document, parseable with `jq`.
-- `ndjson` — one JSON value per line, for streaming consumers (`jq -c`,
-  piping to other commands). Reach for it on many-row streaming queries
-  (`debundle scc --format ndjson` over a large graph).
-
-If `--format` isn't passed and stdout is **not** a tty (i.e. the command is
-in a pipeline), the default flips to `json`. So
-`debundle modules propose | jq …` works without an explicit `--format json`.
-
-Report rendering, serialization, stdout and stderr writes, and explicit final
-flushes are fallible. A successful operation whose stdout consumer closes the
-pipe exits successfully. A stderr failure exits nonzero, even when stdout also
-closes. If the operation failed, failure to emit its diagnostic on either
-stream preserves that failure and the output error and exits nonzero. Text
-reports finish rendering before writing any bytes.
-
-An output error can happen after a spec edit was written. The CLI leaves that
-edit applied and does not retry it; inspect the files before deciding whether
-to run another mutation.
+Read-only commands default to `text` on a terminal and `json` when piped.
+Use `--format ndjson` for one value per line on multirow queries, such as
+`debundle scc --format ndjson`. An output failure can occur after an edit
+has been applied. Inspect the files before retrying a mutation. See
+[output and diagnostic failures](../SPEC.md#diagnostic-ownership).
 
 ### Runtime failures from top-level queries
 
-After Clap has accepted the command line, `describe`, `inspect-source`,
-`graph-summary`, `atoms`, `coverage`, `scc`, and `cluster` keep runtime errors
-machine-readable in JSON modes. A `json` failure writes one object with a
-typed `reason` code and `message`; `ndjson` writes that same object as one row.
-The message contains the full actionable error chain, and the command exits
-nonzero while retaining the same diagnostic on stderr. Current reason codes are
-`io`, `invalid_json`, `source_unit_not_found`,
-`unsupported_identifier_prefix`, and `query_failed`. Unsupported-prefix
-failures also include the identifier, prefix, accepted forms, examples, and a
-suggestion when one is available.
+Check the exit status before consuming query results. In JSON modes a runtime
+query failure supplies a typed reason and message. A `graph_compatibility`
+rejection includes `mismatch.reason` and the regeneration command. Argument
+parse failures go to stderr. The [query failure contract](../SPEC.md#read-only-query-failures)
+lists covered commands, reason codes and stream behavior.
 
-Graph compatibility failures retain the existing `graph_compatibility`
-rejection object, including `mismatch.reason` and regeneration details. With
-`--format text`, runtime failures keep the existing stderr diagnostic and do
-not write an error report to stdout. Clap usage and argument-parsing failures
-remain Clap diagnostics because dispatch has not begun.
-
-Read-only inspection commands provide graph, source-unit, atomic-group and
-module-ownership evidence. `modules propose` searches the unseeded residual
-domain for an exact placement; see [exact residual placement](module_proposals.md).
+### Spec edit outcomes
 
 The mutating verbs (`bindings assign`, `bindings unassign`,
 `bindings rename`, `modules apply`, `modules merge`, `modules delete`) take the same
@@ -445,30 +396,12 @@ loading or compatibility checks, with `logical:7` suggested for a module ID.
 An existing module path containing a colon is resolved as a path before this
 check.
 
-`describe` emits at most 20 rows in each report section by default. Use
-`--limit N` for a different positive per-section cap, or `--all` to return
-every matching row; `--all` conflicts with `--limit`, and `--limit 0` directs
-you to use `--all`. Its `limits.sections` object records `total`, `emitted`,
-and `truncated` after filtering; `limits.limit` is the cap, or `0` with
-`--all`. The selected binding/source-unit/group row comes first in its matching
-section so it remains available under a small limit.
-
-`--direction incoming|outgoing|both` selects edge direction relative to the
-query and defaults to `both`. It filters dependency, atomic-group, and
-module-quotient edges; neighbor source units are derived from the remaining
-dependency edges. Repeat `--reason KIND` to retain any of several dependency
-reasons, using the `edge_kind` spellings from `dependency_graph.json.gz`:
-`eager_use`, `lazy_use`, `hoisted_use`, `eager_rebind`, `lazy_rebind`,
-`deferred_rebind`, `sequenced`, `co_declaration`, `co_location`, or
-`local_effect`. Both
-filters are applied before totals and row limits.
-
-`cluster <binding>` also emits at most 20 incoming and 20 outgoing module
-neighbors by default. `--limit N` sets the positive cap for each direction;
-`--all` emits every neighbor and reports `limits.limit: 0`. Its
-`limits.sections.incoming_modules` and `outgoing_modules` entries report
-`total`, `emitted`, and `truncated` after `--direction` and repeated `--reason`
-filters.
+For a bounded neighborhood, use `describe <id> --direction incoming --limit N`.
+Repeat `--reason KIND` to retain any of several `edge_kind` values from the
+graph. Inspect `limits.sections` for truncation or use `--all` for complete
+results. `cluster <binding>` bounds module neighbors per direction. See the
+[saved graph query contract](../SPEC.md#querying-a-saved-graph) for selection
+order, default limits, filter semantics and counts.
 
 ## Validate-by-default (mutating commands)
 
