@@ -92,7 +92,7 @@ _EXCALIDRAW_SCROLL_DATA = [
     "//devinfra/js/debundle/x/split_proof/translation:syntax_inventory",
     "//devinfra/js/debundle/excalidraw:bundle",
     "//devinfra/js/debundle/excalidraw:inputs",
-    "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+    "//devinfra/js/debundle/x/split_proof/lowering:dump_core",
     "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
 ]
 

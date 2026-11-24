@@ -217,7 +217,7 @@ p=//devinfra/js/debundle/x/split_proof
 bb run "$p/translation:prepare_real_bundles" -- "$out"
 ```
 
-Compare their footprints with `bb run "$p:compare_footprints" -- "$out/"*.json`.
+Compare their footprints with `bb run "$p/lowering:compare_footprints" -- "$out/"*.json`.
 
 ## 7. Real splits: halves, cuts, blocks, random placements
 

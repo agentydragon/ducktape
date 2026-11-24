@@ -16,9 +16,9 @@ js_library(
     name = "scope_metadata",
     srcs = ["scope_metadata.mjs"],
     visibility = [
-        "//devinfra/js/debundle/x/split_proof:__pkg__",
         "//devinfra/js/debundle/x/split_proof/experiments/splits:__pkg__",
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/lowering:__pkg__",
         "//devinfra/js/debundle/x/split_proof/model:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation/testing:__pkg__",
     ],
@@ -32,7 +32,7 @@ js_binary(
         ":node_modules/eslint-scope",
         ":print",
         ":scope_metadata",
-        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+        "//devinfra/js/debundle/x/split_proof/lowering:dump_core",
     ],
     entry_point = "module_io.mjs",
     visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
@@ -66,7 +66,7 @@ _SHIFT_FUZZ_DATA = [
     ":shift_candidate",
     ":syntax_inventory",
     ":scope_metadata",
-    "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+    "//devinfra/js/debundle/x/split_proof/lowering:dump_core",
     "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
 ]
 
@@ -134,8 +134,8 @@ js_test(
     name = "identity_emission_test",
     data = _CHECKER_RUNFILES + [
         "fixtures/local_identity/bundle.js",
-        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/lowering:dump_core",
         "//devinfra/js/debundle/x/split_proof/translation/testing:check_translation",
         "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
     ],
@@ -150,7 +150,7 @@ _LOWER_CALLBACK_FUZZ_DATA = [
     ":scope_metadata",
     ":node_modules/acorn",
     ":node_modules/eslint-scope",
-    "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+    "//devinfra/js/debundle/x/split_proof/lowering:dump_core",
     "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
 ]
 
@@ -603,9 +603,9 @@ js_test(
         ":split_dump",
         _MODEL + ":sources",
         "//:node_modules/acorn",
-        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
         "//devinfra/js/debundle/x/split_proof/lean:corejs",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/lowering:dump_core",
     ],
     entry_point = "corejs_ast_lowering_test.mjs",
     env = {
@@ -630,7 +630,7 @@ js_binary(
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
         ":scope_metadata",
-        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+        "//devinfra/js/debundle/x/split_proof/lowering:dump_core",
     ],
     entry_point = "dump_ast.mjs",
     visibility = ["//devinfra/js/debundle/x/split_proof:__pkg__"],
@@ -646,8 +646,8 @@ js_binary(
         ":node_modules/zod",
         ":scope_metadata",
         "//:node_modules/esbuild",
-        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
-        "//devinfra/js/debundle/x/split_proof:real_bundle_entries",
+        "//devinfra/js/debundle/x/split_proof/lowering:dump_core",
+        "//devinfra/js/debundle/x/split_proof/lowering/entries:real_bundle_entries",
     ],
     entry_point = "prepare_real_bundles.mjs",
     tags = ["manual"],
@@ -658,9 +658,9 @@ js_library(
     name = "bazel_parser",
     srcs = ["bazel_parser.mjs"],
     visibility = [
-        "//devinfra/js/debundle/x/split_proof:__pkg__",
         "//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__",
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/lowering:__pkg__",
     ],
     deps = [
         ":node_modules/acorn",
@@ -747,7 +747,7 @@ js_library(
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
         ":syntax_inventory",
-        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+        "//devinfra/js/debundle/x/split_proof/lowering:dump_core",
     ],
 )
 
@@ -810,7 +810,7 @@ js_library(
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
         ":scope_metadata",
-        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
+        "//devinfra/js/debundle/x/split_proof/lowering:dump_core",
         "//devinfra/js/debundle/x/split_proof/model:sources",
     ],
 )
