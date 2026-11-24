@@ -32,7 +32,9 @@ use swc_ecma_visit::{VisitMut, VisitMutWith};
 use artifact::paths::{join_module_path, module_path_dirname, relative_module_path};
 use artifact::{ArtifactIndexes, ImportReferenceKind};
 use binding_targets::{imported_export_name, module_export_name, public_export_name};
-use js_ast::{new_url_expr, set_str_value, str_value};
+use js_ast::{
+    is_dotted_import_meta_property, new_url_expr, set_str_value, str_value, worker_literal_source,
+};
 use spec::PartialSwapKind;
 
 use crate::plan::VendorResolutionPlan;
@@ -507,7 +509,7 @@ impl VisitMut for SourceCanonicalizer<'_> {
     }
 
     fn visit_mut_new_expr(&mut self, node: &mut NewExpr) {
-        if let Some(source) = worker_new_str(node).map(str_value)
+        if let Some(source) = worker_literal_source(node).map(str_value)
             && let Some(rewritten) = self.rewrite_source(&source)
             && let Some(args) = &mut node.args
             && let Some(first) = args.first_mut()
@@ -523,20 +525,7 @@ fn canonicalizable_call_source_mut(node: &mut CallExpr) -> Option<&mut Str> {
     let is_literal_host_require = matches!(
         &node.callee,
         Callee::Expr(callee)
-            if matches!(
-                callee.unwrap_parens(),
-                Expr::Member(MemberExpr {
-                    obj,
-                    prop: MemberProp::Ident(property),
-                    ..
-                }) if matches!(
-                    &**obj,
-                    Expr::MetaProp(MetaPropExpr {
-                        kind: MetaPropKind::ImportMeta,
-                        ..
-                    })
-                ) && property.sym == *"require"
-            )
+            if is_dotted_import_meta_property(callee.unwrap_parens(), "require")
     );
     if !is_dynamic_import && !is_literal_host_require {
         return None;
@@ -549,17 +538,4 @@ fn canonicalizable_call_source_mut(node: &mut CallExpr) -> Option<&mut Str> {
         return None;
     };
     Some(source)
-}
-
-fn worker_new_str(node: &NewExpr) -> Option<&Str> {
-    if matches!(&*node.callee, Expr::Ident(ident) if ident.sym == *"Worker" || ident.sym == *"SharedWorker")
-        && let Some(args) = &node.args
-        && let Some(first) = args.first()
-        && first.spread.is_none()
-        && let Expr::Lit(Lit::Str(s)) = &*first.expr
-    {
-        Some(s)
-    } else {
-        None
-    }
 }

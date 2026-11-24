@@ -23,7 +23,10 @@ use binding_targets::{
     member_root_sym, module_export_name, record_assign_target, record_pat_write,
     record_update_target,
 };
-use js_ast::{ParsedGlobalUses, ParsedJsModule, SourceLineIndex, str_value};
+use js_ast::{
+    ParsedGlobalUses, ParsedJsModule, SourceLineIndex, is_dotted_import_meta_property,
+    is_worker_constructor, str_value, worker_literal_source,
+};
 
 mod loader_phase;
 mod loader_reach;
@@ -81,23 +84,8 @@ fn import_meta_require_relative_specifier(node: &CallExpr) -> Option<String> {
 /// If `node` is `new Worker("literal")` / `new SharedWorker("literal")`
 /// and the literal is a relative module path, return it; otherwise `None`.
 fn worker_relative_specifier(node: &NewExpr) -> Option<String> {
-    let callee_is_worker = matches!(
-        &*node.callee,
-        Expr::Ident(ident) if ident.sym == *"Worker" || ident.sym == *"SharedWorker"
-    );
-    if !callee_is_worker {
-        return None;
-    }
-    let args = node.args.as_ref()?;
-    let first = args.first()?;
-    if first.spread.is_some() {
-        return None;
-    }
-    let Expr::Lit(Lit::Str(s)) = &*first.expr else {
-        return None;
-    };
-    let v = str_value(s);
-    is_relative_specifier(&v).then_some(v)
+    let source = str_value(worker_literal_source(node)?);
+    is_relative_specifier(&source).then_some(source)
 }
 
 fn member_is_named(member: &MemberExpr, name: &str) -> bool {
@@ -1136,24 +1124,24 @@ impl Visit for ModuleScanVisitor {
 
     fn visit_new_expr(&mut self, node: &NewExpr) {
         self.observable_module_effect = true;
-        if let Expr::Ident(callee) = &*node.callee {
-            let args = node.args.as_deref().unwrap_or_default();
-            let kind = if callee.sym == *"Worker" || callee.sym == *"SharedWorker" {
-                Some(RuntimeResourceKind::Worker)
-            } else if callee.sym == *"URL" && args.get(1).is_some_and(|arg| {
-                matches!(&*arg.expr, Expr::Member(member)
-                    if matches!(&*member.obj, Expr::MetaProp(meta) if meta.kind == MetaPropKind::ImportMeta)
-                    && matches!(&member.prop, MemberProp::Ident(property) if property.sym == *"url"))
-            }) {
-                Some(RuntimeResourceKind::Url)
-            } else { None };
-            if let Some(kind) = kind {
-                let specifier = args.first().and_then(|arg| match &*arg.expr {
-                    Expr::Lit(Lit::Str(value)) if arg.spread.is_none() => Some(str_value(value)),
-                    _ => None,
-                });
-                self.resources.push(RuntimeResourceUse { kind, specifier });
-            }
+        let args = node.args.as_deref().unwrap_or_default();
+        let kind = if is_worker_constructor(node) {
+            Some(RuntimeResourceKind::Worker)
+        } else if matches!(&*node.callee, Expr::Ident(callee) if callee.sym == *"URL")
+            && args
+                .get(1)
+                .is_some_and(|arg| is_dotted_import_meta_property(&arg.expr, "url"))
+        {
+            Some(RuntimeResourceKind::Url)
+        } else {
+            None
+        };
+        if let Some(kind) = kind {
+            let specifier = args.first().and_then(|arg| match &*arg.expr {
+                Expr::Lit(Lit::Str(value)) if arg.spread.is_none() => Some(str_value(value)),
+                _ => None,
+            });
+            self.resources.push(RuntimeResourceUse { kind, specifier });
         }
         if !self.has_rewritable_specifier && worker_relative_specifier(node).is_some() {
             self.has_rewritable_specifier = true;

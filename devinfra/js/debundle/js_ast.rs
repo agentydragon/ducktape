@@ -882,6 +882,34 @@ pub fn named_export_module_item(
     }))
 }
 
+/// Whether the expression is a dotted `import.meta` property access.
+/// Callers choose whether to unwrap parentheses before this check.
+pub fn is_dotted_import_meta_property(expr: &Expr, name: &str) -> bool {
+    matches!(
+        expr,
+        Expr::Member(member)
+            if matches!(&*member.obj, Expr::MetaProp(meta) if meta.kind == MetaPropKind::ImportMeta)
+                && matches!(&member.prop, MemberProp::Ident(prop) if prop.sym == name)
+    )
+}
+
+/// Whether the constructor is spelled `Worker` or `SharedWorker`.
+pub fn is_worker_constructor(node: &NewExpr) -> bool {
+    matches!(&*node.callee, Expr::Ident(ident) if ident.sym == *"Worker" || ident.sym == *"SharedWorker")
+}
+
+/// The first, unspread string argument of a worker constructor.
+pub fn worker_literal_source(node: &NewExpr) -> Option<&Str> {
+    if !is_worker_constructor(node) {
+        return None;
+    }
+    let first = node.args.as_ref()?.first()?;
+    match first.expr.as_ref() {
+        Expr::Lit(Lit::Str(source)) if first.spread.is_none() => Some(source),
+        _ => None,
+    }
+}
+
 /// `new URL("<source>", import.meta.url)`, the module-relative form a worker
 /// URL needs at runtime.
 pub fn new_url_expr(source: &str) -> Expr {

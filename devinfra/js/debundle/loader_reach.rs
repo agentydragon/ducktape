@@ -32,7 +32,7 @@ use swc_ecma_visit::{Visit, VisitWith};
 use artifact::reports::LoaderUseConsumer;
 
 use crate::loader_phase::{SiteKey, site_key};
-use js_ast::str_value;
+use js_ast::{is_dotted_import_meta_property, str_value};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 enum Owner {
@@ -226,12 +226,7 @@ fn ends_abruptly(stmt: &Stmt) -> bool {
 }
 
 fn is_import_meta_require(expr: &Expr) -> bool {
-    matches!(
-        expr.unwrap_parens(),
-        Expr::Member(member)
-            if matches!(&*member.obj, Expr::MetaProp(meta) if meta.kind == MetaPropKind::ImportMeta)
-                && matches!(&member.prop, MemberProp::Ident(prop) if prop.sym == *"require")
-    )
+    is_dotted_import_meta_property(expr.unwrap_parens(), "require")
 }
 
 impl ReachWalk<'_> {
