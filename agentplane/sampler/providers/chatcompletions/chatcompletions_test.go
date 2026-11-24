@@ -153,7 +153,8 @@ func TestStreamCompletion(t *testing.T) {
 		{name: "truncated after finish reason", frames: []string{tool, callFinish}, transient: true, fails: true},
 		{name: "tool calls finish without tool deltas", frames: []string{reasoning, callFinish, "[DONE]"}, transient: true, fails: true},
 		{name: "contradictory finish reason", frames: []string{tool, stop, "[DONE]"}, fails: true},
-		{name: "output limit", frames: []string{`{"id":"chat","choices":[{"delta":{"content":"Partial"},"finish_reason":"length"}]}`, "[DONE]"}, fails: true},
+		{name: "output limit", frames: []string{`{"id":"chat","choices":[{"delta":{"content":"Partial"},"finish_reason":"length"}]}`, "[DONE]"}, transient: true, fails: true},
+		{name: "unfinished function arguments", frames: []string{strings.Replace(tool, `"arguments":"{}"`, `"arguments":"{"`, 1), callFinish, "[DONE]"}, transient: true, fails: true},
 		{name: "provider error", frames: []string{`{"error":{"message":"completion aborted"}}`}, fails: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
