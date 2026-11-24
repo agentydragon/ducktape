@@ -34,6 +34,8 @@ checker stdout/stderr, and `--move-report` JSON. The latter reports individual
 statement categories and up to 64 failing inverted pairs in original source IDs;
 it is diagnostic evidence, not a certificate bypassing the checker's other premises.
 
+For the main entry, the [first renderer placement](main.md) isolates the missing proof for a retained module metadata reader.
+
 ## Building and replaying the authored Excalidraw specs
 
 ```sh
