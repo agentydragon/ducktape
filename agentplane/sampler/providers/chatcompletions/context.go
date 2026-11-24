@@ -23,12 +23,12 @@ type toolCall struct {
 
 type message struct {
 	Role string `json:"role"`
-	// A summary rendered as a user message is not an authored turn.
-	CompactionSummary bool       `json:"sampler_compaction_summary,omitempty"`
-	Content           string     `json:"content,omitempty"`
-	Reasoning         string     `json:"reasoning_content,omitempty"`
-	ToolCalls         []toolCall `json:"tool_calls,omitempty"`
-	ToolID            string     `json:"tool_call_id,omitempty"`
+	// Marks the generated handoff and environment notice in the native context.
+	CompactionGenerated bool       `json:"sampler_compaction_summary,omitempty"`
+	Content             string     `json:"content,omitempty"`
+	Reasoning           string     `json:"reasoning_content,omitempty"`
+	ToolCalls           []toolCall `json:"tool_calls,omitempty"`
+	ToolID              string     `json:"tool_call_id,omitempty"`
 }
 
 // Chat Completions requires content for system, user and tool messages, even when empty.
@@ -72,7 +72,7 @@ func (c *Context) recordsFrom(start int, project bool) ([]json.RawMessage, error
 	records := make([]json.RawMessage, 0, len(c.messages)-start)
 	for _, m := range c.messages[start:] {
 		if project {
-			m.CompactionSummary = false
+			m.CompactionGenerated = false
 		}
 		raw, err := json.Marshal(m)
 		if err != nil {
@@ -195,7 +195,7 @@ func (c *Context) TurnComplete() bool {
 		return false
 	}
 	last := c.messages[len(c.messages)-1]
-	return last.Role == "assistant" && len(last.ToolCalls) == 0
+	return last.Role == "assistant" && len(last.ToolCalls) == 0 && !last.CompactionGenerated
 }
 
 func inspect(messages []message) ([]protocol.ToolInvocation, map[string]bool, error) {

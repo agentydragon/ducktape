@@ -23,11 +23,11 @@ import (
 )
 
 func TestCompactionRecoveryRejectsChangedPolicy(t *testing.T) {
-	for _, field := range []string{"keep_recent_turns", "per_message_effort", "replacement_template"} {
+	for _, field := range []string{"keep_recent_turns", "per_message_effort", "keep_recent_tokens", "replacement_template"} {
 		t.Run(field, func(t *testing.T) {
 			store := runtimetesting.NewStore(t, integrationDatabase)
 			api, effort := protocol.APIStyleAnthropicMessages, "high"
-			if field == "replacement_template" {
+			if field == "keep_recent_tokens" || field == "replacement_template" {
 				api, effort = protocol.APIStyleChatCompletions, ""
 			}
 			session, err := runtimetesting.OpenStoreSession(t, store, &sessionconfig.Configuration{
@@ -61,7 +61,7 @@ func TestCompactionRecoveryRejectsChangedPolicy(t *testing.T) {
 				config = samplersettings.ModelConfig{
 					API: api, ProviderModel: "fixture-model", Connection: "chat", ExecEncoding: protocol.ExecEncodingJSON,
 					ChatCompaction: &chatcompletions.CompactionConfig{
-						MaxTokens: 1000, KeepRecentTurns: 1,
+						MaxTokens: 1000, KeepRecentTokens: new(32),
 						Replacement: &chatcompletions.CompactionReplacement{Role: "user", Template: "Handoff: {{.Summary}}"},
 					},
 				}
@@ -97,6 +97,8 @@ func TestCompactionRecoveryRejectsChangedPolicy(t *testing.T) {
 				config.AnthropicMessages.Compaction.KeepRecentTurns = 1
 			case "per_message_effort":
 				config.AnthropicMessages.PerMessageEffort = false
+			case "keep_recent_tokens":
+				config.ChatCompaction.KeepRecentTokens = new(64)
 			case "replacement_template":
 				config.ChatCompaction.Replacement.Template = "<checkpoint>{{.Summary}}</checkpoint>"
 			}

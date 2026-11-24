@@ -227,7 +227,7 @@ func (a chatAdapter) Sample(ctx context.Context, client *http.Client, connection
 
 func (a chatAdapter) AutoCompactTokens(_ *int, state protocol.Context) *int {
 	config := a.config.ChatCompaction
-	if config != nil && config.AutoCompactTokens != nil && state.(*chatcompletions.Context).CanCompact(config.KeepRecentTurns) {
+	if config != nil && config.AutoCompactTokens != nil && state.(*chatcompletions.Context).CanCompact(config.RecentTokenBudget()) {
 		return config.AutoCompactTokens
 	}
 	return nil
@@ -243,7 +243,9 @@ func (a chatAdapter) PrepareCompaction(c *sessionstore.Conversation, session *se
 		return nil, err
 	}
 	return &compactionPlan{
-		Preparation: &providerrequest.Preparation{ModelConfig: a.config, SessionEffort: session.Effort, Compaction: true},
+		Preparation: &providerrequest.Preparation{
+			ModelConfig: a.config, SessionEffort: session.Effort, Compaction: true, ChatCompactionPlan: plan,
+		},
 		Apply: func(result *sampleResult) (protocol.Context, error) {
 			return plan.Apply(result.Records, result.Audit.(chatcompletions.Audit))
 		},

@@ -66,6 +66,7 @@ type Preparation struct {
 	Attribution                protocol.SessionAttribution
 	Compaction                 bool
 	AnthropicCompactionRequest *anthropic.Request
+	ChatCompactionPlan         *chatcompletions.CompactionPlan
 }
 
 func Prepare(store Content, snapshot Snapshot, preparation Preparation) (Recipe, error) {
@@ -114,14 +115,15 @@ func Prepare(store Content, snapshot Snapshot, preparation Preparation) (Recipe,
 		}
 		recipe := Recipe{ProfileID: profile, PrefixIDs: []content.ContentID{system}, History: Projection{Key: chatProjectionKey}}
 		if preparation.Compaction {
-			if preparation.ModelConfig.ChatCompaction == nil {
-				return Recipe{}, protocol.ErrPrecondition
+			if preparation.ChatCompactionPlan == nil {
+				return Recipe{}, protocol.ErrInvalid
 			}
-			profile, instruction, err := chatcompletions.PrepareCompactionRequest(store, profile, *preparation.ModelConfig.ChatCompaction)
+			profile, history, instruction, err := preparation.ChatCompactionPlan.PrepareRequest(store, profile)
 			if err != nil {
 				return Recipe{}, err
 			}
 			recipe.ProfileID = profile
+			recipe.History = Complete{IDs: history}
 			recipe.SuffixIDs = []content.ContentID{instruction}
 		}
 		return recipe, nil

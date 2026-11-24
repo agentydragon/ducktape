@@ -25,7 +25,7 @@ from agentplane.native.codex.testing.responses_sse import (
     Reasoning,
     response_stream,
 )
-from agentplane.native.testing.model_endpoint import SseEvent
+from agentplane.native.testing.model_endpoint import JsonResponse, SseEvent
 from agentplane.proto import event_pb2
 from agentplane.sampler.api import sampler_admin_pb2, sampler_pb2
 from agentplane.sampler.settings import (
@@ -1023,9 +1023,13 @@ async def test_chat_completions_tool_round_trip(
         assert json.loads(body) == continued
 
 
-@pytest.mark.parametrize("automatic", [False, True])
+@pytest.mark.parametrize("case", ["manual", "automatic", "overlong_input", "context_limit"])
 async def test_chat_completions_compaction(
-    endpoint: Endpoint, config: Settings, tmp_path: Path, automatic: bool
+    endpoint: Endpoint,
+    config: Settings,
+    store: Store,
+    tmp_path: Path,
+    case: Literal["manual", "automatic", "overlong_input", "context_limit"],
 ) -> None:
     def completion(reply: str, *, tokens: int = 12) -> tuple[SseEvent, SseEvent, SseEvent]:
         chunk = {"id": f"chat-{reply}", "choices": [{"index": 0, "delta": {"content": reply}, "finish_reason": "stop"}]}
@@ -1036,6 +1040,8 @@ async def test_chat_completions_compaction(
             SseEvent("done", b"data: [DONE]\n\n"),
         )
 
+    automatic = case in {"automatic", "overlong_input"}
+    overlong = case in {"overlong_input", "context_limit"}
     config.models["test-model"] = ModelConfig(
         connection="provider",
         provider_model="chat-test-model",
@@ -1044,9 +1050,11 @@ async def test_chat_completions_compaction(
         exec_encoding="json",
         chat_compaction=ChatCompactionConfig(
             max_tokens=8192,
-            keep_recent_turns=1,
+            keep_recent_tokens=32,
             auto_compact_tokens=256 if automatic else None,
-            summary_prompt_template=None if automatic else "Write a work handoff. Keep {{.KeepRecentTurns}} turns.",
+            summary_prompt_template=None
+            if automatic
+            else "Write a handoff for this prefix. The tail budget is {{.KeepRecentTokens}} tokens.",
             replacement=None
             if automatic
             else ChatCompactionReplacement(role="user", template="<handoff>{{.Summary}}</handoff>"),
@@ -1055,7 +1063,8 @@ async def test_chat_completions_compaction(
     request = create_request(tmp_path)
     request.spec.reasoning_effort = "medium"
     old = "old source " * 300
-    recent = "Keep this request verbatim."
+    old_answer = "old answer " * 32
+    recent = "Long user request. " * 300 if overlong else "Keep this request verbatim."
     async with service(config) as stub:
         await stub.CreateSession(request, timeout=10)
         await submit_input(stub, session_id=request.session_id, command_id="old", text=old, timeout_s=10)
@@ -1063,7 +1072,7 @@ async def test_chat_completions_compaction(
             first_request = exchange.request.body
             assert first_request["reasoning_effort"] == "medium"
             assert first_request["stream_options"] == {"include_usage": True}
-            await exchange.send(*completion("old answer", tokens=500))
+            await exchange.send(*completion(old_answer, tokens=500))
         assert (await turn_completed(stub, request.session_id, "old")).status == event_pb2.TURN_STATUS_COMPLETED
 
         await stub.ChangeReasoningEffort(
@@ -1089,14 +1098,16 @@ async def test_chat_completions_compaction(
             assert frozen["tools"] == first_request["tools"]
             messages = frozen["messages"]
             assert messages[: len(first_request["messages"])] == first_request["messages"]
-            assert {"role": "assistant", "content": "old answer"} in messages
-            assert {"role": "user", "content": recent} in messages
+            assert {"role": "assistant", "content": old_answer} in messages
+            assert ({"role": "user", "content": recent} in messages) == overlong
             assert messages[-1]["role"] == "user"
             if automatic:
                 assert "handoff" in messages[-1]["content"]
             else:
-                assert messages[-1]["content"] == "Write a work handoff. Keep 1 turns."
-            if automatic:
+                assert messages[-1]["content"] == ("Write a handoff for this prefix. The tail budget is 32 tokens.")
+            if case == "context_limit":
+                await exchange.respond(JsonResponse(b'{"error":{"code":"context_length_exceeded"}}', 400))
+            elif automatic:
                 await exchange.send(*completion("truncated summary")[:-1])
             else:
                 await exchange.send(*completion("retained summary"))
@@ -1105,7 +1116,12 @@ async def test_chat_completions_compaction(
                 assert exchange.request.body == frozen
                 await exchange.send(*completion("retained summary"))
         else:
-            await wait_for_command(stub, request.session_id, "compact", sampler_pb2.COMMAND_OUTCOME_APPLIED)
+            outcome = (
+                sampler_pb2.COMMAND_OUTCOME_FAILED if case == "context_limit" else sampler_pb2.COMMAND_OUTCOME_APPLIED
+            )
+            compact = await wait_for_command(stub, request.session_id, "compact", outcome)
+            if case == "context_limit":
+                assert "context_length_exceeded" in compact.failure_reason
             await submit_input(stub, session_id=request.session_id, command_id="after", text="Go on.", timeout_s=10)
 
         async with await endpoint.next() as exchange:
@@ -1120,14 +1136,23 @@ async def test_chat_completions_compaction(
                 if automatic
                 else {"role": "user", "content": "<handoff>retained summary</handoff>"}
             )
-            assert expected in messages
+            assert (expected in messages) == (case != "context_limit")
             assert all("sampler_compaction_summary" not in m for m in messages)
-            assert {"role": "user", "content": recent} in messages
-            assert not any("old source" in m["content"] or "truncated summary" in m["content"] for m in messages)
+            assert ({"role": "user", "content": recent} in messages) == (case != "overlong_input")
+            assert ({"role": "user", "content": old} in messages) == (case == "context_limit")
+            assert all("truncated summary" not in m["content"] for m in messages)
             await exchange.send(*completion("done"))
 
         command = "recent" if automatic else "after"
         assert (await turn_completed(stub, request.session_id, command)).status == event_pb2.TURN_STATUS_COMPLETED
+        entries = await store.events(request.session_id, 0, limit=10000)
+        authored = {
+            entry.event.harness_user_message_confirmed.turn_id: entry.event.harness_user_message_confirmed.text
+            for entry in entries
+            if entry.event.HasField("harness_user_message_confirmed")
+        }
+        assert authored["old"] == old
+        assert authored["recent"] == recent
 
 
 @pytest.mark.parametrize("dialect", ["lite", "standard"])

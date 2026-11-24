@@ -184,7 +184,7 @@ func TestChatCompactionUpgradesLegacySamplingProfileForNewRequests(t *testing.T)
 
 func TestChatEffortUpdatesNewRequestsWithoutChangingRetainedRequests(t *testing.T) {
 	memory := memoryContent{}
-	config := samplersettings.ModelConfig{API: protocol.APIStyleChatCompletions, ProviderModel: "fixture-model", ExecEncoding: protocol.ExecEncodingJSON, ChatCompaction: &chatcompletions.CompactionConfig{MaxTokens: 100, KeepRecentTurns: 1}}
+	config := samplersettings.ModelConfig{API: protocol.APIStyleChatCompletions, ProviderModel: "fixture-model", ExecEncoding: protocol.ExecEncodingJSON, ChatCompaction: &chatcompletions.CompactionConfig{MaxTokens: 100, KeepRecentTokens: new(32)}}
 	snapshot := Snapshot{API: config.API}
 	preparation := Preparation{ModelConfig: config, SessionEffort: "medium"}
 	first, err := Prepare(memory, snapshot, preparation)
@@ -198,6 +198,14 @@ func TestChatEffortUpdatesNewRequestsWithoutChangingRetainedRequests(t *testing.
 		t.Fatal(err)
 	}
 	preparation.Compaction = true
+	state := &chatcompletions.Context{}
+	if err := state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: strings.Repeat("old text ", 64)}}); err != nil {
+		t.Fatal(err)
+	}
+	preparation.ChatCompactionPlan, err = state.PrepareCompaction(*config.ChatCompaction, "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	compact, err := Prepare(memory, snapshot, preparation)
 	if err != nil {
 		t.Fatal(err)

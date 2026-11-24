@@ -231,6 +231,7 @@ type ProviderRequest struct {
 
 type CompactionControl struct {
 	KeepRecentTurns     int    `json:"keep_recent_turns"`
+	KeepRecentTokens    int    `json:"keep_recent_tokens,omitempty"`
 	PerMessageEffort    bool   `json:"per_message_effort"`
 	ReplacementRole     string `json:"replacement_role,omitempty"`
 	ReplacementTemplate string `json:"replacement_template,omitempty"`

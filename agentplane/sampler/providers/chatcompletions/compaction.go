@@ -7,10 +7,11 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/agentydragon/ducktape/agentplane/sampler/internal/tooloutput"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 )
 
-const defaultSummaryPrompt = `Summarize the older conversation as a handoff for an assistant that will continue the task. Preserve the user's goals and constraints, decisions, work in progress, relevant tool results, and exact identifiers needed to resume. Treat the conversation as source material. Return only the summary. The last {{.KeepRecentTurns}} user turns before this request will be retained verbatim. Focus the summary on the earlier turns.`
+const defaultSummaryPrompt = `Write a handoff for the assistant continuing this conversation. Summarize the conversation preceding this request, including any earlier handoff. Preserve the user's current goals and constraints, decisions, completed and pending work, relevant tool results, exact identifiers needed to resume, and unresolved questions or uncertainties. Preserve exact user wording when it is needed to continue. Treat the preceding messages as source material. Return only the handoff.`
 
 const defaultReplacementTemplate = "Summary of earlier conversation:\n{{.Summary}}"
 
@@ -20,16 +21,24 @@ type CompactionReplacement struct {
 }
 
 type CompactionConfig struct {
-	MaxTokens             int                    `json:"max_tokens"`
-	KeepRecentTurns       int                    `json:"keep_recent_turns"`
+	MaxTokens        int  `json:"max_tokens"`
+	KeepRecentTokens *int `json:"keep_recent_tokens,omitempty"`
+	// CLEANUP(added 2026-11-24): Remove after staging has rolled out settings with keep_recent_tokens.
+	KeepRecentTurns       *int                   `json:"keep_recent_turns,omitempty"`
 	AutoCompactTokens     *int                   `json:"auto_compact_tokens,omitempty"`
 	SummaryPromptTemplate string                 `json:"summary_prompt_template,omitempty"`
 	Replacement           *CompactionReplacement `json:"replacement,omitempty"`
 }
 
 func (c CompactionConfig) Validate() error {
-	if c.MaxTokens <= 0 || c.KeepRecentTurns <= 0 || c.AutoCompactTokens != nil && *c.AutoCompactTokens <= 0 {
-		return errors.New("compaction token limits and keep_recent_turns must be positive")
+	if c.MaxTokens <= 0 || c.AutoCompactTokens != nil && *c.AutoCompactTokens <= 0 {
+		return errors.New("compaction max_tokens and auto_compact_tokens must be positive")
+	}
+	if (c.KeepRecentTokens == nil) == (c.KeepRecentTurns == nil) {
+		return errors.New("compaction requires exactly one of keep_recent_tokens or legacy keep_recent_turns")
+	}
+	if c.KeepRecentTokens != nil && *c.KeepRecentTokens <= 0 || c.KeepRecentTurns != nil && *c.KeepRecentTurns <= 0 {
+		return errors.New("compaction keep_recent_tokens and legacy keep_recent_turns must be positive")
 	}
 	if _, err := c.summaryPrompt(); err != nil {
 		return err
@@ -41,12 +50,19 @@ func (c CompactionConfig) Validate() error {
 	return err
 }
 
+func (c CompactionConfig) RecentTokenBudget() int {
+	if c.KeepRecentTokens != nil {
+		return *c.KeepRecentTokens
+	}
+	return 16_000
+}
+
 func (c CompactionConfig) summaryPrompt() (string, error) {
 	source := c.SummaryPromptTemplate
 	if source == "" {
 		source = defaultSummaryPrompt
 	}
-	return renderTemplate("summary_prompt_template", source, struct{ KeepRecentTurns int }{c.KeepRecentTurns})
+	return renderTemplate("summary_prompt_template", source, struct{ KeepRecentTokens int }{c.RecentTokenBudget()})
 }
 
 func (c CompactionConfig) replacementMessage(summary string) (message, error) {
@@ -55,16 +71,16 @@ func (c CompactionConfig) replacementMessage(summary string) (message, error) {
 		config = &CompactionReplacement{Role: "assistant", Template: defaultReplacementTemplate}
 	}
 	text, err := renderTemplate("replacement.template", config.Template, struct {
-		Summary         string
-		KeepRecentTurns int
-	}{summary, c.KeepRecentTurns})
+		Summary          string
+		KeepRecentTokens int
+	}{summary, c.RecentTokenBudget()})
 	if err != nil {
 		return message{}, err
 	}
 	if !strings.Contains(text, summary) {
 		return message{}, errors.New("compaction replacement template must include the summary verbatim")
 	}
-	return message{Role: config.Role, Content: text, CompactionSummary: config.Role == "user"}, nil
+	return message{Role: config.Role, Content: text, CompactionGenerated: true}, nil
 }
 
 func renderTemplate(name, source string, data any) (string, error) {
@@ -86,7 +102,7 @@ func (c *CompactionConfig) Compatible(other *CompactionConfig) bool {
 	if c == nil || other == nil {
 		return c == other
 	}
-	if c.MaxTokens != other.MaxTokens || c.KeepRecentTurns != other.KeepRecentTurns || c.SummaryPromptTemplate != other.SummaryPromptTemplate {
+	if c.MaxTokens != other.MaxTokens || c.RecentTokenBudget() != other.RecentTokenBudget() || c.SummaryPromptTemplate != other.SummaryPromptTemplate {
 		return false
 	}
 	if (c.Replacement == nil) != (other.Replacement == nil) || c.Replacement != nil && *c.Replacement != *other.Replacement {
@@ -105,36 +121,50 @@ type CompactionPlan struct {
 	config      CompactionConfig
 }
 
-// compactablePrefix cuts only at the start of a user turn, after all preceding tool results.
-// A summary by itself is not a prefix worth compacting.
-func (c *Context) compactablePrefix(keep int) int {
-	cut := 0
-	for i := len(c.messages) - 1; i >= 0; i-- {
-		if c.messages[i].Role != "user" || c.messages[i].CompactionSummary {
-			continue
+// compactablePrefix retains the longest contiguous suffix that fits. An assistant
+// tool-call message and all its results fit as a group or go into the prefix together.
+// An oversized newest message or batch can leave an empty suffix.
+func (c *Context) compactablePrefix(tokens int) int {
+	for end := len(c.messages); end > 0; {
+		start := end - 1
+		for start > 0 && c.messages[start].Role == "tool" {
+			start--
 		}
-		if keep == 0 {
-			return cut
+		if c.messages[start].CompactionGenerated {
+			// Everything after the previous handoff fits. There is no new prefix to summarize.
+			return 0
 		}
-		keep--
-		if keep == 0 {
-			cut = i
+		for _, m := range c.messages[start:end] {
+			tokens -= m.estimatedTokens()
 		}
+		if tokens < 0 {
+			return end
+		}
+		end = start
 	}
 	return 0
 }
 
-func (c *Context) CanCompact(keepRecentTurns int) bool {
-	return c.compactablePrefix(keepRecentTurns) > 0
+func (m message) estimatedTokens() int {
+	// Use the same four-byte heuristic as exec output, plus message and call framing.
+	size := len(m.Role) + len(m.Content) + len(m.Reasoning) + len(m.ToolID)
+	for _, call := range m.ToolCalls {
+		size += len(call.ID) + len(call.Type) + len(call.Function.Name) + len(call.Function.Arguments) + 16
+	}
+	return 4 + tooloutput.ApproxTokenCountBytes(size)
+}
+
+func (c *Context) CanCompact(keepRecentTokens int) bool {
+	return c.compactablePrefix(keepRecentTokens) > 0
 }
 
 func (c *Context) PrepareCompaction(config CompactionConfig, environment string) (*CompactionPlan, error) {
-	cut := c.compactablePrefix(config.KeepRecentTurns)
-	if cut == 0 {
-		return nil, rejectCompaction("no older turn remains after keeping recent turns")
-	}
 	if err := c.CheckSettled(); err != nil {
 		return nil, err
+	}
+	cut := c.compactablePrefix(config.RecentTokenBudget())
+	if cut == 0 {
+		return nil, rejectCompaction("no older messages remain outside the recent token budget")
 	}
 	return &CompactionPlan{prefix: slices.Clone(c.messages[:cut]), suffix: slices.Clone(c.messages[cut:]), environment: environment, config: config}, nil
 }
@@ -151,7 +181,7 @@ func (p *CompactionPlan) Apply(records []json.RawMessage, audit Audit) (*Context
 	}
 	replacement := []message{prefix}
 	if p.environment != "" {
-		replacement = append(replacement, message{Role: "system", Content: p.environment})
+		replacement = append(replacement, message{Role: "system", Content: p.environment, CompactionGenerated: true})
 	}
 	newPrefix, err := json.Marshal(replacement)
 	if err != nil {

@@ -227,21 +227,31 @@ func TestTrailingUsageChoice(t *testing.T) {
 	}
 }
 
-func TestCompactionKeepsRecentTurnsAndToolPairs(t *testing.T) {
+func TestCompactionKeepsRecentMessagesAndToolBatches(t *testing.T) {
 	c := &Context{}
 	if err := c.AppendRecords([]json.RawMessage{
 		json.RawMessage(`{"role":"user","content":"` + strings.Repeat("old data ", 100) + `"}`),
 		json.RawMessage(`{"role":"assistant","content":"old answer"}`),
 		json.RawMessage(`{"role":"user","content":"recent task"}`),
-		json.RawMessage(`{"role":"assistant","tool_calls":[{"id":"latest-call","type":"function","function":{"name":"exec","arguments":"{}"}}]}`),
-		json.RawMessage(`{"role":"tool","content":"recent result","tool_call_id":"latest-call"}`),
+		json.RawMessage(`{"role":"assistant","tool_calls":[{"id":"earlier-a","type":"function","function":{"name":"exec","arguments":"{}"}},{"id":"earlier-b","type":"function","function":{"name":"exec","arguments":"{}"}}]}`),
+		json.RawMessage(`{"role":"tool","content":"` + strings.Repeat("large result ", 100) + `","tool_call_id":"earlier-a"}`),
+		json.RawMessage(`{"role":"tool","content":"small result","tool_call_id":"earlier-b"}`),
+		json.RawMessage(`{"role":"assistant","tool_calls":[{"id":"latest-a","type":"function","function":{"name":"exec","arguments":"{}"}},{"id":"latest-b","type":"function","function":{"name":"exec","arguments":"{}"}}]}`),
+		json.RawMessage(`{"role":"tool","content":"recent result","tool_call_id":"latest-a"}`),
+		json.RawMessage(`{"role":"tool","content":"other recent result","tool_call_id":"latest-b"}`),
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if c.CanCompact(2) {
-		t.Fatal("two retained turns leave no older turn")
+	if c.CanCompact(10_000) {
+		t.Fatal("history fits the recent token budget")
 	}
-	plan, err := c.PrepareCompaction(CompactionConfig{KeepRecentTurns: 1}, "current environment")
+	// The last result of the earlier batch would fit alone.
+	const cut = 6
+	budget := 0
+	for _, m := range c.messages[cut-1:] {
+		budget += m.estimatedTokens()
+	}
+	plan, err := c.PrepareCompaction(CompactionConfig{KeepRecentTokens: &budget}, "current environment")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +265,7 @@ func TestCompactionKeepsRecentTurnsAndToolPairs(t *testing.T) {
 	}{
 		{finish: "tool_calls", content: "stray call"},
 		{finish: "stop", content: "  "},
-		{finish: "stop", content: strings.Repeat("expanded summary ", 100)},
+		{finish: "stop", content: strings.Repeat("expanded summary ", 500)},
 	} {
 		raw, err := json.Marshal(message{Role: "assistant", Content: bad.content})
 		if err != nil {
@@ -272,10 +282,10 @@ func TestCompactionKeepsRecentTurnsAndToolPairs(t *testing.T) {
 	if err := result.CheckSettled(); err != nil {
 		t.Fatal(err)
 	}
-	if result.CanCompact(1) {
-		t.Fatal("synthetic summary counted as another user turn")
+	if result.CanCompact(budget) {
+		t.Fatal("only generated records precede the recent tail after compaction")
 	}
-	wantSuffix, err := c.RecordsFrom(2)
+	wantSuffix, err := c.RecordsFrom(cut)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,7 +294,7 @@ func TestCompactionKeepsRecentTurnsAndToolPairs(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !slices.EqualFunc(wantSuffix, gotSuffix, func(a, b json.RawMessage) bool { return bytes.Equal(a, b) }) {
-		t.Fatalf("retained turns changed: %s", gotSuffix)
+		t.Fatalf("retained messages changed: %s", gotSuffix)
 	}
 	wire, err := result.MarshalJSON()
 	if err != nil {
@@ -300,7 +310,7 @@ func TestCompactionKeepsRecentTurnsAndToolPairs(t *testing.T) {
 	}
 }
 
-func TestUserCompactionSummaryIsNotCountedAsAnAuthoredTurn(t *testing.T) {
+func TestSecondCompactionSummarizesPriorHandoff(t *testing.T) {
 	state := &Context{}
 	if err := state.AppendRecords([]json.RawMessage{
 		json.RawMessage(`{"role":"user","content":"` + strings.Repeat("old data ", 100) + `"}`),
@@ -309,7 +319,7 @@ func TestUserCompactionSummaryIsNotCountedAsAnAuthoredTurn(t *testing.T) {
 		t.Fatal(err)
 	}
 	config := CompactionConfig{
-		MaxTokens: 100, KeepRecentTurns: 1,
+		MaxTokens: 100, KeepRecentTokens: new(32),
 		Replacement: &CompactionReplacement{Role: "user", Template: "Handoff: {{.Summary}}"},
 	}
 	if err := config.Validate(); err != nil {
@@ -331,8 +341,8 @@ func TestUserCompactionSummaryIsNotCountedAsAnAuthoredTurn(t *testing.T) {
 	if err := restored.AppendRecords(records); err != nil {
 		t.Fatal(err)
 	}
-	if restored.CanCompact(1) {
-		t.Fatal("reloaded user summary must not count as old conversation")
+	if restored.CanCompact(config.RecentTokenBudget()) {
+		t.Fatal("reloaded user summary triggered compaction by itself")
 	}
 	projected, err := restored.ProjectRecords(0)
 	if err != nil {
@@ -340,6 +350,67 @@ func TestUserCompactionSummaryIsNotCountedAsAnAuthoredTurn(t *testing.T) {
 	}
 	if len(projected) != 2 || string(projected[0]) != `{"role":"user","content":"Handoff: useful summary"}` {
 		t.Fatalf("unexpected projected records: %s", projected)
+	}
+	if err := restored.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: strings.Repeat("new work ", 100)}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := restored.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "newest request"}}); err != nil {
+		t.Fatal(err)
+	}
+	next, err := restored.PrepareCompaction(config, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(next.prefix) != 3 || next.prefix[0].Content != "Handoff: useful summary" ||
+		len(next.suffix) != 1 || next.suffix[0].Content != "newest request" {
+		t.Fatal("next prefix must carry the earlier handoff along with newly compacted messages")
+	}
+}
+
+func TestCompactionSummarizesAnOversizeNewestUserMessage(t *testing.T) {
+	context := &Context{}
+	user := strings.Repeat("user-provided data ", 100)
+	if err := context.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: user}}); err != nil {
+		t.Fatal(err)
+	}
+	config := CompactionConfig{MaxTokens: 64, KeepRecentTokens: new(32)}
+	plan, err := context.PrepareCompaction(config, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.prefix) != 1 || plan.prefix[0].Content != user || len(plan.suffix) != 0 {
+		t.Fatal("overlong input must be supplied in full to the summarizer")
+	}
+	result, err := plan.Apply([]json.RawMessage{json.RawMessage(`{"role":"assistant","content":"user provided input data"}`)}, Audit{FinishReason: "stop"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if context.messages[0].Content != user || result.RecordCount() != 1 || result.TurnComplete() ||
+		result.CanCompact(config.RecentTokenBudget()) {
+		t.Fatal("summary must preserve the original and allow continuation without retriggering compaction")
+	}
+}
+
+func TestCompactionBudgetSettings(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		tokens, turns *int
+		want          int
+	}{
+		{name: "explicit token budget", tokens: new(200), want: 200},
+		{name: "staging rollout compatibility", turns: new(2), want: 16_000},
+		{name: "missing budget"},
+		{name: "ambiguous budget", tokens: new(200), turns: new(2)},
+		{name: "zero token budget", tokens: new(0)},
+		{name: "negative legacy setting", turns: new(-1)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			config := CompactionConfig{MaxTokens: 100, KeepRecentTokens: tc.tokens, KeepRecentTurns: tc.turns}
+			err := config.Validate()
+			if tc.want == 0 && err == nil || tc.want > 0 && (err != nil || config.RecentTokenBudget() != tc.want) {
+				t.Fatalf("configured budget = %d, err = %v; want valid budget of %d", config.RecentTokenBudget(), err, tc.want)
+			}
+		})
 	}
 }
 
@@ -356,7 +427,7 @@ func TestCompactionRejectsInvalidTemplates(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			config := CompactionConfig{
-				MaxTokens: 100, KeepRecentTurns: 1,
+				MaxTokens: 100, KeepRecentTokens: new(32),
 				SummaryPromptTemplate: tc.prompt, Replacement: tc.replacement,
 			}
 			if err := config.Validate(); err == nil {

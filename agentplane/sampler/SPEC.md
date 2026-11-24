@@ -413,32 +413,38 @@ reasoning content when supplied and pairs each tool result with its native call 
 notifications use system messages. The route uses the provider's default reasoning setting.
 Image tool results become text notices.
 
-A Chat Completions route with `chat_compaction` supports manual compaction and can set
-`auto_compact_tokens` to trigger at the last streamed usage total. The sampler keeps
-`keep_recent_turns` user turns verbatim. The summary request reuses the system message, tools and
-conversation, then appends a user message asking for a handoff summary of older turns. It sets
-`tool_choice: "none"` and an output budget of `max_tokens`. This preserves the prompt prefix for
-providers that cache it. The cut is at a user message, so retained tool calls and their results
-stay together. A complete nonempty text summary replaces the active
-prefix only if it reduces the serialized context. The full transcript remains available in History.
-The sampler commits the summary request before dispatch and reuses its exact body on retry.
-Automatic compaction waits for a settled context with an older turn available.
+A Chat Completions route with `chat_compaction` supports manual compaction. Set
+`auto_compact_tokens` to trigger from the last streamed usage total. Newly appended input and tool
+results can exceed provider limits before another usage report. The sampler keeps the longest
+contiguous tail that fits the estimated `keep_recent_tokens` budget, using four UTF-8 bytes per
+token plus framing for content, reasoning and tool fields. The cut can fall within a user turn.
+An assistant tool-call batch and every result on that batch stay together. A message or batch that
+exceeds the budget goes into the summary source in full, even if that leaves an empty tail.
 
-The route can set `chat_compaction.summary_prompt_template` and
-`chat_compaction.replacement` in the sampler settings ConfigMap. These are Go text templates.
-The prompt receives `.KeepRecentTurns`. The replacement receives `.Summary` and
-`.KeepRecentTurns`, and must include the summary verbatim. Choose `assistant` or `user`
-for the replacement role. The environment notice and retained native turns follow it.
-A replacement rendered as a user message does not count as an authored turn. With both
-settings omitted, the sampler uses its built-in handoff prompt and assistant-message wrapper.
+The summary request reuses the system message and tool definitions, sends only the prefix being
+replaced, and appends a user message requesting a handoff. It sets `tool_choice: "none"` and
+`max_tokens` for summary output. The prefix includes any previous handoff. A complete nonempty
+text summary replaces the active prefix only if it reduces serialized context. An upstream context
+limit or incomplete summary leaves the original active context intact. The full transcript remains
+available in History.
+
+The sampler freezes the request body before dispatch and reuses it on retry. Changes to the tail
+budget or replacement settings prevent an in-flight summary from being applied under the new
+policy. Automatic compaction requires a settled context and newly compactable messages.
+
+`chat_compaction.summary_prompt_template` and `chat_compaction.replacement.template` are Go text
+templates. Both receive `.KeepRecentTokens`. The replacement also receives `.Summary` and must
+include it verbatim. Choose `assistant` or `user` for the replacement role. The environment notice
+and retained messages follow. Without custom templates, the sampler uses its built-in handoff prompt
+and assistant-message wrapper.
 
 ```yaml
 chat_compaction:
   max_tokens: 8192
-  keep_recent_turns: 2
+  keep_recent_tokens: 16000
+  auto_compact_tokens: 160000
   summary_prompt_template: |
-    Write a handoff with goals, decisions, and open work.
-    The latest {{.KeepRecentTurns}} user turns will be kept verbatim.
+    Write a handoff for the conversation above with goals, decisions, and open work.
   replacement:
     role: user
     template: |
@@ -447,9 +453,9 @@ chat_compaction:
       </handoff>
 ```
 
-The sampler validates templates at startup. A retry uses the original rendered request.
-Changing the replacement settings while a summary request is pending prevents applying
-that summary under the new settings.
+During the settings rollout, an existing positive `keep_recent_turns` setting selects the
+16,000-token tail budget. Configure only one retention field and update custom templates to use
+`.KeepRecentTokens`.
 
 Anthropic preserves signed thinking, redacted thinking and compaction content without translating
 their fields.
