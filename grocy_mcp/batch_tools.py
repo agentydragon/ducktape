@@ -25,7 +25,7 @@ from fastmcp.dependencies import Depends
 from pydantic import Field
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential
 
-from grocy_mcp.client import GrocyClient, ResolvedQU, resolve_entity_ref
+from grocy_mcp.client import GrocyClient, ResolvedQU, resolve_entity_id
 from grocy_mcp.grocy_types import EntityType, GettableEntityType, ReadableEntityType
 from grocy_mcp.mcp_types import (
     DETAIL_DESC,
@@ -311,7 +311,7 @@ def register_batch_tools(
         return await asyncio.gather(*(_one(item) for item in items))
 
     async def _resolve_id(client: GrocyClient, entity_type: EntityType, ref: int | str) -> int:
-        return (await client.resolve_entity(entity_type, ref)).id
+        return resolve_entity_id(entity_type, ref, await client.entities_by_id(entity_type))
 
     def _set_if_present(body: dict[str, Any], key: str, value: Any) -> None:
         if value is not None:
@@ -517,8 +517,8 @@ def register_batch_tools(
         stock, catalog = await asyncio.gather(
             _get_with_retry(client, "/objects/stock"), _StockEntryCatalog.load(client)
         )
-        product_ids = {resolve_entity_ref(EntityType.PRODUCT, ref, catalog.products).id for ref in products}
-        location_ids = {resolve_entity_ref(EntityType.LOCATION, ref, catalog.locations).id for ref in locations}
+        product_ids = {resolve_entity_id(EntityType.PRODUCT, ref, catalog.products) for ref in products}
+        location_ids = {resolve_entity_id(EntityType.LOCATION, ref, catalog.locations) for ref in locations}
 
         lots: defaultdict[tuple[int, int], list[dict[str, Any]]] = defaultdict(list)
         for entry in stock.json():
@@ -575,14 +575,13 @@ def register_batch_tools(
         try:
             product = await client.resolve_entity(EntityType.PRODUCT, item.product)
             location = await client.resolve_entity(EntityType.LOCATION, item.location)
+            product_id = int(product["id"])
             qu_ref = item.qu
             if qu_ref is None:
                 assert isinstance(item, SetItem)
                 if item.new_amount != 0:
                     raise ValueError("`qu` is required unless `new_amount` is 0 (zeroing-out shortcut).")
-                product_row = await client.get_entity(EntityType.PRODUCT, product.id)
-                assert product_row is not None  # just resolved
-                stock_qu_id = int(product_row["qu_id_stock"])
+                stock_qu_id = int(product["qu_id_stock"])
                 stock_qu_name = await client.entity_name(EntityType.QUANTITY_UNIT, stock_qu_id)
                 rqu = ResolvedQU(
                     id=stock_qu_id,
@@ -592,11 +591,13 @@ def register_batch_tools(
                     conversion_factor=1.0,
                 )
             else:
-                rqu = await client.resolve_qu_for_product(qu_ref, product.id)
+                rqu = await client.resolve_qu_for_product(qu_ref, product)
             input_amount = item.new_amount if isinstance(item, SetItem) else item.amount
             stock_amount = input_amount * rqu.conversion_factor
 
-            body: dict[str, Any] = {"location_id": location.id}
+            product_name = str(product["name"])
+            location_name = str(location["name"])
+            body: dict[str, Any] = {"location_id": int(location["id"])}
             applied_best_before_date: date | None = None
             match item:
                 case AddItem():
@@ -605,12 +606,8 @@ def register_batch_tools(
                     if item.best_before_date is not None:
                         body["best_before_date"] = _date_to_str(item.best_before_date)
                     else:
-                        product_row = await client.get_entity(EntityType.PRODUCT, product.id)
-                        location_row = await client.get_entity(EntityType.LOCATION, location.id)
-                        assert product_row is not None  # just resolved
-                        assert location_row is not None  # just resolved
                         body["best_before_date"] = _compute_default_bbd(
-                            product_row, is_freezer=bool(int(location_row.get("is_freezer") or 0))
+                            product, is_freezer=bool(int(location.get("is_freezer") or 0))
                         )
                     applied_best_before_date = _parse_date(body["best_before_date"])
                     if item.price is not None:
@@ -633,7 +630,7 @@ def register_batch_tools(
                         body["price"] = item.price
 
             async def _do_post() -> tuple[str | None, float | None, str | None]:
-                r = await client.post(f"/stock/products/{product.id}/{endpoint}", json=body)
+                r = await client.post(f"/stock/products/{product_id}/{endpoint}", json=body)
                 r.raise_for_status()
                 entries: list[dict[str, Any]] = r.json()
                 tx_id = entries[0]["transaction_id"] if entries else None
@@ -642,23 +639,23 @@ def register_batch_tools(
                 return tx_id, amount_delta, stock_id
 
             tx_id, amount_delta, stock_id = await _retry_mutation(
-                _do_post, describe=f"stock {endpoint} of {input_amount} {rqu.name} for product {product.name!r}"
+                _do_post, describe=f"stock {endpoint} of {input_amount} {rqu.name} for product {product_name!r}"
             )
             if isinstance(item, AddItem) and stock_id is not None:
                 new_amount, entry_id = await asyncio.gather(
-                    _best_effort_new_amount(client, product.id), _best_effort_entry_id(client, product.id, stock_id)
+                    _best_effort_new_amount(client, product_id), _best_effort_entry_id(client, product_id, stock_id)
                 )
             else:
-                new_amount = await _best_effort_new_amount(client, product.id)
+                new_amount = await _best_effort_new_amount(client, product_id)
                 entry_id = None
             return StockOpOk(
-                product_name=product.name,
+                product_name=product_name,
                 transaction_id=tx_id,
                 amount_delta=amount_delta,
                 new_amount=new_amount,
                 qu_name=rqu.name,
                 stock_qu_name=rqu.stock_qu_name if rqu.conversion_factor != 1.0 else None,
-                location_name=location.name,
+                location_name=location_name,
                 entry_id=entry_id,
                 best_before_date=applied_best_before_date,
             )
@@ -791,8 +788,8 @@ def register_batch_tools(
             all_results: list[StockEntryOk | StockEntryError] = []
             for product_ref in products:
                 try:
-                    resolved = resolve_entity_ref(EntityType.PRODUCT, product_ref, catalog.products)
-                    r = await _get_with_retry(client, f"/stock/products/{resolved.id}/entries")
+                    product_id = resolve_entity_id(EntityType.PRODUCT, product_ref, catalog.products)
+                    r = await _get_with_retry(client, f"/stock/products/{product_id}/entries")
                     entries_data: list[dict[str, Any]] = r.json()
                     for entry_data in entries_data:
                         try:
@@ -1107,10 +1104,10 @@ def register_batch_tools(
     ) -> EditOk | CreateError:
         """Delete a product. Also removes every stock entry for the product — irreversible."""
         try:
-            resolved = await client.resolve_entity(EntityType.PRODUCT, product)
-            r = await client.delete(f"/objects/products/{resolved.id}")
+            product_id = await _resolve_id(client, EntityType.PRODUCT, product)
+            r = await client.delete(f"/objects/products/{product_id}")
             r.raise_for_status()
-            return EditOk(object_id=resolved.id)
+            return EditOk(object_id=product_id)
         except Exception as e:
             return CreateError(error=_format_exc(e))
 
@@ -1139,36 +1136,35 @@ def register_batch_tools(
         """
         try:
             prod = await client.resolve_entity(EntityType.PRODUCT, product)
-            from_loc = await client.resolve_entity(EntityType.LOCATION, from_location)
-            to_loc = await client.resolve_entity(EntityType.LOCATION, to_location)
-            rqu = await client.resolve_qu_for_product(qu, prod.id)
+            locations = await client.entities_by_id(EntityType.LOCATION)
+            from_id = resolve_entity_id(EntityType.LOCATION, from_location, locations)
+            to_id = resolve_entity_id(EntityType.LOCATION, to_location, locations)
+            rqu = await client.resolve_qu_for_product(qu, prod)
 
+            product_name = str(prod["name"])
+            location_name = f"{locations[from_id]['name']} -> {locations[to_id]['name']}"
             stock_amount = amount * rqu.conversion_factor
 
-            body: dict[str, Any] = {
-                "amount": stock_amount,
-                "location_id_from": from_loc.id,
-                "location_id_to": to_loc.id,
-            }
+            body: dict[str, Any] = {"amount": stock_amount, "location_id_from": from_id, "location_id_to": to_id}
 
             async def _do() -> str | None:
-                r = await client.post(f"/stock/products/{prod.id}/transfer", json=body)
+                r = await client.post(f"/stock/products/{int(prod['id'])}/transfer", json=body)
                 r.raise_for_status()
                 entries: list[dict[str, Any]] = r.json()
                 return entries[0]["transaction_id"] if entries else None
 
             tx_id = await _retry_mutation(
-                _do, describe=f"stock transfer of {amount} {rqu.name} for product {prod.name!r}"
+                _do, describe=f"stock transfer of {amount} {rqu.name} for product {product_name!r}"
             )
 
             return StockOpOk(
-                product_name=prod.name,
+                product_name=product_name,
                 transaction_id=tx_id,
                 amount_delta=None,
                 new_amount=None,
                 qu_name=rqu.name,
                 stock_qu_name=rqu.stock_qu_name if rqu.conversion_factor != 1.0 else None,
-                location_name=f"{from_loc.name} -> {to_loc.name}",
+                location_name=location_name,
             )
         except Exception as e:
             return StockOpError(error=_format_exc(e))
@@ -1216,13 +1212,13 @@ def register_batch_tools(
         `note`, and `done`. Add items with `shopping_list_items_add`; empty
         the list with `shopping_list_clear`.
         """
-        sl = await client.resolve_entity(EntityType.SHOPPING_LIST, shopping_list)
+        list_id = await _resolve_id(client, EntityType.SHOPPING_LIST, shopping_list)
 
-        r = await client.get(f"/objects/shopping_lists/{sl.id}")
+        r = await client.get(f"/objects/shopping_lists/{list_id}")
         r.raise_for_status()
         list_data: dict[str, Any] = r.json()
 
-        items = await _shopping_list_items(client, sl.id)
+        items = await _shopping_list_items(client, list_id)
 
         product_ids = [int(item["product_id"]) if item.get("product_id") is not None else None for item in items]
         products = await _shopping_products(client, {pid for pid in product_ids if pid is not None})
@@ -1372,9 +1368,9 @@ def register_batch_tools(
         Returns `{kind: "ok", cleared: N}` with the number removed. To
         remove specific items only, use `shopping_list_items_remove`.
         """
-        sl = await client.resolve_entity(EntityType.SHOPPING_LIST, shopping_list)
+        list_id = await _resolve_id(client, EntityType.SHOPPING_LIST, shopping_list)
 
-        items = await _shopping_list_items(client, sl.id)
+        items = await _shopping_list_items(client, list_id)
 
         async def _delete(item_id: int) -> None:
             r = await client.delete(f"/objects/shopping_list/{item_id}")

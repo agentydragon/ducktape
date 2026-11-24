@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncGenerator
+from datetime import date, timedelta
 
 import httpx
 import httpx2
@@ -79,6 +80,20 @@ async def test_add_stock_post_not_retried_when_get_fails(mcp_client: tuple[Clien
     assert post_route.calls.call_count == 1
 
 
+async def test_incomplete_location_fails_before_stock_write(mcp_client: tuple[Client, respx.Router]) -> None:
+    client, router = mcp_client
+    router.get("/objects/locations").respond(json=[*LOCATIONS, {"id": 2}])
+    item = {"product": 1, "amount": 3, "qu": 1}
+    add = router.post("/stock/products/1/add").respond(json=ADD_RESPONSE)
+    transfer = router.post("/stock/products/1/transfer").respond(json=ADD_RESPONSE)
+
+    [added] = unwrap_result(await client.call_tool("stock_add", {"items": [{**item, "location": 2}]}))
+    moved = unwrap_result(await client.call_tool("stock_transfer", {**item, "from_location": 1, "to_location": 2}))
+
+    assert added["kind"] == moved["kind"] == "error"
+    assert add.calls.call_count == transfer.calls.call_count == 0
+
+
 async def test_add_stock_post_not_retried_on_server_error(mcp_client: tuple[Client, respx.Router]) -> None:
     """A 500 may follow an applied mutation, so surface it without resending."""
     client, router = mcp_client
@@ -101,6 +116,27 @@ async def test_add_stock_post_not_retried_on_server_error(mcp_client: tuple[Clie
     assert "HTTP 500 Internal Server Error" in op["error"]
     assert "Grocy response body: " in op["error"]
     assert error_body["error_message"] in op["error"]
+
+
+async def test_stock_add_uses_resolved_shelf_life_and_refreshes_on_next_call(
+    mcp_client: tuple[Client, respx.Router],
+) -> None:
+    client, router = mcp_client
+    product = {**PRODUCTS[0], "id": "1", "default_best_before_days": 0, "default_best_before_days_after_freezing": -1}
+    products = router.get("/objects/products").respond(json=[product])
+    locations = router.get("/objects/locations").respond(json=[{**LOCATIONS[0], "id": "1", "is_freezer": "1"}])
+    add = router.post("/stock/products/1/add").respond(json=ADD_RESPONSE)
+    router.get("/stock/products/1").respond(json={"stock_amount": 5})
+    item = {"product": "TestProduct", "qu": 1, "location": 1, "amount": 5}
+
+    for index, frozen_days in enumerate([-1, 4], start=1):
+        products.respond(json=[{**product, "default_best_before_days_after_freezing": frozen_days}])
+        [saved] = unwrap_result(await client.call_tool("stock_add", {"items": [item]}))
+        due = "2999-12-31" if frozen_days == -1 else (date.today() + timedelta(days=frozen_days)).isoformat()
+        assert saved["kind"] == "ok", saved
+        assert saved["best_before_date"] == due
+        assert json.loads(add.calls.last.request.content)["best_before_date"] == due
+        assert (products.calls.call_count, locations.calls.call_count) == (index, index)
 
 
 async def test_stock_edit_lost_reply_reports_uncertain_outcome(mcp_client: tuple[Client, respx.Router]) -> None:
