@@ -2474,8 +2474,8 @@ rows were backfilled, and the subsequent relation growth and event volume. Compa
 
 **Operator decision requested, 2026-11-24.** Can an existing library or backend provide
 cross-record compression behind simple value writes, lookups and scans while preserving sampler
-recovery and History replay? Evaluate content references, sequential column storage and shared
-dictionaries, including alternatives to PostgreSQL. Begin the workload study now. Use the
+recovery, History replay and whole-session deletion? Prioritize engine-managed compression and
+evaluate content references, including alternatives to PostgreSQL. Begin the workload study now. Use the
 post-rollout baseline for the final comparison. **Exit:** bring the operator a measured
 recommendation, including the option of retaining the stopgap, before scheduling implementation.
 The [storage plan](storage_representations.md#november-24-recurrence-and-storage-decision) owns

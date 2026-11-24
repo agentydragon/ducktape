@@ -95,15 +95,18 @@ Evaluate whether an existing storage engine or library can own cross-record comp
 operations such as append an exact value, fetch by cursor or reference, and scan an ordered range.
 Exercise repeated tool schemas, shared conversation prefixes and content blocks, and streams of
 small events with similar structure but distinct values. Compare the two service-owned packers
-against an off-the-shelf sequential column or segment format, independently readable values with a
-shared compression dictionary, and immutable content references using the sampler's existing content
-store or the [catalog proposal](https://github.com/agentydragon/ducktape/pull/19800). Consider
+against storage engines with compressed ordered blocks and standard column or segment formats.
+Prefer compression metadata owned by the engine or stored with the segment. An application-managed
+shared dictionary would require training, versioning, and retaining the matching decoder dictionary
+for every readable value. Revisit that option if measurements justify owning that lifecycle.
+Evaluate immutable content references separately using the sampler's existing content store or
+the [catalog proposal](https://github.com/agentydragon/ducktape/pull/19800). Consider
 staying on PostgreSQL, separating payload storage from its transactional index, or moving to another
 backend. Compare combinations when they address different measured costs.
 
 Use the same representative workload for each candidate. Count payloads, reference tables,
 indexes and duplicated service copies toward total physical bytes. Measure append cost, bounded
-point and kind-filtered range reads, and recovery/export reads. Demonstrate exact replay through
+point and kind-filtered range reads, sequential recovery/export reads, and whole-session deletion. Demonstrate exact replay through
 a retry and a reader restart. Compare operational costs, including atomic publication of a value
 and its reference, retention and deletion, restore, and mixed-version rollout. Present the simplest
 option that meets those contracts, its measured advantage over the stopgap, and which custom
