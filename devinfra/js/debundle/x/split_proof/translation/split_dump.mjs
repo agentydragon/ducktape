@@ -1,8 +1,8 @@
-// The ESTree Program as `lowersplit` reads it (`lowering/dump_core.mjs`), with the parser and the scope
+// The ESTree Program as `lowersplit` reads it (`translation/annotated_estree.mjs`), with the parser and the scope
 // analysis of this package. `model/differential.mjs` splits its programs with it.
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
-import { dumpParsed, lowerDump } from "../lowering/dump_core.mjs";
+import { dumpParsed, lowerDump } from "./annotated_estree.mjs";
 import { parseModule, topLevelStatements } from "./scope_metadata.mjs";
 import { coreFromParsed, toCore, toCoreProgram } from "../model/to_core.mjs";
 

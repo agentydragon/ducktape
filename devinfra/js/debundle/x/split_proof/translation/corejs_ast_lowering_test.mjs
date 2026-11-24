@@ -5,7 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
-import { dumpParsed } from "../lowering/dump_core.mjs";
+import { dumpParsed } from "./annotated_estree.mjs";
 import { coreFromParsed } from "../model/to_core.mjs";
 import { bundleFromParsed } from "./frontend.mjs";
 import { parseModule } from "./scope_metadata.mjs";

@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
-import { lowerDump } from "../lowering/dump_core.mjs";
+import { lowerDump } from "./annotated_estree.mjs";
 import { assertSelectedSourceUnits, parseSourceUnits } from "./testing/ast_assertions.mjs";
 import { lcg32 } from "../seeded_random.mjs";
 

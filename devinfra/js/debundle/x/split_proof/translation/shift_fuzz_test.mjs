@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
-import { lowerDump } from "../lowering/dump_core.mjs";
+import { lowerDump } from "./annotated_estree.mjs";
 import { shiftCandidate } from "./shift_candidate.mjs";
 import { walk } from "./syntax_inventory.mjs";
 import { topLevelStatements } from "./scope_metadata.mjs";
