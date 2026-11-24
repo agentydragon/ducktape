@@ -25,7 +25,7 @@ from fastmcp.dependencies import Depends
 from pydantic import Field
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential
 
-from grocy_mcp.client import GrocyClient, ResolvedQU, resolve_entity_id
+from grocy_mcp.client import GrocyClient, resolve_entity_id
 from grocy_mcp.grocy_types import EntityType, GettableEntityType, ReadableEntityType
 from grocy_mcp.mcp_types import (
     DETAIL_DESC,
@@ -576,22 +576,9 @@ def register_batch_tools(
             product = await client.resolve_entity(EntityType.PRODUCT, item.product)
             location = await client.resolve_entity(EntityType.LOCATION, item.location)
             product_id = int(product["id"])
-            qu_ref = item.qu
-            if qu_ref is None:
-                assert isinstance(item, SetItem)
-                if item.new_amount != 0:
-                    raise ValueError("`qu` is required unless `new_amount` is 0 (zeroing-out shortcut).")
-                stock_qu_id = int(product["qu_id_stock"])
-                stock_qu_name = await client.entity_name(EntityType.QUANTITY_UNIT, stock_qu_id)
-                rqu = ResolvedQU(
-                    id=stock_qu_id,
-                    name=stock_qu_name,
-                    stock_qu_id=stock_qu_id,
-                    stock_qu_name=stock_qu_name,
-                    conversion_factor=1.0,
-                )
-            else:
-                rqu = await client.resolve_qu_for_product(qu_ref, product)
+            if isinstance(item, SetItem) and item.qu is None and item.new_amount != 0:
+                raise ValueError("`qu` is required unless `new_amount` is 0 (zeroing-out shortcut).")
+            rqu = await client.resolve_qu_for_product(item.qu, product)
             input_amount = item.new_amount if isinstance(item, SetItem) else item.amount
             stock_amount = input_amount * rqu.conversion_factor
 
@@ -654,7 +641,7 @@ def register_batch_tools(
                 amount_delta=amount_delta,
                 new_amount=new_amount,
                 qu_name=rqu.name,
-                stock_qu_name=rqu.stock_qu_name if rqu.conversion_factor != 1.0 else None,
+                stock_qu_name=rqu.stock_qu_name,
                 location_name=location_name,
                 entry_id=entry_id,
                 best_before_date=applied_best_before_date,
@@ -1163,7 +1150,7 @@ def register_batch_tools(
                 amount_delta=None,
                 new_amount=None,
                 qu_name=rqu.name,
-                stock_qu_name=rqu.stock_qu_name if rqu.conversion_factor != 1.0 else None,
+                stock_qu_name=rqu.stock_qu_name,
                 location_name=location_name,
             )
         except Exception as e:

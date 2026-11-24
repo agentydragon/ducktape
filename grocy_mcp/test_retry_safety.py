@@ -139,6 +139,29 @@ async def test_stock_add_uses_resolved_shelf_life_and_refreshes_on_next_call(
         assert (products.calls.call_count, locations.calls.call_count) == (index, index)
 
 
+async def test_one_to_one_transfer_reports_stock_unit(mcp_client: tuple[Client, respx.Router]) -> None:
+    client, router = mcp_client
+    products = router.get("/objects/products").respond(json=PRODUCTS)
+    locations = router.get("/objects/locations").respond(json=[*LOCATIONS, {"id": "2", "name": "Fridge"}])
+    router.get("/objects/quantity_units").respond(json=[QUS[0], {"id": 3, "name": "single pack"}])
+    router.get("/objects/quantity_unit_conversions_resolved").respond(
+        json=[{"from_qu_id": 3, "to_qu_id": 1, "product_id": 1, "factor": 1}]
+    )
+    transfer = router.post("/stock/products/1/transfer").respond(json=ADD_RESPONSE)
+    saved = unwrap_result(
+        await client.call_tool(
+            "stock_transfer",
+            {"product": 1, "amount": 3, "qu": "single pack", "from_location": "TestLoc", "to_location": 2},
+        )
+    )
+    assert saved["kind"] == "ok", saved
+    assert saved["qu_name"] == "single pack"
+    assert saved.get("stock_qu_name") == "pieces"
+    body = json.loads(transfer.calls.last.request.content)
+    assert (body["location_id_from"], body["location_id_to"], body["amount"]) == (1, 2, 3)
+    assert (products.calls.call_count, locations.calls.call_count) == (1, 1)
+
+
 async def test_stock_edit_lost_reply_reports_uncertain_outcome(mcp_client: tuple[Client, respx.Router]) -> None:
     client, router = mcp_client
     path = "/stock/entry/7"

@@ -100,13 +100,13 @@ async def test_resolve_location_unknown(grocy_client: GrocyClient) -> None:
 async def test_qu_for_product_global_conversion(grocy_client: GrocyClient) -> None:
     """Crate -> Kilogram has a global conversion (factor 24). Works for Rice."""
     result = await grocy_client.resolve_qu_for_product("Crate", PRODUCTS[0])
-    assert result == ResolvedQU(id=7, name="Crate", stock_qu_id=3, stock_qu_name="Kilogram", conversion_factor=24.0)
+    assert result == ResolvedQU(name="Crate", stock_qu_name="Kilogram", conversion_factor=24.0)
 
 
 async def test_qu_for_product_specific_conversion(grocy_client: GrocyClient) -> None:
     """Liter -> Kilogram has a product-specific conversion for Rice (factor 0.8)."""
     result = await grocy_client.resolve_qu_for_product("Liter", PRODUCTS[0])
-    assert result == ResolvedQU(id=5, name="Liter", stock_qu_id=3, stock_qu_name="Kilogram", conversion_factor=0.8)
+    assert result == ResolvedQU(name="Liter", stock_qu_name="Kilogram", conversion_factor=0.8)
 
 
 async def test_qu_for_product_no_conversion(grocy_client: GrocyClient) -> None:
@@ -137,7 +137,6 @@ async def test_product_specific_conversion_overrides_global(httpx2_mock: respx.R
     ]
 
     router = httpx2_mock
-    router.get("/objects/products").respond(json=PRODUCTS)
     router.get("/objects/quantity_units").respond(json=QUS)
     router.get("/objects/quantity_unit_conversions_resolved").respond(json=conversions_with_global)
 
@@ -147,18 +146,11 @@ async def test_product_specific_conversion_overrides_global(httpx2_mock: respx.R
     assert result.conversion_factor == 0.8
 
 
-@pytest.mark.parametrize(
-    ("entity_type", "entity_id", "expected"),
-    [
-        (EntityType.PRODUCT, 1, "Rice"),
-        (EntityType.PRODUCT, 999, "id=999"),
-        (EntityType.LOCATION, 2, "Fridge"),
-        (EntityType.QUANTITY_UNIT, 3, "Kilogram"),
-    ],
-    ids=["product", "missing-product", "location", "qu"],
-)
-async def test_entity_name(grocy_client: GrocyClient, entity_type: EntityType, entity_id: int, expected: str) -> None:
-    assert await grocy_client.entity_name(entity_type, entity_id) == expected
+async def test_implicit_stock_unit_keeps_missing_unit_id(grocy_client: GrocyClient) -> None:
+    product = {**PRODUCTS[0], "qu_id_stock": 99}
+    assert await grocy_client.resolve_qu_for_product(None, product) == ResolvedQU(
+        name="id=99", stock_qu_name=None, conversion_factor=1.0
+    )
 
 
 async def test_entity_operations_fetch_fresh_per_call(httpx2_mock: respx.Router) -> None:

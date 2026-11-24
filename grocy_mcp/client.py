@@ -27,10 +27,9 @@ logger = logging.getLogger(__name__)
 class ResolvedQU:
     """A resolved QU reference with optional conversion to stock QU."""
 
-    id: int
     name: str
-    stock_qu_id: int
-    stock_qu_name: str
+    stock_qu_name: str | None
+    """Stock unit when the input unit differs, including one-to-one conversions."""
     conversion_factor: float
     """Factor to multiply input amount by to get stock QU amount.
     1.0 when the input QU is the stock QU."""
@@ -82,10 +81,6 @@ class GrocyClient(httpx2.AsyncClient):
         rows = await self.entities_by_id(entity_type)
         return rows[resolve_entity_id(entity_type, ref, rows)]
 
-    async def entity_name(self, entity_type: EntityType, entity_id: int) -> str:
-        """Look up a name by ID, returning ``id=N`` when it is absent."""
-        return _entity_name(await self.entities_by_id(entity_type), entity_id)
-
     async def entity_name_map(self, entity_type: EntityType) -> dict[int, str]:
         """Return ``{id: name}`` for an entity type."""
         by_id = await self.entities_by_id(entity_type)
@@ -97,19 +92,17 @@ class GrocyClient(httpx2.AsyncClient):
         rows: list[dict[str, Any]] = response.json()
         return rows
 
-    async def resolve_qu_for_product(self, qu_ref: int | str, product: dict[str, Any]) -> ResolvedQU:
+    async def resolve_qu_for_product(self, qu_ref: int | str | None, product: dict[str, Any]) -> ResolvedQU:
         """Resolve a QU and validate or convert it for a product's stock QU."""
         units = await self.entities_by_id(EntityType.QUANTITY_UNIT)
-        unit_id = resolve_entity_id(EntityType.QUANTITY_UNIT, qu_ref, units)
-        unit_name = str(units[unit_id]["name"])
-        product_id = int(product["id"])
         stock_qu_id = int(product["qu_id_stock"])
         stock_qu_name = _entity_name(units, stock_qu_id)
+        unit_id = stock_qu_id if qu_ref is None else resolve_entity_id(EntityType.QUANTITY_UNIT, qu_ref, units)
         if unit_id == stock_qu_id:
-            return ResolvedQU(
-                id=unit_id, name=unit_name, stock_qu_id=stock_qu_id, stock_qu_name=stock_qu_name, conversion_factor=1.0
-            )
+            return ResolvedQU(name=stock_qu_name, stock_qu_name=None, conversion_factor=1.0)
 
+        unit_name = str(units[unit_id]["name"])
+        product_id = int(product["id"])
         conversions = await self._fetch_conversions()
         factor: float | None = None
         for conversion in conversions:
@@ -123,13 +116,7 @@ class GrocyClient(httpx2.AsyncClient):
                 factor = float(conversion["factor"])
 
         if factor is not None:
-            return ResolvedQU(
-                id=unit_id,
-                name=unit_name,
-                stock_qu_id=stock_qu_id,
-                stock_qu_name=stock_qu_name,
-                conversion_factor=factor,
-            )
+            return ResolvedQU(name=unit_name, stock_qu_name=stock_qu_name, conversion_factor=factor)
 
         available_from_qus: set[str] = set()
         for conversion in conversions:

@@ -366,19 +366,40 @@ async def test_stock_get_reports_each_physical_location(mcp_client: Client, ref_
     assert await call_tool(mcp_client, "stock_get", {"products": [other]}) == []
 
 
-async def test_stock_operations(mcp_client: Client, ref_data: RefData) -> None:
+async def _create_pack_unit(http: GrocyClient, product_id: int, name: str, factor: int) -> int:
+    unit = await http.post("/objects/quantity_units", json={"name": name, "name_plural": f"{name}s"})
+    unit.raise_for_status()
+    unit_id = int(unit.json()["created_object_id"])
+    product = await http.get(f"/objects/products/{product_id}")
+    product.raise_for_status()
+    conversion = await http.post(
+        "/objects/quantity_unit_conversions",
+        json={
+            "product_id": product_id,
+            "from_qu_id": unit_id,
+            "to_qu_id": product.json()["qu_id_stock"],
+            "factor": factor,
+        },
+    )
+    conversion.raise_for_status()
+    return unit_id
+
+
+async def test_stock_operations(mcp_client: Client, grocy_http_client: GrocyClient, ref_data: RefData) -> None:
     """Add, consume, set stock; verify amounts via stock_get and stock_entries."""
     product = ref_data.products[0]
     qu = ref_data.qu
     loc = ref_data.location
 
-    # Add stock
+    # Each pack contains one stock unit. Journal amounts are still in stock units.
+    pack = f"SinglePack-{ref_data.suffix}"
+    pack_id = await _create_pack_unit(grocy_http_client, ref_data.product_ids[0], pack, factor=1)
     ops = await call_tool(
-        mcp_client, "stock_add", {"items": [{"product": product, "amount": 5, "qu": qu, "location": loc}]}
+        mcp_client, "stock_add", {"items": [{"product": product, "amount": 5, "qu": pack_id, "location": loc}]}
     )
-    assert ops[0]["kind"] == "ok"
-    assert ops[0]["new_amount"] == 5.0
-    assert ops[0]["qu_name"] == qu
+    assert ops[0]["kind"] == "ok", ops
+    assert (ops[0]["amount_delta"], ops[0]["new_amount"]) == (5, 5)
+    assert (ops[0]["qu_name"], ops[0]["stock_qu_name"]) == (pack, qu)
     assert ops[0]["location_name"] == loc
 
     # Get stock with product filter
@@ -756,7 +777,7 @@ async def test_stock_add_applies_default_best_before_days(mcp_client: Client, re
     assert await _latest_bbd() == override.isoformat()
 
 
-async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData, grocy_base_url: str) -> None:
+async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData, grocy_http_client: GrocyClient) -> None:
     """Add items (product-linked, note-only, product+note), get list, edit item, remove item."""
     product = ref_data.products[0]
 
@@ -783,25 +804,9 @@ async def test_shopping_list_operations(mcp_client: Client, ref_data: RefData, g
     sl_item_id = sl_results[0]["item_id"]
 
     # Choose a shopping unit that contains six stock units, as a user can in Grocy.
-    cases = await call_tool(
-        mcp_client, "quantity_units_create", {"items": [{"name": f"Case-{ref_data.suffix}", "name_plural": "cases"}]}
-    )
-    case_id = cases[0]["created_object_id"]
-    async with httpx.AsyncClient(base_url=f"{grocy_base_url}/api") as http:
-        product_row = await http.get(f"/objects/products/{ref_data.product_ids[0]}")
-        product_row.raise_for_status()
-        conversion = await http.post(
-            "/objects/quantity_unit_conversions",
-            json={
-                "product_id": ref_data.product_ids[0],
-                "from_qu_id": case_id,
-                "to_qu_id": product_row.json()["qu_id_stock"],
-                "factor": 6,
-            },
-        )
-        conversion.raise_for_status()
-        updated = await http.put(f"/objects/shopping_list/{sl_item_id}", json={"qu_id": case_id, "amount": 12})
-        updated.raise_for_status()
+    case_id = await _create_pack_unit(grocy_http_client, ref_data.product_ids[0], f"Case-{ref_data.suffix}", factor=6)
+    updated = await grocy_http_client.put(f"/objects/shopping_list/{sl_item_id}", json={"qu_id": case_id, "amount": 12})
+    updated.raise_for_status()
 
     # Get shopping list — verify items present
     sl_data = await call_tool(mcp_client, "shopping_list_get", {"shopping_list": 1})
