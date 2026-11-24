@@ -143,5 +143,5 @@ features, would require these separate links:
 This is a proposed decomposition, not a demonstrated translation to Lean or
 an estimate of implementation effort. Extracting the IR provides a concrete
 input to a bridge, but this spike found no existing proof-assistant bridge and
-built none. In particular, the current `MiniJS` proof is a proof about a small
-separate language, not an ESMeta-to-ECMAScript correspondence.
+built none. The splitter’s [CoreJS proof](../../proof_fixture/README.md) uses its own
+model and has no formal correspondence to ESMeta.
