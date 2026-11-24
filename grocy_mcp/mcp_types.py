@@ -94,7 +94,7 @@ DUE_TYPE_DESC = (
 PARENT_PRODUCT_DESC = (
     "Parent product. Name or ID. Marks this product as a **variant / sub-product** of the "
     "parent — e.g. two brands of milk both sharing a generic `Milk` parent. This unlocks: "
-    "(a) stock aggregation — `stock_get` and the overview roll every variant's amount (with "
+    "(a) stock aggregation — Grocy's product overview rolls every variant's amount (with "
     "QU conversion) into the parent's row; (b) substitution on consume — `stock_consume` "
     "with `allow_subproduct_substitution=True` on the parent falls back to any variant "
     "when the parent itself is short (FIFO across variants); (c) shared low-stock rules "
@@ -155,11 +155,11 @@ class GetError(GetResultBase):
 
 
 class StockEntry(BaseModel):
-    """Compact stock overview entry. Names always included, no nested dicts."""
+    """On-hand stock for one product at one physical location."""
 
     product_id: int
     product_name: str
-    amount: float = Field(description="Total on-hand in the stock QU, including the opened subset.")
+    amount: float = Field(description="On-hand at this location in the stock QU, including the opened subset.")
     amount_opened: float = Field(description="Subset of `amount` already marked opened; do not add it to `amount`.")
     qu_name: str
     location_name: str

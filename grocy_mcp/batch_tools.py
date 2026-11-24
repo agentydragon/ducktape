@@ -13,6 +13,7 @@ import functools
 import json
 import logging
 import traceback
+from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -85,40 +86,52 @@ def _parse_date(value: str | None) -> date | None:
         return None
 
 
+def _entry_is_open(entry: dict[str, Any]) -> bool:
+    return entry.get("open") in (True, 1, "1")
+
+
+def _entry_location_id(entry: dict[str, Any], product: dict[str, Any] | None) -> int:
+    location_id = entry.get("location_id")
+    if location_id is None:  # Older stock entries use the product's default location.
+        location_id = product["location_id"] if product else 0
+    return int(location_id)
+
+
 @dataclass
 class _StockEntryCatalog:
     products: dict[int, dict[str, Any]]
     unit_names: dict[int, str]
-    location_names: dict[int, str]
+    locations: dict[int, dict[str, Any]]
 
     @classmethod
     async def load(cls, client: GrocyClient) -> Self:
         products, units, locations = await asyncio.gather(
             client.entities_by_id(EntityType.PRODUCT),
             client.entity_name_map(EntityType.QUANTITY_UNIT),
-            client.entity_name_map(EntityType.LOCATION),
+            client.entities_by_id(EntityType.LOCATION),
         )
         return cls(products, units, locations)
+
+    def location_name(self, location_id: int) -> str:
+        location = self.locations.get(location_id)
+        return str(location["name"]) if location else f"id={location_id}"
 
     def describe(self, entry: dict[str, Any]) -> StockEntryDetail:
         product_id = int(entry["product_id"])
         product = self.products.get(product_id)
         product_name = str(product["name"]) if product else f"id={product_id}"
         stock_qu_id = int(product["qu_id_stock"]) if product else 0
-        loc_id = entry.get("location_id")
-        if loc_id is None:
-            loc_id = int(product["location_id"]) if product else 0
         return StockEntryDetail(
             entry_id=int(entry["id"]),
             product_id=product_id,
             product_name=product_name,
             amount=float(entry["amount"]),
             qu_name=self.unit_names.get(stock_qu_id, f"id={stock_qu_id}"),
-            location_name=self.location_names.get(int(loc_id), f"id={loc_id}"),
+            location_name=self.location_name(_entry_location_id(entry, product)),
             best_before_date=_parse_date(entry.get("best_before_date")),
             purchased_date=_parse_date(entry.get("purchased_date")),
             price=float(entry["price"]) if entry.get("price") is not None else None,
-            open=entry.get("open") in (True, 1, "1"),
+            open=_entry_is_open(entry),
             note=entry.get("note"),
         )
 
@@ -337,7 +350,7 @@ def register_batch_tools(
                 "note",
             )
         }
-        body["open"] = current.get("open") in (True, 1, "1")
+        body["open"] = _entry_is_open(current)
         body.update(item.model_dump(mode="json", include=set(body), exclude_unset=True, exclude_none=True))
         if item.location is not None:
             body["location_id"] = await _resolve_id(client, EntityType.LOCATION, item.location)
@@ -490,7 +503,7 @@ def register_batch_tools(
         ],
         client: GrocyClient = client_dependency,
     ) -> list[StockEntry]:
-        """Aggregate stock-on-hand: product, amount, QU, location, best-before.
+        """Return one row per product and physical storage location, with its amount, stock QU and earliest best-before date.
 
         Answers "what's in stock?" Filters AND together; pass empty lists
         (the default) for the whole inventory. Use this before
@@ -501,45 +514,36 @@ def register_batch_tools(
         includes `amount_opened`; the opened amount is a subset, not an
         additional bucket.
         """
-        stock_r, qu_names, location_names = await asyncio.gather(
-            _get_with_retry(client, "/stock"),
-            client.entity_name_map(EntityType.QUANTITY_UNIT),
-            client.entity_name_map(EntityType.LOCATION),
+        stock, catalog = await asyncio.gather(
+            _get_with_retry(client, "/objects/stock"), _StockEntryCatalog.load(client)
         )
-        stock_data: list[dict[str, Any]] = stock_r.json()
+        product_ids = {resolve_entity_ref(EntityType.PRODUCT, ref, catalog.products).id for ref in products}
+        location_ids = {resolve_entity_ref(EntityType.LOCATION, ref, catalog.locations).id for ref in locations}
 
-        product_ids: set[int] = set()
-        for ref in products:
-            product_ids.add(await _resolve_id(client, EntityType.PRODUCT, ref))
-        location_ids: set[int] = set()
-        for ref in locations:
-            location_ids.add(await _resolve_id(client, EntityType.LOCATION, ref))
+        lots: defaultdict[tuple[int, int], list[dict[str, Any]]] = defaultdict(list)
+        for entry in stock.json():
+            product_id = int(entry["product_id"])
+            product = catalog.products.get(product_id)
+            if product is None or not int(product.get("active", 1)) or (product_ids and product_id not in product_ids):
+                continue
+            location_id = _entry_location_id(entry, product)
+            if not location_ids or location_id in location_ids:
+                lots[product_id, location_id].append(entry)
 
         result = []
-        for entry in stock_data:
-            pid = int(entry["product_id"])
-            if product_ids and pid not in product_ids:
-                continue
-
-            product = entry.get("product") or {}
-            loc_id_raw = product.get("location_id")
-            loc_id = int(loc_id_raw) if loc_id_raw is not None else None
-
-            if location_ids and (loc_id is None or loc_id not in location_ids):
-                continue
-
-            qu_name = _lookup_name(product, "qu_id_stock", qu_names)
-            location_name = _lookup_name(product, "location_id", location_names)
-
+        for (product_id, location_id), entries in sorted(lots.items()):
+            product = catalog.products[product_id]
+            dates = (_parse_date(entry.get("best_before_date")) for entry in entries)
+            unit_id = int(product["qu_id_stock"])
             result.append(
                 StockEntry(
-                    product_id=pid,
-                    product_name=str(product.get("name", f"product_id={pid}")),
-                    amount=float(entry["amount"]),
-                    amount_opened=float(entry["amount_opened"]),
-                    qu_name=qu_name,
-                    location_name=location_name,
-                    best_before_date=_parse_date(entry.get("best_before_date")),
+                    product_id=product_id,
+                    product_name=str(product["name"]),
+                    amount=sum(float(entry["amount"]) for entry in entries),
+                    amount_opened=sum(float(entry["amount"]) for entry in entries if _entry_is_open(entry)),
+                    qu_name=catalog.unit_names.get(unit_id, f"id={unit_id}"),
+                    location_name=catalog.location_name(location_id),
+                    best_before_date=min(filter(None, dates), default=None),
                 )
             )
         return result

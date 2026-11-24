@@ -317,6 +317,55 @@ async def test_entity_update_patch_semantics(mcp_client: Client, ref_data: RefDa
     assert cleared["disable_open"] == after["disable_open"]
 
 
+async def test_stock_get_reports_each_physical_location(mcp_client: Client, ref_data: RefData) -> None:
+    product, other = ref_data.products
+    pantry = ref_data.location
+    fridge = f"Fridge-{ref_data.suffix}"
+    [location] = await call_tool(mcp_client, "locations_create", {"items": [{"name": fridge}]})
+    fridge_id = location["created_object_id"]
+    [variant] = await call_tool(mcp_client, "products_edit", {"items": [{"product": other, "parent_product": product}]})
+    assert variant["kind"] == "ok", variant
+    for name, place, amount, due in (
+        (product, pantry, 2, "2030-03-05"),
+        (product, fridge, 1, "2030-04-10"),
+        (product, fridge, 2, "2030-04-02"),
+        (other, fridge, 4, "2031-01-01"),
+    ):
+        [purchase] = await call_tool(
+            mcp_client,
+            "stock_add",
+            {
+                "items": [
+                    {"product": name, "qu": ref_data.qu, "location": place, "amount": amount, "best_before_date": due}
+                ]
+            },
+        )
+        assert purchase["kind"] == "ok", purchase
+        if due == "2030-04-02":
+            [edit] = await call_tool(
+                mcp_client, "stock_entry_edit", {"items": [{"entry_id": purchase["entry_id"], "open": True}]}
+            )
+            assert edit["kind"] == "ok", edit
+
+    rows = await call_tool(mcp_client, "stock_get", {"products": [product]})
+    assert len(rows) == 2
+    assert {(r["location_name"], r["amount"], r["amount_opened"], r["best_before_date"]) for r in rows} == {
+        (pantry, 2, 0, "2030-03-05"),
+        (fridge, 3, 2, "2030-04-02"),
+    }
+    [filtered] = await call_tool(
+        mcp_client, "stock_get", {"products": [ref_data.product_ids[0]], "locations": [fridge_id]}
+    )
+    assert filtered == next(row for row in rows if row["location_name"] == fridge)
+    at_fridge = await call_tool(mcp_client, "stock_get", {"locations": [fridge]})
+    assert {(row["product_name"], row["amount"]) for row in at_fridge} == {(product, 3), (other, 4)}
+
+    await mcp_client.call_tool(
+        "entity_update", {"entity": "products", "objectId": ref_data.product_ids[1], "body": {"active": 0}}
+    )
+    assert await call_tool(mcp_client, "stock_get", {"products": [other]}) == []
+
+
 async def test_stock_operations(mcp_client: Client, ref_data: RefData) -> None:
     """Add, consume, set stock; verify amounts via stock_get and stock_entries."""
     product = ref_data.products[0]

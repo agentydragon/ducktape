@@ -124,8 +124,8 @@ async def test_mutating_post_not_retried_on_timeout(mcp_client: tuple[Client, re
 @pytest.mark.parametrize(
     ("tool", "args", "path", "payload", "failure"),
     [
-        ("stock_get", {}, "/stock", [], httpx2.ReadTimeout("simulated timeout")),
-        ("stock_get", {}, "/stock", [], httpx.Response(503)),
+        ("stock_get", {}, "/objects/stock", [], httpx2.ReadTimeout("simulated timeout")),
+        ("stock_get", {}, "/objects/stock", [], httpx.Response(503)),
         ("stock_entries_list", {"products": [1]}, "/stock/products/1/entries", [], httpx.Response(503)),
         ("get_below_minimum_stock", {}, "/stock/volatile", {"missing_products": []}, httpx.Response(503)),
     ],
