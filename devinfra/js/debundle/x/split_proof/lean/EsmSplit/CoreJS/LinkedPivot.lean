@@ -36,7 +36,7 @@ private theorem Access.afterUnits {w : World} {n i R A units} {s t : State w}
     obtain ⟨id, st, env⟩ := u
     obtain ⟨flow, mid, step, tail⟩ := bind_ok run
     obtain ⟨different, cells, roots, hf⟩ := frames _ List.mem_cons_self
-    have access := hf.runUnit_access (show id + 1 ≠ i + 1 by omega) (s := s)
+    have access := hf.runUnit_access (show id + 1 ≠ i + 1 from fun h => different (Nat.succ.inj h)) (s := s)
       ⟨ready.handed, roots, ready.closed⟩ step
     exact ih (fun x hx => frames x (List.mem_cons_of_mem _ hx)) ⟨access.handed, by simp, access.closed⟩ tail
 
