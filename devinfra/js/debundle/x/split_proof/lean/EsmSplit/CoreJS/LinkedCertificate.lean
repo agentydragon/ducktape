@@ -889,8 +889,9 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   let candidateData := candidateTerm.replace replace
   let s ← EsmSplit.CertificateData.quote "source" sourceData
   let c ← EsmSplit.CertificateData.quote "candidate" candidateData
+  let hasWideRecord := records.fields.any (·.length ≥ wideRecordMinFields)
   let recordTerms ← if records.fields.isEmpty then pure "" else do
-    let keys := if records.fields.any (·.length ≥ wideRecordMinFields) then
+    let keys := if hasWideRecord then
       (literalReadKeys (literalReadKeys {} sourceTerm) candidateTerm).toArray.qsort (· < ·)
     else #[]
     let definitions ← records.fields.zipIdx.toList.mapM fun (fields, index) => recordDefinitions index fields keys
@@ -933,7 +934,9 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   -- The measured 384-field and 705-field cases benefit from separate processes.
   -- Smaller proofs avoid their startup cost. Write batches use file-local CBV rules.
   let checkpoint := if premises = {} ∧ writes.batches.isEmpty ∧ expandedBytes sourceData + expandedBytes candidateData ≥ 40 * 1024 then
-      some (checkpointText preamble options (data ++ programs) (raw ++ profiles "private " ++ gate) fuel stageLink)
+      -- Wide records also benefit from staging the link below the statement cutoff.
+      some (checkpointText preamble options (data ++ programs) (raw ++ profiles "private " ++ gate) fuel
+        (stageLink || hasWideRecord))
     else none
   return { preamble, execution, correspondence, checkpoint, premises }
 
