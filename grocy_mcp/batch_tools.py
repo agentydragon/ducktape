@@ -401,6 +401,34 @@ def register_batch_tools(
         pairs = await asyncio.gather(*[_fetch(et) for et in entity_types])
         return dict(pairs)
 
+    async def _linked_row(client: GrocyClient, kind: EntityType, raw_id: object) -> dict[str, Any]:
+        if not isinstance(raw_id, (int, str)) or isinstance(raw_id, bool):
+            return {}
+        try:
+            object_id = int(raw_id)
+            if object_id > 0:
+                async with sem:
+                    response = await client.get(f"/objects/{kind}/{object_id}")
+                    response.raise_for_status()
+                row = response.json()
+                if isinstance(row, dict) and str(row.get("id")) == str(object_id):
+                    return row
+        except httpx2.HTTPError, ValueError:
+            pass  # Linked names are optional. Keep the shopping row.
+        return {}
+
+    def _row_name(row: dict[str, Any]) -> str | None:
+        name = row.get("name")
+        return name if isinstance(name, str) and name.strip() else None
+
+    async def _shopping_product_and_unit(
+        client: GrocyClient, product_id: object
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        product = await _linked_row(client, EntityType.PRODUCT, product_id)
+        # Grocy stores amount in stock units. The row's qu_id only selects its display unit.
+        unit = await _linked_row(client, EntityType.QUANTITY_UNIT, product.get("qu_id_stock"))
+        return product, unit
+
     @mcp.tool()
     async def entities_get(
         entity_type: GettableEntityType,
@@ -416,26 +444,6 @@ def register_batch_tools(
         results also include available names for the linked product, list and unit.
         """
 
-        async def _linked_row(kind: EntityType, raw_id: object) -> dict[str, Any]:
-            if not isinstance(raw_id, (int, str)) or isinstance(raw_id, bool):
-                return {}
-            try:
-                object_id = int(raw_id)
-                if object_id > 0:
-                    async with sem:
-                        response = await client.get(f"/objects/{kind}/{object_id}")
-                        response.raise_for_status()
-                    row = response.json()
-                    if isinstance(row, dict) and str(row.get("id")) == str(object_id):
-                        return row
-            except httpx2.HTTPError, ValueError:
-                pass  # Linked names are optional. Keep the shopping row.
-            return {}
-
-        def _name(row: dict[str, Any]) -> str | None:
-            name = row.get("name")
-            return name if isinstance(name, str) and name.strip() else None
-
         async def _fetch(object_id: int) -> GetOk:
             async def _do() -> dict[str, Any]:
                 r = await client.get(f"/objects/{entity_type}/{object_id}")
@@ -446,14 +454,12 @@ def register_batch_tools(
             data = await _retry(_do)
             names = None
             if entity_type == "shopping_list":
-                product, shopping_list = await asyncio.gather(
-                    _linked_row(EntityType.PRODUCT, data.get("product_id")),
-                    _linked_row(EntityType.SHOPPING_LIST, data.get("shopping_list_id")),
+                (product, unit), shopping_list = await asyncio.gather(
+                    _shopping_product_and_unit(client, data.get("product_id")),
+                    _linked_row(client, EntityType.SHOPPING_LIST, data.get("shopping_list_id")),
                 )
-                # Grocy stores amount in stock units. The row's qu_id only selects its display unit.
-                unit = await _linked_row(EntityType.QUANTITY_UNIT, product.get("qu_id_stock"))
                 names = ShoppingItemNames(
-                    product_name=_name(product), list_name=_name(shopping_list), unit_name=_name(unit)
+                    product_name=_row_name(product), list_name=_row_name(shopping_list), unit_name=_row_name(unit)
                 )
             return GetOk(entity_type=entity_type, object_id=object_id, data=data, shopping_item_names=names)
 
@@ -1188,11 +1194,16 @@ def register_batch_tools(
                 names[pid] = str(product["name"]), units.get(unit_id, f"id={unit_id}")
         return names
 
-    async def _shopping_product_info(client: GrocyClient, product_id: Any) -> tuple[str | None, str | None]:
-        if product_id is None:
-            return None, None
-        pid = int(product_id)
-        return (await _shopping_products(client, {pid}))[pid]
+    async def _shopping_receipt(client: GrocyClient, item_id: int, item: dict[str, Any]) -> ShoppingListItemOk:
+        product_id = item.get("product_id")
+        product, unit = await _shopping_product_and_unit(client, product_id)
+        unit_id = product.get("qu_id_stock")
+        return ShoppingListItemOk(
+            item_id=item_id,
+            amount=float(item.get("amount", 1)),
+            product_name=_row_name(product) or (f"id={product_id}" if product_id is not None else None),
+            qu_name=_row_name(unit) or (f"id={unit_id}" if unit_id is not None else None),
+        )
 
     async def _shopping_list_items(client: GrocyClient, list_id: int) -> list[dict[str, Any]]:
         r = await client.get("/objects/shopping_list")
@@ -1266,12 +1277,8 @@ def register_batch_tools(
         async def _add(item: ShoppingItem) -> ShoppingListItemOk:
             list_id = await _resolve_id(client, EntityType.SHOPPING_LIST, item.shopping_list)
             body: dict[str, Any] = {"shopping_list_id": list_id, "amount": item.amount}
-            product_name = None
-            qu_name = None
             if item.product is not None:
-                product_id = await _resolve_id(client, EntityType.PRODUCT, item.product)
-                body["product_id"] = product_id
-                product_name, qu_name = await _shopping_product_info(client, product_id)
+                body["product_id"] = await _resolve_id(client, EntityType.PRODUCT, item.product)
             if item.note is not None:
                 body["note"] = item.note
 
@@ -1281,7 +1288,7 @@ def register_batch_tools(
                 return int(r.json().get("created_object_id", 0))
 
             item_id = await _retry_mutation(_do, describe=f"add item to shopping list {item.shopping_list!r}")
-            return ShoppingListItemOk(item_id=item_id, product_name=product_name, amount=item.amount, qu_name=qu_name)
+            return await _shopping_receipt(client, item_id, body)
 
         return await _ordered_batch(
             items, "items", _add, lambda _item, exc: ShoppingListItemError(error=_format_exc(exc))
@@ -1329,11 +1336,7 @@ def register_batch_tools(
             r = await client.put(f"/objects/shopping_list/{item_id}", json=body)
             r.raise_for_status()
 
-            product_name, qu_name = await _shopping_product_info(client, body.get("product_id"))
-
-            return ShoppingListItemOk(
-                item_id=item_id, product_name=product_name, amount=float(body.get("amount", 1)), qu_name=qu_name
-            )
+            return await _shopping_receipt(client, item_id, body)
         except Exception as e:
             return ShoppingListItemError(error=_format_exc(e))
 
@@ -1361,11 +1364,7 @@ def register_batch_tools(
             r = await client.delete(f"/objects/shopping_list/{item_id}")
             r.raise_for_status()
 
-            product_name, qu_name = await _shopping_product_info(client, item.get("product_id"))
-
-            return ShoppingListItemOk(
-                item_id=item_id, product_name=product_name, amount=float(item.get("amount", 1)), qu_name=qu_name
-            )
+            return await _shopping_receipt(client, item_id, item)
 
         return await _ordered_batch(
             item_ids, "item_ids", _remove, lambda _item, exc: ShoppingListItemError(error=_format_exc(exc))

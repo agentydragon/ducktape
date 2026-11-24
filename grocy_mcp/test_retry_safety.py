@@ -164,6 +164,36 @@ async def test_shopping_list_catalogs_are_read_once_per_report(mcp_client: tuple
     assert (products.calls.call_count, units.calls.call_count) == (2, 1)
 
 
+@pytest.mark.parametrize("tool", ["shopping_list_items_add", "shopping_list_item_edit", "shopping_list_items_remove"])
+async def test_shopping_write_survives_unavailable_names(tool: str, mcp_client: tuple[Client, respx.Router]) -> None:
+    client, router = mcp_client
+    path = "/objects/shopping_list/12"
+    router.get(path).respond(json={"id": 12, "product_id": "1", "amount": "3", "note": "Back shelf", "done": 0})
+    router.get("/objects/products/1").respond(json=PRODUCTS[0])
+    router.get("/objects/quantity_units/1").respond(status_code=503)
+    if tool == "shopping_list_items_add":
+        router.get("/objects/shopping_lists").respond(json=[{"id": 1, "name": "Weekly"}])
+        mutation = router.post("/objects/shopping_list").respond(json={"created_object_id": 12})
+        arguments: dict[str, object] = {"items": [{"shopping_list": 1, "product": 1, "amount": 3}]}
+    elif tool == "shopping_list_item_edit":
+        mutation = router.put(path).respond(status_code=204)
+        arguments = {"item_id": 12, "done": True}
+    else:
+        mutation = router.delete(path).respond(status_code=204)
+        arguments = {"item_ids": [12]}
+
+    result = unwrap_result(await client.call_tool(tool, arguments))
+    receipt = result[0] if isinstance(result, list) else result
+    assert mutation.calls.call_count == 1
+    assert receipt["kind"] == "ok", receipt
+    assert (receipt["item_id"], receipt["amount"], receipt["product_name"], receipt["qu_name"]) == (
+        12,
+        3,
+        "TestProduct",
+        "id=1",
+    )
+
+
 async def test_low_stock_report_survives_unavailable_locations(mcp_client: tuple[Client, respx.Router]) -> None:
     client, router = mcp_client
     router.get("/stock/volatile").respond(
