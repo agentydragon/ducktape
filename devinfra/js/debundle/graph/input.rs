@@ -7,7 +7,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use source_identity::SourceUnitId;
 
-use super::{DependencyEdgeId, DependencyGraph, UnresolvedDependencyEdgeEndpoint};
+use super::{DependencyEdgeId, DependencyGraph, GraphReportIdError};
 use crate::DependencyGraphReport;
 
 /// Immutable graph input shared by inspection, planning and edit validation.
@@ -34,9 +34,7 @@ impl DependencyGraphInput {
             .with_context(|| format!("reconstructing dependency graph {}", path.display()))
     }
 
-    pub fn from_report(
-        report: DependencyGraphReport,
-    ) -> Result<Self, UnresolvedDependencyEdgeEndpoint> {
+    pub fn from_report(report: DependencyGraphReport) -> Result<Self, GraphReportIdError> {
         let (graph, source_units_by_report_id) = DependencyGraph::from_report(&report)?;
         Ok(Self {
             report,

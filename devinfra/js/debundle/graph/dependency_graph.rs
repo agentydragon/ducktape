@@ -160,19 +160,21 @@ impl DependencyGraph {
     /// The gate only uses them as opaque identifiers in its evidence
     /// listing.
     ///
-    /// Errors with [`UnresolvedDependencyEdgeEndpoint`] when an edge
+    /// Errors with [`GraphReportIdError`] when an edge
     /// references a source unit id missing from the report's node table —
     /// a malformed or version-skewed `dependency_graph.json.gz`. Silently
     /// dropping such edges would hand the planner-side gate a weaker
     /// graph than the one the report described.
     pub(super) fn from_report(
         report: &crate::DependencyGraphReport,
-    ) -> Result<(Self, HashMap<String, SourceUnitId>), UnresolvedDependencyEdgeEndpoint> {
+    ) -> Result<(Self, HashMap<String, SourceUnitId>), GraphReportIdError> {
         let mut by_id = HashMap::with_capacity(report.nodes.len());
         let mut nodes = Vec::with_capacity(report.nodes.len());
         for row in &report.nodes {
             let id = SourceUnitId(nodes.len());
-            by_id.insert(row.id.clone(), id);
+            if by_id.insert(row.id.clone(), id).is_some() {
+                return Err(GraphReportIdError::DuplicateNode { id: row.id.clone() });
+            }
             nodes.push(SourceUnit {
                 id,
                 statement_ordinal: row.statement_ordinal,
@@ -192,7 +194,7 @@ impl DependencyGraph {
             by_id
                 .get(endpoint)
                 .copied()
-                .ok_or_else(|| UnresolvedDependencyEdgeEndpoint {
+                .ok_or_else(|| GraphReportIdError::MissingEndpoint {
                     edge_id: row_id.to_owned(),
                     endpoint: endpoint.to_owned(),
                 })
@@ -280,15 +282,13 @@ impl DependencyGraph {
     }
 }
 
-/// A dependency graph report references a source unit absent from its node
-/// table. See [`super::DependencyGraphInput::from_report`].
+/// A saved graph cannot map a report ID to one source unit.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error(
-    "dependency-graph edge {edge_id} references source-unit ID {endpoint} which is not in the report's node table \
-     (malformed or version-skewed dependency_graph.json.gz)"
-)]
-pub struct UnresolvedDependencyEdgeEndpoint {
-    pub edge_id: String,
-    /// The source unit id (e.g. `unit:42`) that didn't resolve.
-    pub endpoint: String,
+pub enum GraphReportIdError {
+    #[error("dependency graph repeats source-unit ID {id}")]
+    DuplicateNode { id: String },
+    #[error(
+        "dependency-graph edge {edge_id} references source-unit ID {endpoint} which is not in the report's node table (malformed or version-skewed dependency_graph.json.gz)"
+    )]
+    MissingEndpoint { edge_id: String, endpoint: String },
 }

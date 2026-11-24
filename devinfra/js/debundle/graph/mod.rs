@@ -7,7 +7,7 @@
 //!   [`DependencyEdge`], [`DependencyEdgeId`]).
 //! - [`dependency_graph`] — the [`DependencyGraph`] IR and [`SourceUnit`] rows;
 //!   their dense IDs are `source_identity::SourceUnitId`. It also provides JSON
-//!   recovery ([`DependencyGraphInput`], [`UnresolvedDependencyEdgeEndpoint`]).
+//!   recovery ([`DependencyGraphInput`], [`GraphReportIdError`]).
 //! - [`build`] — dependency-graph construction ([`build_dependency_graph_with`],
 //!   at-init call promotion, the S-chain).
 //! - [`quotient`] — module-level edge projection ([`EndpointView`],
@@ -36,8 +36,7 @@ pub use build::{
 };
 pub use commutation_order::{CommutationOrder, PreservedOrder, TemporalConstraint, TemporalEdge};
 pub use dependency_graph::{
-    AppliedCommutingPremise, DependencyGraph, SourceUnit, SourceUnitClass,
-    UnresolvedDependencyEdgeEndpoint,
+    AppliedCommutingPremise, DependencyGraph, GraphReportIdError, SourceUnit, SourceUnitClass,
 };
 pub use edge::{
     BindingTimelineOrder, CellConflict, CellEffectClass, CellOverlapReport, DependencyEdge,
