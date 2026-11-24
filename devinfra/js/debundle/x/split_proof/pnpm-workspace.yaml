@@ -1,0 +1,5 @@
+packages:
+  - translation
+  - integration/library_splits
+
+allowBuilds: {}

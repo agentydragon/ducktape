@@ -5,7 +5,7 @@
 /lowering/example.json
 /lowering/torture.json
 # Standalone npm manifests copied from package.json.in.
-/lowering/package.json
+/integration/library_splits/package.json
 /debundle_cases/package.json
 /translation/package.json
 /model/package.json

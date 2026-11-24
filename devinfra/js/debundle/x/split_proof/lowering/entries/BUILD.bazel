@@ -1,7 +1,0 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library")
-
-js_library(
-    name = "real_bundle_entries",
-    srcs = glob(["*.mjs"]),
-    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
-)

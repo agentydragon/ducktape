@@ -5,10 +5,10 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
-import { lowerDump } from "./annotated_estree.mjs";
+import { lowerDump } from "../../translation/annotated_estree.mjs";
 
 const [output, ...requested] = process.argv.slice(2);
-if (!output) throw new Error("usage: prepare_real_bundles <output dir> [bundle ...]");
+if (!output) throw new Error("usage: prepare <output dir> [bundle ...]");
 const directory = path.resolve(output);
 const stems = ["lodash", "acorn", "zod", "semver"].flatMap((name) => [name, `${name}.min`]);
 await mkdir(directory, { recursive: true });
@@ -17,7 +17,7 @@ for (const variant of requested.length ? requested : stems) {
   const name = variant.replace(/\.min$/, "");
   const minify = variant !== name;
   const stem = path.join(directory, variant);
-  const entry = new URL(`../lowering/entries/${name}.mjs`, import.meta.url);
+  const entry = new URL(`./entries/${name}.mjs`, import.meta.url);
   const { outputFiles } = await build({
     stdin: {
       contents: await readFile(entry, "utf8"),

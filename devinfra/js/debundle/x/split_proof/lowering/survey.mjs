@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import * as acorn from "acorn";
+import { acorn } from "../translation/bazel_parser.mjs";
 import { statementShape } from "./statement_shape.mjs";
 
 for (const f of ["lodash", "acorn", "semver", "zod", "acorn.min", "zod.min"]) {

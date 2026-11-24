@@ -3,7 +3,10 @@
 # gazelle:exclude fuzz
 
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_run_binary")
+load("@npm_split_proof//:defs.bzl", "npm_link_all_packages")
 load("//devinfra/lint:linters.bzl", "eslint_test")
+
+npm_link_all_packages(name = "node_modules")
 
 exports_files(
     [

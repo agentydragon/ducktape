@@ -5,7 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 importers:
-  .:
+  .: {}
+
+  translation:
     dependencies:
       acorn:
         specifier: 8.19.0
@@ -28,6 +30,15 @@ importers:
       shift-parser:
         specifier: 8.0.0
         version: 8.0.0
+
+  integration/library_splits:
+    dependencies:
+      acorn:
+        specifier: 8.19.0
+        version: 8.19.0
+      eslint-scope:
+        specifier: 9.1.2
+        version: 9.1.2
       lodash-es:
         specifier: 4.18.1
         version: 4.18.1
@@ -187,6 +198,8 @@ snapshots:
   shift-fuzzer@3.0.0:
     dependencies:
       shift-ast: 7.0.0
+      # shift-fuzzer imports shift-parser/src/utils.js but omits it from its manifest.
+      shift-parser: 8.0.0
 
   shift-parser@8.0.0:
     dependencies:

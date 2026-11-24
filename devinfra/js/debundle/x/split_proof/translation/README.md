@@ -120,7 +120,7 @@ bbr test //devinfra/js/debundle/x/split_proof/translation:fixtures_test
 
 The Bazel fixture driver uses Node to parse and pair each fixture and checks the Lean checker's verdict for each base case, output variant and generated mutation. The fixture suite checks verdicts. The differential fuzzer described above runs accepted trees in Node and compares their behavior with their bundles.
 
-The package-local `pnpm-lock.yaml` pins the parsers, fuzzer dependencies, and public benchmark libraries. The standalone `package-lock.json` is used by research scripts outside Bazel.
+The [split-proof pnpm lock](../pnpm-lock.yaml) pins the parsers and fuzzer dependencies for this package and the benchmark libraries for the integration suite. The standalone `package-lock.json` is used by research scripts outside Bazel.
 
 Run a seeded sample of the differential fuzzer on demand:
 
