@@ -80,7 +80,6 @@ _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean
         "optional_callee_test",
         "optional_chain_test",
         "pre_super_test",
-        "provider_programs_test",
         "realm_constructors_test",
         "record_prefix_test",
         "record_values_test",
@@ -103,6 +102,15 @@ _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean
         "wide_table_reversal_test",
     ]
 ]
+
+js_test(
+    name = "provider_programs_test",
+    size = "medium",
+    data = _TEST_DATA,
+    entry_point = "provider_programs_test.mjs",
+    env = _TEST_ENV,
+    shard_count = 3,
+)
 
 js_test(
     name = "programs_test",
