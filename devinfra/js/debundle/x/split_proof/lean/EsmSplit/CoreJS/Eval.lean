@@ -1,5 +1,5 @@
 import Std.Data.HashSet
-import EsmSplit.CoreJS.Value
+import EsmSplit.CoreJS.Iterator
 
 /-!
 # CoreJS: the interpreter
@@ -299,6 +299,48 @@ def evalStaticInitializers (eval : Expr → M W Val) (target : Addr) :
     eval init >>= fun value =>
       (match key with | some key => createData target key value | none => pure ()) >>= fun _ =>
         evalStaticInitializers eval target rest
+
+/-- Each element takes at most one step. Once the iterator is done, later
+elements receive undefined and a binding throw cannot close it. -/
+def bindArrayElements (call : Call W) (bindField : BindingPattern → Val → M W Unit) :
+    List (Option BindingPattern) → Option IteratorCursor → M W (Option IteratorCursor)
+  | [], cursor => pure cursor
+  | pattern :: rest, cursor => do
+    let result ← cursor.elim (pure none) (fun cursor => iteratorStep call cursor pattern.isSome)
+    let value := (result.map Prod.fst).getD .undef
+    let next := result.map Prod.snd
+    let bound ← attempt (pattern.elim (pure ()) (fun p => bindField p value))
+    match bound with
+    | .ok _ => bindArrayElements call bindField rest next
+    | .error e =>
+      match next with
+      | none => throwVal e
+      | some cursor => iteratorClose call cursor (.error e)
+
+def bindArrayPattern (call : Call W) (fuel : Nat) (bindField : BindingPattern → Val → M W Unit)
+    (elements : List (Option BindingPattern)) (rest : Option BindingPattern) (value : Val) : M W Unit := do
+  let cursor ← getIterator call value
+  let next ← bindArrayElements call bindField elements (some cursor)
+  match rest with
+  | none =>
+    match next with
+    | none => pure ()
+    | some cursor => iteratorClose call cursor (.ok ())
+  | some p =>
+    let values ← next.elim (pure []) (collectIterator call fuel)
+    bindField p (.obj (← alloc (arrayObject values)))
+
+/-- A failed iterator step propagates directly. A break, return, or throw from
+the loop body or its binding closes the iterator. -/
+def loopIterator (call : Call W) (iteration : Val → M W Flow) : Nat → IteratorCursor → M W Flow
+  | 0, _ => outOfFuel
+  | n + 1, cursor => do
+    let some (value, next) ← iteratorStep call cursor | pure .normal
+    match ← attempt (iteration value) with
+    | .ok .normal | .ok .cont => loopIterator call iteration n next
+    | .ok .brk => iteratorClose call next (.ok .normal)
+    | .ok (.ret v) => iteratorClose call next (.ok (.ret v))
+    | .error e => iteratorClose call next (.error e)
 
 mutual
 
@@ -628,6 +670,8 @@ def bindPattern : Nat → Env → DeclKind → BindingPattern → Val → M W Un
         let key ← evalExpr n env key
         let v ← getProp (callFn n) value key
         bindPattern n env kind field v
+  | n + 1, env, kind, .array elements rest, value =>
+    bindArrayPattern (callFn n) n (bindPattern n env kind) elements rest value
   | n + 1, env, kind, .defaultValue target init, value => do
     let v ← if let .undef := value then evalExpr n env init else pure value
     bindPattern n env kind target v
@@ -662,6 +706,16 @@ def execStmt : Nat → Env → Stmt → M W Flow
       match ← execStmt n env body with
       | .brk => pure .normal
       | result => pure result
+
+    | .forOf kind pattern source body => do
+      let declarations := [Stmt.bind kind pattern .undef]
+      -- Lexical head names already shadow outer names while the iterable is evaluated.
+      let sourceEnv ← enterBlock env declarations
+      let cursor ← getIterator (callFn n) (← evalExpr n sourceEnv source)
+      loopIterator (callFn n) (fun value => do
+        let iterationEnv ← enterBlock env declarations
+        bindPattern n iterationEnv kind pattern value
+        execStmt n iterationEnv body) n cursor
     | .brk => pure .brk
     | .cont => pure .cont
     | .throw e => do throwVal (← evalExpr n env e)

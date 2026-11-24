@@ -210,7 +210,7 @@ theorem evalMembers_reachFrame_step {r R cells A n} (away : Away r R A) (env : E
     | staticBlock _ =>
       exact (rest tail).bind fun xs _ => reachFrame_pure r R cells A xs trivial
 
-private theorem literalArray_nodes {A : HeapNode → Prop} (root : A (.obj arrayProto))
+theorem literalArray_nodes {A : HeapNode → Prop} (root : A (.obj arrayProto))
     (vs : List Val) (h : ∀ v ∈ vs, SafeVal A v) : ∀ node ∈ (arrayObject vs).nodes, A node := by
   intro node hn
   simp only [arrayObject, Obj.nodes, List.mem_append, List.mem_flatMap, List.mem_map,

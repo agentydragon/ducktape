@@ -211,6 +211,58 @@ theorem iteratorValues_le {call call' : Call W} (h : Call.le call call') {n m : 
     (source : Val) : iteratorValues n call source ⊑ iteratorValues m call' source :=
   M.le_bind (getIterator_le h source) (collectIterator_le h hFuel)
 
+private theorem optionElim_le {α β : Type} (a : Option α) (fallback : M W β) {some some' : α → M W β}
+    (h : ∀ x, some x ⊑ some' x) : a.elim fallback some ⊑ a.elim fallback some' := by
+  cases a with
+  | none => exact M.le_refl _
+  | some x => exact h x
+
+theorem bindArrayElements_le {call call' : Call W} {bindField bindField' : BindingPattern → Val → M W Unit}
+    (hCall : Call.le call call') (hBind : ∀ p v, bindField p v ⊑ bindField' p v)
+    (elements : List (Option BindingPattern)) (cursor : Option IteratorCursor) :
+    bindArrayElements call bindField elements cursor ⊑ bindArrayElements call' bindField' elements cursor := by
+  induction elements generalizing cursor with
+  | nil => exact M.le_refl _
+  | cons p rest ih =>
+    simp only [bindArrayElements]
+    repeat' first
+    | exact optionElim_le _ _ (fun cursor => iteratorStep_le hCall cursor _)
+    | exact attempt_le (optionElim_le _ _ (fun p => hBind p _))
+    | exact ih _
+    | exact iteratorClose_le hCall _ _
+    | mono_step
+
+theorem bindArrayPattern_le {call call' : Call W} {bindField bindField' : BindingPattern → Val → M W Unit}
+    (hCall : Call.le call call') (hBind : ∀ p v, bindField p v ⊑ bindField' p v)
+    {n m : Nat} (hFuel : n ≤ m) (elements : List (Option BindingPattern)) (rest : Option BindingPattern) (v : Val) :
+    bindArrayPattern call n bindField elements rest v ⊑ bindArrayPattern call' m bindField' elements rest v := by
+  unfold bindArrayPattern
+  repeat' first
+  | exact getIterator_le hCall _
+  | exact bindArrayElements_le hCall hBind _ _
+  | exact iteratorClose_le hCall _ _
+  | exact optionElim_le _ _ (collectIterator_le hCall hFuel)
+  | exact hBind _ _
+  | mono_step
+
+theorem loopIterator_le {call call' : Call W} {body body' : Val → M W Flow}
+    (hCall : Call.le call call') (hBody : ∀ v, body v ⊑ body' v)
+    {n m : Nat} (hFuel : n ≤ m) (cursor : IteratorCursor) :
+    loopIterator call body n cursor ⊑ loopIterator call' body' m cursor := by
+  induction n generalizing m cursor with
+  | zero => exact M.le_outOfFuel _
+  | succ n ih =>
+    cases m with
+    | zero => omega
+    | succ m =>
+      simp only [loopIterator]
+      repeat' first
+      | exact iteratorStep_le hCall _ _
+      | exact attempt_le (hBody _)
+      | exact ih (Nat.le_of_succ_le_succ hFuel) _
+      | exact iteratorClose_le hCall _ _
+      | mono_step
+
 /-- Every function of the interpreter with the bound `n`, against the same with the bound `m`. -/
 structure Mono (W : World) (n m : Nat) : Prop where
   expr : ∀ env e, (evalExpr n env e : M W _) ⊑ evalExpr m env e
@@ -303,11 +355,13 @@ theorem Mono.construct_succ (target callee : Val) (args : List Val) :
   mono ih
   exact superArgsMono _ _
 
-theorem Mono.binding_succ (env : Env) (kind : DeclKind) (p : BindingPattern) (v : Val) :
+theorem Mono.binding_succ (hFuel : n ≤ m) (env : Env) (kind : DeclKind) (p : BindingPattern) (v : Val) :
     (bindPattern (n + 1) env kind p v : M W _) ⊑ bindPattern (m + 1) env kind p v := by
   cases p with
   | name => simp only [bindPattern]; exact M.le_refl _
   | defaultValue => simp only [bindPattern]; mono ih
+  | array elements rest =>
+    exact bindArrayPattern_le ih.callLe (ih.binding env kind) hFuel elements rest v
   | object props =>
     simp only [bindPattern]
     have fields : ∀ props : List (Expr × BindingPattern),
@@ -328,7 +382,7 @@ theorem Mono.binding_succ (env : Env) (kind : DeclKind) (p : BindingPattern) (v 
         repeat' first | exact step | mono_part ih | mono_step
     split <;> first | exact M.le_refl _ | exact fields props
 
-theorem Mono.stmt_succ (env : Env) (s : Stmt) : (execStmt (n + 1) env s : M W _) ⊑ execStmt (m + 1) env s := by
+theorem Mono.stmt_succ (hFuel : n ≤ m) (env : Env) (s : Stmt) : (execStmt (n + 1) env s : M W _) ⊑ execStmt (m + 1) env s := by
   cases s with
   | tryCatch body param handler =>
     unfold execStmt
@@ -361,6 +415,13 @@ theorem Mono.stmt_succ (env : Env) (s : Stmt) : (execStmt (n + 1) env s : M W _)
         mono ih
       | _ => exact .inr rfl
   | decl kind x e => cases kind <;> unfold execStmt <;> mono ih
+  | forOf kind pattern source body =>
+    simp only [execStmt]
+    refine M.le_bind (M.le_refl _) fun sourceEnv => ?_
+    refine M.le_bind (ih.expr sourceEnv source) fun value => ?_
+    refine M.le_bind (getIterator_le ih.callLe value) fun cursor => ?_
+    refine loopIterator_le ih.callLe (fun v => ?_) hFuel cursor
+    mono ih
   | «opaque» code decls funs free run =>
     cases run with
     | world => unfold execStmt; mono ih
@@ -399,7 +460,7 @@ theorem mono : ∀ n m, n ≤ m → Mono W n m := by
     | succ m =>
       have ih := ih m (by omega)
       exact ⟨ih.expr_succ, ih.args_succ, ih.target_succ, ih.props_succ, ih.members_succ, ih.fields_succ, ih.call_succ,
-        ih.construct_succ, ih.binding_succ, ih.stmt_succ, ih.stmts_succ, ih.loop_succ, ih.converse_succ⟩
+        ih.construct_succ, ih.binding_succ (by omega), ih.stmt_succ (by omega), ih.stmts_succ, ih.loop_succ, ih.converse_succ⟩
 
 theorem runUnits_le {n m : Nat} (h : n ≤ m) (units : List LinkedUnit) :
     (runUnits n units : M W _) ⊑ runUnits m units := by
