@@ -487,9 +487,9 @@ theorem allocOnly_local (r : Nat) (R : Addr → Prop) (n : Nat) :
       | nil => unfold evalArgs; exact local_pure _
       | cons e es =>
         simp only [allocOnlyAll, Bool.and_eq_true] at he
-        unfold evalArgs
+        simp only [evalArgs, Expr.argument_of_allocOnly he.1, Bool.false_eq_true, ↓reduceIte]
         exact (ihE env e he.1 fun z hz => hw z (by simp [readsNowAll, hz])).bind' fun _ =>
-          (ihA env es he.2 fun z hz => hw z (by simp [readsNowAll, hz])).bind' fun _ => local_pure _
+          (local_pure _).bind' fun _ => (ihA env es he.2 fun z hz => hw z (by simp [readsNowAll, hz])).bind' fun _ => local_pure _
     · cases ps with
       | nil => unfold evalProps; exact local_pure _
       | cons p ps =>

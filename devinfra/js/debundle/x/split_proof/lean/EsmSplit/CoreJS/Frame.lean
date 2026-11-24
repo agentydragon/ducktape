@@ -474,8 +474,9 @@ theorem allocOnly_keeps (n : Nat) :
       | nil => unfold evalArgs; exact (inert_pure _).keeps hb
       | cons e es =>
         simp only [allocOnlyAll, Bool.and_eq_true] at he
-        unfold evalArgs
+        simp only [evalArgs, Expr.argument_of_allocOnly he.1, Bool.false_eq_true, ↓reduceIte]
         refine keeps_bind (ihE env e base s he.1 hb) fun v s1 _ hb1 => ?_
+        change ((evalArgs n env es >>= fun rest => pure ([v] ++ rest)) s1).Keeps base
         refine keeps_bind (ihA env es base s1 he.2 hb1) fun vs s2 _ hb2 => ?_
         exact (inert_pure _).keeps hb2
     · cases ps with
