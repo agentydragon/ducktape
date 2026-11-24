@@ -525,7 +525,7 @@ pub fn run_patch_plan_report(
 pub fn run_graph_summary_report(args: &GraphSummaryArgs) -> Result<GraphSummaryReport> {
     let input = DependencyGraphInput::read(&args.common.dependency_graph_path)?;
     let graph = input.report();
-    let mut largest_residual_atomic_groups: Vec<AtomicGroupSummary> = graph
+    let mut residual_groups: Vec<_> = graph
         .atomic_graph
         .nodes
         .iter()
@@ -535,34 +535,23 @@ pub fn run_graph_summary_report(args: &GraphSummaryArgs) -> Result<GraphSummaryR
                 .iter()
                 .any(|destination| graph.is_unassigned_or_entry(destination))
         })
+        .collect();
+    let residual_atomic_group_count = residual_groups.len();
+    residual_groups.sort_by_key(|group| (std::cmp::Reverse(group.size_lines_estimate), &group.id));
+    apply_limit(&mut residual_groups, args.limit);
+    let largest_residual_atomic_groups = residual_groups
+        .into_iter()
         .map(|atomic_group| AtomicGroupSummary {
             atomic_group_id: atomic_group.id.clone(),
             size_lines_estimate: atomic_group.size_lines_estimate,
             members: atomic_group.members.clone(),
         })
         .collect();
-    largest_residual_atomic_groups.sort_by_key(|atomic_group| {
-        (
-            std::cmp::Reverse(atomic_group.size_lines_estimate),
-            atomic_group.atomic_group_id.clone(),
-        )
-    });
-    apply_limit(&mut largest_residual_atomic_groups, args.limit);
     Ok(GraphSummaryReport {
         source_unit_count: graph.nodes.len(),
         dependency_edge_count: graph.edges.len(),
         atomic_group_count: graph.atomic_graph.nodes.len(),
-        residual_atomic_group_count: graph
-            .atomic_graph
-            .nodes
-            .iter()
-            .filter(|atomic_group| {
-                atomic_group
-                    .destinations
-                    .iter()
-                    .any(|destination| graph.is_unassigned_or_entry(destination))
-            })
-            .count(),
+        residual_atomic_group_count,
         atomic_edge_count: graph.atomic_graph.edges.len(),
         module_count: graph.quotient.nodes.len(),
         module_edge_count: graph.quotient.edges.len(),
