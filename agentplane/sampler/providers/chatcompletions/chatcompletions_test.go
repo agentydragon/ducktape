@@ -290,6 +290,17 @@ func TestCompactionKeepsRecentTurnsAndToolPairs(t *testing.T) {
 		!slices.EqualFunc(wantSuffix, gotSuffix[:len(wantSuffix)], func(a, b json.RawMessage) bool { return bytes.Equal(a, b) }) {
 		t.Fatalf("retained turns changed: %s", gotSuffix)
 	}
+	const storedMarker = "sampler_compaction_summary"
+	projected, err := result.ProjectRecords(result.RecordCount() - 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(gotSuffix[len(gotSuffix)-1], []byte(storedMarker)) ||
+		bytes.Contains(projected[0], []byte(storedMarker)) ||
+		!bytes.Contains(projected[0], []byte("current environment")) {
+		t.Fatalf("environment marker leaked into the wire or was omitted from storage: stored=%s projected=%s",
+			gotSuffix[len(gotSuffix)-1], projected[0])
+	}
 	wire, err := result.MarshalJSON()
 	if err != nil {
 		t.Fatal(err)

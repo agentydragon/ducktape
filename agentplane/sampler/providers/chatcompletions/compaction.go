@@ -64,7 +64,7 @@ func (c CompactionConfig) replacementMessage(summary string) (message, error) {
 	if !strings.Contains(text, summary) {
 		return message{}, errors.New("compaction replacement template must include the summary verbatim")
 	}
-	return message{Role: config.Role, Content: text, CompactionSummary: config.Role == "user"}, nil
+	return message{Role: config.Role, Content: text, CompactionGenerated: true}, nil
 }
 
 func renderTemplate(name, source string, data any) (string, error) {
@@ -109,7 +109,7 @@ type CompactionPlan struct {
 func (c *Context) compactablePrefix(keep int) int {
 	cut := 0
 	for i := len(c.messages) - 1; i >= 0; i-- {
-		if c.messages[i].Role != "user" || c.messages[i].CompactionSummary {
+		if c.messages[i].Role != "user" || c.messages[i].CompactionGenerated {
 			continue
 		}
 		if keep == 0 {
