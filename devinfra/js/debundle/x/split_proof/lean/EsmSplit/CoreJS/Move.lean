@@ -126,6 +126,17 @@ def Local (r : Nat) (R : Addr → Prop) {α : Type} (m : M W α) : Prop :=
 section local_
 variable {r : Nat} {R : Addr → Prop}
 
+/-- A successful write that changes an object outside the running region rules
+out locality, even if the computation may read arbitrary binding cells. -/
+theorem not_local_of_foreign_object_change {α : Type} {m : M W α} {s t : State W}
+    {a : Addr} {v : α} (region : s.region = r) (run : m s = .ok v t)
+    (foreign : a.region ≠ r) (changed : t.objAt a ≠ s.objAt a) : ¬ Local r R m := by
+  intro localStep
+  have sees : Sees r R s s := ⟨region, region, rfl, rfl, fun _ _ => rfl⟩
+  obtain ⟨h, c, eq, _⟩ := localStep s s v t sees run
+  apply changed
+  rw [eq, State.objAt_put, ite_eq_right foreign]
+
 theorem Local.same {s t : State W} (h : Sees r R s t) :
     ∃ H C, s = s.put r H C ∧ t = t.put r H C :=
   ⟨s.heap[r]?.getD #[], s.cells[r]?.getD #[],

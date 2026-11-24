@@ -264,6 +264,11 @@ js_test(
 )
 
 js_test(
+    name = "static_field_locality_test",
+    entry_point = "static_field_locality_test.mjs",
+)
+
+js_test(
     name = "inert_escape_test",
     data = [
         "testdata/inert_escape/seed2026_round3.js.txt",
