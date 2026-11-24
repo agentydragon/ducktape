@@ -439,92 +439,104 @@ private def writeBatchDefinitions (index : Nat) (batch : WriteBatch) : EsmSplit.
 deriving instance Lean.ToExpr for EsmSplit.Module
 deriving instance Lean.ToExpr for EsmSplit.Plan
 
+section JsonQuoting
+
+open Lean (mkConst mkApp mkApp2 mkApp3 mkApp5 mkAppN mkLambda toExpr)
+
 private structure JsonDefs where
   definitions : Array String := #[]
-  objectBuilders : Std.HashMap String String := {}
-  arrayFragments : Std.HashMap String String := {}
+  entries : EsmSplit.CertificateData.Entries := #[]
+  shared : Std.HashMap Lean.Expr Lean.Name := {}
 
 private abbrev JsonQuote := StateM JsonDefs
 
-private def arrayFragment (stem term : String) : JsonQuote String := do
-  if let some name := (← get).arrayFragments[term]? then return name
-  let name := s!"{stem}_array_{(← get).definitions.size}"
-  let definition := s!"private def {name} : Array Lean.Json := {term}\n"
-  modify fun s =>
-    let fragments := s.arrayFragments.insert term name
-    { s with definitions := s.definitions.push definition, arrayFragments := fragments }
-  return name
+private def addJsonDefinition (name type : String) (value : Lean.Expr) : JsonQuote Lean.Expr := do
+  let id := Lean.Name.mkSimple name
+  modify fun s => { s with
+    definitions := s.definitions.push s!"private def {name} : {type} := certificate_data% {name}\n"
+    entries := s.entries.push (id, value) }
+  return EsmSplit.CertificateData.ref id
+
+private def shareJsonDefinition (stem type : String) (value : Lean.Expr) : JsonQuote Lean.Expr := do
+  let s ← get
+  if let some id := s.shared[value]? then
+    return EsmSplit.CertificateData.ref id
+  let name := s!"{stem}_{s.definitions.size}"
+  modify fun s => { s with shared := s.shared.insert value (Lean.Name.mkSimple name) }
+  addJsonDefinition name type value
 
 private abbrev JsonTree := Std.DTreeMap.Internal.Impl String (fun _ => Lean.Json)
 
-private def objectTree [Monad m] (value : Lean.Json → m String) : JsonTree → m String
-  | .leaf => pure ".leaf"
-  | .inner sz key val left right => do
-    let fieldTerm ← value val
-    let leftTerm ← objectTree value left
-    let rightTerm ← objectTree value right
-    return s!"(.inner {sz} {key.quote} {fieldTerm} {leftTerm} {rightTerm})"
+private def jsonFromTree (tree : JsonTree) : Lean.Json := .obj ⟨⟨tree⟩⟩
 
-/-- AST nodes with the same raw object tree can use one definition. The keys, tree
-sizes and child positions are part of the cache key. Only the values are parameters. -/
-private def objectBuilder (stem body : String) (arity : Nat) : JsonQuote String := do
-  if let some name := (← get).objectBuilders[body]? then return name
-  let name := s!"{stem}_object_{(← get).objectBuilders.size}"
-  let params := String.intercalate " " ((List.range arity).map fun i => s!"v{i}")
-  let definition := s!"private def {name} ({params} : Lean.Json) : Lean.Json := .obj ⟨⟨{body}⟩⟩\n"
-  modify fun s =>
-    let builders := s.objectBuilders.insert body name
-    { s with definitions := s.definitions.push definition, objectBuilders := builders }
-  return name
+private def jsonType := mkConst ``Lean.Json
+
+private def treeConstructor (name : Lean.Name) : Lean.Expr :=
+  mkApp2 (mkConst name [0, 0]) (mkConst ``String) (mkLambda `_ .default (mkConst ``String) jsonType)
+
+private def objectTree [Monad m] (value : Lean.Json → m Lean.Expr) : JsonTree → m Lean.Expr
+  | .leaf => pure (treeConstructor ``Std.DTreeMap.Internal.Impl.leaf)
+  | .inner size key item left right => do
+    return mkApp5 (treeConstructor ``Std.DTreeMap.Internal.Impl.inner)
+      (toExpr size) (toExpr key) (← value item) (← objectTree value left) (← objectTree value right)
+
+private def objectParameter (i : Nat) : Lean.Name := Lean.Name.mkSimple s!"v{i}"
 
 mutual
-private partial def jsonLiteral (stem : String) : Lean.Json → JsonQuote String
-  | .null => pure "Lean.Json.null"
-  | .bool b => pure ("(Lean.Json.bool " ++ toString b ++ ")")
-  | .num n => pure ("(Lean.Json.num ⟨(" ++ toString n.mantissa ++ ")," ++ toString n.exponent ++ "⟩)")
-  | .str s => pure ("(Lean.Json.str " ++ s.quote ++ ")")
-  | .arr a => do return "(Lean.Json.arr " ++ (← arrayLiteral stem a 0 a.size) ++ ")"
+private partial def jsonLiteral (stem : String) : Lean.Json → JsonQuote Lean.Expr
+  | .null => pure (mkConst ``Lean.Json.null)
+  | .bool b => pure (mkApp (mkConst ``Lean.Json.bool) (toExpr b))
+  | .num n => pure (mkApp (mkConst ``Lean.Json.num)
+      (mkApp2 (mkConst ``Lean.JsonNumber.mk) (toExpr n.mantissa) (toExpr n.exponent)))
+  | .str s => pure (mkApp (mkConst ``Lean.Json.str) (toExpr s))
+  | .arr a => do return mkApp (mkConst ``Lean.Json.arr) (← arrayLiteral stem a 0 a.size)
   | .obj ⟨⟨o⟩⟩ => do
-    -- Large dictionaries and the empty tree need no parameterized constructor.
+    let wrap := mkApp (mkConst ``jsonFromTree)
+    -- Common AST nodes share a function that fills the same raw object layout.
     if o.size == 0 || o.size > 16 then
-      return "(Lean.Json.obj ⟨⟨" ++ (← objectTree (jsonLiteral stem) o) ++ "⟩⟩)"
-    let parameter (v : Lean.Json) : StateM (Array Lean.Json) String := do
+      return wrap (← objectTree (jsonLiteral stem) o)
+    let parameter (v : Lean.Json) : StateM (Array Lean.Json) Lean.Expr := do
       let args ← get
       set (args.push v)
-      pure s!"v{args.size}"
-    let (body, args) := (objectTree parameter o).run #[]
-    let name ← objectBuilder stem body args.size
-    let values ← args.toList.mapM (jsonLiteral stem)
-    return "(" ++ String.intercalate " " (name :: values) ++ ")"
+      return EsmSplit.CertificateData.ref (objectParameter args.size)
+    let (tree, args) := (objectTree parameter o).run #[]
+    let params := (Array.range args.size).map objectParameter
+    let body := (wrap tree).abstract (params.map EsmSplit.CertificateData.ref)
+    let builder := params.foldr (fun param body => mkLambda param .default jsonType body) body
+    let type := String.join (List.replicate params.size "Lean.Json → ") ++ "Lean.Json"
+    let fn ← shareJsonDefinition (stem ++ "_object") type builder
+    return mkAppN fn (← args.mapM (jsonLiteral stem))
 
-/-- Elaborate wide arrays as separate, bounded-size definitions. Join chunks in a
-balanced tree to keep the depth of the definition dependencies logarithmic. Reuse
-identical generated terms, so both leaf chunks and complete branches can be shared. -/
-private partial def arrayLiteral (stem : String) (a : Array Lean.Json) (start stop : Nat) :
-    JsonQuote String := do
+/-- Keep each wide array fragment small enough to compile on its own. -/
+private partial def arrayLiteral (stem : String) (a : Array Lean.Json) (start stop : Nat) : JsonQuote Lean.Expr := do
   let chunkSize := 8
   let count := stop - start
-  if count ≤ chunkSize then
-    let elements ← (a.extract start stop).toList.mapM (jsonLiteral stem)
-    let term := "#[" ++ String.intercalate "," elements ++ "]"
-    if a.size ≤ chunkSize then return term
-    arrayFragment stem term
-  else
+  let value ← if count ≤ chunkSize then do
+    let nil := mkApp (mkConst ``List.nil [0]) jsonType
+    let cons := mkApp (mkConst ``List.cons [0]) jsonType
+    let items ← a.foldrM (fun value tail => do return mkApp2 cons (← jsonLiteral stem value) tail)
+      nil (start := stop) (stop := start)
+    pure (mkApp2 (mkConst ``List.toArray [0]) jsonType items)
+  else do
     let middle := start + count / 2
     let left ← arrayLiteral stem a start middle
     let right ← arrayLiteral stem a middle stop
-    arrayFragment stem s!"Array.append {left} {right}"
+    pure (mkApp3 (mkConst ``Array.append [0]) jsonType left right)
+  if a.size ≤ chunkSize then return value
+  shareJsonDefinition (stem ++ "_array") "Array Lean.Json" value
 end
 
-/-- Quote exact Lean JSON values, including raw object trees and each number's
-mantissa and decimal exponent. Named roots share object layouts and identical
-array fragments. No parsing or field reinsertion is needed in the certificate. -/
-def jsonDefinitions (roots : List (String × Lean.Json)) : Array String :=
+/-- Store exact JSON terms in the same certificate data format as the CoreJS programs.
+The generated file only declares their types and names. -/
+def jsonDefinitions (roots : List (String × Lean.Json)) :
+    Array String × EsmSplit.CertificateData.Entries :=
   let quote : JsonQuote Unit := do
     for (name, json) in roots do
-      let value ← jsonLiteral name json
-      modify fun s => { s with definitions := s.definitions.push s!"private def {name} : Lean.Json := {value}\n" }
-  (quote.run {}).2.definitions
+      let _ ← addJsonDefinition name "Lean.Json" (← jsonLiteral name json)
+  let result := (quote.run {}).2
+  (result.definitions, result.entries)
+
+end JsonQuoting
 
 /-- The equation compiler puts a negative premise on the general unary case because
 `typeof` of a variable has its own lookup rule. The proof-producing `cbv` evaluator
@@ -801,6 +813,7 @@ structure Certificate where
   preamble : String
   execution : String
   correspondence : String
+  stagedGate : Bool
   checkpoint : Option CheckpointText
   premises : HostPremises
 
@@ -898,7 +911,11 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
     pure ("attribute [cbv_eval] CoreJS.lookup_literalProperties\n" ++ String.join definitions)
   let writeTerms ← writes.batches.zipIdx.toList.mapM fun (batch, index) => writeBatchDefinitions index batch
   let p ← EsmSplit.CertificateData.quote "plan" (Lean.toExpr plan)
-  let asts := jsonDefinitions [("sourceAST", sourceAST), ("providers", providers), ("files", files)]
+  let (asts, astData) := jsonDefinitions [("sourceAST", sourceAST), ("providers", providers), ("files", files)]
+  modify (· ++ astData)
+  -- The generated declarations are short. Estimate the compiler's workload from
+  -- the quoted terms when deciding whether to run correspondence separately.
+  let stagedGate := astData.foldl (fun bytes (_, term) => bytes + expandedBytes term) 0 ≥ 512 * 1024
   let writeImports := if writeTerms.isEmpty then "" else "import EsmSplit.Fast\n"
   let profileTerm := fun (p : HostProfile) => match p with
     | .empty => "CoreJS.HostProfile.empty"
@@ -938,7 +955,7 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
       some (checkpointText preamble options (data ++ programs) (raw ++ profiles "private " ++ gate) fuel
         (stageLink || hasWideRecord))
     else none
-  return { preamble, execution, correspondence, checkpoint, premises }
+  return { preamble, execution, correspondence, stagedGate, checkpoint, premises }
 
 /-- Both proof layouts check the same all-world execution claim and exact ASTs. -/
 def certificate (profile : HostProfile) (sourceAST providers files : Lean.Json) (plan : EsmSplit.Plan)

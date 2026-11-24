@@ -396,7 +396,7 @@ private def checkCheckpoint (timings : Bool) (work : System.FilePath) (text : Co
 /-- The ordinary execution proof can also be imported into a separate AST gate. -/
 private def checkOrdinaryExecution (timings : Bool) (work : System.FilePath)
     (cert : CoreJS.LinkedBehavior.Certificate) (dataArts : Lean.NameMap Lean.ImportArtifacts) : IO Unit := do
-  if cert.correspondence.utf8ByteSize < 512 * 1024 then
+  if !cert.stagedGate then
     timePhase timings "execution_and_correspondence" fun _ => do
       checkProofModule work { name := `LinkedExecution, importArts := dataArts }
         (cert.preamble ++ cert.execution ++ cert.correspondence) #[]
