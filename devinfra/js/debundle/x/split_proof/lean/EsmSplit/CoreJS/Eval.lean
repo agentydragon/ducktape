@@ -456,12 +456,15 @@ def evalExpr : Nat → Env → Expr → M W Val
         let key ← evalExpr n env k
         let callee ← getProp (callFn n) base key
         callFn n callee base (← evalArgs n env args)
-    | .callOptionalCallee o k args => do
+    | .callOptionalCallee o k args property => do
       let base ← evalExpr n env o
       let key ← evalExpr n env k
       let callee ← getProp (callFn n) base key
       if !(← lift (shortCircuits .nullish callee)) then pure .undef else
-        callFn n callee base (← evalArgs n env args)
+        let result ← callFn n callee base (← evalArgs n env args)
+        match property with
+        | none => pure result
+        | some property => getProp (callFn n) result (← evalExpr n env property)
     | .new f args => do
       let callee ← evalExpr n env f
       constructTarget n callee callee (← evalArgs n env args)

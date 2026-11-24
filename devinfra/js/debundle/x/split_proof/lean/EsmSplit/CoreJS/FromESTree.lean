@@ -546,6 +546,13 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
   | "ChainExpression" =>
     let body ← j.getObjVal? "expression"
     let lower := linkedExpr profile imports inFunction ""
+    let (body, property) ← if (← field body "type") == "MemberExpression" &&
+        (body.getObjValAs? Bool "optional").toOption == some false then do
+      let base ← body.getObjVal? "object"
+      if (← field base "type") == "CallExpression" && (base.getObjValAs? Bool "optional").toOption == some true then
+        pure (base, some (← memberKey lower body))
+      else pure (body, none)
+    else pure (body, none)
     if (← field body "type") == "CallExpression" then
       let optionalCallee ← body.getObjValAs? Bool "optional"
       let member ← body.getObjVal? "callee"
@@ -554,11 +561,12 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
       let optionalReceiver ← member.getObjValAs? Bool "optional"
       if optionalCallee == optionalReceiver then throw reason
       if isSuperMember member then
+        unless property.isNone do throw "unsupported continuation after an optional super call"
         return .callSuper (← memberKey lower member) (← (← body.getObjValAs? (List Json) "arguments").mapM (linkedArgument lower)) true
       if ← member.getObjValAs? Bool "computed" then throw "unsupported computed optional method call"
       let (base, key) ← linkedMember lower member (allowOptional := optionalReceiver)
       let args ← (← body.getObjValAs? (List Json) "arguments").mapM (linkedArgument lower)
-      return if optionalCallee then .callOptionalCallee base key args else .callOptionalReceiver base key args
+      return if optionalCallee then .callOptionalCallee base key args property else .callOptionalReceiver base key args
     let member := body
     unless (← field member "type") == "MemberExpression" do throw "unsupported optional chain"
     unless ← member.getObjValAs? Bool "optional" do throw "unsupported optional chain"

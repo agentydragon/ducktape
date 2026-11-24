@@ -148,8 +148,8 @@ inductive Expr where
   | callSuper (k : Expr) (args : List Expr) (optional : Bool)
   /-- `o?.m(args)`: evaluate the receiver once, short circuit a nullish value, and keep the receiver as `this`. -/
   | callOptionalReceiver (o k : Expr) (args : List Expr)
-  /-- `o.m?.(args)`: look up the callee once and keep `o` as `this` if called. -/
-  | callOptionalCallee (o k : Expr) (args : List Expr)
+  /-- `o.m?.(args)`, optionally followed by a property read within the same chain. -/
+  | callOptionalCallee (o k : Expr) (args : List Expr) (property : Option Expr)
   | new (f : Expr) (args : List Expr)
   | prim (p : Prim) (args : List Expr)
   | unary (op : UnOp) (e : Expr)
@@ -386,8 +386,10 @@ def Expr.free : Expr → List Name
   | .assignLogical t _ rhs => t.free ++ rhs.free
   | .update t _ _ => t.free
   | .call f args => f.free ++ freeExprs args
-  | .callMethod o k args | .callOptionalReceiver o k args | .callOptionalCallee o k args =>
+  | .callMethod o k args | .callOptionalReceiver o k args | .callOptionalCallee o k args none =>
     o.free ++ (k.free ++ freeExprs args)
+  | .callOptionalCallee o k args (some property) =>
+    o.free ++ (k.free ++ (freeExprs args ++ property.free))
   | .callSuper k args _ => k.free ++ freeExprs args
   | .new f args => f.free ++ freeExprs args
   | .prim (.dynamicImport _ captures) args => captures ++ freeExprs args
