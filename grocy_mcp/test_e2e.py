@@ -15,6 +15,7 @@ from collections.abc import AsyncGenerator
 from datetime import UTC, date, datetime, timedelta
 
 import httpx
+import httpx2
 import pytest
 import pytest_bazel
 from fastmcp.client import Client
@@ -32,15 +33,20 @@ tracer = trace.get_tracer(__name__)
 
 
 @pytest.fixture
-async def mcp_client(grocy_base_url: str) -> AsyncGenerator[Client]:
+async def grocy_http_client(grocy_base_url: str) -> AsyncGenerator[GrocyClient]:
+    async with GrocyClient(base_url=f"{grocy_base_url}/api", timeout=30.0) as client:
+        yield client
+
+
+@pytest.fixture
+async def mcp_client(grocy_base_url: str, grocy_http_client: GrocyClient) -> AsyncGenerator[Client]:
     """Function-scoped MCP client exercising the full MCP protocol in-process."""
-    async with GrocyClient(base_url=f"{grocy_base_url}/api", timeout=30.0) as http_client:
-        with tracer.start_as_current_span("build_mcp"):
-            mcp = build_mcp(
-                ServerSettings(grocy_url=grocy_base_url), client_provider=borrowed_http_client_provider(http_client)
-            )
-        async with Client(FastMCPTransport(mcp)) as client:
-            yield client
+    with tracer.start_as_current_span("build_mcp"):
+        mcp = build_mcp(
+            ServerSettings(grocy_url=grocy_base_url), client_provider=borrowed_http_client_provider(grocy_http_client)
+        )
+    async with Client(FastMCPTransport(mcp)) as client:
+        yield client
 
 
 @pytest.fixture
@@ -145,31 +151,28 @@ async def test_products_create_requires_default_best_before_days(mcp_client: Cli
         )
 
 
-async def test_products_edit_preserves_default_best_before_days_when_omitted(
-    mcp_client: Client, ref_data: RefData
+async def test_products_edit_preserves_concurrent_shelf_life_change(
+    mcp_client: Client, grocy_base_url: str, grocy_http_client: GrocyClient, ref_data: RefData
 ) -> None:
-    """`products_edit` omitting `default_best_before_days` leaves it unchanged.
+    product_id = ref_data.product_ids[0]
+    path = f"/objects/products/{product_id}"
+    async with httpx.AsyncClient(base_url=f"{grocy_base_url}/api") as other_writer:
 
-    Unlike `products_create` (which now requires the field explicitly),
-    omission on edit means "leave the existing value alone" — the two
-    endpoints must not share the same omission semantics.
-    """
-    product = ref_data.products[0]
+        async def change_shelf_life(request: httpx2.Request) -> None:
+            if request.method == "PUT" and request.url.path == f"/api{path}":
+                response = await other_writer.put(path, json={"default_best_before_days": 42})
+                response.raise_for_status()
 
-    edit = await call_tool(
-        mcp_client, "products_edit", {"items": [{"product": product, "default_best_before_days": 42}]}
-    )
-    assert edit[0]["kind"] == "ok", edit
-
-    # Edit an unrelated field, omitting default_best_before_days.
-    unrelated_edit = await call_tool(
-        mcp_client, "products_edit", {"items": [{"product": product, "description": "unrelated change"}]}
-    )
-    assert unrelated_edit[0]["kind"] == "ok", unrelated_edit
-
-    products = await call_tool(mcp_client, "products_list", {"detail": "full"})
-    our_product = next(p for p in products if p["name"] == product)
-    assert int(our_product["default_best_before_days"]) == 42
+        grocy_http_client.event_hooks["request"].append(change_shelf_life)
+        edit = await call_tool(
+            mcp_client, "products_edit", {"items": [{"product": product_id, "description": "New label"}]}
+        )
+        assert edit[0]["kind"] == "ok", edit
+        stored = await other_writer.get(path)
+        stored.raise_for_status()
+        product = stored.json()
+        assert product["description"] == "New label"
+        assert int(product["default_best_before_days"]) == 42
 
 
 async def test_products_edit_serializes_values_and_resolves_references(mcp_client: Client, ref_data: RefData) -> None:
@@ -218,6 +221,9 @@ async def test_products_edit_serializes_values_and_resolves_references(mcp_clien
     assert int(product["qu_id_consume"]) == int(quantity_unit_id)
     assert int(product["parent_product_id"]) == ref_data.product_ids[1]
     assert int(product["product_group_id"]) == int(product_group_id)
+
+    noop = await call_tool(mcp_client, "products_edit", {"items": [{"product": product_id}]})
+    assert noop == [{"kind": "ok", "object_id": product_id}]
 
     unrelated_edit = await call_tool(
         mcp_client,

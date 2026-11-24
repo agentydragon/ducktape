@@ -32,7 +32,7 @@ from pydantic import Field
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_exponential
 
 from grocy_mcp.client import GrocyClient, ResolvedQU
-from grocy_mcp.grocy_types import PRODUCT_WRITABLE_FIELDS, EntityType, GettableEntityType, ReadableEntityType
+from grocy_mcp.grocy_types import EntityType, GettableEntityType, ReadableEntityType
 from grocy_mcp.mcp_types import (
     DETAIL_DESC,
     MAX_BATCH_SIZE,
@@ -52,7 +52,6 @@ from grocy_mcp.mcp_types import (
     CreateShoppingListItem,
     DetailLevel,
     EditOk,
-    EditProductField,
     EditProductItem,
     EditShoppingListField,
     EditStockEntryField,
@@ -994,6 +993,19 @@ def register_batch_tools(
             client, items, "/objects/shopping_lists", lambda item: item.model_dump(exclude_none=True)
         )
 
+    async def _resolve_product_references(client: GrocyClient, body: dict[str, Any]) -> None:
+        for field, column, kind in (
+            ("location", "location_id", EntityType.LOCATION),
+            ("stock_qu", "qu_id_stock", EntityType.QUANTITY_UNIT),
+            ("purchase_qu", "qu_id_purchase", EntityType.QUANTITY_UNIT),
+            ("consume_qu", "qu_id_consume", EntityType.QUANTITY_UNIT),
+            ("parent_product", "parent_product_id", EntityType.PRODUCT),
+            ("product_group", "product_group_id", EntityType.PRODUCT_GROUP),
+        ):
+            if field in body:
+                ref = body.pop(field)
+                body[column] = await _resolve_id(client, kind, ref) if ref is not None else None
+
     @mcp.tool()
     async def products_create(
         items: Annotated[
@@ -1024,37 +1036,10 @@ def register_batch_tools(
         """
 
         async def _create(item: CreateProductItem) -> CreateOk:
-            loc_id = await _resolve_id(client, EntityType.LOCATION, item.location)
-            squ_id = await _resolve_id(client, EntityType.QUANTITY_UNIT, item.stock_qu)
-            pqu_id = (
-                await _resolve_id(client, EntityType.QUANTITY_UNIT, item.purchase_qu)
-                if item.purchase_qu is not None
-                else squ_id
-            )
-            cqu_id = (
-                await _resolve_id(client, EntityType.QUANTITY_UNIT, item.consume_qu)
-                if item.consume_qu is not None
-                else squ_id
-            )
-
-            body: dict[str, Any] = {
-                "name": item.name,
-                "location_id": loc_id,
-                "qu_id_stock": squ_id,
-                "qu_id_purchase": pqu_id,
-                "qu_id_consume": cqu_id,
-                "min_stock_amount": item.min_stock_amount,
-                "default_best_before_days": item.default_best_before_days,
-                "due_type": item.due_type,
-            }
-            for ref, key, entity_type in (
-                (item.parent_product, "parent_product_id", EntityType.PRODUCT),
-                (item.product_group, "product_group_id", EntityType.PRODUCT_GROUP),
-            ):
-                if ref is not None:
-                    body[key] = await _resolve_id(client, entity_type, ref)
-            _set_if_present(body, "description", item.description)
-
+            body = item.model_dump(exclude_none=True)
+            await _resolve_product_references(client, body)
+            body.setdefault("qu_id_purchase", body["qu_id_stock"])
+            body.setdefault("qu_id_consume", body["qu_id_stock"])
             return await _create_object(client, "/objects/products", body, describe=f"create product {item.name!r}")
 
         return await _ordered_batch(items, "items", _create, lambda _item, exc: CreateError(error=_format_exc(exc)))
@@ -1066,40 +1051,18 @@ def register_batch_tools(
     ) -> list[EditOk | CreateError]:
         """Partial update of one or more products.
 
-        Only the fields you set on each item change — the rest are
-        preserved. The server reads each product, merges your changes,
-        and writes back. To null out a nullable field (vs setting it to
-        a new value), name it in `clear_fields`. Failed items return
-        errors without aborting the others. See also `products_create`,
+        Grocy updates only the fields you supply. Name a nullable field in
+        `clear_fields` to clear it. Failed items return errors without
+        aborting the others. See also `products_create`,
         `product_delete`, `products_list`.
         """
 
         async def _edit(item: EditProductItem) -> EditOk:
             product_id = await _resolve_id(client, EntityType.PRODUCT, item.product)
-            r = await client.get(f"/objects/products/{product_id}")
-            r.raise_for_status()
-            current: dict[str, Any] = r.json()
-
-            body = {k: v for k, v in current.items() if k in PRODUCT_WRITABLE_FIELDS}
-            body.update(item.model_dump(include=PRODUCT_WRITABLE_FIELDS, exclude_unset=True, exclude_none=True))
-            for ref, key, entity_type in (
-                (item.stock_qu, "qu_id_stock", EntityType.QUANTITY_UNIT),
-                (item.location, "location_id", EntityType.LOCATION),
-                (item.purchase_qu, "qu_id_purchase", EntityType.QUANTITY_UNIT),
-                (item.consume_qu, "qu_id_consume", EntityType.QUANTITY_UNIT),
-                (item.parent_product, "parent_product_id", EntityType.PRODUCT),
-                (item.product_group, "product_group_id", EntityType.PRODUCT_GROUP),
-            ):
-                if ref is not None:
-                    body[key] = await _resolve_id(client, entity_type, ref)
-            for field, key in {
-                EditProductField.DESCRIPTION: "description",
-                EditProductField.PRODUCT_GROUP: "product_group_id",
-                EditProductField.PARENT_PRODUCT: "parent_product_id",
-                EditProductField.CALORIES: "calories",
-            }.items():
-                if field in (item.clear_fields or ()):
-                    body[key] = None
+            body = item.model_dump(exclude={"product", "clear_fields"}, exclude_unset=True, exclude_none=True)
+            for field in item.clear_fields or ():
+                body[field.value] = None
+            await _resolve_product_references(client, body)
 
             r = await client.put(f"/objects/products/{product_id}", json=body)
             r.raise_for_status()
