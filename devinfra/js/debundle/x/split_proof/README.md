@@ -171,6 +171,11 @@ returns the well-known iterator symbol without observable effects. Its descripto
 from one named `"Symbol.iterator"`. For example, `this.path[Symbol.iterator]()` looks up the
 method on the path’s prototype chain and calls it with the path as its receiver.
 
+A browser-profile call to the ambient `Symbol()` or `Symbol("description")` creates a fresh
+symbol under an explicit premise that the binding holds the intrinsic Symbol function.
+A base class can use a lexical identifier as a computed instance field key. Class definition
+captures the key once, and each construction creates an own data property for that key.
+
 A derived constructor with plain parameters can compute local values before a direct `super(...)` call.
 The prefix admits simple `let` and `const` bindings and expression statements. Prefixes and arguments
 that read `this` or define a nested callable are rejected. The parent receives the evaluated arguments
