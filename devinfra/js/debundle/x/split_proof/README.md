@@ -116,7 +116,8 @@ A derived constructor with plain parameters can compute local values before a di
 The prefix admits simple `let` and `const` bindings and expression statements. Prefixes and arguments
 that read `this` or define a nested callable are rejected. The parent receives the evaluated arguments
 in source order. The rest of the constructor sees the same local bindings and the receiver returned by
-the parent, including a replacement object.
+the parent, including a replacement object. If argument evaluation changes the active constructor’s
+prototype, CoreJS returns unknown because Node and ECMAScript can select different parents.
 
 Consecutive optional member reads such as `receiver?.field?.[key]` evaluate each reached receiver once. A null or undefined receiver yields `undefined` without computing a key or invoking a getter. A reached read keeps the original base as the getter's `this`, even if key evaluation changes the value of the receiver expression.
 

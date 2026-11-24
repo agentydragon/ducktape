@@ -469,14 +469,17 @@ def constructTarget : Nat → Val → Val → List Val → M W Val
         | .normal => do
           let parent := (← getObj a).proto
           let argv ← evalArgs n env superArgs
-          let receiver ← constructParent (constructTarget n newTarget) parent argv
-          match ← execStmts n { env with this := receiver } body.body with
-          | .ret (.obj r) => pure (.obj r)
-          | .ret (.error k msg) => pure (.error k msg)
-          | .ret (.host name) => unknown s!"host value {name} is inspected"
-          | .ret .undef | .normal => pure receiver
-          | .ret _ => throwErr .type "derived constructor returned a non-object"
-          | _ => unknown "invalid derived constructor control flow"
+          -- ECMA-262 selects the superclass before evaluating arguments. V8 can select it after.
+          if (← getObj a).proto != parent then unknown "superclass changed while evaluating super arguments"
+          else do
+            let receiver ← constructParent (constructTarget n newTarget) parent argv
+            match ← execStmts n { env with this := receiver } body.body with
+            | .ret (.obj r) => pure (.obj r)
+            | .ret (.error k msg) => pure (.error k msg)
+            | .ret (.host name) => unknown s!"host value {name} is inspected"
+            | .ret .undef | .normal => pure receiver
+            | .ret _ => throwErr .type "derived constructor returned a non-object"
+            | _ => unknown "invalid derived constructor control flow"
         | _ => unknown "invalid derived constructor control flow before super"
       | some (.closure f closed fields) =>
         if f.kind != .normal && f.kind != .classCtor then throwErr .type "not a constructor" else do

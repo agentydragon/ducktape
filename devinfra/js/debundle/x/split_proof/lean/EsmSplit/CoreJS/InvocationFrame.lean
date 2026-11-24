@@ -268,21 +268,25 @@ theorem constructTarget_reachFrame_of_steps {r R cells A n} (away : Away r R A)
           intro original safeObj
           apply (evalArgsFrame env superArgs he).bind
           intro argv hargv
-          apply (parentRun original safeObj argv hargv).bind
-          intro receiver hr
-          apply (stmts { env with this := receiver } body.body (Env.nodes_setThis he hr)).bind
-          intro flow hflow
-          cases flow
-          case ret v =>
-            have hv := hflow v rfl
-            cases v <;> first
-            | exact reachFrame_pure r R cells A _ hv
+          apply active.bind
+          intro current _
+          split
+          · exact reachFrame_unknown r R cells A _ _
+          · apply (parentRun original safeObj argv hargv).bind
+            intro receiver hr
+            apply (stmts { env with this := receiver } body.body (Env.nodes_setThis he hr)).bind
+            intro flow hflow
+            cases flow
+            case ret v =>
+              have hv := hflow v rfl
+              cases v <;> first
+              | exact reachFrame_pure r R cells A _ hv
+              | exact reachFrame_pure r R cells A _ hr
+              | exact reachFrame_typeError _
+              | exact reachFrame_unknown r R cells A _ _
+            all_goals first
             | exact reachFrame_pure r R cells A _ hr
-            | exact reachFrame_typeError _
             | exact reachFrame_unknown r R cells A _ _
-          all_goals first
-          | exact reachFrame_pure r R cells A _ hr
-          | exact reachFrame_unknown r R cells A _ _
       | «opaque» code part inner ctor =>
         cases ctor
         · exact reachFrame_typeError "not a constructor"
