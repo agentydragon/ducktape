@@ -39,8 +39,9 @@ structure BundleInput where
   source : String
   input : System.FilePath
 
-def readBundle (bundlePath work : System.FilePath) (validateSnapshot timings : Bool) : IO BundleInput := do
-  let program ← timePhase timings "input_parse" fun _ => loadProgram bundlePath work validateSnapshot
+def readBundle (bundlePath work : System.FilePath) (validateSnapshot timings : Bool)
+    (sourceHash : Option String := none) : IO BundleInput := do
+  let program ← timePhase timings "input_parse" fun _ => loadProgram bundlePath work validateSnapshot sourceHash
   let source ← IO.ofExcept (program.getObjValAs? String "sourceText")
   let input := work / "source.mjs"
   IO.FS.writeFile input source

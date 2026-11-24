@@ -67,6 +67,34 @@ def parseSpec (j : Json) : Except String Spec := do
   let sequential := (j.getObjVal? "sequential" >>= Json.getBool?).toOption.getD false
   pure { entry, modules, order, sequential }
 
+/-- Read a selector-only ownership export. Its import priority orders requests;
+the untrusted planner and the linked checker decide the actual evaluation order. -/
+def parseResolvedSpec (j : Json) (chunk entry : String) (unitCount : Nat) : Except String Spec := do
+  unless (← j.getObjValAs? String "chunk_id") == chunk do throw "resolved placement chunk ID differs"
+  -- A caller with a required evaluation order must supply an ordinary sequential spec.
+  unless (← j.getObj?).toList.all (fun e => ["chunk_id", "source_sha256", "import_order", "units"].contains e.1) do
+    throw "unexpected resolved placement field"
+  let owners ← j.getObjValAs? (List String) "import_order"
+  validateModulePaths owners
+  let order := owners.map (· ++ ".mjs")
+  let names := entry :: order
+  validateModulePaths names
+  unless names.Nodup do throw "duplicate module in resolved placement"
+  let mut groups : Std.HashMap String (List Selector) := {}
+  let units ← j.getObjValAs? (Array Json) "units"
+  unless units.size == unitCount do throw "resolved placement unit count differs from source"
+  let allowed := Std.HashSet.ofList owners
+  for (unit, i) in units.zipIdx do
+    unless (← unit.getObjValAs? Nat "ordinal") == i do throw "expected consecutive source-unit ordinals"
+    let value ← unit.getObjVal? "owner"
+    let dest ← if value == .null then pure entry else do
+      let owner ← value.getStr?
+      unless allowed.contains owner do throw s!"resolved owner {owner} absent from import priority"
+      pure (owner ++ ".mjs")
+    groups := groups.insert dest (.stmt i :: groups.getD dest [])
+  unless order.all groups.contains do throw "resolved import priority includes an owner with no units"
+  return { entry, modules := names.map fun name => (name, (groups.getD name []).reverse), order }
+
 def loadSpec (path : System.FilePath) : IO Spec := do
   IO.ofExcept (Json.parse (← IO.FS.readFile path) >>= parseSpec)
 

@@ -33,11 +33,13 @@ def javascript (flags : Array String) (paths : Array System.FilePath) : IO Unit 
 def readJson (path : System.FilePath) : IO Json := do
   IO.ofExcept (Json.parse (← IO.FS.readFile path))
 
-def loadProgram (path work : System.FilePath) (validateSnapshot : Bool) : IO Json := do
+def loadProgram (path work : System.FilePath) (validateSnapshot : Bool) (sourceHash : Option String := none) : IO Json := do
   if path.extension == some "js" || path.extension == some "mjs" then
     let parsed := work / "source.json"
-    javascript #["--parse"] #[path, parsed]
+    let flags := sourceHash.elim #["--parse"] fun digest => #["--parse-sha256", digest]
+    javascript flags #[path, parsed]
     return ← readJson parsed
+  if sourceHash.isSome then throw (IO.userError "resolved placements require JavaScript source bytes")
   if validateSnapshot then
     let parsed := work / "source.json"
     javascript #["--load-input"] #[path, parsed]

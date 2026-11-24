@@ -1,4 +1,5 @@
 // ESTree transport for LowerSplit's printer, input migration and declaration checker.
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -9,9 +10,12 @@ import { lowerDump, upgradeLowerDump } from "./annotated_estree.mjs";
 
 const linkedAnnotations = { includeOpaqueCaptures: true };
 
-function program(file) {
+function program(file, expectedHash) {
   try {
-    return lowerDump(fs.readFileSync(file, "utf8"), acorn, eslintScope, linkedAnnotations);
+    const bytes = fs.readFileSync(file);
+    if (expectedHash !== undefined && createHash("sha256").update(bytes).digest("hex") !== expectedHash)
+      throw new Error("resolved placement source_sha256 differs from source bytes");
+    return lowerDump(bytes.toString("utf8"), acorn, eslintScope, linkedAnnotations);
   } catch (error) {
     throw new Error(`${file}: ${error.message}`);
   }
@@ -171,6 +175,9 @@ try {
         : source.slice(unit.start, unit.end)
     );
     writeJson(output, text);
+  } else if (mode === "--parse-sha256") {
+    const [digest, input, output] = args;
+    writeJson(output, program(input, digest));
   } else if (mode === "--parse") {
     const [input, output] = args;
     writeJson(output, program(input));

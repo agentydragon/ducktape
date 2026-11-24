@@ -28,10 +28,16 @@ Chromium. Its `trial_union` artifacts contain the exact checked `placement.json`
 source deployment origin and both verdicts. A [second replay](https://app.buildbuddy.io/invocation/84bd70d5-5a73-460d-848c-12c6393b6827)
 took all 1,787 owner assignments directly from the
 [selector export](https://github.com/agentydragon/ducktape/pull/19757).
-Using its authored import priority, Lean rejected: “unit 1759 has access to
+Forcing its authored import priority as the execution sequence, Lean rejected: “unit 1759 has access to
 the moved region of unit 1598”. Using [lean-order.json](lean-order.json) with
 `sequential: true`, the same assignments certified at emit and recheck and
 passed Chromium. The resolver supplies claims; Lean checks the proposed order.
+
+The [ordinary planner replay](https://app.buildbuddy.io/invocation/04bbaabc-4c15-4759-879c-443526865e13)
+used the exported priority to order import requests and let depth-first module evaluation determine
+the execution order. With the same source digest and owners, the 236-unit proposal passed
+certified emit, disk recheck and Chromium without the order file. The 280-unit utilities
+proposal passed the same checks in that run.
 
 ## Why this does not move calculateScrollCenter
 
