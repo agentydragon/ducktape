@@ -31,18 +31,6 @@ def stringLiteral (j : Json) : Except String String := do
 def moduleExportName (j : Json) : Except String Name := do
   if (← field j "type") == "Literal" then stringLiteral j else identifier j
 
-private def stringExpr (s : String) : Except String Expr := do
-  unless s.toList.all (·.toNat ≤ 0xffff) do throw "string outside the Basic Multilingual Plane"
-  return .str s
-
-/-- A string literal consumed directly by a relational comparison has no use that can
-observe its length or index its code units. The comparison itself uses UTF-16 order. -/
-private def relationalOperand (lower : Json → Except String Expr) (j : Json) : Except String Expr := do
-  if (← field j "type") == "Literal" then
-    if (← field j "lit").startsWith "s:" then
-      return .str (← stringLiteral j)
-  lower j
-
 private def literal (key : String) : Except String Expr := do
   match key with
   | "null" => return .null
@@ -51,7 +39,7 @@ private def literal (key : String) : Except String Expr := do
   | _ =>
     if key.startsWith "s16:" then throw "string literal contains an isolated UTF-16 surrogate"
     if key.startsWith "s:" then
-      return ← stringExpr (key.drop 2).toString
+      return .str (key.drop 2).toString
     if key.startsWith "n:" then
       let s := (key.drop 2).toString
       let n := Num.ofString s
@@ -204,7 +192,6 @@ private def linkedObjectPattern (j : Json) (binding : Json → Except String α)
         !(← p.getObjValAs? Bool "computed") && !(← p.getObjValAs? Bool "method") do
       throw "expected a static object pattern property"
     let key ← moduleExportName (← p.getObjVal? "key")
-    unless key.toList.all (·.toNat ≤ 0xffff) do throw "property key outside the Basic Multilingual Plane"
     return (key, ← p.getObjVal? "value" >>= binding)
 
 private def linkedPatternIdentifier (binder : Json → Except String Name) (target : Json) : Except String Name := do
@@ -259,7 +246,7 @@ private def linkedObject (lower : Name → Json → Except String Expr)
       props := props.push (.init (← lower "" (← p.getObjVal? "key")) (← lower "" value))
       continue
     let key ← staticPropertyName (← p.getObjVal? "key")
-    let keyExpr ← stringExpr key
+    let keyExpr := Expr.str key
     if let some previous := seen[key]? then
       unless (previous == "get" && kind == "set") || (previous == "set" && kind == "get") do
         throw "duplicate object property"
@@ -289,7 +276,7 @@ private def linkedTemplate (lower : Json → Except String Expr) (j : Json) : Ex
     unless (← field q "type") == "TemplateElement" do throw "expected a template element"
     if let .ok false := q.getObjValAs? Bool "cookedWellFormed" then
       throw "template text contains an isolated UTF-16 surrogate"
-    stringExpr (← field (← q.getObjVal? "value") "cooked")
+    return Expr.str (← field (← q.getObjVal? "value") "cooked")
   let mut result ← cooked first
   for (expression, quasi) in expressions.zip rest do
     let value := Expr.unary .toString (← lower expression)
@@ -328,7 +315,7 @@ private partial def linkedMember (lower : Json → Except String Expr) (j : Json
     match ambientSymbolMember? j with
     | some member => s!"unsupported ambient member Symbol.{member}"
     | none => reason
-  let key ← if ← j.getObjValAs? Bool "computed" then lower prop else identifier prop >>= stringExpr
+  let key ← if ← j.getObjValAs? Bool "computed" then lower prop else Expr.str <$> identifier prop
   return (base, key)
 
 private def linkedTarget (imports : List Name) (inFunction allowFrozen : Bool)
@@ -436,6 +423,7 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
       let flags ← field rx "flags"
       unless key == "r:" ++ pattern ++ "/" ++ flags do throw "regexp literal differs from its annotation"
       return .regexp ⟨pattern, flags⟩
+    if key.startsWith "s:" then return .str (← stringLiteral j)
     literal key
   | "Identifier" => reference imports inFunction j profile
   | "ThisExpression" => return .this
@@ -533,7 +521,6 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
   | "BinaryExpression" =>
     let op ← field j "operator"
     let lower := linkedExpr profile imports inFunction ""
-    let lower := if ["<", "<=", ">", ">="].contains op then relationalOperand lower else lower
     let left ← lower (← j.getObjVal? "left")
     let right ← lower (← j.getObjVal? "right")
     match op with
@@ -732,7 +719,7 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
     unless tag == "MethodDefinition" || tag == "PropertyDefinition" do throw s!"unsupported class element {tag}"
     if ← member.getObjValAs? Bool "computed" then throw "unsupported computed class key"
     let key ← moduleExportName (← member.getObjVal? "key")
-    let keyExpr ← stringExpr key
+    let keyExpr := Expr.str key
     let static ← member.getObjValAs? Bool "static"
     let value ← member.getObjVal? "value"
     if tag == "PropertyDefinition" then

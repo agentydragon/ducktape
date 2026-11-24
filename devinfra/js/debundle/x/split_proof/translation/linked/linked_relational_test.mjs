@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   arrow,
@@ -11,6 +12,7 @@ import {
   forcePreview,
   id,
   literal,
+  lower,
   moduleEvaluationOrder,
   observe,
   ownerReaderSplit,
@@ -116,10 +118,43 @@ assertRejected(object, /an object is converted to a primitive/);
 
 const supplementary = ownerReaderSplit(
   "supplementary-property",
-  'const length = () => "𐀀".length; const result = length(); export { result };'
+  `const first = "𐀀";
+    const text = "A😀\\ufe0fZ";
+    const read = () => {
+      const second = "𐀁";
+      const keys = { 𐀀: 1, [second]: 2, "😀": 3 };
+      if (text.length !== 5 || text[0] !== "A" || text["4"] !== "Z" || text[-0] !== "A") throw 1;
+      if (text[3] !== "\\ufe0f" || text[5] !== undefined || text["04"] !== undefined || text["-0"] !== undefined) throw 2;
+      if (!(first < "\\ue000") || !(first < second) || first === second || first + second !== "𐀀𐀁") throw 3;
+      if (keys.𐀀 !== 1 || keys[first] !== 1 || keys[second] !== 2 || keys["😀"] !== 3) throw 4;
+      return \`𐀂/\${first}/\${text}\`;
+    };
+    const result = read();
+    export { result };`,
+  { [owner]: ["#0", "#1"], [reader]: ["#2", "#3"], [entry]: ["#4"] }
 );
-assert.deepEqual(observe(supplementary.files.sourceFile, "result"), { result: 2 });
-assertRejected(supplementary, /string outside the Basic Multilingual Plane/);
+assertCertifiedResult(supplementary, "𐀂/𐀀/A😀\ufe0fZ");
+const checked = () =>
+  lower(supplementary.files.sourceFile, supplementary.files.specFile, supplementary.out, ["--check-output"]);
+assert.deepEqual(checked().verdict, supplementary.verdict);
+
+const readerFile = path.join(supplementary.out, reader);
+const readerSource = readFileSync(readerFile, "utf8");
+const changedReader = readerSource.replace("𐀂", "𐀃");
+assert.notEqual(changedReader, readerSource);
+writeFileSync(readerFile, changedReader);
+assert.deepEqual(observe(path.join(supplementary.out, entry), "result"), { result: "𐀃/𐀀/A😀\ufe0fZ" });
+const changed = checked();
+assert.equal(changed.verdict.status, "rejected", changed.log);
+
+for (const index of [0, 1]) {
+  const half = ownerReaderSplit(
+    `supplementary-index-${index}`,
+    `const read = () => "𐀀"[${index}] !== "\\ufffd"; const result = read(); export { result };`
+  );
+  assert.deepEqual(observe(half.files.sourceFile, "result"), { result: true });
+  assertRejected(half, /string index reads an isolated UTF-16 surrogate/);
+}
 
 // Replacing the isolated surrogate with U+FFFD would flip the result.
 for (const [label, value] of [

@@ -15,18 +15,15 @@ theorem reachFrame_fromWorld (r R cells A) (result : HostResult) :
     ReachFrame r R cells A (SafeVal A) (fun s : State W => fromWorld s result) := by
   constructor
   · intro s H C _ _
-    cases result <;> simp only [fromWorld] <;> first | rfl | split <;> rfl
+    cases result <;> rfl
   · intro s _ _
-    cases result <;> simp only [fromWorld] <;>
-      first | exact Preserves.refl r R s | split <;> exact Preserves.refl r R s
+    cases result <;> exact Preserves.refl r R s
   · intro s hs _
     cases result with
     | ret v | throw v =>
-      simp only [fromWorld]
-      split
-      · exact ⟨by cases v <;> simp [SafeVal, Primitive.val, Val.nodes], hs⟩
-      · exact hs
+      exact ⟨by cases v <;> simp [SafeVal, Primitive.val, Val.nodes], hs⟩
     | error => exact ⟨by simp [SafeVal, Val.nodes], hs⟩
+    | unknown => exact hs
 
 /-- A world observation reads only the private state and leaves the handle table alone. Its
 decoder runs on the actual state returned by that observation. -/

@@ -120,6 +120,8 @@ def Val.primitive? : Val → Option Primitive
 (`Host.handed`), so the world can name no other object. -/
 inductive WVal where
   | prim (p : Primitive)
+  /-- An external string that contains an isolated UTF-16 surrogate. -/
+  | illFormedString
   | handle (k : Nat)
   | error (kind : ErrorKind) (msg : String)
   | host (name : String)
@@ -158,11 +160,12 @@ inductive Request where
   | newFunction (part : Nat) (name : String) (length : Nat) (constructor : Bool)
   | prim (p : Prim) (args : List WVal)
 
-/-- How a call of a host function ends: with a primitive, with a thrown primitive, or with a thrown error object. -/
+/-- How a call of a host function ends. The world can also report an unrepresentable result. -/
 inductive HostResult where
   | ret (v : Primitive)
   | throw (v : Primitive)
   | error (kind : ErrorKind) (msg : String)
+  | unknown (why : String)
 
 /-- Ambient bindings and properties of opaque host objects are distinct observations. -/
 inductive HostRef where
@@ -455,17 +458,12 @@ def worldArgs (name : String) (this : Val) (args : List Val) : Option (Primitive
   let this ← if method then this.primitive? else some .undef
   pure (this, ← args.mapM Val.primitive?)
 
-/-- A string of the model has no character outside the Basic Multilingual Plane: the model counts code points, and
-JavaScript code units. -/
-def Primitive.inModel : Primitive → Bool
-  | .str s => s.toList.all fun c => c.toNat < 0x10000
-  | _ => true
-
 /-- What the world gave back, as the model's result. -/
 def fromWorld (s : State W) : HostResult → Res W Val
-  | .ret v => if v.inModel then .ok v.val s else .unknown "the host returns a string outside the Basic Multilingual Plane" s
-  | .throw v => if v.inModel then .throw v.val s else .unknown "the host throws a string outside the Basic Multilingual Plane" s
+  | .ret v => .ok v.val s
+  | .throw v => .throw v.val s
   | .error kind msg => .throw (.error kind msg) s
+  | .unknown why => .unknown why s
 
 /-- A call of the host function `name`: the world's step, if the world answers for it. -/
 def hostCall (name : String) (this : Val) (args : List Val) : M W Val :=
@@ -713,10 +711,15 @@ def createData (a : Addr) (k : String) (v : Val) : M W Unit :=
 /-- What a call does: the callee, `this`, the arguments. The operations below take it as a parameter. -/
 abbrev Call (W : World) := Val → Val → List Val → M W Val
 
-/-- What a string has itself: `length` and its characters. -/
-def stringOwn (s : String) (k : String) : Option Val :=
-  if k == "length" then some (.num (Float.ofNat s.length)) else
-    (k.toNat?.filter (toString · == k)).bind fun i => (s.toList[i]?).map fun c => .str (String.singleton c)
+/-- String own properties are `length` and canonical indices into its UTF-16 code units.
+An indexed property exists even when its value is an isolated surrogate. -/
+def stringOwn (s : String) (k : String) : Option (Except Abort Val) :=
+  if k == "length" then some (.ok (.num (Float.ofNat (utf16CodeUnits s).length))) else do
+    let i ← k.toNat?.filter (toString · == k)
+    let unit ← (utf16CodeUnits s)[i]?
+    return if 0xd800 ≤ unit ∧ unit ≤ 0xdfff then
+      .error (.unknown "string index reads an isolated UTF-16 surrogate")
+    else .ok (.str (String.singleton (Char.ofNat unit)))
 
 /-- The property `k` of the object at `a`, read for `base`: a getter runs with `base` as `this`. -/
 def getFrom (call : Call W) (a : Addr) (base : Val) (k : String) : M W Val := do
@@ -754,7 +757,7 @@ def getProp (call : Call W) (base key : Val) : M W Val := do
   | .str s =>
     let k ← toKey key
     match stringOwn s k with
-    | some v => pure v
+    | some v => lift v
     | none => protoProp call "String.prototype" stringProtoNames base k
   | .num _ => protoProp call "Number.prototype" numberProtoNames base (← toKey key)
   | .bool _ => protoProp call "Boolean.prototype" booleanProtoNames base (← toKey key)
@@ -775,7 +778,11 @@ def setProp (call : Call W) (base key v : Val) : M W Unit := do
       -- an own writable data property keeps its attributes; an inherited or a missing one makes a new own property
       defineOwn a k (if ((← getObj a).props.lookup k).isSome then { value := some v } else
         { value := some v, writable := some true, enumerable := some true, configurable := some true })
-  | .str _ | .num _ | .bool _ => unknown "a property is set on a primitive"
+  | .str s =>
+    let k ← toKey key
+    if (stringOwn s k).isSome then throwErr .type s!"cannot assign to read only property {k}"
+    else unknown "a property is set on a primitive"
+  | .num _ | .bool _ => unknown "a property is set on a primitive"
   | .error .. => unknown "a property of an engine error"
   | .host name => unknown s!"a property of host value {name}"
 
@@ -792,7 +799,11 @@ def deleteProp (base key : Val) : M W Val := do
         modifyObj a fun o => { o with props := o.props.filter (·.1 != k) }
         pure (.bool true)
       else throwErr .type s!"cannot delete property {k}"
-  | .str _ | .num _ | .bool _ => unknown "a property of a primitive is deleted"
+  | .str s =>
+    let k ← toKey key
+    if (stringOwn s k).isSome then throwErr .type s!"cannot delete property {k}"
+    else pure (.bool true)
+  | .num _ | .bool _ => unknown "a property of a primitive is deleted"
   | .error .. => unknown "a property of an engine error"
   | .host name => unknown s!"a property of host value {name}"
 
@@ -868,9 +879,7 @@ def regexpFlags (call : Call W) (receiver : Val) : List (String × String) → M
 def regexpSlot (a : Addr) (data : Option RegExpData) (letter : Option Char) : M W Val :=
   match data, letter with
   | some rx, some c => pure (.bool (rx.flags.contains c))
-  | some rx, none =>
-    if (Primitive.str rx.pattern).inModel then pure (.str rx.pattern)
-    else unknown "RegExp source outside the Basic Multilingual Plane"
+  | some rx, none => pure (.str rx.pattern)
   | none, _ =>
     if a == regexpProto then pure (if letter.isNone then .str "(?:)" else .undef)
     else throwErr .type "RegExp getter called on an incompatible receiver"
@@ -958,7 +967,8 @@ def toW (v : Val) : M W WVal :=
 
 /-- The value the world names. -/
 def fromW : WVal → M W Val
-  | .prim p => if p.inModel then pure p.val else unknown "the world gives a string outside the Basic Multilingual Plane"
+  | .prim p => pure p.val
+  | .illFormedString => unknown "the world gives a string containing an isolated UTF-16 surrogate"
   | .handle k => fun s =>
     match s.world.handed[k]? with
     | some a => .ok (.obj a) s
@@ -1030,8 +1040,8 @@ def copySpread (call : Call W) (target : Addr) : Val → M W Unit
     copySpreadKeys call target source (← ownKeys (.obj source))
   | .undef | .null | .num _ | .bool _ => pure ()
   | .str s => do
-    unless (Primitive.str s).inModel do
-      unknown "object spread requires individual UTF-16 code units"
+    unless s.toList.all (·.toNat ≤ 0xffff) do
+      unknown "object spread would copy an isolated UTF-16 surrogate"
     for (c, i) in s.toList.zipIdx do
       createData target (toString i) (.str (String.singleton c))
   | .host name => unknown s!"object spread inspects host value {name}"

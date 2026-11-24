@@ -125,11 +125,8 @@ theorem frames_toW (r : Nat) (R : Addr → Prop) (v : Val) : Frames r R (toW v :
 
 theorem frames_fromW (r : Nat) (R : Addr → Prop) (v : WVal) : Frames r R (fromW v : M W Val) := by
   cases v with
-  | prim p =>
-    simp only [fromW]
-    split
-    · exact frames_pure r R _
-    · exact frames_unknown r R _
+  | prim => exact frames_pure r R _
+  | illFormedString => exact frames_unknown r R _
   | handle k =>
     constructor
     · intro s H C hr

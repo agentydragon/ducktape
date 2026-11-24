@@ -217,10 +217,11 @@ export function coreFromParsed(
     }
   };
 
-  const string = (node, s) => {
-    if (/[\ud800-\udfff]/.test(s)) refuse(node, "a string outside the Basic Multilingual Plane");
-    emit("str", s);
+  const checkedString = (node, s) => {
+    if (!s.isWellFormed()) refuse(node, "a string containing an isolated UTF-16 surrogate");
+    return s;
   };
+  const string = (node, s) => emit("str", checkedString(node, s));
   /** The name of a property written without brackets. */
   const staticKey = (node) => {
     if (node.type === "Identifier") return node.name;
@@ -379,7 +380,7 @@ export function coreFromParsed(
     switch (node.type) {
       case "Literal":
         if (node.regex) {
-          emit("regexp", node.regex.pattern, node.regex.flags);
+          emit("regexp", checkedString(node, node.regex.pattern), node.regex.flags);
           break;
         }
         if (node.bigint !== undefined) refuse(node, "a BigInt");
@@ -682,13 +683,14 @@ export function coreFromParsed(
 
   function importDeclaration(node) {
     if (node.attributes?.length) refuse(node, "an import attribute");
-    if (!/^\.\.?\//.test(node.source.value)) refuse(node, "an import of a module that is not a relative path");
+    const source = checkedString(node.source, node.source.value);
+    if (!/^\.\.?\//.test(source)) refuse(node, "an import of a module that is not a relative path");
     const names = node.specifiers.map((specifier) => {
       if (specifier.type === "ImportNamespaceSpecifier") refuse(specifier, "a namespace import");
       const exported = specifier.type === "ImportDefaultSpecifier" ? "default" : moduleName(specifier.imported);
       return [exported, specifier.local.name];
     });
-    imports.push({ source: node.source.value, names });
+    imports.push({ source, names });
   }
 
   const unitIds = [];
