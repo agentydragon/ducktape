@@ -136,7 +136,6 @@ write_js_tree: {out_dir: out}
 emit_browser_harness: {asset_summary_path: assets.json, out_dir: harness, snapshot_root: snapshot}
 "#).unwrap();
     ApplyProjection {
-        format_version: super::super::APPLY_PROJECTION_FORMAT_VERSION,
         source: TransformSpecSource::Tree(spec_tree::CompileSpecTreeOptions {
             config_path: "config.yaml".into(),
             modules_root: "modules".into(),

@@ -6,6 +6,8 @@ use prost::Message;
 use spec_wire::{required, unique_set};
 use spec_wire_proto::debundle::spec::Unit;
 
+const APPLY_PROJECTION_FORMAT_VERSION: u32 = 3;
+
 impl ApplyProjection {
     pub(super) fn encode(&self) -> Vec<u8> {
         self.to_proto().encode_to_vec()
@@ -13,7 +15,7 @@ impl ApplyProjection {
     pub(super) fn decode(bytes: &[u8]) -> Result<Self> {
         let value = wire::ApplyProjection::decode(bytes)?;
         ensure!(
-            value.format_version == super::APPLY_PROJECTION_FORMAT_VERSION,
+            value.format_version == APPLY_PROJECTION_FORMAT_VERSION,
             "unsupported apply projection format version {}",
             value.format_version
         );
@@ -21,7 +23,7 @@ impl ApplyProjection {
     }
     fn to_proto(&self) -> wire::ApplyProjection {
         wire::ApplyProjection {
-            format_version: self.format_version,
+            format_version: APPLY_PROJECTION_FORMAT_VERSION,
             source: Some(self.source.to_proto()),
             spec: Some(spec_wire::encode_transform_spec(&self.spec)),
             module_roots_by_chunk: self
@@ -44,7 +46,6 @@ impl ApplyProjection {
     }
     fn from_proto(v: wire::ApplyProjection) -> Result<Self> {
         Ok(Self {
-            format_version: v.format_version,
             source: TransformSpecSource::from_proto(
                 v.source.context("missing apply spec source")?,
             )?,
