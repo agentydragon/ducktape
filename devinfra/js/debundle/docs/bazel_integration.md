@@ -406,18 +406,18 @@ bbr test -c opt --nocache_test_results --remote_build_event_upload=all \
   //devinfra/js/debundle/perf:excalidraw_pipeline_bench
 ```
 
-The test executes fresh project, analyze and apply commands. GNU `time -v`
-output and each command's stdout/stderr go to `TEST_UNDECLARED_OUTPUTS_DIR`
-for attachment to the BuildBuddy test invocation. Inputs are read directly from
-Bazel runfiles; intermediate pipeline outputs stay in `TEST_TMPDIR`. The benchmark
-does not produce aggregate reports or automatic revision comparisons.
+Bazel sends the Excalidraw test action to the self-hosted `kvm-vm` pool. Its
+pinned tools image supplies GNU time, perf and Heaptrack. Each run reads the
+corpus from runfiles, writes intermediate outputs to `TEST_TMPDIR`, and
+executes project, analyze and apply in order. Each phase has a 30-minute timeout,
+a 16 GiB address-space limit per process and a 512 MiB limit per file. Look in
+the test outputs under each phase name for `gnu-time.txt`, `stdout.txt` and
+`stderr.txt`. Compare those outputs across runs of the revisions of interest.
 
-For a raw Analyze CPU profile or heap allocation profile, run the benchmark
-separately with `DEBUNDLE_BENCH_PROFILE=cpu` or `heap`. Profiling builds use the
-same optimized settings plus Rust line tables and frame pointers. The workflow
-sets these flags automatically. Rust normally strips debug information in opt
-mode independently of Bazel's `--strip` setting, so both strip flags are needed.
-For a direct Bazel invocation add:
+Use `profile=none` for native timings. Run CPU and heap profiles separately
+because Heaptrack affects CPU cost. The workflow adds Rust line tables, frame
+pointers and both Rust and Bazel strip overrides. For direct profiling, append
+these flags to the test command (substitute `heap` for an allocation profile):
 
 ```sh
 --@rules_rust//rust/settings:extra_rustc_flag=-Cdebuginfo=1 \
@@ -426,25 +426,12 @@ For a direct Bazel invocation add:
 --strip=never --test_env=DEBUNDLE_BENCH_PROFILE=cpu
 ```
 
-The CPU run writes `analyze/perf.data`; the heap run writes
-`analyze/heaptrack.raw.zst` (or `.raw.gz`). Each also attaches the matching
-`analyze/debundle_analyze` executable, including its debug information. To
-symbolize the raw allocation trace, make that executable available at its
-recorded path before running `heaptrack --interpret`; use the exact executable
-for CPU symbols as well. Run each mode separately: Heaptrack changes CPU costs,
-and `perf` should not be wrapped around it. Perf compresses its records inside
-`perf.data`; Heaptrack compresses its raw trace as it writes. Use `none` for
-native timing. Both profiled modes also pass `--metrics-file` to the project,
-analyze and apply commands. Their raw OpenTelemetry JSONL files are written as
-`project/metrics.jsonl`, `analyze/metrics.jsonl` and `apply/metrics.jsonl` beside
-the corresponding phase logs. The benchmark sets the standard
-`OTEL_METRIC_EXPORT_INTERVAL=1000` environment variable so short phases flush
-before exit; it performs no metrics postprocessing.
-
-The Excalidraw pipeline benchmark runs locally on the outer BuildBuddy runner,
-whose pinned image supplies the profiling tools. Tool builds and the synthetic
-benchmark tests use RBE. Each native command has a timeout, a 16 GiB per-process
-address-space limit and a 512 MiB per-file limit.
+CPU profiles attach compressed records in `analyze/perf.data`. Heap profiles
+attach `analyze/heaptrack.raw.zst` (or `.raw.gz`). Both attach the matching
+`analyze/debundle_analyze` for symbolization. Restore that executable at its
+recorded path before running `heaptrack --interpret`. In both modes each phase
+also writes raw OpenTelemetry data to its own `metrics.jsonl` with
+`OTEL_METRIC_EXPORT_INTERVAL=1000`.
 
 The optional
 [Debundle performance workflow](https://github.com/agentydragon/ducktape/actions/workflows/debundle-performance.yml)
@@ -470,6 +457,3 @@ gh workflow run debundle-performance.yml --ref devel \
   -f candidate_ref="$revision" -f suite=excalidraw \
   -f additional_test_flags=--runs_per_test=3 -f profile=none
 ```
-
-Use the BuildBuddy invocation's native tool outputs for subsequent analysis.
-Run each revision separately when comparing changes.

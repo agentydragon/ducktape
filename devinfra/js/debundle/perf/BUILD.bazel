@@ -18,8 +18,7 @@ _INPUT_ENV = {
     for variable, label in _INPUT_RUNFILES.items()
 }
 
-# Run on the single-action kvm-vm workers to reduce contention during timing
-# and profiling. The tools image supplies GNU time and optional profilers.
+# The KVM test action uses the tools image for GNU time, perf and Heaptrack.
 _BENCH_TOOLS_IMAGE = "docker://" + BUILDBUDDY_REMOTE_RUNNER_IMAGE + "@" + BUILDBUDDY_REMOTE_RUNNER_DIGEST
 
 _BENCH_EXEC_PROPERTIES = {
