@@ -7,7 +7,7 @@ import * as acorn from "acorn";
 import * as eslintScope from "eslint-scope";
 import { bundleFromParsed, frontBundle } from "./frontend.mjs";
 import { annotateProgram, parseModule, resolveIdentifiers } from "./scope_metadata.mjs";
-import { dumpParsed, lowerDump, upgradeLowerDump } from "./annotated_estree.mjs";
+import { dumpParsed, loadSnapshot, lowerDump } from "./annotated_estree.mjs";
 import { checkTranslation } from "./testing/check_translation.mjs";
 import { lowerDiagnostic, prepareSideSplit, run } from "./testing/diagnostic_split.mjs";
 
@@ -93,9 +93,9 @@ assert.deepEqual(
   ]
 );
 const legacy = JSON.parse(legacyDump(printParsed));
-assert.deepEqual(upgradeLowerDump(legacy, acorn, eslintScope), printProgram);
+assert.deepEqual(loadSnapshot(legacy, acorn, eslintScope), printProgram);
 legacy.body[0].declarations[0].init.elements[0].lit = "r:b+/gi";
-assert.throws(() => upgradeLowerDump(legacy, acorn, eslintScope), /disagrees with a fresh parse/);
+assert.throws(() => loadSnapshot(legacy, acorn, eslintScope), /disagrees with a fresh parse/);
 writeFileSync(ast, JSON.stringify(dumpParsed(parsed)));
 const scopes = lowerDump("const a = (x) => x, b = (x) => x;", acorn, eslintScope);
 const callbacks = scopes.body[0].declarations.map((d) => d.init);
