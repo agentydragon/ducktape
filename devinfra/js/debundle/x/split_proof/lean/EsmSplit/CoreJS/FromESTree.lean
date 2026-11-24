@@ -220,6 +220,13 @@ private def staticPropertyName (key : Json) : Except String Name := do
         return toString n
   moduleExportName key
 
+private def isAnonymousDefinition (value : Json) : Except String Bool := do
+  if value == .null then return false
+  match ← field value "type" with
+  | "ArrowFunctionExpression" => return true
+  | "FunctionExpression" | "ClassExpression" => return (← value.getObjVal? "id") == .null
+  | _ => return false
+
 /-- Evaluate object elements in source order. Only a colon-form __proto__ initializer
 sets the prototype. Shorthand properties and methods with that name define own properties. -/
 private def linkedObject (lower : Name → Json → Except String Expr)
@@ -238,11 +245,7 @@ private def linkedObject (lower : Name → Json → Except String Expr)
       -- Methods, accessors and anonymous definitions get their name from the evaluated key.
       if kind != "init" || (← p.getObjValAs? Bool "method") then
         throw "unsupported method or accessor named by a computed key"
-      let anonymous ← match ← field value "type" with
-        | "ArrowFunctionExpression" => pure true
-        | "FunctionExpression" | "ClassExpression" => pure ((← value.getObjVal? "id") == .null)
-        | _ => pure false
-      if anonymous then throw "unsupported function or class named by a computed key"
+      if ← isAnonymousDefinition value then throw "unsupported function or class named by a computed key"
       props := props.push (.init (← lower "" (← p.getObjVal? "key")) (← lower "" value))
       continue
     let key ← staticPropertyName (← p.getObjVal? "key")
@@ -608,6 +611,13 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     let lower := linkedExpr profile imports inFunction ""
     let callee ← j.getObjVal? "callee"
     let args ← j.getObjValAs? (List Json) "arguments"
+    if profile == .browserPage && (field callee "type").toOption == some "Identifier" &&
+        (field callee "k").toOption == some "G" && (identifier callee).toOption == some "Symbol" then
+      match args with
+      | [] => return .prim .freshSymbol []
+      | [arg] =>
+        if let .ok description := stringLiteral arg then return .prim .freshSymbol [.str description]
+      | _ => pure ()
     match ← field callee "type" with
     | "MemberExpression" =>
       if ambientSymbolMember? callee == some "for" then
@@ -752,16 +762,20 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
     let tag ← field member "type"
     unless tag == "MethodDefinition" || tag == "PropertyDefinition" do throw s!"unsupported class element {tag}"
     let keyNode ← member.getObjVal? "key"
+    let static ← member.getObjValAs? Bool "static"
+    let value ← member.getObjVal? "value"
     let (key, keyExpr) ← if ← member.getObjValAs? Bool "computed" then do
-      unless tag == "MethodDefinition" && profile == .browserPage && ambientSymbolMember? keyNode == some "iterator" do
-        throw "unsupported computed class key"
-      -- SetFunctionName wraps a symbol’s description in brackets.
-      pure ("[Symbol.iterator]", Expr.prim .iteratorSymbol [])
+      if tag == "MethodDefinition" && profile == .browserPage && ambientSymbolMember? keyNode == some "iterator" then
+        -- SetFunctionName wraps a symbol’s description in brackets.
+        pure ("[Symbol.iterator]", Expr.prim .iteratorSymbol [])
+      else if tag == "PropertyDefinition" && !static && (← field keyNode "type") == "Identifier" &&
+          (field keyNode "k").toOption.any (["L", "T", "V"].contains ·) then
+        if ← isAnonymousDefinition value then throw "unsupported function or class named by a computed field key"
+        pure ("", ← reference imports inFunction keyNode profile)
+      else throw "unsupported computed class key"
     else do
       let name ← moduleExportName keyNode
       pure (name, Expr.str name)
-    let static ← member.getObjValAs? Bool "static"
-    let value ← member.getObjVal? "value"
     if tag == "PropertyDefinition" then
       unless parent == .null do throw "unsupported derived class field"
       let init ← if value == .null then pure .undef else linkedExpr profile imports inFunction key value
