@@ -950,17 +950,6 @@ pub(crate) struct BrowserHarnessFixture {
     pub(crate) out_dir: PathBuf,
 }
 
-#[derive(Serialize)]
-struct AssetSummaryFixture<'a> {
-    #[serde(rename = "entryPoints")]
-    entry_points: AssetSummaryEntryPoints<'a>,
-}
-
-#[derive(Serialize)]
-struct AssetSummaryEntryPoints<'a> {
-    html: &'a str,
-}
-
 fn prepare_fixture(opts: &FixtureOpts<'_>) -> PreparedFixture {
     let root = CaseWorkspace::default();
     let extracted_root = root.path().join("extracted");
@@ -984,10 +973,7 @@ fn prepare_fixture(opts: &FixtureOpts<'_>) -> PreparedFixture {
         let asset_summary_path = extracted_root.join("asset-summary.json");
         write_text_file(
             &asset_summary_path,
-            &serde_json::to_string(&AssetSummaryFixture {
-                entry_points: AssetSummaryEntryPoints { html: "index.html" },
-            })
-            .unwrap(),
+            r#"{"entryPoints":{"html":"index.html"}}"#,
         );
         BrowserHarnessFixture {
             asset_summary_path,
