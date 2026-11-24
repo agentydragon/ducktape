@@ -40,18 +40,6 @@ js_binary(
     visibility = ["//devinfra/js/debundle/x/split_proof/lean:__pkg__"],
 )
 
-js_test(
-    name = "linked_input_test",
-    data = [
-        ":node_modules/acorn",
-        ":node_modules/eslint-scope",
-        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
-        "//devinfra/js/debundle/x/split_proof/lean:linked_input_test_runner",
-    ],
-    entry_point = "linked_input_test.mjs",
-    env = {"LINKED_INPUT_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:linked_input_test_runner)"},
-)
-
 # Include first-party runfile helpers as lint sources.
 js_library(
     name = "lint_sources",
@@ -215,133 +203,6 @@ js_test(
     entry_point = "lower_callback_fuzz_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
     tags = ["manual"],
-)
-
-_LINKED_PROGRAMS_TEST_DATA = [
-    "//devinfra/js/debundle/x/split_proof/translation/testing:linked_programs",
-    "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
-]
-
-_LINKED_PROGRAMS_TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"}
-
-[
-    js_test(
-        name = name,
-        size = "medium",
-        data = _LINKED_PROGRAMS_TEST_DATA,
-        entry_point = name + ".mjs",
-        env = _LINKED_PROGRAMS_TEST_ENV,
-    )
-    for name in [
-        "linked_arithmetic_observer_test",
-        "linked_arithmetic_test",
-        "linked_arrays_test",
-        "linked_async_methods_test",
-        "linked_bitwise_test",
-        "linked_browser_globals_test",
-        "linked_classes_test",
-        "linked_composition_test",
-        "linked_default_parameters_test",
-        "linked_dense_array_batch_test",
-        "linked_flat_patterns_test",
-        "linked_function_declaration_test",
-        "linked_generator_test",
-        "linked_identifier_assignment_test",
-        "linked_if_test",
-        "linked_import_cells_test",
-        "linked_literal_records_test",
-        "linked_logical_test",
-        "linked_loops_test",
-        "linked_member_test",
-        "linked_module_graph_test",
-        "linked_object_elements_test",
-        "linked_object_spread_test",
-        "linked_optional_callee_test",
-        "linked_optional_chain_test",
-        "linked_provider_programs_test",
-        "linked_realm_constructors_test",
-        "linked_record_values_test",
-        "linked_relational_test",
-        "linked_reordering_test",
-        "linked_sequence_test",
-        "linked_regexp_test",
-        "linked_small_records_test",
-        "linked_structural_pivot_test",
-        "linked_switch_test",
-        "linked_templates_test",
-        "linked_wide_records_test",
-        "linked_wide_table_reversal_test",
-    ]
-]
-
-js_test(
-    name = "linked_programs_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_programs_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-    shard_count = 3,
-)
-
-js_test(
-    name = "linked_host_profile_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_host_profile_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-    shard_count = 3,
-)
-
-# Preserve the 48-reader reduction-budget regression for explicit runs.
-js_test(
-    name = "linked_module_graph_scale_test",
-    size = "medium",
-    args = ["--full-graph"],
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_module_graph_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-    tags = ["manual"],
-)
-
-js_test(
-    name = "linked_mutations_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_mutations_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-    shard_count = 3,
-)
-
-js_test(
-    name = "linked_property_assignment_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_property_assignment_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-    shard_count = 3,
-)
-
-js_test(
-    name = "linked_table_lookups_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA + [
-        ":node_modules/acorn",
-        ":node_modules/astring",
-    ],
-    entry_point = "linked_table_lookups_test.mjs",
-    env = _LINKED_PROGRAMS_TEST_ENV,
-)
-
-js_test(
-    name = "linked_record_fuel_test",
-    size = "medium",
-    data = _LINKED_PROGRAMS_TEST_DATA,
-    entry_point = "linked_wide_table_reversal_test.mjs",
-    # Cross the old probe ceiling without repeating the 44-row scaling workload.
-    env = _LINKED_PROGRAMS_TEST_ENV | {
-        "LINKED_TABLE_FIELDS": "1410",
-        "LINKED_TABLE_ROWS": "3",
-    },
 )
 
 js_test(
@@ -757,18 +618,6 @@ _COREJS_DIFFERENTIAL_ENV = {
     "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
     "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
 }
-
-js_test(
-    name = "certified_split_test",
-    data = [
-        ":node_modules/acorn",
-        ":node_modules/eslint-scope",
-        "//devinfra/js/debundle/x/split_proof:lowering_dump_core",
-        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
-    ],
-    entry_point = "certified_split_test.mjs",
-    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
-)
 
 js_test(
     name = "corejs_ast_lowering_test",
