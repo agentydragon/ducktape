@@ -1435,7 +1435,9 @@ Qwen's template cannot replay a field that never reaches Tabby.
 The generic OpenAI adapter [passed a direct replay probe](../../cluster/cdk8s/litellm/README.md#tabbyapi-reasoning-replay)
 on the abliterated checkpoint. After rollout, repeat the paired prompt-token check through the
 public model aliases, including the stock checkpoint. Verify streamed tool use and the
-placement of a mid-conversation system message. Budget for the larger prompts; any omission at compaction is a separate policy.
+placement of a mid-conversation system message. Repeat through LiteLLM’s Responses and Anthropic
+Messages bridges with their native reasoning items; the old stock route accepted both but
+showed no prompt-token increase. Budget for the larger prompts; any omission at compaction is a separate policy.
 
 ### `CENTRAL_SAMPLER_COMPACTION_TIMELINE` — show when the sampler compacts context
 
