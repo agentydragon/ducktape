@@ -85,8 +85,8 @@ theorem reachFrame_readHostRef (r R cells A) (ref : HostRef) :
   let name := match ref with
     | .binding name => name
     | .property receiver key => s!"{receiver}.{key}"
-  apply reachFrame_hostObservation r R cells A (W.hostRef ref) (fun identity => pure (.host identity))
-    (fun identity => reachFrame_pure r R cells A (Val.host identity) (by simp [SafeVal, Val.nodes]))
+  apply reachFrame_hostObservation r R cells A (W.hostRef ref) (fun value => pure value.val)
+    (fun value => reachFrame_pure r R cells A value.val (by cases value <;> simp [SafeVal, HostValue.val, Val.nodes]))
     s!"unsupported host reference {name}"
   intro s
   unfold readHostRef

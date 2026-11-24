@@ -66,6 +66,19 @@ The browser-page profile also allows deferred construction of selected ambient c
 
 The command prints one JSON verdict. A successful split reports `status: "certified"` after Lean certifies the output module ASTs and the printer writes them to the requested directory. The default `normal-completion` request means that, for each modeled world and successful final state, the bundle reaches that state exactly when the split does. It does not say that either program completes normally; in the closed-declaration case, both may throw. The linked-program proof additionally establishes that both programs initialize normally. The checker reports the strongest available guarantee, so a default request may report `all-outcomes` for a supported order-preserving split. Pass `--require all-outcomes` to insist on that stronger guarantee. A rejected request exits nonzero with `status: "rejected"`, a null guarantee and a reason.
 
+To move an initializer such as `Math.PI / 12`, pass
+`{"profile":"browser-page","stableIntrinsicValues":["Math.PI@1"]}` with
+`--host-contract` and `--structural` on both emission and `--check-output`.
+The caller asserts that throughout initialization the ambient binding returns
+the same Math object, and that reading its own `PI` data property returns the
+Number with binary64 bits `0x400921fb54442d18`. Both reads must have no
+observable effects. The verdict lists the premise when the move uses it.
+A page that replaces `Math` with `{PI:24}` before the declaration can get
+`2` in source order but `Math.PI / 12` from the original intrinsic after the
+move. Such a page does not satisfy the contract. Neither a lexical `Math`
+binding nor an object operand requiring numeric coercion qualifies for this
+rule. The plain browser-page profile makes no such assertion.
+
 The experimental `--structural` checker selects a proof from the linked schedules. If the units keep their original order, it checks the exact unit sequence, source syntax, resolved capture cells, initial state and entry exports, then reports `scope: "linked-structural-order"`. For an order change, it brings units forward one at a time. A hoisted function is already in its declaration cell before either schedule runs. The initial states must agree on its object address, code, and captured cells; entry exports must resolve to the same live cells. Only the inert declaration step moves past earlier units, which may already use the function. Moving an allocating initializer still requires checks on the prefix and crossed units of the intermediate schedule. It reports `scope: "linked-structural-pivot"` for one move and `scope: "linked-structural-moves"` for multiple moves.
 
 A regex literal can move as a fresh allocation, including as the value of a named data property. Each evaluation creates a distinct object with its own `lastIndex` and the realm's `%RegExp.prototype%`. The intrinsic constructor's `prototype` is a non-writable, non-configurable data property; literal evaluation does not consult the global `RegExp` binding or invoke getters on the prototype. This rule needs no browser-page premise. Calling `new RegExp(...)`, reading `/a/.flags`, and running a matcher during initialization remain outside the allocation rule.

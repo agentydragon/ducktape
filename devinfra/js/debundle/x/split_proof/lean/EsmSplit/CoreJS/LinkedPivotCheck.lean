@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.LinkedPivot
+import EsmSplit.CoreJS.StableIntrinsic
 import EsmSplit.CoreJS.Request.Allocation
 import EsmSplit.CoreJS.SyntaxMatch
 
@@ -50,6 +51,38 @@ abbrev Outside (q : Nat) := Unprotected q (fun _ => False)
 
 def IsolatedUnit (q : Nat) (u : Nat × Stmt × Env) : Prop :=
   u.1 + 1 ≠ q ∧ ∀ node ∈ (u.2.2.capture u.2.1.free).nodes, Outside q node
+
+abbrev PivotLocal (w : World) (n : Nat) (u : Nat × Stmt × Env) :=
+  Local (u.1 + 1) (fun _ => False) (execStmt n u.2.2 u.2.1 : M w Flow)
+
+abbrev PivotLocalFor (intrinsics : List StableIntrinsic) (u : Nat × Stmt × Env) :=
+  ∀ w, (∀ d ∈ intrinsics, d.Satisfied w) → ∀ n, PivotLocal w n u
+
+/-- Existing local evaluations need no host observations. An opted-in
+descriptor can also prove an actual Number read independent of host state. -/
+def checkedLocal? (intrinsics : List StableIntrinsic) (pivot : Nat × Stmt × Env) :
+    Option (PLift (PivotLocalFor intrinsics pivot)) := do
+  if h : localPivotOk pivot = true then return ⟨fun _ _ => localPivotOk_sound h⟩
+  match hp : pivot with
+  | (id, .decl kind name e, env) =>
+    let ⟨owned⟩ ← if h : inRegion (id + 1) env name = true then some (PLift.up h) else none
+    intrinsics.attach.findSome? fun ⟨d, hd⟩ => do
+      let ⟨evaluate⟩ ← d.evalValue? e
+      return ⟨by
+        rw [hp]
+        intro w hw fuel
+        have hx (c : Addr) (h : env.vars.lookup name = some c) : c.region = id + 1 := inRegion_owns owned h
+        cases fuel with
+        | zero => exact local_outOfFuel
+        | succ n =>
+          have expr : Local (id + 1) (fun _ => False) (evalExpr n env e : M w Val) := by
+            rcases evaluate w (hw d hd) n env with exhausted | ⟨x, value⟩
+            · rw [exhausted]; exact local_outOfFuel
+            · rw [value]; exact local_pure _
+          cases kind <;> unfold execStmt
+          case var => exact expr.bind' fun v => (local_writeVar hx v).bind' fun _ => local_pure _
+          all_goals exact expr.bind' fun v => (local_initVar hx v).bind' fun _ => local_pure _⟩
+  | _ => none
 
 private def outsideRegion (r : Nat) (node : HeapNode) : Bool := node.addr.region != r
 
@@ -118,7 +151,6 @@ schedule. The prefix must also preserve the frame from the initial linked state.
 structure CheckedPivot {w : World} (ready : State w)
     (pre crossed : List (Nat × Stmt × Env)) (pivot : Nat × Stmt × Env) : Prop where
   access : Access [] (Unprotected (pivot.1 + 1) (fun _ => False)) ready
-  localFlag : localPivotOk pivot = true
   scope : ∀ u ∈ pre ++ crossed, IsolatedUnit (pivot.1 + 1) u
 
 def checkPivot {w : World} (ready : State w)
@@ -126,19 +158,16 @@ def checkPivot {w : World} (ready : State w)
     Except String (PLift (CheckedPivot ready (pre.map (·.unit)) (crossed.map (·.unit)) pivot)) := do
   let ordinal := pivot.1
   let r := ordinal + 1
-  if localStep : localPivotOk pivot = true then
-    if accessible : accessOk ready [] (outsideRegion r) = true then
-      if unchanged : (pre ++ crossed).all (unitEnvOk r) = true then
-        return ⟨{
-          access := accessOk_outsideRegion accessible
-          localFlag := localStep
-          scope := by simpa only [List.map_append] using isolatedUnits_of_check unchanged
-        }⟩
-      else
-        let offender := (pre ++ crossed).find? (fun u => !(unitEnvOk r u))
-        throw s!"unit {(offender.map (·.unit.1)).getD ordinal} has access to the moved region of unit {ordinal}"
-    else throw s!"the linked state already exposes the region of unit {ordinal}"
-  else throw s!"unit {ordinal} is not a local allocating declaration"
+  if accessible : accessOk ready [] (outsideRegion r) = true then
+    if unchanged : (pre ++ crossed).all (unitEnvOk r) = true then
+      return ⟨{
+        access := accessOk_outsideRegion accessible
+        scope := by simpa only [List.map_append] using isolatedUnits_of_check unchanged
+      }⟩
+    else
+      let offender := (pre ++ crossed).find? (fun u => !(unitEnvOk r u))
+      throw s!"unit {(offender.map (·.unit.1)).getD ordinal} has access to the moved region of unit {ordinal}"
+  else throw s!"the linked state already exposes the region of unit {ordinal}"
 
 /-- One candidate per object row with a direct edge into the pivot. The
 move checker must still prove that each candidate is isolated. -/

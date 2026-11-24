@@ -84,13 +84,13 @@ def observations (profile : HostProfile) : World where
     return (.ret (.str value), { st with typeofBindings := st.typeofBindings.insert (name, value) })
   hostRef := fun ref st => do
     let identity ← profile.identity ref
-    return (identity, { st with refs := st.refs.insert (ref, identity) })
+    return (.identity identity, { st with refs := st.refs.insert (ref, identity) })
 
 /-- Each used observation returns the specified result and preserves every host state. -/
 def Satisfied (p : HostPremises) (w : World) : Prop :=
   (∀ name value, p.typeofBindings.lookup name = some value →
     ∀ s, w.globalTypeof name s = some (.ret (.str value), s)) ∧
-  (∀ ref identity, p.refs.lookup ref = some identity → ∀ s, w.hostRef ref s = some (identity, s))
+  (∀ ref identity, p.refs.lookup ref = some identity → ∀ s, w.hostRef ref s = some (.identity identity, s))
 
 def specialize (p : HostPremises) (w : World) : World :=
   { w with
@@ -100,7 +100,7 @@ def specialize (p : HostPremises) (w : World) : World :=
       | none => w.globalTypeof name s
     hostRef := fun ref s =>
       match p.refs.lookup ref with
-      | some identity => some (identity, s)
+      | some identity => some (.identity identity, s)
       | none => w.hostRef ref s }
 
 theorem specialize_eq (p : HostPremises) (w : World) (h : p.Satisfied w) : p.specialize w = w := by

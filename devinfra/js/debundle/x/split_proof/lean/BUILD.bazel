@@ -323,6 +323,7 @@ lean_library(
         "EsmSplit/CoreJS/Request/Dispatch.lean",
         "EsmSplit/CoreJS/Request/Frame.lean",
         "EsmSplit/CoreJS/Request/Property.lean",
+        "EsmSplit/CoreJS/StableIntrinsic.lean",
         "EsmSplit/CoreJS/StatementFrame.lean",
         "EsmSplit/CoreJS/StructuralCertificate.lean",
     ],
