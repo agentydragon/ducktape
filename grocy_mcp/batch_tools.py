@@ -9,7 +9,6 @@ for purchase receipts run outside the mutation retry loop.
 from __future__ import annotations
 
 import asyncio
-import functools
 import json
 import logging
 import traceback
@@ -1357,27 +1356,20 @@ def register_batch_tools(
     ) -> dict[str, Any]:
         """Empty a shopping list — removes every item, keeps the list itself.
 
-        Returns `{kind: "ok", cleared: N}` with the number removed. To
-        remove specific items only, use `shopping_list_items_remove`.
+        Returns `{kind: "ok"}` when Grocy confirms the list was emptied.
+        To remove specific items, use `shopping_list_items_remove`.
         """
         list_id = await _resolve_id(client, EntityType.SHOPPING_LIST, shopping_list)
-
-        items = await _shopping_list_items(client, list_id)
-
-        async def _delete(item_id: int) -> None:
-            r = await client.delete(f"/objects/shopping_list/{item_id}")
-            r.raise_for_status()
-
-        await asyncio.gather(
-            *(
-                _retry_mutation(
-                    functools.partial(_delete, int(i["id"])), describe=f"clear shopping-list item {i['id']}"
-                )
-                for i in items
-            )
+        if list_id == 0:
+            raise ValueError("Grocy cannot clear list ID 0 because its clear endpoint treats 0 as the default list.")
+        await _write_no_content(
+            client,
+            "POST",
+            "/stock/shoppinglist/clear",
+            body={"list_id": list_id},
+            describe=f"clear shopping list {list_id}",
         )
-
-        return {"kind": "ok", "cleared": len(items)}
+        return {"kind": "ok"}
 
     async def _fetch_volatile(client: GrocyClient, *, days_ahead: int | None = None) -> dict[str, Any]:
         params = {"due_soon_days": days_ahead} if days_ahead is not None else {}

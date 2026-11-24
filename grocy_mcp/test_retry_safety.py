@@ -19,6 +19,7 @@ import pytest_bazel
 import respx
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
+from fastmcp.exceptions import ToolError
 
 from grocy_mcp.batch_tools import build_batch_tools_mcp
 from grocy_mcp.client import GrocyClient
@@ -364,6 +365,21 @@ async def test_object_writes_retry_only_before_delivery(
     assert receipt["kind"] == "error", receipt
     assert "may or may not have been applied" in receipt["error"]
     assert write.calls.call_count == 3
+
+
+async def test_shopping_list_clear_targets_only_the_resolved_list(mcp_client: tuple[Client, respx.Router]) -> None:
+    client, router = mcp_client
+    router.get("/objects/shopping_lists").respond(json=[{"id": 0, "name": "Imported"}, {"id": 7, "name": "Weekly"}])
+    clear = router.post("/stock/shoppinglist/clear").mock(side_effect=httpx2.ReadTimeout("lost reply"))
+
+    with pytest.raises(ToolError, match="list ID 0"):
+        await client.call_tool("shopping_list_clear", {"shopping_list": "Imported"})
+    assert clear.calls.call_count == 0
+
+    with pytest.raises(ToolError, match="may or may not have been applied"):
+        await client.call_tool("shopping_list_clear", {"shopping_list": "weekly"})
+    assert clear.calls.call_count == 1
+    assert json.loads(clear.calls.last.request.content) == {"list_id": 7}
 
 
 async def test_low_stock_report_survives_unavailable_locations(mcp_client: tuple[Client, respx.Router]) -> None:
