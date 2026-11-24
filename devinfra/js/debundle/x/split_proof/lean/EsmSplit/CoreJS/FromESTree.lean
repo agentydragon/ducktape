@@ -372,9 +372,9 @@ private partial def endsSwitchCase (j : Json) : Bool :=
   | some "BreakStatement" | some "ContinueStatement" | some "ReturnStatement" | some "ThrowStatement" => true
   | _ => false
 
-/-- Find a direct super call at the start of a statement's expression. After
-construction, the residual expression sees the initialized receiver and fields. -/
-private def leadingSuper? (stmt : Json) : Option (Json × Option Json) := do
+/-- Find a direct super call among the top-level comma operands. Earlier operands
+execute before construction, and the residual sees the initialized receiver and fields. -/
+private def directSuper? (stmt : Json) : Option (List Json × Json × Option Json) := do
   let kind ← (field stmt "type").toOption
   let fieldName ← match kind with
     | "ExpressionStatement" => some "expression"
@@ -384,16 +384,20 @@ private def leadingSuper? (stmt : Json) : Option (Json × Option Json) := do
   let expr ← (stmt.getObjVal? fieldName).toOption
   let operands ← if (field expr "type").toOption == some "SequenceExpression" then
     (expr.getObjValAs? (List Json) "expressions").toOption else pure [expr]
-  let call :: rest := operands | none
-  guard ((field call "type").toOption == some "CallExpression")
-  guard ((call.getObjVal? "callee" >>= (field · "type")).toOption == some "Super")
-  if kind == "ExpressionStatement" && rest.isEmpty then return (call, none)
+  let isSuperCall := fun operand =>
+    (field operand "type").toOption == some "CallExpression" &&
+    (operand.getObjVal? "callee" >>= (field · "type")).toOption == some "Super"
+  let (earlier, remaining) := operands.span (!isSuperCall ·)
+  let call :: rest := remaining | none
+  let prior := earlier.map fun operand =>
+    Json.mkObj [("type", .str "ExpressionStatement"), ("expression", operand)]
+  if kind == "ExpressionStatement" && rest.isEmpty then return (prior, call, none)
   let residual := match rest with
     | [] => Json.mkObj [("type", .str "ThisExpression")]
     | [expr] => expr
     | _ => Json.mkObj [("type", .str "SequenceExpression"), ("expressions", .arr rest.toArray)]
   let fields ← stmt.getObj?.toOption
-  return (call, some (.obj (fields.insert fieldName residual)))
+  return (prior, call, some (.obj (fields.insert fieldName residual)))
 
 /-- Resolve lexical `this` in prefix and argument arrows to the constructor's
 receiver cell. Ordinary functions, including object methods, bind their own receiver. -/
@@ -815,8 +819,8 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
   if bindings.isEmpty then return .complete (.mk name kind self slots stmts)
   return .objectBindings slots bindings.toList stmts
 
-/-- Split a derived constructor at its direct super call, including a call at the head
-of a comma expression. All three parts run with the same parameter and local cells. -/
+/-- Split a derived constructor at its direct super call, including a call among
+comma operands. All three parts run with the same parameter and local cells. -/
 private partial def linkedDerivedConstructor (profile : HostProfile) (imports : List Name)
     (name : Name) (fn : Json) : Except String (List Stmt × Option (List Expr) × Func) := do
   for param in ← fn.getObjValAs? (Array Json) "params" do
@@ -828,11 +832,11 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
     else discard <| localBinding param
   let block ← fn.getObjVal? "body"
   let statements ← block.getObjValAs? (List Json) "body"
-  let (prefixStmts, remaining) := statements.span (fun stmt => (leadingSuper? stmt).isNone)
+  let (prefixStmts, remaining) := statements.span (fun stmt => (directSuper? stmt).isNone)
   let first :: tail := remaining | throw "expected a direct super call"
-  let some (call, rest) := leadingSuper? first | throw "expected a direct super call"
+  let some (commaPrefix, call, rest) := directSuper? first | throw "expected a direct super call"
   let mut before := #[]
-  for stmt in prefixStmts do
+  for stmt in prefixStmts ++ commaPrefix do
     match ← field stmt "type" with
     | "VariableDeclaration" =>
       for d in ← stmt.getObjValAs? (Array Json) "declarations" do
