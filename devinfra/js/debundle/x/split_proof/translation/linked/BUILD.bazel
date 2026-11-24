@@ -63,7 +63,6 @@ _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean
         "if_test",
         "import_cells_test",
         "initializer_moves_test",
-        "iterators_test",
         "literal_records_test",
         "logical_test",
         "loops_test",
@@ -118,6 +117,15 @@ _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean
         ("templates_test", 3),
     ]
 ]
+
+js_test(
+    name = "iterators_test",
+    size = "medium",
+    data = _TEST_DATA,
+    entry_point = "iterators_test.mjs",
+    env = _TEST_ENV,
+    shard_count = 3,
+)
 
 js_test(
     name = "dense_array_batch_test",

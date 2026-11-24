@@ -1,11 +1,21 @@
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
-import { assertCertified, assertRejected, lower, observe, prepare, root, sequentialSplit } from "./harness.mjs";
+import {
+  assertCertified,
+  assertRejected,
+  caseShard,
+  lower,
+  observe,
+  prepare,
+  root,
+  sequentialSplit,
+} from "./harness.mjs";
 
 const entry = "entry.mjs";
+const runCase = caseShard();
 
-{
+if (runCase("native-array-and-fresh-cells")) {
   const source = `
     const [first, , { n: second = first + 1 }, ...rest] = [2, 0, {}, 4];
     function run() {
@@ -36,6 +46,7 @@ const profile = path.join(root, "browser.json");
 writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
 
 function browserCase(name, source, expected) {
+  if (!runCase(name)) return;
   const dir = path.join(root, name);
   const files = prepare(dir, {
     source,
@@ -127,7 +138,7 @@ browserCase(
   [1, 2, 3, 2]
 );
 
-{
+if (runCase("loop-head-tdz")) {
   const source = `
     const values = [1];
     for (const values of values) {}
