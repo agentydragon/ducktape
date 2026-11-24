@@ -16,6 +16,8 @@ node pair.mjs bundle.json output.json --out cert.json
 ../lean/.lake/build/bin/translate bundle.json output.json cert.json [--premises premises.json] [--table table.json] [--obligations obligations.jsonl]
 ```
 
+For source text, use `dump(source, options)` from `parser.mjs`. If a caller already has an Acorn parse and scope manager, pass that parsed value to `dumpParsed` from `annotated_estree.mjs` instead.
+
 Exit code `0` means accepted. Code `1` means rejection during translation or
 structural checking. Code `4` means structural checks passed and the output
 reverses conflicting units (**obligations**), including conflicts on shared

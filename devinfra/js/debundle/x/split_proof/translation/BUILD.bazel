@@ -38,10 +38,8 @@ js_library(
 js_binary(
     name = "module_io",
     data = [
-        ":annotated_estree",
-        ":node_modules/acorn",
         ":node_modules/astring",
-        ":node_modules/eslint-scope",
+        ":parser",
         ":print",
         ":scope_metadata",
     ],
@@ -72,9 +70,7 @@ eslint_test(
 _SEEDED_RANDOM = "//devinfra/js/debundle/x/split_proof:seeded_random"
 
 _SHIFT_FUZZ_DATA = [
-    ":annotated_estree",
-    ":node_modules/acorn",
-    ":node_modules/eslint-scope",
+    ":parser",
     "shift_fuzz_worker.mjs",
     ":shift_candidate",
     ":syntax_inventory",
@@ -154,6 +150,7 @@ js_test(
     data = _CHECKER_RUNFILES + [
         "fixtures/local_identity/bundle.js",
         ":annotated_estree",
+        ":parser",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
         "//devinfra/js/debundle/x/split_proof/translation/testing:check_translation",
         "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
@@ -166,10 +163,8 @@ js_test(
 )
 
 _LOWER_CALLBACK_FUZZ_DATA = [
-    ":annotated_estree",
+    ":parser",
     ":scope_metadata",
-    ":node_modules/acorn",
-    ":node_modules/eslint-scope",
     "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
 ]
 
@@ -615,8 +610,7 @@ js_test(
     data = [
         ":annotated_estree",
         ":frontend",
-        ":node_modules/acorn",
-        ":node_modules/eslint-scope",
+        ":parser",
         ":scope_metadata",
         ":split_dump",
         "//devinfra/js/debundle/x/split_proof/lean:corejs",
@@ -642,28 +636,37 @@ js_binary(
 # Keep this CLI next to the isolated parser links.
 js_binary(
     name = "dump_ast",
-    data = [
-        ":annotated_estree",
-        ":node_modules/acorn",
-        ":node_modules/eslint-scope",
-        ":scope_metadata",
-    ],
+    data = [":parser"],
     entry_point = "dump_ast.mjs",
     visibility = ["//devinfra/js/debundle/x/split_proof:__pkg__"],
 )
 
 js_library(
-    name = "bazel_parser",
-    srcs = ["bazel_parser.mjs"],
+    name = "parser",
+    srcs = ["parser.mjs"],
     visibility = [
         "//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__",
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
         "//devinfra/js/debundle/x/split_proof/lowering:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:__pkg__",
     ],
     deps = [
+        ":annotated_estree",
         ":node_modules/acorn",
         ":node_modules/eslint-scope",
+        ":scope_metadata",
     ],
+)
+
+js_test(
+    name = "parser_dump_test",
+    data = [
+        ":annotated_estree",
+        ":parser",
+        ":scope_metadata",
+    ],
+    entry_point = "parser_dump_test.mjs",
 )
 
 py_test(
@@ -742,9 +745,7 @@ js_library(
     name = "analysis_inventory",
     srcs = ["analysis_inventory.mjs"],
     deps = [
-        ":annotated_estree",
-        ":node_modules/acorn",
-        ":node_modules/eslint-scope",
+        ":parser",
         ":syntax_inventory",
     ],
 )
@@ -804,8 +805,7 @@ js_library(
     ],
     deps = [
         ":annotated_estree",
-        ":node_modules/acorn",
-        ":node_modules/eslint-scope",
+        ":parser",
         ":scope_metadata",
         "//devinfra/js/debundle/x/split_proof/model:to_core",
     ],

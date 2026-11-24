@@ -2,7 +2,7 @@
 // The locations belong only to this JS file. No production placements are emitted.
 import { readFileSync } from "node:fs";
 import { SourceMap } from "node:module";
-import { acorn } from "../../translation/bazel_parser.mjs";
+import { acorn } from "../../translation/parser.mjs";
 
 export function mappedBindings(code, payload) {
   const map = new SourceMap(payload);

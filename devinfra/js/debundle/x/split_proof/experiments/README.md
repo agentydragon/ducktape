@@ -215,7 +215,7 @@ p=//devinfra/js/debundle/x/split_proof
 bb run "$p/integration/library_splits:prepare" -- "$out"
 ```
 
-To run the same builder outside Bazel, copy `package.json.in` to `package.json` in [the fixture package](../integration/library_splits), run `npm ci` there, then `node prepare.mjs "$out"`. Pass library variants after the output directory (for example, `semver zod.min`) to build a subset.
+To run the same builder outside Bazel, copy `package.json.in` to `package.json` in [the fixture package](../integration/library_splits), run `npm ci` there, then `node prepare.mjs "$out"`. That package supplies its own Acorn and `eslint-scope`; `prepare.mjs` parses the source there and passes the existing parse to `dumpParsed`, so it does not require translation's npm install. Pass library variants after the output directory (for example, `semver zod.min`) to build a subset.
 
 Compare their footprints with `bb run "$p/lowering:compare_footprints" -- "$out/"*.json`.
 

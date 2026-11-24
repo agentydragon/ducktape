@@ -3,9 +3,7 @@ import { strict as assert } from "node:assert";
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import * as acorn from "acorn";
-import * as eslintScope from "eslint-scope";
-import { lowerDump } from "./annotated_estree.mjs";
+import { acorn, dump } from "./parser.mjs";
 import { assertSelectedSourceUnits, parseSourceUnits } from "./testing/ast_assertions.mjs";
 import { lcg32 } from "../seeded_random.mjs";
 
@@ -72,7 +70,7 @@ const spec = path.join(dir, "spec.json");
 const bundle = path.join(dir, "bundle.mjs");
 const out = path.join(dir, "out");
 writeFileSync(bundle, source);
-const sourceProgram = lowerDump(source, acorn, eslintScope);
+const sourceProgram = dump(source);
 writeFileSync(ast, JSON.stringify(sourceProgram));
 
 const sourceUnits = parseSourceUnits(source);

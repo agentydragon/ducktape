@@ -5,9 +5,7 @@ import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import * as acorn from "acorn";
-import * as eslintScope from "eslint-scope";
-import { lowerDump } from "./annotated_estree.mjs";
+import { acorn, dump } from "./parser.mjs";
 import { assertSourceUnitsReparse } from "./testing/ast_assertions.mjs";
 
 const temp = process.env.TEST_TMPDIR;
@@ -67,8 +65,8 @@ function split(name, { code, outside = {}, modules, force = false, spec = {} }) 
   writeFileSync(path.join(dir, "probe.mjs"), PROBE);
   writeFileSync(path.join(dir, "bundle.mjs"), code);
   for (const [file, text] of Object.entries(outside)) writeFileSync(path.join(dir, file), text);
-  const dump = lowerDump(code, acorn, eslintScope);
-  writeFileSync(path.join(dir, "ast.json"), JSON.stringify(dump));
+  const program = dump(code);
+  writeFileSync(path.join(dir, "ast.json"), JSON.stringify(program));
   writeFileSync(path.join(dir, "spec.json"), JSON.stringify({ entry: "entry.mjs", modules, ...spec }));
   const checked = spawnSync(
     process.env.LOWERSPLIT,

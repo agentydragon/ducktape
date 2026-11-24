@@ -1,9 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import * as acorn from "acorn";
-import * as eslintScope from "eslint-scope";
-import { lowerDump } from "../annotated_estree.mjs";
+import { dump } from "../parser.mjs";
 
 export const run = (binary, args) => spawnSync(binary, args, { encoding: "utf8" });
 
@@ -15,14 +13,14 @@ export function prepareSideSplit(name, code, selectedSide) {
   const source = dir + ".mjs";
   const input = dir + "-ast.json";
   const spec = dir + "-spec.json";
-  const dump = lowerDump(code, acorn, eslintScope);
-  const side = selectedSide ?? [dump.body.length - 2];
+  const program = dump(code);
+  const side = selectedSide ?? [program.body.length - 2];
   const modules = {
-    "entry.mjs": dump.body.flatMap((_, i) => (side.includes(i) ? [] : [`#${i}`])),
+    "entry.mjs": program.body.flatMap((_, i) => (side.includes(i) ? [] : [`#${i}`])),
     "side.mjs": side.map((i) => `#${i}`),
   };
   writeFileSync(source, code);
-  writeFileSync(input, JSON.stringify(dump));
+  writeFileSync(input, JSON.stringify(program));
   writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules }));
   return { dir, source, input, spec };
 }

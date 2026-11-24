@@ -1,12 +1,9 @@
 // The ESTree Program as `lowersplit` reads it (`translation/annotated_estree.mjs`), with the parser and the scope
 // analysis of this package. `model/differential.mjs` splits its programs with it.
-import * as acorn from "acorn";
-import * as eslintScope from "eslint-scope";
-import { dumpParsed, lowerDump } from "./annotated_estree.mjs";
+import { acorn, eslintScope } from "./parser.mjs";
+import { dumpParsed } from "./annotated_estree.mjs";
 import { parseModule, topLevelStatements } from "./scope_metadata.mjs";
 import { coreFromParsed, toCore, toCoreProgram } from "../model/to_core.mjs";
-
-export const dumpOf = (code) => lowerDump(code, acorn, eslintScope);
 
 /** The footprint input and CoreJS program share a parse, including the
  * identity of every identifier used for opaque closure capture. */

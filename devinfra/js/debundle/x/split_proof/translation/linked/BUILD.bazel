@@ -17,9 +17,7 @@ js_test(
     name = "input_test",
     data = [
         "//devinfra/js/debundle/x/split_proof/lean:linked_input_test_runner",
-        "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
-        "//devinfra/js/debundle/x/split_proof/translation:node_modules/acorn",
-        "//devinfra/js/debundle/x/split_proof/translation:node_modules/eslint-scope",
+        "//devinfra/js/debundle/x/split_proof/translation:parser",
     ],
     entry_point = "input_test.mjs",
     env = {"LINKED_INPUT_CHECKER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:linked_input_test_runner)"},
@@ -189,9 +187,7 @@ js_test(
     name = "certified_split_test",
     data = [
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
-        "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
-        "//devinfra/js/debundle/x/split_proof/translation:node_modules/acorn",
-        "//devinfra/js/debundle/x/split_proof/translation:node_modules/eslint-scope",
+        "//devinfra/js/debundle/x/split_proof/translation:parser",
     ],
     entry_point = "certified_split_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},

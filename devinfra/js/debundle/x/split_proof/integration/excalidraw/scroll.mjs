@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { acorn, eslintScope } from "../../translation/bazel_parser.mjs";
+import { acorn, eslintScope } from "../../translation/parser.mjs";
 import { parseModule, topLevelStatements } from "../../translation/scope_metadata.mjs";
 import { walk } from "../../translation/syntax_inventory.mjs";
 import { dumpParsed } from "../../translation/annotated_estree.mjs";

@@ -28,7 +28,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { acorn, eslintScope } from "../translation/bazel_parser.mjs";
+import { acorn, eslintScope } from "../translation/parser.mjs";
 import { parse as parseYaml } from "yaml";
 import { dumpParsed } from "../translation/annotated_estree.mjs";
 import { parseModule, topLevelStatements } from "../translation/scope_metadata.mjs";

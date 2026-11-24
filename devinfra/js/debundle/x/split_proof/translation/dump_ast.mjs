@@ -2,9 +2,7 @@
 //
 //   node dump_ast.mjs <bundle.mjs> > bundle.json
 import { readFileSync } from "node:fs";
-import * as acorn from "acorn";
-import * as eslintScope from "eslint-scope";
-import { lowerDump } from "./annotated_estree.mjs";
+import { dump } from "./parser.mjs";
 
 const [path] = process.argv.slice(2);
-process.stdout.write(JSON.stringify(lowerDump(readFileSync(path, "utf8"), acorn, eslintScope)));
+process.stdout.write(JSON.stringify(dump(readFileSync(path, "utf8"))));

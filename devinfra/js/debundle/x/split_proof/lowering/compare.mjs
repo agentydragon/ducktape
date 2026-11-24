@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import { acorn, eslintScope } from "../translation/bazel_parser.mjs";
+import { acorn, eslintScope } from "../translation/parser.mjs";
 import { parseModule, topLevelStatements } from "../translation/scope_metadata.mjs";
 import { statementShape } from "./statement_shape.mjs";
 
