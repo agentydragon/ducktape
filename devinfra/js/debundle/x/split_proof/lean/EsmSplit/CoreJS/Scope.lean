@@ -597,6 +597,7 @@ theorem Same.args_succ (env env' : Env) (es : List Expr) (hN : Agree (freeExprs 
     generalize ha : e.argument = arg at *
     obtain ⟨spread, operand⟩ := arg
     dsimp only at head
+    dsimp only
     rw [head, tail]
 
 theorem Same.target_succ (env env' : Env) (t : Target) (hN : Agree t.free env env') :

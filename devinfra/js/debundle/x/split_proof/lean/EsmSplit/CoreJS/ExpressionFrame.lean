@@ -91,15 +91,14 @@ theorem evalArgs_reachFrame_step {r R cells A n} {env : Env}
     obtain ⟨spread, operand⟩ := arg
     apply (eval operand).bind
     intro v hv
-    have prefix : ReachFrame r R cells A (fun vs => ∀ x ∈ vs, SafeVal A x)
+    have expanded : ReachFrame r R cells A (fun vs => ∀ x ∈ vs, SafeVal A x)
         (if spread then iteratorValues n (callFn n) v else pure [v] : M W (List Val)) := by
       cases spread
       · exact reachFrame_pure r R cells A [v] (by simpa using hv)
       · exact iterate v hv
-    apply prefix.bind
-    intro vs hs
-    exact (tail es).bind fun rest hr => reachFrame_pure r R cells A (vs ++ rest) fun x h =>
-      (List.mem_append.mp h).elim (hs x) (hr x)
+    cases spread <;> apply expanded.bind <;> intro vs hs <;>
+      exact (tail es).bind fun rest hr => reachFrame_pure r R cells A (vs ++ rest) fun x h =>
+        (List.mem_append.mp h).elim (hs x) (hr x)
 
 theorem evalTarget_reachFrame_step {r R cells A n} {env : Env}
     (eval : ∀ e, ReachFrame r R cells A (SafeVal A) (evalExpr n env e : M W Val)) (target : Target) :

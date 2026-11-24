@@ -212,7 +212,11 @@ private theorem succeeds (origin : State W) (env : Env) (base : Array Obj) (fuel
               (withObjects_get hs (updated.objects base)) nextSize h'
             rw [withObjects_twice] at ht hExt'
             refine ⟨?_, hExt.trans hExt', finalSize⟩
-            simp only [evalArgs, M.bind_apply, he, ht] <;> rfl
+            have head : expr.argument = (false, expr) := by
+              cases expr <;> first | rfl | cases n <;> simp [tryExpr] at h
+            have hp {α : Type} (a : α) (st : State W) : (pure a : M W α) st = .ok a st := rfl
+            simp only [evalArgs, head, Bool.false_eq_true, ↓reduceIte, M.bind_apply, he, hp, ht]
+            rfl
 
 private def ordinary (n : Nat) (env : Env) (elems : List Expr) : M W Val := do
   let values ← evalArgs n env elems

@@ -74,6 +74,10 @@ def allocOnlyProps : List PropDef → Bool
   | _ :: _ => false
 end
 
+theorem Expr.argument_of_allocOnly {e : Expr} (h : e.allocOnly = true) : e.argument = (false, e) := by
+  cases e <;> first | rfl | simp [Expr.allocOnly] at h
+
+
 /-- Opaque method bodies stay deferred during plain class creation. -/
 theorem allocOnly_plainClass_opaqueMethod :
     (Expr.cls "Plain" true (.opaque "Plain" .classCtor false 0 0 0 [] none)

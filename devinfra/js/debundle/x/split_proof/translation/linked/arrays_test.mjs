@@ -118,6 +118,40 @@ for (const [name, body, expected] of [
   );
 }
 
+// A spread drains its iterator before evaluating the argument that follows it.
+{
+  const dir = path.join(root, "custom-spread-order");
+  const files = prepare(dir, {
+    source: `const worker = () => {
+      let trace = "";
+      class Items {
+        [Symbol.iterator]() {
+          trace += "I";
+          let used = false;
+          return { get next() {
+            trace += "G";
+            return function() {
+              trace += "N";
+              if (used) return { done: true };
+              used = true;
+              return { value: 11 };
+            };
+          }};
+        }
+      }
+      function take(a,b) {return [a,b,trace];}
+      return take(...new Items(), (trace += "L", 19));
+    }; const value = worker(); export { value as result };`,
+    provider: "",
+    spec: { entry: "entry.mjs", modules: { "worker.mjs": ["#0"], "entry.mjs": entryUnits }, order: ["worker.mjs"] },
+  });
+  const out = path.join(dir, "out");
+  const profile = path.join(dir, "browser.json");
+  writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
+  const checked = lower(files.sourceFile, files.specFile, out, ["--host-contract", profile]);
+  assertCertifiedResult({ files, out, ...checked }, [11, 19, "IGNNL"]);
+}
+
 // Vary array lengths and compose literals, linked reads and calls in element positions.
 for (const width of [0, 1, 2, 5]) {
   const variants = [
