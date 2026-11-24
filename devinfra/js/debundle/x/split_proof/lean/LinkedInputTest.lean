@@ -47,6 +47,25 @@ private def check (input : Json) : Except String Json := do
   let ordinals (p : CoreJS.Program) := p.loaded.flatMap fun m => m.body.map Prod.fst
   return toJson [ordinals original, ordinals emitted]
 
+private def structural (input : Json) : Except String Json := do
+  let binding ← input.getObjValAs? String "glueBinding"
+  let plan : EsmSplit.Plan := { entry := "entry.mjs", mods := [
+    ⟨"entry.mjs", [0, 1, 2, 4, 5], [("lib/scroll.mjs", ["scroll"])], []⟩,
+    ⟨"lib/scroll.mjs", [3], [], [("scroll", binding)]⟩] }
+  let pivot ← input.getObjValAs? Nat "pivot"
+  let pair ← CoreJS.LinkedInput.decodeStructuralPair (← input.getObjVal? "source") (← input.getObjVal? "providers")
+    (← input.getObjVal? "files") plan (some pivot)
+  let inspect (p : CoreJS.Program) := (p.loaded.flatMap (·.body)).mapM fun (id, stmt) => do
+    match stmt with
+    | .decl _ name (.func f) =>
+      unless f.kind == .arrow && f.opaqueBody.isNone do throw "expected the concrete pivot arrow"
+      return Json.arr #[toJson id, toJson name]
+    | .opaque code decls funs free _ =>
+      unless code == id do throw "opaque code lost its source ordinal"
+      return Json.arr #[toJson id, toJson (decls.map Prod.fst ++ funs.map Prod.fst), toJson free]
+    | _ => throw "unexpected structural statement"
+  return toJson [← inspect pair.1, ← inspect pair.2]
+
 private def opaqueUnits (input : Json) : Except String Json := do
   let mut units := #[]
   for (j, i) in (← ESTreeUnits.nodes input).zipIdx do
@@ -71,6 +90,7 @@ private def fixtures (input : Json) : Except String Json := do
       | "imports" => pure (imports (← fixture.getObjVal? "input"))
       | "location" => pure (location (← fixture.getObjVal? "input"))
       | "linked" => pure (check (← fixture.getObjVal? "input"))
+      | "structural" => pure (structural (← fixture.getObjVal? "input"))
       | "opaque" => pure (opaqueUnits (← fixture.getObjVal? "input"))
       | kind => throw s!"unknown test case {kind}"
     return match result with
