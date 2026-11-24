@@ -357,6 +357,16 @@ theorem reachFrame_getProp {r R cells A} (away : Away r R A) (call : Call W)
   case bool =>
     exact (reachFrame_toKey r R cells A key).bind fun k _ =>
       reachFrame_protoProp away call framed root _ _ _ hb k
+  case error kind msg =>
+    cases kind <;> try exact reachFrame_unknown r R cells A _ _
+    case native _ hasMessage =>
+      apply (reachFrame_toKey r R cells A key).bind
+      intro k _
+      unfold getNativeErrorProp
+      split <;> try exact reachFrame_unknown r R cells A _ _
+      split
+      · exact reachFrame_pure r R cells A _ (by simp [SafeVal, Val.nodes])
+      · exact reachFrame_unknown r R cells A _ _
   case host name =>
     apply (reachFrame_toKey r R cells A key).bind
     intro k _

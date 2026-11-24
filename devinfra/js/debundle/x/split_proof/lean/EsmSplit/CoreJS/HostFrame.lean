@@ -15,14 +15,16 @@ theorem reachFrame_fromWorld (r R cells A) (result : HostResult) :
     ReachFrame r R cells A (SafeVal A) (fun s : State W => fromWorld s result) := by
   constructor
   · intro s H C _ _
-    cases result <;> rfl
+    cases result <;> try rfl
+    case error kind _ => cases kind <;> rfl
   · intro s _ _
-    cases result <;> exact Preserves.refl r R s
+    cases result <;> try exact Preserves.refl r R s
+    case error kind _ => cases kind <;> exact Preserves.refl r R s
   · intro s hs _
     cases result with
     | ret v | throw v =>
       exact ⟨by cases v <;> simp [SafeVal, Primitive.val, Val.nodes], hs⟩
-    | error => exact ⟨by simp [SafeVal, Val.nodes], hs⟩
+    | error kind _ => cases kind <;> first | exact ⟨by simp [SafeVal, Val.nodes], hs⟩ | exact hs
     | unknown => exact hs
 
 /-- A world observation reads only the private state and leaves the handle table alone. Its
@@ -85,6 +87,7 @@ theorem reachFrame_readHostRef (r R cells A) (ref : HostRef) :
   let name := match ref with
     | .binding name => name
     | .property receiver key => s!"{receiver}.{key}"
+    | .nativeErrorConstructor => "native Error constructor"
   apply reachFrame_hostObservation r R cells A (W.hostRef ref) (fun value => pure value.val)
     (fun value => reachFrame_pure r R cells A value.val (by cases value <;> simp [SafeVal, HostValue.val, Val.nodes]))
     s!"unsupported host reference {name}"

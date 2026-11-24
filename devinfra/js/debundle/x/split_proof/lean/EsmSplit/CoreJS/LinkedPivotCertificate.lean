@@ -301,10 +301,10 @@ def checkStructuralSchedule (intrinsics : List StableIntrinsic) (source candidat
         (left w n final).trans ((middle w hw n final).trans (right w n final).symm)))
   have equivalent : NormalEquivalent (StableIntrinsic.Worlds intrinsics) source candidate := normalEquivalent_of_bounded fun w hw n final => by
     rw [run_after_link n (before.forWorld w), run_after_link n (after.forWorld w)]
-    change runUnits n sourceUnits (linkState w before.ready) = .ok () final ↔
-      runUnits n candidateUnits (linkState w after.ready) = .ok () final
+    change runLinkedUnits n sourceUnits (linkState w before.ready) = .ok () final ↔
+      runLinkedUnits n candidateUnits (linkState w after.ready) = .ok () final
     rw [← congrArg (linkState w) initial]
-    exact runs.2.down w hw n final
+    simp only [runLinkedUnits, checkErrorResult_ok, runs.2.down w hw n final]
   let method := match runs.1 with
     | 0 => .preservedOrder
     | 1 => .singlePivot

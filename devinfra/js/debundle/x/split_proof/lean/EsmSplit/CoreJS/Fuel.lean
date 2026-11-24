@@ -365,7 +365,11 @@ theorem runUnits_le {n m : Nat} (h : n ≤ m) (units : List LinkedUnit) :
 theorem fuel_mono {n m : Nat} {P : Program} {r : Res W Unit} (h : runProgram W n P = r) (hr : r ≠ .fuel)
     (hnm : n ≤ m) : runProgram W m P = r := by
   have hle : (runProgram W n P).le (runProgram W m P) :=
-    M.le_bind (M.le_refl _) (fun linked => runUnits_le hnm (unitsOf linked)) (initialState W P.regions)
+    M.le_bind (M.le_refl _) (fun linked s => by
+      have h := runUnits_le (W := W) hnm (unitsOf linked) s
+      rcases h with hf | he
+      · exact Or.inl ((congrArg (checkErrorResult s) hf).trans rfl)
+      · exact Or.inr (congrArg (checkErrorResult s) he)) (initialState W P.regions)
   rcases hle with hf | he
   · exact absurd (h ▸ hf) hr
   · exact he ▸ h

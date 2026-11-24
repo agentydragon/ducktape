@@ -190,22 +190,40 @@ private theorem objectProto_safe {A : HeapNode → Prop} {o : Obj}
     SafeVal A (.obj parent) :=
   safeVal_obj.2 (safe (.obj parent) (by simp [Obj.nodes, hp]))
 
-private def constructorProto : Val → Addr
-  | .obj p => p
-  | _ => objectProto
-
 private theorem reachFrame_constructorReceiver {r R cells A}
     (root : A (.obj objectProto))
     (allocate : ∀ o : Obj, (∀ node ∈ o.nodes, A node) →
       ReachFrame r R cells A (fun a => A (.obj a)) (alloc o : M W Addr))
     (proto : Val) (safe : SafeVal A proto) :
-    ReachFrame r R cells A (fun a => A (.obj a))
-      (alloc { proto := some (constructorProto proto), props := [] } : M W Addr) := by
-  have parent : A (.obj (constructorProto proto)) := by
-    cases proto <;> try exact root
-    exact safeVal_obj.1 safe
-  apply allocate
-  simpa [Obj.nodes] using parent
+    ReachFrame r R cells A (fun a => A (.obj a)) (constructorReceiver proto : M W Addr) := by
+  cases proto
+  case error kind _ => cases kind <;> simp only [constructorReceiver] <;>
+    first
+    | exact reachFrame_unknown r R cells A _ _
+    | apply allocate; simpa [Obj.nodes] using root
+  all_goals simp only [constructorReceiver] <;>
+    first
+    | exact reachFrame_unknown r R cells A _ _
+    | apply allocate; simpa [Obj.nodes] using root
+    | apply allocate; simpa [Obj.nodes] using safeVal_obj.1 safe
+
+private theorem reachFrame_constructNativeError {r R cells A}
+    (allocate : ∀ o : Obj, (∀ node ∈ o.nodes, A node) →
+      ReachFrame r R cells A (fun a => A (.obj a)) (alloc o : M W Addr))
+    (target : Val) (args : List Val) :
+    ReachFrame r R cells A (SafeVal A) (constructNativeError target args : M W Val) := by
+  unfold constructNativeError
+  split
+  · exact reachFrame_unknown r R cells A _ _
+  · apply (reachFrame_lift _ (P := fun _ => True) (fun _ _ => trivial)).bind
+    intro message _
+    apply (reachFrame_readHostRef (W := W) (r := r) (R := R) (cells := cells) (A := A) .nativeErrorConstructor).bind
+    intro ctor _
+    split
+    · apply (allocate _ (by simp [Obj.nodes])).bind
+      intro identity _
+      exact reachFrame_pure r R cells A _ (by simp [SafeVal, Val.nodes])
+    · exact reachFrame_unknown r R cells A _ _
 
 private theorem reachFrame_initDerivedFields {r R cells A n}
     (run : ∀ env a fs, (∀ node ∈ Env.nodes env, A node) → A (.obj a) →
@@ -243,7 +261,12 @@ theorem constructTarget_reachFrame_of_steps {r R cells A n} (away : Away r R A)
     (safeCallee : SafeVal A callee) (safeArgs : ∀ a ∈ args, SafeVal A a) :
     ReachFrame r R cells A (SafeVal A) (constructTarget (n + 1) target callee args : M W Val) := by
   cases callee
-  case host name => exact reachFrame_unknown r R cells A _ _
+  case host name =>
+    by_cases native : name = "window.Error"
+    · subst name
+      exact reachFrame_constructNativeError allocate target args
+    · simpa [constructTarget, native] using
+        (reachFrame_unknown (W := W) r R cells A (SafeVal A) s!"host value {name} is constructed")
   case obj a =>
     simp only [constructTarget]
     apply (reachFrame_getObj away (safeVal_obj.1 safeCallee)).bind
