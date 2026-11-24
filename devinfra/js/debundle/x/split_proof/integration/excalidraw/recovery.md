@@ -285,3 +285,26 @@ the later subtraction uses the initialized side threshold and epsilon. The
 [proof for numeric cell reads](https://github.com/agentydragon/ducktape/pull/19831)
 uses the existing deployment contract. The production selector spells the
 epsilon literal `1e-5`, as it appears in the pinned bundle.
+
+## Recovering the geometry constructors
+
+The pinned source defines `line`, `lineSegment` and `rectangle` as two-element
+array constructors in three different modules. The
+[selector fragments](proposals/math_geometry) distinguish them by the adjacent
+intersection or distance calculation. The fourth module,
+[`math/curve.ts`](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/math/curve.ts),
+contains the four-point constructor, finite-difference gradient, solver and bounds.
+Moving the constructors to their upstream homes lets
+[`deconstructRectanguloidElement`](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/excalidraw/element/utils.ts)
+import them without adding any public editor name. The
+[combined placement](https://app.buildbuddy.io/invocation/d9a99730-6907-455f-b609-fc2c90beeb42)
+certified nine additional bindings.
+
+The same full-context solve resolves additional geometry bindings. Moving
+`pointOnLineSegment` with `distanceToLineSegment` in the
+[larger trial](https://app.buildbuddy.io/invocation/fb144d58-fb9a-4c64-b3e9-de19b4e6620c)
+failed: the linked initial state already exposes the region of
+`pointOnLineSegment` (517). Leaving the segment predicates and their private
+consumers in the entry then exposed the same proof condition for
+[`bezierEquation` (525)](https://app.buildbuddy.io/invocation/78f1f928-788b-43b5-9a68-f2bf165df18d).
+These are proof refusals, not observed behavioral differences.

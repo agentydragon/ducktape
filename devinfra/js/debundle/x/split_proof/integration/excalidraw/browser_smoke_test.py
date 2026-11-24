@@ -237,6 +237,15 @@ async def smoke(
                 }""",
                 f"/{editor}",
             )
+            # The editor's private rectanguloid helper now imports its upstream geometry constructors.
+            sides, curves = await page.evaluate(
+                """async () => {
+                  const {Xs: deconstruct} = await import("/packages/excalidraw/element/utils.mjs");
+                  return deconstruct({type: "rectangle", x: 10, y: 20, width: 30, height: 40, roundness: null}, 2);
+                }"""
+            )
+            assert curves == []
+            assert sides == [[[8, 18], [42, 18]], [[42, 18], [42, 62]], [[8, 62], [42, 62]], [[8, 62], [8, 18]]]
         return list(namespace["names"])
 
 

@@ -501,6 +501,36 @@
       "module": "packages/excalidraw/change",
       "bindings": ["Delta"],
       "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/math/line",
+      "bindings": ["line", "linesIntersectAt"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/math/segment",
+      "bindings": ["lineSegment"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/math/rectangle",
+      "bindings": ["rectangle"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/math/curve",
+      "bindings": ["curve", "gradient", "solve", "curveBounds"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/element/utils",
+      "bindings": ["deconstructRectanguloidElement"],
+      "anonymous_statements": []
     }
   ]
 }

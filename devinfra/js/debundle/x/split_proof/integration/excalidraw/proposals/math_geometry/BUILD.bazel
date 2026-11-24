@@ -1,0 +1,9 @@
+exports_files(
+    [
+        "curve.yaml",
+        "line.yaml",
+        "rectangle.yaml",
+        "segment.yaml",
+    ],
+    visibility = ["//devinfra/js/debundle/excalidraw:__pkg__"],
+)
