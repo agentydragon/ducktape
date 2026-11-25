@@ -103,6 +103,7 @@ private theorem createData_cells {s t : State w} (run : createData a k v s = .ok
   split at gets <;> try contradiction
   cases gets
   split at rest <;> try contradiction
+  split at rest <;> try contradiction
   obtain ⟨opt, s2, desc, act⟩ := bind_ok rest
   have liftState {α} (z : Except Abort α) {a : α} {before after : State w}
       (h : lift z before = .ok a after) : after = before := by
