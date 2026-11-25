@@ -38,6 +38,27 @@ const absent = inspect("output/entry.mjs", {
 assert.equal(absent.status, "refused", JSON.stringify(absent));
 assert.equal(absent.reason, "provider.mjs: expected an ESTree Program");
 
+function inspectSourceFree(entry, iface = { exports: ["value", "alternate", "set"], code: 73 }) {
+  const input = { source, interface: iface, files: { "entry.mjs": parse(entry), "part.mjs": part } };
+  const result = spawnSync(process.env.PROVIDER_BOUNDARY_CHECKER, [], {
+    encoding: "utf8",
+    input: JSON.stringify(input) + "\n",
+  });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout);
+}
+
+const sourceFree = inspectSourceFree("output/entry.mjs");
+assert.equal(sourceFree.status, "ok", JSON.stringify(sourceFree));
+assert.equal(sourceFree.result.providerTurns, 4);
+const sourceFreeWrong = inspectSourceFree("wrong/entry.mjs");
+assert.equal(sourceFreeWrong.status, "refused");
+assert.match(sourceFreeWrong.reason, /entry requests for providers differ/);
+const missingCell = inspectSourceFree("output/entry.mjs", { exports: ["value", "set"], code: 73 });
+assert.equal(missingCell.status, "refused");
+assert.equal(missingCell.reason, "provider interface exports differ");
+
 async function runtime(name, entry, includePart) {
   const dir = path.join(process.env.TEST_TMPDIR, name);
   mkdirSync(dir);

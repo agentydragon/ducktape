@@ -1,0 +1,5 @@
+import ProviderInputBoundaryTest
+
+#print axioms ProviderBoundaryFixture.certify
+#print axioms ProviderBoundaryFixture.commonProviderBehavior
+#print axioms ProviderBoundaryFixture.sourceFreeLinkedBoundary

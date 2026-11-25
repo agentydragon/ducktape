@@ -431,6 +431,27 @@ private def decodeFragment (format : BodyFormat) (profile : HostProfile) (source
       (StructuralRefusal.mapReason fun why => s!"{m.name}: {why}")
   return ⟨original.numbered P.entry base, split.map Prod.fst, nodes.size, original.templates, split.flatMap Prod.snd⟩
 
+/-- Importer modules decoded from source and emitted files, before provider linking.
+The caller must supply and check the provider modules and their behavior. -/
+structure StructuralImporterFragment where
+  source : Module
+  emitted : List Module
+  assignment : List UnitPlacement
+  nextIdentity : Nat
+
+/-- Proof-facing access to the same structural fragment decoder used by the
+production path. Template sites need the deployment's shared registry and are
+therefore refused by this standalone wrapper. No provider body is synthesized. -/
+def decodeStructuralImporterFragment (source files : Json) (P : EsmSplit.Plan)
+    (providerNames : List String) (pivots : List Nat) (profile : HostProfile := .empty) :
+    Except StructuralRefusal StructuralImporterFragment := do
+  let format : BodyFormat := .structural (Std.HashSet.ofList pivots) {} .null
+  let fragment ← decodeFragment format profile source files P "bundle.mjs" providerNames 0
+  unless fragment.sourceTemplates.isEmpty && fragment.emittedTemplates.isEmpty do
+    throw (.unclassified "standalone importer fragment does not install template sites")
+  return ⟨fragment.sourceModule, fragment.emitted,
+    plannedPlacements P fragment.sourceModule 0, fragment.unitCount⟩
+
 private def decode (format : BodyFormat) (source providers files : Json) (P : EsmSplit.Plan)
     (profile : HostProfile) : Except StructuralRefusal DecodedDeployment := do
   let ps := (← (providers.getObj?).mapError StructuralRefusal.unclassified).toList

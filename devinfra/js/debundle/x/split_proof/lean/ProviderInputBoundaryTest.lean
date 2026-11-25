@@ -50,9 +50,61 @@ private def providerCells (linked : List (Module × Env)) : Except String
 def Proved (source candidate : Program) : Prop :=
   (∀ w fuel, runProgram w fuel source = runProgram w fuel candidate) ∧ SameExports source candidate
 
+/-- An external implementation must correspond to the *same* modeled
+initializer and callable on all states, bounds and arguments. This premise
+includes effects and abrupt outcomes; export names alone do not establish it. -/
+structure ProviderCorrespondence (w : World) (init : Nat → M w Unit)
+    (call : Nat → Val → List Val → M w Val)
+    (externalInit : Nat → M w Unit) (externalCall : Nat → Val → List Val → M w Val) : Prop where
+  initialization : ∀ fuel state, externalInit fuel state = init fuel state
+  invocation : ∀ fuel receiver args state, externalCall fuel receiver args state = call fuel receiver args state
+
+/-- Correspondence is an explicit boundary obligation; it does not assume
+equality of complete importer runs. -/
+theorem commonProviderBehavior {w : World} {init : Nat → M w Unit}
+    {call : Nat → Val → List Val → M w Val} {initA initB : Nat → M w Unit}
+    {callA callB : Nat → Val → List Val → M w Val}
+    (a : ProviderCorrespondence w init call initA callA)
+    (b : ProviderCorrespondence w init call initB callB) :
+    (∀ fuel state, initA fuel state = initB fuel state) ∧
+    (∀ fuel receiver args state, callA fuel receiver args state = callB fuel receiver args state) := by
+  exact ⟨fun fuel state => (a.initialization fuel state).trans (b.initialization fuel state).symm,
+    fun fuel receiver args state => (a.invocation fuel receiver args state).trans
+      (b.invocation fuel receiver args state).symm⟩
+
+/-- The modeled operations in the correspondence are the actual linked
+prefix and callable. A separate cell/capture check must identify `setter`. -/
+theorem sourceFreeLinkedBoundary {source candidate : Program} {w : World}
+    (boundary : SharedProvider source candidate w) (fuel : Nat)
+    (continuations : ∀ state, runUnits fuel boundary.pre boundary.before.ready = .ok () state →
+      runUnits fuel boundary.sourceTail state = runUnits fuel boundary.candidateTail state)
+    (setter : Val) {initA initB : Nat → M w Unit} {callA callB : Nat → Val → List Val → M w Val}
+    (a : ProviderCorrespondence w (fun n => runUnits n boundary.pre)
+      (fun n receiver args => callFn n setter receiver args) initA callA)
+    (b : ProviderCorrespondence w (fun n => runUnits n boundary.pre)
+      (fun n receiver args => callFn n setter receiver args) initB callB) :
+    runProgram w fuel source = runProgram w fuel candidate ∧
+    (∀ n state, initA n state = initB n state) ∧
+    (∀ n receiver args state, callA n receiver args state = callB n receiver args state) :=
+  ⟨boundary.run_eq fuel continuations, commonProviderBehavior a b⟩
+
+/-- In addition to run equality, retain the actual checked boundary and its
+quantified external-provider obligation for every world. -/
+def ExternalProved (source candidate : Program) (setter : Val) : Prop :=
+  ∀ w, ∃ boundary : SharedProvider source candidate w,
+    ∀ (fuel : Nat) (initA initB : Nat → M w Unit) (callA callB : Nat → Val → List Val → M w Val),
+      ProviderCorrespondence w (fun n => runUnits n boundary.pre)
+        (fun n receiver args => callFn n setter receiver args) initA callA →
+      ProviderCorrespondence w (fun n => runUnits n boundary.pre)
+        (fun n receiver args => callFn n setter receiver args) initB callB →
+      runProgram w fuel source = runProgram w fuel candidate ∧
+        (∀ n state, initA n state = initB n state) ∧
+        (∀ n receiver args state, callA n receiver args state = callB n receiver args state)
+
 /-- Construct #20043's boundary from the actual links; every missing witness refuses. -/
 def certify {source candidate : Program} (before : CheckedLink source World.probe)
-    (after : CheckedLink candidate World.probe) : Except String (PLift (Proved source candidate)) := do
+    (after : CheckedLink candidate World.probe) (setter : Val := .undef) :
+    Except String (PLift (Proved source candidate ∧ ExternalProved source candidate setter)) := do
   let ⟨first, firstEnv, left, ⟨leftLink, leftProvider⟩⟩ ← provider before.linked
   let ⟨second, secondEnv, right, ⟨rightLink, rightProvider⟩⟩ ← provider after.linked
   let ⟨leftCells, ⟨leftExports⟩⟩ ← providerCells before.linked
@@ -89,9 +141,16 @@ def certify {source candidate : Program} (before : CheckedLink source World.prob
         exact rightExports
       entryCells := entry
     }
-    return ⟨⟨fun w fuel => (boundary w).run_eq fuel (fun state _ => by
+    have continuation (w : World) (fuel : Nat) : ∀ state,
+        runUnits fuel (boundary w).pre (boundary w).before.ready = .ok () state →
+        runUnits fuel (boundary w).sourceTail state = runUnits fuel (boundary w).candidateTail state := by
+      intro state _
       have same : (runUnits fuel (unitsOf left) : M w Unit) = runUnits fuel (unitsOf right) := runUnits_same fuel sameTail
-      exact congrFun same state), SharedProvider.sameExports boundary⟩⟩
+      exact congrFun same state
+    return ⟨⟨⟨fun w fuel => (boundary w).run_eq fuel (continuation w fuel),
+      SharedProvider.sameExports boundary⟩, fun w => ⟨boundary w, by
+        intro fuel initA initB callA callB a b
+        exact sourceFreeLinkedBoundary (boundary w) fuel (continuation w fuel) setter a b⟩⟩⟩
   else throw "entry live cells differ"
 
 
@@ -134,7 +193,91 @@ private def cell (linked : List (Module × Env)) (moduleName name : String) : Ex
   let some addr := env.vars.lookup name | throw s!"missing binding {moduleName}:{name}"
   return addr
 
+/-- This is an explicit model of a source-free interface, not a decoded provider.
+Its initializer and the body of `set` are interpreted by the world. -/
+private def interfaceProvider (id code : Nat) : Module where
+  name := "provider.mjs"
+  imports := []
+  body := [(id, .opaque code [("value", .var), ("alternate", .var)]
+    [("set", 1, .ordinary true)] [] .world)]
+  exports := [("value", "value"), ("alternate", "alternate"), ("set", "set")]
+
+private def sourceFreeWorld : World where
+  σ := Nat
+  init := 0
+  step := fun _ _ _ state => (.ret .undef, state)
+  talk := fun _ state =>
+    match state with
+    | 0 => (.writeVar 0 (.prim (.bool false)), 1)
+    | 1 => (.done (.prim .undef), 2)
+    | 2 => (.writeVar 0 (.prim (.bool true)), 3)
+    | 3 => (.done (.prim .undef), 4)
+    | _ => (.unknown "unexpected provider turn", state)
+
+private def sourceFreeThrowWorld : World where
+  σ := Nat
+  init := 0
+  step := fun _ _ _ state => (.ret .undef, state)
+  talk := fun _ state => (.throw (.prim (.str "provider stopped")), state + 1)
+
+private def sourceFreeExercise (source candidate : Program) (live snapshot : Addr) : Except String Unit := do
+  let .ok () before := runProgram sourceFreeWorld 64 source | throw "original source-free world did not complete"
+  let .ok () after := runProgram sourceFreeWorld 64 candidate | throw "candidate source-free world did not complete"
+  letI : DecidableEq sourceFreeWorld.σ := by change DecidableEq Nat; infer_instance
+  unless (StateMatch.state before after).isSome do throw "source-free world results differ"
+  let turns : Nat := before.world.state
+  unless turns == 4 do throw s!"unexpected source-free provider turns {turns}"
+  unless (before.cellAt live).bind (·.value) == some (.bool true) &&
+      (before.cellAt snapshot).bind (·.value) == some (.bool true) do
+    throw "source-free provider write was not observed"
+  let .throw (.str a) thrown := runProgram sourceFreeThrowWorld 64 source | throw "original provider throw was not propagated"
+  let .throw (.str b) thrown' := runProgram sourceFreeThrowWorld 64 candidate | throw "candidate provider throw was not propagated"
+  letI : DecidableEq sourceFreeThrowWorld.σ := by change DecidableEq Nat; infer_instance
+  let count : Nat := thrown.world.state
+  unless a == "provider stopped" && b == a && count == 1 &&
+      (thrown.cellAt snapshot).bind (·.value) == some .undef &&
+      (StateMatch.state thrown thrown').isSome do
+    throw "source-free provider throw states differ"
+
+private def inspectSourceFree (input : Json) : Except String Json := do
+  let source ← input.getObjVal? "source"
+  let files ← input.getObjVal? "files"
+  let iface ← input.getObjVal? "interface"
+  let exports ← iface.getObjValAs? (List String) "exports"
+  unless exports == ["value", "alternate", "set"] do throw "provider interface exports differ"
+  let code ← iface.getObjValAs? Nat "code"
+  let fragment ← (LinkedInput.decodeStructuralImporterFragment source files plan ["provider.mjs"] [1, 2]).mapError
+    StructuralRefusal.reason
+  let provider := interfaceProvider fragment.nextIdentity code
+  let beforeProgram : Program := ⟨plan.entry, fragment.source :: [provider]⟩
+  let afterProgram : Program := ⟨plan.entry, fragment.emitted ++ [provider]⟩
+  let _ ← checkPlaces (fragment.assignment ++ provider.unitPlacements) beforeProgram afterProgram
+  let before ← checkLink beforeProgram
+  let after ← checkLink afterProgram
+  let a ← cell before.linked "entry.mjs" "live"
+  let b ← cell after.linked "entry.mjs" "live"
+  let setter ← cell before.linked "entry.mjs" "set"
+  let setterAfter ← cell after.linked "part.mjs" "set"
+  let providerCells ← EntryExports.resolve "provider.mjs" before.linked
+  let providerCellsAfter ← EntryExports.resolve "provider.mjs" after.linked
+  unless providerCells.lookup "value" == some a && b == a &&
+      providerCells.lookup "set" == some setter && setterAfter == setter && providerCellsAfter == providerCells do
+    throw "source-free provider cell mismatch"
+  let some alternate := providerCells.lookup "alternate" | throw "source-free alternate cell missing"
+  let some (.obj fn) := (before.ready.cellAt setter).bind (·.value) | throw "provider setter is not an object"
+  let some (.opaque actualCode part captures _) := (before.ready.objAt fn).bind (·.code) | throw "provider setter is not opaque"
+  unless actualCode == code && part == 1 && captures == [some a, some alternate, some setter] do
+    throw "provider setter captures differ"
+  let _ ← certify before after (.obj fn)
+  let entry ← EntryExports.resolve "entry.mjs" before.linked
+  let emitted ← EntryExports.resolve "entry.mjs" after.linked
+  unless entry == emitted && entry.lookup "live" == some a do throw "source-free entry cells differ"
+  let some snapshot := entry.lookup "snapshot" | throw "source-free snapshot cell missing"
+  sourceFreeExercise beforeProgram afterProgram a snapshot
+  return Json.mkObj [("live", toJson (a.region, a.index)), ("providerTurns", toJson (4 : Nat))]
+
 def inspect (input : Json) : Except String Json := do
+  if (input.getObjVal? "interface").isOk then return ← inspectSourceFree input
   let source ← input.getObjVal? "source"
   let providers ← input.getObjVal? "providers"
   let files ← input.getObjVal? "files"
