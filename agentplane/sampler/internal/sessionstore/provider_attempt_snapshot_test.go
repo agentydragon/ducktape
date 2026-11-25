@@ -300,6 +300,7 @@ func TestPreparedSamplingFinishReloadsChangedContext(t *testing.T) {
 					if err := bare.AppendRecords(records); err != nil {
 						return err
 					}
+					current.executionSnapshots[bare] = current.executionSnapshots[current.Transcript]
 					current.Transcript = bare
 				}
 				return store.updateConversation(ctx, tx, current)

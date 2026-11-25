@@ -470,7 +470,7 @@ func TestContextSourceWritesCanRollForwardAndBack(t *testing.T) {
 			t.Fatal("read-only stage wrote a sourced record")
 		}
 	}
-	if rows := tableRowCount(t, store, "sampler_content"); rows == 0 {
+	if legacy.Transcript.RecordCount() == 0 {
 		t.Fatal("fixture did not persist the legacy records")
 	}
 	store.contextSourceWrites = true

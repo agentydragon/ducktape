@@ -112,9 +112,12 @@ func (s *Store) recordEnvironmentContext(objects content.ContentWriter, conversa
 				return err
 			}
 		}
-		origin := protocol.RecordOrigin{Kind: protocol.RecordOriginEnvironment, ObjectID: sourceID}
-		if previous != nil {
-			origin.Projection = protocol.RecordProjectionEnvironmentDiff
+		var origin protocol.RecordOrigin
+		if sourceID != "" {
+			origin = protocol.RecordOrigin{Kind: protocol.RecordOriginEnvironment, ObjectID: sourceID}
+			if previous != nil {
+				origin.Projection = protocol.RecordProjectionEnvironmentDiff
+			}
 		}
 		return state.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: update}}, afterCompaction, origin)
 	}); err != nil {

@@ -74,7 +74,10 @@ func (s *Store) appendExecutionState(objects content.ContentWriter, conversation
 			}
 			notice = "Active execution handles: " + string(raw)
 		}
-		origin := protocol.RecordOrigin{Kind: protocol.RecordOriginExecutionSnapshot, ObjectID: sourceID}
+		var origin protocol.RecordOrigin
+		if sourceID != "" {
+			origin = protocol.RecordOrigin{Kind: protocol.RecordOriginExecutionSnapshot, ObjectID: sourceID}
+		}
 		if err := native.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: notice}}, origin); err != nil {
 			return err
 		}
