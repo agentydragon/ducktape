@@ -265,13 +265,6 @@ struct VendorPackageSource {
     bundle_export: Option<String>,
 }
 
-struct ModuleSource {
-    chunk_id: String,
-    tree: PathBuf,
-    path: String,
-    module: LogicalModule,
-}
-
 pub fn compile_spec_tree(options: &CompileSpecTreeOptions) -> Result<TransformSpec> {
     Ok(compile_spec_tree_with_roots(options)?.0)
 }
@@ -290,11 +283,7 @@ pub fn compile_spec_tree_with_roots(
         .embedded_loaders_path
         .map(|path| source_path(source_root, path));
     let layout = DebundleOutputLayout::new(&options.out_root);
-    let module_sources = load_module_sources(
-        &options.modules_root,
-        &config.main_chunk_id,
-        &config.module_roots,
-    )?;
+    let logical_modules = load_logical_modules(&options.modules_root, &roots)?;
     let spec = TransformSpec {
         host_behavior: config.host_behavior,
         program_premises: config.program_premises,
@@ -307,7 +296,7 @@ pub fn compile_spec_tree_with_roots(
             read_yaml::<VendorMarksFile>(&options.vendor_marks_path)?.vendor_marks,
             source_root,
         )?,
-        logical_modules: logical_modules_map(module_sources)?,
+        logical_modules,
         chunk_renames: config.chunk_renames,
         import_order: config.import_order,
         unassigned_mode: config.unassigned_mode,
@@ -402,29 +391,47 @@ fn read_yaml<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
     serde_yaml::from_str(&yaml).with_context(|| format!("parsing {}", path.display()))
 }
 
-fn load_module_sources(
+fn load_logical_modules(
     modules_root: &Path,
-    main_chunk_id: &str,
-    module_roots: &BTreeMap<PathBuf, String>,
-) -> Result<Vec<ModuleSource>> {
-    if module_roots.is_empty() {
-        return load_chunk_modules(modules_root, Path::new(""), main_chunk_id);
+    roots_by_chunk: &BTreeMap<String, Vec<PathBuf>>,
+) -> Result<BTreeMap<String, BTreeMap<String, LogicalModule>>> {
+    let mut out = BTreeMap::new();
+    for (chunk, roots) in roots_by_chunk {
+        let mut modules = BTreeMap::new();
+        for tree in roots {
+            let mut directory = modules_root.to_owned();
+            directory.extend(tree.components());
+            let files = collect_module_files(&directory).with_context(|| {
+                format!(
+                    "loading module root {} for chunk {chunk:?}",
+                    directory.display()
+                )
+            })?;
+            for file in files {
+                let path = module_path_from_file(&file, &directory);
+                let module = read_module_file(&file)?;
+                if let Some((first, _)) = modules.insert(path.clone(), (tree, module)) {
+                    bail!(
+                        "module_roots entries `{}` and `{}` both define module `{}` of chunk `{}`",
+                        first.display(),
+                        tree.display(),
+                        path,
+                        chunk,
+                    );
+                }
+            }
+        }
+        if !modules.is_empty() {
+            out.insert(
+                chunk.clone(),
+                modules
+                    .into_iter()
+                    .map(|(path, (_, module))| (path, module))
+                    .collect(),
+            );
+        }
     }
-
-    let mut active = Vec::new();
-    for (relative_root, chunk_id) in module_roots {
-        active.extend(
-            load_chunk_modules(&modules_root.join(relative_root), relative_root, chunk_id)
-                .with_context(|| {
-                    format!(
-                        "loading module_roots entry `{}` for chunk `{chunk_id}`",
-                        relative_root.display()
-                    )
-                })?,
-        );
-    }
-    active.sort_by(|left, right| (&left.chunk_id, &left.path).cmp(&(&right.chunk_id, &right.path)));
-    Ok(active)
+    Ok(out)
 }
 
 /// Roots are normalized relative paths and no tree contains another, so a
@@ -462,28 +469,6 @@ fn validate_module_roots(module_roots: &BTreeMap<PathBuf, String>) -> Result<()>
         }
     }
     Ok(())
-}
-
-/// The modules of the tree at `modules_root`, scoped to `chunk_id`; `tree`
-/// is its `module_roots` entry (empty without `module_roots`).
-fn load_chunk_modules(
-    modules_root: &Path,
-    tree: &Path,
-    chunk_id: &str,
-) -> Result<Vec<ModuleSource>> {
-    let mut active = Vec::new();
-    for path in collect_module_files(modules_root)? {
-        let module_path = module_path_from_file(&path, modules_root);
-        let data = read_module_file(&path)?;
-        active.push(ModuleSource {
-            chunk_id: chunk_id.to_string(),
-            tree: tree.to_path_buf(),
-            path: module_path,
-            module: data,
-        });
-    }
-    active.sort_by(|left, right| left.path.cmp(&right.path));
-    Ok(active)
 }
 
 fn vendor_map(
@@ -678,31 +663,6 @@ impl VendorPackageSource {
             namespace: self.namespace,
         })
     }
-}
-
-fn logical_modules_map(
-    sources: Vec<ModuleSource>,
-) -> Result<BTreeMap<String, BTreeMap<String, LogicalModule>>> {
-    let mut out = BTreeMap::new();
-    let mut trees = BTreeMap::<(String, String), PathBuf>::new();
-    for source in sources {
-        if let Some(first) = trees.insert(
-            (source.chunk_id.clone(), source.path.clone()),
-            source.tree.clone(),
-        ) {
-            bail!(
-                "module_roots entries `{}` and `{}` both define module `{}` of chunk `{}`",
-                first.display(),
-                source.tree.display(),
-                source.path,
-                source.chunk_id,
-            );
-        }
-        out.entry(source.chunk_id)
-            .or_insert_with(BTreeMap::new)
-            .insert(source.path, source.module);
-    }
-    Ok(out)
 }
 
 #[cfg(test)]
