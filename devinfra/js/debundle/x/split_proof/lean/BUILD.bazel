@@ -284,6 +284,12 @@ lean_library(
 )
 
 lean_library(
+    name = "static_provider_boundary",
+    srcs = ["EsmSplit/CoreJS/StaticProviderBoundary.lean"],
+    deps = [":corejs_certificate_support"],
+)
+
+lean_library(
     name = "corejs_linked_input",
     srcs = [
         "EsmSplit/CertificateData.lean",
@@ -579,6 +585,7 @@ lean_axiom_test(
         "EsmSplit.CoreJS.Split",
         "EsmSplit.CoreJS.StateMatch",
         "EsmSplit.CoreJS.StatementFrame",
+        "EsmSplit.CoreJS.StaticProviderBoundary",
         "EsmSplit.CoreJS.StructuralCertificate",
         "EsmSplit.CoreJS.WrapperLinked",
         "EsmSplit.CoreJS.WrapperMove",
@@ -605,6 +612,15 @@ lean_axiom_test(
         "CoreJS.LinkedBehaviorExamples.jsonLiteralRoundTrip",
         "CoreJS.LinkedBehaviorExamples.sharedJsonLiteralRoundTrip",
         "CoreJS.LinkedBehaviorExamples.movedClosure",
+        "CoreJS.StaticProviderBoundary.liveCells",
+        "CoreJS.StaticProviderBoundary.providerPrefix",
+        "CoreJS.StaticProviderBoundary.importerContinuation",
+        "CoreJS.StaticProviderBoundary.linkedBoundary",
+        "CoreJS.StaticProviderBoundary.allOutcomes",
+        "CoreJS.StaticProviderBoundary.sameExports",
+        "CoreJS.StaticProviderBoundary.wrongAlias",
+        "CoreJS.StaticProviderBoundary.effectfulOnce",
+        "CoreJS.StaticProviderBoundary.wrongAlias_changes_run",
         "CoreJS.reachFrame_fromWorld",
         "CoreJS.reachFrame_hostCall",
         "CoreJS.reachFrame_observeGlobalTypeof",
@@ -844,6 +860,7 @@ lean_axiom_test(
         ":corejs_runtime",
         ":corejs_structural",
         ":planner",
+        ":static_provider_boundary",
     ],
 )
 
