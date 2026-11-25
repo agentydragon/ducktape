@@ -9,9 +9,8 @@
 
 use source_identity::{ChunkId, ChunkTable};
 use vendor::{
-    DeferredImport, IdentRewriteTarget, MaterializedOutputChunkIndex, VendorImportAction,
-    VendorImportRewrites, VendorResolutionPlan, bundled_facade_import_source,
-    resolve_partial_swap_import_target,
+    DeferredImport, MaterializedOutputChunkIndex, VendorImportAction, VendorImportRewrites,
+    VendorResolutionPlan, bundled_facade_import_source, resolve_partial_swap_import_target,
 };
 
 use artifact::ArtifactIndexes;
@@ -136,14 +135,8 @@ pub(crate) struct PlannedVendorReimports<'a> {
     /// External package / facade import decls replacing claimed
     /// re-imports; appended to the runtime re-import block.
     pub(crate) external_imports: Vec<ModuleItem>,
-    /// Body replacements for member-access / named-rename claimed
-    /// bindings, applied by `PartialSwapIdentRewriter` after the sealed
-    /// rename application (like the runtime-URL rewrite).
-    pub(crate) body_rewrites: BTreeMap<Id, IdentRewriteTarget>,
-    /// Whole-import replacements already counted at construction
-    /// (namespace / default / named-without-alias kinds), summed into
-    /// the manifest's per-symbol `references_rewritten`.
-    pub(crate) references_rewritten: BTreeMap<(ChunkId, String), usize>,
+    /// Direct import counts and body replacements collected from the same directives.
+    pub(crate) rewrites: VendorImportRewrites,
 }
 
 pub(crate) fn plan_vendor_reimports<'a>(
@@ -157,14 +150,12 @@ pub(crate) fn plan_vendor_reimports<'a>(
         retained: BTreeMap::new(),
         imported_overrides: BTreeMap::new(),
         external_imports: Vec::new(),
-        body_rewrites: BTreeMap::new(),
-        references_rewritten: BTreeMap::new(),
+        rewrites: VendorImportRewrites::default(),
     };
     let Some(oracle) = oracle else {
         planned.retained = needed;
         return planned;
     };
-    let mut rewrites = VendorImportRewrites::default();
     for (local_id, info) in needed {
         let (chunk, chunk_export, action) =
             match oracle.classify(info, source_chunk_id, source_entry_file) {
@@ -193,7 +184,8 @@ pub(crate) fn plan_vendor_reimports<'a>(
                 }
             };
         planned.external_imports.extend(
-            rewrites
+            planned
+                .rewrites
                 .materialize(action, local_id, chunk, chunk_export, |path| {
                     bundled_facade_import_source(
                         oracle.chunk_table,
@@ -206,7 +198,5 @@ pub(crate) fn plan_vendor_reimports<'a>(
                 .map(DeferredImport::into_module_item),
         );
     }
-    planned.body_rewrites = rewrites.body_rewrites;
-    planned.references_rewritten = rewrites.references_rewritten;
     planned
 }

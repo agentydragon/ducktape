@@ -39,9 +39,8 @@ use spec::PartialSwapKind;
 
 use crate::plan::VendorResolutionPlan;
 use crate::{
-    MaterializedOutputChunkIndex, PartialSwapIdentRewriter, VendorImportRewrites,
-    bundled_facade_import_source, make_named_reexport, make_namespace_reexport,
-    resolve_partial_swap_import_target,
+    MaterializedOutputChunkIndex, VendorImportRewrites, bundled_facade_import_source,
+    make_named_reexport, make_namespace_reexport, resolve_partial_swap_import_target,
 };
 
 pub(crate) struct PassthroughContext<'a> {
@@ -89,15 +88,7 @@ pub(crate) fn rewrite_passthrough_module(
 
     // Pass C: body reference rewrites for member-access / named-rename
     // bindings collected in Pass A.
-    if !state.body_rewrites.is_empty() {
-        let mut rewriter = PartialSwapIdentRewriter {
-            bindings: &state.body_rewrites,
-            references_by_symbol: &mut state.references_rewritten,
-        };
-        module.visit_mut_with(&mut rewriter);
-    }
-
-    for (key, count) in state.references_rewritten {
+    for (key, count) in state.finish(&mut module.body) {
         *references_by_symbol.entry(key).or_insert(0) += count;
     }
 }
@@ -137,15 +128,8 @@ pub fn rewrite_peeled_module_imports(
             other => rewritten.push(other),
         }
     }
-    if !state.body_rewrites.is_empty() {
-        let mut rewriter = PartialSwapIdentRewriter {
-            bindings: &state.body_rewrites,
-            references_by_symbol: &mut state.references_rewritten,
-        };
-        rewritten.visit_mut_with(&mut rewriter);
-    }
     *body = rewritten;
-    state.references_rewritten
+    state.finish(body)
 }
 
 fn rewrite_directive_items(

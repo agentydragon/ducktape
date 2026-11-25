@@ -14,7 +14,6 @@ use std::sync::Arc;
 use anyhow::{Context, Result, bail};
 
 use analysis_projection::AnalysisSpec;
-use artifact::EmissionFiles;
 use artifact::reports::{ArtifactChunkRecord, ArtifactCounts, ChunkDecompositionOutput};
 use emit_harness::emit_browser_harness;
 use final_global_resolution::GlobalResolutionSources;
@@ -36,10 +35,7 @@ use spec_modules::read_flat_transform_spec;
 use spec_tree::{
     CompileSpecTreeOptions, compile_spec_tree, compile_spec_tree_with_roots, graph_module_roots,
 };
-use vendor::{
-    VendorPlanOptions, VendorResolutionPlan, VendorSwapsReport, build_partial_swap_resolutions,
-    build_vendor_resolution_plan,
-};
+use vendor::{VendorPlanOptions, VendorResolutionPlan, build_vendor_resolution_plan};
 use write_tree::{RejectedArtifacts, WriteTreeInput, write_gate_rejected_marker, write_js_tree};
 
 /// Exit status of `debundle run --emit-on-rejection` when the realizability
@@ -1206,7 +1202,10 @@ fn run_prepared_transform(
         embedded_loaders,
         ..
     } = prepared;
-    let (counts, chunk_records) = source_report_records(&source_program.artifact().chunks);
+    let (counts, emitted_chunk_records) = source_report_records(
+        &source_program.artifact().chunks,
+        &vendor_plan.full_swap_chunk_ids(),
+    );
     let materialise_chunk_ids: Vec<String> = spec.materialize_chunk_ids().into_iter().collect();
     anyhow::ensure!(
         options.ownership_subset.is_none() || !materialise_chunk_ids.is_empty(),
@@ -1250,15 +1249,7 @@ fn run_prepared_transform(
         bail!("{requested} requires a configured report output directory");
     }
     let swap_cfg = &spec.swap_vendor_chunks;
-    let mut vendor_report = VendorSwapsReport::default();
     let write_vendor_outputs = swap_cfg.write && write_program;
-
-    // Full swaps are an emission-set exclusion: the swapped chunks stay in
-    // the bundle — nothing removes them, and the dependency graph never
-    // contained vendor chunks — but emission, the rename queue, the
-    // emit-shape check, and the chunk reports skip them. Their
-    // wire-facing resolutions are projections of the plan.
-    vendor_report.full = vendor_plan.full_swap_resolutions();
 
     let mut decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput> = HashMap::new();
     // Spec member claims whose `binding.name` did not resolve to a
@@ -1344,8 +1335,7 @@ fn run_prepared_transform(
     // The draft runs naturalization, vendor emission rewrites, and both
     // prune passes in their fixed order; its finalized files are immutable.
     let (candidate, selected_lowerings) = candidate_draft.finalize()?;
-    (vendor_report.partial, vendor_report.bundled_partial) =
-        build_partial_swap_resolutions(&vendor_plan, candidate.references_by_symbol())?;
+    let vendor_report = vendor_plan.swaps_report(candidate.references_by_symbol())?;
 
     // A gate-rejected program never reaches final program validation (as
     // without the flag, where the gate already failed the run): freeze it for
@@ -1367,11 +1357,7 @@ fn run_prepared_transform(
                 out_dir,
                 lowerings: &selected_lowerings,
                 counts: &counts,
-                chunk_records: &emitted_chunk_records(
-                    chunk_records,
-                    rejected_plan.files(),
-                    rejected_plan.excluded_chunk_ids(),
-                ),
+                chunk_records: &emitted_chunk_records,
                 decomposition_by_chunk: &decomposition_by_chunk,
             })?;
         }
@@ -1387,8 +1373,6 @@ fn run_prepared_transform(
         spec.emit_browser_harness.as_ref(),
         VendorManifestOutput::prepare(swap_cfg.output_manifest_path.as_deref(), vendor_report),
     )?;
-    let emission_files = validated_plan.files();
-    let excluded_chunk_ids = validated_plan.excluded_chunk_ids();
 
     if !dry_run
         && !suppress_reports
@@ -1408,9 +1392,6 @@ fn run_prepared_transform(
     if write_vendor_outputs {
         validated_plan.write_vendor_outputs()?;
     }
-
-    let emitted_chunk_records =
-        emitted_chunk_records(chunk_records, emission_files, excluded_chunk_ids);
 
     if write_program && let Some(cfg) = &spec.write_js_tree {
         write_js_tree(&WriteTreeInput {
@@ -1434,8 +1415,10 @@ fn run_prepared_transform(
     Ok(PreparedTransformResult::Completed)
 }
 
+/// Totals describe the source bundle; chunk records describe the emission set.
 fn source_report_records(
     chunks: &[artifact::ChunkArtifact],
+    excluded_chunk_ids: &BTreeSet<ChunkId>,
 ) -> (ArtifactCounts, Vec<ArtifactChunkRecord>) {
     let mut counts = ArtifactCounts {
         kept_top_level_declarations: 0,
@@ -1450,29 +1433,15 @@ fn source_report_records(
         counts.top_level_side_effects += analysis.counts.top_level_side_effects;
         counts.export_aliases += analysis.counts.export_aliases;
         counts.unresolved_exports += analysis.counts.unresolved_exports;
+        if excluded_chunk_ids.contains(&chunk.chunk_id) {
+            continue;
+        }
         chunk_records.push(ArtifactChunkRecord {
             chunk_id: analysis.chunk_id.clone(),
             source_path: analysis.source_path.clone(),
         });
     }
     (counts, chunk_records)
-}
-
-/// Chunk records of the emission set: records of excluded (fully-swapped)
-/// chunks are dropped from the emitted reports.
-fn emitted_chunk_records(
-    chunk_records: Vec<ArtifactChunkRecord>,
-    emission_files: &EmissionFiles,
-    excluded_chunk_ids: &BTreeSet<ChunkId>,
-) -> Vec<ArtifactChunkRecord> {
-    let excluded_chunk_names: BTreeSet<&str> = excluded_chunk_ids
-        .iter()
-        .map(|chunk_id| emission_files.files().chunk_table.name(*chunk_id))
-        .collect();
-    chunk_records
-        .into_iter()
-        .filter(|record| !excluded_chunk_names.contains(record.chunk_id.as_str()))
-        .collect()
 }
 
 fn provenance_roots(cli: &TransformRequest) -> Result<(ProvenanceRoots, Option<PathBuf>)> {
@@ -1711,8 +1680,6 @@ fn validate_transform_spec(spec: &TransformSpec) -> Result<()> {
     Ok(())
 }
 
-/// Fold one application site's per-symbol rewrite counts into the
-/// merged map `build_partial_swap_resolutions` projects from.
 fn preflight_output_roots(spec: &TransformSpec) -> Result<()> {
     let mut roots = Vec::<PathBuf>::new();
     if let Some(cfg) = &spec.write_js_tree {
