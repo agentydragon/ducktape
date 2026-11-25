@@ -30,6 +30,20 @@ export function topLevelStatements(program) {
   });
 }
 
+// eslint-scope can resolve an arguments reference in a parameter initializer
+// past its implicit binding, which has no source-level definition. Strict modules
+// cannot declare arguments explicitly. Every ordinary function supplies the
+// binding, and intervening arrows inherit it.
+function resolvedVariable(ref) {
+  if (ref.identifier.name === "arguments") {
+    for (let scope = ref.from; scope; scope = scope.upper) {
+      if (scope.type === "function" && scope.block.type !== "ArrowFunctionExpression")
+        return scope.set.get("arguments");
+    }
+  }
+  return ref.resolved;
+}
+
 /** The ESTree and (when requested) scope manager for one JavaScript module.
  * Scope references point to identifier objects in this exact tree. */
 export function parseModule(code, parse, analyzer = null, scopeOptions = {}) {
@@ -54,9 +68,11 @@ export function resolveIdentifiers({ scopes }, isExternal) {
       for (const id of variable.identifiers)
         if (!meaning.has(id)) meaning.set(id, { cls: classOf(variable), variable, declares: declaresModuleBinding });
     }
-    for (const ref of scope.references)
-      if (!meaning.has(ref.identifier))
-        meaning.set(ref.identifier, { cls: classOf(ref.resolved), variable: ref.resolved, declares: false });
+    for (const ref of scope.references) {
+      if (meaning.has(ref.identifier)) continue;
+      const variable = resolvedVariable(ref);
+      meaning.set(ref.identifier, { cls: classOf(variable), variable, declares: false });
+    }
   }
   return meaning;
 }
@@ -130,7 +146,15 @@ function annotate(node, meaning, unitRanges, binders, legacy, scopes) {
     if (scope) {
       // Scope-through references include children that capture the same outer
       // cells. Ambient references stay in the callable body.
-      const captures = scope.through.filter((ref) => ref.resolved && ref.resolved.scope.type !== "global");
+      const captures = scope.through.filter((ref) => {
+        if (ref.identifier.name !== "arguments") return ref.resolved && ref.resolved.scope.type !== "global";
+        const binding = resolvedVariable(ref);
+        if (!binding) return false;
+        for (let outer = scope.upper; outer; outer = outer.upper) {
+          if (outer === binding.scope) return true;
+        }
+        return false;
+      });
       out.opaqueCaptures = [
         ...new Set(captures.sort((a, b) => a.identifier.start - b.identifier.start).map((ref) => ref.identifier.name)),
       ];
