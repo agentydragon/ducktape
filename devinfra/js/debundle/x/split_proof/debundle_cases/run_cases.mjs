@@ -11,6 +11,7 @@
 //   3. run the original and the emitted entry in Node;
 //   4. compare with the expectation.
 // What the adapter cannot translate is reported as `unsupported:<cause>`, not forced. One JSON line per spec entry.
+import { certify } from "./certify.mjs";
 import { classify, coverageLosses, rejectKind, wanted } from "./verdict.mjs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
@@ -47,7 +48,16 @@ const option = (name, fallback) => {
 };
 const casesRoot = path.resolve(here, option("cases", "../../../e2e/cases"));
 const filter = option("filter", "");
-const outFile = path.resolve(option("out", path.join(here, "results/cases.jsonl")));
+const checkCertificates = args.includes("--check-certificates");
+const certification = checkCertificates || args.includes("--certify");
+const outFile = path.resolve(
+  option(
+    "out",
+    certification
+      ? path.join(process.env.TEST_TMPDIR ?? ".", "certification.jsonl")
+      : path.join(here, "results/cases.jsonl")
+  )
+);
 const keepDir = option("keep", null) && path.resolve(option("keep", null));
 
 // ---------------------------------------------------------------- source analysis
@@ -291,8 +301,11 @@ function jsFiles(dir) {
   return out.sort();
 }
 
-function runCase(dir, specName, expected) {
-  const id = `${path.relative(casesRoot, dir)}/${specName.replace(/\.?spec\.yaml$|\.yaml$/, "") || "spec"}`;
+function caseId(dir, specName) {
+  return `${path.relative(casesRoot, dir)}/${specName.replace(/\.?spec\.yaml$|\.yaml$/, "") || "spec"}`;
+}
+
+function runCase(dir, specName, expected, id) {
   const base = { id, area: path.relative(casesRoot, dir).split(path.sep)[0] };
   const expectation = "accept" in expected ? "accept" : `reject:${rejectKind(expected)}`;
   const record = { ...base, expect: expectation };
@@ -353,6 +366,9 @@ function runCase(dir, specName, expected) {
       path.join(stage, "lean_spec.json"),
       JSON.stringify({ entry: plan.entry, modules: plan.modules, order: plan.order })
     );
+    if (certification) {
+      return { id, ...certify({ stage, chunkFile, plan, want: wanted(expected), run, lowersplit, nodeRun }) };
+    }
     const checkerArgs = [
       "--diagnostic",
       writeDeployment(path.join(stage, "bundle.json"), path.join(stage, "lean_spec.json"), path.join(stage, "split")),
@@ -442,14 +458,27 @@ function runCase(dir, specName, expected) {
 }
 
 const regression = args.includes("--regression");
-const baselinePath = path.resolve(option("baseline", path.join(here, "results/cases.jsonl")));
-if (regression && outFile === baselinePath) throw new Error("--regression needs an --out distinct from its baseline");
-const baseline = regression
-  ? readFileSync(baselinePath, "utf8")
-      .trimEnd()
-      .split("\n")
-      .map((line) => JSON.parse(line))
-  : [];
+const baselinePath = path.resolve(
+  option("baseline", path.join(here, checkCertificates ? "results/certificates.jsonl" : "results/cases.jsonl"))
+);
+if ((regression || certification) && outFile === baselinePath)
+  throw new Error("--regression needs an --out distinct from its baseline");
+const baseline =
+  regression || certification
+    ? readFileSync(baselinePath, "utf8")
+        .trimEnd()
+        .split("\n")
+        .map((line) => JSON.parse(line))
+    : [];
+if (certification && regression) throw new Error("diagnostic --regression and --certify are separate runs");
+let selected = baseline.filter((r) => r.outcome === (checkCertificates ? "certified" : "agree-accept"));
+if (checkCertificates && process.env.TEST_SHARD_STATUS_FILE) {
+  writeFileSync(process.env.TEST_SHARD_STATUS_FILE, "");
+  selected = selected.filter(
+    (_, i) => i % Number(process.env.TEST_TOTAL_SHARDS) === Number(process.env.TEST_SHARD_INDEX)
+  );
+}
+const cohort = new Set(selected.map((r) => r.id));
 mkdirSync(path.dirname(outFile), { recursive: true });
 const lines = [];
 for (const dir of discover()) {
@@ -457,11 +486,24 @@ for (const dir of discover()) {
   for (const [specName, expected] of Object.entries(expectations)) {
     const id = `${path.relative(casesRoot, dir)}/${specName}`;
     if (filter && !id.includes(filter)) continue;
-    lines.push(runCase(dir, specName, expected));
+    const key = caseId(dir, specName);
+    if (certification && !cohort.delete(key)) continue;
+    try {
+      lines.push(runCase(dir, specName, expected, key));
+    } catch (error) {
+      if (!certification) throw error;
+      lines.push({ id: key, outcome: "error:runner", detail: error.message });
+    }
   }
 }
 writeFileSync(outFile, `${lines.map((row) => JSON.stringify(row)).join("\n")}\n`);
 console.log(`${lines.length} cases -> ${outFile}`);
+if (certification) {
+  if (!filter && cohort.size) throw new Error("missing cohort cases: " + [...cohort].join(", "));
+  const failures = lines.filter((r) => r.outcome !== "certified" && (checkCertificates || r.outcome !== "rejected"));
+  for (const row of failures) console.error(JSON.stringify(row));
+  if (!lines.length || failures.length) process.exitCode = 1;
+}
 if (regression) {
   const failures = lines.filter(({ outcome }) => outcome.startsWith("error:") || outcome === "unsound-accept");
   console.log(`${lines.filter(({ outcome }) => outcome.startsWith("unsupported:")).length} unsupported`);
