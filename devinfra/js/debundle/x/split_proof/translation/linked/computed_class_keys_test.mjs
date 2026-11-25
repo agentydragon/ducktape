@@ -23,9 +23,9 @@ if (runCase("order-receiver-names")) {
   const run = split(
     "computed-class-key-order-receiver-names",
     `const trace = { value: "" };
+    class Base { read() { return this.value; } }
     let key = "run";
     const access = "amount";
-    class Base { read() { return this.value; } }
     export class Child extends (trace.value += "h", Base) {
       [(trace.value += "m", key)]() { return super.read() + 1; }
       static { trace.value += "s"; }
@@ -41,7 +41,7 @@ if (runCase("order-receiver-names")) {
         child.run() === 6 && child.run.name === "run" && Child.run() === Child && Child.run.name === "run" &&
         child.later === undefined;
     })();`,
-    { "base.mjs": ["#0", "#1", "#2", "#3"], "entry.mjs": ["#4", "#5", "#6"] }
+    { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3", "#4", "#5", "#6"] }
   );
   assertCertifiedResult(run, true);
   const entry = path.join(run.out, "entry.mjs");
