@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { dump } from "./parser.mjs";
 
@@ -118,3 +118,28 @@ const wrongTargetVerdict = JSON.parse(wrongTarget.stdout.trim().split("\n").at(-
 assert.equal(wrongTarget.status, 1, wrongTarget.stdout + wrongTarget.stderr);
 assert.equal(wrongTargetVerdict.status, "rejected", JSON.stringify(wrongTargetVerdict));
 assert.match(wrongTargetVerdict.reason, /output module public\/entry\.mjs differs from its generated ESTree/);
+
+// A trailing separator names the same output directory. Publication stages beside it.
+const slashOut = path.join(work, "certified-trailing-slash");
+const slashed = spawnSync(
+  process.env.LOWERSPLIT,
+  [astPath, specPath, slashOut + path.sep, "--require", "all-outcomes"],
+  { encoding: "utf8" }
+);
+const slashedVerdict = JSON.parse(slashed.stdout.trim().split("\n").at(-1));
+assert.equal(slashed.status, 0, slashed.stdout + slashed.stderr);
+assert.equal(slashedVerdict.status, "certified", JSON.stringify(slashedVerdict));
+assert.deepEqual(readdirSync(slashOut).sort(), ["other", "parts", "public"]);
+assert.deepEqual(
+  readdirSync(work).filter((name) => name.startsWith(".split-proof-")),
+  [],
+  "no staging directory is left behind"
+);
+
+// A path ending in .. names no new directory and is refused before certification.
+const parentOut = path.join(work, "certified-parent") + path.sep + "..";
+const parent = spawnSync(process.env.LOWERSPLIT, [astPath, specPath, parentOut], { encoding: "utf8" });
+const parentVerdict = JSON.parse(parent.stdout.trim().split("\n").at(-1));
+assert.equal(parent.status, 1, parent.stdout + parent.stderr);
+assert.equal(parentVerdict.status, "rejected", JSON.stringify(parentVerdict));
+assert.match(parentVerdict.reason, /output path .* must end in a directory name/);

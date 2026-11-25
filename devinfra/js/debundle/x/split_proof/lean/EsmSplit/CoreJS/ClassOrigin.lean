@@ -24,8 +24,10 @@ theorem literalInstanceMembers_plain {ms : List ClassMember} (h : literalInstanc
   induction ms with
   | nil => rfl
   | cons m ms ih =>
-    cases m <;> rename_i static k f <;> cases static <;> cases k <;>
-      simp only [literalInstanceMembers, Bool.false_eq_true] at h
+    cases m <;> try simp only [literalInstanceMembers, Bool.false_eq_true] at h
+    all_goals
+      rename_i static k f
+      cases static <;> cases k <;> simp only [literalInstanceMembers, Bool.false_eq_true] at h
     all_goals exact ih h
 
 theorem alloc_objAt {s t : State W} {o : Obj} {a : Addr} (h : alloc o s = .ok a t) :
@@ -75,8 +77,10 @@ private theorem evalMembers_instance_preserves_ctor (n : Nat) (env : Env) (proto
     cases ms with
     | nil => cases h; exact ho
     | cons m ms =>
-      cases m <;> rename_i static k f <;> cases static <;> cases k <;>
-        simp only [literalInstanceMembers, Bool.false_eq_true] at hm
+      cases m <;> try simp only [literalInstanceMembers, Bool.false_eq_true] at hm
+      all_goals
+        rename_i static k f
+        cases static <;> cases k <;> simp only [literalInstanceMembers, Bool.false_eq_true] at hm
       all_goals
         unfold evalMembers at h
         obtain ⟨key, s1, hk, h1⟩ := bind_ok h
@@ -86,7 +90,8 @@ private theorem evalMembers_instance_preserves_ctor (n : Nat) (env : Env) (proto
         have hs2 := (inert_lift _).ok hn
         subst s2
         obtain ⟨value, s3, hf, h3⟩ := bind_ok h2
-        have hfunc := makeFunc_keeps env f (Extends.refl s)
+        have hfunc := makeFunc_keeps { env with home := some proto } f (Extends.refl s)
+        simp only [Bool.false_eq_true, ite_false] at hf
         rw [hf] at hfunc
         obtain ⟨_, s4, hd, h4⟩ := bind_ok h3
         have hother := defineOwn_preserves_other hne hd
@@ -100,7 +105,7 @@ private theorem evalExpr_plainClass_origin {n : Nat} {env : Env} {name : Name}
     {ctor : Func} {ms : List ClassMember} (hm : literalInstanceMembers ms = true)
     {s t : State W} {v : Val} (h : evalExpr n env (.cls name false ctor ms) s = .ok v t) :
     ∃ a p o, v = .obj a ∧ a.region = s.region ∧ t.objAt a = some o ∧
-      o.code = some (.closure ctor (env.capture (ctor.free ++ freeMembers ms)) []) ∧
+      o.code = some (.closure ctor ({ env with home := some p }.capture (ctor.free ++ freeMembers ms)) []) ∧
       o.props.lookup (.str "prototype") = some (.data (.obj p) false false false) := by
   cases n with
   | zero => cases h
@@ -125,13 +130,13 @@ private theorem evalExpr_plainClass_origin {n : Nat} {env : Env} {name : Name}
     rw [plainClassMembers_fieldInits (literalInstanceMembers_plain hm)] at hfinish
     have hz : keys.zip ([] : List Expr) = [] := by cases keys <;> rfl
     rw [hz] at hfinish
-    simp only [List.filterMap_nil] at hfinish
+    simp only [List.filterMap_nil, staticInitializers_plain (literalInstanceMembers_plain hm)] at hfinish
     obtain ⟨_, s5, hu, hinit⟩ := bind_ok hfinish
     have hfound := modifyObj_self hcObj' hu
     obtain ⟨_, s6, hi, hfields⟩ := bind_ok hinit
     cases hi
     obtain ⟨_, s7, he, hresult⟩ := bind_ok hfields
-    have hs : s7 = s5 := by cases n <;> cases he <;> rfl
+    have hs : s7 = s5 := by cases he; rfl
     subst s7
     cases hresult
     exact ⟨c, proto, _, rfl, (alloc_region hc).trans (alloc_ok hp).2.region, hfound, rfl, rfl⟩
@@ -162,7 +167,7 @@ theorem plainClassVar_origin {n id : Nat} {env : Env} {x name : Name} {ctor : Fu
     {s t : State W} {flow : Flow} (h : runUnit n env id (.decl .var x (.cls name false ctor ms)) s = .ok flow t) :
     ∃ cell a p o, env.vars.lookup x = some cell ∧ cell.region = id + 1 ∧
       t.cellAt cell = some ⟨some (.obj a), true⟩ ∧ a.region = id + 1 ∧ t.objAt a = some o ∧
-      o.code = some (.closure ctor (env.capture (ctor.free ++ freeMembers ms)) []) ∧
+      o.code = some (.closure ctor ({ env with home := some p }.capture (ctor.free ++ freeMembers ms)) []) ∧
       o.props.lookup (.str "prototype") = some (.data (.obj p) false false false) := by
   obtain ⟨u, hexec, rfl⟩ := runUnit_ok h
   cases n with

@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/agentydragon/ducktape/agentplane/net/peertls"
+	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 )
 
 type Actions struct {
@@ -37,6 +38,7 @@ type Settings struct {
 	DirectExecutorTarget                   string                      `json:"direct_executor_target"`
 	DirectExecutorInsecureLocaltest        bool                        `json:"direct_executor_insecure_localtest"`
 	MaxLiveSessions                        int                         `json:"max_live_sessions"`
+	ContextSourceWrites                    bool                        `json:"context_source_writes,omitempty"`
 	EventBlockWrites                       bool                        `json:"event_block_writes,omitempty"`
 	ProviderResponseHeaderTimeoutSeconds   *int                        `json:"provider_response_header_timeout_seconds,omitempty"`
 	ProviderIdleTimeoutSeconds             *int                        `json:"provider_idle_timeout_seconds,omitempty"`
@@ -52,8 +54,9 @@ type Settings struct {
 	ShutdownDrainSeconds                   *int                        `json:"shutdown_drain_seconds,omitempty"`
 	ShutdownBudgetSeconds                  *int                        `json:"shutdown_budget_seconds,omitempty"`
 	LeaseSeconds                           int                         `json:"lease_seconds"`
-	AutoCompactTokens                      *int                        `json:"auto_compact_tokens"`
-	SetupTimeoutSeconds                    *int                        `json:"setup_timeout_seconds,omitempty"`
+	// CLEANUP(added 2026-11-24): Remove the old settings keys after the model-level config rolls out.
+	LegacyAutoCompactTokens *int `json:"auto_compact_tokens,omitempty"`
+	SetupTimeoutSeconds     *int `json:"setup_timeout_seconds,omitempty"`
 }
 
 const defaultHealthListen = ":8081"
@@ -101,6 +104,20 @@ func decodeSettings(reader io.Reader) (Settings, error) {
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
 		return Settings{}, errors.New("configuration must contain exactly one JSON object")
+	}
+	for name, model := range settings.Models {
+		if model.AutoCompactTokens != nil || !model.SupportsCompaction() {
+			continue
+		}
+		switch model.API {
+		case protocol.APIStyleResponses:
+			model.AutoCompactTokens = settings.LegacyAutoCompactTokens
+		case protocol.APIStyleAnthropicMessages:
+			model.AutoCompactTokens = model.AnthropicMessages.Compaction.LegacyAutoCompactTokens
+		case protocol.APIStyleChatCompletions:
+			model.AutoCompactTokens = model.ChatCompaction.LegacyAutoCompactTokens
+		}
+		settings.Models[name] = model
 	}
 	return settings, nil
 }

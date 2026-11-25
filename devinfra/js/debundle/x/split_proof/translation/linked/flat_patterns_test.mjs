@@ -4,13 +4,17 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   arrow,
+  assertCertified,
+  assertRejected,
   block,
   call,
+  caseShard,
   exportNamed,
   forcePreview,
   functionExpression,
   id,
   literal,
+  lower,
   observe,
   program,
   property,
@@ -22,8 +26,9 @@ import {
 } from "./harness.mjs";
 
 const entry = "entry.mjs";
+const runCase = caseShard();
 
-{
+if (runCase("module-var")) {
   const source = `
     var calls = 0, order = "";
     function make() {
@@ -48,36 +53,108 @@ const entry = "entry.mjs";
   }
 }
 
-{
+for (const kind of ["var", "const"]) {
+  if (!runCase(`inline-module-${kind}`)) continue;
   const source = `
     const input = { x: 5, y: 7 };
-    export var { x: right, "y": left } = input;
+    export ${kind} { x: right, "y": left } = input;
   `;
-  const { files, out, verdict, log } = sequentialSplit("inline-module-var", source, {
+  const { files, out, verdict, log } = sequentialSplit(`inline-module-${kind}`, source, {
     "worker.mjs": ["#0"],
     [entry]: ["#1"],
   });
-  assert.equal(verdict.status, "certified", log);
+  assertCertified(verdict, log);
   for (const file of [files.sourceFile, path.join(out, entry)]) {
     const mod = await import(pathToFileURL(file).href);
     assert.deepEqual({ ...mod }, { left: 7, right: 5 });
   }
 }
 
-for (const [name, declaration, reason] of [
-  ["module-var-computed", "var {[key]: value} = {};", "expected a static object pattern property"],
-  ["module-lexical", "let {x: value} = {x: 1};", "unsupported module lexical object pattern"],
+if (runCase("module-lexical")) {
+  const source = `
+    let calls = 0, order = "";
+    function make() {
+      calls += 1;
+      const receiver = {
+        get left() { if (this !== receiver) throw 1; order += "L"; return 37; },
+        get right() { order += "R"; return first; },
+        get nested() { order += "N"; return { 0x10: null }; },
+      };
+      return receiver;
+    }
+    function key() { order += "K"; return "right"; }
+    let { left: first, [key()]: second, nested: { 0x10: third = 7 }, absent: read = () => first } = make();
+    function change() { first += 1; }
+    const atInit = [read(), read.name];
+    export { first, second, third, calls, order, read, change, atInit };
+  `;
+  const { files, out, verdict, log } = sequentialSplit("module-lexical", source, {
+    "worker.mjs": ["#0", "#1", "#2", "#3", "#4", "#5"],
+    [entry]: ["#6", "#7"],
+  });
+  assertCertified(verdict, log);
+  assert.deepEqual(lower(files.sourceFile, files.specFile, out, ["--check-output"]).verdict, verdict);
+  for (const file of [files.sourceFile, path.join(out, entry)]) {
+    const { atInit, calls, order, second, third, read, change, ...initial } = await import(pathToFileURL(file).href);
+    assert.deepEqual(
+      { atInit, calls, order, second, third, initial },
+      {
+        atInit: [37, "read"],
+        calls: 1,
+        order: "LKRN",
+        second: 37,
+        third: null,
+        initial: { first: 37 },
+      }
+    );
+    change();
+    const mod = await import(pathToFileURL(file).href);
+    assert.equal(mod.first, 38);
+    assert.equal(read(), 38);
+  }
+}
+
+if (runCase("lexical-before-read")) {
+  const source = `
+    const { value = make() } = {};
+    const result = read();
+    function read() { return value; }
+    function make() { return 7; }
+    export { result };
+  `;
+  const modules = { "pattern.mjs": ["#0"], "call.mjs": ["#1", "#2", "#3"], [entry]: ["#4"] };
+  const correct = sequentialSplit("lexical-before-read", source, modules, ["pattern.mjs", "call.mjs"]);
+  assertCertified(correct.verdict, correct.log);
+  for (const file of [correct.files.sourceFile, path.join(correct.out, entry)])
+    assert.deepEqual(observe(file, "result"), { result: 7 });
+
+  const early = sequentialSplit("lexical-read-before-init", source, modules, ["call.mjs", "pattern.mjs"]);
+  assertRejected(early, /split threw during linked initialization/);
+  const preview = path.join(root, "lexical-read-before-init-preview");
+  forcePreview(early.files, preview);
+  assert.deepEqual(observe(path.join(preview, entry), "result"), { error: "ReferenceError" });
+}
+
+for (const [name, declaration, reason, error] of [
+  [
+    "module-default-tdz",
+    "const { missing: earlier = value, other: value = 9 } = {};",
+    /original threw during linked initialization/,
+    "ReferenceError",
+  ],
+  ["module-null-before-key", "const { [value]: value } = null;", /original threw/, "TypeError"],
+  ["module-rest", "const { ...value } = {};", /unsupported object binding property/, null],
 ]) {
-  const source = `const key = "x"; ${declaration} export { value };`;
-  const result = sequentialSplit(name, source, { [entry]: ["#0", "#1", "#2"] }, []);
-  assert.equal(result.verdict.status, "rejected", result.log);
-  assert.match(result.verdict.reason, new RegExp(reason));
-  assert(!existsSync(result.out));
+  if (!runCase(name)) continue;
+  const source = `${declaration} export { value };`;
+  const result = sequentialSplit(name, source, { [entry]: ["#0", "#1"] }, []);
+  assertRejected(result, reason);
+  if (error) assert.deepEqual(observe(result.files.sourceFile, "value"), { error });
 }
 
 // Calling make() twice would bind two different objects. A null argument to the
 // exported function must also throw before any body statements execute.
-{
+if (runCase("once")) {
   const source = `
     function make() { const unique = {}; return {a: unique, b: unique}; }
     function read({a, "b": alias}) { var a; return a === alias; }
@@ -114,6 +191,7 @@ for (const [name, declaration, reason] of [
 // Vary property order, aliases, quoted keys, declaration kind and the position of
 // the pattern. A premature call in the same graph destructures an undefined var.
 for (let seed = 0; seed < 6; seed++) {
+  if (!runCase(`seed-${seed}`)) continue;
   const parameter = seed % 2 === 0;
   const keys = ["left", "right", "tail"];
   const fields = Array.from({ length: 1 + (seed % 3) }, (_, i) => {
@@ -174,13 +252,21 @@ for (let seed = 0; seed < 6; seed++) {
   }
 }
 
+if (runCase("shorthand-parameter-default")) {
+  const source = "function read({a=1}) { return a; } const answer = [read({}), read({a: 0})]; export {answer};";
+  const { files, out, verdict, log } = sequentialSplit("shorthand-parameter-default", source);
+  assert.equal(verdict.status, "certified", log);
+  assert.deepEqual(observe(files.sourceFile, "answer"), { answer: [1, 0] });
+  assert.deepEqual(observe(path.join(out, entry), "answer"), { answer: [1, 0] });
+}
+
 for (const [name, param] of [
   ["empty", "{}"],
   ["computed", "{[key]:value}"],
   ["nested", "{a:{b}}"],
-  ["default", "{a=1}"],
   ["rest", "{...props}"],
 ]) {
+  if (!runCase(`unsupported-parameter-${name}`)) continue;
   const source = `function read(${param}) {} read({}); export {read};`;
   const result = sequentialSplit(name, source, { [entry]: ["#0", "#1", "#2"] }, []);
   assert.equal(result.verdict.status, "rejected", result.log);
@@ -188,7 +274,7 @@ for (const [name, param] of [
   assert(!existsSync(result.out));
 }
 
-{
+if (runCase("local-defaults")) {
   const source = `
     const run = () => {
       let calls = 0;

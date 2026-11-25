@@ -114,6 +114,28 @@ def get_user(user_id: str) -> User:
 # Reason: Temporary shim during refactoring (should be removed later)
 ```
 
+## Methods and properties
+
+The same test applies to methods and properties: does the body do anything beyond
+forwarding?
+
+```python
+class DataProcessor:
+    def process(self, data: dict) -> Result:
+        return self._process_impl(data)  # forwards unchanged arguments
+
+class Config:
+    @property
+    def value(self) -> str:
+        return self._value  # returns the stored attribute unchanged
+```
+
+Keep the member when its body adds validation, logging or transformation, or when the
+class needs it for a facade, a protocol or a dependency-injection point - the same
+legitimate reasons that keep a plain function alive above. Whether a property exists as
+scaffolding for a planned change is an architectural judgement, so read the class before
+removing it.
+
 ## Detection Strategy
 
 **MANDATORY Step 0**: Run single-line function body scanner.
@@ -136,8 +158,6 @@ def get_user(user_id: str) -> User:
 
 ```bash
 # Run on entire codebase (from the repository root)
-python -m prompts.scans.scan_single_line_functions . > single_line_functions.json
-# or
 bb run //prompts/scans:scan_single_line_functions_bin -- . > single_line_functions.json
 
 # Pretty-print summary
@@ -180,7 +200,7 @@ cat single_line_functions.json | jq '.by_file'
 
 1. Process single-line function scanner output (MANDATORY Step 0)
 2. For each candidate, analyze:
-   - **Call count**: How many times is it called? (vulture, grep, AST)
+   - **Call count**: How many times is it called? (grep, AST)
    - **Complexity**: Would inlining make call sites more complex?
    - **Architecture**: Is this a facade, interface implementation, or API boundary?
    - **Purpose**: Does it consolidate logic or just shuffle calls?

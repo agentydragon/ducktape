@@ -111,7 +111,7 @@ private def publicAliases (names : List Name) : Program :=
   }
   ⟨m.name, [m]⟩
 
-#guard match LinkedBehavior.checkStructuralSchedule [] (publicAliases ["a", "b", "c", "d"]) (publicAliases []) with
+#guard match LinkedBehavior.checkStructuralSchedule [] (publicAliases ["a", "b", "c", "d"]) (publicAliases []) {} with
   | .error reason => reason == "entry exports resolve to different linked cells; extra 0; missing 4: " ++
       "\"a\" (original cell @1.0), \"b\" (original cell @1.0), \"c\" (original cell @1.0), …; retargeted 0"
   | .ok _ => false
@@ -238,7 +238,7 @@ private def spread (operand : Json) : Json := node "SpreadElement" [("argument",
 private def arrayLiteral (elements : Array Json) : Json := node "ArrayExpression" [("elements", .arr elements)]
 
 private def spreadProgram : Program :=
-  let body : Expr := .arrWithSpread [(.spread, .str "first"), (.spread, .arr [])]
+  let body : Expr := .arr [.spreadArg (.str "first"), .spreadArg (.arr [])]
   ⟨"main.mjs", [⟨"main.mjs", [], [(0, .expr (.func (.mk "" .arrow false [] [.ret body])))], []⟩]⟩
 
 private theorem spreadExecution :
@@ -282,7 +282,7 @@ private theorem objectSpreadExecution : LinkedBehavior.Equivalent objectSpreadPr
 
 -- Inspect the CoreJS heap as well as checking the emitted JavaScript in Node.
 private def asyncMethodShape : M World.probe Bool := do
-  let fn ← makeFunc ⟨[], .undef⟩ (.opaque "read" .asyncFn false 1 0 1 [] (some "deferred"))
+  let fn ← makeFunc ⟨[], .undef, none⟩ (.opaque "read" .asyncFn false 1 0 1 [] (some "deferred"))
   let .obj proto ← prim (callFn 8) .getPrototypeOf [fn] | return false
   let .obj parent ← prim (callFn 8) .getPrototypeOf [.obj proto] | return false
   let .str name ← getProp (callFn 8) fn (.str "name") | return false
@@ -307,7 +307,7 @@ private def changedSuperclass (inPrefix : Bool) : Program :=
   .single [
     superclass "Base" "base",
     superclass "Alternate" "alternate",
-    .decl .const "Child" (.derived "Child" false (.var "Base") [] (some (before, args, tail))),
+    .decl .const "Child" (.derived "Child" false (.var "Base") [] (some (before, some args, tail))),
     .expr (.new (.var "Child") [])
   ]
 
@@ -319,6 +319,37 @@ private def changedSuperclass (inPrefix : Bool) : Program :=
 
 #guard match runProgram World.probe 96 (changedSuperclass true) with
   | .ok _ state => state.out == #["argument", "alternate"]
+  | _ => false
+
+-- A fresh arguments object has its own intrinsic iterator, but the next method on the
+-- resulting iterator's prototype remains mutable. The forwarding shortcut must check it.
+private def modifiedIterator : M World.probe (List Val) := do
+  modifyObj arrayIteratorProto fun proto => { proto with props := [] }
+  forwardFreshArguments [.num 7]
+
+#guard match modifiedIterator (initialState World.probe 1) with
+  | .unknown reason _ => reason == "arguments spread uses a modified array iterator"
+  | _ => false
+
+private def changedMethodPrototype : Program :=
+  let read := Expr.callMethod (.var "borrower") (.str "callback") []
+  .single [
+    .decl .const "home" (.obj [
+      .proto (.obj [.init (.str "value") (.str "original")]),
+      .method (.str "callback") (.mk "callback" .method false [] [
+        .ret (.func (.mk "" .arrow false [] [.ret (.getSuper (.str "value"))]))])]),
+    .decl .const "borrower" (.obj [
+      .init (.str "callback") (.get (.var "home") (.str "callback"))]),
+    .decl .const "later" read,
+    .expr (.prim .log [.call (.var "later") []]),
+    .expr (.prim .setPrototypeOf [.var "home", .obj [.init (.str "value") (.str "updated")]]),
+    .expr (.prim .log [.call (.var "later") []])
+  ]
+
+-- The arrow keeps the lexical home even after the method is borrowed. A later call
+-- reads that object's current prototype, so only the second result sees the update.
+#guard match runProgram World.probe 96 changedMethodPrototype with
+  | .ok _ state => state.out == #["original", "updated"]
   | _ => false
 
 end CoreJS.LinkedBehaviorExamples

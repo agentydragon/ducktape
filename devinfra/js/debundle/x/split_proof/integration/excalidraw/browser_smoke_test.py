@@ -5,9 +5,11 @@
 import asyncio
 import hashlib
 import json
+import math
 import os
 import subprocess
 from pathlib import Path, PurePosixPath
+from typing import Literal
 
 import httpx
 import pytest
@@ -27,6 +29,7 @@ from testing.frontend_visual.context import deterministic_browser_context
 pytest_plugins = ("testing.frontend_visual.fixtures",)
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
+RENDERER = "packages/excalidraw/renderer/interactivescene"
 SCROLL = "packages/excalidraw/scene/scroll.mjs"
 
 
@@ -49,31 +52,39 @@ def editor_source(runfiles: Runfiles) -> Path:
     return bundle / name
 
 
-def certify_editor_split(runfiles: Runfiles, source: Path, origin: str) -> dict[str, Path]:
+def certify_split(runfiles: Runfiles, source: Path, origin: str, chunk: Literal["editor", "main"]) -> dict[str, Path]:
     canonical = json.loads(resolve(runfiles, os.environ["CANONICAL_PLACEMENT"]).read_text())
     resolved = resolve(runfiles, os.environ["SELECTED_PLACEMENT"])
     selected = json.loads(resolved.read_text())
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
-    assert selected["chunk_id"] == canonical["chunk_id"] == "editor"
+    assert selected["chunk_id"] == canonical["chunk_id"] == chunk
     assert selected["source_sha256"] == canonical["source_sha256"] == digest
 
     for ordinal, (unit, full) in enumerate(zip(selected["units"], canonical["units"], strict=True)):
         assert unit["ordinal"] == full["ordinal"] == ordinal
         assert unit["owner"] is None or unit["owner"] == full["owner"], (ordinal, unit, full)
+    if chunk == "main":
+        assert len(selected["units"]) == 1628
+        assert selected["import_order"] == [RENDERER]
+        assert [(u["ordinal"], u["owner"]) for u in selected["units"] if u["owner"] is not None] == [(1486, RENDERER)]
     files = [source.name, *(owner + ".mjs" for owner in selected["import_order"])]
     artifacts = undeclared_outputs_dir()
     (artifacts / "browser-origin.txt").write_text(f"{origin}\n")
     (artifacts / "placement.json").write_bytes(resolved.read_bytes())
     profile = artifacts / "host.json"
-    profile.write_text(json.dumps({"profile": "browser-page", "stableIntrinsicValues": ["Math.PI@1"]}))
-    out = artifacts / "certified-editor"
+    profile.write_text(
+        json.dumps(
+            {"profile": "browser-page", **({"stableIntrinsicValues": ["Math.PI@1"]} if chunk == "editor" else {})}
+        )
+    )
+    out = artifacts / f"certified-{chunk}"
     command: list[str | Path] = [
         resolve(runfiles, os.environ["LOWERSPLIT"]),
         source,
         resolved,
         out,
         "--resolved-placement",
-        "editor",
+        chunk,
         "--require",
         "normal-completion",
         "--host-contract",
@@ -82,6 +93,8 @@ def certify_editor_split(runfiles: Runfiles, source: Path, origin: str) -> dict[
         origin,
         "--structural",
     ]
+    if chunk == "main":
+        command.extend(["--deployment-preset", "native-browser-record@1", "--deployment-import-map", "empty@1"])
     verdicts = []
     for stage, args in [("emit", []), ("check-output", ["--check-output"])]:
         run = subprocess.run([*command, *args], capture_output=True, text=True, check=False)
@@ -91,9 +104,12 @@ def certify_editor_split(runfiles: Runfiles, source: Path, origin: str) -> dict[
         assert verdict["status"] == "certified", verdict
         assert verdict["requested"] == "normal-completion", verdict
         assert verdict["guarantee"] == "normal-completion", verdict
-        assert verdict["scope"] == "linked-structural-moves", verdict
+        assert verdict["scope"] == ("linked-structural-moves" if chunk == "editor" else "linked-structural-pivot"), (
+            verdict
+        )
         assert verdict["hostProfile"] == "browser-page", verdict
-        assert any(premise.startswith("Math.PI@1:") for premise in verdict["assumptions"]), verdict
+        for premise in ["Math.PI@1:"] if chunk == "editor" else ["native-browser-record@1:", "empty@1:"]:
+            assert any(a.startswith(premise) for a in verdict["assumptions"]), verdict
         verdicts.append(verdict)
     assert verdicts[0] == verdicts[1]
     return {name: out / name for name in files}
@@ -153,6 +169,8 @@ async def smoke(
     source: Path,
     providers: list[str],
     overlay: dict[str, Path] | None = None,
+    *,
+    main_case: bool = False,
 ) -> list[str]:
     editor = source.name
     async with deterministic_browser_context(
@@ -216,7 +234,7 @@ async def smoke(
             expected_files.update(overlay)
         for name, file in expected_files.items():
             assert await responses[f"{origin}/{name}"].body() == file.read_bytes(), name
-        if overlay is not None:
+        if overlay is not None and editor in overlay:
             assert await page.evaluate(
                 """async ([editor, scroll]) =>
                     Object.values(await import(scroll)).includes((await import(editor)).Bg)""",
@@ -237,6 +255,70 @@ async def smoke(
                 }""",
                 f"/{editor}",
             )
+            # The editor's private rectanguloid helper now imports its upstream geometry constructors.
+            sides, curves = await page.evaluate(
+                """async () => {
+                  const {Xs: deconstruct} = await import("/packages/excalidraw/element/utils.mjs");
+                  return deconstruct({type: "rectangle", x: 10, y: 20, width: 30, height: 40, roundness: null}, 2);
+                }"""
+            )
+            assert curves == []
+            assert sides == [[[8, 18], [42, 18]], [[42, 18], [42, 62]], [[8, 62], [42, 62]], [[8, 62], [8, 18]]]
+        probe = await page.evaluate(
+            """async ([entry, moved]) => {
+                const editor = await import(entry);
+                const rect = {id: "box", type:"rectangle", x:0, y:0, width:100, height:80, angle:0, locked:false};
+                const map = new Map([[rect.id, rect]]), zoom = {value:1}, device = {viewport:{isMobile:false}, isTouchScreen:false};
+                const handles = editor.Gj(rect, zoom, map, "mouse", {});
+                const [x,y,w,h] = handles.nw;
+                const at = (state) => editor.Ij([rect], {selectedElementIds:state}, x+w/2,y+h/2,zoom,"mouse",map,device);
+                const hit = at({box:true});
+                const fromCoords = (sx,sy) => editor.Jj([0,0,100,80],sx,sy,zoom,"mouse",device);
+                const same = moved ? Object.values(await import("/packages/excalidraw/element/transformhandles.mjs")) : Object.values(editor);
+                return [same.includes(editor.Fj), same.includes(editor.Gj), same.includes(editor.Hj), w,h,
+                    hit?.transformHandleType,hit?.element === rect,at({}) === null,fromCoords(x+w/2,y+h/2),
+                    fromCoords(50,40),fromCoords(104,40),editor.Ij([rect],{selectedElementIds:{box:true}},104,40,zoom,"mouse",map,device)?.transformHandleType,editor.Hj([rect],{editingLinearElement:false})];
+            }""",
+            [f"/{editor}", overlay is not None and editor in overlay],
+        )
+        assert probe == [True, True, True, 8, 8, "nw", True, True, "nw", False, "e", "e", True]
+        if main_case:
+            assert await page.evaluate("async () => Object.keys(await import('/main.js'))") == []
+            assert await page.locator("script[type=importmap]").count() == 0
+            if overlay is not None:
+                # The single private renderer is exported to main, not by main.
+                calls = await page.evaluate(
+                    """async file => {
+                    const exports = Object.values(await import(file));
+                    if (exports.length !== 1) throw new Error("unexpected renderer namespace");
+                    const trace = [];
+                    exports[0]({
+                        beginPath: () => trace.push(["begin"]),
+                        ellipse: (...args) => trace.push(["ellipse", ...args]),
+                        stroke: () => trace.push(["stroke"]),
+                    }, 12, 8, 20, 30, 0.25);
+                    return trace;
+                }""",
+                    "/" + RENDERER + ".mjs",
+                )
+                assert calls == [["begin"], ["ellipse", 20, 30, 6, 4, 0.25, 0, 2 * math.pi], ["stroke"]]
+            # This build deliberately externalizes the dialog library. Assert the
+            # known rejection specifically; all other page failures still count.
+            await page.evaluate("""() => {
+                window.dialogFailures = [];
+                addEventListener("unhandledrejection", e => {
+                    if (e.reason instanceof TypeError && e.reason.message.includes("@excalidraw/mermaid-to-excalidraw")) {
+                        window.dialogFailures.push(e.reason.name);
+                        e.preventDefault();
+                    }
+                });
+            }""")
+            await page.get_by_title("More tools", exact=True).click()
+            await page.get_by_text("Mermaid", exact=False).first.click()
+            await expect(page.locator('.ttd-dialog[role="dialog"]')).to_be_visible()
+            await page.wait_for_function("window.dialogFailures.length > 0")
+            assert errors == []
+        elif overlay is not None:
             geometry = await page.evaluate(
                 """async () => {
                   const {al: line, K8: intersect} = await import("/packages/math/line.mjs");
@@ -252,6 +334,20 @@ async def smoke(
                 }"""
             )
             assert geometry == {"crossing": [3, 2], "parallel": None, "inside": True, "outside": False}
+            shape_results = await page.evaluate(
+                """async () => {
+                  const {A1: polygon, Er: fromPoints, C1: inside, t7: onEdge} = await import("/packages/math/polygon.mjs");
+                  const {Ls: ellipse, Hu: intersect, Bu: distance} = await import("/packages/math/ellipse.mjs");
+                  const pts = [[0,0],[4,0],[4,4],[0,4]];
+                  const ring = polygon(...pts), e = ellipse([0,0], 2, 1);
+                  return [ring.length, ring[0] === ring[4], fromPoints(ring) === ring,
+                    inside([2,2],ring),inside([5,2],ring),onEdge([2,0],ring),onEdge([2,2],ring),
+                    intersect(e,[[-3,0],[3,0]]).map(p=>p[0]).sort((a,b)=>a-b),
+                    intersect(e,[[-3,1],[3,1]]).length,intersect(e,[[-3,2],[3,2]]).length,
+                    Math.abs(distance([3,0], e) - 1) < 1e-4];
+                }"""
+            )
+            assert shape_results == [5, True, True, True, False, True, False, [-2, 2], 1, 0, True]
         return list(namespace["names"])
 
 
@@ -389,11 +485,34 @@ async def test_certified_editor_split(
     editor_providers: list[str],
 ) -> None:
     async with serve_app_in_loop(editor_app) as origin:
-        files = await asyncio.to_thread(certify_editor_split, runfiles, editor_source, origin)
+        files = await asyncio.to_thread(certify_split, runfiles, editor_source, origin, "editor")
         original = await smoke(playwright_driver, origin, editor_source, editor_providers)
         # The first browser context has closed. Switch only the certified routes on the running server.
         install_editor_overlay(editor_app, editor_source, files)
         assert await smoke(playwright_driver, origin, editor_source, editor_providers, files) == original
+
+
+async def test_certified_main_split(
+    playwright_driver: Playwright, runfiles: Runfiles, editor_app: Starlette, editor_source: Path
+) -> None:
+    source = editor_source.parent / "main.js"
+    pinned = json.loads(resolve(runfiles, os.environ["MAIN_STATIC_DIGESTS"]).read_text())
+    for name, digest in pinned.items():
+        assert hashlib.sha256((source.parent / name).read_bytes()).hexdigest() == digest, name
+    assert editor_source.name in pinned
+    providers = [p for p in pinned if p != source.name]
+    async with serve_app_in_loop(editor_app) as origin:
+        files = await asyncio.to_thread(certify_split, runfiles, source, origin, "main")
+        assert set(files) == {source.name, RENDERER + ".mjs"}
+        # Publication and disk verification cover exactly these copied providers.
+        out = files[source.name].parent
+        assert {p.relative_to(out).as_posix() for p in out.rglob("*") if p.is_file()} == set(files) | set(providers)
+        for name in providers:
+            assert hashlib.sha256((out / name).read_bytes()).hexdigest() == pinned[name], name
+        (undeclared_outputs_dir() / "input-sha256.json").write_text(json.dumps(pinned, indent=2))
+        original = await smoke(playwright_driver, origin, editor_source, providers, main_case=True)
+        install_editor_overlay(editor_app, source, files)
+        assert await smoke(playwright_driver, origin, editor_source, providers, files, main_case=True) == original
 
 
 if __name__ == "__main__":

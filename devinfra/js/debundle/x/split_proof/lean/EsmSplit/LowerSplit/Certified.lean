@@ -13,17 +13,6 @@ namespace EsmSplit.LowerSplit
 
 open Lean EsmSplit.SplitFiles
 
-/-- The linked execution theorem checks the schedules themselves. Its planner needs only the
-bindings each unit declares, mentions, assigns and exports. Promoting lazy reads to eager in
-the effect analysis leaves their first-occurrence order in `eager ++ lazy` unchanged. -/
-private def linkedLayoutBundle (asts units : Array Json) : Bundle :=
-  let tops := units.map Lower.analyzeTop
-  let declared := Effects.declaredNames tops
-  (asts.zip tops).toList.map fun (ast, t) =>
-    { src := "", defs := t.defs, eager := (Effects.dedupeArr t.rawEager).toList,
-      lazy := (Effects.dedupeArr t.rawLazy).toList, assigns := Effects.assignedNames t declared,
-      exports := published ast, hoisted := t.hoisted }
-
 open CoreJS.DeclarationArtifacts (Guarantee)
 
 /-- Check the generated proof with the same toolchain and model as the splitter. -/
@@ -149,6 +138,7 @@ private def parseCertifiedOptions (label : String) (args : List String) : IO (Sp
   let usage := IO.userError "usage: lowersplit <bundle.mjs|bundle.json> spec.json outdir [--require LEVEL] [--resolved-placement CHUNK] [--check-output] [--host-contract PROFILE.json] [--structural [--deployment-origin ORIGIN [--deployment-preset native-browser-record@1]]]; use --diagnostic for plan and preview options"
   let [bundle, spec, out] := args | throw usage
   if args.any (·.startsWith "--") then throw usage
+  let out ← IO.ofExcept (outputDirectory out)
   return (⟨bundle, spec, out⟩, { request, profile, intrinsics, structural, deploymentOrigin, checkOnly, nativeRecord, resolvedChunk })
 
 private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work : System.FilePath) : IO UInt32 := do

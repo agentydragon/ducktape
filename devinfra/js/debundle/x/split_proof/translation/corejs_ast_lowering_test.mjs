@@ -94,14 +94,17 @@ for (const [i, source] of sources.entries()) {
   );
 }
 
-const unsupportedOperands = ["-binding", "-true", "-Infinity", "+1", "~1"];
-const refusals = run(
-  unsupportedOperands.map((e) => dumpSource(`const binding = 1, value = ${e};`)),
-  true
+// The linked rules lower unary operators on any operand; Node observes the thrown value.
+const unarySources = ["-binding", "-true", "-Infinity", "+1", "~1"].map(
+  (e) => `const binding = 1, value = ${e}; throw value;`
 );
-for (const [i, expression] of unsupportedOperands.entries()) {
-  assert.equal(refusals[i].end, "malformed", expression);
-  assert.match(refusals[i].detail, /expected a numeric literal after unary minus|unsupported unary operator/);
+const unary = run(unarySources.map(dumpSource), true);
+for (const [i, source] of unarySources.entries()) {
+  assert.deepEqual(
+    [unary[i].end, unary[i].detail],
+    await nodeOutcome(`data:text/javascript,${encodeURIComponent(source)}#unary-${i}`),
+    source
+  );
 }
 
 const spec = file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["a", "b"] } }));

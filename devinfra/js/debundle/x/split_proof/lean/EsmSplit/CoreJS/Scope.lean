@@ -61,20 +61,21 @@ theorem filterMap_congr {f g : α → Option β} : ∀ (l : List α), (∀ a ∈
 
 /-! ## Scopes that agree on some names -/
 
-/-- `env` and `env'` have the same `this` and give every name of `N` the same binding, or none. -/
+/-- The environments share a receiver and home object and resolve each name of `N` to the same binding. -/
 structure Agree (N : List Name) (env env' : Env) : Prop where
   this : env.this = env'.this
+  home : env.home = env'.home
   vars : ∀ x ∈ N, env.vars.lookup x = env'.vars.lookup x
 
 theorem Agree.mono {N N' : List Name} {env env' : Env} (h : Agree N env env') (sub : ∀ x ∈ N', x ∈ N) :
     Agree N' env env' :=
-  ⟨h.this, fun x hx => h.vars x (sub x hx)⟩
+  ⟨h.this, h.home, fun x hx => h.vars x (sub x hx)⟩
 
 /-- A new innermost frame, the same in both scopes: they then also agree on the names of the frame. -/
 theorem Agree.push {N N' : List Name} {env env' : Env} (h : Agree N env env') (frame : List (Name × Addr))
     (sub : ∀ x ∈ N', x ∈ N ∨ x ∈ frame.map (·.1)) :
     Agree N' { env with vars := frame ++ env.vars } { env' with vars := frame ++ env'.vars } := by
-  refine ⟨h.this, fun x hx => ?_⟩
+  refine ⟨h.this, h.home, fun x hx => ?_⟩
   simp only [List.lookup_append]
   cases hf : frame.lookup x with
   | some a => rfl
@@ -87,11 +88,15 @@ theorem Agree.push {N N' : List Name} {env env' : Env} (h : Agree N env env') (f
 
 theorem Agree.withThis {N : List Name} {env env' : Env} (h : Agree N env env') (v : Val) :
     Agree N { env with this := v } { env' with this := v } :=
-  ⟨rfl, h.vars⟩
+  ⟨rfl, h.home, h.vars⟩
+
+theorem Agree.withHome {N : List Name} {env env' : Env} (h : Agree N env env') (home : Option Addr) :
+    Agree N { env with home } { env' with home } :=
+  ⟨h.this, rfl, h.vars⟩
 
 theorem capture_agree {N : List Name} {env env' : Env} (h : Agree N env env') : env.capture N = env'.capture N := by
   unfold Env.capture
-  rw [h.this, filterMap_congr _ fun x hx => by rw [h.vars x (List.mem_eraseDups.1 hx)]]
+  rw [h.this, h.home, filterMap_congr _ fun x hx => by rw [h.vars x (List.mem_eraseDups.1 hx)]]
 
 theorem readVar_agree {env env' : Env} {x : Name} (h : env.vars.lookup x = env'.vars.lookup x) :
     (readVar env x : M W Val) = readVar env' x := by
@@ -243,7 +248,7 @@ theorem funDecl_of_mem {f : Func} {ss : List Stmt} (h : f ∈ funDecls ss) : Stm
 
 theorem funDecl_name_lex {f : Func} {ss : List Stmt} (h : Stmt.funDecl f ∈ ss) : f.name ∈ lexNames ss := by
   unfold lexNames lexDecls
-  exact List.mem_map.2 ⟨(f.name, true), List.mem_filterMap.2 ⟨_, h, rfl⟩, rfl⟩
+  exact List.mem_map.2 ⟨(f.name, true), List.mem_flatMap.2 ⟨_, h, by simp⟩, rfl⟩
 
 theorem lexBindings_names (ss : List Stmt) :
     ((lexDecls ss).map fun (x, mutable) => (x, ({ value := none, mutable } : Binding))).map (·.1) = lexNames ss := by
@@ -304,6 +309,8 @@ structure Same (W : World) (n : Nat) : Prop where
     (evalMembers n env proto c ms : M W _) = evalMembers n env' proto c ms
   fields : ∀ env env' a fs, Agree (fs.flatMap (·.2.free)) env env' →
     (evalFields n env a fs : M W _) = evalFields n env' a fs
+  binding : ∀ env env' kind p v, Agree p.free env env' →
+    (bindPattern n env kind p v : M W _) = bindPattern n env' kind p v
   stmt : ∀ env env' s, Agree s.free env env' → (execStmt n env s : M W _) = execStmt n env' s
   stmts : ∀ env env' ss, Agree (freeStmts ss) env env' → (execStmts n env ss : M W _) = execStmts n env' ss
   loop : ∀ env env' fresh test update body, Agree (fresh ++ (test.free ++ (update.free ++ body.free))) env env' →
@@ -316,19 +323,19 @@ macro_rules
     (intro x hx
      first
      | (simp only [Expr.free, Target.free, PropDef.free, ClassMember.free, Stmt.free, freeExprs, freeProps,
-          freeMembers, freeStmts, List.flatMap_cons, List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hx
+          freeMembers, freeStmts, BindingPattern.free, freeObjectBindings, freeArrayBindings, List.flatMap_cons, List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at hx
         done)
      | (try simp only [Expr.free, Target.free, PropDef.free, ClassMember.free, Stmt.free, freeExprs, freeProps,
-          freeMembers, freeStmts, List.flatMap_cons, List.mem_append, List.mem_cons, List.not_mem_nil,
+          freeMembers, freeStmts, BindingPattern.free, freeObjectBindings, freeArrayBindings, List.flatMap_cons, List.mem_append, List.mem_cons, List.not_mem_nil,
           or_false] at hx
         try simp only [Expr.free, Target.free, PropDef.free, ClassMember.free, Stmt.free, freeExprs, freeProps,
-          freeMembers, freeStmts, List.flatMap_cons, List.mem_append, List.mem_cons, List.not_mem_nil, or_false]
+          freeMembers, freeStmts, BindingPattern.free, freeObjectBindings, freeArrayBindings, List.flatMap_cons, List.mem_append, List.mem_cons, List.not_mem_nil, or_false]
         first | exact hx | simp only [hx, true_or, or_true])))
 
 /-- This name is among the free names of the code that mentions it. -/
 syntax "free_here" : tactic
 macro_rules
-  | `(tactic| free_here) => `(tactic| simp [Expr.free, Target.free, Stmt.free])
+  | `(tactic| free_here) => `(tactic| simp [Expr.free, Target.free, Stmt.free, BindingPattern.free])
 
 -- Match the equality before proving agreement on the selected names.
 syntax "same_apply " term:max " using " ident : tactic
@@ -347,9 +354,12 @@ macro_rules
     | same_apply ($ih).props using $hN
     | same_apply ($ih).members using $hN
     | same_apply ($ih).fields using $hN
+    | same_apply ($ih).binding using $hN
     | same_apply ($ih).stmt using $hN
     | same_apply ($ih).stmts using $hN
     | same_apply makeFunc_agree using $hN
+    | (with_reducible apply makeFunc_agree
+       with_reducible exact (($hN).mono (by free_mem)).withHome _)
     | with_reducible exact readVar_agree (($hN).vars _ (by free_here))
     | with_reducible exact writeVar_agree (($hN).vars _ (by free_here)) _
     | with_reducible exact initVar_agree (($hN).vars _ (by free_here)) _
@@ -387,9 +397,46 @@ theorem fieldInits_free : ∀ (ms : List ClassMember), ∀ init ∈ fieldInits m
       rcases List.mem_cons.1 hinit with rfl | hinit
       · exact List.mem_append_left _ (by simp [ClassMember.free, hx])
       · exact List.mem_append_right _ (fieldInits_free ms init hinit x hx)
-    | method | getter | setter =>
+    | method | getter | setter | staticBlock =>
       unfold fieldInits at hinit
       exact List.mem_append_right _ (fieldInits_free ms init hinit x hx)
+
+private theorem staticInitializers_free (ms : List ClassMember) (keys : List (Bool × PropertyKey))
+    (step : Option PropertyKey × Expr) (hstep : step ∈ staticInitializers ms keys) :
+    ∀ x ∈ step.2.free, x ∈ freeMembers ms := by
+  induction ms generalizing keys with
+  | nil => simp [staticInitializers] at hstep
+  | cons m ms ih =>
+    intro x hx
+    have tail (k : List (Bool × PropertyKey)) (h : step ∈ staticInitializers ms k) :=
+      List.mem_append_right m.free (ih k h x hx)
+    change x ∈ m.free ++ freeMembers ms
+    cases m with
+    | method | getter | setter => exact tail keys hstep
+    | staticBlock f =>
+      rcases List.mem_cons.mp hstep with rfl | h
+      · exact List.mem_append_left _ (by simpa [ClassMember.free, Expr.free, freeExprs] using hx)
+      · exact tail keys h
+    | field static key init =>
+      cases keys with
+      | nil => exact tail [] hstep
+      | cons k ks =>
+        rcases k with ⟨_, name⟩
+        cases static
+        · exact tail ks hstep
+        · rcases List.mem_cons.mp hstep with rfl | h
+          · exact List.mem_append_left _ (List.mem_append_right key.free hx)
+          · exact tail ks h
+
+private theorem evalStaticInitializers_eq {eval eval' : Expr → M W Val} (target : Addr)
+    (plan : List (Option PropertyKey × Expr)) (h : ∀ step ∈ plan, eval step.2 = eval' step.2) :
+    evalStaticInitializers eval target plan = evalStaticInitializers eval' target plan := by
+  induction plan with
+  | nil => rfl
+  | cons step steps ih =>
+    rcases step with ⟨key, init⟩
+    unfold evalStaticInitializers
+    rw [h _ List.mem_cons_self, ih (fun step hstep => h step (List.mem_cons_of_mem _ hstep))]
 
 /-- `typeof` of a name: a name that does not resolve gives "undefined". -/
 theorem evalExpr_typeof_var (n : Nat) (env : Env) (x : Name) :
@@ -427,73 +474,83 @@ theorem Same.cls_succ (env env' : Env) (name : String) (self : Bool) (ctor : Fun
           exact ⟨hx, by cases h : (self && x == name) <;> simp_all⟩)
   · have h2 : Agree (ctor.free ++ freeMembers members) env1 env1' := h1.mono fun x hx => List.mem_append_right _ hx
     dsimp only
-    rw [capture_agree h2]
-    refine M.bind_congr rfl fun proto => M.bind_congr rfl fun c => M.bind_congr rfl fun _ => ?_
+    refine M.bind_congr rfl fun proto => ?_
+    rw [capture_agree (h2.withHome (some proto))]
+    refine M.bind_congr rfl fun c => M.bind_congr rfl fun _ => ?_
     refine M.bind_congr (ih.members _ _ _ _ _ (h2.mono fun x hx => List.mem_append_right _ hx)) fun keys => ?_
     refine M.bind_congr rfl fun _ => M.bind_congr ?_ fun _ => M.bind_congr ?_ fun _ => rfl
     · exact initSelf_agree self (.obj c) fun hs => h1.vars name (by simp [hs])
-    · refine ih.fields _ _ _ _ ((h2.withThis (.obj c)).mono fun x hx => ?_)
-      obtain ⟨⟨k, init⟩, hmem, hx⟩ := List.mem_flatMap.1 hx
-      obtain ⟨⟨⟨static, k'⟩, init'⟩, hzip, hsome⟩ := List.mem_filterMap.1 hmem
-      cases static <;> simp at hsome
-      obtain ⟨rfl, rfl⟩ := hsome
-      exact List.mem_append_right _ (fieldInits_free members _ (List.of_mem_zip hzip).2 x hx)
+    · apply evalStaticInitializers_eq
+      intro step hstep
+      exact ih.expr _ _ _ (((h2.withThis (.obj c)).withHome (some c)).mono fun x hx =>
+        List.mem_append_right _ (staticInitializers_free members keys step hstep x hx))
 
 theorem Same.derived_succ (env env' : Env) (name : String) (self : Bool) (parent : Expr) (members : List ClassMember)
-    (ctor : Option (List Stmt × List Expr × Func))
+    (ctor : Option (List Stmt × Option (List Expr) × Func))
     (hN : Agree (Expr.derived name self parent members ctor).free env env') :
     (evalExpr (n + 1) env (.derived name self parent members ctor) : M W _) =
       evalExpr (n + 1) env' (.derived name self parent members ctor) := by
   simp only [evalExpr]
-  split
-  · rfl
-  · refine selfScope_congr (N' := (if self then [name] else []) ++ ((parent.free ++ freeMembers members) ++ derivedCtorFree ctor)) self name hN
-      (fun x hx => ?_) fun env1 env1' h1 => ?_
-    · rcases List.mem_append.1 hx with hx | hx
-      · cases self <;> simp at hx
-        exact Or.inr ⟨rfl, hx⟩
-      · by_cases hc : (self && x == name) = true
-        · simp only [Bool.and_eq_true, beq_iff_eq] at hc
-          exact Or.inr hc
-        · exact Or.inl (by
-            simp only [Expr.free, List.mem_filter]
-            exact ⟨hx, by cases h : (self && x == name) <;> simp_all⟩)
-    · have both : Agree ((parent.free ++ freeMembers members) ++ derivedCtorFree ctor) env1 env1' :=
-        h1.mono fun x hx => List.mem_append_right _ hx
-      have h2 := both.mono fun x (hx : x ∈ parent.free ++ freeMembers members) => List.mem_append_left _ hx
-      refine M.bind_congr (ih.expr _ _ _ (h2.mono fun x hx => List.mem_append_left _ hx)) fun base => ?_
-      refine M.bind_congr rfl fun parents => ?_
-      unfold finishDerived
-      have sameCode (fields : List (PropertyKey × Expr))
-          (hfree : ∀ x ∈ fields.flatMap (·.2.free), x ∈ freeMembers members) :
-          derivedCtorCode env1 ctor fields = derivedCtorCode env1' ctor fields := by
-        have agree : Agree (derivedCtorFree ctor ++ fields.flatMap (·.2.free)) env1 env1' :=
-          both.mono fun x hx => by
-            rcases List.mem_append.1 hx with hc | hf
-            · exact List.mem_append_right _ hc
-            · exact List.mem_append_left _ (List.mem_append_right _ (hfree x hf))
-        unfold derivedCtorCode
-        rw [capture_agree agree]
-      rw [sameCode [] (by simp)]
-      refine M.bind_congr rfl fun proto => M.bind_congr rfl fun c => M.bind_congr rfl fun _ => ?_
-      refine M.bind_congr (ih.members _ _ _ _ _ (h2.mono fun x hx => List.mem_append_right _ hx)) fun keys => ?_
-      let fields := (keys.zip (fieldInits members)).filterMap fun ((static, k), init) =>
-        if static then none else some (k, init)
-      have hcode := sameCode fields fun x hx => by
-        obtain ⟨⟨k, init⟩, hmem, hx⟩ := List.mem_flatMap.1 hx
-        obtain ⟨⟨⟨static, k'⟩, init'⟩, hzip, hsome⟩ := List.mem_filterMap.1 hmem
-        cases static <;> simp at hsome
-        obtain ⟨rfl, rfl⟩ := hsome
-        exact fieldInits_free members _ (List.of_mem_zip hzip).2 x hx
-      have hself := initSelf_agree (W := W) self (.obj c) fun hs => h1.vars name (by simp [hs])
-      dsimp only
-      rw [hcode, hself]
+  refine selfScope_congr (N' := (if self then [name] else []) ++ ((parent.free ++ freeMembers members) ++ derivedCtorFree ctor)) self name hN
+    (fun x hx => ?_) fun env1 env1' h1 => ?_
+  · rcases List.mem_append.1 hx with hx | hx
+    · cases self <;> simp at hx
+      exact Or.inr ⟨rfl, hx⟩
+    · by_cases hc : (self && x == name) = true
+      · simp only [Bool.and_eq_true, beq_iff_eq] at hc
+        exact Or.inr hc
+      · exact Or.inl (by
+          simp only [Expr.free, List.mem_filter]
+          exact ⟨hx, by cases h : (self && x == name) <;> simp_all⟩)
+  · have both : Agree ((parent.free ++ freeMembers members) ++ derivedCtorFree ctor) env1 env1' :=
+      h1.mono fun x hx => List.mem_append_right _ hx
+    have h2 := both.mono fun x (hx : x ∈ parent.free ++ freeMembers members) => List.mem_append_left _ hx
+    refine M.bind_congr (ih.expr _ _ _ (h2.mono fun x hx => List.mem_append_left _ hx)) fun base => ?_
+    refine M.bind_congr rfl fun parents => ?_
+    unfold finishDerived
+    have sameCode (proto : Addr) (fields : List (PropertyKey × Expr))
+        (hfree : ∀ x ∈ fields.flatMap (·.2.free), x ∈ freeMembers members) :
+        derivedCtorCode { env1 with home := some proto } ctor fields =
+          derivedCtorCode { env1' with home := some proto } ctor fields := by
+      have agree : Agree (derivedCtorFree ctor ++ fields.flatMap (·.2.free)) env1 env1' :=
+        both.mono fun x hx => by
+          rcases List.mem_append.1 hx with hc | hf
+          · exact List.mem_append_right _ hc
+          · exact List.mem_append_left _ (List.mem_append_right _ (hfree x hf))
+      unfold derivedCtorCode
+      rw [capture_agree (agree.withHome (some proto))]
+    refine M.bind_congr rfl fun proto => ?_
+    dsimp only
+    rw [sameCode proto [] (by simp)]
+    refine M.bind_congr rfl fun c => M.bind_congr rfl fun _ => ?_
+    refine M.bind_congr (ih.members _ _ _ _ _ (h2.mono fun x hx => List.mem_append_right _ hx)) fun keys => ?_
+    let fields := (keys.zip (fieldInits members)).filterMap fun ((static, k), init) =>
+      if static then none else some (k, init)
+    have hcode := sameCode proto fields fun x hx => by
+      obtain ⟨⟨k, init⟩, hmem, hx⟩ := List.mem_flatMap.1 hx
+      obtain ⟨⟨⟨static, k'⟩, init'⟩, hzip, hsome⟩ := List.mem_filterMap.1 hmem
+      cases static <;> simp at hsome
+      obtain ⟨rfl, rfl⟩ := hsome
+      exact fieldInits_free members _ (List.of_mem_zip hzip).2 x hx
+    have hself := initSelf_agree (W := W) self (.obj c) fun hs => h1.vars name (by simp [hs])
+    rw [hcode, hself]
+    refine M.bind_congr rfl fun _ => M.bind_congr rfl fun _ => M.bind_congr ?_ fun _ => rfl
+    apply evalStaticInitializers_eq
+    intro step hstep
+    exact ih.expr _ _ _ (((h2.withThis (.obj c)).withHome (some c)).mono fun x hx =>
+      List.mem_append_right _ (staticInitializers_free members keys step hstep x hx))
 
 set_option maxHeartbeats 1000000 in
 theorem Same.expr_succ (env env' : Env) (e : Expr) (hN : Agree e.free env env') :
     (evalExpr (n + 1) env e : M W _) = evalExpr (n + 1) env' e := by
   cases e with
   | this => unfold evalExpr; rw [hN.this]
+  | getSuper | callSuper =>
+    unfold evalExpr
+    rw [hN.home, hN.this]
+    same ih hN
+  | callOptionalCallee _ _ _ property =>
+    cases property <;> unfold evalExpr <;> same ih hN
   | assign t rhs =>
     unfold evalExpr
     refine ih.assign_like hN (by free_mem) fun r hr => ?_
@@ -525,7 +582,18 @@ theorem Same.expr_succ (env env' : Env) (e : Expr) (hN : Agree e.free env env') 
 
 theorem Same.args_succ (env env' : Env) (es : List Expr) (hN : Agree (freeExprs es) env env') :
     (evalArgs (n + 1) env es : M W _) = evalArgs (n + 1) env' es := by
-  cases es <;> unfold evalArgs <;> same ih hN
+  cases es with
+  | nil => rfl
+  | cons e es =>
+    have head := ih.expr env env' e.argument.2 (hN.mono fun x hx =>
+      List.mem_append_left _ (by simpa using hx))
+    have tail := ih.args env env' es (hN.mono fun _ hx => List.mem_append_right _ hx)
+    unfold evalArgs
+    generalize ha : e.argument = arg at *
+    obtain ⟨spread, operand⟩ := arg
+    dsimp only at head
+    dsimp only
+    rw [head, tail]
 
 theorem Same.target_succ (env env' : Env) (t : Target) (hN : Agree t.free env env') :
     (evalTarget (n + 1) env t : M W _) = evalTarget (n + 1) env' t := by
@@ -555,6 +623,65 @@ section step
 variable {n : Nat} (ih : Same W n)
 include ih
 
+theorem Same.binding_succ (env env' : Env) (kind : DeclKind) (p : BindingPattern) (v : Val)
+    (hN : Agree p.free env env') :
+    (bindPattern (n + 1) env kind p v : M W _) = bindPattern (n + 1) env' kind p v := by
+  cases p with
+  | name x => simp only [bindPattern]; cases kind <;> same ih hN
+  | defaultValue target fallback => simp only [bindPattern]; same ih hN
+  | array elements rest =>
+    have elementScopes : ∀ elements cursor, Agree (freeArrayBindings elements) env env' →
+        (bindArrayElements (callFn n) (bindPattern n env kind) elements cursor : M W _) =
+        bindArrayElements (callFn n) (bindPattern n env' kind) elements cursor := by
+      intro elements
+      induction elements with
+      | nil => exact fun _ _ => rfl
+      | cons pattern tail step =>
+        intro cursor agree
+        simp only [bindArrayElements]
+        refine M.bind_congr rfl fun result => ?_
+        cases pattern with
+        | none =>
+          exact step _ agree
+        | some target =>
+          simp only [Option.elim]
+          rw [ih.binding _ _ _ _ _ (agree.mono fun x hx => by simp [freeArrayBindings, hx])]
+          refine M.bind_congr rfl fun bound => ?_
+          cases bound
+          · rfl
+          · exact step _ (agree.mono fun x hx => by simp [freeArrayBindings, hx])
+    simp only [bindPattern, bindArrayPattern]
+    refine M.bind_congr rfl fun cursor => ?_
+    refine M.bind_congr (elementScopes elements (some cursor) (hN.mono fun x hx => ?_)) fun next => ?_
+    · cases rest <;> simp [BindingPattern.free, hx]
+    · cases rest with
+      | none => rfl
+      | some target =>
+        refine M.bind_congr rfl fun values => M.bind_congr rfl fun a => ?_
+        exact ih.binding _ _ _ _ _ (hN.mono fun x hx => by
+          change x ∈ freeArrayBindings elements ++ target.free
+          exact List.mem_append_right _ hx)
+  | object props =>
+    simp only [bindPattern]
+    have fields : ∀ props : List (Expr × BindingPattern), Agree (freeObjectBindings props) env env' →
+        (props.forM (fun (key, field) => do
+          let key ← evalExpr n env key
+          let v' ← getProp (callFn n) v key
+          bindPattern n env kind field v') : M W Unit) =
+        props.forM (fun (key, field) => do
+          let key ← evalExpr n env' key
+          let v' ← getProp (callFn n) v key
+          bindPattern n env' kind field v') := by
+      intro props
+      induction props with
+      | nil => exact fun _ => rfl
+      | cons item rest step =>
+        obtain ⟨key, field⟩ := item
+        intro agree
+        unfold List.forM
+        repeat' first | same_apply step using agree | same_part ih agree | same_step
+    split <;> first | rfl | exact fields props hN
+
 theorem Same.stmt_succ (env env' : Env) (s : Stmt) (hN : Agree s.free env env') :
     (execStmt (n + 1) env s : M W _) = execStmt (n + 1) env' s := by
   cases s with
@@ -569,23 +696,52 @@ theorem Same.stmt_succ (env env' : Env) (s : Stmt) (hN : Agree s.free env env') 
     · exact free_mem_freeStmts (funDecl_of_mem hf) x (by simp [Stmt.free, hx])
   | loop init test update body =>
     unfold execStmt
-    refine enterBlock_congr (N' := (init.free ++ (test.free ++ (update.free ++ body.free))) ++ lexNames [init]) [init]
+    refine enterBlock_congr (N' := (freeStmts init ++ (test.free ++ (update.free ++ body.free))) ++ lexNames init) init
       hN (fun x hx => ?_) (fun f hf x hx => ?_) fun env1 env1' h1 => ?_
     · rcases List.mem_append.1 hx with hx | hx
-      · by_cases hc : (lexNames [init]).contains x = true
+      · by_cases hc : (lexNames init).contains x = true
         · exact Or.inr (List.contains_iff_mem.1 hc)
         · exact Or.inl (by simp only [Stmt.free, List.mem_filter]; exact ⟨hx, by simpa using hc⟩)
       · exact Or.inr hx
     · have := free_mem_freeStmts (funDecl_of_mem hf) x (by simp [Stmt.free, hx])
-      simp only [freeStmts, List.append_nil] at this
       exact List.mem_append_left _ (List.mem_append_left _ this)
-    · refine M.bind_congr (ih.stmt _ _ _ (h1.mono fun x hx => by simp [hx])) fun _ => ?_
+    · refine M.bind_congr (ih.stmts _ _ _ (h1.mono fun x hx => by simp [hx])) fun _ => ?_
       dsimp only
-      refine copyBindings_congr _ h1 (fun x hx => List.mem_append_right _ (fresh_lex [init] x hx))
+      refine copyBindings_congr _ h1 (fun x hx => List.mem_append_right _ (fresh_lex init x hx))
         fun env2 env2' h2 => ih.loop _ _ _ _ _ _ (h2.mono fun x hx => ?_)
       rcases List.mem_append.1 hx with hx | hx
-      · exact List.mem_append_right _ (fresh_lex [init] x hx)
+      · exact List.mem_append_right _ (fresh_lex init x hx)
       · exact List.mem_append_left _ (List.mem_append_right _ hx)
+  | breakScope body =>
+    simp only [execStmt]
+    rw [ih.stmt _ _ body hN]
+
+  | forOf kind pattern source body =>
+    let head := [Stmt.bind kind pattern .undef]
+    have lex : lexNames head = if kind == .var then [] else pattern.names := by
+      cases kind <;> simp [head, lexNames, lexDecls, List.map_map, Function.comp_def]
+    let needed := source.free ++ pattern.free ++ body.free
+    have enter {β : Type} {k k' : Env → M W β} (hk : ∀ e e', Agree needed e e' → k e = k' e') :
+        enterBlock env head >>= k = enterBlock env' head >>= k' := by
+      apply enterBlock_congr head hN (fun x hx => ?_) (fun f hf => by simp [head, funDecls] at hf) hk
+      by_cases h : (lexNames head).contains x
+      · exact Or.inr (List.contains_iff_mem.mp h)
+      · exact Or.inl (by
+          simp only [Stmt.free, List.mem_filter]
+          refine ⟨hx, ?_⟩
+          simpa only [← lex, Bool.not_eq_true'] using Bool.eq_false_iff.2 h)
+    simp only [execStmt]
+    apply enter
+    intro sourceEnv sourceEnv' sourceAgree
+    refine M.bind_congr (ih.expr _ _ _ (sourceAgree.mono (fun x hx => by simp [needed, hx]))) fun v => ?_
+    refine M.bind_congr rfl fun cursor => ?_
+    apply congrArg (fun iteration => loopIterator (callFn n) iteration n cursor)
+    funext value
+    apply enter
+    intro iterationEnv iterationEnv' iterationAgree
+    refine M.bind_congr (ih.binding _ _ _ _ _
+      (iterationAgree.mono fun x hx => by simp [needed, hx])) fun _ => ?_
+    exact ih.stmt _ _ _ (iterationAgree.mono fun x hx => by simp [needed, hx])
   | tryCatch body param handler =>
     unfold execStmt
     dsimp only
@@ -643,10 +799,11 @@ end step
 and on `this`, run it the same way: the same result in the same state, for every bound and every world. -/
 theorem same : ∀ n, Same W n
   | 0 => ⟨fun _ _ _ _ => rfl, fun _ _ _ _ => rfl, fun _ _ _ _ => rfl, fun _ _ _ _ _ => rfl, fun _ _ _ _ _ _ => rfl,
-      fun _ _ _ _ _ => rfl, fun _ _ _ _ => rfl, fun _ _ _ _ => rfl, fun _ _ _ _ _ _ _ => rfl⟩
+      fun _ _ _ _ _ => rfl, fun _ _ _ _ _ _ => rfl, fun _ _ _ _ => rfl, fun _ _ _ _ => rfl,
+      fun _ _ _ _ _ _ _ => rfl⟩
   | n + 1 =>
     have ih := same n
-    ⟨ih.expr_succ, ih.args_succ, ih.target_succ, ih.props_succ, ih.members_succ, ih.fields_succ, ih.stmt_succ,
+    ⟨ih.expr_succ, ih.args_succ, ih.target_succ, ih.props_succ, ih.members_succ, ih.fields_succ, ih.binding_succ, ih.stmt_succ,
       ih.stmts_succ, ih.loop_succ⟩
 
 /-- A statement of a program, run in the scopes of two modules that agree on the names it mentions. -/
@@ -677,7 +834,7 @@ theorem lookup_filterMap (f : Name → Option Addr) (x : Name) : ∀ (l : List N
 when the kept names include its free names. -/
 theorem capture_faithful (n : Nat) (env : Env) (s : Stmt) (N : List Name) (hN : ∀ x ∈ s.free, x ∈ N) :
     (execStmt n (env.capture N) s : M W Flow) = execStmt n env s := by
-  refine (same n).stmt _ _ s ⟨rfl, fun x hx => ?_⟩
+  refine (same n).stmt _ _ s ⟨rfl, rfl, fun x hx => ?_⟩
   show (N.eraseDups.filterMap fun y => (env.vars.lookup y).map (y, ·)).lookup x = _
   simp only [lookup_filterMap, List.mem_eraseDups, hN x hx, ite_true]
 

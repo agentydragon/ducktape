@@ -112,7 +112,7 @@ func (s *Store) publishIntent(ctx context.Context, tx *sql.Tx, conversation *Con
 		return err
 	}
 	conversation.Pending = &PendingIntent{ID: id, Kind: request.Kind}
-	if err := updateConversation(ctx, tx, conversation); err != nil {
+	if err := s.updateConversation(ctx, tx, conversation); err != nil {
 		return err
 	}
 	return s.recordEvidence(ctx, tx, conversation, session, id, IntentKind(request.Kind).progressKind(), eventpb.ExecutionProgress_PHASE_DISPATCH, request.dispatchEvidence(id))
@@ -120,13 +120,13 @@ func (s *Store) publishIntent(ctx context.Context, tx *sql.Tx, conversation *Con
 
 func (s *Store) Finish(ctx context.Context, owner Owner, intentID string, result any, records []json.RawMessage, contextTokens *int) error {
 	return s.finish(ctx, owner, intentID, result, contextTokens, nil, func(c *Conversation) error {
-		return c.apply(func(state protocol.Context) error { return state.AppendRecords(records) })
+		return c.appendProviderRecords(records, intentID)
 	})
 }
 
 func (s *Store) FinishTool(ctx context.Context, owner Owner, intentID string, result map[string]any, call protocol.ToolInvocation, output []protocol.ContentPart) error {
 	return s.finish(ctx, owner, intentID, result, nil, nil, func(c *Conversation) error {
-		return c.appendToolResult(call, output)
+		return c.appendToolResult(call, output, protocol.RecordOrigin{Kind: protocol.RecordOriginToolResult, SourceID: intentID})
 	})
 }
 
@@ -187,7 +187,7 @@ func (s *Store) finish(ctx context.Context, owner Owner, intentID string, result
 			conversation.ContextTokens = contextTokens
 		}
 		conversation.Pending = nil
-		return updateConversation(ctx, tx, conversation)
+		return s.updateConversation(ctx, tx, conversation)
 	})
 }
 
@@ -235,7 +235,7 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 				return err
 			}
 			conversation.Stopped = true
-			if err := updateConversation(ctx, tx, conversation); err != nil {
+			if err := s.updateConversation(ctx, tx, conversation); err != nil {
 				return err
 			}
 			session, err := sessionForConversation(ctx, tx, conversation.ID)
@@ -263,7 +263,7 @@ func (s *Store) Reject(ctx context.Context, owner Owner, intentID string, failur
 
 		conversation.Stopped = true
 		conversation.Pending = nil
-		if err := updateConversation(ctx, tx, conversation); err != nil {
+		if err := s.updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}
 		session, err := sessionForConversation(ctx, tx, conversation.ID)
@@ -298,22 +298,21 @@ func (s *Store) beginCompaction(ctx context.Context, owner Owner, request Intent
 		if err := checkInterrupt(ctx, tx, owner); err != nil {
 			return err
 		}
-		if !sameNativeContext(conversation.Context(), original) {
+		if !sameCompactionSource(conversation.Context(), original) {
 			return protocol.ErrPrecondition
 		}
-		liveCell, err := hasLiveCell(ctx, tx, conversation.ID)
+		if err := conversation.Transcript.CheckSettled(); err != nil {
+			return err
+		}
+		if err := conversation.Context().CheckSettled(); err != nil {
+			return err
+		}
+		blocking, err := hasCompactionBlockingWork(ctx, tx, owner)
 		if err != nil {
 			return err
 		}
-		if liveCell {
-			return &protocol.UnknownEffectError{Reason: "cannot compact over live JavaScript cells"}
-		}
-		unresolved, err := hasUnresolvedIntent(ctx, tx, conversation.ID, "")
-		if err != nil {
-			return err
-		}
-		if unresolved {
-			return &protocol.UnknownEffectError{Reason: "unresolved nested intent; cannot compact"}
+		if blocking {
+			return &protocol.UnknownEffectError{Reason: "unresolved execution work blocks compaction"}
 		}
 		if request.ProviderRequest != nil {
 			if prepare == nil || request.API != conversation.API {
@@ -352,7 +351,7 @@ func (s *Store) beginCompaction(ctx context.Context, owner Owner, request Intent
 	return id, wire, nil
 }
 
-func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID string, audit any, original, replacement protocol.Context) error {
+func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID string, audit any, original, replacement protocol.Context, validateReplacement func(protocol.Context) error) error {
 	resultWire, err := marshal(audit)
 	if err != nil {
 		return err
@@ -365,7 +364,7 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 		if !pendingMatches(conversation.Pending, intentID, PendingIntentCompaction) {
 			return protocol.ErrPrecondition
 		}
-		if !sameNativeContext(conversation.Context(), original) {
+		if !sameCompactionSource(conversation.Context(), original) {
 			return protocol.ErrPrecondition
 		}
 		intent, err := intentFor(ctx, tx, intentID)
@@ -398,17 +397,29 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 		if err := replacement.CheckSettled(); err != nil {
 			return err
 		}
-		environment, err := s.environmentContext(conversation, session)
-		if err != nil {
-			return err
-		}
-		conversation.EnvironmentContext = &environment
-		conversation.ActiveContext = replacement
+		// Persistence can retry the same validated replacement after an ambiguous
+		// commit. Keep any appended notifications private to this transaction.
+		conversation.ActiveContext = replacement.Clone()
 		conversation.activeContextID = ""
 
 		conversation.ContextTokens = nil
 		conversation.Pending = nil
-		if err := updateConversation(ctx, tx, conversation); err != nil {
+		objects := newContentDB(ctx, tx)
+		if err := s.recordEnvironmentContext(objects, conversation, session, true); err != nil {
+			return err
+		}
+		if err := objects.Save(); err != nil {
+			return err
+		}
+		if validateReplacement != nil {
+			if err := validateReplacement(conversation.ActiveContext); err != nil {
+				return err
+			}
+		}
+		if _, err := s.settleNotifications(ctx, tx, conversation, session, true); err != nil {
+			return err
+		}
+		if err := s.updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}
 		return s.completeCompactionCommand(ctx, tx, session, sources)
@@ -473,7 +484,13 @@ func (s *Store) RecordNested(ctx context.Context, owner Owner, kind IntentKind, 
 			}
 		}
 		if pendingMatches(conversation.Pending, "", PendingIntentCompaction) {
-			return &protocol.UnknownEffectError{Reason: "cannot start a nested effect during compaction"}
+			live, err := hasLiveCell(ctx, tx, owner.ConversationID)
+			if err != nil {
+				return err
+			}
+			if kind == IntentInterruptProcess || !live {
+				return &protocol.UnknownEffectError{Reason: "cannot start this nested effect during compaction"}
+			}
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO sampler_intent(id,conversation_id,generation,request,result) VALUES($1,$2,$3,$4,NULL)`, id, owner.ConversationID, owner.Generation, requestWire); err != nil {
 			return err
@@ -523,6 +540,18 @@ func pendingMatches(pending *PendingIntent, id string, kind PendingIntentKind) b
 		return false
 	}
 	return kind == "" || pending.Kind == kind
+}
+
+func sameCompactionSource(left, right protocol.Context) bool {
+	if left.RecordCount() != right.RecordCount() {
+		return false
+	}
+	for i := range left.RecordCount() {
+		if left.OriginAt(i) != right.OriginAt(i) {
+			return false
+		}
+	}
+	return sameNativeContext(left, right)
 }
 
 func sameNativeContext(left, right protocol.Context) bool {
@@ -602,6 +631,19 @@ func hasUnresolvedIntent(ctx context.Context, tx *sql.Tx, conversationID, except
 	return found, err
 }
 
+func hasCompactionBlockingWork(ctx context.Context, tx *sql.Tx, owner Owner) (bool, error) {
+	// A live cell under this owner can finish its tool and executor intents
+	// independently of the provider request. Older work may have lost its host.
+	var blocking bool
+	err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM sampler_cell
+		WHERE conversation_id=$1 AND generation<>$2 AND status='live')
+		OR EXISTS(SELECT 1 FROM sampler_intent WHERE conversation_id=$1 AND result IS NULL
+			AND (generation<>$2 OR COALESCE(request->>'kind','') NOT IN ('tool','executor')
+				OR NOT EXISTS (SELECT 1 FROM sampler_cell WHERE conversation_id=$1 AND generation=$2 AND status='live')))`,
+		owner.ConversationID, owner.Generation).Scan(&blocking)
+	return blocking, err
+}
+
 func settlePendingCalls(conversation *Conversation, message func(protocol.ToolInvocation) string) ([]map[string]any, error) {
 	calls, err := conversation.Transcript.PendingCalls()
 	if err != nil {
@@ -610,7 +652,7 @@ func settlePendingCalls(conversation *Conversation, message func(protocol.ToolIn
 	outputs := make([]map[string]any, 0, len(calls))
 	for _, call := range calls {
 		content := []protocol.ContentPart{{Type: "input_text", Text: message(call)}}
-		if err := conversation.appendToolResult(call, content); err != nil {
+		if err := conversation.appendToolResult(call, content, protocol.RecordOrigin{}); err != nil {
 			return nil, err
 		}
 		outputs = append(outputs, map[string]any{"call_id": call.CallID, "output": content})

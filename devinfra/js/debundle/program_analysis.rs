@@ -20,8 +20,7 @@ use artifact::reports::{
 };
 use binding_targets::{
     DeclShape, TargetAccessRecorder, binding_names, decl_shape, declaration_name_strings,
-    member_root_sym, module_export_name, record_assign_target, record_pat_write,
-    record_update_target,
+    module_export_name, record_assign_target, record_pat_write, record_update_target,
 };
 use js_ast::{
     ParsedGlobalUses, ParsedJsModule, SourceLineIndex, is_dotted_import_meta_property,
@@ -218,26 +217,19 @@ pub struct ProgramAnalysis {
     pub imports: Vec<ImportRecord>,
     pub import_local_names: HashSet<String>,
     pub export_aliases: Vec<ExportAliasRecord>,
-    pub declarations: Vec<DeclarationRecord>,
+    pub declarations: Vec<KeptTopLevelDeclarationRecord>,
     pub side_effect_count: usize,
     pub dynamic_import_count: usize,
-    pub observable_module_effect: bool,
     /// True when the module body contains any specifier that the
     /// pass-through emission rewriter could canonicalize (any `import`,
     /// `export … from`, `import(...)`, or `new Worker(...)` /
     /// `new SharedWorker(...)` whose source is a relative path
     /// starting with `.` or `/`). Collected during the same module
-    /// walk as `dynamic_import_count` / `observable_module_effect` so
+    /// walk as `dynamic_import_count` so
     /// `prepare_js_chunks` can decide AST retention without a second
     /// full-tree visit.
     pub has_rewritable_specifier: bool,
     pub runtime_facts: ChunkRuntimeFacts,
-}
-
-pub struct DeclarationRecord {
-    pub line: Option<usize>,
-    pub names: Vec<String>,
-    pub kind: TopLevelDeclarationKind,
 }
 
 enum PrimitiveExportSource {
@@ -474,7 +466,6 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
     }
     let ModuleScanVisitor {
         dynamic_import_count,
-        observable_module_effect,
         has_rewritable_specifier,
         has_cjs_interop: visitor_has_cjs_interop,
         has_own_cjs_export_surface: visitor_has_own_cjs_export_surface,
@@ -730,7 +721,7 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         }
 
         if let Some((kind, names)) = classify_top_level_decl(item) {
-            declarations.push(DeclarationRecord {
+            declarations.push(KeptTopLevelDeclarationRecord {
                 line: item_line(&line_index, item),
                 names,
                 kind,
@@ -783,7 +774,6 @@ pub fn analyze_program_shallow(parsed: &ParsedJsModule) -> ProgramAnalysis {
         declarations,
         side_effect_count,
         dynamic_import_count,
-        observable_module_effect,
         has_rewritable_specifier,
         runtime_facts,
     }
@@ -793,7 +783,7 @@ pub fn build_chunk_manifest_from_analysis(
     chunk_id: &str,
     entry_file: &str,
     source_path: &str,
-    analysis: &ProgramAnalysis,
+    analysis: ProgramAnalysis,
 ) -> ChunkAnalysisReport {
     let declared_names: HashSet<&String> = analysis
         .declarations
@@ -810,16 +800,6 @@ pub fn build_chunk_manifest_from_analysis(
         })
         .cloned()
         .collect::<Vec<_>>();
-    let kept_top_level_declarations = analysis
-        .declarations
-        .iter()
-        .map(|declaration| KeptTopLevelDeclarationRecord {
-            line: declaration.line,
-            names: declaration.names.clone(),
-            kind: declaration.kind,
-        })
-        .collect::<Vec<_>>();
-
     ChunkAnalysisReport {
         chunk_id: chunk_id.to_string(),
         source_path: source_path.to_string(),
@@ -842,11 +822,11 @@ pub fn build_chunk_manifest_from_analysis(
             file: entry_file.to_string(),
             role: FileRole::Entry,
         }],
-        imports: analysis.imports.clone(),
-        export_aliases: analysis.export_aliases.clone(),
+        imports: analysis.imports,
+        export_aliases: analysis.export_aliases,
         unresolved_exports,
-        kept_top_level_declarations,
-        runtime_facts: analysis.runtime_facts.clone(),
+        kept_top_level_declarations: analysis.declarations,
+        runtime_facts: analysis.runtime_facts,
     }
 }
 
@@ -903,9 +883,6 @@ fn item_line(line_index: &SourceLineIndex, item: &ModuleItem) -> Option<usize> {
 ///
 /// - `dynamic_import_count`: number of `import(...)` call expressions
 ///   anywhere in the module.
-/// - `observable_module_effect`: any `new …(…)` or any `window.*` /
-///   `document.*` member access; matches the previous
-///   `ObservableTopLevelEffectCollector` exactly.
 /// - `has_rewritable_specifier`: any `import`, `export … from`,
 ///   `import(…literal)`, direct literal `import.meta.require(…literal)`,
 ///   or `new Worker(…literal)` / `new SharedWorker(…literal)` whose
@@ -913,15 +890,10 @@ fn item_line(line_index: &SourceLineIndex, item: &ModuleItem) -> Option<usize> {
 ///   Mirrors the pass-through rewriter's gate so `prepare_js_chunks`
 ///   can drop the AST when no rewrite is possible.
 ///
-/// Replaces three independent module-level `Visit` impls that each
-/// walked the full module — one `visit_with` per concern. Concerns
-/// here are independent: their hooks set distinct fields and never
-/// short-circuit each other.
 #[derive(Default)]
 struct ModuleScanVisitor {
     resources: Vec<RuntimeResourceUse>,
     dynamic_import_count: usize,
-    observable_module_effect: bool,
     has_rewritable_specifier: bool,
     has_cjs_interop: bool,
     has_own_cjs_export_surface: bool,
@@ -1123,7 +1095,6 @@ impl Visit for ModuleScanVisitor {
     }
 
     fn visit_new_expr(&mut self, node: &NewExpr) {
-        self.observable_module_effect = true;
         let args = node.args.as_deref().unwrap_or_default();
         let kind = if is_worker_constructor(node) {
             Some(RuntimeResourceKind::Worker)
@@ -1180,11 +1151,6 @@ impl Visit for ModuleScanVisitor {
                 self.interop_uses
                     .push((self.item_index, node.span, kind, None));
             }
-        }
-        if !self.observable_module_effect
-            && member_root_sym(&node.obj).is_some_and(|sym| sym == "window" || sym == "document")
-        {
-            self.observable_module_effect = true;
         }
         if matches!(&*node.obj, Expr::MetaProp(meta) if meta.kind == MetaPropKind::ImportMeta) {
             if !member_is_named(node, "require") {

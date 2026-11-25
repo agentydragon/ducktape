@@ -158,8 +158,9 @@ private def sameUnit? (u v : LinkedUnit) :
       simpa only [Bool.and_eq_true] using h
     some (PLift.up ((isModuleReceiver_eq both.1).trans (isModuleReceiver_eq both.2).symm))
     else none
+  let home ← if h : u.env.home == v.env.home then some (PLift.up (beq_iff_eq.1 h)) else none
   if names : u.stmt.free.all (fun x => u.env.vars.lookup x == v.env.vars.lookup x) then
-    return ⟨tag.down, st.down, ⟨receiver.down, fun x hx => beq_iff_eq.1 (List.all_eq_true.mp names x hx)⟩⟩
+    return ⟨tag.down, st.down, ⟨receiver.down, home.down, fun x hx => beq_iff_eq.1 (List.all_eq_true.mp names x hx)⟩⟩
   else none
 
 def sameUnits? : (u v : List LinkedUnit) → Option (PLift (SameUnits u v))
@@ -198,6 +199,44 @@ move checker must still prove that each candidate is isolated. -/
 def observerRegions {w} (ready : State w) (r : Nat) : List Nat :=
   ready.heap.zipIdx.toList.filterMap fun (row, q) =>
     if q != r && row.any (fun o => o.nodes.any (fun n => n.addr.region == r)) then some q else none
+
+/-- Index foreign incoming regions once, including both closure captures in objects
+and object values in binding cells. Multiple references from one row give one predecessor. -/
+private def addIncoming {α} (rows : Array (Array α)) (edges : α → List HeapNode)
+    (incoming : Std.HashMap Nat (List Nat)) : Std.HashMap Nat (List Nat) := Id.run do
+  let mut incoming := incoming
+  for (row, src) in rows.zipIdx do
+    let mut seen : Std.HashSet Nat := {}
+    for item in row do
+      for node in edges item do
+        let dst := node.addr.region
+        unless src == dst || seen.contains dst do
+          seen := seen.insert dst
+          incoming := incoming.insert dst (src :: incoming.getD dst [])
+  return incoming
+
+/-- An observer may itself be captured by another hoist. Propose masking the
+incoming closure in dependency order: peel outer observers before their targets.
+This is only a bounded hint; each removal still needs an isolation proof on
+the current linked state. Cycles have no first isolated row. -/
+def observerClosure? {w} (ready : State w) (r : Nat) : Option (List Nat) := do
+  let incoming := addIncoming ready.cells Binding.nodes (addIncoming ready.heap Obj.nodes {})
+  let rec visit (fuel : Nat) (q : Nat) (active done_ : Std.HashSet Nat) (rev : List Nat) :
+      Option (Std.HashSet Nat × List Nat) := do
+    if done_.contains q then return (done_, rev)
+    guard (!active.contains q && active.size + done_.size ≤ 32)
+    match fuel with
+    | 0 => none
+    | fuel + 1 =>
+      let active := active.insert q
+      let mut st := (done_, rev)
+      for p in incoming.getD q [] do
+        st ← visit fuel p active st.1 st.2
+      return (st.1.insert q, q :: st.2)
+  let mut st : Std.HashSet Nat × List Nat := ({}, [])
+  for q in incoming.getD r [] do
+    st ← visit 32 q ({r} : Std.HashSet Nat) st.1 st.2
+  return st.2.reverse
 
 def checkIsolated? {w} (s : State w) (q : Nat) (units : List PreparedUnit) :
     Option (PLift (q ≠ 0 ∧ Access [] (Unprotected q (fun _ => False)) s ∧

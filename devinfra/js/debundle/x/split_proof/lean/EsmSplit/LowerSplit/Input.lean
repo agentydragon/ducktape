@@ -64,6 +64,17 @@ def analyzeFootprints (asts units : Array Json) (prem : Effects.Premises) (timin
 def bundleOfFootprints (asts : Array Json) (fps : Array Lower.Footprint) (texts : Array String) : Bundle :=
   (asts.zip fps).toList.zipIdx.map fun ((ast, f), i) => toStmt (texts.getD i "") ast f
 
+/-- The linked execution theorem checks the schedules themselves. Its planner needs only the
+bindings each unit declares, mentions, assigns and exports. Promoting lazy reads to eager in
+the effect analysis leaves their first-occurrence order in `eager ++ lazy` unchanged. -/
+def linkedLayoutBundle (asts units : Array Json) : Bundle :=
+  let tops := units.map Lower.analyzeTop
+  let declared := Effects.declaredNames tops
+  (asts.zip tops).toList.map fun (ast, t) =>
+    { src := "", defs := t.defs, eager := (Effects.dedupeArr t.rawEager).toList,
+      lazy := (Effects.dedupeArr t.rawLazy).toList, assigns := Effects.assignedNames t declared,
+      exports := published ast, hoisted := t.hoisted }
+
 /-- The entry module keeps the published interface and loads outside imports before the rest of the bundle. -/
 def entryPlacementProblem (B : Bundle) (S : Spec) (ast : Json) (i : Nat) : Option String :=
   let t := Lower.typ ast

@@ -1,0 +1,13 @@
+# Upstream: packages/math/rectangle.ts (v0.18.1).
+source_matches:
+  - match: |
+      function rectangle(topLeft, bottomRight) { return [topLeft, bottomRight]; }
+      function rectangleIntersectLineSegment(r, l) {
+        return [
+          lineSegment(r[0], pointFrom(r[1][0], r[0][1])),
+          lineSegment(pointFrom(r[1][0], r[0][1]), r[1]),
+          lineSegment(r[1], pointFrom(r[0][0], r[1][1])),
+          lineSegment(pointFrom(r[0][0], r[1][1]), r[0]),
+        ].map(s => lineSegmentIntersectionPoints(l, s)).filter(p => !!p);
+      }
+    bindings: [rectangle, rectangleIntersectLineSegment]

@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.Eval
+import EsmSplit.CoreJS.Iterator
 
 /-!
 # CoreJS: more fuel never changes a run that finished
@@ -80,8 +81,8 @@ theorem copySpreadKeys_le {call call' : Call W} (h : Call.le call call') (target
     unfold copySpreadKeys
     repeat' first | exact ih | exact getFrom_le h _ _ _ | mono_step
 
-theorem copySpread_le {call call' : Call W} (h : Call.le call call') (target : Addr) (v : Val) :
-    copySpread call target v ⊑ copySpread call' target v := by
+theorem copySpread_le {call call' : Call W} (h : Call.le call call') (target : Addr) (excluded : List Name) (v : Val) :
+    copySpread call target excluded v ⊑ copySpread call' target excluded v := by
   cases v <;> unfold copySpread <;> repeat' first | exact copySpreadKeys_le h _ _ _ | mono_step
 
 theorem protoProp_le {call call' : Call W} (h : Call.le call call') (owner : String) (names : List String) (base : Val)
@@ -93,6 +94,17 @@ theorem getProp_le {call call' : Call W} (h : Call.le call call') (base key : Va
     getProp call base key ⊑ getProp call' base key := by
   unfold getProp
   repeat' first | exact getFrom_le h _ _ _ | exact protoProp_le h _ _ _ _ | mono_step
+
+theorem getSuperProp_le {call call' : Call W} (h : Call.le call call') (home : Option Addr) (receiver key : Val) :
+    getSuperProp call home receiver key ⊑ getSuperProp call' home receiver key := by
+  cases home with
+  | none => exact M.le_refl _
+  | some a =>
+    unfold getSuperProp
+    refine M.le_bind (M.le_refl _) fun key => M.le_bind (M.le_refl _) fun obj => ?_
+    cases obj.proto <;> simp only []
+    · exact M.le_refl _
+    · exact getFrom_le h _ _ key
 
 theorem setProp_le {call call' : Call W} (h : Call.le call call') (base key v : Val) :
     setProp call base key v ⊑ setProp call' base key v := by
@@ -151,6 +163,106 @@ theorem classParents_le {call call' : Call W} (h : Call.le call call') (base : V
     | exact getProp_le h _ _
     | mono_step
 
+private theorem evalStaticInitializers_le {eval eval' : Expr → M W Val} (h : ∀ e, eval e ⊑ eval' e)
+    (target : Addr) (plan : List (Option PropertyKey × Expr)) :
+    evalStaticInitializers eval target plan ⊑ evalStaticInitializers eval' target plan := by
+  induction plan with
+  | nil => exact M.le_refl _
+  | cons step rest ih =>
+    rcases step with ⟨key, init⟩
+    exact M.le_bind (h init) fun _ => M.le_bind (M.le_refl _) fun _ => ih
+
+theorem getIterator_le {call call' : Call W} (h : Call.le call call') (v : Val) :
+    getIterator call v ⊑ getIterator call' v := by
+  unfold getIterator
+  repeat' first | exact getProp_le h _ _ | exact h _ _ _ | mono_step
+
+theorem iteratorStep_le {call call' : Call W} (h : Call.le call call') (cursor : IteratorCursor) (readValue : Bool) :
+    iteratorStep call cursor readValue ⊑ iteratorStep call' cursor readValue := by
+  cases cursor <;> simp only [iteratorStep] <;>
+    repeat' first | exact getProp_le h _ _ | exact h _ _ _ | mono_step
+
+theorem callIteratorReturn_le {call call' : Call W} (h : Call.le call call') (cursor : IteratorCursor) :
+    callIteratorReturn call cursor ⊑ callIteratorReturn call' cursor := by
+  cases cursor <;> simp only [callIteratorReturn] <;>
+    repeat' first | exact getProp_le h _ _ | exact h _ _ _ | mono_step
+
+theorem iteratorClose_le {α : Type} {call call' : Call W} (h : Call.le call call') (cursor : IteratorCursor)
+    (completion : Except Val α) :
+    iteratorClose call cursor completion ⊑ iteratorClose call' cursor completion := by
+  unfold iteratorClose
+  exact M.le_bind (attempt_le (callIteratorReturn_le h cursor)) (fun _ => M.le_refl _)
+
+theorem collectIterator_le {call call' : Call W} (h : Call.le call call') {n m : Nat} (hFuel : n ≤ m)
+    (cursor : IteratorCursor) : collectIterator call n cursor ⊑ collectIterator call' m cursor := by
+  induction n generalizing m cursor with
+  | zero => exact M.le_outOfFuel _
+  | succ n ih =>
+    cases m with
+    | zero => omega
+    | succ m =>
+      simp only [collectIterator]
+      refine M.le_bind (iteratorStep_le h cursor true) fun step => ?_
+      cases step with
+      | none => exact M.le_refl _
+      | some next => exact M.le_map _ (ih (by omega) next.2)
+
+theorem iteratorValues_le {call call' : Call W} (h : Call.le call call') {n m : Nat} (hFuel : n ≤ m)
+    (source : Val) : iteratorValues n call source ⊑ iteratorValues m call' source :=
+  M.le_bind (getIterator_le h source) (collectIterator_le h hFuel)
+
+private theorem optionElim_le {α β : Type} (a : Option α) (fallback : M W β) {some some' : α → M W β}
+    (h : ∀ x, some x ⊑ some' x) : a.elim fallback some ⊑ a.elim fallback some' := by
+  cases a with
+  | none => exact M.le_refl _
+  | some x => exact h x
+
+theorem bindArrayElements_le {call call' : Call W} {bindField bindField' : BindingPattern → Val → M W Unit}
+    (hCall : Call.le call call') (hBind : ∀ p v, bindField p v ⊑ bindField' p v)
+    (elements : List (Option BindingPattern)) (cursor : Option IteratorCursor) :
+    bindArrayElements call bindField elements cursor ⊑ bindArrayElements call' bindField' elements cursor := by
+  induction elements generalizing cursor with
+  | nil => exact M.le_refl _
+  | cons p rest ih =>
+    simp only [bindArrayElements]
+    repeat' first
+    | exact optionElim_le _ _ (fun cursor => iteratorStep_le hCall cursor _)
+    | exact attempt_le (optionElim_le _ _ (fun p => hBind p _))
+    | exact ih _
+    | exact iteratorClose_le hCall _ _
+    | mono_step
+
+theorem bindArrayPattern_le {call call' : Call W} {bindField bindField' : BindingPattern → Val → M W Unit}
+    (hCall : Call.le call call') (hBind : ∀ p v, bindField p v ⊑ bindField' p v)
+    {n m : Nat} (hFuel : n ≤ m) (elements : List (Option BindingPattern)) (rest : Option BindingPattern) (v : Val) :
+    bindArrayPattern call n bindField elements rest v ⊑ bindArrayPattern call' m bindField' elements rest v := by
+  unfold bindArrayPattern
+  repeat' first
+  | exact getIterator_le hCall _
+  | exact bindArrayElements_le hCall hBind _ _
+  | exact iteratorClose_le hCall _ _
+  | exact optionElim_le _ _ (collectIterator_le hCall hFuel)
+  | exact hBind _ _
+  | mono_step
+
+theorem loopIterator_le {call call' : Call W} {body body' : Val → M W Flow}
+    (hCall : Call.le call call') (hBody : ∀ v, body v ⊑ body' v)
+    {n m : Nat} (hFuel : n ≤ m) (cursor : IteratorCursor) :
+    loopIterator call body n cursor ⊑ loopIterator call' body' m cursor := by
+  induction n generalizing m cursor with
+  | zero => exact M.le_outOfFuel _
+  | succ n ih =>
+    cases m with
+    | zero => omega
+    | succ m =>
+      simp only [loopIterator]
+      repeat' first
+      | exact iteratorStep_le hCall _ _
+      | exact attempt_le (hBody _)
+      | exact ih (Nat.le_of_succ_le_succ hFuel) _
+      | exact iteratorClose_le hCall _ _
+      | mono_step
+
 /-- Every function of the interpreter with the bound `n`, against the same with the bound `m`. -/
 structure Mono (W : World) (n m : Nat) : Prop where
   expr : ∀ env e, (evalExpr n env e : M W _) ⊑ evalExpr m env e
@@ -161,6 +273,7 @@ structure Mono (W : World) (n m : Nat) : Prop where
   fields : ∀ env a fs, (evalFields n env a fs : M W _) ⊑ evalFields m env a fs
   call : ∀ callee this args, (callFn n callee this args : M W _) ⊑ callFn m callee this args
   construct : ∀ target callee args, (constructTarget n target callee args : M W _) ⊑ constructTarget m target callee args
+  binding : ∀ env k p v, (bindPattern n env k p v : M W _) ⊑ bindPattern m env k p v
   stmt : ∀ env s, (execStmt n env s : M W _) ⊑ execStmt m env s
   stmts : ∀ env ss, (execStmts n env ss : M W _) ⊑ execStmts m env ss
   loop : ∀ env fresh test update body, (loop n env fresh test update body : M W _) ⊑ loop m env fresh test update body
@@ -180,14 +293,17 @@ macro_rules
     | with_reducible exact ($h).fields _ _ _
     | with_reducible exact ($h).call _ _ _
     | with_reducible exact ($h).construct _ _ _
+    | with_reducible exact ($h).binding _ _ _ _
     | with_reducible exact ($h).stmt _ _
     | with_reducible exact ($h).stmts _ _
     | with_reducible exact ($h).loop _ _ _ _ _
     | with_reducible exact ($h).converse _ _ _
     | with_reducible exact attempt_le (perform_le ($h).callLe (fun f args => ($h).construct f f args) _ _ _)
-    | with_reducible exact copySpread_le ($h).callLe _ _
+    | with_reducible exact copySpread_le ($h).callLe _ _ _
     | with_reducible exact classParents_le ($h).callLe _
+    | with_reducible exact evalStaticInitializers_le (fun e => ($h).expr _ e) _ _
     | with_reducible exact getProp_le ($h).callLe _ _
+    | with_reducible exact getSuperProp_le ($h).callLe _ _ _
     | with_reducible exact setProp_le ($h).callLe _ _ _
     | with_reducible exact getRef_le ($h).callLe _ _
     | with_reducible exact putRef_le ($h).callLe _ _ _
@@ -204,8 +320,15 @@ include ih
 theorem Mono.expr_succ (env : Env) (e : Expr) : (evalExpr (n + 1) env e : M W _) ⊑ evalExpr (m + 1) env e := by
   cases e <;> unfold evalExpr <;> try unfold finishDerived <;> mono ih
 
-theorem Mono.args_succ (env : Env) (es : List Expr) : (evalArgs (n + 1) env es : M W _) ⊑ evalArgs (m + 1) env es := by
-  cases es <;> unfold evalArgs <;> mono ih
+theorem Mono.args_succ (hFuel : n ≤ m) (env : Env) (es : List Expr) : (evalArgs (n + 1) env es : M W _) ⊑ evalArgs (m + 1) env es := by
+  cases es with
+  | nil => exact M.le_refl _
+  | cons e es =>
+    unfold evalArgs
+    generalize e.argument = arg
+    obtain ⟨spread, operand⟩ := arg
+    cases spread <;> simp only [Bool.false_eq_true, ↓reduceIte] <;> mono ih
+    exact iteratorValues_le ih.callLe hFuel _
 
 theorem Mono.target_succ (env : Env) (t : Target) : (evalTarget (n + 1) env t : M W _) ⊑ evalTarget (m + 1) env t := by
   cases t <;> unfold evalTarget <;> mono ih
@@ -229,10 +352,44 @@ theorem Mono.call_succ (callee this : Val) (args : List Val) :
 
 theorem Mono.construct_succ (target callee : Val) (args : List Val) :
     (constructTarget (n + 1) target callee args : M W _) ⊑ constructTarget (m + 1) target callee args := by
+  have superArgsMono (argExprs : Option (List Expr)) (env : Env) :
+      (argExprs.elim (forwardFreshArguments args) (evalArgs n env) : M W _) ⊑
+        argExprs.elim (forwardFreshArguments args) (evalArgs m env) := by
+    cases argExprs with
+    | none => exact M.le_refl _
+    | some es => exact ih.args env es
   unfold constructTarget constructParent initDerivedFields
   mono ih
+  exact superArgsMono _ _
 
-theorem Mono.stmt_succ (env : Env) (s : Stmt) : (execStmt (n + 1) env s : M W _) ⊑ execStmt (m + 1) env s := by
+theorem Mono.binding_succ (hFuel : n ≤ m) (env : Env) (kind : DeclKind) (p : BindingPattern) (v : Val) :
+    (bindPattern (n + 1) env kind p v : M W _) ⊑ bindPattern (m + 1) env kind p v := by
+  cases p with
+  | name => simp only [bindPattern]; exact M.le_refl _
+  | defaultValue => simp only [bindPattern]; mono ih
+  | array elements rest =>
+    exact bindArrayPattern_le ih.callLe (ih.binding env kind) hFuel elements rest v
+  | object props =>
+    simp only [bindPattern]
+    have fields : ∀ props : List (Expr × BindingPattern),
+        (props.forM (fun (key, field) => do
+          let key ← evalExpr n env key
+          let v' ← getProp (callFn n) v key
+          bindPattern n env kind field v') : M W Unit) ⊑
+        props.forM (fun (key, field) => do
+          let key ← evalExpr m env key
+          let v' ← getProp (callFn m) v key
+          bindPattern m env kind field v') := by
+      intro props
+      induction props with
+      | nil => exact M.le_refl _
+      | cons item rest step =>
+        obtain ⟨key, field⟩ := item
+        unfold List.forM
+        repeat' first | exact step | mono_part ih | mono_step
+    split <;> first | exact M.le_refl _ | exact fields props
+
+theorem Mono.stmt_succ (hFuel : n ≤ m) (env : Env) (s : Stmt) : (execStmt (n + 1) env s : M W _) ⊑ execStmt (m + 1) env s := by
   cases s with
   | tryCatch body param handler =>
     unfold execStmt
@@ -265,6 +422,13 @@ theorem Mono.stmt_succ (env : Env) (s : Stmt) : (execStmt (n + 1) env s : M W _)
         mono ih
       | _ => exact .inr rfl
   | decl kind x e => cases kind <;> unfold execStmt <;> mono ih
+  | forOf kind pattern source body =>
+    simp only [execStmt]
+    refine M.le_bind (M.le_refl _) fun sourceEnv => ?_
+    refine M.le_bind (ih.expr sourceEnv source) fun value => ?_
+    refine M.le_bind (getIterator_le ih.callLe value) fun cursor => ?_
+    refine loopIterator_le ih.callLe (fun v => ?_) hFuel cursor
+    mono ih
   | «opaque» code decls funs free run =>
     cases run with
     | world => unfold execStmt; mono ih
@@ -293,7 +457,8 @@ theorem mono : ∀ n m, n ≤ m → Mono W n m := by
     intro m _
     exact ⟨fun _ _ => M.le_outOfFuel _, fun _ _ => M.le_outOfFuel _, fun _ _ => M.le_outOfFuel _,
       fun _ _ _ => M.le_outOfFuel _, fun _ _ _ _ => M.le_outOfFuel _, fun _ _ _ => M.le_outOfFuel _,
-      fun _ _ _ => M.le_outOfFuel _, fun _ _ _ => M.le_outOfFuel _, fun _ _ => M.le_outOfFuel _,
+      fun _ _ _ => M.le_outOfFuel _, fun _ _ _ => M.le_outOfFuel _, fun _ _ _ _ => M.le_outOfFuel _,
+      fun _ _ => M.le_outOfFuel _,
       fun _ _ => M.le_outOfFuel _, fun _ _ _ _ _ => M.le_outOfFuel _, fun _ _ _ => M.le_outOfFuel _⟩
   | succ n ih =>
     intro m hm
@@ -301,8 +466,8 @@ theorem mono : ∀ n m, n ≤ m → Mono W n m := by
     | zero => omega
     | succ m =>
       have ih := ih m (by omega)
-      exact ⟨ih.expr_succ, ih.args_succ, ih.target_succ, ih.props_succ, ih.members_succ, ih.fields_succ, ih.call_succ,
-        ih.construct_succ, ih.stmt_succ, ih.stmts_succ, ih.loop_succ, ih.converse_succ⟩
+      exact ⟨ih.expr_succ, ih.args_succ (by omega), ih.target_succ, ih.props_succ, ih.members_succ, ih.fields_succ, ih.call_succ,
+        ih.construct_succ, ih.binding_succ (by omega), ih.stmt_succ (by omega), ih.stmts_succ, ih.loop_succ, ih.converse_succ⟩
 
 theorem runUnits_le {n m : Nat} (h : n ≤ m) (units : List LinkedUnit) :
     (runUnits n units : M W _) ⊑ runUnits m units := by

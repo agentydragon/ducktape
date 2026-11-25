@@ -310,10 +310,13 @@ process-termination request.
 
 `notify(value)` follows Codex: the host's `notification/delivered` acknowledgement is sent only after
 the text is durably queued for the active turn; without one it is rejected as "no active turn", and
-blank text is a no-op. Queued outputs become extra `custom_tool_call_output` items for the emitting
-`exec` call, after the current step's own tool outputs and before the next provider request, with
-Codex's 12,000-token middle truncation. Outputs queued after the last step are appended when the
-turn completes; an interrupted or effect-uncertain turn discards them, as Codex does on abort.
+blank text is a no-op. Queued outputs follow the current step's tool outputs and precede the next
+provider request, with Codex's 12,000-token middle truncation. Responses records them as extra
+`custom_tool_call_output` items for the emitting freeform `exec` call. If compaction removed the
+answered call from the active context, the sampler adds a notice there with the call and cell IDs
+and retains the provider's normal asynchronous output in the full transcript. Outputs queued
+after the last step are appended when the turn completes. An interrupted or effect-uncertain
+turn discards them, as Codex does on abort.
 **Deviation:** a failed turn also discards them, because its unresolved intent must precede any
 later output. Boundary evidence records each output as `recorded` or `discarded`.
 
@@ -387,9 +390,8 @@ requests reasoning only when an effort is selected. The standard request adapter
 function results as strings, preserving multimodal content arrays and opaque provider items.
 In standard mode or with JSON exec encoding, repeated `notify()` outputs for a completed call
 become asynchronous developer messages identifying the original call, without modifying the
-durable Codex transcript. Standard mode has no compaction
-implementation: explicit compaction is rejected at admission, and automatic compaction fails the
-turn before sending a private provider request.
+durable Codex transcript. In standard Responses mode, the sampler rejects explicit compaction at
+admission and rejects automatic compaction settings at startup.
 
 Streamed `response.output_item.done` items are authoritative for execution and
 continuation, matching Codex. `response.completed.output` is retained as evidence
@@ -400,6 +402,18 @@ Each conversation is pinned to its API and retains its native items or messages.
 call/result pairing, completion, effort controls, and compaction. They derive generic tool invocations
 with call IDs and native source-record ordinals; these execution decisions are not extra conversation
 records. The shared runtime owns effect intents, execution, leases, interruption, and recovery.
+A context entry can pair a native record with a sampler source. Environment records point to an
+immutable update with the Session ID and the typed before and after values. Execution-handle
+records point to an immutable snapshot with the conversation ID and the cells and processes
+included in the notice. Submitted and steering user input reference their commands. Sampling
+output, settled tool results, and compaction handoffs reference their sampler intents.
+Records without a source have unknown origin.
+
+A retained item carries its source through compaction. Two native occurrences can reference the
+same source, such as an environment diff in the transcript and a full rendering in the active
+context. The projection on each entry identifies a diff or shortened user text. Provider requests
+use the native payload. Current `notify()` output uses its existing tool-call and cell provenance.
+
 The native API packages receive execution snapshots and a provider-neutral evidence sink. Each
 stream event and its derived History observations commit atomically before parsing continues;
 evidence failure stops the stream without acknowledging the pending effect.
@@ -413,32 +427,54 @@ reasoning content when supplied and pairs each tool result with its native call 
 notifications use system messages. The route uses the provider's default reasoning setting.
 Image tool results become text notices.
 
-A Chat Completions route with `chat_compaction` supports manual compaction and can set
-`auto_compact_tokens` to trigger at the last streamed usage total. The sampler keeps
-`keep_recent_turns` user turns verbatim. The summary request reuses the system message, tools and
-conversation, then appends a user message asking for a handoff summary of older turns. It sets
-`tool_choice: "none"` and an output budget of `max_tokens`. This preserves the prompt prefix for
-providers that cache it. The cut is at a user message, so retained tool calls and their results
-stay together. A complete nonempty text summary replaces the active
-prefix only if it reduces the serialized context. The full transcript remains available in History.
-The sampler commits the summary request before dispatch and reuses its exact body on retry.
-Automatic compaction waits for a settled context with an older turn available.
+A model route that supports compaction can set `auto_compact_tokens` alongside its API and provider
+model. Before a new sample, the sampler compares the threshold to the last streamed usage total.
+Newly appended input and tool results can exceed provider limits before another usage report.
 
-The route can set `chat_compaction.summary_prompt_template` and
-`chat_compaction.replacement` in the sampler settings ConfigMap. These are Go text templates.
-The prompt receives `.KeepRecentTurns`. The replacement receives `.Summary` and
-`.KeepRecentTurns`, and must include the summary verbatim. Choose `assistant` or `user`
-for the replacement role. The environment notice and retained native turns follow it.
-A replacement rendered as a user message does not count as an authored turn. With both
-settings omitted, the sampler uses its built-in handoff prompt and assistant-message wrapper.
+A Chat Completions route with `chat_compaction` supports manual compaction.
+
+The summarizer receives the full active context, including earlier handoffs, assistant messages,
+reasoning and tool exchanges. The request reuses the system message and tool definitions, appends a
+handoff instruction, disables tool choice and sets `max_tokens` for the response. A provider
+context-limit failure or incomplete response leaves the active context intact.
+
+The replacement carries recent authored user messages in chronological order, a fresh environment
+baseline and one generated handoff. Earlier assistant messages, reasoning, tool calls and tool
+results remain in History. The user budget `keep_recent_tokens` counts an estimated token per four
+UTF-8 bytes plus five tokens of framing per message. Starting with the newest user message, the
+sampler keeps whole messages while they fit. It can keep one older message with marked middle
+truncation at UTF-8 boundaries. The minimum configured budget is nine tokens, enough for a marker
+and framing. A partial message is omitted when the remaining budget cannot fit its marker. History
+retains the complete authored text.
+
+Chat environment notices and execution snapshots consume no authored-user budget. User messages
+retain their source command identity at their new record positions. The origin records shortened
+content as a truncated projection of that command. User-role records with absent or unrecognized
+origin remain eligible, even when their content matches an environment notice.
+
+The sampler compares serialized bytes for the whole candidate replacement and original active
+context before committing it. It freezes the request body before dispatch and reuses it on retry.
+Recovery rejects an in-flight summary prepared under a different retention or replacement policy.
+Automatic compaction requires a settled context with material the replacement can discard.
+A prior handoff alone does not trigger another compaction.
+
+`chat_compaction.summary_prompt_template` and `chat_compaction.replacement.template` are Go text
+templates. Both receive `.KeepRecentTokens`. The replacement also receives `.Summary` and must
+include it verbatim. Choose `assistant` or `user` for the replacement role. During rollout, omitted
+templates use the built-in handoff prompt and assistant-message wrapper.
+
+After staging has rolled out a release with both templates explicitly configured for every Chat
+Completions model that enables compaction, require both fields and remove the built-in fallbacks.
+Before removing recovery support for omitted replacements, check that no pending compaction
+still uses the old representation.
 
 ```yaml
+auto_compact_tokens: 160000
 chat_compaction:
   max_tokens: 8192
-  keep_recent_turns: 2
+  keep_recent_tokens: 16000
   summary_prompt_template: |
-    Write a handoff with goals, decisions, and open work.
-    The latest {{.KeepRecentTurns}} user turns will be kept verbatim.
+    Write a handoff for the conversation above with goals, decisions, and open work.
   replacement:
     role: user
     template: |
@@ -447,9 +483,11 @@ chat_compaction:
       </handoff>
 ```
 
-The sampler validates templates at startup. A retry uses the original rendered request.
-Changing the replacement settings while a summary request is pending prevents applying
-that summary under the new settings.
+During the settings rollout, an existing positive `keep_recent_turns` setting selects the
+16,000-token user budget. Configure only one retention field and update custom templates to use
+`.KeepRecentTokens`.
+
+[Codex rust-v0.162.1 local compaction](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/core/src/compact.rs).
 
 Anthropic preserves signed thinking, redacted thinking and compaction content without translating
 their fields.
@@ -478,9 +516,9 @@ It never inserts a control between the summary and kept turns. A result must con
 nonempty signed compaction block and shrink serialized active context. A single transaction swaps
 context and settles the command under the original-context/lease fence; original conversation and
 History survive. Summarized effort stops applying at the provider, so restoration is deferred until
-the first new user message after kept turns. Native compaction puts the summary first and does not
-prepend the Responses environment reinjection. Background compaction and dynamic definitions are
-deferred.
+the first new user message after kept turns. The signed summary comes first, followed directly
+by the retained turns. The current environment follows the retained turns without activating
+the deferred effort. Background compaction and dynamic definitions are deferred.
 
 Nested `exec_command` and `write_stdin` follow Codex 0.162.1 unified exec for one remote environment:
 upstream schemas and result objects (`chunk_id`, `wall_time_seconds`,
@@ -529,8 +567,8 @@ Responses Lite compaction sends the final `compaction_trigger` input item and th
 `x-codex-beta-features: remote_compaction_v2` header to the sampler's ordinary Responses endpoint.
 The completed stream must contain exactly one `compaction` item with nonempty opaque
 `encrypted_content`. The item must be smaller in serialized bytes than the old active context.
-The sampler preserves unknown fields, prepends current environment context and regenerates the
-execution-handle snapshot for the next sample. A rejected summary preserves the old context.
+The sampler preserves unknown fields and places current environment context before the opaque
+item. A rejected summary preserves the old context.
 The terminal event can omit `response.completed.output` when the item arrives through
 `response.output_item.done`. [Compaction validation](providers/responses/compaction.go)
 
@@ -616,10 +654,17 @@ and the frozen prepared body; steering input and notifications wait until that s
 Changed routing or parser profiles fail the command rather than silently rerouting its request.
 Compaction also pins its kept-suffix and effort-restoration policy, so a configuration change
 cannot apply a frozen summary to a different suffix.
+
+Compaction takes a settled provider context. Yielded cells can keep using their existing host and
+finish nested tools under the lease that dispatched them. Compaction writes no cell or executor
+state. One transaction installs the replacement with the environment current at commit and the
+notifications queued during the summary request. The next sampling request injects a fresh
+execution-handle snapshot, including an empty snapshot if all handles have settled.
 Other provider failures are permanent. Permanent failure or exhausted attempts atomically fails
 only the original command and turn, leaving the Session usable and known live cells/processes
-intact. Unresolved native effects still prevent this settlement. No partial response dispatches
-a model tool call. Explicit interruption suppresses the remaining retry chain.
+intact. Unresolved native effects prevent this settlement, except for effects that a live cell
+can still settle independently of a failed compaction. No partial response dispatches a model
+tool call. Explicit interruption suppresses the remaining retry chain.
 Confirmed input retains its effected receipt in History; the failed turn records the later
 provider failure. A failed explicit compaction receives a command-failure observation.
 
@@ -793,13 +838,14 @@ request carries Codex's `gpt-6.1-sol` base instructions as Responses `instructio
 it does not replace the provider/harness base. Standing instructions are supported; remote
 AGENTS.md discovery, subagents, skills/MCP and approvals/hooks are deferred.
 
-The conversation carries Codex's `<environment_context>` user message: the Session cwd, the name of
+The conversation carries Codex's `<environment_context>` with the Session cwd, the name of
 the executor-reported shell that `exec_command` launches (omitted for an executor that reports none,
 although `exec_command` then falls back to `/bin/sh`) and the sampler's local date. The full context
 precedes the first input; afterwards an update is recorded before a turn's input, or before a
 sampling step after that step's queued `notify()` outputs, whenever a value changed (a date rollover
-renders only the date). Responses compaction re-injects the full context before the compaction item;
-Anthropic preserves its signed summary as the first message. Timezone and
+renders only the date). Responses and Anthropic encode the environment as user-role context.
+Chat Completions uses a system notice so environment updates do not count as authored turns.
+All three restore the full environment in the replacement. Timezone and
 Codex's network, filesystem, permission-profile and subagents sections are omitted; Agentplane owns
 those boundaries. **Deviation:** the executor connects lazily, so a shell first learned after the
 initial context renders an update; Codex resolves the shell before its first render.
@@ -909,13 +955,17 @@ sampler-private `internal/content` content reader/writer: typed IDs/kinds, stand
 content hashing and integrity checks. The content package imports neither provider nor semantic
 protocol packages and does not interpret provider payloads. The shared `protocol` package defines
 semantic contracts, not persisted records. The sampler owns PostgreSQL, transactions, context roots,
-authorization and request history. The shared table holds native item/block JSON and small
-provider-specific message/profile reference records, not a universal message schema.
+authorization and request history. The shared table holds native item/block JSON, small
+provider-specific message/profile references, and sampler context entries with sources.
 
-`sampler_context` represents an immutable ordered prefix plus one native record. Appending an item
-shares the entire prior prefix. The conversation transcript retains the full native conversation
-across compaction. Transcript and optional active roots reference these contexts; small controls
-retain Anthropic deferred effort. With no replacement context, the transcript is the active context.
+`sampler_context` represents an immutable ordered prefix plus a content reference. Each entry
+points either to bare native content or to a `sampler_context_record` containing the native
+content ID and its source reference. Identical native content can be shared by entries with
+different sources. Appending an item shares the prior prefix. The conversation retains the full
+transcript across compaction. With no replacement context, the transcript is the active context.
+Small controls retain Anthropic deferred effort and the execution snapshot baseline. A frozen
+sampling retry compares native records and controls. A frozen compaction retry also pins the
+source-bearing context because its sources can affect retention.
 `sampler_model_request` links each provider request to a frozen profile, ordered request-only
 prefix/suffix references, and a provider-ready history root. A source root and versioned API/dialect/
 encoding projection key permit projecting only newly appended native records. A changed prefix

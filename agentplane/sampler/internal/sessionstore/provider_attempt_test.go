@@ -2,6 +2,7 @@ package sessionstore
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -399,7 +400,7 @@ func TestProviderFinishDoesNotCommitAfterDurableInterrupt(t *testing.T) {
 			if kind == PendingIntentSampling {
 				err = store.Finish(t.Context(), owner, intentID, map[string]any{"response": map[string]any{"status": "completed"}}, nil, nil)
 			} else {
-				err = store.FinishCompaction(t.Context(), owner, intentID, map[string]any{"response": map[string]any{"status": "completed"}}, original, original)
+				err = store.FinishCompaction(t.Context(), owner, intentID, map[string]any{"response": map[string]any{"status": "completed"}}, original, original, nil)
 			}
 			var interrupt InterruptPendingError
 			if !errors.As(err, &interrupt) {
@@ -503,6 +504,51 @@ func TestFailProviderCommandPreservesUnrelatedLiveCell(t *testing.T) {
 	var retryDue bool
 	if err := store.DB().QueryRowContext(t.Context(), `SELECT provider_retry_not_before IS NOT NULL FROM sampler_intent WHERE id=$1`, intentID).Scan(&retryDue); err != nil || retryDue {
 		t.Fatalf("provider retry due remained after command failure: due=%v err=%v", retryDue, err)
+	}
+}
+
+func TestFailedCompactionPreservesInFlightCellEffect(t *testing.T) {
+	store, session, owner := claimedSession(t)
+	ctx := t.Context()
+	const commandID = "failed-compaction"
+	admitProviderCommand(t, store, owner, session.ID, commandID, false)
+	original, err := store.Read(ctx, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CellResult(ctx, owner, "live-cell", executionstate.CellLive); err != nil {
+		t.Fatal(err)
+	}
+	request, prepare := providerAttemptTestRequest(PendingIntentCompaction)
+	compaction, _, err := store.beginCompaction(ctx, owner, request, original.Context(), prepare, providerAttemptTestPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	nested, err := store.RecordNested(ctx, owner, IntentTool, map[string]any{"cell_id": "live-cell"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AbandonProviderAttempt(ctx, owner, compaction, ProviderAttemptFailure{
+		Class: ProviderAttemptPermanent, Reason: "provider rejected compaction",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.FailProviderCommand(ctx, owner, session.ID, commandID, compaction, "provider rejected compaction"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.FinishNested(ctx, owner, nested, map[string]any{"complete": true}); err != nil {
+		t.Fatal(err)
+	}
+	current, err := store.Read(ctx, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.Pending != nil || current.Stopped || !sameNativeContext(original.Context(), current.Context()) {
+		t.Fatalf("failed compaction changed the prior provider context: %+v", current)
+	}
+	state, err := store.ExecutionState(ctx, owner)
+	if err != nil || len(state.Cells) != 1 || state.Cells[0].ID != "live-cell" {
+		t.Fatalf("failed compaction lost a live cell: state=%+v err=%v", state, err)
 	}
 }
 
@@ -741,6 +787,88 @@ func TestCompactionRetryRetainsOriginalNativeContext(t *testing.T) {
 	current, err = store.Read(t.Context(), owner)
 	if err != nil || !sameNativeContext(current.Context(), original.Context()) {
 		t.Fatalf("compaction retry changed original context: err=%v", err)
+	}
+}
+
+func TestProviderRetryDistinguishesSourceAndNativeChanges(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		kind       PendingIntentKind
+		changeWire bool
+		wantRetry  bool
+	}{
+		{name: "sampling accepts origin change", kind: PendingIntentSampling, wantRetry: true},
+		{name: "sampling rejects native change", kind: PendingIntentSampling, changeWire: true},
+		{name: "compaction rejects origin change", kind: PendingIntentCompaction},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			store, session, owner := claimedSession(t)
+			compaction := tc.kind == PendingIntentCompaction
+			admitProviderCommand(t, store, owner, session.ID, "source-change-command", compaction)
+			before := snapshotFixtureRead(t, store, owner)
+			request, prepare := providerAttemptTestRequest(tc.kind)
+			policy := providerAttemptTestPolicy()
+			var id string
+			var wire []byte
+			var err error
+			if compaction {
+				id, wire, err = store.beginCompaction(ctx, owner, request, before.Context(), prepare, policy)
+			} else {
+				id, wire, err = store.begin(ctx, owner, request, prepare, &policy)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.AbandonProviderAttempt(ctx, owner, id, ProviderAttemptFailure{
+				Class: ProviderAttemptTransient, Reason: "provider unavailable", RetryAfter: time.Millisecond,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			setProviderRetryDueNow(t, store, id)
+			if err := store.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
+				current, err := lockOwner(ctx, tx, owner)
+				if err != nil {
+					return err
+				}
+				native, err := current.Context().Records()
+				if err != nil {
+					return err
+				}
+				replacement := &responses.Context{}
+				if err := replacement.AppendRecords(native); err != nil {
+					return err
+				}
+				if tc.changeWire {
+					if err := replacement.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "changed native context"}}, protocol.RecordOrigin{}); err != nil {
+						return err
+					}
+				}
+				current.executionSnapshots[replacement] = current.executionSnapshots[current.Context()]
+				current.Transcript = replacement
+				return store.updateConversation(ctx, tx, current)
+			}); err != nil {
+				t.Fatal(err)
+			}
+			after := snapshotFixtureRead(t, store, owner)
+			if after.nativeContextID() == before.nativeContextID() {
+				t.Fatal("fixture did not change the context root")
+			}
+			var replay []byte
+			if compaction {
+				// Supply the updated caller view to exercise the persisted source fence.
+				_, replay, err = store.BeginCompactionRetry(ctx, owner, id, after.Context(), policy)
+			} else {
+				_, replay, err = store.BeginSamplingRetry(ctx, owner, id, policy)
+			}
+			if tc.wantRetry {
+				if err != nil || !bytes.Equal(replay, wire) {
+					t.Fatalf("retry err=%v, frozen request preserved=%t", err, bytes.Equal(replay, wire))
+				}
+			} else if !errors.Is(err, protocol.ErrPrecondition) {
+				t.Fatalf("retry error = %v, want changed-context precondition", err)
+			}
+		})
 	}
 }
 

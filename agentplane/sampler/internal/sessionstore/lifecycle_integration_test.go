@@ -24,6 +24,9 @@ func TestProtocolEventsDoNotLoadRetainedConversationItems(t *testing.T) {
 
 func TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction(t *testing.T) {
 	store, session, owner := claimedSession(t)
+	if _, err := store.PrepareSamplingContext(t.Context(), owner, nil); err != nil {
+		t.Fatal(err)
+	}
 	for _, input := range []string{"first input", "second input"} {
 		if err := store.AppendInput(t.Context(), owner, input); err != nil {
 			t.Fatal(err)
@@ -52,8 +55,8 @@ func TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(before) != 2 {
-		t.Fatalf("transcript rows=%d, want 2", len(before))
+	if len(before) != 3 {
+		t.Fatalf("transcript rows=%d, want 3", len(before))
 	}
 	conversation, err := store.Read(t.Context(), owner)
 	if err != nil {
@@ -64,7 +67,7 @@ func TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.FinishCompaction(t.Context(), owner, intentID, map[string]any{"response": "complete"}, conversation.Context(), replacement); err != nil {
+	if err := store.FinishCompaction(t.Context(), owner, intentID, map[string]any{"response": "complete"}, conversation.Context(), replacement, nil); err != nil {
 		t.Fatal(err)
 	}
 	after, err := readTranscript()

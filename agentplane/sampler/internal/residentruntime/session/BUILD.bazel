@@ -32,7 +32,6 @@ go_library(
         "//agentplane/sampler/api:sampler_go_proto",
         "//agentplane/sampler/internal/actions",
         "//agentplane/sampler/internal/codemode",
-        "//agentplane/sampler/internal/environmentcontext",
         "//agentplane/sampler/internal/executionstate",
         "//agentplane/sampler/internal/executor",
         "//agentplane/sampler/internal/jsonwire",

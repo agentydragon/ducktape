@@ -70,6 +70,7 @@ py_library(
 
 py_test(
     name = "isolated_edit_test",
+    size = "medium",
     srcs = ["isolated_edit_test.py"],
     data = glob(["fixture/**"]) + _TOOLS,
     env = _TOOL_ENV,

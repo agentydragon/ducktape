@@ -96,6 +96,47 @@ func TestProviderFailureDiagnosticsKeepEvents(t *testing.T) {
 	if got := string(wirefixture.MustMarshalJSON(t, known.Evidence)); !strings.Contains(got, `"events"`) || !strings.Contains(got, `"provider_error":{"code":"fixture"}`) {
 		t.Fatalf("provider failure diagnostics lost streamed events: %s", got)
 	}
+	if got := err.Error(); got != "The Responses API reported an error (fixture)." {
+		t.Fatalf("error = %q", got)
+	}
+}
+
+func TestResponsesStreamFailureMessages(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		terminal string
+		want     string
+	}{
+		{
+			name:     "context window",
+			terminal: `{"type":"response.failed","response":{"status":"failed","error":{"code":"context_too_large","message":"Your input exceeds the context window of this model. Please adjust your input and try again."}}}`,
+			want:     "Your input exceeds the context window of this model. Please adjust your input and try again. (context_too_large)",
+		},
+		{
+			name:     "top-level error",
+			terminal: `{"type":"error","code":"invalid_request","message":"Invalid input."}`,
+			want:     "Invalid input. (invalid_request)",
+		},
+		{
+			name:     "incomplete",
+			terminal: `{"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}}`,
+			want:     "The Responses API returned an incomplete response (max_output_tokens).",
+		},
+		{
+			name:     "missing diagnostic",
+			terminal: `{"type":"response.failed","response":{"status":"failed"}}`,
+			want:     "The Responses API reported a failed response.",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			stream := "data: " + `{"type":"response.created","response":{"instructions":"fixture prompt"}}` + "\n\ndata: " + test.terminal + "\n\n"
+			_, err := readStream(t.Context(), strings.NewReader(stream), nil, protocol.ProviderHooks{})
+			var known *protocol.KnownFailureError
+			if !errors.As(err, &known) || err.Error() != test.want {
+				t.Fatalf("error = %v, want known failure %q", err, test.want)
+			}
+		})
+	}
 }
 
 func TestProviderRetryableHTTPStatusesCarryRetryAfter(t *testing.T) {
@@ -411,7 +452,7 @@ func TestResponsesRequestBuildsReasoningAndAttribution(t *testing.T) {
 	}
 }
 
-func TestValidateCompactionPrependsCurrentEnvironment(t *testing.T) {
+func TestValidateCompactionPreservesOpaqueProviderRecord(t *testing.T) {
 	original := &Context{}
 	if err := original.AppendRecords([]json.RawMessage{
 		[]byte(`{"type":"message","role":"user","content":"a sufficiently long original context"}`),
@@ -420,14 +461,14 @@ func TestValidateCompactionPrependsCurrentEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	records := []json.RawMessage{[]byte(`{"type":"compaction","encrypted_content":"opaque","provider_number":9007199254740993}`)}
-	replacement, err := ValidateCompaction(original, records, &Audit{}, nil, "Current environment")
+	replacement, err := ValidateCompaction(original, records, &Audit{}, nil, "fixture-compaction")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(replacement.items) != 2 || replacement.items[0].Type != ItemMessage || replacement.items[0].Role != "user" || replacement.items[1].Type != ItemCompaction {
+	if len(replacement.items) != 1 || replacement.items[0].Type != ItemCompaction {
 		t.Fatalf("compacted context has unexpected boundary items: %+v", replacement.items)
 	}
-	if got := string(replacement.items[1].Raw); got != string(records[0]) {
+	if got := string(replacement.items[0].Raw); got != string(records[0]) {
 		t.Fatalf("opaque compaction record changed: %s", got)
 	}
 }
@@ -439,7 +480,7 @@ func TestValidateCompactionRejectsUnusableSummary(t *testing.T) {
 		{[]byte(`{"type":"message","role":"assistant","content":"not a compaction"}`)},
 		{[]byte(`{"type":"compaction"}`)},
 	} {
-		if _, err := ValidateCompaction(original, records, nil, nil, "environment"); err == nil {
+		if _, err := ValidateCompaction(original, records, nil, nil, "fixture-compaction"); err == nil {
 			t.Fatalf("accepted unusable summary %s", records)
 		}
 	}
@@ -452,7 +493,7 @@ func TestValidateCompactionFailureKeepsTransientEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	audit := &Audit{Response: &Terminal{Raw: json.RawMessage(`{"status":"completed","provider_terminal_marker":"fixture"}`)}}
-	_, err := ValidateCompaction(original, nil, audit, []Event{event}, "environment")
+	_, err := ValidateCompaction(original, nil, audit, []Event{event}, "fixture-compaction")
 	var known *protocol.KnownFailureError
 	if !errors.As(err, &known) {
 		t.Fatalf("invalid compaction error=%v; want a known rejection", err)
@@ -559,10 +600,10 @@ func TestStandardResponsesSerializesTextAndAsyncNotifications(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := state.AppendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "result"}}); err != nil {
+	if err := state.AppendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "result"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := state.AppendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "later"}}); err != nil {
+	if err := state.AppendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "later"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	items := state.items
@@ -704,10 +745,10 @@ func TestContextTracksPendingCallsAndRepeatedOutputs(t *testing.T) {
 		t.Fatalf("unknown call error=%v, want protocol.ErrMissing", err)
 	}
 	parts := []protocol.ContentPart{{Type: "input_text", Text: "first"}}
-	if err := state.AppendToolResult(call, parts); err != nil {
+	if err := state.AppendToolResult(call, parts, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := state.AppendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "async"}}); err != nil {
+	if err := state.AppendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "async"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	if state.items[2].Type != ItemFunctionOutput || state.items[3].Type != ItemFunctionOutput {
@@ -729,7 +770,7 @@ func TestContextUsesCustomOutputForFreeformCalls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := state.AppendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "1"}}); err != nil {
+	if err := state.AppendToolResult(call, []protocol.ContentPart{{Type: "input_text", Text: "1"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	if got := state.items[1].Type; got != ItemCustomToolOutput {
@@ -773,13 +814,13 @@ func TestContextRejectsDuplicateOrOrphanToolRecords(t *testing.T) {
 
 func TestContextTerminalAndAdapterOnlyState(t *testing.T) {
 	state := &Context{}
-	if err := state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "question"}}); err != nil {
+	if err := state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: "question"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	if state.TurnComplete() {
 		t.Fatal("user message completed a turn")
 	}
-	if err := state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: "recovery notice"}}); err != nil {
+	if err := state.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: "recovery notice"}}, protocol.RecordOrigin{}); err != nil {
 		t.Fatal(err)
 	}
 	if state.items[1].Type != ItemMessage || state.items[1].Role != "developer" || state.TurnComplete() {

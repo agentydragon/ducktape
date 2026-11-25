@@ -199,7 +199,7 @@ with contextlib.suppress(Exception):
 
 ## Detection Strategy
 
-**MANDATORY first step**: From the repository root, run `python -m prompts.scans.scan_error_handling` and process ALL output.
+**MANDATORY first step**: From the repository root, run `bb run //prompts/scans:scan_error_handling_bin -- .` and process ALL output.
 
 - This scan is **required** - do not skip this step
 - You **must** read and handle the complete scan output (can pipe to temp file)
@@ -221,9 +221,6 @@ with contextlib.suppress(Exception):
 
 ```bash
 # Run from the repository root.
-# Run on entire codebase
-python -m prompts.scans.scan_error_handling . > error_handling_scan.json
-# Or run the Bazel binary:
 bb run //prompts/scans:scan_error_handling_bin -- . > error_handling_scan.json
 
 # Filter for high-priority issues (bare except)

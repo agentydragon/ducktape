@@ -41,12 +41,11 @@ private def withParent (fuel : Nat) (env : Env) (name : Name) (ms : List ClassMe
 private theorem eval_withParent (h : ParentAt s env base cell ctor proto)
     (hm : plainClassMembers ms = true) (n : Nat) :
     evalExpr n env (.derived name false (.var base) ms none) s = withParent n env name ms ctor proto s := by
-  have hf := hasStaticField_false_of_fieldInits_nil (plainClassMembers_fieldInits hm)
   cases n with
   | zero => rfl
   | succ n =>
     cases n with
-    | zero => simp only [evalExpr, hf]; rfl
+    | zero => simp only [evalExpr, staticInitializers_plain hm, evalStaticInitializers]; rfl
     | succ n =>
       obtain ⟨mutable, hb⟩ := h.binding
       obtain ⟨o, f, closed, fields, w, e, c, ho, hcode, hk, hp⟩ := h.object
@@ -55,7 +54,7 @@ private theorem eval_withParent (h : ParentAt s env base cell ctor proto)
       have hvar : evalExpr (n + 1) env (.var base) s = .ok (.obj ctor) s := by
         simpa only [evalExpr] using hr
       have hparent := classParents_ownPrototype (callFn (n + 1)) ho hcode hk hp
-      simp only [evalExpr, hf]
+      simp only [evalExpr, staticInitializers_plain hm, evalStaticInitializers]
       change ((evalExpr (n + 1) env (.var base)) >>= fun v =>
         classParents (callFn (n + 1)) v >>= fun parents =>
         finishDerived (evalMembers (n + 1)) env name false ms parents) s = _

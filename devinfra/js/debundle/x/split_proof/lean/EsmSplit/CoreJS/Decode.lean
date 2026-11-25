@@ -99,7 +99,8 @@ def logOp : String → D LogOp
 def primOf : String → D Prim
   | "log" => pure .log | "defineProperty" => pure .defineProperty | "create" => pure .create
   | "getPrototypeOf" => pure .getPrototypeOf | "setPrototypeOf" => pure .setPrototypeOf
-  | "iteratorSymbol" => pure .iteratorSymbol
+  | "iteratorSymbol" => pure (.wellKnownSymbol .iterator)
+  | "toStringTagSymbol" => pure (.wellKnownSymbol .toStringTag)
   | "freshSymbol" => pure .freshSymbol
   | p => fail s!"unknown primitive {p}"
 
@@ -230,7 +231,7 @@ def token (tag : String) (args : List Json) : D Unit := do
     let body ← popStmt
     let update ← popExpr
     let test ← popExpr
-    push (.stmt (.loop (← popStmt) test update body))
+    push (.stmt (.loop [← popStmt] test update body))
   | "brk", [] => push (.stmt .brk)
   | "cont", [] => push (.stmt .cont)
   | "throw", [] => do push (.stmt (.throw (← popExpr)))

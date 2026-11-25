@@ -286,13 +286,83 @@ the later subtraction uses the initialized side threshold and epsilon. The
 uses the existing deployment contract. The production selector spells the
 epsilon literal `1e-5`, as it appears in the pinned bundle.
 
-The [line and triangle replay](https://app.buildbuddy.io/invocation/54c5cb26-c7fa-437d-a36e-0c76a10e348f)
-adds three functions to that selection. Units 514 and 515 match the adjacent
-constructor and determinant-based intersection in upstream
-[line.ts](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/math/line.ts).
-The constructor alone also matches other pair constructors. Unit 540 matches
-the three signed-area comparisons in
-[triangle.ts](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/math/triangle.ts).
-The combined selection moves 330 of 1,787 editor units into 38 upstream modules.
-Lean certified normal completion at emission and from disk under the same
-browser contract, and Chromium compared the original and overlaid editor.
+## Recovering the geometry constructors
+
+The pinned source defines `line`, `lineSegment` and `rectangle` as two-element
+array constructors in three different modules. The
+[selector fragments](proposals/math_geometry) distinguish them by the adjacent
+intersection or distance calculation. The fourth module,
+[`math/curve.ts`](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/math/curve.ts),
+contains the four-point constructor, finite-difference gradient, solver and bounds.
+Moving the constructors to their upstream homes lets
+[`deconstructRectanguloidElement`](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/excalidraw/element/utils.ts)
+import them without adding any public editor name. The
+[combined placement](https://app.buildbuddy.io/invocation/d9a99730-6907-455f-b609-fc2c90beeb42)
+certified nine additional bindings.
+
+The same full-context solve resolves additional geometry bindings. Moving
+`pointOnLineSegment` with `distanceToLineSegment` in the
+[larger trial](https://app.buildbuddy.io/invocation/fb144d58-fb9a-4c64-b3e9-de19b4e6620c)
+failed: the linked initial state already exposes the region of
+`pointOnLineSegment` (517). Leaving the segment predicates and their private
+consumers in the entry then exposed the same proof condition for
+[`bezierEquation` (525)](https://app.buildbuddy.io/invocation/78f1f928-788b-43b5-9a68-f2bf165df18d).
+These are proof refusals, not observed behavioral differences.
+
+The [observer-chain proof](https://github.com/agentydragon/ducktape/pull/19889)
+accounts for hoisted observers in dependency order. For example, the
+`curveIntersectLineSegment` closure can reach `rectangleIntersectLineSegment`,
+which can reach `lineSegmentIntersectionPoints`, which captures
+`pointOnLineSegment`. The [linked probe](https://app.buildbuddy.io/invocation/173feb9b-e2dc-4d81-b7e6-b7839b698081)
+checked that the three observers could be isolated, starting with the outermost.
+The [combined 344-binding replay](https://app.buildbuddy.io/invocation/460d6629-1056-48f1-aefb-19f483b54515)
+then certified all eight previously omitted segment, rectangle and Bézier helpers
+together. The proof does not require an additional host assumption or a different
+module order.
+
+## Transform handles and the resize hit tests
+
+The [353-binding replay](https://app.buildbuddy.io/invocation/b8bd7863-1139-4bf2-ac9f-eb005e5c2f18)
+adds nine declarations from upstream [transformHandles.ts](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/excalidraw/element/transformHandles.ts):
+handle sizes, the rotation gap, three omission masks, three handle builders,
+and `shouldShowBoundingBox`. Chromium constructs handles for a desktop
+rectangle and checks its northwest corner and east side through the editor's
+public hit-test functions.
+
+The resize hit tests themselves still need private entry bindings. Including
+`getSelectionBorders` and `canResizeFromSides` leaves `isAndroid` in entry.
+[Separate hit-test placements](https://app.buildbuddy.io/invocation/0c429b2e-0fc7-4121-8826-a7e0cdfd1651).
+A stable user-agent string alone does not justify moving the regex test that
+initializes this flag. In a [Chromium control](https://app.buildbuddy.io/invocation/61053222-ff13-406a-9b44-61c9278006c5),
+exchanging two native matches changes the realm's legacy match captures even
+when the initializer returns the same boolean and leaves the same `lastIndex`.
+
+A separate trial assigned `deconstructDiamondElement` to `element/utils` and
+`getDiamondPoints` to its upstream `element/bounds` module. Both selectors
+resolved. Lean refused before emission because the linked initial state already
+exposes the region of `getDiamondPoints` (unit 1252).
+[Diamond placement refusal](https://app.buildbuddy.io/invocation/6636793f-2c68-4853-ae8b-f3175fcb3d8a).
+
+## Computed font keys and the default sidebar
+
+`FONT_FAMILY_FALLBACKS` constructs a fresh object using two previously
+initialized font names as property keys. `DEFAULT_SIDEBAR` uses an earlier
+string binding as its `defaultTab` value. Both belong to upstream
+[constants.ts](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/excalidraw/constants.ts).
+The [record creation proof](https://github.com/agentydragon/ducktape/pull/19900)
+checks the actual linked prefixes before specializing either read. The
+[355-binding combined replay](https://app.buildbuddy.io/invocation/50fd3de4-ed08-45b7-bab6-d6c47ba006b8)
+uses the same host contract and upstream module owners as the transform-handle
+placement. The selector requests both declarations by their upstream names.
+
+The [364-binding editor replay](https://app.buildbuddy.io/invocation/2e0b2820-9297-4755-81c6-d6fc99928ec2)
+adds the six [polygon and three ellipse helpers](proposals/polygon_ellipse/README.md)
+to their upstream owners. Chromium checks that a polygon ring closes with the
+same point object, tests inside and boundary points, and distinguishes secant,
+tangent and disjoint lines for an ellipse. These calls exercise the recovered
+modules after the independent disk certificate.
+
+The triangle selector matches the three signed-area comparisons in editor unit
+540 to [`triangleIncludesPoint`](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/math/triangle.ts).
+Chromium calls the recovered predicate on interior and exterior points and
+checks crossing and parallel lines through the existing line module exports.

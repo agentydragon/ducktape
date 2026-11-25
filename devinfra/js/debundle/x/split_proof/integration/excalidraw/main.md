@@ -1,4 +1,28 @@
-# First main.js placement: a retained metadata reader
+# Certified main.js renderer split
+
+Run the bounded manual target:
+
+```sh
+bbr test //devinfra/js/debundle/x/split_proof/integration/excalidraw:excalidraw_certified_main_browser_smoke
+```
+
+The [named subset](../../../../excalidraw/main_smoke_subset.json) selects only
+`strokeEllipseWithRotation` in `packages/excalidraw/renderer/interactivescene`.
+Rust resolves the full canonical main spec; the test checks the selected and canonical owner for ordinal 1486 and retains the other 1,627 units in the entry.
+[SHA-256 pins](main_static_sha256.json) cover original `main.js` and all eight static providers, including the unchanged editor.
+The source and copied providers must match the pins, and the browser must receive the expected bytes.
+
+Lean certifies the original deployment at the live browser origin, with the `browser-page` profile,
+`native-browser-record@1` and the fixed `empty@1` import map. It then reparses the published files and repeats the certificate.
+Both verdicts must agree at `normal-completion` with a single structural move.
+Chromium loads the original and the split at the same URLs in fresh contexts. Both mount the editor, draw a rectangle,
+enable Undo, retain the empty main namespace, and show the Mermaid dialog with the expected unmapped import rejection.
+The split's renderer export must issue `beginPath`, `ellipse` with the supplied center, radii and angle, and `stroke` in order.
+The [durable main and editor smoke run](https://app.buildbuddy.io/invocation/aac13792-9965-4c30-b606-7420f07cf32d) exercised both cases.
+
+A next named trial is `packages/excalidraw/history::HistoryChangedEvent`. It resolves to unit 1196 in this source; it has not been certified by this fixture.
+
+## Earlier proof boundaries
 
 The [pinned main trial](https://app.buildbuddy.io/invocation/8c4a747d-bf15-47bb-a118-23752040cdd1)
 selected `strokeEllipseWithRotation` in its canonical owner
@@ -77,3 +101,11 @@ A retained function reads `import.meta.env.MODE` before an exported `var pivot =
 Lean checks both executions. It also proves `no_common_probe`: the metadata getter captures the cell of `pivot`, so the frame check excluding that region fails in the getter world and passes in the data world. Both hosts allocate at the same addresses. Transporting one probe snapshot copies its heap and cells, giving the same answer in both worlds. Consequently the experimental linker cannot supply the existing structural certificate for arbitrary metadata.
 
 The next step is to parameterize the **ready heap and the frame proof**, not just the receiver address. For example, derive a bound on the binding cells that host callbacks can reach from each protected record (including through the module namespace); prove it contains every reachable edge for every admitted world, and reject any pivot it intersects. Capture the same record in both layouts and preserve first-access timing if provisioning has effects. The [direct resolver retry](https://app.buildbuddy.io/invocation/3427ec99-a05e-48b0-a358-7ddac381a4a9) used the pinned digest above and the actual providers with `--resolved-placement main`. The production decoder still rejects unit 23 before publication.
+
+## Requests from an unchanged provider
+
+In the [original editor provider](https://app.buildbuddy.io/invocation/4aefef28-161c-4bb7-b15b-a182849456e9), unit 354 conditionally imports either `./file-open-002ab408-75HCAGST.js` or `./file-open-7c801643-M7Y3IQ2R.js`. Both resolve from the URL of `chunk-PN7KOLDJ.js`. Another lazy import in this provider re-enters its linked exports through the image module.
+
+The checker collects these dependency graphs from the actual provider files and assigns their live import cells to the originating provider units. With native metadata enabled, each referring module gets its own metadata object. The [provider fixture](../../translation/linked/provider_location_test.mjs) distinguishes same-named targets in two directories, exercises a lazy cycle, and rejects moving a binding captured by a provider hoist through a lazy dependency.
+
+The [full main replay](https://app.buildbuddy.io/invocation/77fdabaf-e337-45e6-aab3-39a36b7149ae) selected renderer unit 1486 at the original main digest, with generator hoists, native entry metadata and an empty browser import map. Both graphs decoded and passed the scope comparison. The structural schedule checker did not return within the 900-second diagnostic budget. This establishes neither a failed move nor a certified main output.

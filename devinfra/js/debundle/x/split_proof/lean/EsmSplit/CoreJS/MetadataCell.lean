@@ -77,7 +77,7 @@ theorem missing_linked_root (W : World) :
   cbv
 
 private def addr (i : Nat) : Addr := ⟨1, i⟩
-private def envAt (cell : Nat) : Env := ⟨[(slot, addr cell)], .undef⟩
+private def envAt (cell : Nat) : Env := ⟨[(slot, addr cell)], .undef, none⟩
 
 /-- Two module records, two metadata roots. The first environment getter reads
 a captured cell; the second enters unsupported code only when called. -/
@@ -89,7 +89,7 @@ private def fixture : State World.probe :=
   let refused := Func.opaque "env" .method false 0 1 0 [] (some "outside model")
   { initialState World.probe 1 with
     heap := #[builtins, #[obj [("env", getter 2)], obj [("env", getter 3)],
-      { proto := none, props := [], code := some (.closure body ⟨[("current", addr 2)], .undef⟩ []) },
+      { proto := none, props := [], code := some (.closure body ⟨[("current", addr 2)], .undef, none⟩ []) },
       { proto := none, props := [], code := some (.closure refused (envAt 1) []) },
       obj [("MODE", data (.obj (addr 6)))], obj [("MODE", data (.obj (addr 7)))], obj [], obj []]]
     cells := #[#[], #[⟨some (.obj (addr 0)), false⟩, ⟨some (.obj (addr 1)), false⟩, ⟨some (.obj (addr 4)), true⟩]] }

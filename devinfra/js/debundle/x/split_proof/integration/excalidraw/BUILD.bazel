@@ -112,6 +112,7 @@ _EXCALIDRAW_SCROLL_ENV = {
 js_test(
     name = "excalidraw_scroll_certificate",
     size = "medium",
+    timeout = "long",
     data = _EXCALIDRAW_SCROLL_DATA,
     entry_point = "scroll.mjs",
     env = _EXCALIDRAW_SCROLL_ENV,
@@ -172,6 +173,8 @@ py_test(
 py_test(
     name = "excalidraw_certified_editor_browser_smoke",
     size = "medium",
+    # Both proofs and Chromium share the exact emitted tree and live deployment origin.
+    timeout = "long",
     srcs = [_EXCALIDRAW_BROWSER_PY],
     args = [
         "-k",
@@ -189,6 +192,38 @@ py_test(
         SELECTED_PLACEMENT = "$(rlocationpath " + _SELECTED_PLACEMENT + ")",
     ),
     main = _EXCALIDRAW_BROWSER_PY,
+    deps = _EXCALIDRAW_BROWSER_DEPS,
+)
+
+_SELECTED_MAIN_PLACEMENT = "//devinfra/js/debundle/excalidraw:selected_main_placement"
+
+_CANONICAL_MAIN_PLACEMENT = "//devinfra/js/debundle/excalidraw:canonical_main_placement"
+
+py_test(
+    name = "excalidraw_certified_main_browser_smoke",
+    size = "large",
+    timeout = "long",
+    # Both proofs and Chromium share the exact emitted tree and live deployment origin.
+    srcs = [_EXCALIDRAW_BROWSER_PY],
+    args = [
+        "-k",
+        "test_certified_main_split",
+    ],
+    data = _EXCALIDRAW_BROWSER_DATA + [
+        "main_static_sha256.json",
+        _CANONICAL_MAIN_PLACEMENT,
+        _SELECTED_MAIN_PLACEMENT,
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+    ],
+    env = dict(
+        _EXCALIDRAW_BROWSER_ENV,
+        CANONICAL_PLACEMENT = "$(rlocationpath " + _CANONICAL_MAIN_PLACEMENT + ")",
+        LOWERSPLIT = "$(rlocationpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+        MAIN_STATIC_DIGESTS = "$(rlocationpath main_static_sha256.json)",
+        SELECTED_PLACEMENT = "$(rlocationpath " + _SELECTED_MAIN_PLACEMENT + ")",
+    ),
+    main = _EXCALIDRAW_BROWSER_PY,
+    tags = ["manual"],
     deps = _EXCALIDRAW_BROWSER_DEPS,
 )
 

@@ -141,8 +141,8 @@ pub fn resolve_placement(
             .context("missing chunk source")?
             .as_bytes(),
     );
-    let prepared = prepare_js_chunks(&chunk_ids, &BTreeSet::new(), &BTreeMap::new(), loaded)?;
-    let mut resolved = resolve_ownership(prepared.program.artifact(), &spec, diagnostics)?;
+    let source = prepare_js_chunks(&chunk_ids, &BTreeSet::new(), &BTreeMap::new(), loaded)?;
+    let mut resolved = resolve_ownership(source.artifact(), &spec, diagnostics)?;
     let canonical = resolved
         .remove(chunk)
         .context("chunk lacks canonical ownership")?;

@@ -22,19 +22,23 @@ func (s *Store) PrepareSamplingContext(ctx context.Context, owner Owner, state *
 		if err != nil {
 			return err
 		}
-		if err := s.applySamplingContext(conversation, session, state); err != nil {
+		if err := s.applySamplingContext(ctx, tx, conversation, session, state); err != nil {
 			return err
 		}
-		return updateConversation(ctx, tx, conversation)
+		return s.updateConversation(ctx, tx, conversation)
 	})
 	return conversation, err
 }
 
-func (s *Store) applySamplingContext(conversation *Conversation, session *Session, state *ExecutionState) error {
-	if err := s.recordEnvironmentContext(conversation, session); err != nil {
+func (s *Store) applySamplingContext(ctx context.Context, tx *sql.Tx, conversation *Conversation, session *Session, state *ExecutionState) error {
+	objects := newContentDB(ctx, tx)
+	if err := s.recordEnvironmentContext(objects, conversation, session, false); err != nil {
 		return err
 	}
-	return conversation.appendExecutionState(state.protocolState())
+	if err := s.appendExecutionState(objects, conversation, state.protocolState()); err != nil {
+		return err
+	}
+	return objects.Save()
 }
 
 func (s *Store) GetSessionForConversation(ctx context.Context, owner Owner) (*Session, error) {

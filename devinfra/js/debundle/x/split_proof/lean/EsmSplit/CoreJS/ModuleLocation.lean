@@ -68,6 +68,13 @@ source, ranges and ordinals as the full location check. -/
 def entryUses (source : Json) (sourceEntry sourceText : String) (nativeRecord : Bool := false) : Except String (Array (Nat × Use)) :=
   Prod.snd <$> checkedEntryUses source sourceEntry sourceText nativeRecord
 
+/-- Copied providers keep their own paths, bytes and module records. Check the
+provider AST against that resource and resolve its sites relative to its path. -/
+def providerUses (file : Json) (name : String) (resource : Resource) (nativeRecord : Bool) :
+    Except String (Array (Nat × Use)) := do
+  unless !resource.effectiveUrl.isEmpty do throw "missing effective provider URL"
+  entryUses file name resource.source nativeRecord
+
 /-- Check every URL-sensitive source ordinal against the placement, equal effective entry URLs,
 and the same effective target URL and source for every literal relative dynamic import. The plan
 must use fresh output paths. Import maps, custom loaders and context-dependent responses require

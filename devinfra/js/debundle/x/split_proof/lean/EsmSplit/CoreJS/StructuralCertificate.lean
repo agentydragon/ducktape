@@ -75,7 +75,7 @@ def StructuralASTEquivalent (profile : HostProfile) (offered used : List StableI
 
 /-- Compute the certificate directly with the executable, proof-carrying
 checks. The proof relates the same concrete ASTs later sent to the printer. -/
-private def certifyWith (pivots : List Nat) (profile : HostProfile) (offered : List StableIntrinsic) (source providers files : Lean.Json)
+private def certifyWith (recordPivots : Std.HashSet Nat) (pivots : List Nat) (profile : HostProfile) (offered : List StableIntrinsic) (source providers files : Lean.Json)
     (plan : EsmSplit.Plan)
     (deployment : Option LinkedDeployment.Input) :
     Except String ((used : List StableIntrinsic) ×
@@ -89,7 +89,7 @@ private def certifyWith (pivots : List Nat) (profile : HostProfile) (offered : L
       match u.2 with
       | .decl _ _ e => (d.evalValue? e).isSome
       | _ => false
-    let (method, ⟨certified⟩) ← checkStructuralSchedule used original candidate
+    let (method, ⟨certified⟩) ← checkStructuralSchedule used original candidate recordPivots
     return ⟨used, method, ⟨(fun _ h => (List.mem_filter.mp h).1), pivots, original, candidate, decoded, certified⟩⟩
 
 def certifyStructuralASTs (profile : HostProfile) (offered : List StableIntrinsic) (source providers files : Lean.Json)
@@ -97,12 +97,12 @@ def certifyStructuralASTs (profile : HostProfile) (offered : List StableIntrinsi
     Except String ((used : List StableIntrinsic) ×
       StructuralProof × PLift (StructuralASTEquivalent profile offered used source providers files plan deployment)) := do
   let pivots ← pivotHints source plan
-  let check := fun ids => certifyWith ids profile offered source providers files plan deployment
+  let set := Std.HashSet.ofList pivots
+  let check := fun ids => certifyWith set ids profile offered source providers files plan deployment
   match check pivots with
   | .ok result => return result
   | .error why =>
     let extras ← projectionHints source pivots
-    let set := Std.HashSet.ofList pivots
     if extras.all set.contains then throw why
     check (extras ++ pivots)
 

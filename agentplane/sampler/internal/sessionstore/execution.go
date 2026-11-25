@@ -7,6 +7,7 @@ import (
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
+	"github.com/agentydragon/ducktape/agentplane/sampler/internal/content"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/environmentcontext"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionconfig"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
@@ -48,7 +49,7 @@ func (s *Store) BindInitialExecutorSession(ctx context.Context, owner Owner, san
 		session.Configuration = wire
 		conversation.ExecutorSession = &sessionID
 		conversation.ExecutorShell = shell
-		if err := updateConversation(ctx, tx, conversation); err != nil {
+		if err := s.updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}
 		// Advance History's metadata snapshot together with the new incarnation fence.
@@ -79,37 +80,48 @@ func (s *Store) SetExecutorSession(ctx context.Context, owner Owner, sessionID s
 		}
 		conversation.ExecutorSession = &sessionID
 		conversation.ExecutorShell = shell
-		return updateConversation(ctx, tx, conversation)
+		return s.updateConversation(ctx, tx, conversation)
 	})
 }
 
-func (s *Store) environmentContext(conversation *Conversation, session *Session) (environmentcontext.Context, error) {
-	return s.CurrentEnvironmentContext(session.Configuration, conversation.ExecutorShell)
-}
-
-// CurrentEnvironmentContext renders the model-visible environment baseline for the stored
-// session launch configuration and executor shell.
-func (s *Store) CurrentEnvironmentContext(configuration []byte, shell *string) (environmentcontext.Context, error) {
+// recordEnvironmentContext advances the environment baseline. A replacement
+// receives the full current environment while the transcript receives any diff.
+func (s *Store) recordEnvironmentContext(objects content.ContentWriter, conversation *Conversation, session *Session, refreshCompacted bool) error {
 	request := &sessionconfig.Configuration{}
-	if err := proto.Unmarshal(configuration, request); err != nil {
-		return environmentcontext.Context{}, err
-	}
-	return environmentcontext.Current(request.GetSpec().GetCwd(), shell, s.now()), nil
-}
-
-// recordEnvironmentContext appends the update from the conversation's baseline to the Session's
-// current environment, then advances the baseline. The caller persists the conversation.
-func (s *Store) recordEnvironmentContext(conversation *Conversation, session *Session) error {
-	current, err := s.environmentContext(conversation, session)
-	if err != nil {
+	if err := proto.Unmarshal(session.Configuration, request); err != nil {
 		return err
 	}
-	if update := environmentcontext.Update(conversation.EnvironmentContext, current); update != "" {
-		if err := conversation.apply(func(state protocol.Context) error {
-			return state.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: update}})
-		}); err != nil {
-			return err
+	current := environmentcontext.Current(request.GetSpec().GetCwd(), conversation.ExecutorShell, s.now())
+	var sourceID string
+	if err := conversation.apply(func(state protocol.Context) error {
+		afterCompaction := refreshCompacted && state == conversation.ActiveContext
+		previous := conversation.EnvironmentContext
+		if afterCompaction {
+			previous = nil
 		}
+		update := environmentcontext.Update(previous, current)
+		if update == "" {
+			return nil
+		}
+		if s.contextSourceWrites && sourceID == "" {
+			var err error
+			sourceID, err = putRecordObject(objects, EnvironmentUpdateObject{
+				SessionID: session.ID, Before: conversation.EnvironmentContext, After: current,
+			})
+			if err != nil {
+				return err
+			}
+		}
+		var origin protocol.RecordOrigin
+		if sourceID != "" {
+			origin = protocol.RecordOrigin{Kind: protocol.RecordOriginEnvironment, ObjectID: sourceID}
+			if previous != nil {
+				origin.Projection = protocol.RecordProjectionEnvironmentDiff
+			}
+		}
+		return state.AddEnvironment([]protocol.ContentPart{{Type: "input_text", Text: update}}, afterCompaction, origin)
+	}); err != nil {
+		return err
 	}
 	conversation.EnvironmentContext = &current
 	return nil
@@ -244,7 +256,7 @@ func (s *Store) settleSetup(ctx context.Context, tx *sql.Tx, conversation *Conve
 		if err := s.blockQueue(ctx, tx, session, reason); err != nil {
 			return err
 		}
-		if err := updateConversation(ctx, tx, conversation); err != nil {
+		if err := s.updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}
 	}

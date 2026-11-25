@@ -79,8 +79,8 @@ pub fn analyze_from_projection(
     let analysis_providers = spec.source_sites.source_sha256.keys().cloned().collect();
     let source = prepare_js_chunks(&materialized, &analysis_providers, &vendor, artifact)?;
     let vendor_plan = build_vendor_resolution_plan(
-        source.program.artifact(),
-        source.program.indexes(),
+        source.artifact(),
+        source.indexes(),
         &vendor,
         &VendorPlanOptions {
             package_roots: &package_roots,
@@ -93,7 +93,7 @@ pub fn analyze_from_projection(
     )?;
     let provenance = capture.finish_inputs()?;
     let bytes = super::analyze_program(
-        source.program.into_artifact(),
+        source.into_artifact(),
         AnalyzeProgramInputs {
             diagnostics,
             spec: &spec,

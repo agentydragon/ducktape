@@ -64,6 +64,22 @@ CoreJS allocates a fresh object for each regular-expression literal. It preserve
 
 The browser-page profile also allows deferred construction of selected ambient constructors (`Date`, `Error`, `RegExp`, `Set`, and `URL`). The linked model retains the constructor name and arguments. If initialization reaches that lookup, it reports an unknown result before evaluating the arguments, including inside a `try` block. Reading `Date.now` can certify under a stable-reference premise. Calling it during initialization requires a model of the clock. The caller is responsible for choosing a profile that holds in the deployment.
 
+Linked replay models `super.member` and `super[key]` reads, direct calls, and
+optional calls. It starts at the current prototype of the method's home object
+and passes the active receiver to getters and calls. An arrow retains both the
+home object and receiver of its enclosing scope. Async bodies can retain these
+references, but replay stops if it reaches an async invocation. Super-property
+writes and deletion remain outside the executable model.
+
+An async definition can fail during lowering if its body needs context the
+checker cannot retain. The `linked_input` verdict identifies the original unit,
+callable number within the unit, and failed check. A `probe_unknown` verdict
+that reports an async invocation means the linked initializer reached the call.
+
+Class static blocks run in their own scope with the constructor as the
+receiver. The checker evaluates class member keys before it initializes
+fixed-name static fields and runs blocks in their source order.
+
 The command prints one JSON verdict. A successful split reports `status: "certified"` after Lean certifies the output module ASTs and the printer writes them to the requested directory. The default `normal-completion` request means that, for each modeled world and successful final state, the bundle reaches that state exactly when the split does. It does not say that either program completes normally; in the closed-declaration case, both may throw. The linked-program proof additionally establishes that both programs initialize normally. The checker reports the strongest available guarantee, so a default request may report `all-outcomes` for a supported order-preserving split. Pass `--require all-outcomes` to insist on that stronger guarantee. A rejected request exits nonzero with `status: "rejected"`, a null guarantee and a reason.
 
 To move an initializer such as `Math.PI / 12`, pass
@@ -111,6 +127,13 @@ operator tree and uses CoreJS Number operations; the emitted code still reads
 the binding. Unknown writes, object coercions and uninitialized cells do not
 provide Number facts.
 
+The same prefix check can certify creation of a fresh record such as
+`{[fontName]: 100, defaultTab: libraryTab}` when the two cells hold
+the same respective strings in both layouts. Lean checks key and value
+evaluation and every data property definition on the new object. It keeps
+the original allocation and field order; an object key requiring coercion
+does not satisfy the string-read proof.
+
 For a move such as `const chosen = table.value`, the structural checker can
 prove the read from a freshly allocated record with distinct own numeric
 data properties. It checks the receiver's actual linked cell and descriptor
@@ -122,7 +145,9 @@ The experimental `--structural` checker selects a proof from the linked schedule
 
 A regex literal can move as a fresh allocation, including as the value of a named data property. Each evaluation creates a distinct object with its own `lastIndex` and the realm's `%RegExp.prototype%`. The intrinsic constructor's `prototype` is a non-writable, non-configurable data property; literal evaluation does not consult the global `RegExp` binding or invoke getters on the prototype. This rule needs no browser-page premise. Calling `new RegExp(...)`, reading `/a/.flags`, and running a matcher during initialization remain outside the allocation rule.
 
-Both proofs establish equality of normally terminating CoreJS states. Retained statements use the same opaque-code world on both sides, with access through their checked live cells and object handles. The verdict records the assumptions for interpreting the JavaScript artifacts.
+Both proofs establish equality of normally terminating CoreJS states. Retained opaque statements use the same world on both sides, with access through their checked live cells and object handles. For a retained generator declaration, the structural checker uses the linked generator model at instantiation, including its distinct prototype and captured cells. This does not model generator execution or resumption. The verdict records the assumptions for interpreting the JavaScript artifacts.
+
+[Checking two static splits](docs/joint_static.md) describes the scoped joint checker and the additional deployment premises needed for a main/editor split.
 
 A static browser deployment with retained `import.meta.url` and literal relative `import()` can supply `--deployment-origin ORIGIN`. The source entry keeps its effective URL, the split overlays its planned file paths, and the other assets keep their bytes and URLs. The checker parses the actual lazy-module dependency closure, accounts for its imports from linked modules, and checks the live cells those imports resolve to. The host uses native module caching and promise scheduling. Source positions and fetch timing are outside the modeled observations. Pass the same options to `--check-output` to repeat the proof after reparsing the emitted JavaScript.
 
@@ -130,13 +155,13 @@ With the `browser-page` host profile, `--deployment-preset native-browser-record
 
 [Lean's initializer](lean/EsmSplit/CoreJS/NativeRecord.lean) allocates that receiver and its nonconstructible resolver in a private model dependency before original module bodies run. The entry captures its immutable binding. The resolver runs in the common opaque world with its actual receiver and arguments. The record's properties can subsequently change; getter calls and objects reachable from them remain subject to the ordinary structural frame checks. All metadata sites, including deferred ones, must stay in the checked entry. The model dependency is never emitted. Pass the same preset to `--check-output`; without it the original deployment checks still apply.
 
-The verdict's `scope` identifies the proof about the original annotated ESTree and the [generated module ASTs](lean/EsmSplit/ESTreeEmit.lean):
+The verdict's `scope` identifies which theorem the run established. Each theorem is about the CoreJS programs that Lean lowers from the original annotated ESTree and the [generated module ASTs](lean/EsmSplit/ESTreeEmit.lean):
 
-- [Closed declarations](lean/EsmSplit/CoreJS/Declaration/Artifacts.lean): `prepare?` checks the plan, footprints and order. Its `certify` function decodes the output modules, checks the entry's public surface, and proves the reported level for those modules. Kept order gives equal results and states for every world and fuel, including throws. Checked moves give the same successful states in both directions.
-- [Structural order and moves](lean/EsmSplit/CoreJS/StructuralCertificate.lean): `certifyStructuralASTs` checks both linked schedules. Its result proves that each entry exports the same live cells and that either graph reaches a successful final state exactly when the other does, under the opaque-world and deployment interpretation above.
-- [Linked execution](lean/EsmSplit/CoreJS/LinkedCertificate/Proof.lean): `certifyASTs` checks that the supplied ASTs decode to the programs in the execution proof. Both initialize normally in the same state for every world satisfying the reported host premises and export the same live cells.
+- [Closed declarations](lean/EsmSplit/CoreJS/Declaration/Artifacts.lean): `prepare?` checks the plan, footprints and order. Its `certify` function is a proven checker that runs as compiled code. It decodes the output modules, checks the entry's public surface, and proves the reported level for those modules. Kept order gives equal results and states for every world and fuel, including throws. Checked moves give the same successful states in both directions.
+- [Structural order and moves](lean/EsmSplit/CoreJS/StructuralCertificate.lean): `certifyStructuralASTs` is a proven checker that runs as compiled code. It checks both linked schedules. Its result proves that each entry exports the same live cells and that either graph reaches a successful final state exactly when the other does, under the opaque-world and deployment interpretation above.
+- [Linked execution](lean/EsmSplit/CoreJS/LinkedCertificate/Proof.lean): each run writes a Lean proof about the two lowered programs, and the kernel checks it in a separate Lean process. `certifyASTs` then runs as compiled code and checks that the supplied ASTs lower to those programs. Both initialize normally in the same state for every world satisfying the reported host premises and export the same live cells.
 
-[Publication](lean/EsmSplit/SplitFiles.lean) passes the same AST map to the chosen check and then to the printer. The theorem ends at the ASTs: interpreting it as a statement about JavaScript files relies on faithful parsing and scope annotation, printing, file IO, and the CoreJS model of the supported syntax. `--check-output` [reparses an existing directory](translation/module_io.mjs), compares the module set, syntax and callable spelling, requires copied providers to match the source text, and checks the certificate against the expected ASTs. It can accept regrouped declarations whose ordered units still match.
+[Publication](lean/EsmSplit/SplitFiles.lean) passes the same AST map to the chosen check and then to the printer. The theorems start and end at CoreJS. Interpreting a verdict as a statement about JavaScript files relies on faithful parsing and scope annotation, the Lean lowering from annotated ESTree to CoreJS, printing, file IO, the CoreJS model of the supported syntax, and Lean's compiler for the checks that run as compiled code. The lowering uses `partial` definitions, which the kernel cannot unfold, so running it establishes its result. `--check-output` [reparses an existing directory](translation/module_io.mjs), compares the module set, syntax and callable spelling, requires copied providers to match the source text, and checks the certificate against the expected ASTs. It can accept regrouped declarations whose ordered units still match. The [convergence plan](PLAN.md#convergence) removes the printer from this list.
 
 For a module that calls functions or imports named bindings from relative JavaScript files, use
 the normal three-positional command with the original source path. The splitter parses
@@ -163,11 +188,15 @@ Ordinary top-level function declarations initialize when the modules link. A cal
 
 Named parameters can have defaults such as `(x = 1, y = x) => y`. Missing and `undefined` arguments use the initializer. A `null` argument binds directly. Parameters initialize left to right and a read of the current or a later parameter before initialization throws, including inside `typeof`. Body lexical declarations are in a scope inside the parameter environment. The linked fragment refuses a body `var` whose name repeats a parameter or occurs free in an initializer. The function's `length` counts only parameters before the first default. CoreJS executes defaults on identifier parameters. It can retain other parameter patterns for deferred calls. Implicit `arguments` remains outside the linked fragment.
 
-Linked ordinary functions and arrows accept nonempty flat object patterns in parameters and local `var`, `let`, and `const` declarations. For example, `function read({x, label: name})` takes one argument and reads `x` before `label`. A local declaration evaluates its initializer once. Both forms use CoreJS property lookup, including the receiver for a getter, and stop at the first abrupt read. Keys may be identifiers or string literals. Module-level patterns, nested targets, defaults, rest, and computed keys are outside this lowering. An empty pattern still checks its argument for null or undefined and is also excluded.
+Module-level `var`, `let`, and `const` declarations can use object binding patterns, including nested object patterns, computed keys, and defaults. The module linker creates a cell for each bound name. The declaration evaluates its initializer once, then reads properties and initializes bindings in source order. A getter keeps its receiver, and a default runs only for `undefined`. It can read an earlier binding, while a read of a later lexical binding throws in the temporal dead zone. An empty pattern still checks that the source is neither `null` nor `undefined`. Object rest remains unsupported.
+
+Local declarations use the same object binding rules. Linked ordinary functions and arrows also accept nonempty flat object patterns with identifier or string keys in parameters. For example, `function read({x, label: name})` takes one argument and reads `x` before `label`.
+
+Array binding patterns and synchronous `for…of` loops take the source's iterator and cache its `next` method. Array patterns support elisions, defaults, nested bindings and a trailing rest binding. An elision advances the iterator without reading the iterator result's `value` property. A lexical loop head creates fresh cells for each iteration. An assignment head can write an identifier or a property. The iterator's `return` method runs if binding or the body exits abruptly, and when a finite array pattern leaves the iterator open. The native array path checks the iterator method and the array iterator prototype. String iteration, host iterator methods, and `for await…of` remain unsupported.
 
 In linked programs, conditional expressions and `if` statements inside functions evaluate the test once and run the selected branch with the state left by the test. Both branches must lower to CoreJS, including code that initialization never executes. Branch blocks have their own lexical scope, and `var` declarations in either branch belong to the enclosing function. A false test with no `else` continues to the following statement.
 
-Linked functions can also use `switch` cases ending in `return`, `throw`, or an unlabeled `break` before the next clause. The discriminant is evaluated once. Case tests run in source order and match by strict equality. A trailing `default` runs when no test matches. The checker refuses fallthrough, a nontrailing default, nested breaks, and lexical declarations shared by the clauses. Independently braced case bodies keep their own lexical scopes.
+Linked functions can use `switch` with a trailing `default` and case bodies that exit before the next clause. The discriminant is evaluated once, and case tests run in source order and match by strict equality. Empty labels share the following body. A break exits its nearest loop or switch. A continue inside a switch reaches the enclosing loop. Braced case bodies can declare their own lexical bindings.
 
 Linked sequence expressions evaluate their operands from left to right, stop at the first abrupt completion, and return the final operand's value. A sequence used as a call's callee supplies `undefined` as `this`, including when its last operand reads a member.
 
@@ -197,8 +226,11 @@ trigger defaults from left to right, before the constructor body or its direct `
 Later parameters stay in the temporal dead zone, and the first default determines the constructor's
 `length`. Defaults follow the same receiver restrictions as the prefix. A body binding that would
 shadow an outer name used in a default is rejected.
-The prefix admits simple `let` and `const` bindings and expression statements. Prefixes and arguments
-that read `this` or define a nested callable are rejected. The parent receives the evaluated arguments
+Before `super()`, `var`, `let`, and `const` declarations can bind an object pattern. A trailing
+`...rest` copies enumerable own properties, including symbols, after the selected fields have
+been read. Each selected key must lower to a constant string for this rest binding.
+A direct read of `this` in the prefix or arguments is rejected. Arrows can capture the receiver
+cell and read it after the parent initializes it. The parent receives the evaluated arguments
 in source order. The rest of the constructor sees the same local bindings and the receiver returned by
 the parent, including a replacement object. If argument evaluation changes the active constructor’s
 prototype, CoreJS returns unknown because Node and ECMAScript can select different parents.
@@ -230,7 +262,7 @@ A logical expression in a static data property, such as `{mode: config.mode || "
 
 A linked `void` expression evaluates its operand and returns `undefined` on normal completion. Side effects and thrown exceptions from the operand are observable.
 
-Linked dense array literals evaluate their elements left to right. At module scope and inside functions, the checker records array spread elements and the bindings their operands reference. If initialization reaches such a literal, CoreJS stops with an unknown result because iterator behavior is outside the model. Array holes are rejected during lowering.
+Dense array literals, calls and constructors evaluate each ordinary or spread operand left to right. A spread operand consumes its synchronous iterator before evaluation proceeds to the next operand. The iterator model covers linked iterator methods and the native array iterator with its modeled next method. Array holes are rejected during lowering.
 
 Untagged template literals use their cooked text and evaluate substitutions from left to right. CoreJS converts each primitive substitution to a string before evaluating the next expression. A linked initialization that needs object-to-primitive conversion reaches an unknown result and cannot certify.
 
@@ -238,7 +270,7 @@ Linked binary `+`, `-`, `*`, `/`, and `%` evaluate both operands in source order
 
 Linked `<`, `<=`, `>`, and `>=` evaluate operands in source order. CoreJS compares two strings by UTF-16 code unit and converts other primitive pairs to numbers. A numeric comparison with NaN is false. String literals, template text and property keys can contain supplementary Unicode characters. String length and indexed reads use UTF-16 code units. For example, `"A😀B".length` is 4 and `"A😀B"[3]` is `"B"`. A read that would return an isolated surrogate gives an unknown result. The lowerer rejects literal and template text containing an isolated surrogate. Reached object-to-primitive conversion remains unknown.
 
-Linked expressions support `typeof`, `===` and `!==` on modeled operands. Strict comparisons evaluate both operands in source order and compare without coercion. For `==` and `!=`, each operand must be a string literal or a `typeof` expression, so the comparison uses string contents. Looking up a host global still requires a model of that binding, including inside `typeof`.
+Linked expressions support `typeof`, `===` and `!==` on modeled operands. Strict comparisons evaluate both operands in source order and compare without coercion. Loose equality and inequality compare two strings by contents, compare ordinary objects by identity, and perform JavaScript numeric conversions for mixed string, number and boolean operands. A nullish comparison can finish without coercing an object. Reached comparisons requiring an object to produce a primitive or inspection of an opaque host value stop the checker. Looking up a host global still requires a model of that binding, including inside `typeof`.
 
 The linked fragment handles `try` inside function bodies with `catch`, `finally`, or both. A catch can bind one identifier or omit the binding. Inside functions, grouped `var`, `let` and `const` declarations with identifier binders initialize in source order. Each block has its own lexical scope, and an abrupt completion from `finally` takes precedence over a pending return or throw.
 The state includes the heap and captured bindings of exported closures. The checker
@@ -379,8 +411,9 @@ Both programs print `<circle> 12.56636 true` and `area,label`.
 
 ## What is proved
 
-The structural theorem below applies to a plan and its stated footprints. For the
-artifact guarantee of the normal splitter, see [CoreJS certification](#request-a-corejs-guarantee).
+The abstract theorem below applies to a plan and its stated footprints. No verdict states it
+directly; closed-declaration verdicts reuse its `Valid` checks. For the artifact guarantee of
+the normal splitter, see [CoreJS certification](#request-a-corejs-guarantee).
 
 [`lean/EsmSplit/Correct.lean`](lean/EsmSplit/Correct.lean):
 
@@ -432,7 +465,7 @@ uses `decide +kernel` for `Valid` and applies `split_correct`.
 
 ## What is not proved
 
-The structural theorem assumes footprint soundness for the supplied program.
+The abstract theorem assumes footprint soundness for the supplied program.
 [`Lower.lean`](lean/EsmSplit/Lower.lean) scans declarations, eager and deferred
 names, and assignment sites. [The Effects analysis](effects/README.md) supplies
 writes, indirect reads and world effects under its printed premises.
@@ -448,7 +481,7 @@ and unchanged resolution of relative specifiers. Diagnostic glue exports may wid
 the entry's public surface.
 
 For the normal splitter, the [CoreJS artifact guarantee](#request-a-corejs-guarantee)
-states the parser, binding annotations, printer and model premises. The
+states the parser, binding annotation, lowering, printer, model and compiler premises. The
 [footprint proof inventory](docs/footprint_soundness.md#current-proof-inventory)
 lists the Effects summaries already covered by separate CoreJS certificates.
 For validation of a separately authored tree, see the

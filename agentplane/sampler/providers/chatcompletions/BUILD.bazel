@@ -17,6 +17,7 @@ go_library(
         "//agentplane/proto:event_go_proto",
         "//agentplane/sampler/internal/content",
         "//agentplane/sampler/internal/providerio",
+        "//agentplane/sampler/internal/tooloutput",
         "//agentplane/sampler/protocol",
     ],
 )

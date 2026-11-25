@@ -14,8 +14,10 @@ import EsmSplit.CoreJS.Fragment
 statement it ended in; `order` is the order in which the modules run; `state` is a hash of every object and binding
 of the final state, with its address.
 
-`corejs --ast dumps.jsonl` runs the same interpreter on annotated ESTree dumps, one module per line.
-An unsupported AST produces a `malformed` result with its statement index and reason.
+`corejs --ast dumps.jsonl` runs the same interpreter on annotated ESTree dumps. Each line is an entry module,
+optionally with `"providers"`: its relative dependencies by resolved filename. The entry point in
+`CoreJSMain.lean` lowers them through `LinkedInput.program`, the lowering that certification uses.
+An unsupported AST produces a `malformed` result with its reason.
 
 **The world of a run** is a recording. A program may come with `"world": [call, …]`, the calls of host functions that
 a run of the program in Node made, in order, each with how it ended. The model runs in the world that answers exactly
@@ -271,8 +273,10 @@ def hostRefs (j : Json) : Except String (List (HostRef × String)) := do
     | .ok value => value.getBool?
     | .error _ => pure false
   let iteratorSymbol ← observed "iteratorSymbol"
+  let tag ← observed "toStringTagSymbol"
   let symbolConstructor ← observed "symbolConstructor"
   return (if iteratorSymbol then [(.property "Symbol" "iterator", "Symbol.iterator")] else []) ++
+    (if tag then [(.property "Symbol" "toStringTag", "Symbol.toStringTag")] else []) ++
     (if symbolConstructor then [(.binding "Symbol", "intrinsic.Symbol")] else [])
 
 end Decode
@@ -285,7 +289,7 @@ def describe {W : World} (s : State W) : Val → String
   | .bool b => if b then "boolean:true" else "boolean:false"
   | .num n => "number:" ++ Num.toString n
   | .str x => "string:" ++ x
-  | .iteratorSymbol => "symbol:Symbol(Symbol.iterator)"
+  | .wellKnownSymbol sym => s!"symbol:Symbol({sym.description})"
   | .symbol _ => "symbol"
   | .obj a => if isCallable s (.obj a) then "function" else "object"
   | .error .type _ => "TypeError"
@@ -304,7 +308,7 @@ def showVal : Val → String
   | .bool b => toString b
   | .num n => s!"#{n.toBits}"
   | .str x => (Json.str x).compress
-  | .iteratorSymbol => "Symbol.iterator"
+  | .wellKnownSymbol sym => sym.description
   | .symbol a => showSymbol a
   | .obj a => s!"@{a.region}.{a.index}"
   | .error kind msg => s!"error {reprStr kind} {msg}"
@@ -312,7 +316,7 @@ def showVal : Val → String
 
 private def showKey : PropertyKey → String
   | .str k => (Json.str k).compress
-  | .iteratorSymbol => "Symbol.iterator"
+  | .wellKnownSymbol sym => sym.description
   | .symbol a => showSymbol a
 
 def showAddr (a : Addr) : String := s!"@{a.region}.{a.index}"
@@ -326,7 +330,7 @@ def showCode : Code → String
   | .derivedFields env fields =>
     s!"derived fields {env.vars.map fun (x, a) => (x, showAddr a)} {fields.map fun (key, _) => showKey key}"
   | .derivedBody before args f env fields =>
-    let base := s!"derived {f.name} {f.params} {before.length} {args.length} {env.vars.map fun (x, a) => (x, showAddr a)}"
+    let base := s!"derived {f.name} {f.params} {before.length} {args.elim "forward" (toString ·.length)} {env.vars.map fun (x, a) => (x, showAddr a)}"
     if fields.isEmpty then base else s!"{base} {fields.map fun (key, _) => showKey key}"
   | .closure f env fields =>
     s!"closure {f.name} {f.params} {env.vars.map fun (x, a) => (x, showAddr a)} {showVal env.this} {fields.map fun (k, _) => showKey k}"
@@ -451,6 +455,7 @@ def main (args : List String) : IO UInt32 := do
         ("Object.prototype", strings ("__proto__" :: objectProtoNames)),
         ("Function.prototype", strings (["length", "name", "arguments", "caller"] ++ functionProtoNames)),
         ("Array.prototype", strings ("length" :: arrayProtoNames)),
+        ("ArrayIterator.prototype", ownStringNames arrayIteratorPrototype),
         ("Iterator.prototype", ownStringNames iteratorPrototype),
         ("Generator.prototype", ownStringNames generatorPrototype),
         ("AsyncIterator.prototype", ownStringNames asyncIteratorPrototype),
@@ -479,10 +484,6 @@ def main (args : List String) : IO UInt32 := do
     match Json.parse (← IO.FS.readFile programFile) >>= Decode.program >>= (moveCensus · lines) with
     | .ok report => IO.println report; pure 0
     | .error msg => IO.eprintln msg; pure 1
-  | ["--ast", file] =>
-    for line in (← IO.FS.lines file) do
-      IO.println (runLine 100000 line fun j => ESTreeUnits.nodes j >>= FromESTree.program)
-    pure 0
   | [file] | [file, "--fuel", _] =>
     let fuel := (args[2]?.bind String.toNat?).getD 100000
     for line in (← IO.FS.lines file) do

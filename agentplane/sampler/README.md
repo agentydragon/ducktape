@@ -85,6 +85,12 @@ enabling it. To roll back block writes, remove the setting and roll the block-ca
 again. Check sampler event follow, provider recovery, and History export checkpoints after the
 roll. Keep migration 21 and the block-capable reader as the rollback floor while blocks exist.
 
+`context_source_writes` enables sourced context entries. Deploy the reader to every sampler
+replica before enabling writes. With the setting omitted, the sampler reads both formats and
+writes bare native records. After enabling writes, keep a reader that understands sourced context
+entries as the rollback floor. Disabling writes and rolling that reader preserves existing
+entries and stops adding sources to new records.
+
 Migration 16 adds required durable provider-attempt metadata to every sampling and compaction intent.
 It preserves existing Sessions, conversations, raw evidence, and History export checkpoints, but the
 new constraint prevents an older sampler image from inserting provider intents. Staging uses its
@@ -327,6 +333,7 @@ nested tools, executor, effect journal and History export.
       "provider_model": "claude-haiku-5-5",
       "api": "anthropic_messages",
       "exec_encoding": "json",
+      "auto_compact_tokens": 160000,
       "reasoning_efforts": ["low", "medium", "high", "xhigh", "max"],
       "anthropic_messages": {
         "max_tokens": 16384,
@@ -336,7 +343,7 @@ nested tools, executor, effect journal and History export.
         "per_message_effort": true,
         "strict_tool_input": true,
         "eager_input_streaming": true,
-        "compaction": { "max_tokens": 4096, "auto_compact_tokens": 160000, "keep_recent_turns": 1 }
+        "compaction": { "max_tokens": 4096, "keep_recent_turns": 1 }
       }
     }
   }
@@ -373,8 +380,10 @@ active context, leaving the append-only conversation and History intact. `keep_r
 summarizes all context; positive values preserve that many completed turns and any subsequent input.
 Boundaries move backward over an effort control to keep signed thinking valid. The signed summary
 goes first, followed directly by the unchanged suffix. Summarized effort is restored after the next
-new user message. Live cells and unanswered tools prevent compaction; failed compaction preserves
-old context. Background compaction and dynamic definitions remain in the [task DAG](../plans/task_dag.md).
+new user message. Compaction waits for model tool calls to be answered. Yielded cells keep running
+on their existing host. The next sample sees the current execution handles and any queued cell
+notifications. Failed compaction preserves old context. Background compaction and dynamic
+definitions remain in the [task DAG](../plans/task_dag.md).
 Langfuse export is an independent deferred follow-up; native exchanges are already retained in
 the sampler DB.
 
@@ -411,8 +420,7 @@ compaction, and leaves the provider to handle incompatible reasoning.
 If a Chat Completions route is removed, an idle, settled Session can switch to another Chat
 Completions route and replay its retained messages and tool calls. Other switches require the
 original route contract. See [the continuation rules](SPEC.md#model-changes). Standard routes
-reject manual compaction, and reaching the
-configured automatic compaction threshold fails the turn before any private compaction request.
+reject manual compaction at admission and automatic compaction settings at startup.
 Portable compaction is not implemented. Provider compatibility still needs live validation;
 scripted tests establish the sampler's protocol and execution behavior.
 

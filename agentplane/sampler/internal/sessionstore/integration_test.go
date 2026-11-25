@@ -508,7 +508,7 @@ func TestStoreRecoverSessionAbandonsBlockedCellAndFencesOldOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	conversation.ActiveContext = conversation.Context()
-	if err := store.transaction(t.Context(), func(ctx context.Context, tx *sql.Tx) error { return updateConversation(ctx, tx, conversation) }); err != nil {
+	if err := store.transaction(t.Context(), func(ctx context.Context, tx *sql.Tx) error { return store.updateConversation(ctx, tx, conversation) }); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1371,7 +1371,7 @@ func TestCompletedCompactionReleasesCommandBeforeNextInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	replacement := responseContextForTest(t, []responses.Item{{Type: responses.ItemCompaction, EncryptedContent: "test-opaque"}})
-	if err := store.FinishCompaction(t.Context(), owner, intent, map[string]any{"response": "completed"}, conversation.Context(), replacement); err != nil {
+	if err := store.FinishCompaction(t.Context(), owner, intent, map[string]any{"response": "completed"}, conversation.Context(), replacement, nil); err != nil {
 		t.Fatal(err)
 	}
 	// No FinishCommand call: the context and command outcome must commit together.
@@ -1686,7 +1686,7 @@ func TestGooseInitializationPreservesRetainedState(t *testing.T) {
 		if err := conversation.Transcript.AppendRecords([]json.RawMessage{json.RawMessage(`{"type":"reasoning","provider_id":9007199254740993}`)}); err != nil {
 			return err
 		}
-		return updateConversation(ctx, tx, conversation)
+		return store.updateConversation(ctx, tx, conversation)
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -1989,6 +1989,11 @@ func TestSteeringInputJoinsTheActiveTurnOnceInAdmissionOrder(t *testing.T) {
 	items := testsupport.ResponsesItems(t, conversation.Transcript)
 	if got, want := normalized(items[len(items)-1]), normalized(expected); got != want {
 		t.Fatalf("last conversation item=%s, want %s", got, want)
+	}
+	if origin := conversation.Transcript.OriginAt(len(items) - 1); origin != (protocol.RecordOrigin{
+		Kind: protocol.RecordOriginUserInput, SourceID: "steer-a",
+	}) {
+		t.Fatalf("steering input did not reference its durable command: %+v", origin)
 	}
 	for id, want := range map[string]samplerpb.CommandOutcome{
 		"steer-a":     samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED,

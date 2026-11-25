@@ -244,7 +244,7 @@ js_test(
 
 js_test(
     name = "estree_printer_test",
-    size = "small",
+    size = "medium",
     args = ["2026"],
     data = _LOWER_CALLBACK_FUZZ_DATA + [
         _SEEDED_RANDOM,

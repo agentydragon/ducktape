@@ -6,7 +6,6 @@ This script performs two main analyses:
 2. Analyzes BaseModel classes for design issues (overlapping fields, single-field models)
 
 Usage (from the repository root):
-    python -m prompts.scans.scan_manual_serde [directory]
     bb run //prompts/scans:scan_manual_serde_bin -- [directory]
 
 Output:

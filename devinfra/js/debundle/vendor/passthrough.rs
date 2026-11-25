@@ -39,7 +39,7 @@ use spec::PartialSwapKind;
 
 use crate::plan::VendorResolutionPlan;
 use crate::{
-    DeferredImport, MaterializedOutputChunkIndex, PartialSwapIdentRewriter, VendorImportRewrites,
+    MaterializedOutputChunkIndex, PartialSwapIdentRewriter, VendorImportRewrites,
     bundled_facade_import_source, make_named_reexport, make_namespace_reexport,
     resolve_partial_swap_import_target,
 };
@@ -235,21 +235,28 @@ fn rewrite_import_decl(
                 continue;
             };
             let imported_name = imported_export_name(&named);
-            match plan_named_import_replacement(
+            let Some(action) = context
+                .plan
+                .swapped_named_import_action(target_chunk_id, &imported_name)
+            else {
+                retained_specifiers.push(ImportSpecifier::Named(named));
+                continue;
+            };
+            if let Some(directive) = state.materialize(
+                action,
+                named.local.to_id(),
                 target_chunk_id,
-                &imported_name,
-                &named.local,
-                caller_chunk_id,
-                caller_file_path,
-                context,
-                state,
+                imported_name.to_string(),
+                |path| {
+                    bundled_facade_import_source(
+                        context.chunk_table,
+                        caller_chunk_id,
+                        caller_file_path,
+                        path,
+                    )
+                },
             ) {
-                Some(imports) => {
-                    for deferred in imports {
-                        new_body.push(deferred.into_module_item());
-                    }
-                }
-                None => retained_specifiers.push(ImportSpecifier::Named(named)),
+                new_body.push(directive.into_module_item());
             }
         }
         if !retained_specifiers.is_empty() {
@@ -296,39 +303,6 @@ fn rewrite_import_decl(
         }
     }
     new_body.push(ModuleItem::ModuleDecl(ModuleDecl::Import(import_decl)));
-}
-
-/// Classify one named import of `imported_name` targeting a partially /
-/// bundled-partially swapped chunk: `Some(replacement imports)` when a
-/// live rewrite exists (the specifier is dropped and the imports are
-/// spliced in position), `None` to retain the specifier on the chunk
-/// re-import. Classification and materialization are shared with lowering.
-fn plan_named_import_replacement(
-    target_chunk_id: ChunkId,
-    imported_name: &str,
-    local: &Ident,
-    caller_chunk_id: ChunkId,
-    caller_file_path: &str,
-    context: &PassthroughContext<'_>,
-    state: &mut VendorImportRewrites,
-) -> Option<Vec<DeferredImport>> {
-    let action = context
-        .plan
-        .swapped_named_import_action(target_chunk_id, imported_name)?;
-    Some(state.materialize(
-        action,
-        local.to_id(),
-        target_chunk_id,
-        imported_name.to_string(),
-        |path| {
-            bundled_facade_import_source(
-                context.chunk_table,
-                caller_chunk_id,
-                caller_file_path,
-                path,
-            )
-        },
-    ))
 }
 
 /// Rewrite `export { <chunk_export> as <name> } from "<vendor-chunk>"`

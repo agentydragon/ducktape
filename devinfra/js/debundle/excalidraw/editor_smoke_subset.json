@@ -22,6 +22,7 @@
         "CJK_HAND_DRAWN_FALLBACK_FONT",
         "WINDOWS_EMOJI_FALLBACK_FONT",
         "FONT_FAMILY",
+        "FONT_FAMILY_FALLBACKS",
         "getFontFamilyFallbacks",
         "THEME",
         "FRAME_STYLE",
@@ -76,6 +77,7 @@
         "STROKE_WIDTH",
         "LIBRARY_SIDEBAR_TAB",
         "CANVAS_SEARCH_TAB",
+        "DEFAULT_SIDEBAR",
         "TOOL_TYPE",
         "EDITOR_LS_KEYS",
         "DEFAULT_FILENAME",
@@ -506,6 +508,74 @@
       "chunk": "editor",
       "module": "packages/math/line",
       "bindings": ["line", "linesIntersectAt"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/math/segment",
+      "bindings": ["lineSegment", "pointOnLineSegment", "distanceToLineSegment", "lineSegmentIntersectionPoints"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/math/rectangle",
+      "bindings": ["rectangle", "rectangleIntersectLineSegment"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/math/curve",
+      "bindings": [
+        "curve",
+        "gradient",
+        "solve",
+        "curveBounds",
+        "bezierEquation",
+        "curveIntersectLineSegment",
+        "curveClosestPoint",
+        "curvePointDistance"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/element/utils",
+      "bindings": ["deconstructRectanguloidElement"],
+      "anonymous_statements": []
+    },
+    {
+      "chunk": "editor",
+      "module": "packages/excalidraw/element/transformhandles",
+      "bindings": [
+        "transformHandleSizes",
+        "ROTATION_RESIZE_HANDLE_GAP",
+        "DEFAULT_OMIT_SIDES",
+        "OMIT_SIDES_FOR_LINE_SLASH",
+        "OMIT_SIDES_FOR_LINE_BACKSLASH",
+        "generateTransformHandle",
+        "getTransformHandlesFromCoords",
+        "getTransformHandles",
+        "shouldShowBoundingBox"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "module": "packages/math/polygon",
+      "chunk": "editor",
+      "bindings": [
+        "polygon",
+        "polygonFromPoints",
+        "polygonIncludesPoint",
+        "pointOnPolygon",
+        "polygonClose",
+        "polygonIsClosed"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "module": "packages/math/ellipse",
+      "chunk": "editor",
+      "bindings": ["ellipse", "ellipseDistanceFromPoint", "ellipseLineIntersectionPoints"],
       "anonymous_statements": []
     },
     {

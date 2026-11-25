@@ -3,6 +3,7 @@ package sessionstore
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
 	eventpb "github.com/agentydragon/ducktape/agentplane/proto/event"
@@ -24,6 +25,9 @@ const notificationTokenLimit = 12000
 // QueueNotification durably queues a non-empty notify() text for the active turn. It returns
 // protocol.ErrPrecondition when no turn is active; upstream then reports "no active turn" to the host.
 func (s *Store) QueueNotification(ctx context.Context, owner Owner, callID, cellID, text string) error {
+	if callID == "" {
+		return protocol.ErrInvalid
+	}
 	return s.transaction(ctx, func(ctx context.Context, tx *sql.Tx) error {
 		conversation, err := lockOwnerHeader(ctx, tx, owner)
 		if err != nil {
@@ -36,10 +40,14 @@ func (s *Store) QueueNotification(ctx context.Context, owner Owner, callID, cell
 		if session.ActiveTurn == nil {
 			return protocol.ErrPrecondition
 		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO sampler_notification(conversation_id,call_id,cell_id,text) VALUES($1,$2,$3,$4)`,
-			conversation.ID, callID, cellID, text)
-		return err
+		return queueNotification(ctx, tx, conversation.ID, callID, cellID, text)
 	})
+}
+
+func queueNotification(ctx context.Context, tx *sql.Tx, conversationID, callID, cellID, text string) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO sampler_notification(conversation_id,call_id,cell_id,text) VALUES($1,$2,$3,$4)`,
+		conversationID, callID, cellID, text)
+	return err
 }
 
 // DrainNotifications appends queued notify() outputs to the transcript. The caller must have
@@ -69,7 +77,7 @@ func (s *Store) DrainNotifications(ctx context.Context, owner Owner) (bool, erro
 		if drained, err = s.settleNotifications(ctx, tx, conversation, session, true); err != nil {
 			return err
 		}
-		return updateConversation(ctx, tx, conversation)
+		return s.updateConversation(ctx, tx, conversation)
 	})
 	return drained, err
 }
@@ -102,6 +110,16 @@ func (s *Store) settleNotifications(ctx context.Context, tx *sql.Tx, conversatio
 	if err := rows.Close(); err != nil {
 		return false, err
 	}
+	if record && len(notifications) > 0 {
+		if err := conversation.Transcript.CheckSettled(); err != nil {
+			return false, err
+		}
+		if conversation.ActiveContext != nil {
+			if err := conversation.ActiveContext.CheckSettled(); err != nil {
+				return false, err
+			}
+		}
+	}
 	for _, notification := range notifications {
 		operationID := fmt.Sprintf("%s:notification:%d", conversation.ID, notification.sequence)
 		if !record {
@@ -111,19 +129,44 @@ func (s *Store) settleNotifications(ctx context.Context, tx *sql.Tx, conversatio
 			}
 			continue
 		}
-		call, err := conversation.Transcript.FindCall(notification.callID)
-		if err != nil {
-			return false, err
-		}
-		output := []protocol.ContentPart{{Type: "input_text", Text: tooloutput.TruncateTextWithTokenBudget(notification.text, notificationTokenLimit)}}
+		text := tooloutput.TruncateTextWithTokenBudget(notification.text, notificationTokenLimit)
+		output := []protocol.ContentPart{{Type: "input_text", Text: text}}
 		if err := s.recordEvidence(ctx, tx, conversation, session, operationID, eventpb.ExecutionProgress_KIND_NOTIFICATION, eventpb.ExecutionProgress_PHASE_RECORDED,
 			map[string]any{"cell_id": notification.cellID, "call_id": notification.callID, "output": output}); err != nil {
 			return false, err
 		}
-		if err := conversation.appendToolResult(call, output); err != nil {
+		if err := appendNotification(conversation, notification.callID, notification.cellID, text); err != nil {
 			return false, err
 		}
-
 	}
 	return record && len(notifications) > 0, nil
+}
+
+// appendNotification handles asynchronous output after all model calls are settled.
+func appendNotification(conversation *Conversation, callID, cellID, text string) error {
+	output := []protocol.ContentPart{{Type: "input_text", Text: text}}
+	if callID == "" {
+		// A sampler-generated executor notice can arrive while a provider request owns
+		// the context. It shares the durable queue but has no originating model call.
+		return conversation.apply(func(state protocol.Context) error { return state.AppendNotice(output, protocol.RecordOrigin{}) })
+	}
+	call, err := conversation.Transcript.FindCall(callID)
+	if err != nil {
+		return err
+	}
+	if active := conversation.ActiveContext; active != nil {
+		if _, err := active.FindCall(callID); errors.Is(err, protocol.ErrMissing) {
+			// The transcript still has the answered origin. The replacement has no
+			// call to pair with, so give it the output as ordinary context.
+			if err := conversation.Transcript.AppendToolResult(call, output, protocol.RecordOrigin{}); err != nil {
+				return err
+			}
+			return active.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: fmt.Sprintf(
+				"Asynchronous output from exec call %s (cell %s):\n%s", callID, cellID, text,
+			)}}, protocol.RecordOrigin{})
+		} else if err != nil {
+			return err
+		}
+	}
+	return conversation.appendToolResult(call, output, protocol.RecordOrigin{})
 }

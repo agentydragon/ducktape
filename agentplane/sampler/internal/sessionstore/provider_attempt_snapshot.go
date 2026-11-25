@@ -47,11 +47,11 @@ func (s *Store) BeginPreparedSampling(ctx context.Context, owner Owner, source *
 		if err != nil {
 			return err
 		}
-		if err := s.applySamplingContext(conversation, session, state); err != nil {
+		if err := s.applySamplingContext(ctx, tx, conversation, session, state); err != nil {
 			return err
 		}
 		// Request projection needs durable context references for the just-appended records.
-		if err := checkpointConversationContexts(ctx, tx, conversation); err != nil {
+		if err := s.checkpointConversationContexts(ctx, tx, conversation); err != nil {
 			return err
 		}
 		wire, err = s.beginIntent(ctx, tx, owner, conversation, session, id, request, requestPreparationFor(preparation), &policy)
@@ -82,7 +82,7 @@ func (s *Store) FinishPreparedSampling(ctx context.Context, owner Owner, intentI
 		return protocol.ErrPrecondition
 	}
 	return s.finish(ctx, owner, intentID, result, contextTokens, snapshot, func(conversation *Conversation) error {
-		if err := conversation.apply(func(state protocol.Context) error { return state.AppendRecords(records) }); err != nil {
+		if err := conversation.appendProviderRecords(records, intentID); err != nil {
 			return &InvalidSamplingContinuationError{Cause: err}
 		}
 		if validate != nil {

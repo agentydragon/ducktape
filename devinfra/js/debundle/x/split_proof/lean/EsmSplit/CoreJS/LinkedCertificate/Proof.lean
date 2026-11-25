@@ -22,6 +22,18 @@ def EquivalentFor (premises : HostPremises) (source candidate : Program) : Prop 
   else ∀ w, premises.Satisfied w →
       ∃ t : State w, Ends w source (.ok () t) ∧ Ends w candidate (.ok () t)
 
+/-- The linked claim gives the structural checker's statement over the worlds that satisfy
+the same host premises. Empty premises hold in every world. -/
+theorem EquivalentFor.normalEquivalent {premises : HostPremises} {source candidate : Program}
+    (h : EquivalentFor premises source candidate) :
+    NormalEquivalent premises.Satisfied source candidate := by
+  apply normalEquivalent_of_shared
+  intro w hw
+  unfold EquivalentFor at h
+  split at h
+  · exact h w
+  · exact h w hw
+
 theorem of_host_evaluation {premises : HostPremises} {source candidate : Program} (fuel : Nat)
     (checks : ∀ w, normal (runProgram (premises.specialize w) fuel source) = true ∧
       runProgram (premises.specialize w) fuel source =
@@ -68,6 +80,15 @@ theorem checkASTs_sound {profile premises source providers files plan original c
   | error why => rw [h] at accepted; contradiction
   | ok proof => exact proof.down
 
+/-- A linked verdict states the structural guarantee for the same decoded programs. -/
+theorem ASTEquivalent.normal {profile premises source providers files plan}
+    (h : ASTEquivalent profile premises source providers files plan) :
+    ∃ original candidate,
+      LinkedInput.decodePair source providers files plan profile = .ok (original, candidate) ∧
+      NormalEquivalent premises.Satisfied original candidate ∧ SameExports original candidate := by
+  obtain ⟨original, candidate, decoded, semantics, exports⟩ := h
+  exact ⟨original, candidate, decoded, semantics.normalEquivalent, exports⟩
+
 /-- Reduction used by the generated equation for a checked wide record. -/
 def evalQuotedRecordBody {W : World} (fields : List (String × String)) (props : List PropDef)
     (width fuel : Nat) (env : Env) : M W Val :=
@@ -111,6 +132,27 @@ so it can reduce any unary expression without unfolding the mutually recursive i
         let v ← evalExpr n env a
         lift (unop (← getState) op v)) := by
   cases op <;> cases a <;> rfl
+
+-- The generated equations for non-null objects and non-undefined defaults
+-- have negative premises, which the proof-producing evaluator cannot use.
+@[cbv_eval] private theorem bindPattern_object (n : Nat) (env : Env) (kind : DeclKind)
+    (props : List (Expr × BindingPattern)) (value : Val) :
+    (bindPattern (n + 1) env kind (.object props) value : M W Unit) =
+    (match value with
+    | .undef | .null => throwErr .type "cannot destructure undefined or null"
+    | _ => props.forM fun (key, field) => do
+        let key ← evalExpr n env key
+        let v ← getProp (callFn n) value key
+        bindPattern n env kind field v) := by
+  cases value <;> rfl
+
+@[cbv_eval] private theorem bindPattern_default (n : Nat) (env : Env) (kind : DeclKind)
+    (target : BindingPattern) (init : Expr) (value : Val) :
+    (bindPattern (n + 1) env kind (.defaultValue target init) value : M W Unit) =
+    (match value with
+    | .undef => evalExpr n env init >>= bindPattern n env kind target
+    | _ => bindPattern n env kind target value) := by
+  cases value <;> rfl
 
 /-- Resolve an own data prototype on a concrete class constructor directly. Using the
 checked lookup avoids expanding the nested interpreter calls in the non-null heritage path. -/

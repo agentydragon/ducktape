@@ -81,7 +81,7 @@ theorem reachFrame_declare {r R cells A} (away : Away r R A)
   rcases hn with ((⟨p, hp, rfl⟩ | ⟨p, hp, rfl⟩) | hn)
   · exact hf p hp
   · exact henv _ (List.mem_append_left _ (List.mem_map.mpr ⟨p, hp, rfl⟩))
-  · exact henv _ (List.mem_append_right _ hn)
+  · exact henv _ (List.mem_append_right _ (List.mem_append.mpr (hn.imp List.mem_map.mpr id)))
 
 
 theorem Env.nodes_lookup {A : HeapNode → Prop} {env : Env} (safe : ∀ n ∈ env.nodes, A n) {name : Name} {a : Addr}
@@ -103,14 +103,29 @@ theorem Env.nodes_capture {A : HeapNode → Prop} {env : Env} (safe : ∀ n ∈ 
   · exact safe _ (List.mem_append_right _ this)
 
 theorem Env.nodes_this {A : HeapNode → Prop} {env : Env} (safe : ∀ n ∈ env.nodes, A n) : SafeVal A env.this :=
-  fun node hn => safe node (List.mem_append_right _ hn)
+  fun node hn => safe node (List.mem_append_right _ (List.mem_append_right _ hn))
 
 theorem Env.nodes_setThis {A : HeapNode → Prop} {env : Env} (safe : ∀ n ∈ env.nodes, A n) {this : Val}
     (hs : SafeVal A this) : ∀ n ∈ ({ env with this } : Env).nodes, A n := by
   intro node h
   rcases List.mem_append.mp h with cells | recv
   · exact safe node (List.mem_append_left _ cells)
-  · exact hs node recv
+  · rcases List.mem_append.mp recv with home | recv
+    · exact safe node (List.mem_append_right _ (List.mem_append_left _ home))
+    · exact hs node recv
+
+theorem Env.nodes_home {A : HeapNode → Prop} {env : Env}
+    (safe : ∀ n ∈ env.nodes, A n) {home : Addr} (found : env.home = some home) : A (.obj home) :=
+  safe _ (by simp [Env.nodes, found])
+
+theorem Env.nodes_setHome {A : HeapNode → Prop} {env : Env} (safe : ∀ n ∈ env.nodes, A n)
+    (home : Option Addr) (hs : ∀ a ∈ home, A (.obj a)) : ∀ n ∈ ({ env with home } : Env).nodes, A n := by
+  intro node h
+  simp only [Env.nodes, List.mem_append, List.mem_map] at h ⊢
+  rcases h with cells | ⟨a, ha, rfl⟩ | recv
+  · exact safe _ (List.mem_append_left _ (List.mem_map.mpr cells))
+  · exact hs a (by simpa using ha)
+  · exact safe _ (List.mem_append_right _ (List.mem_append_right _ recv))
 
 theorem reachFrame_selfScope {r R cells A} (away : Away r R A)
     (outside : ∀ a, a.region ≠ r → A (.cell a)) (env : Env) (self : Bool) (name : Name)
@@ -323,7 +338,10 @@ theorem reachFrame_makeFunc {r R cells A} (away : Away r R A)
     simp [Obj.nodes, Property.nodes, Val.nodes, Code.nodes] at hn
     rcases hn with rfl | captures
     · exact functionRoot f
-    · exact Env.nodes_capture he f.closes node captures
+    · have closed := Env.nodes_capture he f.closes
+      split at captures
+      · exact Env.nodes_setHome closed none (by simp) node captures
+      · exact closed node captures
 
 private theorem ReachFrame.forM {r R cells A} {α : Type} {f : α → M W PUnit}
     (xs : List α) (step : ∀ x ∈ xs, ReachFrame r R cells A (fun _ => True) (f x)) :
@@ -355,16 +373,62 @@ theorem reachFrame_enterBlock {r R cells A} (away : Away r R A)
     obtain ⟨⟨name, mutable⟩, _, rfl⟩ := List.mem_map.mp hp
     cases hn
 
+theorem literalArray_nodes {A : HeapNode → Prop} (root : A (.obj arrayProto))
+    (vs : List Val) (h : ∀ v ∈ vs, SafeVal A v) : ∀ node ∈ (arrayObject vs).nodes, A node := by
+  intro node hn
+  simp only [arrayObject, Obj.nodes, List.mem_append, List.mem_flatMap, List.mem_map,
+    Option.toList_some, List.mem_singleton, Option.toList_none, List.flatMap_nil, List.mem_nil_iff, or_false] at hn
+  rcases hn with hroot | ⟨p, hmem, hnode⟩
+  · obtain ⟨_, rfl, rfl⟩ := hroot
+    exact root
+  · rcases hmem with ⟨item, hitem, rfl⟩ | hlength
+    · exact h item.1 (List.fst_mem_of_mem_zipIdx hitem) node hnode
+    · subst p
+      cases hnode
+
+private theorem fixedParameterBindings_safe {A : HeapNode → Prop} (names : List Name)
+    (args : List Val) (ha : ∀ arg ∈ args, SafeVal A arg) :
+    ∀ p ∈ fixedParameterBindings names args, ∀ node ∈ p.2.nodes, A node := by
+  intro p hp node hn
+  obtain ⟨⟨_, i⟩, _, rfl⟩ := List.mem_map.mp hp
+  have arg : SafeVal A (args.getD i .undef) := by
+    rw [List.getD_eq_getElem?_getD]
+    cases h : args[i]? with
+    | none => exact fun _ hn => by cases hn
+    | some v => exact ha v (list_index_mem h)
+  exact arg node (by simpa [Binding.nodes] using hn)
+
+private theorem reachFrame_parameterBindings {r R cells A} (root : A (.obj arrayProto))
+    (allocate : ∀ o : Obj, (∀ node ∈ o.nodes, A node) →
+      ReachFrame r R cells A (fun a => A (.obj a)) (alloc o : M W Addr))
+    (f : Func) (args : List Val) (ha : ∀ arg ∈ args, SafeVal A arg) :
+    ReachFrame r R cells A (fun ps => ∀ p ∈ ps, ∀ node ∈ p.2.nodes, A node)
+      (parameterBindings f args : M W (List (Name × Binding))) := by
+  cases f <;> try exact reachFrame_pure r R cells A _ (fixedParameterBindings_safe _ args ha)
+  case withRest name kind self fixed rest body =>
+    unfold parameterBindings
+    apply (allocate _ (literalArray_nodes root _ (fun v hv => ha v (List.mem_of_mem_drop hv)))).bind
+    intro packed hp
+    apply reachFrame_pure r R cells A _
+    intro p pm node hn
+    rcases List.mem_append.mp pm with ordinary | extra
+    · exact fixedParameterBindings_safe fixed args ha p ordinary node hn
+    · rcases List.mem_singleton.mp extra with rfl
+      exact (safeVal_obj.mpr hp) node (by simpa [Binding.nodes] using hn)
+
 theorem reachFrame_enterFunction {r R cells A} (away : Away r R A)
     (outside : ∀ a, a.region ≠ r → A (.cell a))
     (prototypeRoot : ∀ kind : FuncKind, A (.obj kind.instanceProto))
     (functionRoot : ∀ f : Func, A (.obj f.intrinsicProto))
+    (arrayRoot : A (.obj arrayProto))
     (allocate : ∀ o : Obj, (∀ node ∈ o.nodes, A node) →
       ReachFrame r R cells A (fun a => A (.obj a)) (alloc o : M W Addr))
     (f : Func) (closed : Env) (safe : ∀ node ∈ closed.nodes, A node) (this : Val) (ht : SafeVal A this)
     (args : List Val) (ha : ∀ arg ∈ args, SafeVal A arg) :
     ReachFrame r R cells A (fun env' => ∀ node ∈ env'.nodes, A node) (enterFunction f closed this args : M W Env) := by
   unfold enterFunction
+  apply (reachFrame_parameterBindings arrayRoot allocate f args ha).bind
+  intro bindings bindingsSafe
   apply (reachFrame_declare away outside _ _ (Env.nodes_setThis safe ?_) ?_).bind
   · intro e he
     exact reachFrame_enterBlock away outside prototypeRoot functionRoot allocate e he f.body
@@ -373,13 +437,7 @@ theorem reachFrame_enterFunction {r R cells A} (away : Away r R A)
     · exact ht
   · intro p hp node hn
     rcases List.mem_append.mp hp with params | vars
-    · obtain ⟨⟨_, i⟩, _, rfl⟩ := List.mem_map.mp params
-      have arg : SafeVal A (args.getD i .undef) := by
-        rw [List.getD_eq_getElem?_getD]
-        cases h : args[i]? with
-        | none => exact fun _ hn => by cases hn
-        | some v => exact ha v (list_index_mem h)
-      exact arg node (by simpa [Binding.nodes] using hn)
+    · exact bindingsSafe p params node hn
     · obtain ⟨_, _, rfl⟩ := List.mem_map.mp vars
       cases hn
 

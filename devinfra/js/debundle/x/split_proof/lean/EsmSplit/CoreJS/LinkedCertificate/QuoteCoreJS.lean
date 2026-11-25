@@ -9,18 +9,18 @@ local instance : Lean.ToExpr Float where
   toExpr n := Lean.mkApp (Lean.mkConst ``Float.ofBits) (Lean.toExpr n.toBits)
   toTypeExpr := Lean.mkConst ``Float
 
-deriving instance Lean.ToExpr for ArrayElementKind
 deriving instance Lean.ToExpr for DeclKind
 deriving instance Lean.ToExpr for UnOp
 deriving instance Lean.ToExpr for BinOp
 deriving instance Lean.ToExpr for LogOp
 deriving instance Lean.ToExpr for RegExpData
 deriving instance Lean.ToExpr for RegExpGetter
+deriving instance Lean.ToExpr for WellKnownSymbol
 deriving instance Lean.ToExpr for Prim
 deriving instance Lean.ToExpr for FuncKind
 deriving instance Lean.ToExpr for OpaqueRun
 deriving instance Lean.ToExpr for OpaqueHoistKind
-deriving instance Lean.ToExpr for Expr, Target, PropDef, ClassMember, Func, Stmt
+deriving instance Lean.ToExpr for Expr, Target, PropDef, ClassMember, Func, BindingPattern, Stmt
 deriving instance Lean.ToExpr for Import
 deriving instance Lean.ToExpr for Module
 deriving instance Lean.ToExpr for Program

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -33,7 +34,7 @@ func installSnapshotFixtureCompaction(t *testing.T, store *Store, owner Owner) {
 		t.Fatal(err)
 	}
 	replacement := responseContextForTest(t, []responses.Item{{Type: responses.ItemCompaction, EncryptedContent: "fixture-opaque-summary"}})
-	if err := store.FinishCompaction(t.Context(), owner, intentID, map[string]string{"status": "completed"}, source.Context(), replacement); err != nil {
+	if err := store.FinishCompaction(t.Context(), owner, intentID, map[string]string{"status": "completed"}, source.Context(), replacement, nil); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -263,7 +264,7 @@ func TestPreparedSamplingBeginReloadsChangedContext(t *testing.T) {
 }
 
 func TestPreparedSamplingFinishReloadsChangedContext(t *testing.T) {
-	for _, change := range []string{"head", "control"} {
+	for _, change := range []string{"head", "control", "origins"} {
 		t.Run(change, func(t *testing.T) {
 			store, session, owner := claimedSession(t)
 			if change == "control" {
@@ -278,16 +279,31 @@ func TestPreparedSamplingFinishReloadsChangedContext(t *testing.T) {
 				if err != nil {
 					return err
 				}
-				if change == "head" {
-					if err := current.Transcript.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: intervening}}); err != nil {
+				switch change {
+				case "head":
+					if err := current.Transcript.AppendUser([]protocol.ContentPart{{Type: "input_text", Text: intervening}}, protocol.RecordOrigin{}); err != nil {
 						return err
 					}
-				} else {
+				case "control":
 					current.executionSnapshots[current.ActiveContext] = &modelExecutionSnapshot{
 						Cells: []modelCell{{CellID: "fixture-intervening-cell", Status: executionstate.CellLive}}, Processes: []modelProcess{},
 					}
+				case "origins":
+					records, err := current.Transcript.Records()
+					if err != nil {
+						return err
+					}
+					bare, err := newNativeContext(current.API)
+					if err != nil {
+						return err
+					}
+					if err := bare.AppendRecords(records); err != nil {
+						return err
+					}
+					current.executionSnapshots[bare] = current.executionSnapshots[current.Transcript]
+					current.Transcript = bare
 				}
-				return updateConversation(ctx, tx, current)
+				return store.updateConversation(ctx, tx, current)
 			}); err != nil {
 				t.Fatal(err)
 			}
@@ -316,8 +332,12 @@ func TestPreparedSamplingFinishReloadsChangedContext(t *testing.T) {
 			if len(records) != before.Transcript.RecordCount()+1 {
 				t.Fatalf("durable transcript has %d records, want %d", len(records), before.Transcript.RecordCount()+1)
 			}
-			if change == "control" && !sameJSONValue(before.activeControl, after.activeControl) {
+			if change == "control" && !reflect.DeepEqual(before.executionSnapshots[before.ActiveContext], after.executionSnapshots[after.ActiveContext]) {
 				t.Fatal("finish replaced the current context control with the snapshot control")
+			}
+			providerOrigin := protocol.RecordOrigin{Kind: protocol.RecordOriginProviderResult, SourceID: id}
+			if change == "origins" && (after.Transcript.OriginAt(0).Kind != protocol.RecordOriginUnknown || after.Transcript.OriginAt(after.Transcript.RecordCount()-1) != providerOrigin) {
+				t.Fatal("finish restored an origin root from the stale snapshot")
 			}
 		})
 	}

@@ -191,11 +191,19 @@ class ChatCompactionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     max_tokens: int = Field(gt=0)
-    keep_recent_turns: int = Field(gt=0)
+    keep_recent_tokens: int | None = Field(default=None, ge=9)
+    # CLEANUP(added 2026-11-24): Remove after staging has rolled out settings with keep_recent_tokens.
+    keep_recent_turns: int | None = Field(default=None, gt=0)
     auto_compact_tokens: int | None = Field(default=None, gt=0)
 
     summary_prompt_template: str | None = None
     replacement: ChatCompactionReplacement | None = None
+
+    @model_validator(mode="after")
+    def one_recent_history_budget(self) -> Self:
+        if (self.keep_recent_tokens is None) == (self.keep_recent_turns is None):
+            raise ValueError("specify exactly one of keep_recent_tokens or legacy keep_recent_turns")
+        return self
 
 
 class ModelConfig(BaseModel):
@@ -204,6 +212,7 @@ class ModelConfig(BaseModel):
     connection: str
     provider_model: str
     response_header_timeout_seconds: int | None = Field(default=None, gt=0, le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS)
+    auto_compact_tokens: int | None = Field(default=None, gt=0)
     api: Literal["responses", "anthropic_messages", "chat_completions"]
     responses: ResponsesConfig | None = None
     anthropic_messages: AnthropicMessagesConfig | None = None
@@ -243,6 +252,12 @@ class ModelConfig(BaseModel):
                 raise ValueError("Chat Completions cannot set options for another API")
             if self.exec_encoding != "json":
                 raise ValueError("chat_completions requires exec_encoding json")
+        if self.auto_compact_tokens is not None and not (
+            (self.responses is not None and self.responses.dialect == "lite")
+            or (self.anthropic_messages is not None and self.anthropic_messages.compaction is not None)
+            or self.chat_compaction is not None
+        ):
+            raise ValueError("auto_compact_tokens requires compaction support")
         return self
 
 
@@ -290,6 +305,11 @@ class Settings(BaseModel):
     direct_executor_target: str | None = None
     direct_executor_insecure_localtest: bool = False
     max_live_sessions: int = Field(gt=0)
+    context_source_writes: bool = Field(
+        default=False,
+        exclude_if=lambda value: not value,
+        description="Persist source references on sampler context records after all replicas can read them.",
+    )
     event_block_writes: bool = Field(
         default=False, exclude_if=lambda value: not value, description="Seal sampler evidence into journal blocks."
     )

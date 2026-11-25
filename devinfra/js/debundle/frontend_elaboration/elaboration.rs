@@ -154,8 +154,7 @@ pub fn project_analysis(
     if !spec.materialize_logical_modules.target_dir.is_empty() {
         artifact::paths::normalize_module_path(&spec.materialize_logical_modules.target_dir)?;
     }
-    let chunk_ids =
-        normalized_chunk_ids(&spec.materialize_chunk_ids().into_iter().collect::<Vec<_>>())?;
+    let chunk_ids = normalized_chunk_ids(spec.materialize_chunk_ids())?;
     ensure!(
         !chunk_ids.is_empty(),
         "project_analysis requires at least one chunk_id"

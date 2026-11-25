@@ -79,7 +79,7 @@ private theorem resolvedCall_local (n : Nat) (closed : Env) (name : Name) (param
     Local r R (resolvedCall n closed name params returned args : M W Val) := by
   unfold resolvedCall
   apply Local.bind'
-  · unfold enterFunction
+  · simp only [enterFunction, parameterBindings, wrapperFactory, M.pure_bind]
     refine (local_declare _ _).bind' fun env => ?_
     unfold enterBlock
     refine (local_declare _ _).bind' fun env => ?_

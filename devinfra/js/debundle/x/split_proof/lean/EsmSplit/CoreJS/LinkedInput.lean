@@ -56,11 +56,20 @@ private inductive BodyFormat where
   | structural (pivots : Std.HashSet Nat) (location : LinkedDeployment.Access)
 
 private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (imports : List Name)
-    (origin : Nat) (j : Json) (exported : Bool) : Except String (Stmt × List Name) := do
+    (origin : Nat) (providerSite : Option (String × Nat)) (j : Json) (exported : Bool) : Except String (Stmt × List Name) := do
   if let .structural pivots location := format then
     unless pivots.contains origin do
-      let s ← OpaqueInput.unit origin j location.unitNames[origin]?
-      return (s, if exported then (Lower.topDefs j).eraseDups else [])
+      -- A whole-unit opaque hoist represents ordinary and async functions.
+      -- Generator declarations need their own intrinsic and fresh prototype.
+      -- Lower the declaration by the same numbered, capture-checked path as a pivot.
+      if Lower.typ j == "FunctionDeclaration" && Lower.flag j "generator" then
+        if let some why := Lower.outsideModel false j then throw why
+      else
+        let names := match providerSite with
+          | none => location.entryAccess.unitNames[origin]?
+          | some (name, ordinal) => location.providers[name]?.bind fun a => a.unitNames[ordinal]?
+        let s ← OpaqueInput.unit origin j names
+        return (s, if exported then (Lower.topDefs j).eraseDups else [])
   let ast := ((numberFunctions origin j).run 1).1
   if exported then
     let (bindings, s) ← FromESTree.linkedDeclaration imports ast profile
@@ -68,7 +77,7 @@ private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (impo
   return (← FromESTree.linkedUnit imports ast profile, [])
 
 private def parse (format : BodyFormat) (profile : HostProfile) (path : String) (nodes : Array Json)
-    (base : Nat := 0) (origins : Option (Array Nat) := none) : Except String Parsed := do
+    (base : Nat := 0) (origins : Option (Array Nat) := none) (provider : Bool := false) : Except String Parsed := do
   let mut imports := #[]
   for j in nodes do
     if (← typ j) == "ImportDeclaration" then
@@ -83,9 +92,11 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
         | some ids =>
           let some id := ids[units.size]? | throw "emitted body length differs from the placement"
           pure id
-      format.lower profile names origin ast exported
+      format.lower profile names origin (if provider then some (path, i) else none) ast exported
     match ← typ j with
     | "ImportDeclaration" => pure ()
+    -- Neither statement changes the modeled state, so neither gets a unit.
+    | "EmptyStatement" | "DebuggerStatement" => pure ()
     | "ExportNamedDeclaration" =>
       ModuleInput.noAttributes j
       unless (← j.getObjVal? "source") == .null do throw "unsupported re-export from another module"
@@ -116,7 +127,7 @@ private def readProviders (format : BodyFormat) (profile : HostProfile) (provide
   let mut offset := base
   for (name, file) in providers do
     let nodes ← (ESTreeUnits.nodes file).mapError fun why => s!"{name}: {why}"
-    let p ← (parse format profile name nodes offset).mapError fun why => s!"{name}: {why}"
+    let p ← (parse format profile name nodes offset (provider := true)).mapError fun why => s!"{name}: {why}"
     for req in p.imports do
       unless names.contains req.source do throw s!"{name}: missing provider dependency {req.source}"
     modules := modules.push (p.numbered name offset)
@@ -124,9 +135,9 @@ private def readProviders (format : BodyFormat) (profile : HostProfile) (provide
   return modules.toList
 
 private def readSplit (format : BodyFormat) (profile : HostProfile) (files : Json) (P : EsmSplit.Plan) (providers : List String) (original : Parsed)
-    (originalSyntax : Std.HashMap Nat Json) (m : EsmSplit.Module) : Except String Module := do
+    (originalSyntax : Std.HashMap Nat Json) (m : EsmSplit.Module) (base : Nat := 0) : Except String Module := do
   let nodes ← ESTreeUnits.nodes (← files.getObjVal? m.name)
-  let placed := m.stmts.filterMap fun i => originalSyntax[i]?.map (i, ·)
+  let placed := m.stmts.filterMap fun i => originalSyntax[i]?.map (base + i, ·)
   let p ← parse format profile m.name nodes (origins := some (placed.map Prod.fst).toArray)
   let (external, glue) := p.imports.partition fun req => providers.contains req.source
   if m.name == P.entry then
@@ -184,11 +195,14 @@ private def checkScopes (before after : Program) : Except String Unit := do
       let some cell := env.vars.lookup x | throw s!"original unit {id} has an unbound reference to {x}"
       unless env'.vars.lookup x == some cell do throw s!"unit {id}: reference to {x} resolves to a different linked cell"
 
-private def decode (format : BodyFormat) (source providers files : Json) (P : EsmSplit.Plan)
-    (profile : HostProfile) : Except String (Program × Program) := do
+private structure Fragment where
+  sourceModule : Module
+  emitted : List Module
+  unitCount : Nat
+
+private def decodeFragment (format : BodyFormat) (profile : HostProfile) (source files : Json) (P : EsmSplit.Plan)
+    (sourcePath : String) (providerNames : List String) (base : Nat) : Except String Fragment := do
   let fs := (← files.getObj?).toList.map Prod.fst
-  let ps := (← providers.getObj?).toList
-  let providerNames := ps.map Prod.fst
   EsmSplit.validateModulePaths (P.entry :: fs ++ providerNames)
   unless fs.Perm (P.mods.map (·.name)) && fs.contains P.entry do throw "output filenames differ from the plan"
   unless !fs.any providerNames.contains do throw "providers overlap emitted modules"
@@ -199,19 +213,25 @@ private def decode (format : BodyFormat) (source providers files : Json) (P : Es
   for (j, i) in nodes.zipIdx do
     if ["ImportDeclaration", "ExportNamedDeclaration"].contains (← typ j) then
       unless entry.stmts.contains i do throw s!"original import or export unit {i} must stay in the entry"
-  let original ← parse format profile "bundle.mjs" nodes
+  let original ← parse format profile sourcePath nodes base
   if let .structural pivots _ := format then
     let bodyIds := Std.HashSet.ofList (original.units.map (·.1))
     for pivot in pivots do
       unless bodyIds.contains pivot do throw s!"pivot {pivot} is not an executable source unit"
   for req in original.imports do
     unless providerNames.contains req.source do throw s!"missing original dependency {req.source}"
-  let shared ← readProviders format profile ps nodes.size
-  let before : Program := { entry := P.entry, modules := original.numbered P.entry 0 :: shared }
   let originalSyntax := Std.HashMap.ofList (original.units.map fun (i, _, ast) => (i, ast))
   let split ← P.mods.mapM fun m =>
-    (readSplit format profile files P providerNames original originalSyntax m).mapError fun why => s!"{m.name}: {why}"
-  let after : Program := { entry := P.entry, modules := split ++ shared }
+    (readSplit format profile files P providerNames original originalSyntax m base).mapError fun why => s!"{m.name}: {why}"
+  return ⟨original.numbered P.entry base, split, nodes.size⟩
+
+private def decode (format : BodyFormat) (source providers files : Json) (P : EsmSplit.Plan)
+    (profile : HostProfile) : Except String (Program × Program) := do
+  let ps := (← providers.getObj?).toList
+  let fragment ← decodeFragment format profile source files P "bundle.mjs" (ps.map Prod.fst) 0
+  let shared ← readProviders format profile ps fragment.unitCount
+  let before : Program := { entry := P.entry, modules := fragment.sourceModule :: shared }
+  let after : Program := { entry := P.entry, modules := fragment.emitted ++ shared }
   let (before, after) ← match format with
     | .linked => pure (before, after)
     | .structural _ location =>
@@ -237,5 +257,44 @@ def decodeStructuralPair (source providers files : Json) (P : EsmSplit.Plan) (pi
     Except String (Program × Program) := do
   let location ← deployment.mapM (LinkedDeployment.check · source providers P)
   decode (.structural (Std.HashSet.ofList pivots) (location.getD {})) source providers files P profile
+
+/-- One original path and the reparsed output files of its plan. Filenames
+in both plans live in the same deployment root. -/
+structure StaticSplit where
+  source : Json
+  files : Json
+  plan : EsmSplit.Plan
+
+/-- Decode two static splits into one pair of programs rooted at the application.
+Only these original modules exist. No loader, metadata, dynamic import or host
+identity premises are supplied. Fully lower both sets of units; use the same
+origin range for a source unit, its allocations and its emitted callable sites. -/
+def decodeStaticSplits (app provider : StaticSplit) : Except String (Program × Program) := do
+  let paths := (app.plan.mods ++ provider.plan.mods).map (·.name)
+  unless paths.Nodup do throw "joint output path collision"
+  for chunk in [app, provider] do
+    unless (← ModuleLocation.uses chunk.plan.entry chunk.source).isEmpty do
+      throw s!"{chunk.plan.entry}: joint static split requires location-independent units"
+  let a ← decodeFragment .linked .empty app.source app.files app.plan app.plan.entry [provider.plan.entry] 0
+  let b ← decodeFragment .linked .empty provider.source provider.files provider.plan provider.plan.entry
+    [app.plan.entry] a.unitCount
+  let before : Program := ⟨app.plan.entry, [a.sourceModule, b.sourceModule]⟩
+  let after : Program := ⟨app.plan.entry, a.emitted ++ b.emitted⟩
+  checkScopes before after
+  return (before, after)
+
+/-- Lower an unsplit module graph with the linked rules. The entry module is `main`; its units keep
+their source ordinals, and provider units follow them. Linking checks the same scopes and exports
+as `decodePair`. -/
+def program (source providers : Json) (profile : HostProfile := .empty) : Except String Program := do
+  let nodes ← ESTreeUnits.nodes source
+  let original ← parse .linked profile "bundle.mjs" nodes
+  let ps := (← providers.getObj?).toList
+  for req in original.imports do
+    unless ps.any (·.1 == req.source) do throw s!"missing original dependency {req.source}"
+  let shared ← readProviders .linked profile ps nodes.size
+  let p : Program := { entry := "main", modules := original.numbered "main" 0 :: shared }
+  let _ ← scopes p
+  return p
 
 end CoreJS.LinkedInput

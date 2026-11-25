@@ -106,6 +106,27 @@ private def unitProgram (ast : Json) : Except String Json := do
   let units ← ESTreeUnits.nodes ast
   return .obj ((← ast.getObj?).insert "body" (.arr units))
 
+/-- Publication renames a sibling staging directory onto this path. Trailing separators and `.`
+segments name the same directory. A path without a final directory name has no parent to stage in. -/
+def outputDirectory (out : System.FilePath) : Except String System.FilePath := do
+  let parts := ((out.toString.splitOn "/").reverse.dropWhile fun p => p.isEmpty || p == ".").reverse
+  let dir : System.FilePath := ⟨"/".intercalate parts⟩
+  unless dir.fileName.isSome do throw s!"output path {out} must end in a directory name"
+  return dir
+
+/-- Reparse a module directory and require the planned programs and the copied providers. -/
+private def compareDirectory (manifest : System.FilePath) (providers : Json) (input dir work : System.FilePath) :
+    IO Unit := do
+  let providerManifest := work / "provider-programs.json"
+  IO.FS.writeFile providerManifest providers.compress
+  let grouped := work / "grouped-output.json"
+  javascript #["--check-output"] #[manifest, input, providerManifest, dir, grouped]
+  for pair in ← IO.ofExcept (← readJson grouped).getArr? do
+    let name ← IO.ofExcept (pair.getObjValAs? String "name")
+    let planned ← IO.ofExcept (pair.getObjVal? "planned" >>= unitProgram)
+    let observed ← IO.ofExcept (pair.getObjVal? "observed" >>= unitProgram)
+    unless planned == observed do throw (IO.userError s!"output module {name} differs from its generated ESTree")
+
 /-- Certify the exact program map handed to the printer or compared with an existing directory. -/
 def certifyOutput {α : Type} (providers : Json) (B : Bundle) (P : Plan)
     (out work input : System.FilePath) (checkOnly timings : Bool) (asts : Array Json) (source : String)
@@ -117,16 +138,7 @@ def certifyOutput {α : Type} (providers : Json) (B : Bundle) (P : Plan)
     IO.ofExcept (ESTreeEmit.programs asts B P source)
   if checkOnly then
     let manifest ← writeProgramManifest programs work
-    let providerManifest := work / "provider-programs.json"
-    IO.FS.writeFile providerManifest providers.compress
-    timePhase timings "output_comparison" fun _ => do
-      let grouped := work / "grouped-output.json"
-      javascript #["--check-output"] #[manifest, input, providerManifest, out, grouped]
-      for pair in ← IO.ofExcept (← readJson grouped).getArr? do
-        let name ← IO.ofExcept (pair.getObjValAs? String "name")
-        let planned ← IO.ofExcept (pair.getObjVal? "planned" >>= unitProgram)
-        let observed ← IO.ofExcept (pair.getObjVal? "observed" >>= unitProgram)
-        unless planned == observed do throw (IO.userError s!"output module {name} differs from its generated ESTree")
+    timePhase timings "output_comparison" fun _ => compareDirectory manifest providers input out work
     check programs
   else
     match ← check programs with
@@ -145,6 +157,8 @@ def certifyOutput {α : Type} (providers : Json) (B : Bundle) (P : Plan)
             let dest := stage / name
             IO.FS.createDirAll (dest.parent.getD stage)
             IO.FS.writeFile dest (← IO.ofExcept (ast.getObjValAs? String "sourceText"))
+          -- The printer is outside the proof: publish only files that reparse to the certified ASTs.
+          compareDirectory manifest providers input stage work
           IO.FS.rename stage out
         finally
           if ← stage.pathExists then IO.FS.removeDirAll stage
