@@ -271,20 +271,20 @@ const wrapped = [...host.methods.map((name) => [name, true]), ...host.functions.
 /** Run a Node module and record its host calls. */
 async function runFileInNode(file) {
   const directory = path.dirname(file);
+  const activeRecording = { directory, calls: [] };
   const out = [];
-  const world = [];
   const log = console.log;
   console.log = (...args) => {
     const before = inHost;
     inHost = true;
     try {
-      if (calledByProgram(directory)) out.push(format(...args));
+      if (recording === activeRecording && calledByProgram(directory)) out.push(format(...args));
     } finally {
       inHost = before;
     }
   };
   const initialSymbols = symbolObservations();
-  recording = { directory, calls: world };
+  recording = activeRecording;
   for (const w of wrapped) Object.defineProperty(w.owner, w.key, { ...w.descriptor, value: w.proxy });
   let ending;
   try {
@@ -302,7 +302,7 @@ async function runFileInNode(file) {
     out,
     end: ending.end,
     detail: ending.detail,
-    world,
+    world: activeRecording.calls,
     iteratorSymbol: initialSymbols.iteratorSymbol && finalSymbols.iteratorSymbol,
     hasInstanceSymbol: initialSymbols.hasInstanceSymbol && finalSymbols.hasInstanceSymbol,
     toStringTagSymbol: initialSymbols.toStringTagSymbol && finalSymbols.toStringTagSymbol,
@@ -445,9 +445,11 @@ if (broad) {
   const releaseKey = "corejsDifferentialRelease";
   const release = `globalThis[${JSON.stringify(releaseKey)}]`;
   try {
-    await runInNode(`
+    const previous = await runInNode(`
+      const savedLog = console.log;
       new Promise((resolve) => { ${release} = resolve; }).then(() => {
         console.log("previous", Math.abs(-7));
+        savedLog("previous via saved console");
         ${release} = true;
       });
     `);
@@ -457,6 +459,7 @@ if (broad) {
     });
     const active = await runFileInNode(path.join(dir, "main.mjs"));
     assert.equal(globalThis[releaseKey], true, "the previous program's callback must run");
+    assert.deepEqual(previous.out, []);
     assert.equal(active.end, "normal", active.detail);
     assert.deepEqual(active.out, ["active 11"]);
     assert.deepEqual(asked(active), [["Math.abs", ["u"], [["d", bits(-11)]]]]);
