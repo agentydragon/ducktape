@@ -367,7 +367,19 @@ function runCase(dir, specName, expected, id) {
       JSON.stringify({ entry: plan.entry, modules: plan.modules, order: plan.order })
     );
     if (certification) {
-      return { id, ...certify({ stage, chunkFile, plan, want: wanted(expected), run, lowersplit, nodeRun }) };
+      return {
+        id,
+        ...certify({
+          stage,
+          chunkFile,
+          plan,
+          want: wanted(expected),
+          providers: Object.values(expected.accept.runtime_files ?? {}),
+          run,
+          lowersplit,
+          nodeRun,
+        }),
+      };
     }
     const checkerArgs = [
       "--diagnostic",

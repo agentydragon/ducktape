@@ -95,7 +95,7 @@ private structure Parsed where
 with a part-zero script and can script individual callable bodies. -/
 private inductive BodyFormat where
   | linked
-  | structural (pivots : Std.HashSet Nat) (location : LinkedDeployment.Access)
+  | structural (pivots : Std.HashSet Nat) (location : LinkedDeployment.Access) (fixed : Json)
   | recorded (scripts : Std.HashSet (Nat × Nat))
 
 private def BodyFormat.scripts : BodyFormat → Std.HashSet (Nat × Nat)
@@ -108,7 +108,7 @@ private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (impo
     let s ← OpaqueInput.unit origin j loaderNames
     return (s, (if exported then (Lower.topDefs j).eraseDups else []), [])
   match format with
-  | .structural pivots location =>
+  | .structural pivots location _ =>
     unless pivots.contains origin do
       -- Generators need their own intrinsic and fresh prototype.
       if Lower.typ j == "FunctionDeclaration" && Lower.flag j "generator" then
@@ -127,23 +127,72 @@ private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (impo
     return (s, bindings, sites.templates.toList)
   return (← FromESTree.linkedUnit imports ast profile, [], sites.templates.toList)
 
-/-- `export default …` lowers concretely. A structural proof can keep it only as a pivot. -/
+/-- A named default declaration exports its module binding. A retained named
+declaration uses the same checked captures and execution as the corresponding
+ordinary declaration. Anonymous defaults still require concrete lowering. -/
 private def BodyFormat.lowerDefault (format : BodyFormat) (profile : HostProfile) (imports : List Name)
-    (origin : Nat) (j : Json) : Except String (Stmt × Name × List TemplateSite) := do
-  if let .structural pivots _ := format then
-    unless pivots.contains origin do throw "unsupported opaque default export"
+    (origin : Nat) (providerSite : Option (String × Nat)) (j : Json) : Except String (Stmt × Name × List TemplateSite) := do
+  if let .structural pivots _ _ := format then
+    unless pivots.contains origin do
+      unless ["FunctionDeclaration", "ClassDeclaration"].contains (Lower.typ j) &&
+          Lower.typ (Lower.fld j "id") == "Identifier" do throw "unsupported opaque default export"
+      let name ← j.getObjVal? "id" >>= FromESTree.moduleBinding
+      let (s, bindings, sites) ← format.lower profile imports origin providerSite j true
+      unless bindings == [name] do throw "expected one named default binding"
+      return (s, name, sites)
   if format.scripts.contains (origin, 0) then throw "unsupported opaque default export"
   let (ast, sites) := numberSites origin format.scripts j
   let (name, s) ← FromESTree.linkedDefaultExport imports ast profile
   return (s, name, sites.templates.toList)
 
+/-- A retained unit can observe every live export through a namespace, even when the
+source spells only a method call (the receiver is the namespace). Give opaque code
+all those cells in a stable order. The source URL and local spelling are part of
+each slot name; neither the namespace nor its methods are rewritten in the files. -/
+private def namespaceImport (fixed : Json) (path : String) (j sp : Json) :
+    Except String (Import × (Name × List Name)) := do
+  let source ← ModuleInput.importSource path j
+  let .ok file := fixed.getObjVal? source | throw "namespace import requires a fixed provider"
+  let localName ← FromESTree.identifier (← sp.getObjVal? "local")
+  let mut exports := #[]
+  for node in ← ESTreeUnits.nodes file do
+    match Lower.typ node with
+    | "ExportNamedDeclaration" =>
+      let decl := Lower.fld node "declaration"
+      unless Lower.isNull (Lower.fld node "source") && !Lower.isNull decl do
+        throw "namespace provider requires inline named exports"
+      exports := exports ++ (Lower.topDefs decl).toArray
+    | "ExportAllDeclaration" | "ExportDefaultDeclaration" => throw "namespace provider requires inline named exports"
+    | _ => pure ()
+  if exports.isEmpty then throw "namespace provider has no named exports"
+  let names := exports.toList.mergeSort.map fun x => (x, s!":namespace:{source}:{localName}:{x}")
+  return (⟨source, names⟩, (localName, names.map Prod.snd))
+
+private def namespaceCaptures (captures : List (Name × List Name)) (stmt : Stmt) : Except String Stmt := do
+  if captures.isEmpty then return stmt
+  match stmt with
+  | .opaque code decls funs free run =>
+    return .opaque code decls funs (free.flatMap fun x => (captures.lookup x).getD [x]) run
+  | _ =>
+    if stmt.free.any (fun x => (captures.lookup x).isSome) then
+      throw "namespace access requires a retained opaque unit"
+    return stmt
+
 private def parse (format : BodyFormat) (profile : HostProfile) (path : String) (nodes : Array Json)
     (base : Nat := 0) (origins : Option (Array Nat) := none) (provider : Option String := none) : Except String Parsed := do
   let mut imports := #[]
+  let mut namespaces := #[]
   for j in nodes do
     if (← typ j) == "ImportDeclaration" then
+      if let .structural _ _ fixed := format then
+        if let #[sp] := Lower.items (Lower.fld j "specifiers") then
+          if Lower.typ sp == "ImportNamespaceSpecifier" then
+            let (req, capture) ← namespaceImport fixed path j sp
+            imports := imports.push req
+            namespaces := namespaces.push capture
+            continue
       imports := imports.push (← ModuleInput.importDecl path j)
-  let names := imports.toList.flatMap fun i => i.names.map Prod.snd
+  let names := namespaces.toList.map Prod.fst ++ imports.toList.flatMap fun i => i.names.map Prod.snd
   let mut units := #[]
   let mut exports := #[]
   let mut templates := #[]
@@ -172,18 +221,20 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
         unless specs.isEmpty do throw "expected an inline declaration export"
         let (s, names, sites) ← decode declaration true
         templates := templates ++ sites.toArray
-        units := units.push (i, s, declaration)
+        units := units.push (i, ← namespaceCaptures namespaces.toList s, declaration)
         for name in names do exports := exports.push (name, name)
     | "ExportDefaultDeclaration" =>
-      let (s, name, sites) ← (format.lowerDefault profile names (← origin) (← j.getObjVal? "declaration")).mapError
+      let unitOrigin ← origin
+      let (s, name, sites) ← (format.lowerDefault profile names unitOrigin
+        (provider.map fun referrer => (referrer, unitOrigin - base)) (← j.getObjVal? "declaration")).mapError
         fun why => s!"statement {i}: {why}"
       templates := templates ++ sites.toArray
-      units := units.push (i, s, j)
+      units := units.push (i, ← namespaceCaptures namespaces.toList s, j)
       exports := exports.push ("default", name)
     | _ =>
       let (s, _, sites) ← (decode j false).mapError fun why => s!"statement {i}: {why}"
       templates := templates ++ sites.toArray
-      units := units.push (i, s, j)
+      units := units.push (i, ← namespaceCaptures namespaces.toList s, j)
   return { imports := imports.toList, units := units.toList, exports := exports.toList, templates := templates.toList }
 
 private def Parsed.numbered (p : Parsed) (name : String) (base : Nat) : Module where
@@ -329,7 +380,7 @@ private def decodeFragment (format : BodyFormat) (profile : HostProfile) (source
     if ["ImportDeclaration", "ExportNamedDeclaration", "ExportDefaultDeclaration"].contains (← typ j) then
       unless entry.stmts.contains i do throw s!"original import or export unit {i} must stay in the entry"
   let original ← parse format profile sourcePath nodes base (provider := provider)
-  if let .structural pivots _ := format then
+  if let .structural pivots _ _ := format then
     let bodyIds := Std.HashSet.ofList (original.units.map fun u => base + u.1)
     for pivot in pivots do
       unless bodyIds.contains pivot do throw s!"pivot {pivot} is not an executable source unit"
@@ -351,7 +402,7 @@ private def decode (format : BodyFormat) (source providers files : Json) (P : Es
     (fragment.emittedTemplates ++ providerSites)
   let (before, after) ← match format with
     | .linked | .recorded _ => pure (before, after)
-    | .structural _ location =>
+    | .structural _ location _ =>
       pure (← location.attach before, ← location.attach after)
   checkScopes before after
   return (before, after)
@@ -373,7 +424,7 @@ def decodeStructuralPair (source providers files : Json) (P : EsmSplit.Plan) (pi
     (profile : HostProfile := .empty) (deployment : Option LinkedDeployment.Input := none) :
     Except String (Program × Program) := do
   let location ← deployment.mapM (LinkedDeployment.check · source providers P)
-  decode (.structural (Std.HashSet.ofList pivots) (location.getD {})) source providers files P profile
+  decode (.structural (Std.HashSet.ofList pivots) (location.getD {}) (if deployment.isSome then providers else .null)) source providers files P profile
 
 /-- One original path and the reparsed output files of its plan. Filenames
 in both plans live in the same deployment root. -/
@@ -439,7 +490,7 @@ def decodeDeployment (entry : String) (parts : List StaticSplit) (shared : Json)
           throw s!"{path}: joint static split requires location-independent units"
       pure {}
   let format (ids : List Nat) : BodyFormat :=
-    if inputs.isSome then .structural (Std.HashSet.ofList ids) access else .linked
+    if inputs.isSome then .structural (Std.HashSet.ofList ids) access shared else .linked
   let mut fragments := #[]
   let mut planned := #[]
   let mut base := 0

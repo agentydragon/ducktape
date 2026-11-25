@@ -35,12 +35,15 @@ def noAttributes (j : Json) : Except String Unit := do
   if let .ok attrs := j.getObjVal? "attributes" then
     unless (← attrs.getArr?).isEmpty do throw "unsupported module attributes"
 
-/-- Read a named or side-effect-only import and resolve its relative module request. -/
-def importDecl (importer : String) (j : Json) : Except String Import := do
+/-- Discover the provider file independently of how its bindings are imported. -/
+def importSource (importer : String) (j : Json) : Except String String := do
   unless (← typ j) == "ImportDeclaration" do throw "expected an import declaration"
-  let request ← j.getObjVal? "source" >>= FromESTree.stringLiteral
-  let source ← resolve importer request
   noAttributes j
+  resolve importer (← j.getObjVal? "source" >>= FromESTree.stringLiteral)
+
+/-- Read a named, default or side-effect-only import. -/
+def importDecl (importer : String) (j : Json) : Except String Import := do
+  let source ← importSource importer j
   let specs ← j.getObjValAs? (List Json) "specifiers"
   let names ← specs.mapM fun sp => do
     match ← typ sp with
