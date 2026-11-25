@@ -5,8 +5,8 @@ import EsmSplit.CoreJS.Fragment
 /-- Count the individual syntactic candidates for `MayMove`. `other` means that
 neither inert nor allocation-only applies, not that execution has a known effect.
 Opaque is an overlapping count; refused units stay in the denominator. -/
-private def moveCensus (source : Lean.Json) : Except String Lean.Json := do
-  let units ← CoreJS.LinkedInput.censusUnits source
+private def moveCensus (source : Lean.Json) (profile : CoreJS.HostProfile) : Except String Lean.Json := do
+  let units ← CoreJS.LinkedInput.censusUnits source profile
   let mut inert : Nat := 0
   let mut allocate : Nat := 0
   let mut opaqueCount : Nat := 0
@@ -23,17 +23,39 @@ private def moveCensus (source : Lean.Json) : Except String Lean.Json := do
       if stmt.inert then inert := inert + 1
       else if stmt.allocs.isSome then allocate := allocate + 1
       else other := other + 1
-  return Lean.Json.mkObj [("units", Lean.toJson units.size), ("inert", Lean.toJson inert),
+  return Lean.Json.mkObj [("hostProfile", Lean.toJson profile.label), ("units", Lean.toJson units.size), ("inert", Lean.toJson inert),
     ("allocate", Lean.toJson allocate), ("opaque", Lean.toJson opaqueCount), ("other", Lean.toJson other),
     ("refused", Lean.toJson refused), ("may_move", Lean.toJson (inert + allocate)),
     ("may_move_denominator", Lean.toJson units.size), ("problems", Lean.Json.arr problems)]
 
-/-- AST modes use the linked lowering under the recorded Node host. Other modes use `CoreJS.main`. -/
+/-- Census-only selection of production profiles and the two stable-intrinsic
+contracts accepted by `lowersplit`. Stable-value premises do not change the
+syntactic `MayMove` rule. Node recording is selected only by a separate flag. -/
+private def censusProfile (j : Lean.Json) : Except String CoreJS.HostProfile := do
+  let obj := Lean.Json.mkObj
+  if j == obj [("profile", .str "empty")] then return .empty
+  if j == obj [("profile", .str "ecmascript")] ||
+      j == obj [("profile", .str "ecmascript"),
+        ("stableIntrinsicValues", Lean.toJson (["Object.defineProperty@1"] : List String))] then
+    return .ecmascript
+  if j == obj [("profile", .str "browser-page"),
+      ("stableIntrinsicValues", Lean.toJson (["Math.PI@1"] : List String))] then
+    return .browserPage
+  CoreJS.HostProfile.read j
+
+private def runCensus (file : String) (profile : CoreJS.HostProfile) : IO UInt32 := do
+  match Lean.Json.parse (← IO.FS.readFile file) >>= (moveCensus · profile) with
+  | .ok report => IO.println report.compress; pure 0
+  | .error why => IO.eprintln why; pure 1
+
+/-- Replay uses the recorded Node host; the census defaults to the empty production profile. -/
 def main (args : List String) : IO UInt32 := do
   match args with
-  | ["--moves-ast", file] =>
-    match Lean.Json.parse (← IO.FS.readFile file) >>= moveCensus with
-    | .ok report => IO.println report.compress; pure 0
+  | ["--moves-ast", file] => runCensus file .empty
+  | ["--moves-ast", file, "--node-recording"] => runCensus file .nodeRecording
+  | ["--moves-ast", file, "--host-contract", contract] =>
+    match Lean.Json.parse (← IO.FS.readFile contract) >>= censusProfile with
+    | .ok profile => runCensus file profile
     | .error why => IO.eprintln why; pure 1
   | ["--ast", file] =>
     for line in (← IO.FS.lines file) do

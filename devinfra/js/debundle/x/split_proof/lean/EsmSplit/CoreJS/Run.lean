@@ -408,7 +408,7 @@ def main (args : List String) : IO UInt32 := do
       IO.println (runLine fuel line)
     pure 0
   | _ =>
-    IO.eprintln "usage: corejs programs.jsonl [--fuel N] | corejs --ast dumps.jsonl | corejs --host-names | corejs --moves-ast dump.json"
+    IO.eprintln "usage: corejs programs.jsonl [--fuel N] | corejs --ast dumps.jsonl | corejs --host-names | corejs --moves-ast dump.json [--host-contract file | --node-recording]"
     pure 2
 
 end CoreJS

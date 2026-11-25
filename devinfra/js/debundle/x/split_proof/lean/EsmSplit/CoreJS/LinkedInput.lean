@@ -453,7 +453,7 @@ def program (source providers : Json) (scripts : Std.HashSet (Nat × Nat)) (entr
 linked unit lowering as replay, falling back to the structural opaque lowering when
 that lowering refuses. It does not link providers or certify a split; refused units
 remain errors, including units that cannot safely be retained opaque. -/
-def censusUnits (source : Json) : Except String (Array (Nat × Except String Stmt)) := do
+def censusUnits (source : Json) (profile : HostProfile := .empty) : Except String (Array (Nat × Except String Stmt)) := do
   let nodes ← ESTreeUnits.nodes source
   let mut imports : List Name := []
   for j in nodes do
@@ -471,8 +471,8 @@ def censusUnits (source : Json) : Except String (Array (Nat × Except String Stm
     if ast == .null then continue
     let lowered : Except String Stmt := do
       if kind == "ExportDefaultDeclaration" then
-        return (← BodyFormat.lowerDefault (.recorded {}) .nodeRecording imports i none ast).1
-      return (← BodyFormat.lower (.recorded {}) .nodeRecording imports i none ast
+        return (← BodyFormat.lowerDefault (.recorded {}) profile imports i none ast).1
+      return (← BodyFormat.lower (.recorded {}) profile imports i none ast
         (kind == "ExportNamedDeclaration")).1
     let result := match lowered with
       | .ok stmt => .ok stmt

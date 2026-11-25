@@ -54,13 +54,52 @@ const censusSource = `
   export { a };
 `;
 const censusFile = file("census.json", JSON.stringify(dumpSource(censusSource)));
-const census = JSON.parse(execFileSync(process.env.COREJS, ["--moves-ast", censusFile], { encoding: "utf8" }));
+const census = JSON.parse(
+  execFileSync(process.env.COREJS, ["--moves-ast", censusFile, "--node-recording"], { encoding: "utf8" })
+);
+assert.equal(census.hostProfile, "node-recording");
 assert.deepEqual(
   [census.units, census.inert, census.allocate, census.opaque, census.other, census.refused],
   [7, 2, 2, 1, 2, 1]
 );
 assert.deepEqual([census.may_move, census.may_move_denominator], [4, 7]);
 assert.match(census.problems[0], /await/i);
+
+// An ambient host read must not become allocation-only under production
+// profiles merely because recorded Node replay treats it as a host value.
+const globalsFile = file("census-globals.json", JSON.stringify(dumpSource("const a = Object, b = Math;")));
+function censusFor(args = []) {
+  return JSON.parse(execFileSync(process.env.COREJS, ["--moves-ast", globalsFile, ...args], { encoding: "utf8" }));
+}
+function contract(name, value) {
+  return file(`${name}.json`, JSON.stringify(value));
+}
+const emptyCensus = censusFor();
+assert.deepEqual([emptyCensus.hostProfile, emptyCensus.allocate, emptyCensus.opaque], ["empty", 0, 2]);
+const emptyPath = contract("empty", { profile: "empty" });
+assert.deepEqual(censusFor(["--host-contract", emptyPath]), emptyCensus);
+const ecmaPath = contract("ecma", { profile: "ecmascript" });
+const ecmaCensus = censusFor(["--host-contract", ecmaPath]);
+assert.deepEqual([ecmaCensus.hostProfile, ecmaCensus.allocate, ecmaCensus.opaque], ["ecmascript", 0, 1]);
+const browserPath = contract("browser", { profile: "browser-page" });
+const browserCensus = censusFor(["--host-contract", browserPath]);
+assert.deepEqual([browserCensus.hostProfile, browserCensus.allocate, browserCensus.opaque], ["browser-page", 0, 0]);
+const nodeCensus = censusFor(["--node-recording"]);
+assert.deepEqual([nodeCensus.hostProfile, nodeCensus.allocate, nodeCensus.opaque], ["node-recording", 2, 0]);
+const ecmaStable = contract("ecma-stable", {
+  profile: "ecmascript",
+  stableIntrinsicValues: ["Object.defineProperty@1"],
+});
+assert.deepEqual(censusFor(["--host-contract", ecmaStable]), ecmaCensus);
+const browserStable = contract("browser-stable", { profile: "browser-page", stableIntrinsicValues: ["Math.PI@1"] });
+assert.deepEqual(censusFor(["--host-contract", browserStable]), browserCensus);
+const forbidden = contract("bad-profile", { profile: "node-recording" });
+assert.notEqual(spawnSync(process.env.COREJS, ["--moves-ast", globalsFile, "--host-contract", forbidden]).status, 0);
+assert.notEqual(
+  spawnSync(process.env.COREJS, ["--moves-ast", globalsFile, "--node-recording", "--host-contract", browserPath])
+    .status,
+  0
+);
 
 // Each seed builds a fresh module and binding chain. Throwing the last value
 // makes precision, shadowing and initialization observable in Node and CoreJS.
