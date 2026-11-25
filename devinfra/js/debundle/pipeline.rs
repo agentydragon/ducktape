@@ -36,10 +36,7 @@ use spec_modules::read_flat_transform_spec;
 use spec_tree::{
     CompileSpecTreeOptions, compile_spec_tree, compile_spec_tree_with_roots, graph_module_roots,
 };
-use vendor::{
-    VendorPlanOptions, VendorResolutionPlan, VendorSwapsReport, build_partial_swap_resolutions,
-    build_vendor_resolution_plan,
-};
+use vendor::{VendorPlanOptions, VendorResolutionPlan, build_vendor_resolution_plan};
 use write_tree::{RejectedArtifacts, WriteTreeInput, write_gate_rejected_marker, write_js_tree};
 
 /// Exit status of `debundle run --emit-on-rejection` when the realizability
@@ -1250,15 +1247,7 @@ fn run_prepared_transform(
         bail!("{requested} requires a configured report output directory");
     }
     let swap_cfg = &spec.swap_vendor_chunks;
-    let mut vendor_report = VendorSwapsReport::default();
     let write_vendor_outputs = swap_cfg.write && write_program;
-
-    // Full swaps are an emission-set exclusion: the swapped chunks stay in
-    // the bundle — nothing removes them, and the dependency graph never
-    // contained vendor chunks — but emission, the rename queue, the
-    // emit-shape check, and the chunk reports skip them. Their
-    // wire-facing resolutions are projections of the plan.
-    vendor_report.full = vendor_plan.full_swap_resolutions();
 
     let mut decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput> = HashMap::new();
     // Spec member claims whose `binding.name` did not resolve to a
@@ -1344,8 +1333,7 @@ fn run_prepared_transform(
     // The draft runs naturalization, vendor emission rewrites, and both
     // prune passes in their fixed order; its finalized files are immutable.
     let (candidate, selected_lowerings) = candidate_draft.finalize()?;
-    (vendor_report.partial, vendor_report.bundled_partial) =
-        build_partial_swap_resolutions(&vendor_plan, candidate.references_by_symbol())?;
+    let vendor_report = vendor_plan.swaps_report(candidate.references_by_symbol())?;
 
     // A gate-rejected program never reaches final program validation (as
     // without the flag, where the gate already failed the run): freeze it for
@@ -1711,8 +1699,6 @@ fn validate_transform_spec(spec: &TransformSpec) -> Result<()> {
     Ok(())
 }
 
-/// Fold one application site's per-symbol rewrite counts into the
-/// merged map `build_partial_swap_resolutions` projects from.
 fn preflight_output_roots(spec: &TransformSpec) -> Result<()> {
     let mut roots = Vec::<PathBuf>::new();
     if let Some(cfg) = &spec.write_js_tree {

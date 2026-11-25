@@ -4,7 +4,7 @@
 use source_identity::{ChunkId, ChunkTable};
 use std::collections::{BTreeMap, BTreeSet};
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 mod emission;
 mod export_surface;
 mod import_rewrites;
@@ -63,63 +63,6 @@ use spec::PartialSwapKind;
 // facade so the residual strip can drop the old implementation),
 // consumed by `emission::emit_vendor_residual`, and the manifest
 // projection.
-
-/// Project the plan's partial / bundled-partial resolutions into the
-/// wire manifest maps, folding the merged per-symbol rewrite counts
-/// from every application site (lowering construction, pass-through
-/// rewrite, bundled self-rewrite) into `references_rewritten` — the
-/// manifest counts **emitted** references regardless of which site
-/// produced them.
-pub fn build_partial_swap_resolutions(
-    plan: &VendorResolutionPlan,
-    rewrite_counts: &BTreeMap<(ChunkId, String), usize>,
-) -> Result<(
-    BTreeMap<String, ChunkPartialSwapResolution>,
-    BTreeMap<String, ChunkBundledPartialSwapResolution>,
-)> {
-    let mut partial: BTreeMap<String, ChunkPartialSwapResolution> = plan
-        .partial_swaps
-        .values()
-        .map(|entry| (entry.chunk_path.clone(), entry.resolution.clone()))
-        .collect();
-    let mut bundled: BTreeMap<String, ChunkBundledPartialSwapResolution> = plan
-        .bundled_partial_swaps
-        .values()
-        .map(|entry| (entry.chunk_path.clone(), entry.resolution.clone()))
-        .collect();
-    for ((chunk_id, chunk_export), count) in rewrite_counts {
-        let symbol_resolution = if let Some(entry) = plan.partial_swaps.get(chunk_id) {
-            partial
-                .get_mut(&entry.chunk_path)
-                .and_then(|resolution| resolution.symbols.get_mut(chunk_export))
-        } else if let Some(entry) = plan.bundled_partial_swaps.get(chunk_id) {
-            bundled
-                .get_mut(&entry.chunk_path)
-                .and_then(|resolution| resolution.symbols.get_mut(chunk_export))
-        } else {
-            bail!(
-                "vendor rewrite counts reference `{chunk_export}` on chunk {}, which has no partial-swap plan",
-                plan_chunk_name(plan, *chunk_id),
-            );
-        };
-        if let Some(symbol_resolution) = symbol_resolution {
-            symbol_resolution.references_rewritten += count;
-        }
-    }
-    Ok((partial, bundled))
-}
-
-fn plan_chunk_name(plan: &VendorResolutionPlan, chunk_id: ChunkId) -> String {
-    plan.partial_swaps
-        .get(&chunk_id)
-        .map(|entry| entry.resolution.chunk_id.clone())
-        .or_else(|| {
-            plan.bundled_partial_swaps
-                .get(&chunk_id)
-                .map(|entry| entry.resolution.chunk_id.clone())
-        })
-        .unwrap_or_else(|| format!("#{}", chunk_id.0))
-}
 
 /// Map each top-level binding name to its hygiene-preserving `Id`
 /// (`(atom, SyntaxContext)`). Used to resolve a manifest-recorded
