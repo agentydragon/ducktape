@@ -85,7 +85,7 @@ private theorem reachFrame_instanceOf {r R cells A} (away : Away r R A) (call : 
     (hf : CallFramed r R cells A call) (root : A (.obj objectProto)) (value ctor : Val)
     (hv : SafeVal A value) (hc : SafeVal A ctor) :
     ReachFrame r R cells A (SafeVal A) (instanceOf call value ctor) := by
-  have boolean (b : Bool) := reachFrame_pure r R cells A (P := SafeVal A) (Val.bool b) (fun _ h => by cases h)
+  have boolean (b : Bool) := reachFrame_pure (W := W) r R cells A (P := SafeVal A) (Val.bool b) (fun _ h => by cases h)
   have ordinary : ReachFrame r R cells A (SafeVal A) (ordinaryInstance call value ctor) := by
     cases value <;> simp only [ordinaryInstance] <;> try exact boolean false
     all_goals try exact reachFrame_unknown r R cells A _ _
@@ -93,8 +93,10 @@ private theorem reachFrame_instanceOf {r R cells A} (away : Away r R A) (call : 
       refine (reachFrame_getProp away call hf.getter root ctor (.str "prototype") hc).bind fun proto h => ?_
       refine (reachFrame_requireObj _ proto h).bind fun target ht => ?_
       refine (reachFrame_getObj away (safeVal_obj.1 hv)).bind fun o ho => ?_
-      exact (reachFrame_chainContains away ht o.proto (fun p hp => ho _ (by simp [Obj.nodes, hp]))).bind
-        fun b _ => boolean b
+      have safeParent (p : Addr) (hp : p ∈ o.proto) : A (.obj p) := by
+        have parent : o.proto = some p := hp
+        exact ho _ (by simp [Obj.nodes, parent])
+      exact (reachFrame_chainContains away ht o.proto safeParent).bind fun b _ => boolean b
   unfold instanceOf
   refine (reachFrame_requireObj _ ctor hc).bind fun _ _ => ?_
   refine (reachFrame_getProp away call hf.getter root ctor (.wellKnownSymbol .hasInstance) hc).bind fun method hm => ?_
