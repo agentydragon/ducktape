@@ -39,8 +39,48 @@ private def ignoredSourceUnit (ast : Json) : Bool :=
   typ == "ImportDeclaration" || typ == "EmptyStatement" || typ == "DebuggerStatement" ||
     (typ == "ExportNamedDeclaration" && Lower.isNull (Lower.fld ast "declaration"))
 
+private def ignoredSourceIdentity (nodes : Array Json) (id : Nat) : Bool :=
+  match nodes[id]? with
+  | some ast => ignoredSourceUnit ast
+  | none => false
+
+/-- Remove only the empty blocks inserted at source identities omitted by the
+decoder. -/
+private def eraseInserted (nodes : Array Json) (body : List (Nat × CoreJS.Stmt)) :=
+  body.filter fun unit => !(ignoredSourceIdentity nodes unit.1)
+
+/-- Add omitted identities while walking the placement and decoded body
+in lockstep. This refuses a placement that would reorder decoded units. -/
+private def denseBodyAux (nodes : Array Json) :
+    (ids : List Nat) → (body : List (Nat × CoreJS.Stmt)) →
+    Except String { dense : List (Nat × CoreJS.Stmt) // eraseInserted nodes dense = body }
+  | [], [] => .ok ⟨[], by simp [eraseInserted]⟩
+  | [], _ :: _ => .error "the decoded body contains identities outside its placement"
+  | id :: ids, body =>
+    match hIgnored : ignoredSourceIdentity nodes id with
+    | true => do
+      let rest ← denseBodyAux nodes ids body
+      return ⟨(id, .block []) :: rest.val, by
+        simpa [eraseInserted, hIgnored] using rest.property⟩
+    | false =>
+      match body with
+      | [] => .error s!"decoded executable source identity {id} has no CoreJS statement"
+      | (bodyId, stmt) :: bodyRest =>
+        if hId : id = bodyId then do
+          let rest ← denseBodyAux nodes ids bodyRest
+          return ⟨(id, stmt) :: rest.val, by
+            have hIgnoredBody : ignoredSourceIdentity nodes bodyId = false := by
+              simpa [hId] using hIgnored
+            calc
+              eraseInserted nodes ((id, stmt) :: rest.val) =
+                  (bodyId, stmt) :: eraseInserted nodes rest.val := by
+                simp [eraseInserted, hIgnoredBody, hId]
+              _ = (bodyId, stmt) :: bodyRest := by rw [rest.property]⟩
+        else .error s!"decoded body order differs at source identity {id}"
+termination_by ids body => ids.length
+
 private def denseBody (nodes : Array Json) (ids : List Nat) (body : List (Nat × CoreJS.Stmt)) :
-    Except String (List (Nat × CoreJS.Stmt)) := do
+    Except String { dense : List (Nat × CoreJS.Stmt) // eraseInserted nodes dense = body } := do
   unless ids.Nodup do throw "the placement repeats a source identity"
   let bodyIds := body.map Prod.fst
   unless bodyIds.Nodup do throw "the decoded body repeats a source identity"
@@ -48,31 +88,64 @@ private def denseBody (nodes : Array Json) (ids : List Nat) (body : List (Nat ×
   bodyIds.forM fun id => do
     unless (ids.filter (· == id)).length == 1 do
       throw s!"the decoded identity {id} is placed more than once"
-  ids.mapM fun id => do
-    match body.find? (·.1 == id) with
-    | some unit => pure unit
-    | none => do
-      let some ast := nodes[id]? | throw s!"missing source syntax for identity {id}"
-      unless ignoredSourceUnit ast do
-        throw s!"decoded executable source identity {id} has no CoreJS statement"
-      pure (id, .block [])
+  denseBodyAux nodes ids body
 
-structure DensePair where
+/-- Per-module evidence that the dense body erases to that decoded module's
+body, with its position retained in the evidence list. -/
+structure DenseModuleEvidence (nodes : Array Json) where
+  decoded : CoreJS.Module
+  dense : CoreJS.Module
+  nameSame : dense.name = decoded.name
+  bodyErases : eraseInserted nodes dense.body = decoded.body
+
+private def denseModuleEvidence (nodes : Array Json) :
+    (placements : List EsmSplit.Module) → (decoded : List CoreJS.Module) →
+    Except String { evidence : List (DenseModuleEvidence nodes) // evidence.map (·.decoded) = decoded }
+  | [], [] => .ok ⟨[], rfl⟩
+  | [], _ :: _ => .error "decoded candidate has modules absent from the plan"
+  | _ :: _, [] => .error "the plan has modules absent from the decoded candidate"
+  | placement :: placements, emitted :: decoded => do
+    unless placement.name == emitted.name do throw "decoded candidate module order differs from the plan"
+    let body ← denseBody nodes placement.stmts emitted.body
+    let rest ← denseModuleEvidence nodes placements decoded
+    let current : DenseModuleEvidence nodes := {
+      decoded := emitted
+      dense := { emitted with body := body.val }
+      nameSame := rfl
+      bodyErases := by simpa using body.property
+    }
+    return ⟨current :: rest.val, by simp [current, rest.property]⟩
+termination_by placements decoded => placements.length
+
+private def sourceHead (modules : List CoreJS.Module) :
+    Except String { module : CoreJS.Module // modules.head? = some module } :=
+  match modules with
+  | [] => .error "missing original module"
+  | module :: _ => .ok ⟨module, rfl⟩
+
+structure DensePair (decodedOriginal decodedCandidate : CoreJS.Program) where
+  sourceNodes : Array Json
   original : CoreJS.Program
   candidate : CoreJS.Program
   sourceModule : CoreJS.Module
   sourceShape : original.modules = [sourceModule] ∧ original.entry = sourceModule.name ∧ sourceModule.imports = []
+  sourceBodyErases : ∃ decodedModule, decodedOriginal.modules.head? = some decodedModule ∧
+    eraseInserted sourceNodes sourceModule.body = decodedModule.body
+  candidateModuleEvidence : List (DenseModuleEvidence sourceNodes)
+  candidateModulesDecode : candidateModuleEvidence.map (·.decoded) = decodedCandidate.modules
+  candidateModulesDense : candidate.modules = candidateModuleEvidence.map (·.dense)
 
 /-- Add the source-identity empty blocks omitted by `decodePair`. This checked
 post-processing is deliberately local to the slice strategy until all linked
 strategies share dense decoding. -/
 def densePair (sourceAst : Json) (P : EsmSplit.Plan) (B : EsmSplit.Bundle)
-    (original candidate : CoreJS.Program) : Except String DensePair := do
+    (original candidate : CoreJS.Program) : Except String (DensePair original candidate) := do
   let nodes ← (ESTreeUnits.nodes sourceAst).mapError ("source syntax: " ++ ·)
   unless nodes.size == B.length do throw "source syntax and layout bundle have different lengths"
   let providers := original.modules.drop 1
   unless providers.isEmpty do throw "slice strategy requires one original module and no providers"
-  let some sourceModule := original.modules.head? | throw "missing original module"
+  let sourceData ← sourceHead original.modules
+  let sourceModule := sourceData.val
   unless sourceModule.name != ":corejs:template-objects" do
     throw "slice strategy does not cover a template-object source module"
   let checks : Except String (PLift (original.entry = sourceModule.name ∧ sourceModule.imports = [])) :=
@@ -88,14 +161,13 @@ def densePair (sourceAst : Json) (P : EsmSplit.Plan) (B : EsmSplit.Bundle)
   unless candidate.modules.all (·.name != ":corejs:template-objects") do
     throw "slice strategy does not cover a template-object module"
   let denseSourceBody ← denseBody nodes (List.range nodes.size) sourceModule.body
-  let denseSourceModule := { sourceModule with body := denseSourceBody }
-  let denseModules ← (P.mods.zip candidate.modules).mapM fun (placement, emitted) => do
-    unless placement.name == emitted.name do throw "decoded candidate module order differs from the plan"
-    let body ← denseBody nodes placement.stmts emitted.body
-    pure { emitted with body }
+  let denseSourceModule := { sourceModule with body := denseSourceBody.val }
+  let moduleEvidence ← denseModuleEvidence nodes P.mods candidate.modules
+  let denseModules := moduleEvidence.val.map (·.dense)
   let denseOriginal := { original with modules := [denseSourceModule] }
   let denseCandidate := { candidate with modules := denseModules }
   return {
+    sourceNodes := nodes
     original := denseOriginal
     candidate := denseCandidate
     sourceModule := denseSourceModule
@@ -103,6 +175,12 @@ def densePair (sourceAst : Json) (P : EsmSplit.Plan) (B : EsmSplit.Bundle)
       refine ⟨by simp [denseOriginal], ?_, ?_⟩
       simpa [denseOriginal] using hentry
       simpa [denseSourceModule] using himports
+    sourceBodyErases := by
+      refine ⟨sourceModule, sourceData.property, ?_⟩
+      simpa [denseSourceModule] using denseSourceBody.property
+    candidateModuleEvidence := moduleEvidence.val
+    candidateModulesDecode := moduleEvidence.property
+    candidateModulesDense := by simp [denseCandidate, denseModules]
   }
 
 /-! `linkedLayoutBundle` records assignment targets in `Stmt.assigns` for
@@ -257,7 +335,7 @@ def SliceStatementFor (profile : CoreJS.HostProfile) (source providers files : J
     (P : EsmSplit.Plan) (B : EsmSplit.Bundle) (S : EsmSplit.Spec) (kind : SliceKind) : Prop :=
   ∃ original candidate,
     CoreJS.LinkedInput.decodePair source providers files P profile = .ok (original, candidate) ∧
-    ∃ dense : DensePair,
+    ∃ dense : DensePair original candidate,
       densePair source P B original candidate = .ok dense ∧
       CoreJS.FootprintsOfSyntax (dense.sourceModule.body.map Prod.snd) B ∧
       EsmSplit.Valid B S P ∧
