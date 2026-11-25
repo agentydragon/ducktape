@@ -74,13 +74,17 @@ const functions = sequentialSplit(
    async function read(x, y = offset) { return await x + y; }
    const arrow = async (...xs) => (await read(xs[0])) + offset;
    const named = async function inner(x) { return x ? inner(0) : offset; };
-   export { before, read, arrow, named };`,
-  { "offset.mjs": ["#0"], "funcs.mjs": ["#1", "#2", "#3", "#4"], "entry.mjs": ["#5"] },
+   function factory() { return async () => class { #field; }; }
+   export { before, read, arrow, named, factory };`,
+  { "offset.mjs": ["#0"], "funcs.mjs": ["#1", "#2", "#3", "#4", "#5"], "entry.mjs": ["#6"] },
   ["offset.mjs", "funcs.mjs"]
 );
 assert.equal(functions.verdict.status, "certified", functions.log);
 for (const file of [functions.files.sourceFile, path.join(functions.out, "entry.mjs")]) {
-  const { before, read, arrow, named } = await import(pathToFileURL(file).href);
+  const { before, read, arrow, named, factory } = await import(pathToFileURL(file).href);
+  // The enclosing function can retain the complete syntax, including the private
+  // name. Its nested refusal must compare equal after relocation.
+  assert.equal(typeof (await factory()()), "function");
   assert.equal(before, read);
   for (const [fn, name, length] of [
     [read, "read", 1],
@@ -94,7 +98,17 @@ for (const file of [functions.files.sourceFile, path.join(functions.out, "entry.
   }
   assert.deepEqual(await Promise.all([read(3), arrow(4), named(1)]), [5, 8, 2]);
 }
-assertRejected(
-  workerSplit("reached-async-function", "async function run() { return 1; } export const value = run();"),
-  /deferred function run: async invocation requires Promise semantics/
+// A never-called definition can fail during lowering, before the execution probe.
+const definition = workerSplit(
+  "unretained-async-definition",
+  "async function locate() { return import.meta.url; } export const value = 1;"
 );
+assertRejected(definition, /cannot retain async function definition at unit 0, callable 1: .*\(MetaProperty\)/);
+assert.equal(definition.verdict.reason_code, "linked_input", definition.log);
+
+const invocation = workerSplit(
+  "reached-async-function",
+  "async function run() { return 1; } export const value = run();"
+);
+assertRejected(invocation, /deferred function run: async invocation requires Promise semantics/);
+assert.equal(invocation.verdict.reason_code, "probe_unknown", invocation.log);
