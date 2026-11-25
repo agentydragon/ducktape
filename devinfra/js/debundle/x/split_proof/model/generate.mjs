@@ -191,9 +191,16 @@ export function generatedOpaqueCase(seed) {
     `,
     // The opaque closure captures add before its initializer runs, then reenters it after initialization.
     scripts: {
+      // Keep this declaration opaque as a unit, as the diagnostic decoder does.
+      // `pick` is slot 0 and its captured `add` cell is slot 1.
+      "0/0": [
+        ["newFunction", 1, "pick", 1, false],
+        ["initVar", 0, ["r", 2]],
+        ["done", ["u"]],
+      ],
       "0/1": [
         ["get", ["r", 2], ["s", "value"]],
-        ["readVar", 0],
+        ["readVar", 1],
         ["call", ["r", 4], ["u"], ["r", 3]],
         ["done", ["r", 5]],
       ],
