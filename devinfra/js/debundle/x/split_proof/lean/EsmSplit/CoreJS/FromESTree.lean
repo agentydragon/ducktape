@@ -1126,7 +1126,10 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
       continue
     let (key, keyExpr) ← if ← member.getObjValAs? Bool "computed" then do
       if tag == "MethodDefinition" then
-        pure ("", ← linkedExpr profile imports inFunction "" keyNode)
+        if let some sym := (ambientSymbolMember? keyNode).bind WellKnownSymbol.ofMember? then
+          unless profile == .browserPage do throw "unsupported computed class key"
+          pure (s!"[{sym.description}]", Expr.prim (.wellKnownSymbol sym) [])
+        else pure ("", ← linkedExpr profile imports inFunction "" keyNode)
       else if !static && (← field keyNode "type") == "Identifier" &&
           (field keyNode "k").toOption.any (["L", "T", "V"].contains ·) then
         if ← isAnonymousDefinition value then throw "unsupported function or class named by a computed field key"

@@ -78,6 +78,9 @@ if (runCase("async-iterator-symbol")) {
     { "base.mjs": ["#0"], "entry.mjs": ["#1", "#2"] }
   );
   assertCertifiedResult(run, true);
+  assert.deepEqual(run.verdict.assumptions, [
+    "Symbol.asyncIterator returns the well-known asyncIterator symbol without observable effects throughout initialization",
+  ]);
   assert.deepEqual(
     lower(run.files.sourceFile, run.files.specFile, run.out, [...run.options, "--check-output"]).verdict,
     run.verdict
