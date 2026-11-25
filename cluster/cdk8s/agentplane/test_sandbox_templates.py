@@ -105,6 +105,8 @@ def test_runner_pod_gives_codex_a_private_executor_with_shared_paths(
         assert executor[probe]["httpGet"] == {"path": "/healthz", "port": health_port}
     assert executor["image"] == runner["image"]
     assert executor["workingDir"] == runner["workingDir"] == "/state"
+    assert executor["resources"]["requests"]["memory"] == "1Gi"
+    assert executor["resources"]["limits"]["memory"] == "4Gi"
 
     runner_mounts = {mount["mountPath"]: mount["name"] for mount in runner["volumeMounts"]}
     executor_mounts = {mount["mountPath"]: mount["name"] for mount in executor["volumeMounts"]}
