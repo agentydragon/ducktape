@@ -491,6 +491,15 @@ lean_binary(
     deps = [":corejs_runtime"],
 )
 
+lean_binary(
+    name = "global_env_test_runner",
+    testonly = True,
+    srcs = ["GlobalEnvTest.lean"],
+    entry = "GlobalEnvTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
+    deps = [":corejs_runtime"],
+)
+
 # The CoreJS model. `model/differential.mjs` runs it against Node.
 lean_binary(
     name = "corejs",

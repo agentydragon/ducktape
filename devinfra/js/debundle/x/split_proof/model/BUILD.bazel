@@ -54,6 +54,13 @@ js_test(
 )
 
 js_test(
+    name = "global_env_differential_test",
+    data = ["//devinfra/js/debundle/x/split_proof/lean:global_env_test_runner"],
+    entry_point = "global_env_differential.mjs",
+    env = {"GLOBAL_ENV_TEST": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:global_env_test_runner)"},
+)
+
+js_test(
     name = "corejs_differential_test",
     size = "medium",
     args = [
