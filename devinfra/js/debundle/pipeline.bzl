@@ -11,6 +11,7 @@ because authored graph options and module ownership belong to that stage.
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//lib:shell.bzl", "shell")
+load(":directory_artifact.bzl", "single_directory")
 
 # Sync: `GATE_REJECTED_EXIT_CODE` in `pipeline.rs`.
 _GATE_REJECTED_EXIT_CODE = 3
@@ -317,14 +318,7 @@ def _spec_plan(ctx):
 
     package_args = []
     for pkg_label, pkg_name in ctx.attr.package_roots.items():
-        pkg_files = pkg_label[DefaultInfo].files.to_list()
-        if not pkg_files:
-            fail("package_roots entry {} has no files".format(pkg_name))
-
-        # The `:dir` filegroup is a single tree artifact whose `.path`
-        # already points directly at the package directory containing
-        # `package.json`. Make it bin-dir-relative for the post-cd cwd.
-        pkg_dir = paths.relativize(pkg_files[0].path, bin_dir)
+        pkg_dir = paths.relativize(single_directory(pkg_label).path, bin_dir)
         package_args += [
             shell.quote("--package-root"),
             shell.quote("{}={}".format(pkg_name, pkg_dir)),
@@ -429,7 +423,7 @@ _COMMON_ATTRS = {
     ),
     "package_roots": attr.label_keyed_string_dict(
         allow_files = True,
-        doc = "Vendor package roots: label of the package's `:dir` filegroup -> package name. The first file's dirname is passed as `--package-root <name>=<dir>`.",
+        doc = "Vendor package roots: label of the package's `:dir` filegroup -> package name. The target must provide exactly one directory artifact, passed as `--package-root <name>=<dir>`.",
     ),
 }
 

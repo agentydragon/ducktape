@@ -2,6 +2,7 @@
 
 load("@bazel_skylib//lib:shell.bzl", "shell")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load(":directory_artifact.bzl", "single_directory")
 
 _DEBUNDLER = Label("@ducktape//devinfra/js/debundle:debundler")
 _LAUNCHER = Label("//devinfra/js/debundle:debundle_cli.sh")
@@ -26,10 +27,7 @@ _debundler_tool = rule(
 )
 
 def _single_tree_impl(ctx):
-    files = ctx.attr.src[DefaultInfo].files.to_list()
-    if len(files) != 1 or not files[0].is_directory:
-        fail("{} must provide exactly one directory artifact".format(ctx.attr.src.label))
-
+    files = [single_directory(ctx.attr.src)]
     return [DefaultInfo(
         files = depset(files),
         runfiles = ctx.runfiles(files = files).merge(ctx.attr.src[DefaultInfo].default_runfiles),
