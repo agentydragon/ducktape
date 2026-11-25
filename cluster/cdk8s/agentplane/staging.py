@@ -141,7 +141,7 @@ from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSec
 from cluster.cdk8s.public_coder import egress as public_coder_egress
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.ssh_mcp import config as ssh_mcp
-from model_catalog.catalog import TABBYAPI_QWEN_ABLITERATED, TABBYAPI_QWEN_STOCK, Provider
+from model_catalog.catalog import TABBYAPI_QWEN_ABLITERATED, TABBYAPI_QWEN_STOCK, Provider, Route, TokenLimits
 
 _HOSTNAME = "agentplane-staging.allegedly.works"
 _ACTIONS_HOSTNAME = "agentplane-actions-staging.allegedly.works"
@@ -448,6 +448,14 @@ _SPEND_LOGS_FIELDS = {
 }
 
 
+def _anthropic_auto_compact_tokens(route: Route) -> int:
+    limits = route.model.limits
+    if not isinstance(limits, TokenLimits):
+        raise ValueError(f"Missing Anthropic API token limits for {route.id}")
+    # The direct API catalog records Anthropic's published context window as the input ceiling.
+    return limits.max_input_tokens * 9 // 10
+
+
 def environment(*, identity_catalog: bool) -> Environment:
     """Build staging with the selected policy catalog for both app and orchestration presets."""
     openai_compaction_tokens = codex_auto_compact_tokens(
@@ -513,7 +521,7 @@ def environment(*, identity_catalog: bool) -> Environment:
                         provider_model=route.model.id,
                         api="anthropic_messages",
                         anthropic_messages=_ANTHROPIC_MESSAGES,
-                        auto_compact_tokens=750_000,
+                        auto_compact_tokens=_anthropic_auto_compact_tokens(route),
                         exec_encoding="json",
                         reasoning_efforts=set(route.reasoning_efforts),
                     )

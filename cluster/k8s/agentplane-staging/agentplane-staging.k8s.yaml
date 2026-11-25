@@ -3504,7 +3504,7 @@ data:
         "anthropic-api/ant-messages/claude-opus-5-5": {
           "connection": "anthropic-api",
           "provider_model": "claude-opus-5-5",
-          "auto_compact_tokens": 750000,
+          "auto_compact_tokens": 900000,
           "api": "anthropic_messages",
           "anthropic_messages": {
             "max_tokens": 32768,
@@ -3538,7 +3538,7 @@ data:
         "anthropic-api/ant-messages/claude-sonnet-5-5": {
           "connection": "anthropic-api",
           "provider_model": "claude-sonnet-5-5",
-          "auto_compact_tokens": 750000,
+          "auto_compact_tokens": 900000,
           "api": "anthropic_messages",
           "anthropic_messages": {
             "max_tokens": 32768,
@@ -3572,7 +3572,7 @@ data:
         "anthropic-api/ant-messages/claude-haiku-5-5": {
           "connection": "anthropic-api",
           "provider_model": "claude-haiku-5-5",
-          "auto_compact_tokens": 750000,
+          "auto_compact_tokens": 900000,
           "api": "anthropic_messages",
           "anthropic_messages": {
             "max_tokens": 32768,
@@ -3606,7 +3606,7 @@ data:
         "anthropic-api/ant-messages/claude-fable-5-2": {
           "connection": "anthropic-api",
           "provider_model": "claude-fable-5-2",
-          "auto_compact_tokens": 750000,
+          "auto_compact_tokens": 900000,
           "api": "anthropic_messages",
           "anthropic_messages": {
             "max_tokens": 32768,
