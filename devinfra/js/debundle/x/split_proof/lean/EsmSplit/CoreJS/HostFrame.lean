@@ -65,6 +65,9 @@ theorem reachFrame_hostCall (r R cells A) (name : String) (this : Val) (args : L
     ReachFrame r R cells A (SafeVal A) (hostCall name this args : M W Val) := by
   unfold hostCall
   split
+  · exact ⟨fun _ _ _ _ _ => rfl, fun s _ _ => Preserves.refl r R s,
+      fun _ hs _ => ⟨by simp [SafeVal, Val.nodes], hs⟩⟩
+  split
   · exact reachFrame_unknown r R cells A _ _
   · rename_i this args _
     exact reachFrame_hostObservation r R cells A (fun state => some (W.step name this args state))

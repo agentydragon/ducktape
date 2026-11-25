@@ -93,6 +93,7 @@ js_test(
         "reordering_test",
         "resolved_placement_test",
         "rest_parameters_test",
+        "strict_arguments_test",
         "schedule_moves_test",
         "regexp_test",
         "small_records_test",
@@ -121,19 +122,23 @@ js_test(
     )
     for name, shards in [
         ("browser_globals_test", 4),
+        ("conditional_super_test", 3),
         ("default_parameters_test", 3),
         ("flat_patterns_test", 6),
         ("generator_test", 4),
         ("identifier_assignment_test", 3),
         ("instanceof_test", 2),
         ("loops_test", 4),
+        ("new_target_test", 3),
         ("numeric_property_keys_test", 2),
         ("object_parameter_defaults_test", 2),
         ("pre_super_object_test", 5),
+        ("private_elements_test", 4),
         ("optional_chain_test", 3),
         ("sequence_test", 3),
         ("super_members_test", 3),
         ("templates_test", 3),
+        ("tagged_templates_test", 3),
     ]
 ]
 

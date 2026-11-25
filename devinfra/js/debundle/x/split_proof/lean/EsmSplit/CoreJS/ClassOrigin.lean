@@ -58,6 +58,8 @@ private theorem defineOwn_preserves_other {s t : State W} {a c : Addr} {key : Pr
   subst s1
   split at hrest
   · cases hrest
+  split at hrest
+  · cases hrest
   · obtain ⟨p, s2, hp, hdefine⟩ := bind_ok hrest
     have hs2 := (inert_lift _).ok hp
     subst s2

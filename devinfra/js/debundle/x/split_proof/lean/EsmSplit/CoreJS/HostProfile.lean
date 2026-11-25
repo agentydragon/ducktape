@@ -38,6 +38,7 @@ def bindingIdentity (profile : HostProfile) (name : String) : Option String := d
     return "intrinsic.Object"
   guard (profile == .browserPage)
   if aliases.contains name then return "window"
+  if name == "Array" then return "intrinsic.Array"
   if name == "Symbol" then return "intrinsic.Symbol"
   guard (BrowserGlobals.functions.contains name || BrowserGlobals.objects.contains name)
   return "window." ++ name
@@ -47,6 +48,11 @@ def identity (profile : HostProfile) : HostRef → Option String
   | .property "window" name => do
     guard (profile == .browserPage)
     profile.bindingIdentity name
+  | .property "intrinsic.Array" key => do
+    guard (profile == .browserPage)
+    if key == "from" then return "intrinsic.Array.from"
+    guard (((BrowserGlobals.methods.lookup "Array").getD []).contains key)
+    return "window.Array." ++ key
   | .property "Symbol" member => do
     guard (profile == .browserPage)
     return (← WellKnownSymbol.ofMember? member).description
@@ -90,6 +96,8 @@ def assumptions (p : HostPremises) : List String :=
       "the well-known hasInstance symbol"
     else if ref == .property "Symbol" "toStringTag" && identity == "Symbol.toStringTag" then
       "the well-known toStringTag symbol"
+    else if identity == "intrinsic.Array" then "the intrinsic Array constructor"
+    else if identity == "intrinsic.Array.from" then "the intrinsic Array.from function"
     else if identity == "intrinsic.Symbol" then "the intrinsic Symbol function"
     else if identity == "window" then "the same page object" else s!"the stable host reference {identity}"
     s!"{read} returns {result} without observable effects throughout initialization")

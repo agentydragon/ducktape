@@ -65,6 +65,11 @@ def WellKnownSymbol.ofMember? : String → Option WellKnownSymbol
   | "toStringTag" => some .toStringTag
   | _ => none
 
+/-- Operations on an instance element identified by a lexical private name. -/
+inductive PrivateOp where
+  | get | set | addField | addMethod
+  deriving DecidableEq, Repr
+
 /-- Primitive operations and opaque ambient references used by the interpreter. -/
 inductive Prim where
   | regExpGet (getter : RegExpGetter)
@@ -72,10 +77,16 @@ inductive Prim where
   | globalRef (binding : String)
   | wellKnownSymbol (sym : WellKnownSymbol)
   | freshSymbol
+  | privateSlot (op : PrivateOp)
+  | callWithReceiver
   | opaqueAmbientRef (binding : String)
   | opaqueConstructorRef (binding : String)
   | opaqueAmbientMemberRef (receiver member : String)
   | instanceOf
+  /-- Construct the immutable dense array used for a template site. The cooked array receives the raw array first. -/
+  | templateArray (cooked : Bool)
+  | checkArrayFrom
+  | templateIterable
   | forInKeys
   | checkForInWrite
   | log | defineProperty | create | getPrototypeOf | setPrototypeOf
@@ -126,9 +137,9 @@ inductive Expr where
   | spreadArg (source : Expr)
   /-- `class name { … }`; `self` when the body sees the name. -/
   | cls (name : String) (self : Bool) (ctor : Func) (members : List ClassMember)
-  /-- A derived class. An explicit constructor splits its body at the direct super call. -/
+  /-- A derived class. An explicit constructor separates the prefix, superclass arguments and continuation. -/
   | derived (name : String) (self : Bool) (parent : Expr) (members : List ClassMember)
-      (ctor : Option (List Stmt × Option (List Expr) × Func))
+      (ctor : Option (List Stmt × SuperCall × Func))
   | get (o k : Expr)
   /-- Read from the current prototype of the lexical home object, using the active receiver. -/
   | getSuper (k : Expr)
@@ -157,6 +168,13 @@ inductive Expr where
   | logical (op : LogOp) (a b : Expr)
   | cond (c t e : Expr)
   | seq (a b : Expr)
+
+/-- The superclass arguments selected after the prefix has executed. A conditional
+prefix saves its choice and the lexical environments of each selected argument. -/
+inductive SuperCall where
+  | forward
+  | explicit (args : List Expr)
+  | conditional (choice : Name) (consequent alternate : List Expr)
 
 inductive Target where
   | var (x : Name)
@@ -345,6 +363,12 @@ def funDecls (ss : List Stmt) : List Func :=
     | .funDecl f => some f
     | _ => none
 
+/-- Private element installation itself completes the field definition. The hidden
+name table is the destination, so there is no ordinary own property to create. -/
+def Expr.installsPrivate : Expr → Bool
+  | .prim (.privateSlot .addField) _ | .prim (.privateSlot .addMethod) _ => true
+  | _ => false
+
 /-- The initializers of the fields of a class body, in order. -/
 def fieldInits : List ClassMember → List Expr
   | [] => []
@@ -369,6 +393,9 @@ private def freeFunctionNames (params : List Name) (body : List Stmt) (names : L
 
 /-- The receiver binding shared by pre-super arrows, outside the source identifier namespace. -/
 def derivedReceiverName : Name := ":derived-this"
+
+/-- A constructor or ordinary call owns its new target. Lexical arrows close over this cell. -/
+def newTargetName : Name := ":new-target"
 
 mutual
 
@@ -418,17 +445,18 @@ def ClassMember.free : ClassMember → List Name
   | .field _ k init => k.free ++ init.free
   | .staticBlock body => body.free
 
-def freeSuperArgs : Option (List Expr) → List Name
-  | some args => freeExprs args
-  | none => []
+def freeSuperArgs : SuperCall → List Name
+  | .forward => []
+  | .explicit args => freeExprs args
+  | .conditional choice yes no => choice :: (freeExprs yes ++ freeExprs no)
 
-/-- An absent argument list forwards the fresh strict arguments object through its intrinsic iterator.
-The prefix, super arguments and remaining body share the constructor's scope. -/
-def derivedCtorFree : Option (List Stmt × Option (List Expr) × Func) → List Name
+/-- The prefix, super arguments and remaining body share the constructor's scope.
+The forwarding form checks the fresh arguments object's intrinsic iterator. -/
+def derivedCtorFree : Option (List Stmt × SuperCall × Func) → List Name
   | some (before, args, .mk _ _ _ params body) | some (before, args, .withDefaults _ _ _ params _ body) =>
-    freeFunctionNames (derivedReceiverName :: params) (before ++ body) (freeStmts before ++ freeSuperArgs args ++ freeStmts body)
+    freeFunctionNames ("arguments" :: derivedReceiverName :: newTargetName :: params) (before ++ body) (freeStmts before ++ freeSuperArgs args ++ freeStmts body)
   | some (before, args, .withRest _ _ _ fixed rest body) =>
-    freeFunctionNames (derivedReceiverName :: fixed ++ [rest]) (before ++ body)
+    freeFunctionNames ("arguments" :: derivedReceiverName :: newTargetName :: fixed ++ [rest]) (before ++ body)
       (freeStmts before ++ freeSuperArgs args ++ freeStmts body)
   | some (before, args, .opaque ..) => freeFunctionNames [] before (freeStmts before ++ freeSuperArgs args)
   | none => []
@@ -436,10 +464,12 @@ def derivedCtorFree : Option (List Stmt × Option (List Expr) × Func) → List 
 /-- The names of the scope around a function that its code can mean. -/
 def Func.free : Func → List Name
   | .opaque name _ self _ _ _ free _ => free.filter fun x => !(self && x == name)
-  | .mk name _ self params body | .withDefaults name _ self params _ body =>
-    freeFunctionNames (if self then name :: params else params) body (freeStmts body)
-  | .withRest name _ self fixed rest body =>
-    freeFunctionNames ((if self then name :: fixed else fixed) ++ [rest]) body (freeStmts body)
+  | .mk name kind self params body | .withDefaults name kind self params _ body =>
+    freeFunctionNames (if self then name :: params else params) body
+      ((freeStmts body).filter fun x => kind == .arrow || (x != newTargetName && x != "arguments"))
+  | .withRest name kind self fixed rest body =>
+    freeFunctionNames ((if self then name :: fixed else fixed) ++ [rest]) body
+      ((freeStmts body).filter fun x => kind == .arrow || (x != newTargetName && x != "arguments"))
 
 def BindingPattern.free : BindingPattern → List Name
   | .name x => [x]

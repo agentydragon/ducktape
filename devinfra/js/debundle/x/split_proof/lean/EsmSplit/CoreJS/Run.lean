@@ -332,7 +332,11 @@ def showCode : Code → String
   | .derivedFields env fields =>
     s!"derived fields {env.vars.map fun (x, a) => (x, showAddr a)} {fields.map fun (key, _) => showKey key}"
   | .derivedBody before args f env fields =>
-    let base := s!"derived {f.name} {f.params} {before.length} {args.elim "forward" (toString ·.length)} {env.vars.map fun (x, a) => (x, showAddr a)}"
+    let argumentShape := match args with
+      | .forward => "forward"
+      | .explicit es => toString es.length
+      | .conditional _ yes no => s!"if({yes.length},{no.length})"
+    let base := s!"derived {f.name} {f.params} {before.length} {argumentShape} {env.vars.map fun (x, a) => (x, showAddr a)}"
     if fields.isEmpty then base else s!"{base} {fields.map fun (key, _) => showKey key}"
   | .closure f env fields =>
     s!"closure {f.name} {f.params} {env.vars.map fun (x, a) => (x, showAddr a)} {showVal env.this} {fields.map fun (k, _) => showKey k}"
