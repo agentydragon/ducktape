@@ -198,7 +198,7 @@ The Node comparison suites ([`model/README.md`](model/README.md)) exercise the s
 
 The code reaches the [target](#target) through the steps below. Until they land, new work does not add a lowering, a proof mode or an uncertified output.
 
-[Check the printed files](#check-the-printed-files) and [no unchecked output](#no-unchecked-output) are small and independent. [One lowering](#one-lowering-in-lean) comes before [one proven checker](#one-proven-checker), because the theorem is stated over that lowering's output. [One guarantee](#one-guarantee) can remove the mode flags before the proven checker exists by picking a strategy automatically.
+[Check the printed files](#check-the-printed-files) and [no unchecked output](#no-unchecked-output) are small and independent. [One lowering](#one-lowering-in-lean) comes before [one proven checker](#one-proven-checker), because the theorem is stated over that lowering's output. [One guarantee](#one-guarantee) can remove the mode flags before the proven checker exists by picking a strategy automatically. [One of each test tool](#one-of-each-test-tool) follows these steps, replacing the tests each one makes redundant.
 
 ### One lowering, in Lean
 
@@ -319,6 +319,36 @@ This choice keeps world-parametric reasoning at the interaction boundary. Requir
 
 **Done when.** A certified split emits readable names without a renaming premise.
 
+### One of each test tool
+
+**Now.** Several systems do the same job, each for part of the cases. In product code there are three JavaScript-to-CoreJS lowerings (`to_core.mjs`, the basic `FromESTree` rules and the linked rules) and five split checkers (`closed-declarations`, `linked-programs`, `linked-structural-*`, `--diagnostic` and `translate`). None handles every input. The sections above retire all but one lowering and one checker. Test tooling is reimplemented per test:
+
+- Six program generators: [`model/generate.mjs`](model/generate.mjs), [`translation/testing/gen/`](translation/testing/gen/index.mjs), the AST generator behind the emitter fuzzers, the Shift grammar fuzzer, and the targeted and reflective-receiver generators in [`effects/`](effects/).
+- About 30 test files run code in Node with their own harnesses (`model/differential.mjs`, `translation/linked/harness.mjs`, `translation/pair.mjs`, `debundle_cases/run_cases.mjs`, `es_order/check.mjs` and others).
+- About 24 files invoke `lowersplit`, each assembling its own command line and reading the verdict its own way.
+- Expected verdicts are pinned in four forms: `debundle_cases/results`, the `translation/linked` test files (lists of programs with expected verdicts, three to eight shards each), the Excalidraw census and `library_splits`.
+- Split checks run in the three Node comparison suites and in fuzzers (`lower_callback_fuzz_test`, the Shift and AST emitter fuzzers), mostly through `--diagnostic`, and `translate` has its own fuzzers and fixtures.
+
+**Target.** One implementation of each test tool, shared by every test:
+
+- one library of named program families (the Shift grammar fuzzer stays as a source of parser breadth);
+- one Node runner for module graphs, reporting output, exceptions and public bindings;
+- one helper that runs `split` and returns its typed verdict;
+- one corpus format (input, spec, expected verdict and reason code, Node comparison for accepts) with one runner, sharded by case;
+- two property tests built from them: model fidelity (the one lowering and the CoreJS model agree with Node) and checker soundness (every accepted split behaves like its source in Node).
+
+Component tests stay for untrusted parts whose precision matters (footprints, planning, emission, parser pins), as do the Lean axiom audits, the proof fixtures and the browser smoke tests.
+
+**How.** Each step deletes what it replaces in the same PR and reports case counts and mutation results, so nothing previously caught is lost.
+
+1. Now, independent of the other work: add the `split` helper and the Node runner, and move tests onto them as they are touched.
+2. After the one lowering: merge the Node comparison suites into the fidelity test, and merge the generator libraries.
+3. After `--diagnostic` is gone and strategies are automatic: build the soundness test on certified `split`, and move the comparison suites' split checks and the diagnostic fuzzers onto it.
+4. With per-run proof retirement, which makes checks fast: convert the `translation/linked` test files, debundle cases and library splits to the corpus format.
+5. After renames move into `split`: retire `translate` and its tests, porting fixtures that still matter into the corpus.
+
+**Done when.** There is one generator library, one Node runner, one `split` helper and one corpus format, and no test depends on `to_core.mjs`, `--diagnostic` or `translate`.
+
 ## Next steps
 
 Use the production milestone above to prioritize the proof and engineering tracks below. Record the checks and measurements for each completed step in its PR.
@@ -338,6 +368,8 @@ A profile can also name opaque constructors in deferred code. If initialization 
 **Next host inputs.** Add a Node.js or worker profile when it unblocks a measured extraction. The author should be able to extend a named profile with typed premises, for example a stable effect-free `typeof appConfig` or an explicitly absent binding. These extensions are planned. Reject contradictory entries and report which premises the theorem requires. Add an absent-versus-object comparison in matching runtimes when both profiles exist.
 
 **Profiles as data.** `HostProfile` is a closed enumeration (`empty`, `browser-page`, `ecmascript` and the test-only `node-recording`). Its behaviors are checks of the case in [`HostProfile.lean`](lean/EsmSplit/CoreJS/HostProfile.lean) and a few in `FromESTree`, and `--host-contract` only selects `browser-page` by name. What every JavaScript host has is described several times, differently. `Object` is the intrinsic identity under `ecmascript`, a `window.Object` observation under `browser-page`, and model primitives and recorded values under `node-recording`. `Math`'s members are listed both in `BrowserGlobals.methods` and in `hostNamespaces`. The recorded Node host decides which names exist from the browser catalog. The target is one Lean file per layer. An ECMAScript file states, once, what every host has: the standard intrinsics (`Object`, `Array`, `Symbol`, `Math`, `JSON`, `Number`, `String`, the error constructors and so on), their identities, and the operations the model defines on them, each with the premise it needs (for example, that the binding is the unmodified intrinsic). A Node.js file and a browser-page file each include the ECMAScript layer and add only their own names: Node's globals, and the page's `window` aliases and DOM names. A profile is one host description plus optional typed author extensions, read from a file. The recorded Node harness is the Node description plus its recording-specific parts (`console.log` as model output, recorded values). Every entry that asserts host behavior carries a premise, which a verdict that uses it reports: that a name is undeclared and reading it throws, that `console.log` is the unmodified console method and appends to the output, or that `Object` is the intrinsic. An entry that asserts nothing needs none. A recorded value is such an entry: the world answers it, and the theorem holds for every world. Certification refuses an entry that asserts behavior without a premise. This replaces the test-only case and lets tests certify splits under the recorded Node description, with its premises in the verdict.
+
+**Realm intrinsics as the end state.** The intended form follows the specification's realm model. The ECMAScript layer defines intrinsics as model objects (%Object%, %Object.prototype.hasOwnProperty%, %Math%, …) with the semantics the model implements. The heap already holds the realm prototypes (`builtins` in [`Value.lean`](lean/EsmSplit/CoreJS/Value.lean)), but not the constructors, the namespaces or a global object. A host contributes only the starting world's global bindings: `Object` is bound to %Object%, `window` and `globalThis` to the global object, DOM names to host objects. The premise for a standard global is then only its starting binding. Later writes, including the program's own, are modeled state, and code the model does not run needs a stated frame premise. Premises such as "reading `Math.PI` returns π" disappear, since %Math%.PI is a non-writable, non-configurable data property. The data-layer refactor comes first and changes no semantics; this model change follows with its own design.
 
 **Realm intrinsics.** Use the same authored host contract for the ambient `Error` binding. A host profile can identify the binding as its realm's standard error constructor. Lean should supply the reusable semantics for each supported operation. Resolve lexical bindings first. For `class E extends Error {}`, creation observes the value of the binding, its constructibility, and the observable lookup of its `prototype` at that point in initialization. Code can replace the global binding. Both schedules must satisfy any stability hypothesis, including across intervening calls or writes. An eager `new E(message)` additionally requires the semantics of superclass construction with the derived `new.target`. Reading `stack` needs separate host-specific behavior. Record the premises actually used in the certificate. Cover a shadowed binding and a reordered reassignment that makes the subclass inherit from a different constructor.
 
