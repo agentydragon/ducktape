@@ -10,9 +10,7 @@ use peel::OutputFormat;
 use peel::assignment::{AssignmentPlan, SourceUnitAssignment};
 use serde_json::from_slice;
 use spec::ModulePath;
-use spec_tree::ModuleTreeScope;
 
-use crate::binding::load_module_docs;
 use crate::candidate_assessment::{
     CandidateEffectAssessmentExistingTreeArgs, EffectAssessmentUnavailable,
 };
@@ -82,22 +80,13 @@ pub fn run_modules_apply(
         args.tree_config.as_deref(),
         analysis_engine_sha256,
     )?;
-    let (mut assignments, import_order) = read_assignment_request(
+    let (assignments, import_order) = read_assignment_request(
         &args.graph,
         args.plan.as_deref(),
         args.assignments.as_deref(),
         args.import_order.as_deref(),
     )?;
     let input = analysis::DependencyGraphInput::read(&args.graph)?;
-    if args.plan.is_some() {
-        assignments = physical_plan_changes(
-            assignments,
-            &input,
-            args.tree_config.as_deref(),
-            &args.modules_root,
-            source_context,
-        )?;
-    }
     let readable_names = args
         .readable_names
         .as_ref()
@@ -119,6 +108,7 @@ pub fn run_modules_apply(
         source_context,
         SourceUnitApplyOptions {
             tree_config: args.tree_config.as_deref(),
+            chunk_logical_destinations: args.plan.is_some(),
             assignments,
             import_order,
             readable_names,
@@ -158,59 +148,6 @@ pub fn run_modules_apply(
         },
     )?;
     Ok(())
-}
-
-/// Resolve the chunk-logical destinations shared by plans and checks to the
-/// exact authoring locations the source writer will use.
-pub(super) fn physical_plan_changes(
-    mut changes: Vec<peel::assignment::SourceUnitAssignment>,
-    input: &analysis::DependencyGraphInput,
-    tree_config: Option<&Path>,
-    modules_root: &Path,
-    source_context: Option<&VerifiedGraphSourceContext>,
-) -> Result<Vec<peel::assignment::SourceUnitAssignment>> {
-    let Some(config) = tree_config else {
-        return Ok(changes);
-    };
-    if input.report().ownership_subset.is_some() {
-        // Selected-view claims are stored under chunk-logical module keys,
-        // independent of the immutable base tree's physical YAML roots.
-        return Ok(changes);
-    }
-    let scope = ModuleTreeScope::from_config(config, &input.report().chunk_id)?;
-    let modules_root = source_context
-        .and_then(VerifiedGraphSourceContext::modules_root)
-        .unwrap_or(modules_root);
-    let docs = load_module_docs(modules_root)?;
-    let mut authored_paths = std::collections::BTreeMap::<_, Vec<_>>::new();
-    for physical in docs.keys().filter(|path| scope.contains(Path::new(path))) {
-        let logical = spec::ModulePath::parse(scope.logical_destination(physical)?, "")?;
-        authored_paths.entry(logical).or_default().push(physical);
-    }
-    for change in &mut changes {
-        let logical = spec::ModulePath::parse(&change.module, "")?;
-        let existing = authored_paths
-            .get(&logical)
-            .map(Vec::as_slice)
-            .unwrap_or(&[]);
-        anyhow::ensure!(
-            existing.len() <= 1,
-            "logical destination {logical} has multiple authored files"
-        );
-        change.module = if let Some(existing) = existing.first() {
-            (*existing).clone()
-        } else {
-            scope
-                .roots()
-                .first()
-                .context("tree config has no module root for plan destination")?
-                .join(logical.as_str())
-                .to_str()
-                .context("module destination is not UTF-8")?
-                .to_string()
-        };
-    }
-    Ok(changes)
 }
 
 pub(super) fn read_assignment_request(

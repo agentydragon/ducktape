@@ -73,6 +73,7 @@ fn prepare_change<'a>(
 ) -> Result<SelectedViewChange<'a>> {
     let SourceUnitApplyOptions {
         tree_config,
+        chunk_logical_destinations: _,
         assignments,
         import_order,
         mut readable_names,
