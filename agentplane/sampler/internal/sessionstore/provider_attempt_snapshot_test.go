@@ -107,10 +107,10 @@ func TestPreparedSamplingParity(t *testing.T) {
 				if err := store.SetExecutorSession(t.Context(), owner, "fixture-executor-session", &shell); err != nil {
 					t.Fatal(err)
 				}
-				before := snapshotFixtureCursor(t, store, session.ID)
 				if err := store.CellResult(t.Context(), owner, "fixture-live-cell", executionstate.CellLive); err != nil {
 					t.Fatal(err)
 				}
+				before := snapshotFixtureCursor(t, store, session.ID)
 				request, preparation := providerAttemptTestPreparation(PendingIntentSampling)
 				var snapshot *ProviderAttemptSnapshot
 				var id string

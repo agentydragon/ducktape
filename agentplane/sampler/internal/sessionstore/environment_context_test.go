@@ -238,8 +238,9 @@ func TestCompactionRefreshesEnvironmentInNativeOrder(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(got) != len(tc.records)+2 || !strings.Contains(string(got[len(got)-1]), lostExecutorSessionNotice) {
-				t.Fatalf("replacement did not contain the environment and executor-loss notice: %s", got)
+			if len(got) != len(tc.records)+3 || !strings.Contains(string(got[len(got)-2]), lostExecutorSessionNotice) ||
+				!strings.Contains(string(got[len(got)-1]), `Active execution handles: {\"cells\":[],\"processes\":[]}`) {
+				t.Fatalf("replacement did not contain the environment, executor-loss notice and empty compaction snapshot: %s", got)
 			}
 			if content := checkEnvironment(got[tc.envIndex], "/fixture", "2026-01-03", "zsh"); strings.Contains(content, "bash") {
 				t.Fatalf("replacement environment contains the old shell: %s", content)

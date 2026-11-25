@@ -176,6 +176,9 @@ func TestChatCompactionPreservesExecutionSnapshotObjectsAcrossRoots(t *testing.T
 			{Status: executionstate.ProcessStarting},
 		},
 	}
+	if _, err := store.PrepareSamplingContext(ctx, owner); err != nil {
+		t.Fatal(err)
+	}
 	before := seedLegacyExecutionSnapshot(t, store, owner, live)
 	if err := store.CellResult(ctx, owner, "fixture-cell", executionstate.CellLive); err != nil {
 		t.Fatal(err)
@@ -259,7 +262,7 @@ func TestChatCompactionPreservesExecutionSnapshotObjectsAcrossRoots(t *testing.T
 	historical := snapshots(compacted.Transcript)
 	if len(historical) != 1 || historical[0].text != running ||
 		compacted.transcriptContextID != before.transcriptContextID {
-		t.Fatal("compaction should preserve the original native snapshot only in the transcript")
+		t.Fatal("compaction mutated the transcript or its original native snapshot")
 	}
 	originalID, snapshot := readSnapshot(compacted.Transcript, true, historical[0].index)
 	if len(snapshot.Cells) != 1 || snapshot.Cells[0] != (modelCell{CellID: "fixture-cell", Status: executionstate.CellLive}) ||

@@ -1641,6 +1641,10 @@ async def test_input_yields_a_running_cell_and_joins_the_turn(
                 ).events
             )
         async with await endpoint.next() as exchange:
+            stop_call, stop_parts = tool_outputs(exchange.request.body)[-1]
+            assert stop_call == "stop"
+            assert stop_parts[0].startswith("Script terminated")
+            assert "Active execution handles: " not in json.dumps(exchange.request.body["input"])
             await exchange.send(*response_stream([Message("steered")], model="test-model").events)
         assert (await turn_completed(stub, request.session_id, "steered")).status == event_pb2.TURN_STATUS_COMPLETED
         steer = await stub.admin.GetCommand(

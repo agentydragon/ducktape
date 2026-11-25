@@ -87,8 +87,9 @@ func TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction(t *testing.T
 		t.Fatal(err)
 	}
 	compacted := testsupport.ResponsesItems(t, conversation.Context())
-	if len(compacted) == 0 || compacted[len(compacted)-1].EncryptedContent != "opaque" {
-		t.Fatalf("compacted context=%#v", compacted)
+	if len(compacted) != 3 || compacted[1].EncryptedContent != "opaque" ||
+		!bytes.Contains(compacted[2].Content, []byte("Active execution handles: ")) {
+		t.Fatal("compacted context should contain the current environment, opaque summary and compaction snapshot")
 	}
 }
 

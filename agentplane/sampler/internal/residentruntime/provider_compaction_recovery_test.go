@@ -196,7 +196,9 @@ func TestRuntimeCompactsWithLiveCellAndInFlightNestedTool(t *testing.T) {
 		return request.Input
 	}
 	before, after := input(continuation), input(result)
-	if len(after) != len(before)+2 || !slices.EqualFunc(before, after[:len(before)], bytes.Equal) {
+	if len(after) != len(before)+2 || !slices.EqualFunc(before, after[:len(before)], func(a, b json.RawMessage) bool {
+		return bytes.Equal(a, b)
+	}) {
 		t.Fatalf("wait changed the sampled replacement prefix or added records beyond its call and result: %s", result)
 	}
 	var output struct {
