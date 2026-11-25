@@ -256,23 +256,36 @@ fn selected_graphs_preserve_crud_refusals_and_reject_stale_reuse() {
         std::fs::read(&copied_subset).unwrap(),
         std::fs::read(&subset_path).unwrap()
     );
-    let snapshot_verify = Command::new(debundler_path())
-        .args(["snapshot", "verify"])
-        .arg(&destination)
-        .output()
-        .unwrap();
+    let verify = || {
+        Command::new(debundler_path())
+            .args(["snapshot", "verify"])
+            .arg(&destination)
+            .output()
+            .unwrap()
+    };
+    let snapshot_verify = verify();
     assert!(
         snapshot_verify.status.success(),
         "{}",
         String::from_utf8_lossy(&snapshot_verify.stderr)
     );
+
+    // A valid captured subset does not make a missing replay input usable.
+    let manifest_path = destination.join("snapshot.json");
+    let mut missing_input = snapshot_manifest.clone();
+    missing_input["run"]["ownership_subset"] = "missing-subset.json".into();
+    std::fs::write(&manifest_path, serde_json::to_vec(&missing_input).unwrap()).unwrap();
+    let missing = verify();
+    assert!(!missing.status.success());
+    assert!(String::from_utf8_lossy(&missing.stderr).contains("missing-subset.json"));
+    std::fs::write(
+        &manifest_path,
+        serde_json::to_vec(&snapshot_manifest).unwrap(),
+    )
+    .unwrap();
+
     std::fs::write(&copied_subset, r#"{"modules":[]}"#).unwrap();
-    let stale_snapshot = Command::new(debundler_path())
-        .args(["snapshot", "verify"])
-        .arg(&destination)
-        .output()
-        .unwrap();
-    assert!(!stale_snapshot.status.success());
+    assert!(!verify().status.success());
 
     let common = [
         "--graph-ownership-subset-root".to_owned(),

@@ -79,6 +79,26 @@ struct SnapshotRun {
     fail_fast: bool,
 }
 
+impl SnapshotRun {
+    /// Inputs that must resolve inside the worker before returning the replay command.
+    fn input_paths(&self) -> impl Iterator<Item = &PathBuf> {
+        let Self {
+            config,
+            modules,
+            vendor_marks,
+            package_roots,
+            packages_root,
+            ownership_subset,
+            fail_fast: _,
+        } = self;
+        [config, modules, vendor_marks]
+            .into_iter()
+            .chain(package_roots.values())
+            .chain(packages_root)
+            .chain(ownership_subset)
+    }
+}
+
 #[derive(Serialize)]
 struct SnapshotOutcome {
     directory: PathBuf,
@@ -517,15 +537,10 @@ fn verify(directory: &Path) -> Result<SnapshotOutcome> {
             .context("snapshot input escapes its directory")?;
         contained(&directory, relative)?;
     }
-    for path in [
-        &manifest.run.config,
-        &manifest.run.modules,
-        &manifest.run.vendor_marks,
-        &manifest.selector_source_root,
-    ]
-    .into_iter()
-    .chain(manifest.run.package_roots.values())
-    .chain(manifest.run.packages_root.iter())
+    for path in manifest
+        .run
+        .input_paths()
+        .chain([&manifest.selector_source_root])
     {
         contained(&directory, path)?;
     }
