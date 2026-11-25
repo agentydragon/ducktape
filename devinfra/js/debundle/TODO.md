@@ -123,6 +123,41 @@ The sections below hold details, not competing priority queues.
 
 ### Architecture review follow-ups
 
+**Split selector resolution from placement checking.** Both the Rust and Lean
+workflows need Rust's [selector resolver](docs/selector_resolution.md).
+Starting from `spec resolve-placement`, make it a standalone binary: given
+the pinned source and the authored selectors, produce the requested plan
+(source digest, resolved unit identities, destination modules and authored
+import priority). It should report missing or ambiguous selectors on its own.
+A successful resolution says where the author wants the units to go.
+
+Give the Rust gate a separate binary. It and the [Lean splitter](x/split_proof/PLAN.md)
+must consume the same versioned placement interface. Write one resolved plan
+to disk and pass that very file to each binary with the pinned source and its
+checker-specific assumptions. Keep selectors and checker verdicts out of this
+interface. Lean must check placement, observable behavior and its own
+premises against the actual output. Neither checker may silently repair the
+requested assignment or inherit the other checker's verdict. Separate the
+authored placement fields from the gate-specific assumptions in the spec
+schema first. Consider separate files or directories once both consumers
+use the interface; keep existing specs usable during migration.
+
+Add a compatibility test that resolves once and passes the artifact unchanged
+to both binaries, including a stale source digest that both must reject.
+Run both checkers on identical plans for real, version-pinned programs. Record
+what each certifies, refuses or cannot model, the assumptions it used, and
+the output of independent behavioral checks. Keep known Rust false positives
+as regression cases. Once Lean certifies the placements and guarantees needed
+by a production workflow, including rejecting bad output on disk, switch that
+workflow to Lean. The two workflows may also share materialization: one
+writer assembles the module tree from the resolved plan. Lean must still
+reparse the actual emitted files and certify that tree against the source
+and plan before publishing it. A printer mutation that changes an exported
+binding should fail that check even if both workflows used the same writer.
+The goal is one proven-correct splitter, with Lean as the sole certification
+authority. Retire the Rust gate when its last consumer has migrated; the
+shared Rust resolver remains useful.
+
 These IDs identify remaining work; dispatch order stays above. Existing plans
 retain the detailed semantic designs. Preserve the ordinary realizability gate,
 shared import order, explicit saved DTOs, and validated writer boundary.
