@@ -175,7 +175,7 @@ private def entryFacade (asts : Array Json) (B : Bundle) (S : Spec) (P : Plan) :
 
 private def prepare (chunk : DeploymentChunk) (input : BundleInput) (work : System.FilePath)
     (profile : CoreJS.HostProfile) (sourcePath : String) (timings : Bool)
-    (declarations : Option (List CoreJS.DeclarationGroup)) : IO Part := do
+    (declarations : Option (List CoreJS.DeclarationGroup)) (retainEntryRoute := false) : IO Part := do
   let { program, source, input } := input
   let asts ← IO.ofExcept (ESTreeUnits.checkedNodes program source)
   if let some reason := asts.findSome? unsupportedStatement then throw (IO.userError reason)
@@ -186,9 +186,10 @@ private def prepare (chunk : DeploymentChunk) (input : BundleInput) (work : Syst
     else timePhase timings "layout_scan" fun _ => IO.lazyPure fun _ => linkedLayoutBundle asts units
   let S ← IO.ofExcept (chunk.spec asts.size)
   for name in S.entry :: S.modules.map Prod.fst do
-    let moduleExtension := name.endsWith ".mjs" || (profile == .browserPage && name.endsWith ".js")
+    let moduleExtension := name.endsWith ".mjs" ||
+      ((profile == .browserPage || (retainEntryRoute && name == sourcePath)) && name.endsWith ".js")
     unless CoreJS.ModuleInput.supportedFilename name && moduleExtension do
-      throw (IO.userError s!"certified output requires a safe relative .mjs path (.js is supported for browser-page modules), got {name}")
+      throw (IO.userError s!"certified output requires a safe relative .mjs path (.js requires a retained deployment entry or browser-page modules), got {name}")
   for (ast, i) in asts.zipIdx do
     if let some reason := entryPlacementProblem B S ast i then throw (IO.userError reason)
   let P ← planSplit B S timings
@@ -338,7 +339,7 @@ private def runDeployment (manifest : DeploymentManifest) (out work : System.Fil
         originals := originals.push (chunk.path, ← loadProgram chunk.source dir true)
       | _ =>
         let source ← readBundle chunk.source dir true timings (← IO.ofExcept chunk.sourceHash)
-        let part ← prepare chunk source dir profile chunk.path timings none
+        let part ← prepare chunk source dir profile chunk.path timings none (retainEntryRoute := true)
         checkPartLayout part timings
         parts := parts.push part
         originals := originals.push (chunk.path, source.program)
