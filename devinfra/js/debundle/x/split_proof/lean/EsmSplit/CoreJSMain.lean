@@ -9,6 +9,6 @@ def main (args : List String) : IO UInt32 := do
     for line in (← IO.FS.lines file) do
       IO.println (CoreJS.runLine 100000 line fun j =>
         CoreJS.LinkedInput.program j ((j.getObjVal? "providers").toOption.getD (Lean.Json.mkObj []))
-          .nodeRecording)
+          .nodeRecording ((j.getObjValAs? String "entry").toOption.getD "main"))
     pure 0
   | _ => CoreJS.main args
