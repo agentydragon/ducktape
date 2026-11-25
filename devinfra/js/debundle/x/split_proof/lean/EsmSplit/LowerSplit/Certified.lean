@@ -91,9 +91,8 @@ private def emitRefusal (requested : String) (refusal : CertificationRefusal)
   let details := reasonCodeFields ++ observationFields
   emitVerdict requested (.error (IO.userError refusal.reason).toString) scope details
 
-private def structuralRefusal (reason : String) : CertificationRefusal :=
-  let reasonCode := (CoreJS.LinkedBehavior.structuralRefusalCode reason).map fun code => code.label
-  { reason := reason, reasonCode := reasonCode }
+private def structuralRefusal (refusal : CoreJS.LinkedBehavior.StructuralRefusal) : CertificationRefusal :=
+  { reason := refusal.reason, reasonCode := refusal.reasonCode }
 
 private def profileFields (profile : CoreJS.HostProfile) : List (String × Json) :=
   if profile == .empty then [] else [("hostProfile", toJson profile.label)]

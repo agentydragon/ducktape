@@ -262,6 +262,7 @@ lean_library(
         "EsmSplit/CoreJS/Scope.lean",
         "EsmSplit/CoreJS/Split.lean",
         "EsmSplit/CoreJS/StateMatch.lean",
+        "EsmSplit/CoreJS/StructuralRefusal.lean",
         "EsmSplit/CoreJS/WriteExpr.lean",
     ],
     deps = [

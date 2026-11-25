@@ -58,6 +58,20 @@ const eagerFieldVerdict = eagerField.run(refusalScope);
 assert.equal(eagerFieldVerdict.status, "rejected");
 assert.match(eagerFieldVerdict.reason, /unit 1 is not a local allocating declaration/);
 
+const opaqueContext = structuralFixture(
+  "retained-dynamic-import-needs-module-context",
+  `const load = () => import("./lazy.mjs");
+   const phase = 1;
+   export { load, phase };`,
+  ["#1"],
+  ["#0", "#2"]
+);
+const opaqueContextVerdict = opaqueContext.run(refusalScope);
+assert.equal(opaqueContextVerdict.status, "rejected", JSON.stringify(opaqueContextVerdict));
+assert.match(opaqueContextVerdict.reason, /opaque unit requires source-module or method context/);
+assert.equal(opaqueContextVerdict.reason_code, "structural_opaque_unit_context");
+assert(!existsSync(opaqueContext.out));
+
 const typedArraySource = `import { seed } from "./provider.mjs";
    const bytes = new Uint8Array([seed, 17]);
    const read = (position) => bytes[position];

@@ -21,10 +21,12 @@ private def check (input : Json) : Except String Unit := do
   let provider ← fragment (← input.getObjVal? "provider")
   let parts := [app, provider]
   let shared := Json.mkObj []
-  let _ ← CoreJS.LinkedBehavior.certifyDeployment app.plan.entry parts shared none .empty []
+  let _ ← (CoreJS.LinkedBehavior.certifyDeployment app.plan.entry parts shared none .empty []).mapError
+    CoreJS.LinkedBehavior.StructuralRefusal.reason
   -- Test the placement checker on bodies lowered from the parsed fixture.
   -- Invalid assignments exercised here would be refused earlier by the decoder.
-  let decoded ← CoreJS.LinkedInput.decodeDeployment app.plan.entry parts shared none .empty (fun _ => [])
+  let decoded ← (CoreJS.LinkedInput.decodeDeployment app.plan.entry parts shared none .empty (fun _ => [])).mapError
+    CoreJS.LinkedBehavior.StructuralRefusal.reason
   let unit :: rest := decoded.assignment | throw "fixture has no planned executable units"
   let check (assignment : List CoreJS.UnitPlacement) :=
     CoreJS.checkPlaces assignment decoded.before decoded.after
