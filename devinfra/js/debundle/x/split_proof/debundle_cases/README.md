@@ -6,7 +6,7 @@ An entry is a bundle (`main.js` or `static/app.js`), a spec, and the verdict deb
 `run_cases.mjs` turns each entry into a `lowersplit` run and compares the verdicts. A run takes about 10 s.
 
 Results: [`results/summary.md`](results/summary.md) (generated tables) and [`results/cases.jsonl`](results/cases.jsonl) (one line per entry).
-The outcomes and limitations below describe the initial corpus run, before the adapter sent annotated Programs and proposed placements by declarator. Re-run to measure the current adapter.
+These reports record the current run and the per-case Lean coverage baseline. The historical analysis below describes the initial corpus run.
 
 ## Run it
 
@@ -18,7 +18,7 @@ bb run "$p/debundle_cases:debundle_cases" -- --out "$out/cases.jsonl"
 bb run "$p/debundle_cases:summarize_debundle_cases" -- "$out/cases.jsonl" > "$out/summary.md"
 ```
 
-Add `--regression` to fail after writing the report on an empty selection, a runner error, an invalid baseline, or an accepted split with a different observation. Unsupported entries are counted separately. Subprocess failures report the command, elapsed time, and a bounded output tail in the report and in regression failures.
+Add `--regression` to fail after writing the report on an empty selection, a runner error, an invalid baseline, or an accepted split with a different observation. A case that previously received a Lean verdict must still get a verdict, and a case that reached the Lean syntax checker must still reach Lean. A full run also detects missing cases. Filtered runs compare the cases selected. Use a separate output file; review coverage changes before replacing the checked-in JSONL and regenerating the summary. For a different corpus, pass its report with `--baseline FILE`. Subprocess failures report the command, elapsed time, and a bounded output tail in the report and in regression failures.
 
 Use `--filter <substring>` for a smaller run.
 
@@ -41,7 +41,7 @@ DEBUNDLE_RESOLVER=/absolute/path/to/debundle_resolve_placement node run_cases.mj
 5. The adapter copies declared runtime files for the current chunk beside the emitted entry, without replacing emitted files. Node runs the original chunk and the emitted entry. The adapter compares verdict and stdout with the entry's expectation.
 6. What the adapter cannot translate is `unsupported:<cause>` and is not forced.
 
-## Outcomes
+## Initial outcomes
 
 | Outcome             | Entries | Meaning                                                                                                  |
 | ------------------- | ------- | -------------------------------------------------------------------------------------------------------- |

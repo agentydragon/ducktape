@@ -11,7 +11,7 @@
 //   3. run the original and the emitted entry in Node;
 //   4. compare with the expectation.
 // What the adapter cannot translate is reported as `unsupported:<cause>`, not forced. One JSON line per spec entry.
-import { classify, rejectKind, wanted } from "./verdict.mjs";
+import { classify, coverageLosses, rejectKind, wanted } from "./verdict.mjs";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import {
@@ -168,8 +168,8 @@ function translate(spec, chunk, statements, placement) {
   if (!["inline_in_entry", "catchall_file"].includes(kind)) throw new Unsupported(`unassigned_mode ${kind}`);
 
   const entry = "entry.mjs";
-  const files = new Map(Object.keys(authored).map((m) => [m, fileName(m)]));
-  const priority = (spec.import_order?.[chunk] ?? []).slice();
+  const priority = [...placement.import_order];
+  const files = new Map(priority.map((m) => [m, fileName(m)]));
   // `export { … }` is the entry's public surface. Under `catchall_file` the catchall takes the unclaimed declarations,
   // the unclaimed anonymous statements that precede its last statement (their effects must stay ahead of it), and
   // everything when it is the only module. Later anonymous statements stay in the entry (design.md, "Spec explicitness").
@@ -177,16 +177,27 @@ function translate(spec, chunk, statements, placement) {
   const swept = statements.flatMap((s, i) => (owner[i] === null && !surface(i) && s.declared.length > 0 ? [i] : []));
   let sinkFile = null;
   if (kind === "catchall_file") {
+    // The resolver projects out owners with no claims. Only the catchall can
+    // need reinsertion. Read its slot in the full authored priority, folding
+    // ASCII case and trimming edge slashes as ModulePath does for YAML paths.
+    const canonical = (m) => m.replace(/[A-Z]/g, (c) => c.toLowerCase()).replace(/^\/+|\/+$/g, "");
+    const full = (spec.import_order?.[chunk] ?? []).map(canonical);
+    const extra = full.filter((m) => !files.has(m));
     const target =
-      mode.target ?? (swept.length > 0 ? (priority.find((m) => !files.has(m)) ?? "residual/unhandled") : null);
-    if (target) {
-      if (!files.has(target)) files.set(target, fileName(target));
+      mode.target != null ? canonical(mode.target) : swept.length ? (extra[0] ?? "residual/unhandled") : null;
+    if (extra.some((m) => m !== target))
+      throw new Unsupported("import_order names an unknown module", extra.join(", "));
+    if (target !== null) {
+      if (!files.has(target)) {
+        const slot = full.indexOf(target);
+        if (slot < 0) throw new Unsupported("import_order omits a module", target);
+        priority.splice(slot, 0, target);
+        files.set(target, fileName(target));
+      }
       sinkFile = files.get(target);
     }
   }
-  for (const m of priority) if (!files.has(m)) throw new Unsupported("import_order names an unknown module", m);
-  if (new Set(priority).size !== priority.length) throw new Unsupported("import_order repeats a module");
-  for (const m of files.keys()) if (!priority.includes(m)) throw new Unsupported("import_order omits a module", m);
+  if (new Set([entry, ...files.values()]).size !== files.size + 1) throw new Unsupported("module filenames collide");
 
   const inSink = [
     ...swept,
@@ -430,6 +441,15 @@ function runCase(dir, specName, expected) {
   }
 }
 
+const regression = args.includes("--regression");
+const baselinePath = path.resolve(option("baseline", path.join(here, "results/cases.jsonl")));
+if (regression && outFile === baselinePath) throw new Error("--regression needs an --out distinct from its baseline");
+const baseline = regression
+  ? readFileSync(baselinePath, "utf8")
+      .trimEnd()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+  : [];
 mkdirSync(path.dirname(outFile), { recursive: true });
 const lines = [];
 for (const dir of discover()) {
@@ -442,11 +462,13 @@ for (const dir of discover()) {
 }
 writeFileSync(outFile, `${lines.map((row) => JSON.stringify(row)).join("\n")}\n`);
 console.log(`${lines.length} cases -> ${outFile}`);
-if (args.includes("--regression")) {
+if (regression) {
   const failures = lines.filter(({ outcome }) => outcome.startsWith("error:") || outcome === "unsound-accept");
   console.log(`${lines.filter(({ outcome }) => outcome.startsWith("unsupported:")).length} unsupported`);
   if (!lines.length) console.error("No cases selected.");
   for (const { id, outcome, processFailure } of failures)
     console.error(JSON.stringify({ id, outcome, processFailure }));
-  if (!lines.length || failures.length) process.exitCode = 1;
+  const lost = coverageLosses(baseline, lines, { filtered: Boolean(filter) });
+  for (const message of lost) console.error(message);
+  if (!lines.length || failures.length || lost.length) process.exitCode = 1;
 }

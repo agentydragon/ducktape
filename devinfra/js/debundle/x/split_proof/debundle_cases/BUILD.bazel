@@ -4,6 +4,7 @@ js_binary(
     name = "debundle_cases",
     testonly = True,
     data = [
+        "results/cases.jsonl",
         "verdict.mjs",
         "//:node_modules/yaml",
         "//devinfra/js/debundle:debundle_resolve_placement",
@@ -62,5 +63,12 @@ js_test(
     name = "provider_runtime_test",
     data = [":debundle_cases"],
     entry_point = "provider_runtime_test.mjs",
+    env = {"CASE_RUNNER": "$(rootpath :debundle_cases)"},
+)
+
+js_test(
+    name = "placement_routing_test",
+    data = [":debundle_cases"],
+    entry_point = "placement_routing_test.mjs",
     env = {"CASE_RUNNER": "$(rootpath :debundle_cases)"},
 )
