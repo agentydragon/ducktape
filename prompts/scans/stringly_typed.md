@@ -110,8 +110,6 @@ rg --type py 'Literal\[.*,.*\]'
 
 ```bash
 # Run on entire codebase (from the repository root)
-python -m prompts.scans.scan_string_literals . > string_literals_scan.json
-# or
 bb run //prompts/scans:scan_string_literals_bin -- . > string_literals_scan.json
 
 # Pretty-print summary

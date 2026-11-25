@@ -10,7 +10,6 @@ The histogram is sorted by frequency (most common first) and includes file locat
 for each occurrence.
 
 Usage (from the repository root):
-    python -m prompts.scans.scan_string_literals [directory]
     bb run //prompts/scans:scan_string_literals_bin -- [directory]
 
 Output:
