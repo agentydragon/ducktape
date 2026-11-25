@@ -1,8 +1,10 @@
 # CoreJS differential coverage
 
-[`differential.mjs`](differential.mjs) runs JavaScript in Node and the Lean interpreter,
-then sends split plans through the real `lowersplit` emitter in diagnostic mode. Those
-test runs compare the model and Node; emitted files are uncertified previews. CI:
+[`differential.mjs`](differential.mjs) runs JavaScript in Node and the Lean interpreter.
+Consecutive opaque splits require `all-outcomes` from `lowersplit`, recheck the emitted
+files with `--check-output`, and compare output, endings, and recorded host calls in Node.
+Each fixture or generator records its expected refusal reason, when applicable. The other split comparisons
+run the emitter in diagnostic mode and compare Node and model runs. Run the CI suites with
 
 ```sh
 bbr test //devinfra/js/debundle/x/split_proof/model:corejs_differential_test \
@@ -12,7 +14,7 @@ bbr test //devinfra/js/debundle/x/split_proof/model:corejs_differential_test \
 
 The broad CI suite runs the handwritten cases and required generated comparisons
 once with seeds 1 and 2. The binding suite uses seeds 1–12. Run
-`model:corejs_differential_sweep_test` explicitly for 40 seeds and
+`model:corejs_differential_sweep_test` with `--test_tag_filters=manual` for 40 seeds and
 random split plans. Appended `--test_arg=--count --test_arg=N`,
 `--test_arg=--seed --test_arg=S` and `--test_arg=--splits --test_arg=K` override
 the target's arguments.

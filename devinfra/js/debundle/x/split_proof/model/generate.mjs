@@ -338,6 +338,9 @@ export function generatedOpaqueClassCase(seed) {
   );
   return {
     name: `opaque class ${method} method, ${accessor} accessor seed ${seed}`,
+    // Only the detached method with an accessor puts both writes before the midpoint cut.
+    consecutiveSplitRefusal:
+      method === "detached" && accessor !== "absent" ? undefined : "invalid logical placement before entry facade",
     source: `
       class Box { ${ordered.map((member) => member.source).join("\n")} }
       const independent = ${value};

@@ -29,6 +29,8 @@
 //     bundle's order, which keeps every ending. The other accepted splits are counted apart; the model must still
 //     agree with Node on each of them. `splitCases` of `cases.mjs` has one of those as a named case, and a split
 //     that the tool must reject;
+//   - the consecutive opaque splits require an all-outcomes certificate on the emitted files. Node compares the
+//     original and emitted programs, and --check-output checks the published files again.
 //   - the members of the host's prototypes: the model's lists must be Node's.
 //
 // The world. The model asks a world about the host functions that work on primitives (`worldFunction` of
@@ -48,7 +50,7 @@
 // `COREJS`, `LOWERSPLIT` and `EVALORDER` are the executables (default: Lake's build).
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -902,6 +904,70 @@ function split(job, bundle, dump, kind, spec, named) {
   }
 }
 
+// The certified path takes the original JavaScript and numbers its own units.
+async function certifyOpaqueSplit(job) {
+  const label = `${job.label}, consecutive split`;
+  const expectedRefusal = job.opaqueCase.consecutiveSplitRefusal;
+  const entry = "entry.mjs";
+  const n = unitCount(job.source);
+  assert(n >= 2, label);
+  const cut = Math.floor(n / 2);
+  const units = Array.from({ length: n }, (_, i) => `#${i}`);
+  const spec = {
+    entry,
+    modules: { "m0.mjs": units.slice(0, cut), [entry]: units.slice(cut) },
+    sequential: true,
+    privateEntryBody: true,
+  };
+  const dir = writeFiles({ [entry]: job.source, "spec.json": JSON.stringify(spec) });
+  const out = path.join(dir, "out");
+  const manifest = writeDeployment(path.join(dir, entry), path.join(dir, "spec.json"), out);
+  const level = "all-outcomes";
+  const run = (...extra) => {
+    checkpoint(`${label}: ${extra.length ? "check-output" : "emit"}`);
+    const result = spawnSync(lowersplit, [manifest, out, "--structural", "--require", level, ...extra], {
+      encoding: "utf8",
+    });
+    assert.ifError(result.error);
+    assert([0, 1].includes(result.status), `${label}: ${result.stdout}${result.stderr}`);
+    const verdict = JSON.parse(result.stdout);
+    assert.equal(verdict.requested, level, label);
+    assert.equal(verdict.status, result.status === 0 ? "certified" : "rejected", label);
+    return verdict;
+  };
+
+  const emitted = run();
+  if (emitted.status === "rejected") {
+    assert.equal(emitted.guarantee, null, label);
+    assert(!existsSync(out), `${label}: a refused split published output`);
+    assert.equal(typeof emitted.reason, "string", label);
+    assert(emitted.reason.length > 0, label);
+    tally.opaque[1]++;
+    if (emitted.reason !== expectedRefusal) {
+      failures.push(
+        expectedRefusal === undefined
+          ? `${label}: unexpected refusal: ${emitted.reason}`
+          : `${label}: refused with "${emitted.reason}", expected "${expectedRefusal}"`
+      );
+    }
+    return;
+  }
+  if (expectedRefusal !== undefined)
+    failures.push(`${label}: certified a split with expected refusal "${expectedRefusal}"`);
+  assert.equal(emitted.guarantee, level, label);
+  assert.deepEqual(run("--check-output"), emitted, label);
+  const splitNode = await runFileInNode(path.join(out, entry));
+  if (!sameRun(job.node, splitNode) || !same(asked(job.node), asked(splitNode))) {
+    const observations = ({ out, end, detail, world }) => ({ out, end, detail, world });
+    wrongAccepts.push(
+      `${label}
+  original: ${JSON.stringify(observations(job.node))}
+  emitted: ${JSON.stringify(observations(splitNode))}`
+    );
+  }
+  tally.opaque[0]++;
+}
+
 for (const job of jobs.filter((j) => j.opaqueCase))
   if (!job.node || !sameRun(job.result, job.node))
     failures.push(
@@ -922,15 +988,7 @@ for (const job of candidates.filter((j) => j.focused || j.opaqueCase?.move)) {
   const { dump, bundle, units } = splitInputFor(job);
   split(job, bundle, dump, "named", swapPrefix(units), {});
 }
-// a program with opaque statements, in two consecutive pieces that run in order
-for (const job of candidates.filter((j) => j.opaqueCase)) {
-  const { dump, bundle, units } = splitInputFor(job);
-  const n = units.length;
-  const cut = Math.floor(n / 2);
-  const modules = { "m0.mjs": [], "entry.mjs": [] };
-  units.forEach((_, i) => modules[i < cut ? "m0.mjs" : "entry.mjs"].push(`#${i}`));
-  split(job, bundle, dump, "opaque", { entry: "entry.mjs", modules, sequential: true }, null);
-}
+for (const job of jobs.filter((j) => j.opaqueCase)) await certifyOpaqueSplit(job);
 for (const [index, job] of candidates
   .filter((j) => !j.opaqueCase)
   .slice(0, splitPrograms)
@@ -1043,12 +1101,15 @@ console.log("unknown code that units of generated programs were left out for:", 
 console.log(`model endings: ${JSON.stringify(ends)}; corejs took ${modelSeconds.toFixed(1)} s`);
 const verdicts = (kind) => `${kind}: ${tally[kind][0]} accepted, ${tally[kind][1]} rejected`;
 console.log(
-  `opaque cases: ${tally.opaqueCases} of ${allOpaqueCases.length} agree with Node; splits: ${tally.named[0]} named accepted, ${tally.named[1]} named rejected; ${tally.programs} programs; ${["cut", "ordered", "free", "opaque"].map(verdicts).join("; ")}; ` +
+  `opaque cases: ${tally.opaqueCases} of ${allOpaqueCases.length} agree with Node; splits: ${tally.named[0]} named accepted, ${tally.named[1]} named rejected; ${tally.programs} programs; ${["cut", "ordered", "free"].map(verdicts).join("; ")}; ` +
     `${tally.unsupported} unsupported; ${tally.sliceNamed} accepted splits whose verdict names the order-kept slice, ${tally.movesNamed} the moves slice; ${tally.agree} accepted splits where the four runs agree, ` +
     `${tally.orderKept} of them with the statements in the bundle's order, ${tally.sameState} of those ending in ` +
     `the bundle's state; ${apart.splits} accepted splits move code ` +
     `of a bundle that does not end normally and are not compared with it (premise P4), ${apart.differ} of them ` +
     `differ; ${tally.otherCalls} accepted splits make other host calls than their bundle, or in another order`
+);
+console.log(
+  `consecutive opaque certificates: ${tally.opaque[0]} accepted and checked on disk, ${tally.opaque[1]} refused`
 );
 const total = (key) => summary.reduce((sum, s) => sum + s[key], 0);
 const focusedCoverage = {};
