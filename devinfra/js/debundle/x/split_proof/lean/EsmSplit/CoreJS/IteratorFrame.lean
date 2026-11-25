@@ -41,11 +41,8 @@ theorem getIterator_reachFrame {r R cells A} (away : Away r R A) (call : Call W)
   refine (reachFrame_getProp away call framed.getter objectRoot value (.wellKnownSymbol .iterator) safe).bind fun method hm => ?_
   split
   · refine (reachFrame_requireIteratorObject _ value safe).bind fun a ha => ?_
-    refine (reachFrame_getObj away ha).bind fun obj _ => ?_
-    split
-    · exact (reachFrame_checkArrayIteratorNext away arrayIteratorRoot).bind fun _ _ =>
-        reachFrame_pure r R cells A (IteratorCursor.array a 0) ha
-    · exact reachFrame_unknown r R cells A _ _
+    exact (reachFrame_checkArrayIteratorNext away arrayIteratorRoot).bind fun _ _ =>
+      reachFrame_pure r R cells A (IteratorCursor.array a 0) ha
   · refine (framed method value [] hm safe (by simp)).bind fun result hr => ?_
     refine (reachFrame_requireIteratorObject _ result hr).bind fun receiver hReceiver => ?_
     refine (reachFrame_getProp away call framed.getter objectRoot (.obj receiver) (.str "next")
