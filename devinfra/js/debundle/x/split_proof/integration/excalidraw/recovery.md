@@ -354,3 +354,10 @@ checks the actual linked prefixes before specializing either read. The
 [355-binding combined replay](https://app.buildbuddy.io/invocation/50fd3de4-ed08-45b7-bab6-d6c47ba006b8)
 uses the same host contract and upstream module owners as the transform-handle
 placement. The selector requests both declarations by their upstream names.
+
+The [364-binding editor replay](https://app.buildbuddy.io/invocation/2e0b2820-9297-4755-81c6-d6fc99928ec2)
+adds the six [polygon and three ellipse helpers](proposals/polygon_ellipse/README.md)
+to their upstream owners. Chromium checks that a polygon ring closes with the
+same point object, tests inside and boundary points, and distinguishes secant,
+tangent and disjoint lines for an ellipse. These calls exercise the recovered
+modules after the independent disk certificate.

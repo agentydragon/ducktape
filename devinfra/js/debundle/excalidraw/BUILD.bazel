@@ -180,6 +180,8 @@ debundle_resolve_placement(
     ownership_subset = "editor_smoke_subset.json",
     package_roots = _PACKAGE_ROOTS,
     proposal_fragments = {
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/polygon_ellipse:polygon.yaml": "packages/math/polygon",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/polygon_ellipse:ellipse.yaml": "packages/math/ellipse",
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/transform_handles:transform.yaml": "packages/excalidraw/element/transformhandles",
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/math_geometry:line.yaml": "packages/math/line",
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/math_geometry:segment.yaml": "packages/math/segment",
