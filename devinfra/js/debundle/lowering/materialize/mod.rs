@@ -152,37 +152,29 @@ pub(super) enum FinishedLogicalChunk {
     },
 }
 
-/// Lowering state prepared before the shared spec-resolution service projects
-/// and solves selector entities.
+/// Chunk plan and frontend claims still to apply.
 pub(super) struct PreparedLogicalChunk<'a> {
-    pub(super) context: ChunkContext<'a>,
-    pub(super) spec: ChunkSpec<'a>,
+    plan: LogicalChunkPlan<'a>,
+    explicit_requests: Vec<LogicalRequest>,
+    resolution: selector_resolve::Resolution,
+    resolved_members: Vec<Vec<usize>>,
+    member_claims: MemberClaimProjection,
+}
+
+pub(super) struct LogicalChunkPlan<'a> {
+    context: ChunkContext<'a>,
+    spec: ChunkSpec<'a>,
     chunk_unassigned_mode: UnassignedMode,
     chunk_id_interned: ChunkId,
     runtime_file: &'a JsFile,
     runtime_ast: &'a ParsedJsModule,
     ast_analysis: ChunkAstAnalysis,
     requests: Vec<LogicalRequest>,
-    explicit_requests: Vec<LogicalRequest>,
-    resolution: selector_resolve::Resolution,
     placement_anchors: Option<selector_resolve::PlacementAnchors>,
-    resolved_members: Vec<Vec<usize>>,
-    member_claims: MemberClaimProjection,
-    structural_analysis: Option<StructuralChunkSourceFacts<'a>>,
+    structural_analysis: StructuralChunkSourceFacts<'a>,
     source_only_initializer_bindings: BTreeSet<String>,
     external_initializer_contracts: BTreeMap<String, spec::InitializerExternalEffects>,
     builder: ChunkPlanBuilder,
-}
-
-/// A prepared chunk after exact selector resolution has claimed its selected
-/// members and anonymous statements. The structural facts are retained for the
-/// hint-sensitive analysis that follows claim application.
-pub(super) struct ClaimedLogicalChunk<'a> {
-    prepared: PreparedLogicalChunk<'a>,
-    structural_analysis: StructuralChunkSourceFacts<'a>,
-    /// Selector-resolved author overlay, applied after raw facts are computed or loaded.
-    source_only_initializer_bindings: BTreeSet<String>,
-    external_initializer_contracts: BTreeMap<String, spec::InitializerExternalEffects>,
 }
 
 /// Construct output-plan state from source-level facts and the exact shared
@@ -266,23 +258,25 @@ pub(super) fn prepare_logical_chunk<'a>(
     builder.apply_destructuring_group_placement(&ast_analysis.destructuring_groups);
 
     Ok(PreparedLogicalChunk {
-        context,
-        spec,
-        chunk_unassigned_mode,
-        chunk_id_interned,
-        runtime_file,
-        runtime_ast,
-        ast_analysis,
-        requests,
+        plan: LogicalChunkPlan {
+            context,
+            spec,
+            chunk_unassigned_mode,
+            chunk_id_interned,
+            runtime_file,
+            runtime_ast,
+            ast_analysis,
+            requests,
+            placement_anchors,
+            structural_analysis,
+            source_only_initializer_bindings,
+            external_initializer_contracts,
+            builder,
+        },
         explicit_requests,
         resolution,
-        placement_anchors,
         resolved_members,
         member_claims,
-        structural_analysis: Some(structural_analysis),
-        source_only_initializer_bindings,
-        external_initializer_contracts,
-        builder,
     })
 }
 
@@ -309,50 +303,39 @@ fn validate_partial_atomic_group_completion_owners(
     Ok(())
 }
 
-/// The file a chunk's modules are cut from (`materialize_logical_modules.file`,
-/// else the chunk's entry) and its retained AST.
-/// Resolve source-selected bindings before the cross-chunk purity oracle runs.
-/// The same resolved hints are later used by this chunk's source unit analysis.
-pub(super) fn claim_prepared_chunk<'a>(
-    mut prepared: PreparedLogicalChunk<'a>,
-) -> Result<ClaimedLogicalChunk<'a>> {
-    let chunk_top_level_mark = prepared.runtime_ast.top_level_mark;
-    prepared.builder.claim_resolution_at_offset(
+/// Apply source-selected claims before the cross-chunk purity analysis.
+pub(super) fn claim_prepared_chunk(
+    prepared: PreparedLogicalChunk<'_>,
+) -> Result<LogicalChunkPlan<'_>> {
+    let PreparedLogicalChunk {
+        mut plan,
+        explicit_requests,
+        resolution,
+        resolved_members,
+        member_claims,
+    } = prepared;
+    let chunk_top_level_mark = plan.runtime_ast.top_level_mark;
+    plan.builder.claim_resolution_at_offset(
         0,
-        &prepared.explicit_requests,
-        std::mem::take(&mut prepared.resolution),
-        std::mem::take(&mut prepared.resolved_members),
-        &prepared.member_claims,
+        &explicit_requests,
+        resolution,
+        resolved_members,
+        &member_claims,
         chunk_top_level_mark,
-        prepared.context.chunk_id,
-        &prepared.runtime_ast.module.body,
-        &prepared.ast_analysis.declaration_by_name,
+        plan.context.chunk_id,
+        &plan.runtime_ast.module.body,
+        &plan.ast_analysis.declaration_by_name,
     )?;
-    prepared
-        .builder
-        .apply_destructuring_group_placement(&prepared.ast_analysis.destructuring_groups);
-    prepared
-        .builder
-        .adopt_bindings_of_claimed_anonymous_statements(&prepared.ast_analysis.declarations);
-    let source_only_initializer_bindings =
-        std::mem::take(&mut prepared.source_only_initializer_bindings);
-    let external_initializer_contracts =
-        std::mem::take(&mut prepared.external_initializer_contracts);
-    let structural_analysis = prepared
-        .structural_analysis
-        .take()
-        .expect("prepared frontend structure is present");
-    Ok(ClaimedLogicalChunk {
-        prepared,
-        structural_analysis,
-        source_only_initializer_bindings,
-        external_initializer_contracts,
-    })
+    plan.builder
+        .apply_destructuring_group_placement(&plan.ast_analysis.destructuring_groups);
+    plan.builder
+        .adopt_bindings_of_claimed_anonymous_statements(&plan.ast_analysis.declarations);
+    Ok(plan)
 }
 
-impl ClaimedLogicalChunk<'_> {
+impl LogicalChunkPlan<'_> {
     pub(super) fn chunk_id(&self) -> &str {
-        self.prepared.context.chunk_id
+        self.context.chunk_id
     }
 }
 
@@ -727,16 +710,12 @@ fn finalize_selected_assignment<'a, 'p, 's>(
 /// Reuse the same plan finalization for a selected view whose dependency
 /// topology comes from a source-bound saved graph rather than semantic facts.
 pub(super) fn finalize_claimed_selected_assignment<'a, 'p, 's>(
-    claimed: ClaimedLogicalChunk<'a>,
+    claimed: LogicalChunkPlan<'a>,
     graph: analysis::DependencyGraphInput,
     projection: &'p AnalysisProjection<'s>,
 ) -> Result<FinalizedLogicalAssignment<'a>> {
-    let ClaimedLogicalChunk {
-        prepared,
+    let LogicalChunkPlan {
         structural_analysis,
-        ..
-    } = claimed;
-    let PreparedLogicalChunk {
         context,
         spec,
         chunk_unassigned_mode,
@@ -748,7 +727,7 @@ pub(super) fn finalize_claimed_selected_assignment<'a, 'p, 's>(
         builder,
         placement_anchors,
         ..
-    } = prepared;
+    } = claimed;
     let chunk_id = context.chunk_id;
     let placement_modules = context
         .ownership_subset
@@ -789,21 +768,17 @@ pub(super) fn finalize_claimed_selected_assignment<'a, 'p, 's>(
 
 /// Analyze, plan and lower a chunk whose selector claims are already resolved.
 pub(super) fn finish_logical_chunk(
-    claimed: ClaimedLogicalChunk<'_>,
+    claimed: LogicalChunkPlan<'_>,
     projection: &AnalysisProjection<'_>,
     program_summary: &super::program_summary::ProgramSummary,
     loaded_facts: Option<ChunkFactAnalysis>,
     program_graph: &ProgramGraphOutput<'_>,
     graph_context: GraphConstructionContext<'_>,
 ) -> Result<FinishedLogicalChunk> {
-    let ClaimedLogicalChunk {
-        prepared,
+    let LogicalChunkPlan {
         structural_analysis,
         source_only_initializer_bindings,
         external_initializer_contracts,
-        ..
-    } = claimed;
-    let PreparedLogicalChunk {
         context,
         spec,
         chunk_unassigned_mode,
@@ -815,7 +790,7 @@ pub(super) fn finish_logical_chunk(
         builder,
         placement_anchors,
         ..
-    } = prepared;
+    } = claimed;
     let ChunkContext {
         artifact,
         artifact_indexes,
