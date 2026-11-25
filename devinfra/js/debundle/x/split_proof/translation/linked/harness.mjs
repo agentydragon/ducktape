@@ -285,18 +285,25 @@ export function observedProgram(initializer, result) {
   ]);
 }
 
-export function structuralFixture(name, source, moved, kept, provider = "") {
+export function structuralSplit(name, source, modules, provider = "") {
   const dir = path.join(root, name);
-  const files = prepare(dir, {
-    source,
-    provider,
-    spec: {
-      entry: "entry.mjs",
-      modules: { "entry.mjs": kept, "scroll.mjs": moved },
-    },
-  });
+  const files = prepare(dir, { source, provider, spec: { entry, modules } });
   const out = path.join(dir, "out");
   const run = (scope, ...args) =>
     lower(files.sourceFile, files.specFile, out, ["--structural", ...args], scope).verdict;
-  return { sourceFile: files.sourceFile, out, run };
+  return { ...files, out, run };
+}
+
+export function structuralFixture(name, source, moved, kept, provider = "") {
+  return structuralSplit(name, source, { [entry]: kept, "scroll.mjs": moved }, provider);
+}
+
+// A forced preview must exhibit the specific behavior change that certification rejected.
+export function assertRejectedResultChange(test, before, after) {
+  assert.equal(test.run("linked-structural").status, "rejected");
+  assert(!existsSync(test.out));
+  const preview = path.join(path.dirname(test.out), "preview");
+  forcePreview(test, preview);
+  assert.deepEqual(observe(test.sourceFile, "result"), before);
+  assert.deepEqual(observe(path.join(preview, entry), "result"), after);
 }

@@ -1,22 +1,10 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { forcePreview, lower, observe, prepare, root } from "./harness.mjs";
+import { assertRejectedResultChange, observe, structuralSplit } from "./harness.mjs";
 
 function fixture(name, source, moved, kept) {
-  const dir = path.join(root, name);
-  const files = prepare(dir, {
-    source,
-    provider: "",
-    spec: { entry: "entry.mjs", modules: { "numbers.mjs": moved, "entry.mjs": kept } },
-  });
-  const out = path.join(dir, "out");
-  return {
-    files,
-    out,
-    run: (scope, ...flags) => lower(files.sourceFile, files.specFile, out, ["--structural", ...flags], scope).verdict,
-  };
+  return structuralSplit(name, source, { "numbers.mjs": moved, "entry.mjs": kept });
 }
 
 const chain = fixture(
@@ -28,7 +16,7 @@ const chain = fixture(
 const emitted = chain.run("linked-structural-moves");
 assert.equal(emitted.status, "certified", JSON.stringify(emitted));
 assert.deepEqual(chain.run("linked-structural-moves", "--check-output"), emitted);
-for (const file of [chain.files.sourceFile, path.join(chain.out, "entry.mjs")]) {
+for (const file of [chain.sourceFile, path.join(chain.out, "entry.mjs")]) {
   assert.deepEqual(observe(file, "limit"), { limit: 8 - 1e-5 });
 }
 
@@ -58,13 +46,7 @@ for (const [name, source, moved, kept, before, after] of [
     { error: "ReferenceError" },
   ],
 ]) {
-  const test = fixture(name, source, moved, kept);
-  assert.equal(test.run("linked-structural").status, "rejected");
-  assert(!existsSync(test.out));
-  const preview = path.join(root, name, "preview");
-  forcePreview(test.files, preview);
-  assert.deepEqual(observe(test.files.sourceFile, "result"), before);
-  assert.deepEqual(observe(path.join(preview, "entry.mjs"), "result"), after);
+  assertRejectedResultChange(fixture(name, source, moved, kept), before, after);
 }
 
 const special = fixture(
@@ -74,7 +56,7 @@ const special = fixture(
   ["#0", "#5"]
 );
 assert.equal(special.run("linked-structural-moves").status, "certified");
-for (const file of [special.files.sourceFile, path.join(special.out, "entry.mjs")]) {
+for (const file of [special.sourceFile, path.join(special.out, "entry.mjs")]) {
   const ns = await import(pathToFileURL(file));
   assert(Object.is(ns.zero, -0));
   assert.equal(ns.inverse, -Infinity);

@@ -1,22 +1,10 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { forcePreview, lower, observe, prepare, root } from "./harness.mjs";
+import { assertRejectedResultChange, observe, structuralSplit } from "./harness.mjs";
 
 function fixture(name, source, moved, kept) {
-  const dir = path.join(root, name);
-  const files = prepare(dir, {
-    source,
-    provider: "",
-    spec: { entry: "entry.mjs", modules: { "records.mjs": moved, "entry.mjs": kept } },
-  });
-  const out = path.join(dir, "out");
-  return {
-    files,
-    out,
-    run: (scope, ...flags) => lower(files.sourceFile, files.specFile, out, ["--structural", ...flags], scope).verdict,
-  };
+  return structuralSplit(name, source, { "records.mjs": moved, "entry.mjs": kept });
 }
 
 const ok = fixture(
@@ -28,7 +16,7 @@ const ok = fixture(
 const verdict = ok.run("linked-structural-moves");
 assert.equal(verdict.status, "certified");
 assert.deepEqual(ok.run("linked-structural-moves", "--check-output"), verdict);
-for (const f of [ok.files.sourceFile, path.join(ok.out, "entry.mjs")]) {
+for (const f of [ok.sourceFile, path.join(ok.out, "entry.mjs")]) {
   const { first, second } = await import(pathToFileURL(f));
   assert.notEqual(first, second);
   assert.equal(first.label, "active");
@@ -69,13 +57,7 @@ for (const [name, source, moved, kept, before, after] of [
     { error: "ReferenceError" },
   ],
 ]) {
-  const test = fixture(name, source, moved, kept);
-  assert.equal(test.run("linked-structural").status, "rejected");
-  assert(!existsSync(test.out));
-  const preview = path.join(root, name, "preview");
-  forcePreview(test.files, preview);
-  assert.deepEqual(observe(test.files.sourceFile, "result"), before);
-  assert.deepEqual(observe(path.join(preview, "entry.mjs"), "result"), after);
+  assertRejectedResultChange(fixture(name, source, moved, kept), before, after);
 }
 
 // The earlier table supplies an own field read. The retained allocation is
@@ -89,6 +71,6 @@ const retained = fixture(
 const retainedVerdict = retained.run("linked-structural-moves");
 assert.equal(retainedVerdict.status, "certified");
 assert.deepEqual(retained.run("linked-structural-moves", "--check-output"), retainedVerdict);
-for (const f of [retained.files.sourceFile, path.join(retained.out, "entry.mjs")]) {
+for (const f of [retained.sourceFile, path.join(retained.out, "entry.mjs")]) {
   assert.deepEqual(observe(f, ["result", "other"]), { result: 1, other: { k: 2 } });
 }
