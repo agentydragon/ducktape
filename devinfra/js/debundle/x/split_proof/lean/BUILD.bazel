@@ -1022,6 +1022,27 @@ lean_axiom_test(
 )
 
 lean_axiom_test(
+    name = "intrinsic_error_reference_axioms_test",
+    srcs = [
+        "EsmSplit/CoreJS/IntrinsicErrorReference.lean",
+        "EsmSplit/CoreJS/StackReadBoundary.lean",
+    ],
+    imports = ["EsmSplit.CoreJS.IntrinsicErrorReference"],
+    theorems = [
+        "CoreJS.IntrinsicErrorReference.successHasOrigin",
+        "CoreJS.IntrinsicErrorReference.unsupportedHasNoOrigin",
+        "CoreJS.IntrinsicErrorReference.aliasAllocation",
+        "CoreJS.IntrinsicErrorReference.shadowRejected",
+        "CoreJS.IntrinsicErrorReference.lookalikeRejected",
+        "CoreJS.IntrinsicErrorReference.alternateTargetRejected",
+        "CoreJS.IntrinsicErrorReference.hostThrowRetained",
+        "CoreJS.IntrinsicErrorReference.prototypeThrowRetained",
+        "CoreJS.IntrinsicErrorReference.productionStillUnknown",
+    ],
+    deps = [":corejs_certificate_support"],
+)
+
+lean_axiom_test(
     name = "stack_read_boundary_axioms_test",
     srcs = ["EsmSplit/CoreJS/StackReadBoundary.lean"],
     imports = ["EsmSplit.CoreJS.StackReadBoundary"],
