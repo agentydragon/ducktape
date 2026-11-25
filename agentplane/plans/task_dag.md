@@ -1439,6 +1439,28 @@ placement of a mid-conversation system message. Repeat through LiteLLM’s Respo
 Messages bridges with their native reasoning items; the old stock route accepted both but
 showed no prompt-token increase. Budget for the larger prompts; any omission at compaction is a separate policy.
 
+### `CENTRAL_SAMPLER_OBSOLETE_HANDLE_NOTICES` — bound execution-state overhead in model input
+
+**Open.** A tool-heavy Responses session showed repeated developer notices for handles going
+live and clearing. The [snapshot writer](../sampler/internal/sessionstore/execution_context.go)
+already suppresses an unchanged state. The problem is that each _change_ appends a full
+inventory: start a cell, finish it, start another, and the next request still carries the
+superseded inventories in its active prefix. Sharing that prefix in PostgreSQL saves storage,
+not model context. The JS host's per-execute `enabled_tools` catalog is separate; the
+[model tool description](../sampler/internal/toolcontract/sampler_tools.go) uses the built-ins.
+
+In the pinned [Codex CLI yield/wait request trace](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/core/tests/suite/snapshots/all__suite__scenarios__code_mode_catalog_messages.snap),
+the tool results already tell the model which cell yielded and when it completed. That ordinary
+cycle adds no separate live or empty inventory. Compare that path before adding reminders;
+explicit cell notifications and restoring state after compaction serve different purposes.
+
+**Exit:** exercise repeated yield, wait and completion cycles and inspect actual serialized
+provider requests before and after the fix. Report snapshot count and input bytes or tokens,
+including the trade-off with provider prefix caching. Bound the cost of obsolete state while
+keeping current handles usable and preserving exact historical request replay. Test a clear
+and a fresh baseline after compaction or recovery; never identify sampler notices by matching
+user-authored text.
+
 ### `CENTRAL_SAMPLER_COMPACTION_TIMELINE` — show when the sampler compacts context
 
 **Unscheduled.** Render sampler compaction as a timeline activity with start and terminal
