@@ -266,7 +266,7 @@ The broad Node comparison runs through `to_core.mjs`. [`corejs_ast_lowering_test
 
 ### Check the printed files
 
-**Now.** [`SplitFiles.lean`](lean/EsmSplit/SplitFiles.lean) certifies the planned ESTree, prints it and renames the staged directory into place without reparsing. `--check-output` reparses only on request and compares ASTs with scope annotations removed.
+**Now.** Before renaming the staged directory into place, [`SplitFiles.lean`](lean/EsmSplit/SplitFiles.lean) reparses the printed files and compares their ASTs, without scope annotations, with the certified ASTs. `--check-output` runs the same comparison on an existing directory. Neither lowers the reparsed files, so the AST comparator stands in for equality with `Y`.
 
 **Target.** Before publishing, reparse the staged files and lower them with the one lowering. The result must equal `Y`. The emitter and printer leave the trusted parts. `--check-output` runs the same check on an existing directory.
 
