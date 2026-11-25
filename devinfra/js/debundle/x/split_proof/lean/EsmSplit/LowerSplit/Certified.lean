@@ -250,7 +250,13 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
         pure (path.fileName.getD "bundle.mjs", path.parent)
       else pure ("bundle.mjs", none)
     Json.mkObj <$> loadProviders entry (Std.HashMap.ofList [(entry, program)]) root work (allowEntryImport := false)
-  let declaration := if structural then none else declarations.bind fun groups =>
+  -- The opt-in census wrapper must be able to measure linked execution even
+  -- when the ordinary selector would take the closed-declaration fast path.
+  let censusLinked ← do
+    let enabled ← IO.getEnv "SPLIT_PROOF_STRATEGY_CENSUS"
+    let forceLinked ← IO.getEnv "SPLIT_PROOF_CENSUS_FORCE_LINKED"
+    pure (enabled == some "1" && forceLinked == some "1")
+  let declaration := if structural || censusLinked then none else declarations.bind fun groups =>
     CoreJS.DeclarationArtifacts.prepare? program (CoreJS.DeclarationProgram.statements groups) B S P
   if let some prepared := declaration then
     let level := prepared.level

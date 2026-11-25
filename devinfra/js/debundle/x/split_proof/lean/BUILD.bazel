@@ -2,6 +2,7 @@ load("@bazel_skylib//rules:diff_test.bzl", "diff_test")
 load("@rules_lean//lean:lean.bzl", "lean_axiom_test", "lean_binary", "lean_library", "lean_test")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library")
 load(":splitter_launcher.bzl", "splitter_launcher")
 
 _EXAMPLE = "//devinfra/js/debundle/x/split_proof:example/"
@@ -200,7 +201,14 @@ splitter_launcher(
     diagnostic = ":lowersplit_diagnostic_core",
     interpreter = ":lowersplit_core",
     module_io = "//devinfra/js/debundle/x/split_proof/translation:module_io",
+    strategy_census = ":strategy_census_runner",
     template = "lowersplit.sh",
+)
+
+py_binary(
+    name = "strategy_census_runner",
+    srcs = ["strategy_census_wrapper.py"],
+    main = "strategy_census_wrapper.py",
 )
 
 sh_binary(
@@ -209,6 +217,7 @@ sh_binary(
     data = [
         ":lowersplit_core",
         ":lowersplit_diagnostic_core",
+        ":strategy_census_runner",
         "//devinfra/js/debundle/x/split_proof/translation:module_io",
     ],
     use_bash_launcher = True,
@@ -913,4 +922,9 @@ lean_test(
     srcs = ["//devinfra/js/debundle/x/split_proof/lean/generated:generate_lowered_example_certificate"],
     entry = "Experiments/Generated.lean",
     deps = [":planner"],
+)
+
+py_library(
+    name = "strategy_census_wrapper",
+    srcs = ["strategy_census_wrapper.py"],
 )
