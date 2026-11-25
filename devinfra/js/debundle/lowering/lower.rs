@@ -43,7 +43,7 @@ use analysis::{ModuleId, top_level_id};
 use anyhow::Result;
 use artifact::reports::SelectedModuleLowering;
 use artifact::{ArtifactIndexes, ChunkBundle, FileMetadata, FileRole, JsFile, JsFileBody};
-use frontend_elaboration::chunk_ast::{TopLevelDecl, top_level_declaration_names};
+use frontend_elaboration::chunk_ast::{TopLevelDecl, top_level_declaration_ids};
 use frontend_elaboration::source_ast::RuntimeImportFacts;
 use js_ast::ParsedJsModule;
 use rayon::prelude::*;
@@ -169,7 +169,7 @@ pub(super) struct LowerChunkSpecFacts<'a> {
     /// iterating so any spec errors are deterministic.
     pub(super) chunk_renames: &'a HashMap<String, String>,
     /// Bindings the source chunk's entry exports verbatim
-    /// (`record_pre_existing_named_exports`). Consulted by
+    /// (local named exports). Consulted by
     /// `auto_grown_residual_exports` so the auto-grow pass doesn't
     /// emit a `Duplicate export of 'name'` clash with an existing
     /// source export.
@@ -440,7 +440,8 @@ pub(super) fn prepare_candidate_emission_plan<'output>(
     // the emitted clause remaps to entry's post-rename local below.
     let entry_declared_names: HashSet<String> = entry_body
         .iter()
-        .flat_map(|item| top_level_declaration_names(item).0)
+        .flat_map(top_level_declaration_ids)
+        .map(|id| id.0.to_string())
         .collect();
     entry_ledger.seed_taken(
         RenameScope::EntryPublicExports,
@@ -741,7 +742,7 @@ fn compute_selected_statements(
         if decl
             .bindings
             .iter()
-            .any(|(_, id)| binding_assignment.contains_key(id))
+            .any(|id| binding_assignment.contains_key(id))
         {
             selected_statements.insert(decl.statement);
         }

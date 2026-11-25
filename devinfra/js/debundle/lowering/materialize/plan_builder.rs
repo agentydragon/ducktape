@@ -1104,7 +1104,8 @@ impl ChunkPlanBuilder {
                 continue;
             };
             let module = ModuleId(plan_index);
-            for (name, id) in &decl.bindings {
+            for id in &decl.bindings {
+                let name = id.0.as_str();
                 let existing = owned_destination(&self.bindings_catalogue, id);
                 let already_adopted_here = self.module_plans[plan_index]
                     .anonymous_binding_statement_origins
@@ -1117,7 +1118,7 @@ impl ChunkPlanBuilder {
                     } else if existing == plan_index && already_adopted_here {
                         self.module_plans[plan_index]
                             .anonymous_binding_statement_origins
-                            .entry(name.clone())
+                            .entry(name.to_owned())
                             .or_default()
                             .insert(decl.statement);
                         continue;
@@ -1130,14 +1131,14 @@ impl ChunkPlanBuilder {
                     .contains_key(name);
                 self.module_plans[plan_index]
                     .bindings
-                    .entry(name.clone())
-                    .or_insert_with(|| name.clone());
+                    .entry(name.to_owned())
+                    .or_insert_with(|| name.to_owned());
                 self.bindings_catalogue
                     .insert(id.clone(), BindingKind::Owned { module });
                 if !has_explicit_claim {
                     self.module_plans[plan_index]
                         .anonymous_binding_statement_origins
-                        .entry(name.clone())
+                        .entry(name.to_owned())
                         .or_default()
                         .insert(decl.statement);
                 }
@@ -1207,7 +1208,7 @@ impl ChunkPlanBuilder {
         let unclaimed: Vec<_> = declarations
             .iter()
             .flat_map(|declaration| &declaration.bindings)
-            .filter(|(_, binding)| owned_destination(&self.bindings_catalogue, binding).is_none())
+            .filter(|binding| owned_destination(&self.bindings_catalogue, binding).is_none())
             .collect();
         let owner_index = match self
             .module_plans
@@ -1240,7 +1241,8 @@ impl ChunkPlanBuilder {
         };
         let owner_plan = &mut self.module_plans[owner_index];
         owner_plan.role = ModuleRole::Unassigned;
-        for (name, binding) in unclaimed {
+        for binding in unclaimed {
+            let name = binding.0.to_string();
             owner_plan
                 .bindings
                 .entry(name.clone())
