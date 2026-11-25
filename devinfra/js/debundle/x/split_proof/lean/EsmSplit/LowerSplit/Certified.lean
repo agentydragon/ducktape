@@ -270,7 +270,9 @@ def prepareSliceEligibility (profile : CoreJS.HostProfile) (source providers fil
         SingletonPreparationRefusal.placement
       match probed : CoreJS.LinkedBehavior.probeWitness profile deployment.before deployment.after with
       | .error refusal => throw (.probe refusal)
-      | .ok probe => pure ⟨deployment, decodedSingleton, placed, probe, probed⟩
+      | .ok probe =>
+        let checkedLinks := CoreJS.LinkedBehavior.checkProbePair deployment.before deployment.after
+        pure ⟨deployment, decodedSingleton, placed, probe, probed, checkedLinks⟩
 
 /-- Preserve singleton declarations and executable linked certificates,
 with the original bundle at the virtual root for authored inputs. -/
@@ -337,8 +339,7 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
       match ← prepareSliceEligibility profile program providers files P timings with
       | .error refusal => pure (.error refusal.toCertificationRefusal)
       | .ok eligibility => do
-        let { before := original, after := candidate, .. } := eligibility.deployment
-        let blockers := CoreJS.LinkedBehavior.replayPremisedBlockers original candidate
+        let blockers := eligibility.replayBlockers
         let checkReplay := fun phase => timePhase timings phase fun _ => IO.lazyPure fun _ => eligibility.certifyReplay
         -- Keep the generated proof path for a property read that may invoke
         -- an accessor when the compiled replay check cannot handle that read.

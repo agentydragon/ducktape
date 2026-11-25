@@ -360,30 +360,34 @@ structure SliceEligibility (profile : CoreJS.HostProfile) (source providers file
   placed : CoreJS.Places deployment.assignment deployment.before deployment.after
   probe : CoreJS.LinkedBehavior.ProbeWitness deployment.before deployment.after
   probeSucceeded : CoreJS.LinkedBehavior.probeWitness profile deployment.before deployment.after = .ok probe
+  checkedLinks : Except String (CoreJS.LinkedBehavior.CheckedProbePair deployment.before deployment.after)
+
+def SliceEligibility.replayBlockers {profile source providers files P}
+    (input : SliceEligibility profile source providers files P) : List CoreJS.LinkedBehavior.ReplayBlocker :=
+  match input.checkedLinks with
+  | .ok pair => pair.replayBlockers
+  | .error _ => [.other "probe-link-unavailable"]
 
 def SliceEligibility.certifyReplay {profile source providers files P}
     (input : SliceEligibility profile source providers files P) :
     Option (PLift (CoreJS.LinkedBehavior.ASTEquivalent profile input.probe.premises source providers files P)) := do
-  let semantics ← CoreJS.LinkedBehavior.replayPremisedPrograms input.probe
+  let pair ← input.checkedLinks.toOption
+  let semantics ← CoreJS.LinkedBehavior.replayPremisedPrograms pair input.probe
   have decoded : CoreJS.LinkedInput.decodePair source providers files P profile =
       .ok (input.deployment.before, input.deployment.after) := by
     simp only [CoreJS.LinkedInput.decodePair, input.decodedSingleton] <;> rfl
   return ⟨⟨input.deployment.before, input.deployment.after, decoded, semantics.down⟩⟩
 
-private def checkSliceExports (original candidate : CoreJS.Program) :
+private def checkSliceExports {original candidate : CoreJS.Program}
+    (checked : Except String (CoreJS.LinkedBehavior.CheckedProbePair original candidate)) :
     Except CertificationRefusal (PLift (CoreJS.LinkedBehavior.SameExports original candidate)) := do
-  let before ← (CoreJS.LinkedBehavior.checkLink original).mapError fun reason =>
-    ({ reason := "original linker: " ++ reason, reasonCode := some "slice_link" } : CertificationRefusal)
-  let after ← (CoreJS.LinkedBehavior.checkLink candidate).mapError fun reason =>
-    ({ reason := "candidate linker: " ++ reason, reasonCode := some "slice_link" } : CertificationRefusal)
-  if exportsEqual : CoreJS.LinkedBehavior.exportsMatchFrom before after = true then
-    return ⟨CoreJS.LinkedBehavior.sameExports_of_match fun w => by
-      rw [CoreJS.LinkedBehavior.exportsMatch_from_checked (before.forWorld w) (after.forWorld w)]
-      exact exportsEqual⟩
+  let pair ← checked.mapError fun reason => { reason, reasonCode := some "slice_link" }
+  if exportsEqual : CoreJS.LinkedBehavior.exportsMatchFrom pair.before pair.after = true then
+    return ⟨pair.sameExports exportsEqual⟩
   else
-    let a ← (CoreJS.EntryExports.resolve original.entry before.linked).mapError fun why =>
+    let a ← (CoreJS.EntryExports.resolve original.entry pair.before.linked).mapError fun why =>
       ({ reason := "original entry: " ++ why, reasonCode := some "slice_exports" } : CertificationRefusal)
-    let b ← (CoreJS.EntryExports.resolve candidate.entry after.linked).mapError fun why =>
+    let b ← (CoreJS.EntryExports.resolve candidate.entry pair.after.linked).mapError fun why =>
       ({ reason := "candidate entry: " ++ why, reasonCode := some "slice_exports" } : CertificationRefusal)
     throw { reason := CoreJS.EntryExports.mismatch a b, reasonCode := some "slice_exports" }
 
@@ -424,8 +428,8 @@ def certifySlice (profile : CoreJS.HostProfile) (source providers files : Json)
       let candidateEq := candidateSyntax.down
       if hfp : CoreJS.FootprintsOfSyntax ss B then
         if hvalid : EsmSplit.Valid B S P then
-          let ⟨sameExports⟩ ← checkSliceExports denseOriginal denseCandidate
-          let ⟨exactExports⟩ ← checkSliceExports original candidate
+          let ⟨sameExports⟩ ← checkSliceExports (CoreJS.LinkedBehavior.checkProbePair denseOriginal denseCandidate)
+          let ⟨exactExports⟩ ← checkSliceExports eligibility.checkedLinks
           let sourceRun : ∀ w n,
               CoreJS.runProgram w n denseOriginal = CoreJS.runProgram w n canonicalSource := by
             intro w n

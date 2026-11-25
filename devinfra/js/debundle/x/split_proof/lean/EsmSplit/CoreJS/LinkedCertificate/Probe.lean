@@ -1,5 +1,6 @@
 import EsmSplit.CoreJS.LinkedCertificate.Proof
 import EsmSplit.CoreJS.LinkedCertificate.QuoteCoreJS
+import EsmSplit.CoreJS.LinkedPivotCertificate
 import EsmSplit.CoreJS.ProbeReplay
 import EsmSplit.CoreJS.StateMatch
 
@@ -64,18 +65,21 @@ theorem probeObservationMismatchRefutesEquivalent (profile : HostPremises) {sour
   rintro rfl
   simp [probeStatesEqual] at different
 
-private def checkedProbeLink (program : Program) : Option (CheckedLink program World.probe) :=
-  match linked : link program (initialState World.probe program.regions) with
-  | .ok scopes ready => some ⟨scopes, ready, linked⟩
-  | .throw .. | .unknown .. | .fuel => none
+/-- The canonical links shared by strategy checks on the same decoded pair. -/
+structure CheckedProbePair (source candidate : Program) where
+  before : CheckedLink source World.probe
+  after : CheckedLink candidate World.probe
+
+def checkProbePair (source candidate : Program) : Except String (CheckedProbePair source candidate) := do
+  let before ← (checkLink source).mapError ("original linker: " ++ ·)
+  let after ← (checkLink candidate).mapError ("candidate linker: " ++ ·)
+  return ⟨before, after⟩
 
 /-- Typed syntax categories for the linked schedules used by replay. -/
-def replayPremisedBlockers (source candidate : Program) : List ReplayBlocker :=
-  match checkedProbeLink source, checkedProbeLink candidate with
-  | some sourceChecked, some candidateChecked =>
-    (replayScheduleBlockers (unitsOf sourceChecked.linked) ++
-      replayScheduleBlockers (unitsOf candidateChecked.linked)).eraseDups
-  | _, _ => [.other "probe-link-unavailable"]
+def CheckedProbePair.replayBlockers {source candidate : Program}
+    (pair : CheckedProbePair source candidate) : List ReplayBlocker :=
+  (replayScheduleBlockers (unitsOf pair.before.linked) ++
+    replayScheduleBlockers (unitsOf pair.after.linked)).eraseDups
 
 /-- Successful concrete runs at the same fuel and with the same host premises.
 Compiled replay uses these runs when lifting the result to other worlds. -/
@@ -144,40 +148,34 @@ private theorem replayPremisedEquivalentFor {premises : HostPremises} {source ca
       ⟨fuel, sourceRunAtWorld, by simp⟩,
       ⟨fuel, candidateRunAtWorld, by simp⟩⟩
 
-private theorem replayPremisedSameExports {source candidate : Program}
-    (sourceChecked : CheckedLink source World.probe)
-    (candidateChecked : CheckedLink candidate World.probe)
-    (exportsMatched : exportsMatchFrom sourceChecked candidateChecked = true) : SameExports source candidate := by
+theorem CheckedProbePair.sameExports {source candidate : Program} (pair : CheckedProbePair source candidate)
+    (exportsMatched : exportsMatchFrom pair.before pair.after = true) : SameExports source candidate := by
   apply sameExports_of_match
   intro w
-  let sourceAtWorld : CheckedLink source w :=
-    ⟨sourceChecked.linked, linkState w sourceChecked.ready, link_from_probe sourceChecked w⟩
-  let candidateAtWorld : CheckedLink candidate w :=
-    ⟨candidateChecked.linked, linkState w candidateChecked.ready, link_from_probe candidateChecked w⟩
-  rw [exportsMatch_from_checked sourceAtWorld candidateAtWorld]
+  rw [exportsMatch_from_checked (pair.before.forWorld w) (pair.after.forWorld w)]
   exact exportsMatched
 
 /-- A compiled replay check. It accepts only when both programs have a
 successful probe run, their complete probe states match, both reached schedules
 have replay witnesses, and their public exports match. -/
-def replayPremisedPrograms {source candidate : Program} (probe : ProbeWitness source candidate) :
+def replayPremisedPrograms {source candidate : Program}
+    (pair : CheckedProbePair source candidate) (probe : ProbeWitness source candidate) :
     Option (PLift (EquivalentFor probe.premises source candidate ∧ SameExports source candidate)) := do
-  let sourceChecked ← checkedProbeLink source
-  let candidateChecked ← checkedProbeLink candidate
   let allowLogical := source.modules.length == 1 && source.modules.all (fun m => m.imports.isEmpty)
-  let sourceSupported ← replayPremisedDynamicWitness (premises := probe.premises) probe.fuel allowLogical sourceChecked
-  let candidateSupported ← replayPremisedDynamicWitness (premises := probe.premises) probe.fuel allowLogical candidateChecked
+  let sourceSupported ← replayPremisedDynamicWitness (premises := probe.premises) probe.fuel allowLogical pair.before
+  let candidateSupported ← replayPremisedDynamicWitness (premises := probe.premises) probe.fuel allowLogical pair.after
   let stateAgreement ← premisedStateAgreement probe.premises probe.sourceState probe.candidateState
-  if exportsMatched : exportsMatchFrom sourceChecked candidateChecked then
+  if exportsMatched : exportsMatchFrom pair.before pair.after then
     return ⟨⟨replayPremisedEquivalentFor
         (sourceSupported.down probe.sourceState probe.sourceRun) (candidateSupported.down probe.candidateState probe.candidateRun)
         stateAgreement.down,
-      replayPremisedSameExports sourceChecked candidateChecked exportsMatched⟩⟩
+      pair.sameExports exportsMatched⟩⟩
   else none
 
 #audit_linked_programs probeObservationMismatchRefutesEquivalent
 #audit_linked_programs replayPremisedEquivalentFor
-#audit_linked_programs replayPremisedSameExports
+#print axioms CheckedProbePair.sameExports
+#audit_linked_programs CheckedProbePair.sameExports
 #audit_linked_programs replayPremisedPrograms
 
 inductive RefusalCode where
