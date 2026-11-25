@@ -6,6 +6,7 @@ import path from "node:path";
 import { acorn, dump } from "./parser.mjs";
 import { assertSelectedSourceUnits, parseSourceUnits } from "./testing/ast_assertions.mjs";
 import { writeDeployment } from "./testing/deployment_manifest.mjs";
+import { split } from "./testing/split.mjs";
 import { lcg32 } from "../seeded_random.mjs";
 
 const root = process.env.TEST_TMPDIR;
@@ -88,10 +89,19 @@ const modules = {
 };
 writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules }));
 
-const lowered = spawnSync(process.env.LOWERSPLIT, ["--diagnostic", writeDeployment(ast, spec, out), out], {
+// The linked CoreJS lowering currently refuses this printer corpus's RegExp/BigInt literals.
+// Keep this Node comparison on the emitter path until those literal cases can be certified.
+const manifest = writeDeployment(ast, spec, out);
+const certified = split({ ast, spec, out });
+assert.equal(certified.status, "refused", certified.log);
+assert.match(certified.reason, /unsupported literal/);
+assert.equal(certified.reasonCode, "linked_input");
+assert.equal(certified.files.length, 0, "the certified refusal publishes no modules");
+const lowered = spawnSync(process.env.LOWERSPLIT, ["--diagnostic", manifest, out], {
   encoding: "utf8",
 });
 assert.equal(lowered.status, 0, `${lowered.stdout}\n${lowered.stderr}`);
+assert.match(lowered.stdout, /model diagnostic: /, "this printer fixture remains a model-slice diagnostic");
 
 for (const [file, selectors] of Object.entries(modules)) {
   const emittedText = readFileSync(path.join(out, file), "utf8");

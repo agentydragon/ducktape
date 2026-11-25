@@ -1,15 +1,15 @@
 // LowerSplit must accept the annotated source before it writes the emitted tree.
 import { strict as assert } from "node:assert";
-import { readFileSync, mkdirSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { bundleFromParsed, frontBundle } from "./frontend.mjs";
+import { bundleFromParsed } from "./frontend.mjs";
 import { annotateProgram, parseModule, resolveIdentifiers } from "./scope_metadata.mjs";
 import { dumpParsed } from "./annotated_estree.mjs";
 import { acorn, dump, eslintScope, loadSnapshot } from "./parser.mjs";
 import { checkTranslation } from "./testing/check_translation.mjs";
-import { writeDeployment } from "./testing/deployment_manifest.mjs";
-import { lowerDiagnostic, prepareSideSplit, run } from "./testing/diagnostic_split.mjs";
+import { prepareSideSplit, run } from "./testing/diagnostic_split.mjs";
+import { generateInstance, split } from "./testing/split.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const temp = process.env.TEST_TMPDIR;
@@ -17,7 +17,6 @@ assert(temp, "TEST_TMPDIR is required");
 const source = path.join(here, "fixtures/local_identity/bundle.js");
 const code = readFileSync(source, "utf8");
 const out = path.join(temp, "emitted");
-mkdirSync(out, { recursive: true });
 function legacyDump(parsed) {
   const meaning = resolveIdentifiers(parsed, () => true);
   return JSON.stringify(annotateProgram(parsed, meaning, { legacy: true }));
@@ -102,31 +101,24 @@ const callbacks = scopes.body[0].declarations.map((d) => d.init);
 assert.notEqual(callbacks[0].params[0].b, callbacks[1].params[0].b);
 for (const callback of callbacks) assert.equal(callback.params[0].b, callback.body.b);
 const leanCertificate = path.join(temp, "generated.lean");
-const emitted = run(process.env.LOWERSPLIT, [
-  "--diagnostic",
-  writeDeployment(ast, spec, out),
-  out,
-  "--lean",
-  leanCertificate,
-]);
-assert.equal(emitted.status, 0, `annotated emitter must accept: ${emitted.stdout}\n${emitted.stderr}`);
-assert.match(emitted.stdout, /pass\s+OrderOk/);
+const instancePreview = path.join(temp, "instance-generator-preview");
+const nodeHost = path.join(temp, "node-recording.json");
+writeFileSync(nodeHost, JSON.stringify({ profile: "node-recording" }));
+generateInstance({ ast, spec, out: leanCertificate, preview: instancePreview });
+const certifiedEmission = split({ ast, spec, out, hostContract: nodeHost });
+assert.equal(certifiedEmission.status, "certified", `certified emitter must accept: ${certifiedEmission.log}`);
 const legacyInput = path.join(temp, "legacy-ast.json");
 writeFileSync(legacyInput, legacyDump(parsed));
 const upgradedOut = path.join(temp, "upgraded");
-const upgraded = run(process.env.LOWERSPLIT, [
-  "--diagnostic",
-  writeDeployment(legacyInput, spec, upgradedOut),
-  upgradedOut,
-]);
-assert.equal(upgraded.status, 0, `${upgraded.stdout}\n${upgraded.stderr}`);
+const upgraded = split({ ast: legacyInput, spec, out: upgradedOut, hostContract: nodeHost });
+assert.equal(upgraded.status, "certified", upgraded.log);
 for (const file of ["entry.mjs", "side.mjs"])
   assert.equal(readFileSync(path.join(upgradedOut, file), "utf8"), readFileSync(path.join(out, file), "utf8"));
 const leanSource = readFileSync(leanCertificate, "utf8");
 assert.match(leanSource, /kernel checks this supplied bundle and plan, not the source-to-footprint analysis/);
 assert.match(leanSource, /theorem plan_valid/);
 
-// A diagnostic instance retains the original spelling of whole statements
+// A generated instance retains the original spelling of whole statements
 // and standalone declarations for units split out of a declaration list.
 {
   const source = path.join(temp, "instance-source.mjs");
@@ -135,14 +127,7 @@ assert.match(leanSource, /theorem plan_valid/);
   const original = "const /* retained */ seed = 1;";
   writeFileSync(source, `${original}\nconst left = seed, right = 2;\n`);
   writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["seed", "left", "right"] } }));
-  const result = run(process.env.LOWERSPLIT, [
-    "--diagnostic",
-    writeDeployment(source, spec, path.join(temp, "instance-out")),
-    path.join(temp, "instance-out"),
-    "--lean",
-    instance,
-  ]);
-  assert.equal(result.status, 0, result.stdout + result.stderr);
+  generateInstance({ source, spec, out: instance, preview: path.join(temp, "instance-out") });
   const generated = readFileSync(instance, "utf8");
   for (const unit of [original, "const left = seed;", "const right = 2;"])
     assert(generated.includes(`src := ${JSON.stringify(unit)}`), unit);
@@ -174,10 +159,15 @@ for (const [name, unsafe] of [
   ],
 ]) {
   const fixture = prepareSideSplit(name, unsafe);
-  const rejected = lowerDiagnostic(fixture);
-  assert.equal(rejected.status, 1, `${name} must be rejected: ${rejected.stdout}\n${rejected.stderr}`);
-  assert.match(rejected.stdout, /FAIL\s+OrderOk/);
-  assert(!existsSync(path.join(fixture.dir, "entry.mjs")), `${name} must not emit a module`);
+  const rejected = split({
+    ast: fixture.input,
+    spec: fixture.spec,
+    out: path.join(fixture.dir, "certified"),
+    hostContract: fixture.hostContract,
+  });
+  assert.equal(rejected.status, "refused", `${name} must be rejected: ${rejected.log}`);
+  assert(rejected.reason, name);
+  assert.equal(rejected.files.length, 0, `${name} must not emit a module`);
 }
 
 // An escaped callback may read the result before a reordered initializer. The
@@ -250,22 +240,16 @@ globalThis.cb();`,
   ],
 ]) {
   const fixture = prepareSideSplit(name, unsafe, side);
-  const { dir, source: original } = fixture;
-  const rejected = lowerDiagnostic(fixture);
-  assert.equal(rejected.status, 1, `${name}: ${rejected.stdout}\n${rejected.stderr}`);
-  assert.match(rejected.stdout, /FAIL\s+OrderOk/);
-  assert(!existsSync(path.join(dir, "entry.mjs")), name);
-  const emitted = lowerDiagnostic(fixture, "--force");
-  assert.equal(emitted.status, 1, `${name}: ${emitted.stdout}\n${emitted.stderr}`);
-  assert.match(emitted.stdout, /FAIL\s+OrderOk/);
-  const before = run(process.execPath, [original]);
-  const after = run(process.execPath, [path.join(dir, "entry.mjs")]);
-  assert.equal(before.status, 0, before.stderr);
-  assert.notEqual(after.status, 0, name);
-  assert.match(after.stderr, /ReferenceError/);
-  const checkedUnsafe = checkTranslation(frontBundle(original), dir);
-  assert.equal(checkedUnsafe.status, 4, `${name}: ${checkedUnsafe.stdout}\n${checkedUnsafe.stderr}`);
-  assert.match(checkedUnsafe.stdout, /FAIL\s+OrderOk/);
+  const { dir } = fixture;
+  const rejected = split({
+    ast: fixture.input,
+    spec: fixture.spec,
+    out: path.join(dir, "certified"),
+    hostContract: fixture.hostContract,
+  });
+  assert.equal(rejected.status, "refused", `${name}: ${rejected.log}`);
+  assert(rejected.reason, name);
+  assert.equal(rejected.files.length, 0, name);
 }
 
 // A fallback syntax node in a statement mentioning the result may hide a
@@ -276,11 +260,12 @@ const result = identity(1);
 console.log(import.meta.url, result);`;
   const input = path.join(temp, "fallback-identity-ast.json");
   const spec = path.join(temp, "fallback-identity-spec.json");
-  const dir = path.join(temp, "fallback-identity-out");
-  mkdirSync(dir, { recursive: true });
+  const out = path.join(temp, "fallback-identity-out");
   writeFileSync(input, JSON.stringify(dump(codeWithFallback)));
   writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#1", "#2"] } }));
-  const result = run(process.env.LOWERSPLIT, ["--diagnostic", writeDeployment(input, spec, dir), dir]);
-  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-  assert.match(result.stdout, /1 with fallback nodes/);
+  const result = split({ ast: input, spec, out, hostContract: nodeHost });
+  assert.equal(result.status, "refused", result.log);
+  const verdict = result.verdict;
+  assert.equal(result.reasonCode, "linked_input", JSON.stringify(verdict));
+  assert(!existsSync(path.join(out, "entry.mjs")), "unsupported linked input emitted a module");
 }

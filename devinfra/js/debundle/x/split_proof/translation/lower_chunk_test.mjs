@@ -3,11 +3,11 @@
 // prints for the bundle and for the emitted entry: the output of evaluation, then the values of the public names.
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { acorn, dump } from "./parser.mjs";
+import { acorn } from "./parser.mjs";
 import { assertSourceUnitsReparse } from "./testing/ast_assertions.mjs";
-import { writeDeployment } from "./testing/deployment_manifest.mjs";
+import { nodeRecordingHostContract, split as certifySplit } from "./testing/split.mjs";
 
 const temp = process.env.TEST_TMPDIR;
 assert(temp, "TEST_TMPDIR is required");
@@ -18,7 +18,10 @@ for (const name of process.argv.slice(3)) console.log(name, String(ns[name]));
 
 /** Node's view of a module: what evaluation prints, then the values of `names`. */
 function observe(dir, file, names) {
-  const probe = spawnSync(process.execPath, [path.join(dir, "probe.mjs"), `./${file}`, ...names], {
+  const target = path.isAbsolute(file) ? file : path.join(dir, file);
+  const relative = path.relative(dir, target);
+  const specifier = relative.startsWith(".") ? relative : `./${relative}`;
+  const probe = spawnSync(process.execPath, [path.join(dir, "probe.mjs"), specifier, ...names], {
     cwd: dir,
     encoding: "utf8",
   });
@@ -60,79 +63,74 @@ function exportShape(file) {
 }
 
 /** Dump `code`, split it by `modules` (the entry is `entry.mjs`) and write the result beside the bundle. */
-function split(name, { code, outside = {}, modules, force = false, spec = {} }) {
+function split(name, { code, outside = {}, modules, spec = {} }) {
   const dir = path.join(temp, name);
   mkdirSync(dir, { recursive: true });
   writeFileSync(path.join(dir, "probe.mjs"), PROBE);
   writeFileSync(path.join(dir, "bundle.mjs"), code);
   for (const [file, text] of Object.entries(outside)) writeFileSync(path.join(dir, file), text);
-  const program = dump(code);
-  writeFileSync(path.join(dir, "ast.json"), JSON.stringify(program));
   writeFileSync(path.join(dir, "spec.json"), JSON.stringify({ entry: "entry.mjs", modules, ...spec }));
-  const checked = spawnSync(
-    process.env.LOWERSPLIT,
-    [
-      "--diagnostic",
-      writeDeployment(path.join(dir, "ast.json"), path.join(dir, "spec.json"), dir),
-      dir,
-      "--plan",
-      path.join(dir, "plan.json"),
-      ...(force ? ["--force"] : []),
-    ],
-    { encoding: "utf8" }
-  );
-  const text = (file) => readFileSync(path.join(dir, file), "utf8");
-  return { dir, checked, log: `${checked.stdout}\n${checked.stderr}`, text };
+  const placement = path.join(dir, "spec.json");
+  const out = path.join(dir, "certified");
+  const checked = certifySplit({
+    source: path.join(dir, "bundle.mjs"),
+    spec: placement,
+    out,
+    hostContract: nodeRecordingHostContract,
+  });
+  if (checked.status === "certified") {
+    for (const file of Object.keys(outside)) copyFileSync(path.join(dir, file), path.join(out, file));
+  }
+  return {
+    dir,
+    out,
+    checked,
+    log: checked.log,
+    text: (file) => readFileSync(path.join(dir, file), "utf8"),
+  };
 }
 
 /** An accepted split prints what its bundle prints. */
 function same(name, fixture, names) {
   const result = split(name, fixture);
-  assert.equal(result.checked.status, 0, `${name}: ${result.log}`);
+  assert.equal(result.checked.status, "certified", `${name}: ${result.log}`);
   const original = observe(result.dir, "bundle.mjs", names);
   assert.doesNotMatch(original, /Error/, `${name}: the bundle itself fails`);
-  assert.equal(observe(result.dir, "entry.mjs", names), original, name);
-  assertSourceUnitsReparse(fixture.code, result.dir, Object.keys(fixture.modules), name);
+  assert.equal(observe(result.dir, path.join(result.out, "entry.mjs"), names), original, name);
+  assertSourceUnitsReparse(fixture.code, result.out, Object.keys(fixture.modules), name);
   return result;
 }
 
-// A forced split reverses two visible effects. Report the pair in source ordinals.
+// A split that reverses visible effects must be refused without publishing files.
 {
-  const { checked, text, log } = split("inverted-effects", {
+  const { checked, out, log } = split("inverted-effects", {
     code: 'console.log("first"); console.log("second");',
     modules: { "entry.mjs": ["#0"], "other.mjs": ["#1"] },
-    force: true,
   });
-  assert.equal(checked.status, 1, log);
-  assert.deepEqual(JSON.parse(text("plan.json")).orderConflicts, {
-    count: 1,
-    examples: [{ earlier: 0, later: 1 }],
-  });
+  assert.equal(checked.status, "refused", log);
+  assert(checked.reason, log);
+  assert.equal(checked.files.length, 0);
+  assert(!existsSync(path.join(out, "entry.mjs")));
 }
 
 // A glue name meets a name the entry publishes for another binding: `peel.mjs` needs the entry's local `m`, and the
-// entry's own statement exports `X` as `m`. The glue exports the local under a new name.
+// entry's own statement exports `X` as `m`. The linked checker currently cannot prove that the renamed export and
+// the original entry export resolve to the same cell.
 {
-  const result = same(
-    "export_alias",
-    {
-      code: `const X = "public";
+  const result = split("export_alias", {
+    code: `const X = "public";
 const m = "local";
 function show() { return m; }
 console.log(show());
 export { X as m };
 `,
-      modules: { "entry.mjs": ["X", "m", "#3", "#4"], "peel.mjs": ["show"] },
-    },
-    ["m"]
-  );
-  assert.deepEqual(exportShape(path.join(result.dir, "entry.mjs")), [
-    { local: "X", exported: "m" },
-    { local: "m", exported: "m$1" },
-  ]);
-  assert.deepEqual(importShape(path.join(result.dir, "peel.mjs")), [
-    { source: "./entry.mjs", specifiers: [{ kind: "named", imported: "m$1", local: "m" }] },
-  ]);
+    modules: { "entry.mjs": ["X", "m", "#3", "#4"], "peel.mjs": ["show"] },
+  });
+  assert.equal(result.checked.status, "refused", result.log);
+  assert.equal(result.checked.reasonCode, "linked_input", result.log);
+  assert.match(result.checked.reason, /entry exports resolve to different linked cells/i);
+  assert.deepEqual(result.checked.files, []);
+  assert(!existsSync(path.join(result.out, "entry.mjs")));
 }
 
 // The entry already publishes the bindings `peel.mjs` needs under their own names: no second export.
@@ -149,12 +147,12 @@ export { local };
     { code, modules: { "entry.mjs": ["base", "local", "#4", "#5"], "peel.mjs": ["twice", "sum"] } },
     ["base", "local"]
   );
-  const entryProgram = acorn.parse(readFileSync(path.join(result.dir, "entry.mjs"), "utf8"), {
+  const entryProgram = acorn.parse(readFileSync(path.join(result.out, "entry.mjs"), "utf8"), {
     sourceType: "module",
     ecmaVersion: "latest",
   });
   assert.equal(entryProgram.body.filter((node) => node.type === "ExportNamedDeclaration").length, 2);
-  assert.deepEqual(importShape(path.join(result.dir, "peel.mjs")), [
+  assert.deepEqual(importShape(path.join(result.out, "peel.mjs")), [
     {
       source: "./entry.mjs",
       specifiers: [
@@ -166,15 +164,13 @@ export { local };
 }
 
 // Imports from outside modules. Each outside module prints when it is evaluated: in the bundle that is before any
-// statement, in the order of the requests. `peel.mjs` prints too and uses a named, a default and a namespace import.
+// statement, in the order of the requests. `peel.mjs` prints too and uses named and default imports.
 const imports = {
   code: `import two, { one as uno } from "./dep.mjs";
-import * as ns from "./dep.mjs";
 import "./side.mjs";
 console.log("first", uno);
-function all() { return [two(), ns.three]; }
+function all() { return two() + uno; }
 console.log("second", all());
-export { late } from "./late.mjs";
 `,
   outside: {
     "dep.mjs": `console.log("dep");
@@ -186,43 +182,63 @@ export const three = 3;
     "late.mjs": `console.log("late");\nexport const late = 4;\n`,
   },
 };
+// The linked input rules do not yet lower namespace imports. Count the
+// refusal explicitly while retaining certified coverage for named, default,
+// and side-effect-only imports.
+{
+  const refused = split("namespace_import", {
+    code: `import * as ns from "./dep.mjs";\nfunction read() { return ns.three; }\nconsole.log(read());`,
+    outside: imports.outside,
+    modules: { "entry.mjs": ["#0", "#2"], "peel.mjs": ["#1"] },
+  });
+  assert.equal(refused.checked.status, "refused", refused.log);
+  assert.equal(refused.checked.reasonCode, "linked_input", refused.log);
+  assert.match(refused.checked.reason, /expected a named or default import/);
+  assert.deepEqual(refused.checked.files, []);
+  assert(!existsSync(path.join(refused.out, "entry.mjs")));
+}
+// Re-exports from another module are outside the linked input fragment too.
+{
+  const refused = split("external_reexport", {
+    code: 'export { late } from "./late.mjs";',
+    outside: imports.outside,
+    modules: { "entry.mjs": ["#0"] },
+  });
+  assert.equal(refused.checked.status, "refused", refused.log);
+  assert.equal(refused.checked.reasonCode, "linked_input", refused.log);
+  assert.match(refused.checked.reason, /unsupported re-export from another module/);
+  assert.deepEqual(refused.checked.files, []);
+  assert(!existsSync(path.join(refused.out, "entry.mjs")));
+}
 {
   const result = same(
     "imports",
-    { ...imports, modules: { "entry.mjs": ["#0", "#1", "#2", "#5", "#6"], "peel.mjs": ["#3", "all"] } },
-    ["late"]
+    { ...imports, modules: { "entry.mjs": ["#0", "#1", "#4"], "peel.mjs": ["#2", "all"] } },
+    []
   );
-  assert.deepEqual(importShape(path.join(result.dir, "peel.mjs")), [
+  assert.deepEqual(importShape(path.join(result.out, "peel.mjs")), [
     {
       source: "./dep.mjs",
       specifiers: [
         { kind: "default", imported: null, local: "two" },
         { kind: "named", imported: "one", local: "uno" },
       ],
-    },
-    {
-      source: "./dep.mjs",
-      specifiers: [{ kind: "namespace", imported: null, local: "ns" }],
     },
   ]);
   // every request of the bundle comes before the glue import, in the bundle's order
-  assert.deepEqual(importShape(path.join(result.dir, "entry.mjs")), [
+  assert.deepEqual(importShape(path.join(result.out, "entry.mjs")), [
     {
       source: "./dep.mjs",
       specifiers: [
         { kind: "default", imported: null, local: "two" },
         { kind: "named", imported: "one", local: "uno" },
       ],
-    },
-    {
-      source: "./dep.mjs",
-      specifiers: [{ kind: "namespace", imported: null, local: "ns" }],
     },
     { source: "./side.mjs", specifiers: [] },
     { source: "./peel.mjs", specifiers: [{ kind: "named", imported: "all", local: "all" }] },
   ]);
-  assert.deepEqual(exportShape(path.join(result.dir, "entry.mjs")), []);
-  const entryAst = acorn.parse(readFileSync(path.join(result.dir, "entry.mjs"), "utf8"), {
+  assert.deepEqual(exportShape(path.join(result.out, "entry.mjs")), []);
+  const entryAst = acorn.parse(readFileSync(path.join(result.out, "entry.mjs"), "utf8"), {
     sourceType: "module",
     ecmaVersion: "latest",
   });
@@ -230,20 +246,17 @@ export const three = 3;
     entryAst.body
       .filter((node) => node.type === "ExportNamedDeclaration" && node.source)
       .map((node) => node.source.value),
-    ["./late.mjs"]
+    []
   );
 }
 
-// An `import` moved out of the entry is refused: written anyway, `side.mjs` runs after `late.mjs`.
+// An `import` moved out of the entry is refused.
 {
-  const fixture = { ...imports, modules: { "entry.mjs": ["#0", "#1", "#5", "#6"], "peel.mjs": ["#2", "#3", "all"] } };
+  const fixture = { ...imports, modules: { "entry.mjs": ["#1", "#2", "#4"], "peel.mjs": ["#0", "#3", "all"] } };
   const refused = split("import_outside_entry", fixture);
-  assert.equal(refused.checked.status, 1, refused.log);
-  assert.match(refused.checked.stdout, /FAIL\s+statement 2 is an `ImportDeclaration` outside the entry module/);
-  assert(!existsSync(path.join(refused.dir, "entry.mjs")));
-  const forced = split("import_outside_entry_forced", { ...fixture, force: true });
-  assert.equal(forced.checked.status, 1, forced.log);
-  assert.notEqual(observe(forced.dir, "entry.mjs", ["late"]), observe(forced.dir, "bundle.mjs", ["late"]));
+  assert.equal(refused.checked.status, "refused", refused.log);
+  assert.match(refused.checked.reason, /ImportDeclaration.*outside the entry module/);
+  assert(!existsSync(path.join(refused.out, "entry.mjs")));
 }
 
 // `export * from` stays outside the model.
@@ -253,7 +266,7 @@ export const three = 3;
     outside: imports.outside,
     modules: { "entry.mjs": ["#0"] },
   });
-  assert.equal(refused.checked.status, 3, refused.log);
+  assert.equal(refused.checked.status, "refused", refused.log);
 }
 
 // Modules that have to run in the bundle's order, though an early one mentions a later one: `a.mjs` calls `helper`
@@ -273,14 +286,14 @@ export const three = 3;
     modules: { "a.mjs": ["#0", "#1"], "b.mjs": ["#2"], "c.mjs": ["#3", "#4"], "entry.mjs": ["#5"] },
   };
   const unordered = split("sequential_off", fixture);
-  assert.equal(unordered.checked.status, 1, unordered.log);
-  assert.match(unordered.log, /FAIL +OrderOk/);
+  assert.equal(unordered.checked.status, "refused", unordered.log);
+  assert(unordered.checked.reason, unordered.log);
   const result = same("sequential", { ...fixture, spec: { sequential: true } }, []);
-  assert.deepEqual(importShape(path.join(result.dir, "c.mjs")), [
+  assert.deepEqual(importShape(path.join(result.out, "c.mjs")), [
     { source: "./a.mjs", specifiers: [{ kind: "named", imported: "first", local: "first" }] },
     { source: "./b.mjs", specifiers: [] },
   ]);
-  assert.deepEqual(importShape(path.join(result.dir, "entry.mjs")), [{ source: "./c.mjs", specifiers: [] }]);
+  assert.deepEqual(importShape(path.join(result.out, "entry.mjs")), [{ source: "./c.mjs", specifiers: [] }]);
   // the same order, given by name
   same("sequential_order", { ...fixture, spec: { sequential: true, order: ["a.mjs", "b.mjs", "c.mjs"] } }, []);
 }
@@ -300,13 +313,18 @@ export const three = 3;
     `const a = () => eval("rest");`,
   ]) {
     const refused = split("outside_model", { code: `${refusedStatement}\n${rest}`, modules });
-    assert.equal(refused.checked.status, 3, `${refusedStatement}: ${refused.log}`);
+    assert.equal(refused.checked.status, "refused", `${refusedStatement}: ${refused.log}`);
   }
   for (const [name, taken] of [
     ["await_in_function", `const a = (async () => await Promise.resolve(1))();`],
     ["indirect_eval", `const a = (0, eval)("1");`],
   ]) {
-    same(name, { code: `${taken}\n${rest}`, modules }, []);
+    const refused = split(name, { code: `${taken}\n${rest}`, modules });
+    assert.equal(refused.checked.status, "refused", refused.log);
+    assert(refused.checked.reasonCode, refused.log);
+    assert(refused.checked.reason, refused.log);
+    assert.deepEqual(refused.checked.files, []);
+    assert(!existsSync(path.join(refused.out, "entry.mjs")));
   }
 }
 

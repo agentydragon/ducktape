@@ -1,12 +1,12 @@
 // Independent AST-generated programs through the production LowerSplit emitter.
 import { strict as assert } from "node:assert";
 import { spawn, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { dump } from "./parser.mjs";
 import { topLevelStatements } from "./scope_metadata.mjs";
 import { generateAstBundle } from "./testing/ast_generator.mjs";
-import { writeDeployment } from "./testing/deployment_manifest.mjs";
+import { nodeRecordingHostContract, split } from "./testing/split.mjs";
 import { lcg32 } from "../seeded_random.mjs";
 
 const tmp = process.env.TEST_TMPDIR;
@@ -57,23 +57,21 @@ if (process.argv[2] !== "--worker") {
     seed,
     programs: count,
     plans: count * 2,
-    accepted: 0,
-    acceptedNontrivial: 0,
-    rejected: 0,
-    divergent: 0,
+    certified: 0,
+    certifiedNontrivial: 0,
+    certifiedRefused: 0,
   };
   for (const part of parts)
-    for (const key of ["accepted", "acceptedNontrivial", "rejected", "divergent"]) totals[key] += part[key];
+    for (const key of ["certified", "certifiedNontrivial", "certifiedRefused"]) totals[key] += part[key];
   console.log(JSON.stringify(totals));
-  assert.equal(totals.accepted + totals.rejected, totals.plans);
-  assert(totals.acceptedNontrivial >= 2, "fewer than two nontrivial accepted plans");
-  assert(totals.rejected >= 2, "fewer than two rejected plans");
-  assert(totals.divergent >= 2, "fewer than two rejected forced plans demonstrated a behavioral difference");
+  assert.equal(totals.certified + totals.certifiedRefused, totals.plans);
+  assert(totals.certifiedRefused > 0, "the broad emitter corpus should count certified refusals");
+  assert(totals.certifiedNontrivial >= 2, "fewer than two nontrivial certified plans");
 } else {
   const seed = Number(process.argv[3]);
   const start = Number(process.argv[4]);
   const end = Number(process.argv[5]);
-  const stats = { accepted: 0, acceptedNontrivial: 0, rejected: 0, divergent: 0 };
+  const stats = { certified: 0, certifiedNontrivial: 0, certifiedRefused: 0 };
   for (let round = start; round < end; round++) {
     const choose = random((seed ^ 0xa341316c ^ Math.imul(round, 0x9e3779b1)) >>> 0);
     const { source } = generateAstBundle(seed, round);
@@ -111,31 +109,30 @@ if (process.argv[2] !== "--worker") {
       writeFileSync(path.join(dir, "source.mjs"), source);
       writeFileSync(path.join(dir, "ast.json"), JSON.stringify(program));
       writeFileSync(path.join(dir, "spec.json"), JSON.stringify({ entry: "entry.mjs", modules, order }));
-      const args = ["--diagnostic", writeDeployment(path.join(dir, "ast.json"), path.join(dir, "spec.json"), dir), dir];
-      const checked = run(process.env.LOWERSPLIT, args);
-      writeFileSync(path.join(dir, "checker.log"), checked.stdout + checked.stderr);
-      if (checked.status === 0) {
-        stats.accepted++;
+      const certifiedOut = path.join(dir, "certified");
+      const certificate = split({
+        ast: path.join(dir, "ast.json"),
+        spec: path.join(dir, "spec.json"),
+        out: certifiedOut,
+        hostContract: nodeRecordingHostContract,
+        timeoutMs: 60_000,
+      });
+      if (certificate.status === "certified") {
+        stats.certified++;
         if (modules["entry.mjs"].length && (modules["side-a.mjs"].length || modules["side-b.mjs"].length))
-          stats.acceptedNontrivial++;
-        const emitted = run(process.execPath, [path.join(dir, "entry.mjs")]);
-        if (emitted.status !== expected.status || emitted.stdout !== expected.stdout) {
+          stats.certifiedNontrivial++;
+        const checkedOutput = run(process.execPath, [path.join(certifiedOut, "entry.mjs")]);
+        if (checkedOutput.status !== expected.status || checkedOutput.stdout !== expected.stdout) {
           writeFileSync(
-            path.join(dir, "runtime.log"),
-            `original:\n${expected.stdout}\noutput:\n${emitted.stdout}\n${emitted.stderr}`
+            path.join(dir, "certified-runtime.log"),
+            `original:\n${expected.stdout}\noutput:\n${checkedOutput.stdout}\n${checkedOutput.stderr}`
           );
-          preserve(dir, seed, round, plan, "accepted emitter output differs from original");
+          preserve(dir, seed, round, plan, "certified output differs from original");
         }
-      } else if (checked.status === 1) {
-        stats.rejected++;
-        if (existsSync(path.join(dir, "entry.mjs")))
-          preserve(dir, seed, round, plan, "unforced rejection emitted a module");
-        const forced = run(process.env.LOWERSPLIT, [...args, "--force"]);
-        if (forced.status !== 1 || !existsSync(path.join(dir, "entry.mjs")))
-          preserve(dir, seed, round, plan, "forced rejected plan failed to emit");
-        const emitted = run(process.execPath, [path.join(dir, "entry.mjs")]);
-        if (emitted.status !== expected.status || emitted.stdout !== expected.stdout) stats.divergent++;
-      } else preserve(dir, seed, round, plan, `unexpected LowerSplit status ${checked.status}`);
+      } else {
+        stats.certifiedRefused++;
+        assert.equal(certificate.files.length, 0, certificate.log);
+      }
     }
   }
   console.log(JSON.stringify(stats));

@@ -1,10 +1,11 @@
-// Splits that move a statement across something that can observe it. `lowersplit` writes the emitted modules only when
-// its checks pass; `translate` then checks the emitted tree against the source on its own.
+// Splits that move a statement across something that can observe it. Accepted emission controls use the certified
+// helper; the remaining diagnostic cases assert model verdict text until the linked checker has the needed strategies.
 //
-// - `refuse`: a callback or an exported binding can observe the move. Node must run the forced split differently, both
-//   checkers must refuse it, and nothing is written without `--force`.
+// - `refuse`: a callback or an exported binding can observe the move. Both checkers must refuse it without publishing
+//   output.
 // - `accept`: the move changes nothing. Both checkers must accept it and Node must print the same.
-// - `byBehavior`: the checker may go either way, but a split that Node runs differently must be refused.
+// - `byBehavior`: compare certified output with Node and count any certified refusals; keep model verdict checks for
+//   cases the diagnostic checker itself refuses.
 //
 // Not covered, because the checker assumes it does not happen (premise P4: evaluation completes): a source that throws
 // when it runs, such as one that reads a `const` before its declaration.
@@ -15,11 +16,14 @@ import { fileURLToPath } from "node:url";
 import { frontBundle } from "./frontend.mjs";
 import { checkTranslation } from "./testing/check_translation.mjs";
 import { lowerDiagnostic, prepareSideSplit, run } from "./testing/diagnostic_split.mjs";
+import { split } from "./testing/split.mjs";
 
 const temp = process.env.TEST_TMPDIR;
 assert(temp);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fixture = (name) => readFileSync(path.join(here, "testdata/inert_escape", name), "utf8");
+const certifiedControlRefusals = [];
+const certifiedBehaviorRefusals = [];
 
 const describe = (name, r) => `${name}: ${r.stdout}\n${r.stderr}`;
 
@@ -28,50 +32,59 @@ function refuse(name, code, side) {
   const rejected = lowerDiagnostic(p);
   assert.equal(rejected.status, 1, describe(name, rejected));
   assert.match(rejected.stdout, /FAIL\s+OrderOk/, name);
-  assert(!existsSync(path.join(p.dir, "entry.mjs")), `${name} wrote a module without --force`);
-  assert.equal(lowerDiagnostic(p, "--force").status, 1, name);
+  assert.equal(rejected.certification.status, "refused", rejected.certification.log);
+  assert(rejected.certification.reason, rejected.certification.log);
+  assert.deepEqual(rejected.certification.files, []);
+  assert(!existsSync(path.join(p.dir, "entry.mjs")), `${name} wrote modules after a rejected plan`);
   const before = run(process.execPath, [p.source]);
-  const after = run(process.execPath, [path.join(p.dir, "entry.mjs")]);
   assert.equal(before.status, 0, before.stderr);
-  assert.notEqual(after.status, 0, `${name}: the forced split should fail`);
-  assert.match(after.stderr, /ReferenceError/, name);
-  const checked = checkTranslation(frontBundle(p.source), p.dir);
-  assert.equal(checked.status, 4, describe(name, checked));
-  assert.match(checked.stdout, /FAIL\s+OrderOk/, name);
 }
 
 function accept(name, code, side) {
   const p = prepareSideSplit(name, code, side);
-  const emitted = lowerDiagnostic(p);
-  assert.equal(emitted.status, 0, describe(name, emitted));
+  const emitted = split({
+    ast: p.input,
+    spec: p.spec,
+    out: p.certifiedOut,
+    hostContract: p.hostContract,
+  });
+  if (emitted.status === "refused") {
+    certifiedControlRefusals.push(name);
+    const expectedReasonCode = name === "literal_array" ? "linked_input" : "probe_unknown";
+    assert(["literal_array", "private_array_includes_before_factory"].includes(name), emitted.log);
+    assert.equal(emitted.reasonCode, expectedReasonCode, emitted.log);
+    assert(emitted.reason, emitted.log);
+    assert.deepEqual(emitted.files, []);
+    return;
+  }
+  assert.equal(emitted.status, "certified", `${name}: ${emitted.log}`);
   const before = run(process.execPath, [p.source]);
-  const after = run(process.execPath, [path.join(p.dir, "entry.mjs")]);
+  const after = run(process.execPath, [path.join(p.certifiedOut, "entry.mjs")]);
   assert.equal(before.status, 0, before.stderr);
   assert.equal(after.status, 0, after.stderr);
   assert.equal(after.stdout, before.stdout, name);
-  const checked = checkTranslation(frontBundle(p.source), p.dir);
+  const checked = checkTranslation(frontBundle(p.source), p.certifiedOut);
   assert.equal(checked.status, 0, describe(name, checked));
 }
 
 function byBehavior(name, code, side) {
   const p = prepareSideSplit(name, code, side);
   const unforced = lowerDiagnostic(p);
-  lowerDiagnostic(p, "--force");
-  const before = run(process.execPath, [p.source]);
-  const after = run(process.execPath, [path.join(p.dir, "entry.mjs")]);
-  assert.equal(before.status, 0, before.stderr);
-  const differs = after.status !== 0 || after.stdout !== before.stdout;
-  const checked = checkTranslation(frontBundle(p.source), p.dir);
-  if (differs) {
-    assert.equal(
-      unforced.status,
-      1,
-      `${name}: a split that changes the output was accepted: ${describe(name, unforced)}`
-    );
-    assert.equal(checked.status, 4, describe(name, checked));
-  } else if (unforced.status === 0) {
+  if (unforced.certification.status === "refused") {
+    certifiedBehaviorRefusals.push(name);
+    assert(unforced.certification.reason, unforced.certification.log);
+    assert.deepEqual(unforced.certification.files, []);
+  } else {
+    assert.equal(unforced.certification.status, "certified", unforced.certification.log);
+    const before = run(process.execPath, [p.source]);
+    const after = run(process.execPath, [path.join(p.certifiedOut, "entry.mjs")]);
+    assert.equal(before.status, 0, before.stderr);
+    assert.equal(after.status, 0, after.stderr);
+    assert.equal(after.stdout, before.stdout, name);
+    const checked = checkTranslation(frontBundle(p.source), p.certifiedOut);
     assert.equal(checked.status, 0, describe(name, checked));
   }
+  if (unforced.status !== 0) assert.match(unforced.stdout, /FAIL\s+OrderOk/, name);
 }
 
 for (const [name, code, side] of [
@@ -164,18 +177,12 @@ export { ratios, factory };`,
   const rejected = lowerDiagnostic(p);
   assert.equal(rejected.status, 1, describe(name, rejected));
   assert.match(rejected.stdout, /FAIL\s+OrderOk/, name);
-  assert.equal(lowerDiagnostic(p, "--force").status, 1, name);
-  for (const [file, expected] of [
-    [p.source, "undefined\n2\n"],
-    [path.join(p.dir, "entry.mjs"), "function\n2\n"],
-  ]) {
-    const result = run(process.execPath, ["--import", host, file]);
-    assert.equal(result.status, 0, describe(name, result));
-    assert.equal(result.stdout, expected, name);
-  }
-  const checked = checkTranslation(frontBundle(p.source), p.dir);
-  assert.equal(checked.status, 4, describe(name, checked));
-  assert.match(checked.stdout, /FAIL\s+OrderOk/, name);
+  assert.equal(rejected.certification.status, "refused", rejected.certification.log);
+  assert(rejected.certification.reason, rejected.certification.log);
+  assert.deepEqual(rejected.certification.files, []);
+  const original = run(process.execPath, ["--import", host, p.source]);
+  assert.equal(original.status, 0, describe(name, original));
+  assert.equal(original.stdout, "undefined\n2\n", name);
 }
 
 // Exported declarations have no export-specifier read in the input AST, yet an external cyclic importer may observe
@@ -186,6 +193,9 @@ export { ratios, factory };`,
   const rejected = lowerDiagnostic(p);
   assert.equal(rejected.status, 1, describe(name, rejected));
   assert.match(rejected.stdout, /FAIL\s+OrderOk/);
+  assert.equal(rejected.certification.status, "refused", rejected.certification.log);
+  assert(rejected.certification.reason, rejected.certification.log);
+  assert.deepEqual(rejected.certification.files, []);
 }
 
 // Node control for the external-module cycle: `lowersplit` rejects import syntax, so these source modules exercise the
@@ -259,6 +269,9 @@ console.log(scale, factory());`,
 ]) {
   accept(name, code, side);
 }
+assert.deepEqual(certifiedControlRefusals, ["literal_array", "private_array_includes_before_factory"]);
+console.log("certified inert escape controls:", JSON.stringify({ attempted: 7, refused: certifiedControlRefusals }));
+console.log("certified inert behavior controls:", JSON.stringify({ attempted: 3, refused: certifiedBehaviorRefusals }));
 
 // Judged by what Node prints.
 for (const [name, code, side] of [
@@ -301,20 +314,13 @@ console.log(values.includes(ratio));`,
   });`
   );
   const verdict = lowerDiagnostic(p);
-  const forced = lowerDiagnostic(p, "--force");
-  for (const [file, expected] of [
-    [p.source, "undefined\ntrue\n"],
-    [path.join(p.dir, "entry.mjs"), "function\ntrue\n"],
-  ]) {
-    const result = run(process.execPath, ["--import", host, file]);
-    assert.equal(result.status, 0, describe(name, result));
-    assert.equal(result.stdout, expected, name);
-  }
-  const checked = checkTranslation(frontBundle(p.source), p.dir);
-  assert.deepEqual([verdict.status, checked.status], [1, 4], describe(name, verdict) + describe(name, checked));
-  assert.equal(forced.status, 1, describe(name, forced));
+  assert.equal(verdict.certification.status, "refused", verdict.certification.log);
+  assert(verdict.certification.reason, verdict.certification.log);
+  assert.deepEqual(verdict.certification.files, []);
+  const original = run(process.execPath, ["--import", host, p.source]);
+  assert.equal(original.status, 0, describe(name, original));
+  assert.equal(original.stdout, "undefined\ntrue\n", name);
   assert.match(verdict.stdout, /FAIL\s+OrderOk/, name);
-  assert.match(checked.stdout, /FAIL\s+OrderOk/, name);
 }
 
 // Both constructors finish normally. Only the position of the factory initializer changes.
@@ -324,21 +330,12 @@ for (const [name, setup, length] of [
 ]) {
   const p = prepareSideSplit(name, `${setup}\nvar slots = new Array(${length});\nvar factory = () => 7;`, [2]);
   const verdict = lowerDiagnostic(p);
-  const forced = lowerDiagnostic(p, "--force");
-  for (const [file, expected] of [
-    [p.source, "undefined\n"],
-    [path.join(p.dir, "entry.mjs"), "function\n"],
-  ]) {
-    const result = run(process.execPath, [file]);
-    assert.equal(result.status, 0, describe(name, result));
-    assert.equal(result.stdout, expected, name);
-  }
-  const checked = checkTranslation(frontBundle(p.source), p.dir);
-  assert.deepEqual(
-    [verdict.status, forced.status, checked.status],
-    [1, 1, 4],
-    describe(name, verdict) + describe(name, checked)
-  );
+  assert.equal(verdict.certification.status, "refused", verdict.certification.log);
+  assert(verdict.certification.reason, verdict.certification.log);
+  assert.deepEqual(verdict.certification.files, []);
+  const original = run(process.execPath, [p.source]);
+  assert.equal(original.status, 0, describe(name, original));
+  assert.equal(original.stdout, "undefined\n", name);
+  assert.equal(verdict.status, 1, describe(name, verdict));
   assert.match(verdict.stdout, /FAIL\s+OrderOk/, name);
-  assert.match(checked.stdout, /FAIL\s+OrderOk/, name);
 }

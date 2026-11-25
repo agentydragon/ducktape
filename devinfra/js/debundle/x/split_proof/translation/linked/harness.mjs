@@ -1,14 +1,22 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { parse } from "acorn";
 import { writeDeployment } from "../testing/deployment_manifest.mjs";
+import { split } from "../testing/split.mjs";
 import { generate } from "astring";
 
 export const root = process.env.TEST_TMPDIR;
 assert(root, "TEST_TMPDIR is required");
+const certifiedByFixture = new Map();
+const previewCounts = { certified: 0, refused: 0 };
+const fixtureKey = (source, spec) => `${path.resolve(source)}\n${path.resolve(spec)}`;
+process.on("exit", () => {
+  const trials = previewCounts.certified + previewCounts.refused;
+  if (trials) process.stderr.write(`forced preview certification: ${JSON.stringify(previewCounts)}\n`);
+});
 
 export function caseShard() {
   const count = Number(process.env.TEST_TOTAL_SHARDS ?? 1);
@@ -139,29 +147,25 @@ export function observe(file, exportNames) {
 }
 
 export function lower(source, spec, out, extra = [], scope = "linked-programs") {
-  const result = spawnSync(process.env.LOWERSPLIT, [writeDeployment(source, spec, out), out, ...extra], {
-    encoding: "utf8",
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  if (result.error) throw result.error;
+  const options = { source, spec, out };
+  for (let i = 0; i < extra.length; i++) {
+    const flag = extra[i];
+    if (flag === "--check-output") options.checkOutput = true;
+    else if (flag === "--structural") options.structural = true;
+    else if (flag === "--require") options.require = extra[++i];
+    else if (flag === "--host-contract") options.hostContract = extra[++i];
+    else if (flag === "--deployment-origin") options.deploymentOrigin = extra[++i];
+    else if (flag === "--deployment-preset") options.deploymentPreset = extra[++i];
+    else if (flag === "--deployment-import-map") options.deploymentImportMap = extra[++i];
+    else throw new Error(`unsupported certified split option: ${flag}`);
+  }
+  const result = split(options);
+  const cached = certifiedByFixture.get(fixtureKey(source, spec)) ?? [];
+  cached.push({ options, result });
+  certifiedByFixture.set(fixtureKey(source, spec), cached);
   if (process.env.SPLIT_PROOF_TIMINGS === "1") process.stderr.write(result.stderr);
-  const log = result.stdout + result.stderr;
-  assert([0, 1].includes(result.status), log);
-  const verdictLines = result.stdout.split(/\r?\n/).filter((line) => {
-    try {
-      JSON.parse(line);
-      return true;
-    } catch {
-      return false;
-    }
-  });
-  assert.equal(verdictLines.length, 1, log);
-  const verdict = JSON.parse(verdictLines[0]);
-  const requireFlag = extra.indexOf("--require");
-  assert.equal(verdict.requested, requireFlag === -1 ? "normal-completion" : extra[requireFlag + 1], log);
-  assert.equal(verdict.scope, scope, log);
-  assert.equal(result.status, verdict.status === "certified" ? 0 : 1, log);
-  return { verdict, log };
+  assert.equal(result.scope, scope, result.log);
+  return { verdict: result.verdict, log: result.log };
 }
 
 export function prepare(dir, { source, provider, extras = {}, sourceName = "source.mjs", spec }) {
@@ -208,13 +212,38 @@ export function moduleEvaluationOrder(directory, entry) {
   return order;
 }
 
+// Linked counterexample tests explicitly exercise the legacy model diagnostic.
+// The certified result is counted before the test-only preview is requested.
 export function forcePreview(files, directory) {
+  const key = fixtureKey(files.sourceFile, files.specFile);
+  const cached = certifiedByFixture.get(key)?.find(({ options }) => Object.keys(options).length === 3);
+  const certification = cached?.result ?? split({ source: files.sourceFile, spec: files.specFile, out: directory });
+  previewCounts[certification.status]++;
+
+  if (certification.status === "certified") {
+    if (cached && cached.options.out !== directory) {
+      assert(!existsSync(directory), `certified output destination already exists: ${directory}`);
+      for (const file of certification.files) {
+        const source = path.join(cached.options.out, file);
+        const target = path.join(directory, file);
+        mkdirSync(path.dirname(target), { recursive: true });
+        copyFileSync(source, target);
+      }
+    }
+    assert(certification.files.length > 0, certification.log);
+    return certification;
+  }
+
+  assert.equal(certification.status, "refused");
+  assert.equal(certification.files.length, 0, certification.log);
   const preview = spawnSync(
     process.env.LOWERSPLIT,
     ["--diagnostic", writeDeployment(files.sourceFile, files.specFile, directory), directory, "--force"],
     { encoding: "utf8" }
   );
   assert([0, 1].includes(preview.status), preview.error?.message ?? preview.stdout + preview.stderr);
+  assert.match(preview.stdout, /model diagnostic: /, preview.stdout + preview.stderr);
+  return certification;
 }
 
 export function runSplit(name, fixture) {
@@ -300,7 +329,7 @@ export function structuralFixture(name, source, moved, kept, provider = "") {
   return structuralSplit(name, source, { [entry]: kept, "scroll.mjs": moved }, provider);
 }
 
-// A forced preview must exhibit the specific behavior change that certification rejected.
+// A diagnostic preview must exhibit the specific behavior change that certification rejected.
 export function assertRejectedResultChange(test, before, after) {
   assert.equal(test.run("linked-structural").status, "rejected");
   assert(!existsSync(test.out));

@@ -5,7 +5,6 @@ import EsmSplit.CoreJS.FromESTree
 import EsmSplit.CoreJS.HeritageCertificate
 import EsmSplit.CoreJS.Move
 import EsmSplit.ESTreeEmit
-import EsmSplit.InstanceSource
 import EsmSplit.LowerSplit.Input
 import Std.Data.HashMap
 
@@ -280,7 +279,6 @@ private structure DiagnosticOptions where
   moveReportPath : Option String
   force : Bool
   allConflicts : Bool
-  leanOutput : Option (String × InstanceSource.Options)
 
 private def parseDiagnosticOptions (args : List String) : IO (System.FilePath × System.FilePath × DiagnosticOptions) := do
   let (premPath, args) := EsmSplit.takeFlag "--premises" args
@@ -295,14 +293,12 @@ private def parseDiagnosticOptions (args : List String) : IO (System.FilePath ×
   let allConflicts := args.contains "--all-conflicts"
   if allConflicts && planPath.isNone then throw (IO.userError "--all-conflicts requires --plan")
   let args := args.filter fun a => a != "--force" && a != "--all-conflicts"
-  let (manifest, out, leanOutput) ← match args with
-    | [manifest, out] => pure (manifest, out, none)
-    | manifest :: out :: "--lean" :: l :: options => do
-      pure (manifest, out, some (l, ← InstanceSource.parseOptions {} options))
+  let (manifest, out) ← match args with
+    | [manifest, out] => pure (manifest, out)
     | _ => do
-      IO.eprintln "usage: lowersplit --diagnostic <deployment.json> <outdir> [--lean <file> [--namespace NAME] [--variant SPEC]... [--control SPEC]...] [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]"
+      IO.eprintln "usage: lowersplit --diagnostic <deployment.json> <outdir> [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]"
       throw (IO.userError "usage")
-  return (manifest, out, { prem, footprintPath, planPath, corejsPath, moveReportPath, force, allConflicts, leanOutput })
+  return (manifest, out, { prem, footprintPath, planPath, corejsPath, moveReportPath, force, allConflicts })
 
 private def runDiagnostic (chunk : DeploymentChunk) (out : System.FilePath) (options : DiagnosticOptions)
     (work : System.FilePath) : IO UInt32 := do
@@ -323,15 +319,7 @@ private def runDiagnostic (chunk : DeploymentChunk) (out : System.FilePath) (opt
       for line in Effects.premiseLines options.prem analysis do IO.println line
       pure fps
   let t2 ← reportElapsed "footprints (Lean analysis)" t1
-  -- The legacy standalone Lean instance embeds printable source for each unit.
-  let texts ← if options.leanOutput.isSome then do
-      let unitsFile := work / "units.json"
-      let reply := work / "texts.json"
-      IO.FS.writeFile unitsFile (Json.arr asts).compress
-      javascript #["--print-units"] #[unitsFile, input, reply]
-      IO.ofExcept (fromJson? (α := Array String) (← readJson reply))
-    else pure #[]
-  let B := bundleOfFootprints asts fps texts
+  let B := bundleOfFootprints asts fps #[]
   let S ← IO.ofExcept (chunk.spec asts.size)
   let t3 ← reportElapsed "load spec" t2
   IO.println s!"{B.length} statements; footprints computed in Lean; {(fps.filter (·.effect)).size} touch the world; {(fps.filter (·.fallback ≠ [])).size} with fallback nodes"
@@ -351,12 +339,6 @@ private def runDiagnostic (chunk : DeploymentChunk) (out : System.FilePath) (opt
       | .ok value => value
       | .error reason => Json.mkObj [("error", toJson reason)]).compress ++ "\n")
   for line in modelDiagnostics program asts B S P (ok && !bad) model do IO.println line
-  if let some (l, options) := options.leanOutput then
-    if bad then
-      IO.println "  skipped structural plan proof: source placement failed"
-    else
-      IO.FS.writeFile l (InstanceSource.render B S options)
-      IO.println s!"  wrote structural plan proof source to {l}"
   if options.force || (ok && !bad) then
     match ESTreeEmit.programs asts B P source with
     | .error message => IO.eprintln s!"cannot write output: {message}"; return 3

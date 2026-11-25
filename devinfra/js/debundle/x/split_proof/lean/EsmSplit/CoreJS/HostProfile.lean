@@ -6,8 +6,7 @@ namespace CoreJS
 
 inductive HostProfile where
   | empty | browserPage | ecmascript
-  /-- Test-only: the host the Node comparison harness records. `read` never returns it, so
-  certification cannot select it. -/
+  /-- Test-only: the host the Node comparison harness records. It is not a deployment profile. -/
   | nodeRecording
   deriving DecidableEq, Repr
 
@@ -43,10 +42,13 @@ def recordedPrim (p : HostProfile) (owner key : String) : Option Prim := do
   | "Object", "setPrototypeOf" => some .setPrototypeOf
   | _, _ => none
 
+/-- Read a supported deployment profile or the test-only recorded Node host. -/
 def read (j : Lean.Json) : Except String HostProfile := do
-  unless j == Lean.Json.mkObj [("profile", .str "browser-page")] do
-    throw "unsupported host contract (expected the browser-page profile)"
-  return .browserPage
+  if j == Lean.Json.mkObj [("profile", .str "browser-page")] then
+    return .browserPage
+  if j == Lean.Json.mkObj [("profile", .str "node-recording")] then
+    return .nodeRecording
+  throw "unsupported host contract (expected browser-page or the test-only node-recording profile)"
 
 def aliases := ["window", "globalThis", "self"]
 

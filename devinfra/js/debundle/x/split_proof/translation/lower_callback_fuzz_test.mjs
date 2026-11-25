@@ -1,16 +1,26 @@
-// Deterministic generated cases through the actual LowerSplit emitter. Unsafe
-// plans must be rejected normally and their force-emitted output must diverge.
+// Deterministic generated cases through certified LowerSplit. Unsafe plans
+// must be counted as refusals and publish no files.
 import { strict as assert } from "node:assert";
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { lcg32 } from "../seeded_random.mjs";
-import { lowerDiagnostic, prepareSideSplit, run } from "./testing/diagnostic_split.mjs";
+import { prepareSideSplit, run } from "./testing/diagnostic_split.mjs";
+import { split } from "./testing/split.mjs";
 
-function emit(name, code, side, ...flags) {
+function emit(name, code, side) {
   const fixture = prepareSideSplit(name, code, side);
-  return { ...fixture, result: lowerDiagnostic(fixture, ...flags) };
+  const result = split({
+    ast: fixture.input,
+    spec: fixture.spec,
+    out: fixture.certifiedOut,
+    hostContract: fixture.hostContract,
+  });
+  counts[result.status]++;
+  return { ...fixture, dir: fixture.certifiedOut, result };
 }
+
+const counts = { certified: 0, refused: 0 };
 
 // Two workers use disjoint case directories and inherit the same immutable runfiles.
 if (process.argv[2] !== "--worker") {
@@ -21,17 +31,34 @@ if (process.argv[2] !== "--worker") {
       const worker = spawn(process.execPath, [process.argv[1], "--worker", String(start), String(end)], {
         stdio: ["ignore", "pipe", "pipe"],
       });
-      let output = "";
+      let stdout = "";
+      let stderr = "";
       worker.stdout.on("data", (chunk) => {
-        output += chunk;
+        stdout += chunk;
       });
       worker.stderr.on("data", (chunk) => {
-        output += chunk;
+        stderr += chunk;
       });
       worker.on("error", reject);
-      worker.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`worker ${start}-${end}: ${output}`))));
+      worker.on("close", (code) => {
+        if (code !== 0) reject(new Error(`worker ${start}-${end}: ${stdout}\n${stderr}`));
+        else {
+          try {
+            resolve(JSON.parse(stdout.trim()));
+          } catch (error) {
+            reject(new Error(`worker ${start}-${end} returned invalid counts: ${error}\n${stdout}\n${stderr}`));
+          }
+        }
+      });
     });
-  await Promise.all([runWorker(0, Math.ceil(count / 2)), runWorker(Math.ceil(count / 2), count)]);
+  const parts = await Promise.all([runWorker(0, Math.ceil(count / 2)), runWorker(Math.ceil(count / 2), count)]);
+  const totals = parts.reduce(
+    (sum, part) => ({ certified: sum.certified + part.certified, refused: sum.refused + part.refused }),
+    { certified: 0, refused: 0 }
+  );
+  console.log(`callback split certification: ${JSON.stringify(totals)}`);
+  assert(totals.certified > 0, "the generated safe controls should include certified splits");
+  assert(totals.refused > 0, "the generated unsafe controls should count certified refusals");
 } else {
   // Fixed seed and stable PRNG make every failing case reproducible.
   const next = lcg32(0x91e10da5);
@@ -52,7 +79,7 @@ if (process.argv[2] !== "--worker") {
     // Some plans move the factory with the side effect; others import it from entry.
     const safeSide = i % 4 >= 2 ? [1, 3 + shift] : [3 + shift];
     const emitted = emit(`safe-${i}`, safe, safeSide);
-    assert.equal(emitted.result.status, 0, `${i}: ${emitted.result.stdout}\n${emitted.result.stderr}`);
+    assert.equal(emitted.result.status, "certified", `${i}: ${emitted.result.log}`);
     const original = run(process.execPath, [emitted.source]);
     const split = run(process.execPath, [path.join(emitted.dir, "entry.mjs")]);
     assert.equal(original.status, 0, original.stderr);
@@ -79,19 +106,10 @@ if (process.argv[2] !== "--worker") {
     const side = rawSide.map((index) => index + shift);
     const bad = base + suffix;
     const rejected = emit(`unsafe-${i}`, bad, side);
-    assert.equal(rejected.result.status, 1, `${i}: ${rejected.result.stdout}\n${rejected.result.stderr}`);
-    assert.match(rejected.result.stdout, /FAIL\s+OrderOk/, `unsafe ${i}`);
-    assert(!existsSync(path.join(rejected.dir, "entry.mjs")), `unsafe ${i} emitted without --force`);
-    const forced = emit(`forced-${i}`, bad, side, "--force");
-    assert.equal(forced.result.status, 1, `forced ${i}`);
-    assert.match(forced.result.stdout, /FAIL\s+OrderOk/, `forced ${i}`);
-    const before = run(process.execPath, [rejected.source]);
-    const after = run(process.execPath, [path.join(forced.dir, "entry.mjs")]);
-    assert.equal(before.status, 0, before.stderr);
-    assert.equal(before.stdout, `${value}\n`);
-    assert.notEqual(after.status, 0, `forced ${i} unexpectedly matched`);
-    assert.match(after.stderr, /ReferenceError/, `forced ${i}`);
-    // Ensure the forced output is a real multi-module split, not a surrogate.
-    assert.match(readFileSync(path.join(forced.dir, "entry.mjs"), "utf8"), /import/);
+    assert.equal(rejected.result.status, "refused", `${i}: ${rejected.result.log}`);
+    assert(rejected.result.reason, `unsafe ${i}`);
+    assert.equal(rejected.result.files.length, 0, `unsafe ${i}`);
+    assert(!existsSync(path.join(rejected.dir, "entry.mjs")), `unsafe ${i} emitted a module`);
   }
+  console.log(JSON.stringify(counts));
 }

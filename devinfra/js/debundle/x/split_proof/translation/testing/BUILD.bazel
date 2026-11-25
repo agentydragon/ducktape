@@ -1,4 +1,4 @@
-load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_library")
 
 package(
     default_testonly = True,
@@ -41,6 +41,7 @@ js_library(
     srcs = ["diagnostic_split.mjs"],
     deps = [
         ":deployment_manifest",
+        ":split",
         "//devinfra/js/debundle/x/split_proof/translation:parser",
     ],
 )
@@ -48,6 +49,27 @@ js_library(
 js_library(
     name = "lint_sources",
     srcs = glob(["**/*.mjs"]),
+)
+
+js_library(
+    name = "split",
+    srcs = ["split.mjs"],
+    data = ["node_recording_host.json"],
+    visibility = ["//devinfra/js/debundle/x/split_proof:__subpackages__"],
+    deps = [":deployment_manifest"],
+)
+
+js_binary(
+    name = "split_cli",
+    data = [
+        ":split",
+        "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+    ],
+    entry_point = "split_cli.mjs",
+    env = {
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+    },
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
 )
 
 js_library(

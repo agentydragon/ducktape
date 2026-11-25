@@ -1,13 +1,14 @@
 // Broad grammar-generated ASTs supplement the targeted, scope-aware corpus.
 import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { dump as dumpSource } from "./parser.mjs";
+import { acorn, dump as dumpSource } from "./parser.mjs";
 import { shiftCandidate } from "./shift_candidate.mjs";
 import { walk } from "./syntax_inventory.mjs";
-import { writeDeployment } from "./testing/deployment_manifest.mjs";
+import { lowerDiagnostic } from "./testing/diagnostic_split.mjs";
+import { nodeRecordingHostContract, split } from "./testing/split.mjs";
 import { topLevelStatements } from "./scope_metadata.mjs";
 
 // Named source-syntax families from the input requirements. Counts describe
@@ -149,7 +150,8 @@ function emptyCoverage() {
         baselineTimeout: 0,
         unstable: 0,
         loweringRejected: 0,
-        emitterRejected: 0,
+        certifiedRefused: 0,
+        diagnosticRefused: 0,
         acceptedThrowing: 0,
         acceptedSame: 0,
         acceptedSameReordered: 0,
@@ -193,6 +195,31 @@ function run(rootDir, entry, marker = null) {
     throw new Error(`module worker produced invalid JSON: ${error}; stderr=${child.stderr}`);
   }
 }
+
+function emittedStatementOrder(directory, spec) {
+  const modules = new Map(Object.entries(spec.modules));
+  const entered = new Set();
+  const order = [];
+  function visit(module) {
+    if (entered.has(module)) return;
+    entered.add(module);
+    const program = acorn.parse(readFileSync(path.join(directory, module), "utf8"), {
+      sourceType: "module",
+      ecmaVersion: "latest",
+    });
+    for (const node of program.body) {
+      if (node.type !== "ImportDeclaration") continue;
+      const dependency = path.posix.normalize(path.posix.join(path.posix.dirname(module), node.source.value));
+      if (modules.has(dependency)) visit(dependency);
+    }
+    order.push(module);
+  }
+  visit(spec.entry);
+  return order.flatMap((module) =>
+    modules.get(module).flatMap((selector) => (selector.startsWith("#") ? [Number(selector.slice(1))] : []))
+  );
+}
+
 const stats = {
   attempted: 0,
   parseRejected: 0,
@@ -202,7 +229,9 @@ const stats = {
   baselineThrows: 0,
   unstable: 0,
   loweringRejected: 0,
-  emitterRejected: 0,
+  certifiedAccepted: 0,
+  certifiedRefused: 0,
+  certifiedReordered: 0,
   acceptedThrowing: 0,
   accepted: 0,
   acceptedOk: 0,
@@ -211,6 +240,9 @@ const stats = {
   differing: 0,
   modernComposed: 0,
   instrumentationRejected: 0,
+  diagnosticAccepted: 0,
+  diagnosticRefused: 0,
+  diagnosticReordered: 0,
   modernExecuted: { nullish: 0, optional: 0, field: 0 },
   modernReorderedExecuted: { nullish: 0, optional: 0, field: 0 },
 };
@@ -251,7 +283,7 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
     `\nconsole.log("__bindings", ${unique.map((n) => `(typeof ${n} === "object" || typeof ${n} === "function" ? typeof ${n} : ${n})`).join(", ")});\n`;
   const dir = path.join(root, `seed-${seed}`);
   const out = path.join(dir, "out");
-  mkdirSync(out, { recursive: true });
+  mkdirSync(dir, { recursive: true });
   writeFileSync(path.join(dir, "original.mjs"), source);
   const baseline = run(dir, "original.mjs", marker);
   if (!baseline || baseline.status === "timeout") {
@@ -266,9 +298,9 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
     record("unstable");
     continue;
   }
-  let dump;
+  let annotated;
   try {
-    dump = dumpSource(source);
+    annotated = dumpSource(source);
   } catch {
     stats.loweringRejected++;
     record("loweringRejected");
@@ -288,32 +320,51 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
       "side.mjs": side.map((i) => `#${i}`),
     },
   };
-  writeFileSync(path.join(dir, "ast.json"), JSON.stringify(dump));
   writeFileSync(path.join(dir, "spec.json"), JSON.stringify(spec));
-  const emitter = spawnSync(
-    process.env.LOWERSPLIT,
-    ["--diagnostic", writeDeployment(path.join(dir, "ast.json"), path.join(dir, "spec.json"), out), out],
-    {
-      encoding: "utf8",
-      // A cold Lean process loads the compiler before the splitter can read the case.
-      timeout: 60_000,
-    }
-  );
-  if (emitter.error) {
-    if (process.env.TEST_UNDECLARED_OUTPUTS_DIR)
-      cpSync(dir, path.join(process.env.TEST_UNDECLARED_OUTPUTS_DIR, `emitter-error-${seed}`), { recursive: true });
-    throw new Error(
-      `seed ${seed}: emitter failed: ${emitter.error}; source=${JSON.stringify(source)}; stdout=${emitter.stdout}; stderr=${emitter.stderr}`
-    );
+  let certified;
+  let emittedOut = out;
+  let diagnostic;
+  if (modern) {
+    // The certified checker currently refuses most composed modern syntax.
+    // Keep this syntax coverage run on the diagnostic emitter while measuring
+    // each plan with the shared certified helper.
+    const diagnosticOut = path.join(dir, "diagnostic");
+    mkdirSync(diagnosticOut, { recursive: true });
+    const annotatedPath = path.join(dir, "annotated.json");
+    writeFileSync(annotatedPath, JSON.stringify(annotated));
+    diagnostic = lowerDiagnostic({
+      input: annotatedPath,
+      spec: path.join(dir, "spec.json"),
+      dir: diagnosticOut,
+    });
+    certified = diagnostic.certification;
+    emittedOut = diagnosticOut;
+  } else {
+    certified = split({
+      source: path.join(dir, "original.mjs"),
+      spec: path.join(dir, "spec.json"),
+      out,
+      hostContract: nodeRecordingHostContract,
+    });
   }
-  if (emitter.status !== 0) {
-    if (![1, 3].includes(emitter.status))
-      throw new Error(`seed ${seed}: emitter exited ${emitter.status}: ${emitter.stderr}`);
-    if (emitter.status === 1 && !emitter.stderr.includes("rejected; nothing written"))
-      throw new Error(`seed ${seed}: unexpected emitter failure: ${emitter.stderr}`);
-    stats.emitterRejected++;
-    record("emitterRejected");
-    continue;
+  if (certified.status === "refused") {
+    stats.certifiedRefused++;
+    assert.equal(certified.files.length, 0);
+    if (!modern) {
+      record("certifiedRefused");
+      continue;
+    }
+  } else {
+    stats.certifiedAccepted++;
+  }
+  if (modern) {
+    assert([0, 1].includes(diagnostic.status), diagnostic.stdout + diagnostic.stderr);
+    if (diagnostic.status === 0) stats.diagnosticAccepted++;
+    else {
+      stats.diagnosticRefused++;
+      record("diagnosticRefused");
+      continue;
+    }
   }
   stats.accepted++;
   if (baseline.status === "ok") stats.acceptedOk++;
@@ -323,16 +374,15 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
       ? Object.keys(stats.modernExecuted).filter((kind) => baseline.modern.includes(kind))
       : [];
   for (const kind of executed) stats.modernExecuted[kind]++;
-  const match = emitter.stdout.match(/statement order\s+\[([^\]]*)\]/);
-  let reordered = false;
-  if (match) {
-    const order = match[1].split(",").map((x) => Number(x.trim()));
-    reordered = order.some((item, i) => item !== i);
-    if (reordered) {
-      stats.reordered++;
-      if (baseline.status === "ok") stats.reorderedOk++;
-      for (const kind of executed) stats.modernReorderedExecuted[kind]++;
-    }
+  const statementOrder = emittedStatementOrder(emittedOut, spec);
+  assert.equal(statementOrder.length, units.length + 1, `seed ${seed}: incomplete emitted statement order`);
+  const reordered = statementOrder.some((item, index) => item !== index);
+  if (reordered) {
+    stats.reordered++;
+    if (modern) stats.diagnosticReordered++;
+    else stats.certifiedReordered++;
+    if (baseline.status === "ok") stats.reorderedOk++;
+    for (const kind of executed) stats.modernReorderedExecuted[kind]++;
   }
   // Premise P4: the checker's claim is for sources that complete. After a reorder, a source that throws may throw
   // something else, or throw first.
@@ -341,7 +391,7 @@ for (let seed = startSeed; seed < startSeed + count; seed++) {
     record("acceptedThrowing");
     continue;
   }
-  const emitted = run(out, "entry.mjs", marker);
+  const emitted = run(emittedOut, "entry.mjs", marker);
   if (!emitted) throw new Error(`seed ${seed}: emitted tree did not complete; artifacts at ${dir}`);
   if (JSON.stringify(baseline) !== JSON.stringify(emitted)) {
     stats.differing++;
@@ -368,7 +418,8 @@ for (const row of Object.values(coverage)) {
       row.baselineTimeout +
       row.unstable +
       row.loweringRejected +
-      row.emitterRejected +
+      row.certifiedRefused +
+      row.diagnosticRefused +
       row.acceptedThrowing +
       row.acceptedSame
   );
@@ -398,6 +449,25 @@ console.log(
 assert(stats.accepted > 0, "no executable generated split was accepted");
 assert(stats.reordered > 0, "no accepted generated split reordered statements");
 if (scriptGrammar) assert(stats.reorderedOk > 0, "no successful generated split reordered statements");
+if (!scriptGrammar && !modern && count === 128 && startSeed === 1) {
+  assert.equal(stats.certifiedAccepted, 17);
+  assert.equal(stats.certifiedRefused, 5);
+  assert.equal(stats.certifiedReordered, 10);
+}
+if (!scriptGrammar && !modern && count === 128 && startSeed === 2026) {
+  assert.equal(stats.certifiedAccepted, 14);
+  assert.equal(stats.certifiedRefused, 8);
+  assert.equal(stats.certifiedReordered, 7);
+}
+
+if (scriptGrammar && modern && count === 96 && startSeed === 1) {
+  assert.equal(stats.certifiedAccepted, 5);
+  assert.equal(stats.certifiedRefused, 15);
+  assert.equal(stats.diagnosticAccepted, 19);
+  assert.equal(stats.diagnosticRefused, 1);
+  assert.equal(stats.diagnosticReordered, 12);
+  assert.deepEqual(stats.modernReorderedExecuted, { nullish: 2, optional: 3, field: 2 });
+}
 
 if (modern)
   for (const [kind, n] of Object.entries(stats.modernReorderedExecuted))
