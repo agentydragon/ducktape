@@ -729,6 +729,12 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     return .update target inc (← j.getObjValAs? Bool "prefix")
   | "ObjectExpression" =>
     linkedObject (linkedExpr profile imports inFunction) (fun name => linkedFunction profile imports .method name false) j
+  | "MetaProperty" =>
+    unless imports.contains importMetaSlot &&
+        (j.getObjVal? "meta" >>= identifier).toOption == some "import" &&
+        (j.getObjVal? "property" >>= identifier).toOption == some "meta" do
+      throw "unsupported linked expression MetaProperty"
+    return .var importMetaSlot
   | "ArrayExpression" =>
     let elements ← j.getObjValAs? (List Json) "elements"
     let lower := linkedExpr profile imports inFunction ""

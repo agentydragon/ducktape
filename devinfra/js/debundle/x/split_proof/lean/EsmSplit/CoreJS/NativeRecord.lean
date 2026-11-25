@@ -3,7 +3,7 @@ import EsmSplit.CoreJS.Eval
 namespace CoreJS.NativeRecord
 
 def preset := "native-browser-record@1"
-def slot : Name := ":import.meta"
+def slot : Name := importMetaSlot
 private def resolver (id : Nat) := Func.opaque "resolve" .method false 1 id 0 [] none
 
 /-- The resolver is a fresh nonconstructor. Its code identity is private to

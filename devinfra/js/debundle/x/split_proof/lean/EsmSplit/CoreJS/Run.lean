@@ -27,6 +27,7 @@ receiver and arguments, and ends as it did there. `world` in the output says whe
 recording, if they did, and `left` how many recorded calls the model did not make. A recording with
 `"iteratorSymbol": true` supplies the stable, effect-free observation of the ambient `Symbol.iterator`.
 `"symbolConstructor": true` supplies the stable, effect-free observation of the ambient `Symbol` intrinsic.
+`"nodeMetadataUrl"` supplies a test-only native metadata record with that URL.
 
 `corejs --host-names` prints the members the model gives the host's prototypes, and the host functions it asks the
 world about. `corejs --footprints` checks footprints against a program (`checkFootprints`), and `corejs --moves`

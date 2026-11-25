@@ -69,6 +69,39 @@ private def structural (input : Json) : Except String Json := do
     | _ => throw "unexpected structural statement"
   return toJson [← inspect pair.1, ← inspect pair.2]
 
+/-- Inspect a concretely selected metadata unit on both sides of a checked deployment. -/
+private def metadata (input : Json) : Except String Json := do
+  let source ← input.getObjVal? "source"
+  let text ← source.getObjValAs? String "sourceText"
+  let asyncFallback := (input.getObjValAs? Bool "asyncFallback").toOption.getD false
+  let plan : EsmSplit.Plan := { entry := "entry.mjs", mods := [
+    ⟨"entry.mjs", (if asyncFallback then [0, 1, 3] else [0, 2]), [("worker.mjs", ["pivot"])], []⟩,
+    ⟨"worker.mjs", (if asyncFallback then [2] else [1]), [], [("pivot", "pivot")]⟩] }
+  let deployment : CoreJS.LinkedDeployment.Input := {
+    entry := "entry.mjs"
+    options := { nativeRecord := (← input.getObjValAs? Bool "nativeRecord") }
+    assets := Json.mkObj []
+    before := Std.HashMap.ofList [("entry.mjs", ⟨"https://example.org/entry.mjs", text⟩)] }
+  let files ← input.getObjVal? "files"
+  let hints ← if asyncFallback then do
+    let access ← CoreJS.LinkedDeployment.check deployment source (Json.mkObj []) plan
+    let hints ← CoreJS.LinkedInput.metadataCandidates source .browserPage access.entryAccess
+    unless hints == [0] do throw "expected only the concrete metadata reader"
+    pure hints
+  else pure [0]
+  let pair ← CoreJS.LinkedInput.decodeStructuralPair source (Json.mkObj []) files
+    plan hints .browserPage (some deployment)
+  let inspect (p : CoreJS.Program) : Except String Bool := do
+    let some md := p.find "entry.mjs" | throw "missing entry"
+    let some (_, .decl _ "read" (.func f)) := md.body.find? (fun (id, _) => id == 0)
+      | throw "metadata reader is not concrete"
+    let fallback := if asyncFallback then
+      (md.body.find? (fun (id, _) => id == 1)).any fun (_, stmt) =>
+        match stmt with | .opaque .. => true | _ => false
+    else true
+    return f.opaqueBody.isNone && f.free.contains CoreJS.NativeRecord.slot && fallback
+  return toJson [← inspect pair.1, ← inspect pair.2]
+
 private def constructorContexts (source : Json) : Except String Json := do
   let #[cls] ← ESTreeUnits.nodes source | throw "expected one class"
   let #[method] ← (← cls.getObjVal? "body").getObjValAs? (Array Json) "body" | throw "expected one constructor"
@@ -102,6 +135,7 @@ private def fixtures (input : Json) : Except String Json := do
       | "location" => pure (location (← fixture.getObjVal? "input"))
       | "linked" => pure (check (← fixture.getObjVal? "input"))
       | "structural" => pure (structural (← fixture.getObjVal? "input"))
+      | "metadata" => pure (metadata (← fixture.getObjVal? "input"))
       | "constructorContexts" => pure (constructorContexts (← fixture.getObjVal? "input"))
       | "opaque" => pure (opaqueUnits (← fixture.getObjVal? "input"))
       | kind => throw s!"unknown test case {kind}"

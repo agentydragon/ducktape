@@ -90,6 +90,11 @@ def check (inputs : Input) (source providers : Json) (plan : EsmSplit.Plan) : Ex
 def Access.forModule (access : Access) (name : String) : ModuleAccess :=
   if name == access.entry then access.entryAccess else access.providers[name]?.getD {}
 
+/-- Original ordinals that have a checked native metadata binding. -/
+def ModuleAccess.metadataUnits (access : ModuleAccess) : List Nat :=
+  (access.unitNames.toList.filterMap fun (id, names) =>
+    if names.contains NativeRecord.slot then some id else none).mergeSort
+
 /-- Add the capability aliases to their referring modules. Preserve the actual
 order even when a lazy dependency re-enters through a provider or the entry. -/
 def Access.attach (access : Access) (program : Program) : Except String Program := do

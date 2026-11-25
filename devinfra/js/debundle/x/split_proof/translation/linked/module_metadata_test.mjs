@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { existsSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { cpSync, existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { forcePreview, lower, prepare, root } from "./harness.mjs";
@@ -43,6 +44,55 @@ for (const member of ["url", "env.MODE"]) {
       accepted
     );
   }
+}
+
+// Keep the metadata reader in its original module and compare both layouts at
+// the same actual file URL, using a fresh Node process for each module graph.
+{
+  const fixture = path.join(root, "concrete-metadata-reader");
+  const test = prepare(fixture, {
+    source: `var read = () => [import.meta.url, "ready"];
+             var deferred = async () => import.meta.url;
+             var pivot = () => "ready";
+             export { read, deferred, pivot };`,
+    sourceName: entry,
+    provider: "",
+    spec: placement("#2", ["#0", "#1", "#3"]),
+  });
+  const profile = path.join(fixture, "host.json");
+  writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
+  const options = [
+    "--structural",
+    "--deployment-origin",
+    "https://example.org",
+    "--host-contract",
+    profile,
+    "--deployment-preset",
+    "native-browser-record@1",
+  ];
+  const output = path.join(fixture, "out");
+  const checked = lower(test.sourceFile, test.specFile, output, options, "linked-structural-pivot").verdict;
+  assert.equal(checked.status, "certified", JSON.stringify(checked));
+  assert.deepEqual(
+    lower(test.sourceFile, test.specFile, output, [...options, "--check-output"], checked.scope).verdict,
+    checked
+  );
+  const program = `const api = await import(process.argv[1]); console.log(JSON.stringify([api.read(), await api.deferred()]));`;
+  const invoke = () => {
+    const run = spawnSync(
+      process.execPath,
+      ["--input-type=module", "-e", program, pathToFileURL(test.sourceFile).href],
+      {
+        encoding: "utf8",
+      }
+    );
+    assert.equal(run.status, 0, run.stderr);
+    return JSON.parse(run.stdout);
+  };
+  const before = invoke();
+  cpSync(output, fixture, { recursive: true });
+  assert.deepEqual(invoke(), before);
+  assert.deepEqual(before, [[pathToFileURL(test.sourceFile).href, "ready"], pathToFileURL(test.sourceFile).href]);
 }
 
 // One native module record shares mutable metadata between its closures. The outer

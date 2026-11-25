@@ -274,6 +274,35 @@ for (const [controls, expected] of [
   cases.push({ kind: "structural", input: structural(controls), expected });
 }
 
+const metadataRead = "var read = () => import.meta.url;";
+const metadataPivot = "var pivot = () => 42;";
+const metadataExport = "export { read, pivot };";
+const metadataInput = {
+  nativeRecord: true,
+  source: parse(`${metadataRead} ${metadataPivot} ${metadataExport}`),
+  files: {
+    "entry.mjs": parse(`import { pivot } from "./worker.mjs"; ${metadataRead} ${metadataExport}`),
+    "worker.mjs": parse(`${metadataPivot} export { pivot };`),
+  },
+};
+cases.push({ kind: "metadata", input: metadataInput, expected: [true, true] });
+cases.push({ kind: "metadata", input: { ...metadataInput, nativeRecord: false }, expected: /MetaProperty/ });
+const deferredMetadata = "var deferred = async () => import.meta.url;";
+const mixedExport = "export { read, deferred, pivot };";
+cases.push({
+  kind: "metadata",
+  input: {
+    nativeRecord: true,
+    asyncFallback: true,
+    source: parse(`${metadataRead} ${deferredMetadata} ${metadataPivot} ${mixedExport}`),
+    files: {
+      "entry.mjs": parse(`import { pivot } from "./worker.mjs"; ${metadataRead} ${deferredMetadata} ${mixedExport}`),
+      "worker.mjs": parse(`${metadataPivot} export { pivot };`),
+    },
+  },
+  expected: [true, true],
+});
+
 // Lean elaborates the test entry once for the whole fixture table.
 const result = spawnSync(process.env.LINKED_INPUT_CHECKER, [], {
   encoding: "utf8",

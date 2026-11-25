@@ -107,6 +107,12 @@ def certifyStructuralASTs (profile : HostProfile) (offered : List StableIntrinsi
   let pivots ← pivotHints source plan
   let set := Std.HashSet.ofList pivots
   let check := fun ids => certifyWith set ids profile offered source providers files plan deployment
+  if let some inputs := deployment then
+    if inputs.options.nativeRecord then
+      if let .ok access := LinkedDeployment.check inputs source providers plan then
+        if let .ok metadata := LinkedInput.metadataCandidates source profile access.entryAccess then
+          unless metadata.all set.contains do
+            if let .ok result := check (metadata ++ pivots) then return result
   match check pivots with
   | .ok result => return result
   | .error why =>

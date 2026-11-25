@@ -141,6 +141,32 @@ for (const [i, source] of hostSources.entries()) {
   );
 }
 
+// The recorded metadata fixture uses the same URL as Node's source module.
+// Reads must keep object identity and run a user-installed accessor each time.
+const metadataDir = path.join(dir, "node-metadata");
+mkdirSync(metadataDir, { recursive: true });
+const metadataFile = path.join(metadataDir, "main.mjs");
+const metadataSource = `
+  let calls = 0;
+  const meta = import.meta;
+  const read = () => import.meta.url;
+  console.log(meta === import.meta, read());
+  meta.tag = "present";
+  Object.defineProperty(meta, "url", { get() { calls += 1; return "changed"; } });
+  console.log(read(), read(), calls, import.meta.tag);
+`;
+writeFileSync(metadataFile, metadataSource);
+const [metadata] = run([{ ...dumpSource(metadataSource), nodeMetadataUrl: pathToFileURL(metadataFile).href }], true);
+const metadataNode = spawnSync(process.execPath, [metadataFile], { encoding: "utf8" });
+assert.equal(metadataNode.status, 0, metadataNode.stderr);
+assert.deepEqual(
+  [metadata.end, metadata.detail, metadata.out],
+  ["normal", "", metadataNode.stdout.trimEnd().split("\n")]
+);
+const [withoutMetadata] = run([dumpSource(metadataSource)], true);
+assert.equal(withoutMetadata.end, "malformed");
+assert.match(withoutMetadata.detail, /MetaProperty/);
+
 // A callable in a parameter default comes before a callable in the body.
 // Distinct scripted results make both dispatch and lexical numbering observable.
 const scriptedSource =

@@ -20,6 +20,9 @@ namespace CoreJS
 
 abbrev Name := String
 
+/-- Reserved binding for a deployment-checked native module metadata record. -/
+def importMetaSlot : Name := ":import.meta"
+
 inductive DeclKind where
   | var | let_ | const
   deriving DecidableEq, Repr

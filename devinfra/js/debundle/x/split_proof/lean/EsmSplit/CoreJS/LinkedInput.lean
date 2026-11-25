@@ -96,11 +96,33 @@ with a part-zero script and can script individual callable bodies. -/
 private inductive BodyFormat where
   | linked
   | structural (pivots : Std.HashSet Nat) (location : LinkedDeployment.Access) (fixed : Json)
-  | recorded (scripts : Std.HashSet (Nat × Nat))
+  | recorded (scripts : Std.HashSet (Nat × Nat)) (metadata : Bool)
 
 private def BodyFormat.scripts : BodyFormat → Std.HashSet (Nat × Nat)
-  | .recorded scripts => scripts
+  | .recorded scripts _ => scripts
   | _ => {}
+
+private def BodyFormat.loaderNames (format : BodyFormat) (origin : Nat)
+    (providerSite : Option (String × Nat)) : Option (List Name) :=
+  match format with
+  | .structural _ location _ =>
+    match providerSite with
+    | none => location.entryAccess.unitNames[origin]?
+    | some (name, ordinal) => (location.forModule name).unitNames[ordinal]?
+  | _ => none
+
+/-- Only a checked native record grants concrete access to `import.meta`. Source
+identifiers cannot spell this reserved binding. The location check keeps each
+such unit at its original module record. -/
+private def BodyFormat.unitImports (format : BodyFormat) (imports : List Name)
+    (origin : Nat) (providerSite : Option (String × Nat)) : List Name :=
+  match format with
+  | .structural .. =>
+    let names := (format.loaderNames origin providerSite).getD []
+    if names.contains NativeRecord.slot then NativeRecord.slot :: imports else imports
+  | .recorded _ true =>
+    if providerSite.isNone then NativeRecord.slot :: imports else imports
+  | _ => imports
 
 private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (imports : List Name)
     (origin : Nat) (providerSite : Option (String × Nat)) (j : Json) (exported : Bool) : Except String (Stmt × List Name × List TemplateSite) := do
@@ -108,20 +130,18 @@ private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (impo
     let s ← OpaqueInput.unit origin j loaderNames
     return (s, (if exported then (Lower.topDefs j).eraseDups else []), [])
   match format with
-  | .structural pivots location _ =>
+  | .structural pivots _ _ =>
     unless pivots.contains origin do
       -- Generators need their own intrinsic and fresh prototype.
       if Lower.typ j == "FunctionDeclaration" && Lower.flag j "generator" then
         if let some why := Lower.outsideModel false j then throw why
       else
-        let names := match providerSite with
-          | none => location.entryAccess.unitNames[origin]?
-          | some (name, ordinal) => (location.forModule name).unitNames[ordinal]?
-        return ← retain names
-  | .recorded scripts =>
+        return ← retain (format.loaderNames origin providerSite)
+  | .recorded scripts _ =>
     if scripts.contains (origin, 0) then return ← retain none
   | .linked => pure ()
   let (ast, sites) := numberSites origin format.scripts j
+  let imports := format.unitImports imports origin providerSite
   if exported then
     let (bindings, s) ← FromESTree.linkedDeclaration imports ast profile
     return (s, bindings, sites.templates.toList)
@@ -142,8 +162,35 @@ private def BodyFormat.lowerDefault (format : BodyFormat) (profile : HostProfile
       return (s, name, sites)
   if format.scripts.contains (origin, 0) then throw "unsupported opaque default export"
   let (ast, sites) := numberSites origin format.scripts j
+  let imports := format.unitImports imports origin providerSite
   let (name, s) ← FromESTree.linkedDefaultExport imports ast profile
   return (s, name, sites.templates.toList)
+
+/-- Select metadata units that the same linked lowering can actually handle.
+Unsupported units remain opaque; this is only a hint for the checked strategy. -/
+def metadataCandidates (source : Json) (profile : HostProfile) (access : LinkedDeployment.ModuleAccess) :
+    Except String (List Nat) := do
+  let nodes ← ESTreeUnits.nodes source
+  let mut imports := [NativeRecord.slot]
+  for node in nodes do
+    if (← typ node) == "ImportDeclaration" then
+      for spec in ← node.getObjValAs? (Array Json) "specifiers" do
+        imports := imports ++ [← FromESTree.identifier (← spec.getObjVal? "local")]
+  let mut candidates := []
+  for id in access.metadataUnits do
+    let some node := nodes[id]? | continue
+    let kind ← typ node
+    let ast ← if kind == "ExportNamedDeclaration" || kind == "ExportDefaultDeclaration" then
+      node.getObjVal? "declaration"
+    else pure node
+    if ast == .null then continue
+    let result : Except String Unit := do
+      if kind == "ExportDefaultDeclaration" then
+        discard <| BodyFormat.lowerDefault .linked profile imports id none ast
+      else
+        discard <| BodyFormat.lower .linked profile imports id none ast (kind == "ExportNamedDeclaration")
+    if result.isOk then candidates := id :: candidates
+  return candidates.reverse
 
 /-- A retained unit can observe every live export through a namespace, even when the
 source spells only a method call (the receiver is the namespace). Give opaque code
@@ -401,7 +448,7 @@ private def decode (format : BodyFormat) (source providers files : Json) (P : Es
   let after ← installTemplates { entry := P.entry, modules := fragment.emitted ++ shared }
     (fragment.emittedTemplates ++ providerSites)
   let (before, after) ← match format with
-    | .linked | .recorded _ => pure (before, after)
+    | .linked | .recorded _ _ => pure (before, after)
     | .structural _ location _ =>
       pure (← location.attach before, ← location.attach after)
   checkScopes before after
@@ -438,7 +485,8 @@ include the entry's import and export syntax. Provider ordinals follow the entry
 def program (source providers : Json) (scripts : Std.HashSet (Nat × Nat)) (entry : String := "main") :
     Except String Program := do
   let nodes ← ESTreeUnits.nodes source
-  let format := BodyFormat.recorded scripts
+  let metadata := (source.getObjValAs? String "nodeMetadataUrl").toOption
+  let format := BodyFormat.recorded scripts metadata.isSome
   let original ← parse format .nodeRecording entry nodes
   let ps := (← providers.getObj?).toList
   for req in original.imports do
@@ -446,6 +494,11 @@ def program (source providers : Json) (scripts : Std.HashSet (Nat × Nat)) (entr
   let (shared, providerSites) ← readProviders format .nodeRecording ps nodes.size [entry]
   let p ← installTemplates { entry, modules := original.numbered entry 0 :: shared }
     (original.templates ++ providerSites)
+  -- The recorded interpreter alone can supply a Node fixture's observed URL.
+  -- Certification obtains this capability only from `LinkedDeployment.check`.
+  let p ← match metadata with
+    | none => pure p
+    | some url => ({entry, entryAccess := {nativeUrl := some url}} : LinkedDeployment.Access).attach p
   let _ ← scopes p
   return p
 
