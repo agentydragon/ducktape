@@ -317,8 +317,8 @@ theorem reachFrame_makeFunc {r R cells A} (away : Away r R A)
     (functionRoot : ∀ f : Func, A (.obj f.intrinsicProto))
     (allocate : ∀ o : Obj, (∀ node ∈ o.nodes, A node) →
       ReachFrame r R cells A (fun a => A (.obj a)) (alloc o : M W Addr))
-    (env : Env) (safe : ∀ node ∈ env.nodes, A node) (f : Func) :
-    ReachFrame r R cells A (SafeVal A) (makeFunc env f : M W Val) := by
+    (env : Env) (safe : ∀ node ∈ env.nodes, A node) (f : Func) (displayName : String := f.name) :
+    ReachFrame r R cells A (SafeVal A) (makeFunc env f displayName : M W Val) := by
   unfold makeFunc
   apply (reachFrame_selfScope away outside env f.self f.name safe).bind
   intro e he

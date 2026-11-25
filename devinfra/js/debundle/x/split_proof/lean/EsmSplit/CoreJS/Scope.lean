@@ -202,8 +202,9 @@ theorem initSelf_agree {env env' : Env} (self : Bool) {name : Name} (v : Val)
   | true => exact initVar_agree (h rfl) v
 
 /-- A function made in two scopes that agree on its free names is the same object. -/
-theorem makeFunc_agree {env env' : Env} {f : Func} (h : Agree f.free env env') :
-    (makeFunc env f : M W Val) = makeFunc env' f := by
+theorem makeFunc_agree {env env' : Env} {f : Func} (h : Agree f.free env env')
+    (displayName : String := f.name) :
+    (makeFunc env f displayName : M W Val) = makeFunc env' f displayName := by
   unfold makeFunc
   refine selfScope_congr (N' := f.closes) f.self f.name h (fun x hx => ?_) fun env1 env1' h1 => ?_
   · unfold Func.closes at hx
@@ -215,6 +216,14 @@ theorem makeFunc_agree {env env' : Env} {f : Func} (h : Agree f.free env env') :
   · rw [capture_agree h1]
     refine M.bind_congr rfl fun a => M.bind_congr rfl fun _ => M.bind_congr ?_ fun _ => rfl
     exact initSelf_agree f.self (.obj a) fun hs => h1.vars f.name (by simp [Func.closes, hs])
+
+theorem makeClassMethod_agree {env env' : Env} {f : Func} (h : Agree f.free env env')
+    (home : Addr) (key : PropertyKey) (affix : String) :
+    (makeClassMethod env home key affix f : M W Val) = makeClassMethod env' home key affix f := by
+  cases key with
+  | str => exact makeFunc_agree (h.withHome (some home)) _
+  | wellKnownSymbol => exact makeFunc_agree (h.withHome (some home)) _
+  | symbol => rfl
 
 theorem boundCells_agree (s : State W) {env env' : Env} {names : List Name}
     (h : ∀ x ∈ names, env.vars.lookup x = env'.vars.lookup x) : boundCells s env names = boundCells s env' names := by
@@ -357,6 +366,7 @@ macro_rules
     | same_apply ($ih).binding using $hN
     | same_apply ($ih).stmt using $hN
     | same_apply ($ih).stmts using $hN
+    | same_apply makeClassMethod_agree using $hN
     | same_apply makeFunc_agree using $hN
     | (with_reducible apply makeFunc_agree
        with_reducible exact (($hN).mono (by free_mem)).withHome _)
