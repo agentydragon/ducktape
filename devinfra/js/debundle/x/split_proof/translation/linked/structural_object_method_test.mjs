@@ -7,8 +7,6 @@ import { forcePreview, observe, root, structuralSplit } from "./harness.mjs";
 const contract = path.join(root, "portable.json");
 writeFileSync(contract, JSON.stringify({ profile: "ecmascript", stableIntrinsicValues: ["Object.defineProperty@1"] }));
 const enabled = ["--host-contract", contract];
-const pivot = "linked-structural-pivot",
-  refusal = "linked-structural";
 
 function fixture(name, before, init, after = "export {saved};") {
   return structuralSplit(name, `${before}; var saved = ${init}; ${after}`, {
@@ -17,16 +15,16 @@ function fixture(name, before, init, after = "export {saved};") {
   });
 }
 const read = fixture("read", "var marker = 0", "Object.defineProperty");
-assert.equal(read.run(refusal).status, "rejected");
-const certified = read.run(pivot, ...enabled);
+assert.equal(read.run().status, "rejected");
+const certified = read.run(...enabled);
 assert.equal(certified.status, "certified");
 assert.equal(certified.hostProfile, "ecmascript");
 assert.match(
-  certified.assumptions.join("\n"),
+  certified.premises.join("\n"),
   /Object\.defineProperty@1:.*ambient binding Object returns intrinsic\.Object.*stable host reference intrinsic\.Object\.defineProperty; both reads have no observable effects/
 );
-assert.deepEqual(read.run(pivot, ...enabled, "--check-output"), certified);
-assert.equal(read.run(refusal, "--check-output").status, "rejected");
+assert.deepEqual(read.run(...enabled, "--check-output"), certified);
+assert.equal(read.run("--check-output").status, "rejected");
 for (const file of [read.sourceFile, path.join(read.out, "entry.mjs")]) {
   assert.equal((await import(pathToFileURL(file))).saved, Object.defineProperty);
 }
@@ -37,7 +35,7 @@ for (const [name, before, expr] of [
   ["shadow", "export const Object = {get defineProperty() {return 1}}", "Object.defineProperty"],
 ]) {
   const test = fixture(name, before, expr);
-  assert.equal(test.run(refusal, ...enabled).status, "rejected");
+  assert.equal(test.run(...enabled).status, "rejected");
   assert(!existsSync(test.out));
 }
 // Each observation runs in a fresh Node process. Replacing the ambient method
@@ -48,7 +46,7 @@ const replaced = fixture(
   "Object.defineProperty",
   "const same = saved === Object.defineProperty; export {same};"
 );
-assert.equal(replaced.run(refusal).status, "rejected");
+assert.equal(replaced.run().status, "rejected");
 const preview = path.join(replaced.dir, "preview");
 forcePreview(replaced, preview);
 assert.deepEqual(observe(replaced.sourceFile, "same"), { same: true });

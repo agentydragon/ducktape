@@ -32,7 +32,7 @@ function split(entry, owner, owners, inputDir = dir, preview = false) {
   const spec = path.join(root, chunk + "-" + owner + ".json");
   writeFileSync(spec, JSON.stringify(placement));
   const out = spec + ".out";
-  const opts = ["--structural", "--require", "all-outcomes"];
+  const opts = [];
   if (preview) {
     const modules = { [entry]: [], [owner + ".mjs"]: [] };
     for (const row of placement.units) modules[row.owner === null ? entry : owner + ".mjs"].push("#" + row.ordinal);
@@ -40,11 +40,8 @@ function split(entry, owner, owners, inputDir = dir, preview = false) {
     writeFileSync(specFile, JSON.stringify({ entry, modules, order: [owner + ".mjs"] }));
     forcePreview({ sourceFile: file, specFile }, out);
   } else {
-    assert.equal(lower(file, spec, out, opts, "linked-structural-order").verdict.status, "certified");
-    assert.equal(
-      lower(file, spec, out, [...opts, "--check-output"], "linked-structural-order").verdict.status,
-      "certified"
-    );
+    assert.equal(lower(file, spec, out, opts).verdict.status, "certified");
+    assert.equal(lower(file, spec, out, [...opts, "--check-output"]).verdict.status, "certified");
   }
   return { entry, owner: owner + ".mjs", chunk, placement, out, inputDir };
 }
@@ -254,14 +251,14 @@ assert.equal(tagged.stdout.trim(), "certified");
   const out = path.join(root, "three-providers-out");
   writeFileSync(manifest, JSON.stringify({ entry, chunks }));
   const run = (target, ...args) =>
-    spawnSync(
-      process.env.LOWERSPLIT,
-      [manifest, target, "--structural", "--deployment-origin", "https://deployment.test", ...args],
-      { encoding: "utf8" }
-    );
+    spawnSync(process.env.LOWERSPLIT, [manifest, target, "--deployment-origin", "https://deployment.test", ...args], {
+      encoding: "utf8",
+    });
   const emitted = run(out);
   assert.equal(emitted.status, 0, emitted.stdout + emitted.stderr);
-  assert.equal(JSON.parse(emitted.stdout).guarantee, "all-outcomes");
+  assert.equal(JSON.parse(emitted.stdout).guarantee, "normal-equivalence");
+  assert.equal(JSON.parse(emitted.stdout).strategy, "structural");
+  assert.equal(JSON.parse(emitted.stdout).every_ending_matches, true);
   assert.equal((await import(pathToFileURL(path.join(out, entry)))).total, 6);
   const checked = run(out, "--check-output");
   assert.equal(checked.status, 0, checked.stdout + checked.stderr);
@@ -315,7 +312,7 @@ assert.equal(tagged.stdout.trim(), "certified");
       })
     );
   const run = (dest, ...args) => {
-    const result = spawnSync(process.env.LOWERSPLIT, [manifest, dest, "--structural", ...args], { encoding: "utf8" });
+    const result = spawnSync(process.env.LOWERSPLIT, [manifest, dest, ...args], { encoding: "utf8" });
     assert.ifError(result.error);
     assert(result.stdout, result.stderr);
     return { exit: result.status, verdict: JSON.parse(result.stdout) };
@@ -323,23 +320,20 @@ assert.equal(tagged.stdout.trim(), "certified");
 
   const out = path.join(root, "throwing-deployment-out");
   setOrder(["label", "detail"]);
-  const required = ["--require", "all-outcomes"];
-  const emitted = run(out, ...required);
+  const emitted = run(out);
   assert.equal(emitted.exit, 0, JSON.stringify(emitted.verdict));
-  assert.equal(emitted.verdict.guarantee, "all-outcomes");
+  assert.equal(emitted.verdict.guarantee, "normal-equivalence");
+  assert.equal(emitted.verdict.every_ending_matches, true);
   assert.equal(emitted.verdict.scope, "linked-structural-order");
-  assert.deepEqual(run(out, ...required, "--check-output"), emitted);
+  assert.deepEqual(run(out, "--check-output"), emitted);
   for (const dir of [original, out])
     await assert.rejects(import(pathToFileURL(path.join(dir, entry))), (thrown) => thrown === message);
 
   setOrder(["detail", "label"]);
   const reordered = path.join(root, "throwing-deployment-reordered");
-  const refused = run(reordered, ...required);
-  assert.equal(refused.exit, 1, JSON.stringify(refused.verdict));
-  assert.match(refused.verdict.reason, /proves only normal-completion/);
-  assert(!existsSync(reordered));
   const normal = run(reordered);
   assert.equal(normal.exit, 0, JSON.stringify(normal.verdict));
-  assert.equal(normal.verdict.guarantee, "normal-completion");
-  assert.equal(run(reordered, ...required, "--check-output").exit, 1);
+  assert.equal(normal.verdict.guarantee, "normal-equivalence");
+  assert.equal(normal.verdict.every_ending_matches, false);
+  assert.equal(run(reordered, "--check-output").exit, 0);
 }

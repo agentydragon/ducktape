@@ -20,13 +20,14 @@ const spec = {
 const dir = path.join(root, "resolved-cycle");
 const files = prepare(dir, { source, spec, provider: "" });
 const out = path.join(dir, "out");
-const opts = ["--structural"];
-const run = (dest, flags, scope) => lower(files.sourceFile, files.specFile, dest, flags, scope).verdict;
+const opts = [];
+const run = (dest, flags) => lower(files.sourceFile, files.specFile, dest, flags).verdict;
 
 // Visiting value first follows its request for reader. It does not evaluate value first.
-const good = run(out, opts, "linked-structural-order");
+const good = run(out, opts);
 assert.equal(good.status, "certified");
-assert.deepEqual(run(out, [...opts, "--check-output"], "linked-structural-order"), good);
+assert.equal(good.strategy, "structural");
+assert.deepEqual(run(out, [...opts, "--check-output"]), good);
 assert.deepEqual(moduleEvaluationOrder(out, "source.mjs"), ["reader.mjs", "value.mjs", "source.mjs"]);
 for (const file of [files.sourceFile, path.join(out, "source.mjs")]) {
   const { before, read } = await import(pathToFileURL(file));
@@ -34,10 +35,10 @@ for (const file of [files.sourceFile, path.join(out, "source.mjs")]) {
   assert.equal(read(), "function");
 }
 
-function refuses(invalid, flags, scope, why) {
+function refuses(invalid, flags, why) {
   writeFileSync(files.specFile, JSON.stringify(invalid));
   const dest = path.join(dir, "rejected");
-  const verdict = run(dest, flags, scope);
+  const verdict = run(dest, flags);
   assert.equal(verdict.status, "rejected", JSON.stringify(verdict));
   assert.equal(verdict.guarantee, null);
   assert.match(verdict.reason, why);
@@ -47,7 +48,7 @@ function refuses(invalid, flags, scope, why) {
 // Reversing the SCC traversal moves the initializer ahead of the observation.
 // The same evaluation order demanded explicitly may not be repaired silently.
 const effect = /moved region|not a local allocating declaration/;
-refuses({ ...spec, import_order: ["reader", "value"] }, opts, "linked-structural", effect);
+refuses({ ...spec, import_order: ["reader", "value"] }, opts, effect);
 refuses(
   {
     entry: "source.mjs",
@@ -55,10 +56,9 @@ refuses(
     order: ["value.mjs", "reader.mjs"],
     sequential: true,
   },
-  ["--structural"],
-  "linked-structural",
+  [],
   effect
 );
-refuses({ ...spec, source_sha256: "0".repeat(64) }, opts, null, /source_sha256/);
-refuses({ ...spec, units: spec.units.slice(1) }, opts, null, /unit count/);
-refuses({ ...spec, sequential: true }, opts, null, /unexpected resolved placement field/);
+refuses({ ...spec, source_sha256: "0".repeat(64) }, opts, /source_sha256/);
+refuses({ ...spec, units: spec.units.slice(1) }, opts, /unit count/);
+refuses({ ...spec, sequential: true }, opts, /unexpected resolved placement field/);

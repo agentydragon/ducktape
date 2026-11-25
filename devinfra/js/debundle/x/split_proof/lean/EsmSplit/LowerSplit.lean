@@ -4,13 +4,13 @@ import EsmSplit.LowerSplit.Diagnostic
 /-!
 # Certify and publish a JavaScript deployment.
 
-    lowersplit <deployment.json> <outdir> [--require <all-outcomes|normal-completion>] [--check-output] [--host-contract PROFILE.json] [--structural [--deployment-origin ORIGIN]]
+    lowersplit <deployment.json> <outdir> [--check-output] [--host-contract PROFILE.json] [--deployment-origin ORIGIN]
     lowersplit --diagnostic <deployment.json> <outdir> [--lean <Generated.lean> [--namespace NAME] [--variant SPEC]... [--control SPEC]...] [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]
 
 The manifest names the entry and each original chunk, with a source file and an optional placement or spec.
 A singleton authored split accepts an annotated ESTree snapshot as its source.
 JavaScript source and annotated ESTree dumps share the Acorn parser and scope/literal metadata.
-Certified mode checks the requested CoreJS guarantee before publication.
+Certified mode selects a proof strategy and checks CoreJS normal-equivalence before publication.
 With --check-output, it reparses the existing tree before running the proof.
 Lean computes the footprints
 (`Effects.lean`, under the premises in the file, if any), plans the split, runs the checks, writes the modules, and with `--lean` writes a

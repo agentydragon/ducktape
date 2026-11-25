@@ -1,5 +1,5 @@
 import EsmSplit.Cli
-import EsmSplit.CoreJS.Declaration.Artifacts
+import EsmSplit.CoreJS.Declaration.Input
 import EsmSplit.CoreJS.JointStatic
 import EsmSplit.CoreJS.LinkedCertificate
 import EsmSplit.CoreJS.LinkedInput
@@ -14,8 +14,6 @@ import EsmSplit.ReadDeployment
 namespace EsmSplit.LowerSplit
 
 open Lean EsmSplit.SplitFiles
-
-open CoreJS (Guarantee)
 
 /-- Check the generated proof with the same toolchain and model as the splitter. -/
 private def checkLean (work : System.FilePath) (args : Array String) : IO Unit := do
@@ -76,20 +74,21 @@ private def verifyExecution (timings : Bool) (work : System.FilePath) (cert : Co
   unless accepted do runProofRecipe timings work dataArts cert.ordinary
   return cert.premises
 
-private def emitVerdict (requested : String) (outcome : Except String Guarantee) (scope : Option String := none) (extra : List (String × Json) := []) : IO UInt32 := do
+private def emitVerdict (outcome : Except String Unit) (scope : Option String := none)
+    (extra : List (String × Json) := []) : IO UInt32 := do
   let fields := match outcome with
     | .error why => [("status", toJson "rejected"), ("guarantee", Json.null), ("reason", toJson why)]
-    | .ok level => [("status", toJson "certified"), ("guarantee", toJson level.label)]
-  IO.println (Json.mkObj ([("requested", toJson requested), ("scope", toJson scope)] ++ fields ++ extra)).compress
+    | .ok _ => [("status", toJson "certified"), ("guarantee", toJson "normal-equivalence")]
+  IO.println (Json.mkObj ([("scope", toJson scope)] ++ fields ++ extra)).compress
   return if outcome.isOk then 0 else 1
 
 /-- Convert a typed refusal into the existing verdict fields at the CLI boundary. -/
-private def emitRefusal (requested : String) (refusal : CertificationRefusal)
+private def emitRefusal (refusal : CertificationRefusal)
     (scope : Option String := none) : IO UInt32 := do
   let reasonCodeFields := refusal.reasonCode.toList.map fun code => ("reason_code", toJson code)
   let observationFields := refusal.observation.toList.map fun observation => ("observation", observation)
-  let details := reasonCodeFields ++ observationFields
-  emitVerdict requested (.error (IO.userError refusal.reason).toString) scope details
+  let details := reasonCodeFields ++ observationFields ++ refusal.details
+  emitVerdict (.error (IO.userError refusal.reason).toString) scope details
 
 private def structuralRefusal (refusal : CoreJS.LinkedBehavior.StructuralRefusal) : CertificationRefusal :=
   { reason := refusal.reason, reasonCode := refusal.reasonCode }
@@ -97,23 +96,78 @@ private def structuralRefusal (refusal : CoreJS.LinkedBehavior.StructuralRefusal
 private def profileFields (profile : CoreJS.HostProfile) : List (String × Json) :=
   if profile == .empty then [] else [("hostProfile", toJson profile.label)]
 
-private def profileVerdict (selected : CoreJS.HostProfile) (used : CoreJS.HostPremises) : List (String × Json) :=
-  if selected == .empty then [] else profileFields selected ++ [("assumptions", toJson used.assumptions)]
+private def profilePremises (selected : CoreJS.HostProfile) (used : CoreJS.HostPremises) : List String :=
+  (if selected == .empty then [] else [s!"Host profile: {selected.label}"]) ++ used.assumptions
+
+private structure StrategyResult where
+  scope : String
+  everyEndingMatches : Bool := false
+  premises : List String := []
+
+private structure CertifiedStrategy where
+  name : String
+  certify : Json → IO (Except CertificationRefusal StrategyResult)
+
+private structure StrategyFailure where
+  strategy : String
+  refusal : CertificationRefusal
+
+private structure SelectedStrategy where
+  strategy : String
+  result : StrategyResult
+  failures : List StrategyFailure := []
+
+private def strategyFailureJson (failure : StrategyFailure) : Json :=
+  let reasonCode := match failure.refusal.reasonCode with
+    | none => Json.null
+    | some code => toJson code
+  Json.mkObj [
+    ("strategy", toJson failure.strategy),
+    ("reason_code", reasonCode),
+    ("reason", toJson failure.refusal.reason)
+  ]
+
+/-- Try proof strategies in order. Each strategy has one typed result shape, so new
+compiled checks can be inserted without changing fallback control flow. -/
+private def tryStrategies (strategies : List CertifiedStrategy) (files : Json) :
+    IO (Except CertificationRefusal SelectedStrategy) := do
+  let mut failures := []
+  for strategy in strategies do
+    let result ← try strategy.certify files catch error =>
+      pure (.error ({ reason := error.toString } : CertificationRefusal))
+    match result with
+    | .ok result => return .ok { strategy := strategy.name, result, failures }
+    | .error refusal => failures := failures ++ [{ strategy := strategy.name, refusal }]
+  let structuralCode := failures.find? fun failure =>
+    failure.strategy == "structural" && failure.refusal.reasonCode.isSome
+  match structuralCode <|> failures.find? (fun failure => failure.refusal.reasonCode.isSome) <|>
+      failures.getLast? with
+  | none => return .error { reason := "no certification strategy is available" }
+  | some best =>
+    let attempts := toJson (failures.map strategyFailureJson)
+    return .error { best.refusal with
+      details := best.refusal.details ++ [
+        ("strategy_attempts", attempts)
+      ] }
+
+private def emitSelected (profile : CoreJS.HostProfile) (selection : SelectedStrategy) : IO UInt32 := do
+  let extra := profileFields profile ++ [
+    ("strategy", toJson selection.strategy),
+    ("premises", toJson selection.result.premises),
+    ("every_ending_matches", toJson selection.result.everyEndingMatches)
+  ] ++
+    (if selection.failures.isEmpty then [] else
+      [("strategy_attempts", toJson (selection.failures.map strategyFailureJson))])
+  emitVerdict (.ok ()) selection.result.scope extra
 
 private structure CertifiedOptions where
-  request : Guarantee
   profile : CoreJS.HostProfile
   intrinsics : List CoreJS.StableIntrinsic
-  structural : Bool
   deploymentOrigin : Option String
   checkOnly : Bool
   browserOptions : CoreJS.ModuleLocation.BrowserOptions
 
-private def parseCertifiedOptions (label : String) (args : List String) : IO (System.FilePath × System.FilePath × CertifiedOptions) := do
-  let request ← match label with
-    | "all-outcomes" => pure Guarantee.allOutcomes
-    | "normal-completion" => pure Guarantee.normalCompletion
-    | _ => throw (IO.userError "--require expects all-outcomes or normal-completion")
+private def parseCertifiedOptions (args : List String) : IO (System.FilePath × System.FilePath × CertifiedOptions) := do
   let (contract?, args) := EsmSplit.takeFlag "--host-contract" args
   let (profile, intrinsics) ← match contract? with
     | none => pure (CoreJS.HostProfile.empty, [])
@@ -125,13 +179,7 @@ private def parseCertifiedOptions (label : String) (args : List String) : IO (Sy
           ("stableIntrinsicValues", toJson [d.id])]) with
       | some (p, d) => pure (p, [d])
       | none => pure (← IO.ofExcept (CoreJS.HostProfile.read j), [])
-  let structural := args.contains "--structural"
-  unless structural || intrinsics.isEmpty do
-    throw (IO.userError "stableIntrinsicValues requires --structural")
-  let args := args.filter (· != "--structural")
   let (deploymentOrigin, args) := EsmSplit.takeFlag "--deployment-origin" args
-  if deploymentOrigin.isSome && !structural then
-    throw (IO.userError "--deployment-origin requires --structural")
   let (preset, args) := EsmSplit.takeFlag "--deployment-preset" args
   let nativeRecord := preset == some CoreJS.NativeRecord.preset
   if preset.isSome && !(nativeRecord && deploymentOrigin.isSome && profile == .browserPage) then
@@ -142,11 +190,11 @@ private def parseCertifiedOptions (label : String) (args : List String) : IO (Sy
     throw (IO.userError "empty@1 requires a browser-page profile and deployment origin")
   let checkOnly := args.contains "--check-output"
   let args := args.filter (· != "--check-output")
-  let usage := IO.userError "usage: lowersplit <deployment.json> <outdir> [--require LEVEL] [--check-output] [--host-contract PROFILE.json] [--structural [--deployment-origin ORIGIN [--deployment-preset native-browser-record@1] [--deployment-import-map empty@1]]]; use --diagnostic for plan and preview options"
+  let usage := IO.userError "usage: lowersplit <deployment.json> <outdir> [--check-output] [--host-contract PROFILE.json] [--deployment-origin ORIGIN [--deployment-preset native-browser-record@1] [--deployment-import-map empty@1]]; use --diagnostic for plan and preview options"
   let [manifest, out] := args | throw usage
   if args.any (·.startsWith "--") then throw usage
   let out ← IO.ofExcept (outputDirectory out)
-  return (manifest, out, { request, profile, intrinsics, structural, deploymentOrigin, checkOnly, browserOptions := { nativeRecord, emptyMap } })
+  return (manifest, out, { profile, intrinsics, deploymentOrigin, checkOnly, browserOptions := { nativeRecord, emptyMap } })
 
 private structure Part where
   original : Json
@@ -205,17 +253,14 @@ private def prepare (chunk : DeploymentChunk) (input : BundleInput) (work : Syst
     IO.ofExcept (ESTreeEmit.programs asts B P source sourcePath)
   return { original := program, bundle := B, spec := S, plan := P, output := { programs, source, input, work } }
 
-private def requireGuarantee (request proved : Guarantee) : IO Unit := do
-  if request == .allOutcomes && proved != .allOutcomes then
-    throw (IO.userError "the certificate proves only normal-completion")
-
-private def emitStructural (options : CertifiedOptions) (used : List CoreJS.StableIntrinsic)
-    (level : Guarantee) (proof : CoreJS.LinkedBehavior.StructuralProof) : IO UInt32 := do
+private def structuralResult (options : CertifiedOptions) (used : List CoreJS.StableIntrinsic)
+    (proof : CoreJS.LinkedBehavior.StructuralProof) : StrategyResult :=
   let scope := match proof with
     | .preservedOrder => "linked-structural-order"
     | .singlePivot => "linked-structural-pivot"
     | .multiplePivots => "linked-structural-moves"
-  let assumptions :=
+  let premises :=
+    (if options.profile == .empty then [] else [s!"Host profile: {options.profile.label}"]) ++
     ["Retained source units use the same capability-closed opaque world in both layouts."] ++
     (if options.browserOptions.nativeRecord then [s!"{CoreJS.NativeRecord.preset}: Initializing retained module metadata is unobservable except for a fresh null-prototype object with only native writable, enumerable, configurable url and resolve data properties. Each per-record resolver uses the unchanged module URL and static resolution context."] else []) ++
     (if options.browserOptions.emptyMap then ["empty@1: The browser's import map remains empty and the native module resolver is unchanged. Retained bare imports reject their promises on resolution failure, with ordinary browser promise scheduling and rejection reporting."] else []) ++
@@ -224,8 +269,10 @@ private def emitStructural (options : CertifiedOptions) (used : List CoreJS.Stab
       s!"The static deployment at {origin} overlays only the planned module paths.",
       "The native ESM loader uses one module record per effective URL and resolves dynamic dependencies through the checked live cells."
     ])
-  emitVerdict options.request.label (.ok level) scope
-    (profileFields options.profile ++ [("assumptions", toJson assumptions)])
+  let everyEndingMatches := match proof with
+    | .preservedOrder => true
+    | .singlePivot | .multiplePivots => false
+  { scope, everyEndingMatches, premises }
 
 private def checkPartLayout (part : Part) (timings : Bool) : IO Unit := do
   let ok ← timePhase timings "plan_checks" fun _ => checkLayout part.bundle part.plan (some part.spec) false
@@ -236,10 +283,8 @@ private def checkPartLayout (part : Part) (timings : Bool) : IO Unit := do
 with the original bundle at the virtual root for authored inputs. -/
 private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
     (options : CertifiedOptions) (timings : Bool) : IO UInt32 := do
-  let request := options.request
   let profile := options.profile
   let intrinsics := options.intrinsics
-  let structural := options.structural
   let checkOnly := options.checkOnly
   let src ← readBundle chunk.source work true timings (← IO.ofExcept chunk.sourceHash)
   let declarations := (CoreJS.DeclarationInput.decode src.program).toOption
@@ -253,79 +298,31 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
         pure (path.fileName.getD "bundle.mjs", path.parent)
       else pure ("bundle.mjs", none)
     Json.mkObj <$> loadProviders entry (Std.HashMap.ofList [(entry, program)]) root work (allowEntryImport := false)
-  -- The opt-in census wrapper must be able to measure linked execution even
-  -- when the ordinary selector would take the closed-declaration fast path.
-  let censusLinked ← do
-    let enabled ← IO.getEnv "SPLIT_PROOF_STRATEGY_CENSUS"
-    let forceLinked ← IO.getEnv "SPLIT_PROOF_CENSUS_FORCE_LINKED"
-    pure (enabled == some "1" && forceLinked == some "1")
-  let declaration := if structural || censusLinked then none else declarations.bind fun groups =>
-    CoreJS.DeclarationArtifacts.prepare? program (CoreJS.DeclarationProgram.statements groups) B S P
-  if let some prepared := declaration then
-    let level := prepared.level
-    try
-      requireGuarantee request level
-      let checked ← verify (Json.mkObj []) fun files => do
-        timePhase timings "closed_declarations" fun _ => do
-          let _ ← IO.ofExcept (prepared.certify files)
-          pure (.ok ())
-      match checked with
-      | .ok _ => return ← emitVerdict request.label (.ok level) "closed-declarations" (profileVerdict profile {})
-      | .error refusal => return ← emitRefusal request.label refusal "closed-declarations"
-    catch e => return ← emitVerdict request.label (.error e.toString) "closed-declarations"
-  if structural then
-    try
-      checkPartLayout part timings
-      let shared ← providers ()
-      let checked ← verify shared fun files => do
+  try
+    checkPartLayout part timings
+    let shared ← providers ()
+    let structural : CertifiedStrategy := {
+      name := "structural"
+      certify := fun files => do
         timePhase timings "structural_certificate" fun _ => do
           let result ← IO.lazyPure fun _ =>
             CoreJS.LinkedBehavior.certifyStructuralASTs profile intrinsics program shared files P none
-          match result with
-          | .error reason => pure (.error (structuralRefusal reason))
-          | .ok ⟨used, level, proof, _⟩ => do
-            requireGuarantee request level
-            pure (.ok (used, level, proof))
-      match checked with
-      | .ok (used, level, proof) => return ← emitStructural options used level proof
-      | .error refusal => return ← emitRefusal request.label refusal "linked-structural"
-    catch e => return ← emitVerdict request.label (.error e.toString) "linked-structural"
-  try
-    checkPartLayout part timings
-    let providers ← providers ()
-    let checked ← verify providers fun files => do
-      let decoded ← timePhase timings "linked_lowering" fun _ =>
-        IO.lazyPure fun _ => CoreJS.LinkedInput.decodePair program providers files P profile
-      match decoded with
-      | .error reason => pure (.error ({ reason, reasonCode := some "linked_input" } : CertificationRefusal))
-      | .ok (original, candidate) => do
-        let census ← IO.getEnv "SPLIT_PROOF_STRATEGY_CENSUS"
-        let replayBlockers :=
-          if census == some "1" then
-            CoreJS.LinkedBehavior.replayPremisedBlockerKinds original candidate
-          else []
-        if request != .normalCompletion then
-          pure (.error ({ reason := "linked execution proves only normal-completion" } : CertificationRefusal))
-        else do
-          let replayed : Option CoreJS.HostPremises ←
-            timePhase timings "compiled_replay" fun _ => IO.lazyPure fun _ =>
-              match CoreJS.LinkedBehavior.probeWitness profile original candidate with
-              | .error _ => none
-              | .ok (premises, fuel) =>
-                match CoreJS.LinkedBehavior.replayPremisedPrograms premises fuel original candidate with
-                | none => none
-                | some semantics =>
-                  match CoreJS.LinkedBehavior.certifyASTs profile premises program providers files P original candidate semantics.down with
-                  | .error _ => none
-                  | .ok _ => some premises
-          if let some premises := replayed then
-            pure (.ok (premises, "compiled-replay-premised", []))
-          else
-            let prepared : Except CertificationRefusal
-                (CoreJS.LinkedBehavior.Certificate × Lean.NameMap Lean.ImportArtifacts) ←
-              timePhase timings "certificate_preparation" fun _ => do
+          pure <| result.mapError structuralRefusal |>.map fun ⟨used, _, proof, _⟩ =>
+            structuralResult options used proof
+    }
+    let linked : CertifiedStrategy := {
+      name := "linked"
+      certify := fun files => do
+        let decoded ← timePhase timings "linked_lowering" fun _ =>
+          IO.lazyPure fun _ => CoreJS.LinkedInput.decodePair program shared files P profile
+        match decoded with
+        | .error reason => pure (.error ({ reason, reasonCode := some "linked_input" } : CertificationRefusal))
+        | .ok (original, candidate) => do
+          let prepared : Except CertificationRefusal
+              (CoreJS.LinkedBehavior.Certificate × Lean.NameMap Lean.ImportArtifacts) ←
+            timePhase timings "certificate_preparation" fun _ => do
               let result ← IO.lazyPure fun _ =>
-                CoreJS.LinkedBehavior.certificate profile program providers files P original candidate
+                CoreJS.LinkedBehavior.certificate profile program shared files P original candidate
               match result with
               | .error refusal =>
                 pure (.error ({
@@ -341,26 +338,28 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
                     reason := err.toString
                     reasonCode := some "proof_preparation"
                   } : CertificationRefusal))
-            match prepared with
-            | .error refusal => pure (.error refusal)
-            | .ok (cert, dataArts) => do
-              let used ← verifyExecution timings work cert dataArts
-              pure (.ok (used, "generated-proof", replayBlockers))
+          match prepared with
+          | .error refusal => pure (.error refusal)
+          | .ok (cert, dataArts) => do
+            let active ← verifyExecution timings work cert dataArts
+            pure (.ok {
+              scope := "linked-programs"
+              premises := profilePremises profile active
+            })
+    }
+    let strategies := [structural, linked]
+    let checked ← verify shared fun files => tryStrategies strategies files
     match checked with
-    | .ok (active, strategy, blockers) => do
-      let blockerFields := if blockers.isEmpty then [] else [("replay_blockers", toJson blockers)]
-      return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs"
-        (profileVerdict profile active ++ [("strategy", toJson strategy)] ++ blockerFields)
-    | .error refusal => return ← emitRefusal request.label refusal "linked-programs"
-  catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs"
+    | .ok selected => emitSelected profile selected
+    | .error refusal => emitRefusal refusal
+  catch e => emitVerdict (.error e.toString)
 
 /-- Load and check the actual static graph, then certify the union of its
 changed parts and the byte-identical modules shared by both schedules. -/
 private def runDeployment (manifest : DeploymentManifest) (out work : System.FilePath)
     (options : CertifiedOptions) (timings : Bool) : IO UInt32 := do
-  let { request, profile, intrinsics, structural, deploymentOrigin, checkOnly, browserOptions } := options
+  let { profile, intrinsics, deploymentOrigin, checkOnly, browserOptions } := options
   try
-    unless structural do throw (IO.userError "a deployment with multiple chunks requires --structural")
     let root ← deploymentRoot manifest
     let mut originals := #[]
     let mut parts := #[]
@@ -402,26 +401,29 @@ private def runDeployment (manifest : DeploymentManifest) (out work : System.Fil
         let result ← IO.lazyPure fun _ =>
           CoreJS.LinkedBehavior.certifyDeployment manifest.entry actual shared deployment profile intrinsics
         match result with
-        | .error reason => pure (.error (structuralRefusal reason))
-        | .ok ⟨used, level, proof, _⟩ => do
-          requireGuarantee request level
-          pure (.ok (used, level, proof))
+        | .error reason =>
+          let refusal := structuralRefusal reason
+          let failure : StrategyFailure := { strategy := "structural", refusal }
+          pure (.error { refusal with details := refusal.details ++ [
+            ("strategy", toJson "structural"),
+            ("strategy_attempts", toJson [strategyFailureJson failure])
+          ] })
+        | .ok ⟨used, _, proof, _⟩ =>
+          pure (.ok { strategy := "structural", result := structuralResult options used proof })
     match checked with
-    | .ok (used, level, proof) => emitStructural options used level proof
-    | .error refusal => emitRefusal request.label refusal "linked-structural"
-  catch e => emitVerdict request.label (.error e.toString) "linked-structural"
+    | .ok selected => emitSelected profile selected
+    | .error refusal => emitRefusal refusal
+  catch e => emitVerdict (.error e.toString)
 
 def certified (args : List String) : IO UInt32 := do
-  let (level?, args) := EsmSplit.takeFlag "--require" args
-  let label := level?.getD Guarantee.normalCompletion.label
   try
-    let (manifestPath, out, options) ← parseCertifiedOptions label args
+    let (manifestPath, out, options) ← parseCertifiedOptions args
     let manifest ← readDeploymentManifest manifestPath
     let timings := (← IO.getEnv "SPLIT_PROOF_TIMINGS") == some "1"
     IO.FS.withTempDir fun work =>
       match manifest.chunks, options.deploymentOrigin with
       | [chunk], none => runSingleton chunk out work options timings
       | _, _ => runDeployment manifest out work options timings
-  catch e => emitVerdict label (.error e.toString)
+  catch e => emitVerdict (.error e.toString)
 
 end EsmSplit.LowerSplit

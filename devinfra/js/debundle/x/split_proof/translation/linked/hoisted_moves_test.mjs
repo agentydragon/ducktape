@@ -4,9 +4,6 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { structuralFixture } from "./harness.mjs";
 
-const pivotScope = "linked-structural-pivot";
-const refusalScope = "linked-structural";
-
 // The hoisted function points into the pivot's region at link time.
 // Nobody can reach it during this crossing, but the suffix calls it.
 const hiddenObserver = structuralFixture(
@@ -19,9 +16,9 @@ const hiddenObserver = structuralFixture(
   ["#1"],
   ["#0", "#2", "#3", "#4"]
 );
-const hidden = hiddenObserver.run(pivotScope);
+const hidden = hiddenObserver.run();
 assert.equal(hidden.status, "certified", JSON.stringify(hidden));
-assert.deepEqual(hiddenObserver.run(pivotScope, "--check-output"), hidden);
+assert.deepEqual(hiddenObserver.run("--check-output"), hidden);
 for (const file of [hiddenObserver.sourceFile, path.join(hiddenObserver.out, "entry.mjs")]) {
   const { result, observe } = await import(pathToFileURL(file));
   assert.equal(result, 16);
@@ -41,7 +38,7 @@ const reachedObserver = structuralFixture(
   ["#0", "#1", "#3", "#4"]
 );
 assert.equal((await import(pathToFileURL(reachedObserver.sourceFile))).seen, "undefined");
-const reached = reachedObserver.run(refusalScope);
+const reached = reachedObserver.run();
 assert.equal(reached.status, "rejected", JSON.stringify(reached));
 assert.match(reached.reason, /linked state already exposes the region of unit 2/);
 assert(!existsSync(reachedObserver.out));
@@ -63,14 +60,14 @@ for (const called of [null, "first", "second"]) {
   const source = await import(pathToFileURL(two.sourceFile));
   assert.equal(source.seen, called ? "undefined" : "");
   if (called) {
-    const verdict = two.run(refusalScope);
+    const verdict = two.run();
     assert.equal(verdict.status, "rejected", JSON.stringify(verdict));
     assert.match(verdict.reason, /linked state already exposes the region of unit 2/);
     assert(!existsSync(two.out));
   } else {
-    const verdict = two.run(pivotScope);
+    const verdict = two.run();
     assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-    assert.deepEqual(two.run(pivotScope, "--check-output"), verdict);
+    assert.deepEqual(two.run("--check-output"), verdict);
     const emitted = await import(pathToFileURL(path.join(two.out, "entry.mjs")));
     for (const ns of [source, emitted]) {
       assert.equal(ns.seen, "");
@@ -91,7 +88,7 @@ const earlyRead = structuralFixture(
   ["#2"],
   ["#0", "#1", "#3"]
 );
-const refused = earlyRead.run(refusalScope);
+const refused = earlyRead.run();
 assert.equal(refused.status, "rejected", JSON.stringify(refused));
 assert.match(refused.reason, /linked state already exposes the region of unit 2/);
 assert(!existsSync(earlyRead.out));
@@ -105,9 +102,9 @@ const hoist = structuralFixture(
   ["#2"],
   ["#0", "#1", "#3"]
 );
-const hoisted = hoist.run(pivotScope);
+const hoisted = hoist.run();
 assert.equal(hoisted.status, "certified");
-assert.deepEqual(hoist.run(pivotScope, "--check-output"), hoisted);
+assert.deepEqual(hoist.run("--check-output"), hoisted);
 for (const file of [hoist.sourceFile, path.join(hoist.out, "entry.mjs")]) {
   const exports = await import(pathToFileURL(file));
   assert.deepEqual(Object.keys(exports), ["convert", "saved", "scale"]);
@@ -124,7 +121,7 @@ const hiddenCapture = structuralFixture(
   ["#1"],
   ["#0", "#2"]
 );
-const exposed = hiddenCapture.run(refusalScope);
+const exposed = hiddenCapture.run();
 assert.equal(exposed.status, "rejected");
 assert.match(exposed.reason, /extra 1: "hidden" \(candidate cell @1\.0\); missing 0; retargeted 0/);
 assert(!existsSync(hiddenCapture.out));
@@ -139,7 +136,7 @@ const reassigned = structuralFixture(
   ["#1"],
   ["#0", "#2", "#3"]
 );
-const immutable = reassigned.run(refusalScope);
+const immutable = reassigned.run();
 assert.equal(immutable.status, "rejected");
 assert.match(immutable.reason, /placement or module linkage/);
 assert(!existsSync(reassigned.out));
@@ -154,7 +151,7 @@ const tdz = structuralFixture(
   ["#1", "#2"],
   ["#0", "#3"]
 );
-const call = tdz.run(refusalScope);
+const call = tdz.run();
 assert.equal(call.status, "rejected");
 assert.match(call.reason, /unit 2 is not a local allocating declaration/);
 assert(!existsSync(tdz.out));
@@ -178,14 +175,14 @@ for (const early of [false, true]) {
   assert.equal(source.after, "function");
   if (early) {
     assert.equal(source.before, "undefined");
-    const refused = chain.run(refusalScope);
+    const refused = chain.run();
     assert.equal(refused.status, "rejected", JSON.stringify(refused));
     assert.match(refused.reason, /linked state already exposes the region of unit 1/);
     assert(!existsSync(chain.out));
   } else {
-    const verdict = chain.run(pivotScope);
+    const verdict = chain.run();
     assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-    assert.deepEqual(chain.run(pivotScope, "--check-output"), verdict);
+    assert.deepEqual(chain.run("--check-output"), verdict);
     const split = await import(pathToFileURL(path.join(chain.out, "entry.mjs")));
     for (const ns of [source, split]) {
       assert.deepEqual(Object.keys(ns), ["after", "before", "later", "outer"]);

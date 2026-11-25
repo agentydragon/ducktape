@@ -66,10 +66,8 @@ valid deployment origin for that static tree and the same host contract:
 echo '{"profile":"browser-page","stableIntrinsicValues":["Math.PI@1"]}' > host.json
 jq --arg path "$(basename "$source")" --arg source "$source" \
   '{entry:$path, chunks:[{path:$path, source:$source, placement:.}]}' proposal.json > deployment.json
-lowersplit deployment.json out --structural \
-  --require normal-completion --host-contract host.json --deployment-origin "$origin"
-lowersplit deployment.json out --structural \
-  --require normal-completion --host-contract host.json --deployment-origin "$origin" --check-output
+lowersplit deployment.json out --host-contract host.json --deployment-origin "$origin"
+lowersplit deployment.json out --host-contract host.json --deployment-origin "$origin" --check-output
 ```
 
 ## Units per canonical owner

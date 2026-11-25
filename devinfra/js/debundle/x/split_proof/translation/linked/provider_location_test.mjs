@@ -30,7 +30,6 @@ const files = prepare(dir, {
 const host = path.join(dir, "host.json");
 writeFileSync(host, JSON.stringify({ profile: "browser-page" }));
 const opts = [
-  "--structural",
   "--deployment-origin",
   "https://example.org",
   "--host-contract",
@@ -39,12 +38,9 @@ const opts = [
   "native-browser-record@1",
 ];
 const out = path.join(dir, "out");
-const { verdict } = lower(files.sourceFile, files.specFile, out, opts, "linked-structural-pivot");
+const { verdict } = lower(files.sourceFile, files.specFile, out, opts);
 assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-assert.deepEqual(
-  lower(files.sourceFile, files.specFile, out, [...opts, "--check-output"], "linked-structural-pivot").verdict,
-  verdict
-);
+assert.deepEqual(lower(files.sourceFile, files.specFile, out, [...opts, "--check-output"]).verdict, verdict);
 
 // An overlay serves lazy assets and providers at their original URLs. Recreate
 // it in a second tree to exercise both module graphs without sharing Node's cache.
@@ -69,14 +65,14 @@ for (const tree of [dir, overlay]) {
 // Same provider file, different re-entry: the lazy module requires an export
 // the real linked provider doesn't have. A root-relative decoy still exists.
 writeFileSync(path.join(dir, lazy), 'import {missing} from "./provider.mjs"; export {missing};');
-const refused = lower(files.sourceFile, files.specFile, path.join(dir, "unlinked"), opts, "linked-structural").verdict;
+const refused = lower(files.sourceFile, files.specFile, path.join(dir, "unlinked"), opts).verdict;
 assert.equal(refused.status, "rejected");
 assert.match(refused.reason, /does not export missing/);
 assert(!existsSync(path.join(dir, "unlinked")));
 const original = readFileSync(path.join(dir, provider), "utf8");
 writeFileSync(path.join(dir, provider), original.replace('import("./lazy.mjs")', 'import("./provider.mjs")'));
 assert.match(
-  lower(files.sourceFile, files.specFile, path.join(dir, "direct"), opts, "linked-structural").verdict.reason,
+  lower(files.sourceFile, files.specFile, path.join(dir, "direct"), opts).verdict.reason,
   /directly requests a linked namespace/
 );
 
@@ -91,13 +87,7 @@ const capture = prepare(captureDir, {
   extras: { "lazy.mjs": 'import {pivot} from "./entry.mjs"; export const sample = () => pivot;' },
   spec: { entry, modules: { [entry]: ["#0", "#1", "#3"], [worker]: ["#2"] }, order: [worker], sequential: true },
 });
-const hidden = lower(
-  capture.sourceFile,
-  capture.specFile,
-  path.join(captureDir, "unsafe"),
-  opts,
-  "linked-structural"
-).verdict;
+const hidden = lower(capture.sourceFile, capture.specFile, path.join(captureDir, "unsafe"), opts).verdict;
 assert.equal(hidden.status, "rejected");
 assert.match(hidden.reason, /linked state already exposes the region of unit 2/);
 
@@ -114,10 +104,10 @@ const nsFiles = prepare(nsDir, {
   spec: { entry, modules: { [entry]: ["#0", "#1", "#3"], [worker]: ["#2"] }, order: [worker], sequential: true },
 });
 const nsOut = path.join(nsDir, "out");
-const nsCheck = (args, scope) => lower(nsFiles.sourceFile, nsFiles.specFile, nsOut, args, scope).verdict;
-assert.equal(nsCheck(opts, "linked-structural-order").status, "certified");
+const nsCheck = (args) => lower(nsFiles.sourceFile, nsFiles.specFile, nsOut, args).verdict;
+assert.equal(nsCheck(opts).status, "certified");
 const relocated = path.join(nsOut, worker);
 const emitted = readFileSync(relocated, "utf8");
 assert.match(emitted, /provider\.mjs/);
 writeFileSync(relocated, emitted.replace("provider.mjs", "other.mjs"));
-assert.equal(nsCheck([...opts, "--check-output"], "linked-structural").status, "rejected");
+assert.equal(nsCheck([...opts, "--check-output"]).status, "rejected");

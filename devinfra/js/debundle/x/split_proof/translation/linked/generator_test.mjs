@@ -44,7 +44,7 @@ if (runCase("generator-creation-and-disk")) {
     ["offset.mjs", "functions.mjs"]
   );
   assert.equal(test.verdict.status, "certified", test.log);
-  assert.equal(test.verdict.guarantee, "normal-completion", test.log);
+  assert.equal(test.verdict.guarantee, "normal-equivalence", test.log);
   const checked = lower(test.files.sourceFile, test.files.specFile, test.out, ["--check-output"]);
   assert.deepEqual(checked.verdict, test.verdict, checked.log);
 
@@ -172,9 +172,9 @@ if (runCase("retained-generators")) {
     ["#5"],
     ["#0", "#1", "#2", "#3", "#4", "#6"]
   );
-  const moved = retained.run("linked-structural-pivot");
+  const moved = retained.run();
   assert.equal(moved.status, "certified", JSON.stringify(moved));
-  assert.deepEqual(retained.run("linked-structural-pivot", "--check-output"), moved);
+  assert.deepEqual(retained.run("--check-output"), moved);
   const entryFile = path.join(retained.out, "entry.mjs");
   for (const file of [retained.sourceFile, entryFile]) {
     const { alias, stream, asyncStream, update, unrelated } = await import(pathToFileURL(file).href);
@@ -204,7 +204,7 @@ if (runCase("retained-generators")) {
   const reparsed = readFileSync(entryFile, "utf8");
   assert(reparsed.includes(spelling));
   writeFileSync(entryFile, reparsed.replace("/* keep me */", "/* different spelling */"));
-  assert.equal(retained.run("linked-structural", "--check-output").status, "rejected");
+  assert.equal(retained.run("--check-output").status, "rejected");
 }
 
 if (runCase("retained-generator-observes-initializer")) {
@@ -218,7 +218,7 @@ if (runCase("retained-generator-observes-initializer")) {
     ["#0", "#1", "#3"]
   );
   assert.equal((await import(pathToFileURL(reached.sourceFile).href)).before, undefined);
-  const denied = reached.run("linked-structural");
+  const denied = reached.run();
   assert.equal(denied.status, "rejected", JSON.stringify(denied));
   assert.match(denied.reason, /already exposes the region of unit 2/);
 }

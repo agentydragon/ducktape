@@ -3,11 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parse } from "acorn";
-import { structuralFixture } from "./harness.mjs";
-
-const pivotScope = "linked-structural-pivot";
-const movesScope = "linked-structural-moves";
-const refusalScope = "linked-structural";
+import { assertStrategyAttempts, structuralFixture } from "./harness.mjs";
 
 // Creating the class stores the initializer; only construction reads `later`.
 const instanceField = structuralFixture(
@@ -19,9 +15,9 @@ const instanceField = structuralFixture(
   ["#1"],
   ["#0", "#2", "#3"]
 );
-const instanceFieldVerdict = instanceField.run(pivotScope);
+const instanceFieldVerdict = instanceField.run();
 assert.equal(instanceFieldVerdict.status, "certified", JSON.stringify(instanceFieldVerdict));
-assert.deepEqual(instanceField.run(pivotScope, "--check-output"), instanceFieldVerdict);
+assert.deepEqual(instanceField.run("--check-output"), instanceFieldVerdict);
 for (const file of [instanceField.sourceFile, path.join(instanceField.out, "entry.mjs")]) {
   const { before, C } = await import(pathToFileURL(file));
   assert.equal(before, 3);
@@ -36,9 +32,9 @@ const staticField = structuralFixture(
   ["#1"],
   ["#0", "#2"]
 );
-const staticFieldVerdict = staticField.run(pivotScope);
+const staticFieldVerdict = staticField.run();
 assert.equal(staticFieldVerdict.status, "certified", JSON.stringify(staticFieldVerdict));
-assert.deepEqual(staticField.run(pivotScope, "--check-output"), staticFieldVerdict);
+assert.deepEqual(staticField.run("--check-output"), staticFieldVerdict);
 for (const file of [staticField.sourceFile, path.join(staticField.out, "entry.mjs")]) {
   const { before, C } = await import(pathToFileURL(file));
   assert.equal(before, 3);
@@ -54,7 +50,7 @@ const eagerField = structuralFixture(
   ["#1"],
   ["#0", "#2"]
 );
-const eagerFieldVerdict = eagerField.run(refusalScope);
+const eagerFieldVerdict = eagerField.run();
 assert.equal(eagerFieldVerdict.status, "rejected");
 assert.match(eagerFieldVerdict.reason, /unit 1 is not a local allocating declaration/);
 
@@ -66,10 +62,15 @@ const opaqueContext = structuralFixture(
   ["#1"],
   ["#0", "#2"]
 );
-const opaqueContextVerdict = opaqueContext.run(refusalScope);
+const opaqueContextVerdict = opaqueContext.run();
 assert.equal(opaqueContextVerdict.status, "rejected", JSON.stringify(opaqueContextVerdict));
 assert.match(opaqueContextVerdict.reason, /opaque unit requires source-module or method context/);
 assert.equal(opaqueContextVerdict.reason_code, "structural_opaque_unit_context");
+const opaqueAttempts = assertStrategyAttempts(opaqueContextVerdict, 2);
+assert.equal(
+  opaqueAttempts.find(({ strategy }) => strategy === "structural").reason_code,
+  opaqueContextVerdict.reason_code
+);
 assert(!existsSync(opaqueContext.out));
 
 const typedArraySource = `import { seed } from "./provider.mjs";
@@ -87,10 +88,10 @@ const safe = structuralFixture(
   "export const seed = 9;"
 );
 
-const certified = safe.run(pivotScope);
+const certified = safe.run();
 assert.equal(certified.status, "certified", JSON.stringify(certified));
-assert.equal(certified.guarantee, "normal-completion");
-assert.deepEqual(safe.run(pivotScope, "--check-output"), certified);
+assert.equal(certified.guarantee, "normal-equivalence");
+assert.deepEqual(safe.run("--check-output"), certified);
 
 const multipleMoves = structuralFixture(
   "multiple-moves",
@@ -99,10 +100,10 @@ const multipleMoves = structuralFixture(
   ["#0", "#1", "#4", "#5"],
   "export const seed = 9;"
 );
-const reordered = multipleMoves.run(movesScope);
+const reordered = multipleMoves.run();
 assert.equal(reordered.status, "certified", JSON.stringify(reordered));
-assert.equal(reordered.guarantee, "normal-completion");
-assert.deepEqual(multipleMoves.run(movesScope, "--check-output"), reordered);
+assert.equal(reordered.guarantee, "normal-equivalence");
+assert.deepEqual(multipleMoves.run("--check-output"), reordered);
 
 for (const file of [safe.sourceFile, path.join(safe.out, "entry.mjs"), path.join(multipleMoves.out, "entry.mjs")]) {
   const namespace = await import(pathToFileURL(file));
@@ -115,7 +116,7 @@ for (const file of [safe.sourceFile, path.join(safe.out, "entry.mjs"), path.join
 
 const worker = path.join(safe.out, "scroll.mjs");
 writeFileSync(worker, readFileSync(worker, "utf8").replace("amount + 1", "amount + 2"));
-const changed = safe.run(refusalScope, "--check-output");
+const changed = safe.run("--check-output");
 assert.equal(changed.status, "rejected");
 assert.match(changed.reason, /differs from its generated ESTree/);
 
@@ -129,10 +130,12 @@ const laterCapture = structuralFixture(
   ["#1", "#3"],
   ["#0", "#2", "#4"]
 );
-const capture = laterCapture.run(refusalScope);
+const capture = laterCapture.run();
 assert.equal(capture.status, "rejected", JSON.stringify(capture));
 assert.match(capture.reason, /unit 1 has access to the moved region of unit 3/);
 assert.equal(capture.reason_code, "structural_moved_region_access");
+const captureAttempts = assertStrategyAttempts(capture, 2);
+assert.equal(captureAttempts.find(({ strategy }) => strategy === "structural").reason_code, capture.reason_code);
 assert(!existsSync(laterCapture.out));
 
 const deferredPair = structuralFixture(
@@ -144,9 +147,9 @@ const deferredPair = structuralFixture(
   ["#1", "#2"],
   ["#0", "#3"]
 );
-const pair = deferredPair.run(movesScope);
+const pair = deferredPair.run();
 assert.equal(pair.status, "certified", JSON.stringify(pair));
-assert.deepEqual(deferredPair.run(movesScope, "--check-output"), pair);
+assert.deepEqual(deferredPair.run("--check-output"), pair);
 for (const file of [deferredPair.sourceFile, path.join(deferredPair.out, "entry.mjs")]) {
   const { bytes, inspect } = await import(pathToFileURL(file));
   assert.equal(inspect(bytes[0]), 18);
@@ -164,9 +167,9 @@ const interleaved = structuralFixture(
   ["#1", "#2", "#3", "#4"],
   ["#0", "#5"]
 );
-const group = interleaved.run(movesScope);
+const group = interleaved.run();
 assert.equal(group.status, "certified", JSON.stringify(group));
-assert.deepEqual(interleaved.run(movesScope, "--check-output"), group);
+assert.deepEqual(interleaved.run("--check-output"), group);
 const emittedGroup = parse(readFileSync(path.join(interleaved.out, "scroll.mjs"), "utf8"), {
   sourceType: "module",
   ecmaVersion: "latest",
@@ -196,7 +199,7 @@ for (const access of ["peek()", "receiver.value"]) {
     ["#0", "#1", "#2", "#6"]
   );
   assert.equal((await import(pathToFileURL(active.sourceFile))).before, "undefined");
-  const refused = active.run(refusalScope);
+  const refused = active.run();
   assert.equal(refused.status, "rejected", JSON.stringify(refused));
   assert.match(refused.reason, /linked state already exposes the region of unit 5/);
   assert(!existsSync(active.out));
@@ -214,7 +217,7 @@ const reentry = structuralFixture(
   ["#0", "#1", "#2", "#5"]
 );
 assert.equal((await import(pathToFileURL(reentry.sourceFile))).before, "undefined");
-const observed = reentry.run(refusalScope);
+const observed = reentry.run();
 assert.equal(observed.status, "rejected", JSON.stringify(observed));
 assert.match(observed.reason, /linked state already exposes the region of unit 4/);
 assert(!existsSync(reentry.out));
@@ -227,16 +230,16 @@ const retainedReader = `var observe = () => later;
    var later = 2;
    export { before, independent, later };`;
 const one = structuralFixture("retained-capture-one-pivot", retainedReader, ["#2"], ["#0", "#1", "#3", "#4"]);
-const oneVerdict = one.run(pivotScope);
+const oneVerdict = one.run();
 assert.equal(oneVerdict.status, "certified", JSON.stringify(oneVerdict));
-assert.deepEqual(one.run(pivotScope, "--check-output"), oneVerdict);
+assert.deepEqual(one.run("--check-output"), oneVerdict);
 for (const file of [one.sourceFile, path.join(one.out, "entry.mjs")]) {
   const values = await import(pathToFileURL(file));
   assert.equal(values.before, undefined);
   assert.equal(values.later, 2);
 }
 const two = structuralFixture("retained-capture-two-pivots", retainedReader, ["#2", "#3"], ["#0", "#1", "#4"]);
-const twoVerdict = two.run(refusalScope);
+const twoVerdict = two.run();
 assert.equal(twoVerdict.status, "rejected", JSON.stringify(twoVerdict));
 assert.match(twoVerdict.reason, /unit 0 has access to the moved region of unit 3/);
 assert.equal(twoVerdict.reason_code, "structural_moved_region_access");

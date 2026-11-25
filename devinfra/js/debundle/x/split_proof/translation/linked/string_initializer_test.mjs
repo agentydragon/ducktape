@@ -11,9 +11,9 @@ const closed = structuralFixture(
   ["#1"],
   ["#0", "#2"]
 );
-const certified = closed.run("linked-structural-pivot");
+const certified = closed.run();
 assert.equal(certified.status, "certified");
-assert.deepEqual(closed.run("linked-structural-pivot", "--check-output"), certified);
+assert.deepEqual(closed.run("--check-output"), certified);
 for (const file of [closed.sourceFile, path.join(closed.out, "entry.mjs")]) {
   assert.deepEqual(observe(file, "pattern"), { pattern: "^[^az]*[b]" });
 }
@@ -50,7 +50,7 @@ for (const [name, before, expression, expected] of [
     ["#1"],
     ["#0", "#2"]
   );
-  const refused = test.run("linked-structural", "--host-contract", page);
+  const refused = test.run("--host-contract", page);
   assert.equal(refused.status, "rejected");
   assert.match(refused.reason, /unit 1 is not a local allocating declaration/);
   assert(!existsSync(test.out));
@@ -66,5 +66,5 @@ const fresh = structuralFixture(
   ["#0", "#3", "#4"]
 );
 assert.deepEqual(observe(fresh.sourceFile, "inspect"), { inspect: [false, "a\\/b", 0, "(?:)"] });
-assert.equal(fresh.run("linked-structural", "--host-contract", page).status, "rejected");
+assert.equal(fresh.run("--host-contract", page).status, "rejected");
 assert(!existsSync(fresh.out));

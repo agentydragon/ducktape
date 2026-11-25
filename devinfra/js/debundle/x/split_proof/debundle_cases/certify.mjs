@@ -9,13 +9,27 @@ const certificateTimeoutMs = 90_000;
 
 function verdict(result, phase) {
   if (result.failure) throw new Error(`${phase}: ${result.failure} after ${result.elapsedMs} ms`);
-  const v = JSON.parse(result.stdout);
-  if (v.requested === "normal-completion") {
-    if (result.code === 0 && v.status === "certified" && ["normal-completion", "all-outcomes"].includes(v.guarantee))
-      return { guarantee: v.guarantee, scope: v.scope };
-    if (result.code === 1 && v.status === "rejected" && typeof v.reason === "string")
-      return { blocker: v.reason, ...(v.reason_code && { code: v.reason_code }) };
+  const value = JSON.parse(result.stdout);
+  if (result.code === 0 && value.status === "certified" && value.guarantee === "normal-equivalence") {
+    if (
+      typeof value.strategy !== "string" ||
+      !Array.isArray(value.premises) ||
+      typeof value.every_ending_matches !== "boolean"
+    )
+      throw new Error("certified verdict is missing its strategy evidence: " + result.stdout);
+    return {
+      strategy: value.strategy,
+      premises: value.premises,
+      everyEndingMatches: value.every_ending_matches,
+      ...(value.strategy_attempts && { strategy_attempts: value.strategy_attempts }),
+    };
   }
+  if (result.code === 1 && value.status === "rejected" && typeof value.reason === "string")
+    return {
+      blocker: value.reason,
+      ...(value.reason_code && { code: value.reason_code }),
+      ...(value.strategy_attempts && { strategy_attempts: value.strategy_attempts }),
+    };
   throw new Error("inconsistent lowersplit status or verdict: " + result.stdout);
 }
 
@@ -46,38 +60,24 @@ export function certify({ stage, chunkFile, plan, want, providers, run, lowerspl
     writeFileSync(spec, JSON.stringify({ ...plan, privateEntryBody: true }));
     manifest = writeDeployment(path.join(stage, chunkFile), spec, output);
   }
-  const refusals = {};
-  for (const mode of deployment ? ["structural"] : ["structural", "default"]) {
-    const args = [
-      manifest,
-      output,
-      "--require",
-      "normal-completion",
-      ...(mode === "structural" ? ["--structural"] : []),
-      ...(deployment ? ["--deployment-origin", "https://corpus.example"] : []),
-    ];
-    const emission = verdict(run(lowersplit, args, { timeout: certificateTimeoutMs }), `${mode} emission`);
-    if (emission.blocker !== undefined) {
-      refusals[mode] = emission;
-      continue;
-    }
-    const disk = verdict(
-      run(lowersplit, [...args, "--check-output"], { timeout: certificateTimeoutMs }),
-      `${mode} disk check`
-    );
-    if (disk.blocker !== undefined) return { outcome: "error:disk", mode, emission, disk };
-    const matches = (r) => !r.failure && r.code === 0 && r.stdout === want;
-    const original = matches(nodeRun("original", chunkFile, stage));
-    const emitted = matches(nodeRun("emitted", path.join(output, entry), stage));
-    return {
-      outcome: original && emitted ? "certified" : "error:runtime",
-      mode,
-      ...(deployment && { origin: "https://corpus.example" }),
-      emission,
-      disk,
-      original,
-      emitted,
-    };
-  }
-  return { outcome: "rejected", refusals };
+
+  const args = [manifest, output, ...(deployment ? ["--deployment-origin", "https://corpus.example"] : [])];
+  const emission = verdict(run(lowersplit, args, { timeout: certificateTimeoutMs }), "emission");
+  if (emission.blocker !== undefined) return { outcome: "rejected", emission };
+  const disk = verdict(run(lowersplit, [...args, "--check-output"], { timeout: certificateTimeoutMs }), "disk check");
+  if (disk.blocker !== undefined) return { outcome: "error:disk", emission, disk };
+  const matches = (result) => !result.failure && result.code === 0 && result.stdout === want;
+  const original = matches(nodeRun("original", chunkFile, stage));
+  const emitted = matches(nodeRun("emitted", path.join(output, entry), stage));
+  return {
+    outcome: original && emitted ? "certified" : "error:runtime",
+    strategy: emission.strategy,
+    premises: emission.premises,
+    everyEndingMatches: emission.everyEndingMatches,
+    ...(deployment && { origin: "https://corpus.example" }),
+    emission,
+    disk,
+    original,
+    emitted,
+  };
 }

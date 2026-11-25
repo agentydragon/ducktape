@@ -19,12 +19,14 @@ function run(args) {
 }
 
 function certificate(args) {
-  const { status, stdout } = run([...args, "--structural"]);
+  const { status, stdout } = run(args);
   const verdict = JSON.parse(stdout);
-  assert.equal(verdict.requested, "normal-completion", stdout);
   assert.equal(verdict.status, status === 0 ? "certified" : "rejected", stdout);
-  if (status === 0) assert(["all-outcomes", "normal-completion"].includes(verdict.guarantee), stdout);
-  else assert.equal(verdict.guarantee, null, stdout);
+  if (status === 0) {
+    assert.equal(verdict.guarantee, "normal-equivalence", stdout);
+    assert.equal(verdict.strategy, "structural", stdout);
+    assert(Array.isArray(verdict.premises), stdout);
+  } else assert.equal(verdict.guarantee, null, stdout);
   return verdict;
 }
 
@@ -65,7 +67,7 @@ for (const source of process.argv.slice(2)) {
     const verdict = certificate(args);
     if (verdict.status === "rejected") {
       // A refusal without an observed difference is inconclusive.
-      assert.equal(verdict.scope, "linked-structural");
+      assert.equal(verdict.strategy, "structural");
       assert(!existsSync(args[1]));
       assert.equal(strategy, "advance-second", JSON.stringify(verdict));
       results.push({ library, strategy, outcome: "unknown", reason: verdict.reason });
@@ -86,7 +88,7 @@ for (const source of process.argv.slice(2)) {
     assert.equal(verdict.scope, "linked-structural-pivot");
     assert.equal(verdict.hostProfile, "ecmascript");
     assert.match(
-      verdict.assumptions.join("\n"),
+      verdict.premises.join("\n"),
       /Object\.defineProperty@1:.*intrinsic\.Object\.defineProperty.*no observable effects/
     );
     assert.deepEqual(certificate([...args, "--check-output"]), verdict);
@@ -96,7 +98,7 @@ for (const source of process.argv.slice(2)) {
       strategy: "advance-second-portable",
       outcome: "certified",
       scope: verdict.scope,
-      assumptions: verdict.assumptions,
+      premises: verdict.premises,
     });
   }
 }

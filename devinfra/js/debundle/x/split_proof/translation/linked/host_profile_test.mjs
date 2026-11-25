@@ -63,7 +63,7 @@ for (const [binding, defaulted] of [
   const verdict = test.run("--host-contract", profile);
   assert.equal(verdict.status, "certified", JSON.stringify(verdict));
   assert.equal(verdict.hostProfile, "browser-page");
-  assert.equal(verdict.assumptions.length, local ? 0 : 1);
+  assert.equal(verdict.premises.length, local ? 0 : 1);
   assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
   // Supply the single observation promised by the profile in this Node realm.
   globalThis.window = {};
@@ -188,7 +188,7 @@ for (const args of [[], [literal("absent")]]) {
       assert(!existsSync(test.out));
     } else {
       assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-      assert.deepEqual(verdict.assumptions, []);
+      assert.deepEqual(verdict.premises, []);
       assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
       for (const file of [test.sourceFile, path.join(test.out, entry)]) {
         assert.equal((await import(pathToFileURL(file).href)).result, 42);
@@ -219,7 +219,7 @@ if (includesCase("shadowed-host-bindings")) {
   );
   const localVerdict = lexical.run("--host-contract", profile);
   assert.equal(localVerdict.status, "certified", JSON.stringify(localVerdict));
-  assert.deepEqual(localVerdict.assumptions, []);
+  assert.deepEqual(localVerdict.premises, []);
   for (const file of [lexical.sourceFile, path.join(lexical.out, entry)]) {
     assert.equal((await import(pathToFileURL(file).href)).result, "local");
   }
@@ -282,7 +282,7 @@ for (const pageSkipsError of [true, false]) {
     continue;
   }
   assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.assumptions.length, 1);
+  assert.equal(verdict.premises.length, 1);
   assert.deepEqual(moduleEvaluationOrder(out, entry), [...order, entry]);
   globalThis.window = {};
   try {
@@ -315,14 +315,14 @@ for (const active of [false, true]) {
       ]),
     ])
   );
-  const { status, reason, assumptions } = test.run("--host-contract", profile);
+  const { status, reason, premises } = test.run("--host-contract", profile);
   if (active) {
     assert.equal(status, "rejected");
     assert.match(reason, /ambient constructor URL is reached/);
     assert(!existsSync(test.out));
   } else {
     assert.equal(status, "certified", reason);
-    assert.deepEqual(assumptions, []);
+    assert.deepEqual(premises, []);
     for (const file of [test.sourceFile, path.join(test.out, entry)]) {
       const mod = await import(pathToFileURL(file).href);
       assert.equal(mod.result, "help");

@@ -14,19 +14,18 @@ function place(modules) {
   writeFileSync(spec, JSON.stringify({ entry, modules, order: [provider], sequential: true }));
 }
 function check(dir, status, ...args) {
-  const request = "normal-completion";
-  const run = spawnSync(
-    process.env.LOWERSPLIT,
-    [writeDeployment(source, spec, dir), dir, "--require", request, ...args],
-    {
-      encoding: "utf8",
-    }
-  );
+  const run = spawnSync(process.env.LOWERSPLIT, [writeDeployment(source, spec, dir), dir, ...args], {
+    encoding: "utf8",
+  });
   assert.equal(run.status, status === "certified" ? 0 : 1, run.stdout + run.stderr);
   const verdict = JSON.parse(run.stdout);
-  assert.equal(verdict.requested, request);
   assert.equal(verdict.status, status);
-  assert.equal(verdict.guarantee, status === "certified" ? request : null);
+  assert.equal(verdict.guarantee, status === "certified" ? "normal-equivalence" : null);
+  if (status === "certified") {
+    assert.equal(typeof verdict.strategy, "string");
+    assert(Array.isArray(verdict.premises));
+    assert.equal(typeof verdict.every_ending_matches, "boolean");
+  }
 }
 place({ [provider]: ["#0"], [entry]: ["#1"] });
 const out = path.join(process.env.TEST_TMPDIR, "good");

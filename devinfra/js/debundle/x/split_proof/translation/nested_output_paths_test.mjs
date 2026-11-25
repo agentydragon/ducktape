@@ -90,17 +90,15 @@ writeFileSync(
   })
 );
 const certifiedOut = path.join(work, "certified-nested");
-const certified = spawnSync(
-  process.env.LOWERSPLIT,
-  [writeDeployment(astPath, specPath, certifiedOut), certifiedOut, "--require", "all-outcomes"],
-  {
-    encoding: "utf8",
-  }
-);
+const certified = spawnSync(process.env.LOWERSPLIT, [writeDeployment(astPath, specPath, certifiedOut), certifiedOut], {
+  encoding: "utf8",
+});
 const certifiedVerdict = JSON.parse(certified.stdout.trim().split("\n").at(-1));
 assert.equal(certified.status, 0, certified.stdout + certified.stderr);
 assert.equal(certifiedVerdict.status, "certified", JSON.stringify(certifiedVerdict));
-assert.equal(certifiedVerdict.guarantee, "all-outcomes");
+assert.equal(certifiedVerdict.guarantee, "normal-equivalence");
+assert.equal(certifiedVerdict.strategy, "slice");
+assert.equal(certifiedVerdict.every_ending_matches, true);
 assert.equal(
   spawnSync(
     process.execPath,
@@ -122,7 +120,7 @@ assert(certifiedText.includes(expectedTarget), certifiedText);
 writeFileSync(certifiedEntry, certifiedText.replace(expectedTarget, 'from "../other/right.mjs"'));
 const wrongTarget = spawnSync(
   process.env.LOWERSPLIT,
-  [writeDeployment(astPath, specPath, certifiedOut), certifiedOut, "--require", "all-outcomes", "--check-output"],
+  [writeDeployment(astPath, specPath, certifiedOut), certifiedOut, "--check-output"],
   { encoding: "utf8" }
 );
 const wrongTargetVerdict = JSON.parse(wrongTarget.stdout.trim().split("\n").at(-1));
@@ -132,11 +130,9 @@ assert.match(wrongTargetVerdict.reason, /output module public\/entry\.mjs differ
 
 // A trailing separator names the same output directory. Publication stages beside it.
 const slashOut = path.join(work, "certified-trailing-slash");
-const slashed = spawnSync(
-  process.env.LOWERSPLIT,
-  [writeDeployment(astPath, specPath, slashOut), slashOut + path.sep, "--require", "all-outcomes"],
-  { encoding: "utf8" }
-);
+const slashed = spawnSync(process.env.LOWERSPLIT, [writeDeployment(astPath, specPath, slashOut), slashOut + path.sep], {
+  encoding: "utf8",
+});
 const slashedVerdict = JSON.parse(slashed.stdout.trim().split("\n").at(-1));
 assert.equal(slashed.status, 0, slashed.stdout + slashed.stderr);
 assert.equal(slashedVerdict.status, "certified", JSON.stringify(slashedVerdict));

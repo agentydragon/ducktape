@@ -54,8 +54,8 @@ if (runCase("imported-tag")) {
   const options = ["--host-contract", contract];
   const checked = lower(files.sourceFile, files.specFile, out, options);
   assertCertifiedResult({ ...checked, files, out }, "ab7c");
-  assert(checked.verdict.assumptions.some((a) => a.includes("intrinsic Array constructor")));
-  assert(checked.verdict.assumptions.some((a) => a.includes("intrinsic Array.from function")));
+  assert(checked.verdict.premises.some((a) => a.includes("intrinsic Array constructor")));
+  assert(checked.verdict.premises.some((a) => a.includes("intrinsic Array.from function")));
   const verify = () => lower(files.sourceFile, files.specFile, out, [...options, "--check-output"]);
   assert.equal(verify().verdict.status, "certified");
   const entry = path.join(out, "entry.mjs");

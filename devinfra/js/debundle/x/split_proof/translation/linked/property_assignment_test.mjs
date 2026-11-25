@@ -87,7 +87,7 @@ for (const [scenario, values, initialFields] of [
 
   const disk = lower(files.sourceFile, files.specFile, out, ["--check-output"]);
   assert.equal(disk.verdict.status, "certified", disk.log);
-  assert.equal(disk.verdict.guarantee, "normal-completion", disk.log);
+  assert.equal(disk.verdict.guarantee, "normal-equivalence", disk.log);
   for (const file of [files.sourceFile, path.join(out, entry)]) {
     const namespace = await import(pathToFileURL(file).href);
     assert.deepEqual(Object.keys(namespace), ["Codes"]);

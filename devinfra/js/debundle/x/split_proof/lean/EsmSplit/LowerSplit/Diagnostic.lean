@@ -378,7 +378,7 @@ private def runDiagnostic (chunk : DeploymentChunk) (out : System.FilePath) (opt
   IO.eprintln (if options.force then "rejected; written anyway (--force)" else "rejected; nothing written"); return 1
 
 def diagnostic (args : List String) : IO UInt32 := do
-  if args.contains "--require" || args.contains "--check-output" || args.contains "--structural" || args.contains "--deployment-origin" then
+  if args.contains "--check-output" || args.contains "--deployment-origin" then
     IO.eprintln "certification options cannot be combined with --diagnostic"
     return 1
   IO.println "Diagnostic run. Any emitted files are an uncertified preview."

@@ -18,7 +18,7 @@ if (includesCase("page-reference")) {
   assert(!existsSync(test.out));
   const verdict = test.run("--host-contract", profile);
   assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-  assert.deepEqual(verdict.assumptions, [
+  assert.deepEqual(verdict.premises, [
     "window returns the same page object without observable effects throughout initialization",
   ]);
   assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
@@ -45,7 +45,7 @@ if (includesCase("page-aliases")) {
   assert.match(test.run().reason, /unsupported global self/);
   const verdict = test.run("--host-contract", profile);
   assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-  assert.deepEqual(verdict.assumptions, [
+  assert.deepEqual(verdict.premises, [
     "typeof globalThis is object without observable effects throughout initialization",
     "typeof self is object without observable effects throughout initialization",
     "self returns the same page object without observable effects throughout initialization",
@@ -73,7 +73,7 @@ if (includesCase("guarded-global")) {
   assert.match(test.run().reason, /unsupported global global/);
   const verdict = test.run("--host-contract", profile);
   assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-  assert.deepEqual(verdict.assumptions, [
+  assert.deepEqual(verdict.premises, [
     "typeof global is undefined without observable effects throughout initialization",
   ]);
   assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
@@ -97,7 +97,7 @@ for (const deferred of [false, true]) {
         "globalThis returns the same page object without observable effects throughout initialization",
         "window.Error returns the stable host reference window.Error without observable effects throughout initialization",
       ];
-  assert.deepEqual(verdict.assumptions, assumptions);
+  assert.deepEqual(verdict.premises, assumptions);
   assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
   for (const file of [test.sourceFile, path.join(test.out, entry)]) {
     const { result } = await import(pathToFileURL(file).href);
@@ -141,7 +141,7 @@ if (includesCase("bulk-browser-bindings")) {
   );
   const verdict = test.run("--host-contract", profile);
   assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-  assert.deepEqual(verdict.assumptions, [
+  assert.deepEqual(verdict.premises, [
     "typeof document is object without observable effects throughout initialization",
     "typeof fetch is function without observable effects throughout initialization",
     "typeof process is undefined without observable effects throughout initialization",
@@ -172,7 +172,7 @@ for (const reached of [false, true]) {
     assert(!existsSync(test.out));
   } else {
     assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-    assert.deepEqual(verdict.assumptions, []);
+    assert.deepEqual(verdict.premises, []);
     assert.deepEqual(test.run("--host-contract", profile, "--check-output"), verdict);
   }
 }

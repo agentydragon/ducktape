@@ -66,5 +66,4 @@ python3 ../editor_306/inventory.py canonical_editor_placement.json selected_edit
 
 Omit `--trial` for the per-unit ledger. For a fresh proof, pass the resulting placement
 through the [deployment manifest](../editor_306/README.md), using the same host
-contract and origin. Run `lowersplit` with `--structural --require normal-completion`,
-then repeat with `--check-output`.
+contract and origin. Run `lowersplit`, then repeat with `--check-output`.

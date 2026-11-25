@@ -14,12 +14,11 @@ for (const [name, object, action, expected, accepted] of [
     `const table = ${object}; const alias = table; ${action} const chosen = table.value; export { table, chosen };`,
     { "entry.mjs": ["#1", "#2", "#4"], "records.mjs": ["#0", "#3"] }
   );
-  const scope = accepted ? "linked-structural-pivot" : "linked-structural";
-  const verdict = test.run(scope);
+  const verdict = test.run();
   assert.deepEqual(observe(test.sourceFile, "chosen"), { chosen: expected });
   if (accepted) {
     assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-    assert.deepEqual(test.run(scope, "--check-output"), verdict);
+    assert.deepEqual(test.run("--check-output"), verdict);
     assert.deepEqual(observe(path.join(test.out, "entry.mjs"), "chosen"), { chosen: expected });
   } else {
     assert.equal(verdict.status, "rejected");
@@ -40,7 +39,7 @@ for (const [name, object, action, expected, accepted] of [
     "const table = {value: 1}; const chosen = table.value; export {table, chosen};",
     { "entry.mjs": ["#0", "#2"], "records.mjs": ["#1"] }
   );
-  assert.equal(test.run("linked-structural").status, "rejected");
+  assert.equal(test.run().status, "rejected");
   assert(!existsSync(test.out));
   assert.deepEqual(observe(test.sourceFile, "chosen"), { chosen: 1 });
   const preview = path.join(test.dir, "preview");

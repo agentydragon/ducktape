@@ -27,7 +27,7 @@ assert.match(tag.run().reason, /unsupported computed class key/);
 const run = lower(tag.sourceFile, tag.specFile, tag.out, options);
 assertCertifiedResult({ ...run, files: tag, out: tag.out }, true);
 assert.ok(
-  run.verdict.assumptions.includes(
+  run.verdict.premises.includes(
     "Symbol.toStringTag returns the well-known toStringTag symbol without observable effects throughout initialization"
   )
 );

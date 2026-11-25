@@ -107,8 +107,6 @@ def certify_deployment(runfiles: Runfiles, editor: Path, origin: str, pinned: di
         resolve(runfiles, os.environ["LOWERSPLIT"]),
         deployment,
         out,
-        "--require",
-        "normal-completion",
         "--host-contract",
         profile,
         "--deployment-origin",
@@ -117,7 +115,6 @@ def certify_deployment(runfiles: Runfiles, editor: Path, origin: str, pinned: di
         "native-browser-record@1",
         "--deployment-import-map",
         "empty@1",
-        "--structural",
     ]
     verdicts = []
     for stage, args in [("emit", []), ("check-output", ["--check-output"])]:
@@ -126,11 +123,12 @@ def certify_deployment(runfiles: Runfiles, editor: Path, origin: str, pinned: di
         assert run.returncode == 0, run.stdout + run.stderr
         verdict = json.loads(run.stdout.strip().splitlines()[-1])
         assert verdict["status"] == "certified", verdict
-        assert verdict["requested"] == verdict["guarantee"] == "normal-completion", verdict
+        assert verdict["guarantee"] == "normal-equivalence", verdict
+        assert verdict["strategy"] == "structural", verdict
         assert verdict["scope"] == "linked-structural-moves", verdict
         assert verdict["hostProfile"] == "browser-page", verdict
         for premise in ["Math.PI@1:", "native-browser-record@1:", "empty@1:"]:
-            assert any(assumption.startswith(premise) for assumption in verdict["assumptions"]), verdict
+            assert any(assumption.startswith(premise) for assumption in verdict["premises"]), verdict
         verdicts.append(verdict)
     assert verdicts[0] == verdicts[1]
     assert {path.relative_to(out).as_posix() for path in out.rglob("*") if path.is_file()} == set(pinned) | added_paths
@@ -443,7 +441,6 @@ async def test_bare_import(
             resolve(runfiles, os.environ["LOWERSPLIT"]),
             write_deployment(tmp_path / "deployment.json", entry, spec),
             out,
-            "--structural",
             "--host-contract",
             profile,
             "--deployment-origin",
@@ -459,8 +456,9 @@ async def test_bare_import(
             )
             assert run.returncode == 0, run.stdout + run.stderr
             verdict = json.loads(run.stdout)
+            assert verdict["strategy"] == "structural"
             assert verdict["scope"] == "linked-structural-pivot"
-            assert any(s.startswith("empty@1:") for s in verdict["assumptions"])
+            assert any(s.startswith("empty@1:") for s in verdict["premises"])
 
         for overlay, mapped in [(False, False), (False, True), (True, False)]:
             if overlay:
@@ -531,7 +529,6 @@ async def test_native_metadata_preset(
             resolve(runfiles, os.environ["LOWERSPLIT"]),
             write_deployment(tmp_path / "deployment.json", source, spec),
             out,
-            "--structural",
             "--host-contract",
             profile,
             "--deployment-origin",
@@ -544,6 +541,7 @@ async def test_native_metadata_preset(
                 subprocess.run, [*command, *args], capture_output=True, text=True, check=False
             )
             assert run.returncode == 0, run.stdout + run.stderr
+            assert json.loads(run.stdout)["strategy"] == "structural"
             assert json.loads(run.stdout)["scope"] == "linked-structural-pivot"
 
         for overlay in [False, True]:

@@ -4,9 +4,6 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { root, structuralFixture } from "./harness.mjs";
 
-const pivotScope = "linked-structural-pivot";
-const refusalScope = "linked-structural";
-
 const arithmetic = structuralFixture(
   "nested-number-products",
   `var marker = 1; var limit = { bytes: 3 * 128 * 256, fraction: (5 + 2) % 4 / 2,
@@ -14,9 +11,9 @@ const arithmetic = structuralFixture(
   ["#1"],
   ["#0", "#2"]
 );
-const product = arithmetic.run(pivotScope);
+const product = arithmetic.run();
 assert.equal(product.status, "certified", JSON.stringify(product));
-assert.deepEqual(arithmetic.run(pivotScope, "--check-output"), product);
+assert.deepEqual(arithmetic.run("--check-output"), product);
 for (const file of [arithmetic.sourceFile, path.join(arithmetic.out, "entry.mjs")]) {
   const { limit } = await import(pathToFileURL(file));
   assert.equal(limit.bytes, 98304);
@@ -38,7 +35,7 @@ for (const [name, before, operand] of [
     ["#1"],
     ["#0", "#2"]
   );
-  const denied = unsafe.run(refusalScope, "--host-contract", arithmeticProfile);
+  const denied = unsafe.run("--host-contract", arithmeticProfile);
   assert.equal(denied.status, "rejected", JSON.stringify(denied));
   assert.match(denied.reason, /unit 1 is not a local allocating declaration/, name);
   assert(!existsSync(unsafe.out));
@@ -52,9 +49,9 @@ const regexRecord = structuralFixture(
   ["#1"],
   ["#0", "#2"]
 );
-const record = regexRecord.run(pivotScope);
+const record = regexRecord.run();
 assert.equal(record.status, "certified", JSON.stringify(record));
-assert.deepEqual(regexRecord.run(pivotScope, "--check-output"), record);
+assert.deepEqual(regexRecord.run("--check-output"), record);
 for (const file of [regexRecord.sourceFile, path.join(regexRecord.out, "entry.mjs")]) {
   const { patterns } = await import(pathToFileURL(file));
   assert.equal(Object.getPrototypeOf(patterns.first), RegExp.prototype);
@@ -79,7 +76,7 @@ for (const [name, patch, value] of [
     ["#1"],
     ["#0", "#2"]
   );
-  const denied = effect.run(refusalScope, "--host-contract", profile);
+  const denied = effect.run("--host-contract", profile);
   assert.equal(denied.status, "rejected", JSON.stringify(denied));
   assert.match(denied.reason, /unit 1 is not a local allocating declaration/);
   assert(!existsSync(effect.out));

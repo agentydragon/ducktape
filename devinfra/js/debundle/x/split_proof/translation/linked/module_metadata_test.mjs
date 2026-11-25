@@ -23,25 +23,23 @@ for (const member of ["url", "env.MODE"]) {
   const out = path.join(dir, "out");
   const profile = path.join(dir, "host.json");
   writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
-  const options = ["--structural", "--deployment-origin", "https://example.org", "--host-contract", profile];
+  const options = ["--deployment-origin", "https://example.org", "--host-contract", profile];
   if (member === "url") {
-    const scope = "linked-structural-pivot";
-    const { verdict } = lower(sourceFile, specFile, out, options, scope);
+    const { verdict } = lower(sourceFile, specFile, out, options);
     assert.equal(verdict.status, "certified", JSON.stringify(verdict));
-    assert.deepEqual(lower(sourceFile, specFile, out, [...options, "--check-output"], scope).verdict, verdict);
+    assert.equal(verdict.strategy, "structural", JSON.stringify(verdict));
+    assert.deepEqual(lower(sourceFile, specFile, out, [...options, "--check-output"]).verdict, verdict);
   } else {
-    const { verdict } = lower(sourceFile, specFile, out, options, "linked-structural");
+    const { verdict } = lower(sourceFile, specFile, out, options);
     assert.equal(verdict.status, "rejected", JSON.stringify(verdict));
     assert.match(verdict.reason, /unit 0: expected import.meta.url/);
     assert(!existsSync(out));
     const preset = [...options, "--deployment-preset", "native-browser-record@1"];
-    const accepted = lower(sourceFile, specFile, out, preset, "linked-structural-pivot").verdict;
+    const accepted = lower(sourceFile, specFile, out, preset).verdict;
     assert.equal(accepted.status, "certified", JSON.stringify(accepted));
-    assert(accepted.assumptions.some((p) => p.startsWith("native-browser-record@1:")));
-    assert.deepEqual(
-      lower(sourceFile, specFile, out, [...preset, "--check-output"], "linked-structural-pivot").verdict,
-      accepted
-    );
+    assert.equal(accepted.strategy, "structural", JSON.stringify(accepted));
+    assert(accepted.premises.some((p) => p.startsWith("native-browser-record@1:")));
+    assert.deepEqual(lower(sourceFile, specFile, out, [...preset, "--check-output"]).verdict, accepted);
   }
 }
 
@@ -104,7 +102,6 @@ assert.equal(wrongRecord.calls(), 0);
 const profile = path.join(root, "browser-profile.json");
 writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
 const preset = [
-  "--structural",
   "--deployment-origin",
   "https://example.org",
   "--host-contract",
@@ -114,7 +111,7 @@ const preset = [
 ];
 
 // Relocating the reader changes its module record even if the initializer is identical.
-const changed = lower(files.sourceFile, files.specFile, path.join(dir, "checked"), preset, "linked-structural").verdict;
+const changed = lower(files.sourceFile, files.specFile, path.join(dir, "checked"), preset).verdict;
 assert.match(changed.reason, /URL-sensitive unit 0 moved/);
 
 // Native creation is complete before user code installs this getter. It now
@@ -130,13 +127,7 @@ const later = prepare(post, {
   provider: "",
   spec: placement("#3", ["#0", "#1", "#2", "#4"]),
 });
-const refused = lower(
-  later.sourceFile,
-  later.specFile,
-  path.join(post, "checked"),
-  preset,
-  "linked-structural"
-).verdict;
+const refused = lower(later.sourceFile, later.specFile, path.join(post, "checked"), preset).verdict;
 assert.equal(refused.status, "rejected");
 assert.match(refused.reason, /unit 0 has access to the moved region of unit 3/);
 const forced = path.join(post, "preview");

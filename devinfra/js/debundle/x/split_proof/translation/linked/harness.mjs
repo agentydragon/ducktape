@@ -138,7 +138,7 @@ export function observe(file, exportNames) {
   return Object.fromEntries(names.map((name) => [name, observed.values[name]]));
 }
 
-export function lower(source, spec, out, extra = [], scope = "linked-programs") {
+export function lower(source, spec, out, extra = []) {
   const result = spawnSync(process.env.LOWERSPLIT, [writeDeployment(source, spec, out), out, ...extra], {
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
@@ -157,9 +157,12 @@ export function lower(source, spec, out, extra = [], scope = "linked-programs") 
   });
   assert.equal(verdictLines.length, 1, log);
   const verdict = JSON.parse(verdictLines[0]);
-  const requireFlag = extra.indexOf("--require");
-  assert.equal(verdict.requested, requireFlag === -1 ? "normal-completion" : extra[requireFlag + 1], log);
-  assert.equal(verdict.scope, scope, log);
+  assert.equal(verdict.guarantee, verdict.status === "certified" ? "normal-equivalence" : null, log);
+  if (verdict.status === "certified") {
+    assert.equal(typeof verdict.strategy, "string", log);
+    assert(Array.isArray(verdict.premises), log);
+    assert.equal(typeof verdict.every_ending_matches, "boolean", log);
+  }
   assert.equal(result.status, verdict.status === "certified" ? 0 : 1, log);
   return { verdict, log };
 }
@@ -255,7 +258,28 @@ export function workerSplit(name, source, entryUnits = ["#1"]) {
 
 export function assertCertified(verdict, log) {
   assert.equal(verdict.status, "certified", log);
-  assert(["all-outcomes", "normal-completion"].includes(verdict.guarantee), log);
+  assert.equal(verdict.guarantee, "normal-equivalence", log);
+  assert.equal(typeof verdict.strategy, "string", log);
+  assert(Array.isArray(verdict.premises), log);
+  assert.equal(typeof verdict.every_ending_matches, "boolean", log);
+  if (verdict.strategy === "linked") assertStrategyAttempts(verdict, 1);
+}
+
+export function assertStrategyAttempts(verdict, expectedCount) {
+  assert(Array.isArray(verdict.strategy_attempts), JSON.stringify(verdict));
+  assert.equal(Object.hasOwn(verdict, "strategy"), false, JSON.stringify(verdict));
+  assert.equal(verdict.strategy_attempts.length, expectedCount, JSON.stringify(verdict));
+  assert.deepEqual(
+    verdict.strategy_attempts.map(({ strategy }) => strategy),
+    ["structural", "linked"].slice(0, expectedCount)
+  );
+  for (const attempt of verdict.strategy_attempts) {
+    assert.equal(typeof attempt.strategy, "string", JSON.stringify(attempt));
+    assert(Object.hasOwn(attempt, "reason_code"), JSON.stringify(attempt));
+    assert(attempt.reason_code === null || typeof attempt.reason_code === "string", JSON.stringify(attempt));
+    assert.equal(typeof attempt.reason, "string", JSON.stringify(attempt));
+  }
+  return verdict.strategy_attempts;
 }
 
 export function assertCertifiedResult({ files, out, verdict, log }, result) {
@@ -291,8 +315,7 @@ export function structuralSplit(name, source, modules, provider = "") {
   const dir = path.join(root, name);
   const files = prepare(dir, { source, provider, spec: { entry, modules } });
   const out = path.join(dir, "out");
-  const run = (scope, ...args) =>
-    lower(files.sourceFile, files.specFile, out, ["--structural", ...args], scope).verdict;
+  const run = (...args) => lower(files.sourceFile, files.specFile, out, args).verdict;
   return { ...files, dir, out, run };
 }
 
@@ -302,7 +325,7 @@ export function structuralFixture(name, source, moved, kept, provider = "") {
 
 // A forced preview must exhibit the specific behavior change that certification rejected.
 export function assertRejectedResultChange(test, before, after) {
-  assert.equal(test.run("linked-structural").status, "rejected");
+  assert.equal(test.run().status, "rejected");
   assert(!existsSync(test.out));
   const preview = path.join(test.dir, "preview");
   forcePreview(test, preview);

@@ -22,12 +22,10 @@ const files = prepare(dir, {
   },
 });
 const out = path.join(dir, "out");
-const options = ["--structural"];
-const { verdict: proof, log } = lower(files.sourceFile, files.specFile, out, options, "linked-structural-order");
+const options = [];
+const { verdict: proof, log } = lower(files.sourceFile, files.specFile, out, options);
+assert.equal(proof.strategy, "structural", log);
 assertCertified(proof, log);
-assert.deepEqual(
-  lower(files.sourceFile, files.specFile, out, [...options, "--check-output"], "linked-structural-order").verdict,
-  proof
-);
+assert.deepEqual(lower(files.sourceFile, files.specFile, out, [...options, "--check-output"]).verdict, proof);
 for (const file of [files.sourceFile, path.join(out, "entry.mjs")])
   assert.equal((await import(pathToFileURL(file))).answer, 512);

@@ -12,6 +12,7 @@ structure CertificationRefusal where
   reason : String
   reasonCode : Option String := none
   observation : Option Json := none
+  details : List (String × Json) := []
 
 /-- Optional stderr timing keeps stdout available for the certification verdict. -/
 def timePhase (enabled : Bool) (phase : String) (action : Unit → IO α) : IO α := do

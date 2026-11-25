@@ -26,7 +26,7 @@ const brand = fixture(
 );
 const run = lower(brand.sourceFile, brand.specFile, brand.out, options);
 assertCertifiedResult({ ...run, files: brand, out: brand.out }, true);
-assert.deepEqual(run.verdict.assumptions, [
+assert.deepEqual(run.verdict.premises, [
   "Symbol returns the intrinsic Symbol function without observable effects throughout initialization",
 ]);
 assert.deepEqual(brand.run(...options, "--check-output"), run.verdict);
@@ -50,7 +50,7 @@ const shadow = fixture(
 );
 const shadowRun = lower(shadow.sourceFile, shadow.specFile, shadow.out, options);
 assertCertifiedResult({ ...shadowRun, files: shadow, out: shadow.out }, 42);
-assert.deepEqual(shadowRun.verdict.assumptions, []);
+assert.deepEqual(shadowRun.verdict.premises, []);
 
 const namedField = fixture(
   "computed-field-function-name",

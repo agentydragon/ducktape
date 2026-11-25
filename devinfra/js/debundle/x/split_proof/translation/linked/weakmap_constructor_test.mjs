@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { forcePreview, lower, prepare, root } from "./harness.mjs";
+import { assertStrategyAttempts, forcePreview, lower, prepare, root } from "./harness.mjs";
 
 const profile = path.join(root, "browser-page.json");
 writeFileSync(profile, JSON.stringify({ profile: "browser-page" }));
@@ -20,20 +20,20 @@ function fixture(name, crossed, init = "new WeakMap()") {
 }
 
 const neutral = fixture("neutral", "var phase = 1");
-for (const [scope, flags, reason, reasonCode] of [
-  [
-    "linked-structural",
-    ["--structural"],
-    /unit 1 is not a local allocating declaration/,
-    "structural_non_local_allocation",
-  ],
-  ["linked-programs", [], /host value window\.WeakMap is constructed/, undefined],
+for (const [reason, reasonCode] of [
+  [/unit 1 is not a local allocating declaration/, "structural_non_local_allocation"],
+  [/host value window\.WeakMap is constructed/, undefined],
 ]) {
-  const { verdict } = lower(neutral.files.sourceFile, neutral.files.specFile, neutral.out, [...opts, ...flags], scope);
+  const { verdict } = lower(neutral.files.sourceFile, neutral.files.specFile, neutral.out, opts);
   assert.equal(verdict.status, "rejected");
   assert.equal(verdict.guarantee, null);
   assert.match(verdict.reason, reason);
-  if (reasonCode) assert.equal(verdict.reason_code, reasonCode);
+  if (reasonCode) {
+    assert.equal(verdict.reason_code, reasonCode);
+    const structural = assertStrategyAttempts(verdict, 2).find(({ strategy }) => strategy === "structural");
+    assert.equal(structural.reason_code, reasonCode);
+    assert.match(structural.reason, reason);
+  }
   assert(!existsSync(neutral.out));
 }
 
@@ -96,13 +96,7 @@ for (const [name, crossed] of [
   ["shadowed", "export const WeakMap = " + sentinelCtor],
 ]) {
   const test = fixture(name, crossed);
-  const { verdict } = lower(
-    test.files.sourceFile,
-    test.files.specFile,
-    test.out,
-    ["--structural", ...opts],
-    "linked-structural"
-  );
+  const { verdict } = lower(test.files.sourceFile, test.files.specFile, test.out, opts);
   assert.equal(verdict.status, "rejected", JSON.stringify(verdict));
   assert(!existsSync(test.out));
   assert.deepEqual(observe(test.files.sourceFile, name), { log: [], shared: true });

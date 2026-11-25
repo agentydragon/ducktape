@@ -10,7 +10,7 @@ mkdir -p "$WORK/tmp"
 jq -j '.source' "$kit/fixture.json" > "$WORK/source.mjs"
 jq '.spec' "$kit/fixture.json" > "$WORK/spec.json"
 node --input-type=module -e 'console.log((await import(process.argv[1])).result)' "$WORK/source.mjs"
-TMPDIR="$WORK/tmp" "$SPLITTER" "$WORK/source.mjs" "$WORK/spec.json" "$WORK/out" --require normal-completion
+TMPDIR="$WORK/tmp" "$SPLITTER" "$WORK/source.mjs" "$WORK/spec.json" "$WORK/out"
 ```
 
 The generated certificate used witness fuel 32. On a BuildBuddy runner with `lean -j1`, the declarations preceding the execution theorem elaborated in 1.71 seconds and used 1,301,268 KiB of peak resident memory. The complete certificate crossed a 2,450 MiB RSS guard with both proof tactic orders.

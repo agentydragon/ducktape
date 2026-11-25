@@ -235,7 +235,7 @@ for (let seed = 0; seed < 8; seed++) {
     continue;
   }
   assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", JSON.stringify(verdict));
+  assert.equal(verdict.guarantee, "normal-equivalence", JSON.stringify(verdict));
   assert(existsSync(path.join(out, "entry.mjs")), "the entry module is published");
   assert(existsSync(path.join(out, fixture.fragment)), "the moved provider module is published");
   assert(existsSync(path.join(out, "provider.mjs")), "the actual named provider is published beside the split");

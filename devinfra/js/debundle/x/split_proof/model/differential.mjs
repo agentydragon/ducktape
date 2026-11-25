@@ -952,16 +952,14 @@ async function certifyOpaqueSplit(job) {
   const dir = writeFiles({ [entry]: job.source, "spec.json": JSON.stringify(spec) });
   const out = path.join(dir, "out");
   const manifest = writeDeployment(path.join(dir, entry), path.join(dir, "spec.json"), out);
-  const level = "all-outcomes";
   const run = (...extra) => {
     checkpoint(`${label}: ${extra.length ? "check-output" : "emit"}`);
-    const result = spawnSync(lowersplit, [manifest, out, "--structural", "--require", level, ...extra], {
+    const result = spawnSync(lowersplit, [manifest, out, ...extra], {
       encoding: "utf8",
     });
     assert.ifError(result.error);
     assert([0, 1].includes(result.status), `${label}: ${result.stdout}${result.stderr}`);
     const verdict = JSON.parse(result.stdout);
-    assert.equal(verdict.requested, level, label);
     assert.equal(verdict.status, result.status === 0 ? "certified" : "rejected", label);
     return verdict;
   };
@@ -984,7 +982,9 @@ async function certifyOpaqueSplit(job) {
   }
   if (expectedRefusal !== undefined)
     failures.push(`${label}: certified a split with expected refusal "${expectedRefusal}"`);
-  assert.equal(emitted.guarantee, level, label);
+  assert.equal(emitted.guarantee, "normal-equivalence", label);
+  assert.equal(typeof emitted.strategy, "string", label);
+  assert(Array.isArray(emitted.premises), label);
   assert.deepEqual(run("--check-output"), emitted, label);
   const splitNode = await runFileInNode(path.join(out, entry));
   if (!sameRun(job.node, splitNode) || !same(asked(job.node), asked(splitNode))) {

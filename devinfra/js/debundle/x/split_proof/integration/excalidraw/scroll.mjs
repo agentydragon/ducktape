@@ -165,7 +165,6 @@ if (strictSelection.length === 2) {
     [
       writeDeployment(strictSource, spec, out),
       out,
-      "--structural",
       "--host-contract",
       profile,
       "--deployment-origin",
@@ -176,7 +175,6 @@ if (strictSelection.length === 2) {
   if (pair.error) throw pair.error;
   assert.equal(pair.status, 1, pair.stdout + pair.stderr);
   const refused = JSON.parse(pair.stdout.trimEnd().split("\n").at(-1));
-  assert.equal(refused.scope, "linked-structural");
   assert.match(refused.reason, /; extra 3: .*; missing 0; retargeted 0$/);
   report.entryMismatch = refused.reason;
   assert(!existsSync(out));
@@ -184,7 +182,7 @@ if (strictSelection.length === 2) {
 
 const run = spawnSync(
   process.env.LOWERSPLIT,
-  [writeDeployment(strictSource, spec, out), out, "--require", "normal-completion", "--host-contract", profile],
+  [writeDeployment(strictSource, spec, out), out, "--host-contract", profile],
   { encoding: "utf8" }
 );
 if (run.error) throw run.error;
@@ -208,10 +206,8 @@ writeFileSync(
   )
 );
 assert.equal(first.type, "ImportDeclaration");
-assert.equal(verdict.requested, "normal-completion");
 assert.equal(verdict.status, "rejected");
 assert.equal(verdict.guarantee, null);
-assert.equal(verdict.scope, "linked-programs", JSON.stringify(verdict));
 assert.equal(verdict.reason, "statement 354: unsupported linked expression ImportExpression");
 assert(!existsSync(out), "a rejected trial published modules");
 

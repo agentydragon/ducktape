@@ -13,9 +13,9 @@ const chain = fixture(
   ["#0", "#2", "#3", "#4"],
   ["#1", "#5"]
 );
-const emitted = chain.run("linked-structural-moves");
+const emitted = chain.run();
 assert.equal(emitted.status, "certified", JSON.stringify(emitted));
-assert.deepEqual(chain.run("linked-structural-moves", "--check-output"), emitted);
+assert.deepEqual(chain.run("--check-output"), emitted);
 for (const file of [chain.sourceFile, path.join(chain.out, "entry.mjs")]) {
   assert.deepEqual(observe(file, "limit"), { limit: 8 - 1e-5 });
 }
@@ -55,7 +55,7 @@ const special = fixture(
   ["#1", "#2", "#3", "#4"],
   ["#0", "#5"]
 );
-assert.equal(special.run("linked-structural-moves").status, "certified");
+assert.equal(special.run().status, "certified");
 for (const file of [special.sourceFile, path.join(special.out, "entry.mjs")]) {
   const ns = await import(pathToFileURL(file));
   assert(Object.is(ns.zero, -0));

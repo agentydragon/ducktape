@@ -13,9 +13,9 @@ const ok = fixture(
   ["#1", "#2", "#3", "#4"],
   ["#0", "#5"]
 );
-const verdict = ok.run("linked-structural-moves");
+const verdict = ok.run();
 assert.equal(verdict.status, "certified");
-assert.deepEqual(ok.run("linked-structural-moves", "--check-output"), verdict);
+assert.deepEqual(ok.run("--check-output"), verdict);
 for (const f of [ok.sourceFile, path.join(ok.out, "entry.mjs")]) {
   const { first, second } = await import(pathToFileURL(f));
   assert.notEqual(first, second);
@@ -68,9 +68,9 @@ const retained = fixture(
   ["#1", "#2", "#4"],
   ["#0", "#3", "#5"]
 );
-const retainedVerdict = retained.run("linked-structural-moves");
+const retainedVerdict = retained.run();
 assert.equal(retainedVerdict.status, "certified");
-assert.deepEqual(retained.run("linked-structural-moves", "--check-output"), retainedVerdict);
+assert.deepEqual(retained.run("--check-output"), retainedVerdict);
 for (const f of [retained.sourceFile, path.join(retained.out, "entry.mjs")]) {
   assert.deepEqual(observe(f, ["result", "other"]), { result: 1, other: { k: 2 } });
 }

@@ -55,9 +55,7 @@ def test_relocated_stack_key(tmp_path: Path) -> None:
         json.dumps({"entry": ENTRY, "chunks": [{"path": ENTRY, "source": source.name, "spec": spec.name}]})
     )
     args = [str(deployment), str(out)]
-    checked = subprocess.run(
-        [splitter, *args, "--require", "normal-completion"], text=True, capture_output=True, check=False
-    )
+    checked = subprocess.run([splitter, *args], text=True, capture_output=True, check=False)
     assert checked.returncode == 1, checked.stderr
     assert json.loads(checked.stdout)["status"] == "rejected"
     assert not out.exists()
