@@ -3,6 +3,7 @@ import EsmSplit.CoreJS.StringInitializer
 import EsmSplit.CoreJS.StableIntrinsic
 import EsmSplit.CoreJS.Request.Allocation
 import EsmSplit.CoreJS.SyntaxMatch
+import EsmSplit.CoreJS.StructuralRefusal
 
 /-! Compare linked units and check the frame conditions
 for moving one allocating unit earlier. The evaluator supplies the generic
@@ -195,15 +196,16 @@ theorem pivotFrameOk_sound {w : World} {ready : State w} {pre crossed : List Pre
 
 def checkPivot {w : World} (ready : State w)
     (pre crossed : List PreparedUnit) (pivot : LinkedUnit) :
-    Except String (PLift (CheckedPivot ready (pre.map (·.unit)) (crossed.map (·.unit)) pivot)) := do
+    Except StructuralRefusal (PLift (CheckedPivot ready (pre.map (·.unit)) (crossed.map (·.unit)) pivot)) := do
   let ordinal := pivot.id
   let r := ordinal + 1
   if ok : pivotFrameOk ready pre crossed pivot = true then
     return ⟨pivotFrameOk_sound ok⟩
   else if accessOk ready [] (outsideRegion r) then
     let offender := (pre ++ crossed).find? (fun u => !(unitEnvOk r u))
-    throw s!"unit {(offender.map (·.unit.id)).getD ordinal} has access to the moved region of unit {ordinal}"
-  else throw s!"the linked state already exposes the region of unit {ordinal}"
+    throw (.coded .movedRegionAccess
+      s!"unit {(offender.map (·.unit.id)).getD ordinal} has access to the moved region of unit {ordinal}")
+  else throw (.unclassified s!"the linked state already exposes the region of unit {ordinal}")
 
 /-- One candidate per object row with a direct edge into the pivot. The
 move checker must still prove that each candidate is isolated. -/

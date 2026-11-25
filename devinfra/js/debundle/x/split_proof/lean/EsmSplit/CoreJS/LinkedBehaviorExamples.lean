@@ -112,7 +112,7 @@ private def publicAliases (names : List Name) : Program :=
   ⟨m.name, [m]⟩
 
 #guard match LinkedBehavior.checkStructuralSchedule [] (publicAliases ["a", "b", "c", "d"]) (publicAliases []) {} with
-  | .error reason => reason == "entry exports resolve to different linked cells; extra 0; missing 4: " ++
+  | .error reason => reason.reason == "entry exports resolve to different linked cells; extra 0; missing 4: " ++
       "\"a\" (original cell @1.0), \"b\" (original cell @1.0), \"c\" (original cell @1.0), …; retargeted 0"
   | .ok _ => false
 
@@ -141,14 +141,6 @@ example (w : World) (final : State w)
   · cbv <;> rfl
 
 open Lean (Json)
-
-#guard LinkedBehavior.structuralRefusalCode "unit 3 is not a local allocating declaration" ==
-  some .nonLocalAllocation
-#guard LinkedBehavior.structuralRefusalCode "unit 0 has access to the moved region of unit 1" ==
-  some .movedRegionAccess
-#guard LinkedBehavior.structuralRefusalCode "statement 2: opaque unit requires source-module or method context" ==
-  some .opaqueUnitContext
-#guard LinkedBehavior.structuralRefusalCode "linking exhausted fuel" == none
 
 -- The insertion order and a negative decimal distinguish this literal from a reparse of
 -- canonical printed JSON. The string also exercises quotes, escapes and Lean comment syntax.
