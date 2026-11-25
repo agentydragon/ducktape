@@ -38,7 +38,7 @@ _TEST_DATA = [
 _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"}
 
 # These valid Lean-backed shards exceed the medium budget or have timed out in CI.
-_LONG_TIMEOUT_TESTS = {
+_LONG_TIMEOUT_TESTS = [
     "browser_globals_test",
     "flat_patterns_test",
     "host_profile_test",
@@ -51,7 +51,7 @@ _LONG_TIMEOUT_TESTS = {
     "provider_programs_test",
     "sequence_test",
     "switch_test",
-}
+]
 
 js_test(
     name = "joint_static_test",
