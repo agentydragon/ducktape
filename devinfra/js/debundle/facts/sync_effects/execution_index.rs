@@ -39,7 +39,7 @@ use crate::analysis_inputs::{
     ProofDependencies, ResolvedBindingValueInput, ResolvedNativeOperationInput,
     SelectedBindingValueInput, SelectedNativeOperationInput, ValueInputEvidence, ValueInputRef,
 };
-use crate::execution_evidence::SourceLocation;
+use crate::execution_evidence::SourceLocator;
 use crate::facts::abstract_domain::builtins::{
     self, ArgSel, IntrinsicOp, Invocation, Row, iteration_row,
 };
@@ -12041,21 +12041,8 @@ impl PreparedCallableCapabilities {
             .known_array_iterator_protocol_mutation_with(integrity)
     }
 
-    pub(crate) fn locate_value_inputs(
-        &mut self,
-        source: Option<&(String, js_ast::SourceLineIndex)>,
-    ) {
-        let locate = |span: Span| {
-            let (path, index) = source?;
-            let (start_line, end_line, start_column) =
-                index.line_range_and_start_column_for_span(span)?;
-            Some(crate::execution_evidence::SourceLocation {
-                source_path: path.clone(),
-                start_line,
-                end_line,
-                start_column: Some(start_column),
-            })
-        };
+    pub(crate) fn locate_value_inputs(&mut self, source: Option<SourceLocator<'_>>) {
+        let locate = |span| source?.span(span);
         for input in &mut self.index.resolved_value_inputs {
             input.evidence.declaration_location = locate(input.declaration_span);
             input.evidence.initializer_location = locate(input.initializer_span);
@@ -12080,21 +12067,8 @@ impl PreparedCallableCapabilities {
         }
     }
 
-    pub(crate) fn locate_native_operation_inputs(
-        &mut self,
-        source: Option<&(String, js_ast::SourceLineIndex)>,
-    ) {
-        let locate = |span: Span| {
-            let (path, index) = source?;
-            let (start_line, end_line, start_column) =
-                index.line_range_and_start_column_for_span(span)?;
-            Some(crate::execution_evidence::SourceLocation {
-                source_path: path.clone(),
-                start_line,
-                end_line,
-                start_column: Some(start_column),
-            })
-        };
+    pub(crate) fn locate_native_operation_inputs(&mut self, source: Option<SourceLocator<'_>>) {
+        let locate = |span| source?.span(span);
         for input in &mut self.index.resolved_native_operation_inputs {
             input.evidence.declaration_location = locate(input.declaration_span);
             input.evidence.initializer_location = locate(input.call_span);
@@ -12107,21 +12081,10 @@ impl PreparedCallableCapabilities {
     pub(crate) fn locate_native_writes(
         &mut self,
         chunk_id: &str,
-        source: Option<&(String, js_ast::SourceLineIndex)>,
+        source: Option<SourceLocator<'_>>,
     ) {
         self.index.source_chunk_id = Some(chunk_id.to_owned());
-        let source_location = |span| {
-            source.and_then(|(path, index)| {
-                let (start_line, end_line, start_column) =
-                    index.line_range_and_start_column_for_span(span)?;
-                Some(SourceLocation {
-                    source_path: path.clone(),
-                    start_line,
-                    end_line,
-                    start_column: Some(start_column),
-                })
-            })
-        };
+        let source_location = |span| source?.span(span);
         let locate = |witness: &mut NativeMutationWitness| {
             if witness.receiver_roots.is_empty() {
                 return;
