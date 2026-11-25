@@ -207,3 +207,21 @@ const literalMethod = sequentialSplit(
   ["class.mjs"]
 );
 assertCertifiedResult(literalMethod, true);
+
+const namedInnerScope = sequentialSplit(
+  "named-class-expression-inner-scope",
+  `let Named = "outer";
+  const C = class Named {
+    static self = Named;
+    static rejectsWrite() {
+      try { Named = 1; return false; }
+      catch (error) { return true; }
+    }
+    self() { return Named; }
+  };
+  export const result = C.self === C && C.rejectsWrite() && new C().self() === C &&
+    Named === "outer" && C.name === "Named";`,
+  { [entry]: ["#0", "#1", "#2"] },
+  []
+);
+assertCertifiedResult(namedInnerScope, true);

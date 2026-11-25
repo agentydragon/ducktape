@@ -143,6 +143,32 @@ assert.deepEqual(
   await nodeOutcome(`data:text/javascript,${encodeURIComponent(taggedSource)}`)
 );
 
+// A named class expression has an immutable name binding throughout its body.
+// That binding is distinct from an outer binding with the same spelling.
+const namedClassSource = `
+  let Named = "outer";
+  const C = class Named {
+    static self = Named;
+    static fromArrow = () => Named;
+    static rejectsWrite() {
+      try { Named = 1; return false; }
+      catch (error) { return true; }
+    }
+    self() { return Named; }
+  };
+  console.log(C.self === C, C.fromArrow() === C, C.rejectsWrite(), new C().self() === C, Named, C.name);
+`;
+const [namedClass] = run([dumpSource(namedClassSource)], true);
+const namedClassNode = spawnSync(process.execPath, ["--input-type=module", "-e", namedClassSource], {
+  encoding: "utf8",
+});
+assert.equal(namedClassNode.status, 0, namedClassNode.stderr);
+assert.deepEqual(namedClass.out, namedClassNode.stdout.split("\n").slice(0, -1));
+assert.deepEqual(
+  [namedClass.end, namedClass.detail],
+  await nodeOutcome(`data:text/javascript,${encodeURIComponent(namedClassSource)}`)
+);
+
 // `corejs --ast` lowers under the recorded Node host: `console.log` output, the model's `Object`
 // functions, fresh symbols and undeclared names. Certification profiles still refuse these names.
 const hostSources = [

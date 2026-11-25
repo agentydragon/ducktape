@@ -1178,6 +1178,10 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
     Except String Expr := do
   let id ← j.getObjVal? "id"
   let name ← if id == .null then pure hint else identifier id
+  -- A named class gets an immutable inner binding around its heritage and body.
+  -- The frontend annotates references to that cell as function-local even when
+  -- the class appears at module scope.
+  let classScope := inFunction || id != .null
   let parent ← j.getObjVal? "superClass"
   let body ← j.getObjVal? "body"
   unless (← field body "type") == "ClassBody" do throw "expected class body"
@@ -1207,7 +1211,7 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
       let table := Expr.var (privateTable spelling)
       let label := "#" ++ spelling
       if tag == "PropertyDefinition" then
-        let init ← if value == .null then pure .undef else linkedExpr profile imports inFunction label value
+        let init ← if value == .null then pure .undef else linkedExpr profile imports classScope label value
         members := members.push (.field false (.str "") (.prim (.privateSlot .addField) [table, .this, init]))
       else
         unless (← field member "kind") == "method" do throw "unsupported private accessor"
@@ -1225,16 +1229,16 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
         if let some sym := (ambientSymbolMember? keyNode).bind WellKnownSymbol.ofMember? then
           unless profile.ambientSymbols do throw "unsupported computed class key"
           pure (s!"[{sym.description}]", Expr.prim (.wellKnownSymbol sym) [])
-        else pure ("", ← linkedExpr profile imports inFunction "" keyNode)
+        else pure ("", ← linkedExpr profile imports classScope "" keyNode)
       else if !static then
         if ← isAnonymousDefinition value then throw "unsupported function or class named by a computed field key"
-        pure ("", ← linkedExpr profile imports inFunction "" keyNode)
+        pure ("", ← linkedExpr profile imports classScope "" keyNode)
       else throw "unsupported computed class key"
     else do
       let name ← moduleExportName keyNode
       pure (name, Expr.str name)
     if tag == "PropertyDefinition" then
-      let init ← if value == .null then pure .undef else linkedExpr profile imports inFunction key value
+      let init ← if value == .null then pure .undef else linkedExpr profile imports classScope key value
       members := members.push (.field static keyExpr init)
     else
       match ← field member "kind" with
@@ -1247,7 +1251,7 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
       | other => throw s!"unsupported class method kind {other}"
   let ordered := brands.toList ++ members.toList
   let cls ← if parent == .null then pure (Expr.cls name (id != .null) ctor ordered)
-    else pure (Expr.derived name (id != .null) (← linkedExpr profile imports inFunction "" parent) ordered derivedCtor)
+    else pure (Expr.derived name (id != .null) (← linkedExpr profile imports classScope "" parent) ordered derivedCtor)
   if declarations.isEmpty then return cls
   return .call (.func (.mk "" .arrow false [] (declarations ++ [.ret cls]))) []
 
