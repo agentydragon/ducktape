@@ -26,3 +26,19 @@ export function classify(expected, mine, node) {
     ? "lenient"
     : "unsound-accept";
 }
+
+// A Lean syntax refusal still reached the checker, but cannot replace a
+// previously comparable verdict. A resolver refusal never reached Lean.
+function coverage(row) {
+  if (row.mine) return 2;
+  return Number(row.outcome === "unsupported:statement kind the model rejects");
+}
+
+export function coverageLosses(baseline, rows, { filtered }) {
+  const actual = new Map(rows.map((row) => [row.id, row]));
+  return baseline.flatMap((prior) => {
+    const row = actual.get(prior.id);
+    if ((!row && filtered) || coverage(prior) <= (row ? coverage(row) : 0)) return [];
+    return [`${prior.id}: lost Lean coverage (${prior.outcome} -> ${row?.outcome ?? "missing"})`];
+  });
+}
