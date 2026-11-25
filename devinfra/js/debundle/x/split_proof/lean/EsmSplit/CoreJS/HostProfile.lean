@@ -6,6 +6,9 @@ namespace CoreJS
 
 inductive HostProfile where
   | empty | browserPage | ecmascript
+  /-- Test-only: the host the Node comparison harness records. `read` never returns it, so
+  certification cannot select it. -/
+  | nodeRecording
   deriving DecidableEq, Repr
 
 namespace HostProfile
@@ -14,6 +17,29 @@ def label : HostProfile → String
   | .empty => "empty"
   | .browserPage => "browser-page"
   | .ecmascript => "ecmascript"
+  | .nodeRecording => "node-recording"
+
+/-- Fresh `Symbol(…)` calls and the ambient well-known symbols are host observations. -/
+def ambientSymbols (p : HostProfile) : Bool := p == .browserPage || p == .nodeRecording
+
+/-- Under the recorded host, the world answers calls of these globals (`hostFunctions`, `hostNamespaces`). -/
+def recordedHostValue (p : HostProfile) (name : String) : Bool :=
+  p == .nodeRecording && (hostFunctions.contains name || (hostNamespaces.lookup name).isSome)
+
+/-- Under the recorded host, a name outside the host catalog is undeclared: reading it throws. -/
+def undeclaredGlobal (p : HostProfile) (name : String) : Bool :=
+  p == .nodeRecording && !(BrowserGlobals.functions.contains name || BrowserGlobals.objects.contains name)
+
+/-- The recorded host's primitive calls: `console.log` and the `Object` functions the model defines. -/
+def recordedPrim (p : HostProfile) (owner key : String) : Option Prim := do
+  guard (p == .nodeRecording)
+  match owner, key with
+  | "console", "log" => some .log
+  | "Object", "defineProperty" => some .defineProperty
+  | "Object", "create" => some .create
+  | "Object", "getPrototypeOf" => some .getPrototypeOf
+  | "Object", "setPrototypeOf" => some .setPrototypeOf
+  | _, _ => none
 
 def read (j : Lean.Json) : Except String HostProfile := do
   unless j == Lean.Json.mkObj [("profile", .str "browser-page")] do

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -116,6 +116,28 @@ assert.deepEqual(
   [tagged.end, tagged.detail],
   await nodeOutcome(`data:text/javascript,${encodeURIComponent(taggedSource)}`)
 );
+
+// `corejs --ast` lowers under the recorded Node host: `console.log` output, the model's `Object`
+// functions, fresh symbols and undeclared names. Certification profiles still refuse these names.
+const hostSources = [
+  'console.log("a", 1 + 2, true);',
+  "const proto = { x: 1 }; const made = Object.create(proto); console.log(made.x, Object.getPrototypeOf(made) === proto);",
+  'const tag = Symbol("tag"); console.log(typeof tag, tag === Symbol("tag")); missing;',
+];
+// Node's ambient Symbol stays the intrinsic constructor throughout these runs.
+const host = run(
+  hostSources.map((source) => ({ ...dumpSource(source), symbolConstructor: true })),
+  true
+);
+for (const [i, source] of hostSources.entries()) {
+  const printed = spawnSync(process.execPath, ["--input-type=module", "-e", source], { encoding: "utf8" });
+  assert.deepEqual(host[i].out, printed.stdout.split("\n").slice(0, -1), source);
+  assert.deepEqual(
+    [host[i].end, host[i].detail],
+    await nodeOutcome(`data:text/javascript,${encodeURIComponent(source)}#host-${i}`),
+    source
+  );
+}
 
 const spec = file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["a", "b"] } }));
 function split(source, args = []) {
