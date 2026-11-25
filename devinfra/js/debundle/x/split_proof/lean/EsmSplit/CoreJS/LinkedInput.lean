@@ -99,6 +99,15 @@ private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (impo
     return (s, bindings, sites.templates.toList)
   return (← FromESTree.linkedUnit imports ast profile, [], sites.templates.toList)
 
+/-- `export default …` lowers concretely. A structural proof can keep it only as a pivot. -/
+private def BodyFormat.lowerDefault (format : BodyFormat) (profile : HostProfile) (imports : List Name)
+    (origin : Nat) (j : Json) : Except String (Stmt × Name × List TemplateSite) := do
+  if let .structural pivots _ := format then
+    unless pivots.contains origin do throw "unsupported opaque default export"
+  let (ast, sites) := (numberSites origin j).run {}
+  let (name, s) ← FromESTree.linkedDefaultExport imports ast profile
+  return (s, name, sites.templates.toList)
+
 private def parse (format : BodyFormat) (profile : HostProfile) (path : String) (nodes : Array Json)
     (base : Nat := 0) (origins : Option (Array Nat) := none) (provider : Bool := false) : Except String Parsed := do
   let mut imports := #[]
@@ -110,13 +119,13 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
   let mut exports := #[]
   let mut templates := #[]
   for (j, i) in nodes.zipIdx do
+    let origin : Except String Nat := match origins with
+      | none => pure (base + i)
+      | some ids => match ids[units.size]? with
+        | some id => pure id
+        | none => throw "emitted body length differs from the placement"
     let decode (ast : Json) (exported : Bool) : Except String (Stmt × List Name × List TemplateSite) := do
-      let origin ← match origins with
-        | none => pure (base + i)
-        | some ids =>
-          let some id := ids[units.size]? | throw "emitted body length differs from the placement"
-          pure id
-      format.lower profile names origin (if provider then some (path, i) else none) ast exported
+      format.lower profile names (← origin) (if provider then some (path, i) else none) ast exported
     match ← typ j with
     | "ImportDeclaration" => pure ()
     -- Neither statement changes the modeled state, so neither gets a unit.
@@ -135,6 +144,12 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
         templates := templates ++ sites.toArray
         units := units.push (i, s, declaration)
         for name in names do exports := exports.push (name, name)
+    | "ExportDefaultDeclaration" =>
+      let (s, name, sites) ← (format.lowerDefault profile names (← origin) (← j.getObjVal? "declaration")).mapError
+        fun why => s!"statement {i}: {why}"
+      templates := templates ++ sites.toArray
+      units := units.push (i, s, j)
+      exports := exports.push ("default", name)
     | _ =>
       let (s, _, sites) ← (decode j false).mapError fun why => s!"statement {i}: {why}"
       templates := templates ++ sites.toArray
@@ -280,7 +295,7 @@ private def decodeFragment (format : BodyFormat) (profile : HostProfile) (source
     throw "placement must cover every original unit once"
   let some entry := P.find P.entry | throw "missing entry placement"
   for (j, i) in nodes.zipIdx do
-    if ["ImportDeclaration", "ExportNamedDeclaration"].contains (← typ j) then
+    if ["ImportDeclaration", "ExportNamedDeclaration", "ExportDefaultDeclaration"].contains (← typ j) then
       unless entry.stmts.contains i do throw s!"original import or export unit {i} must stay in the entry"
   let original ← parse format profile sourcePath nodes base
   if let .structural pivots _ := format then

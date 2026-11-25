@@ -184,6 +184,54 @@ const frozenNode = spawnSync(process.execPath, [path.join(frozenDir, "main.mjs")
 assert.equal(frozenNode.status, 0, frozenNode.stderr);
 assert.deepEqual([frozen.end, frozen.out], ["normal", frozenNode.stdout.split("\n").slice(0, -1)]);
 
+// Default imports and the four forms of `export default`, compared with Node on disk.
+const defaultFiles = {
+  "main.mjs":
+    'import f, { other } from "./f.mjs"; import value from "./value.mjs"; import Shape from "./shape.mjs";' +
+    ' import anonymous from "./anonymous.mjs";' +
+    ' throw f(1) + "," + other + "," + value + "," + new Shape().sides() + "," + anonymous() + "," +' +
+    ' f.name + "," + Shape.name + "," + anonymous.name;',
+  "f.mjs": "export default function named(x) { return x + 1; } export const other = 2;",
+  "value.mjs": "export default 6 * 7;",
+  "shape.mjs": "export default class { sides() { return 4; } }",
+  "anonymous.mjs": 'export default function () { return "anonymous"; }',
+};
+const defaultDir = path.join(dir, "defaults");
+mkdirSync(defaultDir, { recursive: true });
+for (const [name, text] of Object.entries(defaultFiles)) writeFileSync(path.join(defaultDir, name), text);
+const providers = Object.fromEntries(
+  Object.entries(defaultFiles)
+    .filter(([name]) => name !== "main.mjs")
+    .map(([name, text]) => [name, dumpSource(text)])
+);
+const [defaults] = run([{ ...dumpSource(defaultFiles["main.mjs"]), providers }], true);
+assert.deepEqual(
+  [defaults.end, defaults.detail],
+  await nodeOutcome(pathToFileURL(path.join(defaultDir, "main.mjs")).href)
+);
+
+// A certified split keeps `export default` in the entry and moves the binding it reads.
+const defaultSplit = path.join(dir, "default-split");
+mkdirSync(defaultSplit, { recursive: true });
+writeFileSync(
+  path.join(defaultSplit, "bundle.mjs"),
+  'import value from "./value.mjs"; const doubled = value * 2; export default doubled;\n'
+);
+writeFileSync(path.join(defaultSplit, "value.mjs"), "export default 21;\n");
+writeFileSync(
+  path.join(defaultSplit, "spec.json"),
+  JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#2"], "m.mjs": ["#1"] } })
+);
+const defaultOut = path.join(defaultSplit, "out");
+const defaultRun = spawnSync(
+  process.env.LOWERSPLIT,
+  [path.join(defaultSplit, "bundle.mjs"), path.join(defaultSplit, "spec.json"), defaultOut],
+  { encoding: "utf8" }
+);
+const defaultVerdict = JSON.parse(defaultRun.stdout.trim().split("\n").at(-1));
+assert.equal(defaultVerdict.status, "certified", defaultRun.stdout + defaultRun.stderr);
+assert.equal((await import(pathToFileURL(path.join(defaultOut, "entry.mjs")).href)).default, 42);
+
 const spec = file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["a", "b"] } }));
 function split(source, args = []) {
   const ast = file("bundle.json", JSON.stringify(dumpSource(source)));
