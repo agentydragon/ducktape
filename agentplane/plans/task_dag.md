@@ -2482,6 +2482,18 @@ The [storage plan](storage_representations.md#november-24-recurrence-and-storage
 the comparisons. Coordinate any change to what History retains with the journal representation
 decision below.
 
+**Follow-up: duplicated packing in Sampler and History.** The sampler packs its journal,
+reads the events back for export, and History packs the imported events again for cursor-
+and kind-filtered reads. Use one exported event range to measure encode/decode CPU, WAL
+and retained bytes on both sides. Compare keeping separate layouts, sharing only the packer
+code, and reusing sealed data across export. Sharing code alone would still compress and
+store the events twice. Recommend which work, if any, to remove while preserving sampler
+recovery during a History outage, idempotent import, filtered replay and independent retention.
+This decision can follow the block-size experiment; it does not gate tuning either writer.
+Commit the experiment's dated results on real staging event windows and its repeatable
+measurement procedure in ducktape. Include the observed CPU, I/O and storage trade-offs by
+block target, codec and level; publish aggregate measurements without event payloads.
+
 ### `JOURNAL_REPRESENTATION_DESIGN` — History as stored journals
 
 **Decision, unscheduled; operator, 2026-11-14 UTC:** "journals" sounds like where History should
