@@ -29,7 +29,7 @@ DebundleAnalysisInfo = provider(
 
 def _debundle_apply_impl(ctx):
     out_dir = ctx.actions.declare_directory(ctx.label.name + ".out")
-    plan = _spec_plan(ctx)
+    plan = _spec_plan(ctx, ctx.attr.package_roots)
 
     saved = ctx.attr.analysis[DebundleAnalysisInfo]
     analysis = saved.analysis
@@ -66,7 +66,7 @@ def _debundle_apply_impl(ctx):
 
 def _resolve_placement_impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name + ".json")
-    plan = _spec_plan(ctx)
+    plan = _spec_plan(ctx, {})
     subset = ctx.file.ownership_subset
     canonical = ctx.outputs.canonical_out
     if canonical and not subset:
@@ -88,7 +88,7 @@ def _resolve_placement_impl(ctx):
         inputs = depset(ctx.files.ownership_subset + fragment_files, transitive = [plan.inputs]),
         outputs = [out] + ([canonical] if canonical else []),
         tool = ctx.executable.resolver,
-        args = _spec_args(ctx, plan, ctx.label.name + ".unused") + plan.package_args +
+        args = _spec_args(ctx, plan, ctx.label.name + ".unused") +
                ["--chunk", shell.quote(ctx.attr.chunk), "--out", shell.quote(out.short_path)] +
                (["--ownership-subset", _shell_execroot_path(subset.path)] if subset else []) + extra_args,
         mnemonic = "DebundleResolvePlacement",
@@ -98,7 +98,7 @@ def _resolve_placement_impl(ctx):
 
 def _resolve_placements_impl(ctx):
     out = ctx.actions.declare_file(ctx.label.name + ".json")
-    plan = _spec_plan(ctx)
+    plan = _spec_plan(ctx, {})
     subset = ctx.file.ownership_subset
     canonical = ctx.outputs.canonical_out
     if not ctx.attr.chunks:
@@ -129,7 +129,7 @@ def _resolve_placements_impl(ctx):
         outputs = [out] + ([canonical] if canonical else []),
         tool = ctx.executable.resolver,
         args = ["batch"] +
-               _spec_args(ctx, plan, ctx.label.name + ".unused") + plan.package_args +
+               _spec_args(ctx, plan, ctx.label.name + ".unused") +
                chunk_args + ["--out", shell.quote(out.short_path)] +
                (["--ownership-subset", _shell_execroot_path(subset.path)] if subset else []) + extra_args,
         mnemonic = "DebundleResolvePlacements",
@@ -140,7 +140,7 @@ def _resolve_placements_impl(ctx):
 def _debundle_analysis_impl(ctx):
     if ctx.attr.analysis_threads < 0:
         fail("analysis_threads must be nonnegative, got {}".format(ctx.attr.analysis_threads))
-    plan = _spec_plan(ctx)
+    plan = _spec_plan(ctx, ctx.attr.package_roots)
 
     # Analysis is computed by its own action, keyed only by what it reads:
     # the projection, the sources and the package roots. An edit the
@@ -281,7 +281,7 @@ def _spec_args(ctx, plan, out_root):
         return plan.spec_args
     return plan.spec_args + ["--out-root", shell.quote(out_root)]
 
-def _spec_plan(ctx):
+def _spec_plan(ctx, package_roots):
     bin_dir = ctx.bin_dir.path
 
     has_flat = bool(ctx.file.spec)
@@ -317,7 +317,7 @@ def _spec_plan(ctx):
         ]
 
     package_args = []
-    for pkg_name, pkg_label in named_package_roots(ctx.attr.package_roots).items():
+    for pkg_name, pkg_label in named_package_roots(package_roots).items():
         pkg_dir = paths.relativize(single_directory(pkg_label).path, bin_dir)
         package_args += [
             shell.quote("--package-root"),
@@ -327,7 +327,7 @@ def _spec_plan(ctx):
     # What analysis reads besides its projection: never the spec tree.
     source_inputs = depset(
         transitive = [dep[DefaultInfo].files for dep in ctx.attr.input_data] +
-                     [pkg[DefaultInfo].files for pkg in ctx.attr.package_roots.keys()] +
+                     [pkg[DefaultInfo].files for pkg in package_roots.keys()] +
                      [ctx.attr.tree_source_root[DefaultInfo].files],
     )
     spec_inputs = depset(
@@ -386,7 +386,7 @@ def _shell_execroot_path(path):
         return shell.quote(path)
     return '"${OLDPWD}"/' + shell.quote(path)
 
-_COMMON_ATTRS = {
+_SPEC_ATTRS = {
     "spec": attr.label(
         allow_single_file = True,
         doc = "Optional flat transform spec YAML. Mutually exclusive with the tree_* attrs.",
@@ -421,15 +421,18 @@ _COMMON_ATTRS = {
             "vendor its chunk into git to be buildable."
         ),
     ),
+}
+
+_COMMON_ATTRS = dict(_SPEC_ATTRS, **{
     "package_roots": attr.label_keyed_string_dict(
         allow_files = True,
         doc = "Vendor package roots: label of the package's `:dir` filegroup -> package name. The target must provide exactly one directory artifact, passed as `--package-root <name>=<dir>`.",
     ),
-}
+})
 
 debundle_resolve_placement = rule(
     implementation = _resolve_placement_impl,
-    attrs = dict(_COMMON_ATTRS, **{
+    attrs = dict(_SPEC_ATTRS, **{
         "canonical_out": attr.output(doc = "Optional unfiltered JSON from the same solve as ownership_subset."),
         "proposal_fragments": attr.label_keyed_string_dict(
             allow_files = [".yaml"],
@@ -448,7 +451,7 @@ debundle_resolve_placement = rule(
 
 debundle_resolve_placements = rule(
     implementation = _resolve_placements_impl,
-    attrs = dict(_COMMON_ATTRS, **{
+    attrs = dict(_SPEC_ATTRS, **{
         "canonical_out": attr.output(doc = "Optional unfiltered batch JSON from the same solve as ownership_subset."),
         "chunks": attr.string_list(mandatory = True, doc = "Materialized chunk IDs to include, in output order."),
         "proposal_fragments": attr.label_keyed_string_dict(

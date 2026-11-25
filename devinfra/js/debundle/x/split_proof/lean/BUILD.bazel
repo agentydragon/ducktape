@@ -275,6 +275,7 @@ lean_library(
     name = "corejs_linked_input",
     srcs = [
         "EsmSplit/CertificateData.lean",
+        "EsmSplit/CoreJS/DeploymentPlacement.lean",
         "EsmSplit/CoreJS/LinkedInput.lean",
     ],
     deps = [

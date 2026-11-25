@@ -72,6 +72,7 @@ import { opaqueCases, inheritanceOpaqueCases, scriptsOf } from "./opaque_cases.m
 import { BINARY, LOGICAL, UNARY, bits, HOST_GLOBALS, Refused, toCore, toCoreProgram } from "./to_core.mjs";
 import { writeDeployment } from "../translation/testing/deployment_manifest.mjs";
 import { mulberry32 } from "../seeded_random.mjs";
+import { acorn, dump } from "../translation/parser.mjs";
 
 const option = (name, fallback) => {
   const i = process.argv.lastIndexOf(`--${name}`);
@@ -109,15 +110,56 @@ const familySamples = broad ? FAMILY_SAMPLES : [];
 // How often a generated program is tried again without the unit in which the model reached unknown code.
 const ROUNDS = 8;
 
-/** `{ tokens, units, … }` for `source`, or `null` if the front end refuses it. */
-function accepted(source, options) {
-  try {
-    return toCore(source, options);
-  } catch (e) {
-    if (e instanceof Refused || e instanceof SyntaxError) return null;
-    throw e;
-  }
-}
+/** The annotated module that `corejs --ast` lowers with the linked certification rules. */
+const astOf = (source) => dump(source, { includeOpaqueCaptures: true });
+/** A module graph for `corejs --ast`: the entry `main.mjs` and its providers by filename. */
+const astModules = (files) => ({
+  ...astOf(files["main.mjs"]),
+  entry: "main.mjs",
+  providers: Object.fromEntries(
+    Object.entries(files)
+      .filter(([name]) => name !== "main.mjs")
+      .map(([name, text]) => [name, astOf(text)])
+  ),
+});
+const parseModule = (source) => acorn.parse(source, { sourceType: "module", ecmaVersion: "latest" });
+/** The import graph of `files`, for `Plan.evalOrder`. */
+const moduleGraph = (files) => ({
+  entry: "main.mjs",
+  modules: Object.fromEntries(
+    Object.entries(files).map(([name, text]) => [
+      name,
+      parseModule(text)
+        .body.filter((node) => node.type === "ImportDeclaration")
+        .map((node) => path.posix.normalize(path.posix.join(path.posix.dirname(name), node.source.value))),
+    ])
+  ),
+});
+/** Source units as `ESTreeUnits.nodes` numbers them: one per declarator of a multi-declarator declaration. */
+const unitCount = (source) =>
+  parseModule(source).body.reduce((n, statement) => {
+    const declaration = statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
+    const declarators = declaration?.type === "VariableDeclaration" ? declaration.declarations.length : 1;
+    return n + Math.max(declarators, 1);
+  }, 0);
+/**
+ * Programs the linked rules refuse, by job label, with the reason. A refusal not listed here fails, and so does a
+ * listed program that lowers.
+ */
+const linkedRefusals = new Map([
+  ["case an undeclared name: a read and an assignment throw", /unsupported global missing/],
+  ["case object literals: __proto__, accessors, shorthand, computed and numeric keys", /duplicate object property/],
+  ["case classes: methods, accessors, fields and statics, and the names they give", /unexpected function-local name/],
+  ["case a call of a host function the world does not answer for is unknown code", /unsupported global JSON/],
+  ["case the iterator symbol is a distinct inherited method key", /named by a computed key/],
+  [
+    "modules: var destructuring exports each binding and retains the original receiver",
+    /repeated local or imported binding/,
+  ],
+  ["modules: an import of a name the module does not export", /does not export absent/],
+  ["modules: an import cannot be assigned", /does not export late/],
+]);
+const refusedByLowering = [];
 
 /** A thrown value, as `describe` of `Run.lean` writes it. */
 function describe(v) {
@@ -295,28 +337,50 @@ const single = (t) => ({
 });
 
 let modelSeconds = 0;
-/**
- * Sets `job.result` to what the model does with `job.program` in the world `job.node` recorded, for all `jobs` in one
- * call of `corejs`.
- */
-function runModel(jobs) {
-  if (jobs.length === 0) return;
+/** What `corejs` (with `args`) answers for each of `lines`, one call. */
+function runCorejs(args, lines, label) {
+  if (lines.length === 0) return [];
   const input = path.join(work, "programs.jsonl");
-  const recordings = jobs.map(
-    ({ program, node: { world, iteratorSymbol, hasInstanceSymbol, toStringTagSymbol, symbolConstructor } }) =>
-      JSON.stringify({ ...program, world, iteratorSymbol, hasInstanceSymbol, toStringTagSymbol, symbolConstructor })
-  );
-  writeFileSync(input, recordings.join("\n") + "\n");
-  checkpoint(`CoreJS batch: ${jobs.map((j) => j.label).join("; ")}`);
+  writeFileSync(input, lines.map((line) => JSON.stringify(line)).join("\n") + "\n");
+  checkpoint(`CoreJS batch: ${label}`);
   const started = Date.now();
-  const model = spawnSync(corejs, [input], { encoding: "utf8", maxBuffer: 1 << 28 });
+  const model = spawnSync(corejs, [...args, input], { encoding: "utf8", maxBuffer: 1 << 28 });
   modelSeconds += (Date.now() - started) / 1000;
   checkpoint(`CoreJS returned: ${model.status}`);
   assert.equal(model.status, 0, `corejs failed: ${model.stderr}`);
-  const lines = model.stdout.trimEnd().split("\n");
-  assert.equal(lines.length, jobs.length, "corejs did not answer every program");
-  jobs.forEach((job, i) => {
-    job.result = JSON.parse(lines[i]);
+  const answers = model.stdout.trimEnd().split("\n");
+  assert.equal(answers.length, lines.length, "corejs did not answer every program");
+  return answers.map((answer) => JSON.parse(answer));
+}
+/**
+ * Sets `job.result` to what the model does in the world `job.node` recorded, for all `jobs`. A job with `ast` lowers
+ * through the linked rules (`corejs --ast`); one with `program` is already CoreJS.
+ */
+function runModel(jobs) {
+  const recorded = (input, { world, iteratorSymbol, hasInstanceSymbol, toStringTagSymbol, symbolConstructor }) => ({
+    ...input,
+    world,
+    iteratorSymbol,
+    hasInstanceSymbol,
+    toStringTagSymbol,
+    symbolConstructor,
+  });
+  const lowered = jobs.filter((job) => job.ast);
+  const decoded = jobs.filter((job) => !job.ast);
+  const label = (batch) => batch.map((j) => j.label).join("; ");
+  const results = new Map();
+  runCorejs(
+    ["--ast"],
+    lowered.map((job) => recorded(job.ast, job.node)),
+    label(lowered)
+  ).forEach((r, i) => results.set(lowered[i], r));
+  runCorejs(
+    [],
+    decoded.map((job) => recorded(job.program, job.node)),
+    label(decoded)
+  ).forEach((r, i) => results.set(decoded[i], r));
+  jobs.forEach((job) => {
+    job.result = results.get(job);
     const { world, left, end } = job.result;
     if (world !== "") failures.push(`${job.label}: ${world}\n${show ? job.source : ""}`);
     else if (left !== 0 && (end === "normal" || end === "throw"))
@@ -328,8 +392,7 @@ function runModel(jobs) {
  * A generated program cut down to the fragment, with observers of its primitive state. `banned` are units to leave out
  * although the front end accepts them. `owner[j]` is the unit that statement `j` of the result came from.
  */
-function slice(program, banned) {
-  const one = (unit) => renderProgram({ ...program, units: [unit], exports: [], imports: [] });
+function slice(program, banned, acceptance) {
   const primitive = (type) => ["num", "str", "bool"].includes(kindOf(type));
   const declared = new Set();
   const kept = [];
@@ -337,8 +400,8 @@ function slice(program, banned) {
   const observers = [];
   let acceptedUnits = 0;
   for (const unit of program.units) {
-    const alone = accepted(one(unit));
-    if (alone === null) continue;
+    const alone = acceptance.get(unit);
+    if (!alone.accepted) continue;
     acceptedUnits++;
     if (banned.has(unit) || !unit.uses.every((name) => declared.has(name))) continue;
     kept.push(unit);
@@ -358,7 +421,26 @@ function slice(program, banned) {
   return { source, owner, units: program.units.length, acceptedUnits, keptUnits: kept.length };
 }
 
-// { label, source, entry, program, node, result, expectEnd, set }: `program` is what `corejs` reads
+/** A generated unit alone, as `slice` tries it. */
+const unitSource = (program, unit) => renderProgram({ ...program, units: [unit], exports: [], imports: [] });
+
+/** Whether the linked rules lower each unit of the generated jobs alone, and each whole program, and its unit count. */
+function acceptUnits(generatedJobs) {
+  const entries = generatedJobs.flatMap(({ generated }) => [
+    { key: generated, source: renderProgram(generated) },
+    ...generated.units.map((unit) => ({ key: unit, source: unitSource(generated, unit) })),
+  ]);
+  const answers = runCorejs(
+    ["--ast"],
+    entries.map(({ source }) => astOf(source)),
+    "generated units alone"
+  );
+  return new Map(
+    entries.map(({ key, source }, i) => [key, { accepted: answers[i].end !== "malformed", units: unitCount(source) }])
+  );
+}
+
+// { label, source, entry, ast or program, node, result, expectEnd, set }: `ast` or `program` is what `corejs` reads
 const jobs = [];
 if (broad) {
   for (const source of [String.raw`"\ud800";`, String.raw`({ "\udfff": 1 });`, "`\udfff`;"]) {
@@ -370,12 +452,10 @@ if (broad) {
   }
 }
 for (const c of selectedCases) {
-  const translated = accepted(c.source, { allowHost: c.allowHost ?? false });
-  assert(translated !== null, `case ${c.name}: the front end refuses it`);
   jobs.push({
     label: `case ${c.name}`,
     source: c.source,
-    program: single(translated),
+    ast: astOf(c.source),
     expectEnd: c.end ?? null,
     expectedStop: c.expectedStop,
     set: null,
@@ -393,12 +473,10 @@ const namedSplits = bindingOnly
     ? [...inheritanceSplitCases, ...heritageCases]
     : splitCases;
 for (const c of namedSplits) {
-  const translated = accepted(c.source);
-  assert(translated !== null, `split case ${c.name}: the front end refuses the bundle`);
   jobs.push({
     label: `split case ${c.name}`,
     source: c.source,
-    program: single(translated),
+    ast: astOf(c.source),
     expectEnd: inheritanceOnly ? "normal" : null,
     set: null,
     splitCase: c,
@@ -410,11 +488,10 @@ const focused = bindingOnly
       (inheritanceOnly ? generatedInheritanceCases : generatedCases)(firstSeed + i)
     ).flat();
 for (const c of focused) {
-  const translated = toCore(c.source);
   jobs.push({
     label: c.name,
     source: c.source,
-    program: single(translated),
+    ast: astOf(c.source),
     expectEnd: "normal",
     set: null,
     focused: c,
@@ -429,7 +506,8 @@ for (const c of !broad ? [] : [...moduleCases, ...linked]) {
       .map(([name, text]) => `// ${name}${text}`)
       .join("\n"),
     entry,
-    program: toCoreProgram(entry),
+    ast: astModules(c.files),
+    graph: moduleGraph(c.files),
     expectEnd: c.end ?? null,
     set: null,
     linked: linked.includes(c),
@@ -515,7 +593,6 @@ familySamples.forEach((families, set) => {
   for (let seed = firstSeed; seed < firstSeed + count; seed++) {
     const program = generateProgram(seed, { families });
     summary[set].programs++;
-    if (accepted(renderProgram(program)) !== null) summary[set].wholeAccepted++;
     pending.push({
       label: `seed ${seed} of ${families.join("+")}`,
       generated: program,
@@ -525,28 +602,30 @@ familySamples.forEach((families, set) => {
     });
   }
 });
+const acceptance = acceptUnits(pending);
+for (const job of pending) if (acceptance.get(job.generated).accepted) summary[job.set].wholeAccepted++;
 for (let round = 0; pending.length > 0; round++) {
   const tried = [];
   for (const job of pending) {
-    job.cut = slice(job.generated, job.banned);
+    job.cut = slice(job.generated, job.banned, acceptance);
     job.source = job.cut.source;
-    const translated = accepted(job.source);
-    assert(translated !== null, `${job.label}: the kept units are refused together\n${job.source}`);
-    job.program = single(translated);
+    job.ast = astOf(job.source);
     tried.push(job);
   }
   await runNode(tried);
   runModel(tried);
   pending = [];
   for (const job of tried) {
-    const unit = job.cut.owner[job.result.region - 1];
+    // A unit the linked rules refuse together with the kept units is left out like one that reaches unknown code.
+    const refused = job.result.end === "malformed" ? /^statement (\d+): (.*)$/.exec(job.result.detail) : null;
+    const unit = refused ? job.cut.owner[Number(refused[1])] : job.cut.owner[job.result.region - 1];
+    const reason = refused ? `lowering: ${refused[2]}` : job.result.detail;
     if (
-      job.result.end === "unknown" &&
-      !job.result.detail.startsWith("model:") &&
+      ((job.result.end === "unknown" && !job.result.detail.startsWith("model:")) || refused) &&
       unit !== undefined &&
       round < ROUNDS
     ) {
-      reasons[job.result.detail] = (reasons[job.result.detail] ?? 0) + 1;
+      reasons[reason] = (reasons[reason] ?? 0) + 1;
       job.banned.add(unit);
       pending.push(job);
       continue;
@@ -560,15 +639,11 @@ for (let round = 0; pending.length > 0; round++) {
   }
 }
 
-/** The order `Plan.evalOrder` gives the import graph of `program`. */
-function planOrder(program) {
-  const graph = {
-    entry: program.entry,
-    modules: Object.fromEntries(program.modules.map((m) => [m.name, m.imports.map((i) => i.source)])),
-  };
+/** The order `Plan.evalOrder` gives an import graph. */
+function planOrder(graph) {
   const file = path.join(work, "graph.json");
   writeFileSync(file, JSON.stringify(graph));
-  checkpoint(`module order: ${program.entry}`);
+  checkpoint(`module order: ${graph.entry}`);
   const run = spawnSync(evalorder, [file], { encoding: "utf8" });
   checkpoint(`module order returned: ${run.status}`);
   assert.equal(run.status, 0, `evalorder failed: ${run.stderr}`);
@@ -586,6 +661,13 @@ for (const job of jobs) {
     failures.push(
       `${job.label}: ${why}\n  model: ${JSON.stringify(got)}\n  node:  ${JSON.stringify(node)}\n${show ? job.source : ""}`
     );
+  const refusal = linkedRefusals.get(job.label);
+  if (got.end === "malformed") {
+    if (refusal?.test(got.detail)) refusedByLowering.push(job.label);
+    else fail(`the linked rules refuse it: ${got.detail}`, null);
+    continue;
+  }
+  if (refusal) failures.push(`${job.label}: the linked rules lower it now; remove it from linkedRefusals`);
   if (job.expectEnd !== null && got.end !== job.expectEnd) {
     fail(`the model should end ${job.expectEnd}`, null);
     continue;
@@ -614,7 +696,7 @@ for (const job of jobs) {
   else if (s) s.agree++;
   if (job.entry) {
     orders++;
-    const plan = planOrder(job.program);
+    const plan = planOrder(job.graph);
     if (!same(plan, got.order)) fail(`the modules run in another order than Plan.evalOrder gives: ${plan}`, node);
   }
 }
@@ -651,7 +733,7 @@ function specsFor(units, next) {
 /** `source` as a one-module program whose statements have the numbers `lowersplit` gives them. */
 function splitInputFor(job) {
   if (job.splitInput) return job.splitInput;
-  const scripts = job.program.scripts;
+  const scripts = job.program?.scripts;
   const { dump, core, units } = splitInputs(job.source, { opaque: Boolean(scripts) });
   const program = { entry: "main", modules: [{ name: "main", imports: [], ...core }] };
   if (scripts) program.scripts = scripts;
@@ -810,7 +892,7 @@ function split(job, bundle, dump, kind, spec, named) {
     assert(slice?.startsWith("moves"), `${label}: the required move is outside the proved moves slice: ${slice}`);
   }
   try {
-    const scripts = job.program.scripts;
+    const scripts = job.program?.scripts;
     const program = scripts
       ? { ...coreProgramOf(entry, { ids: modules }), scripts }
       : toCoreProgram(entry, { ids: modules });
@@ -967,6 +1049,7 @@ console.log(
     `generated: ${count} programs for each set from seed ${firstSeed}`
 );
 console.table(summary);
+console.log(`refused by the linked rules, as expected: ${refusedByLowering.length}`);
 console.log("unknown code that units of generated programs were left out for:", reasons);
 console.log(`model endings: ${JSON.stringify(ends)}; corejs took ${modelSeconds.toFixed(1)} s`);
 const verdicts = (kind) => `${kind}: ${tally[kind][0]} accepted, ${tally[kind][1]} rejected`;
@@ -1124,7 +1207,8 @@ assert.deepEqual(
 );
 assert(
   Object.values(focusedCoverage).every((c) => c.generated === count && c.completed === count && c.reordered === count),
-  "every focused family must complete and execute in a matching accepted reordered split for every seed"
+  "every focused family must complete and execute in a matching accepted reordered split for every seed\n" +
+    failures.filter((f) => jobs.some((j) => j.focused && f.startsWith(`${j.label}:`))).join("\n")
 );
 assert(
   jobs.filter((j) => j.linked).every((j) => sameRun(j.result, j.node)),

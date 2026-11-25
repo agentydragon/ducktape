@@ -846,6 +846,12 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
       | [arg] =>
         if let .ok description := stringLiteral arg then return .prim .freshSymbol [.str description]
       | _ => pure ()
+    -- The recorded Node host's ambient `String` is the intrinsic conversion of its one argument.
+    if profile == .nodeRecording && (field callee "type").toOption == some "Identifier" &&
+        (field callee "k").toOption == some "G" && (identifier callee).toOption == some "String" then
+      if let [arg] := args then
+        unless (field arg "type").toOption == some "SpreadElement" do
+          return .unary .toString (← lower arg)
     if (field callee "type").toOption == some "MemberExpression" && !(callee.getObjValAs? Bool "computed").toOption.getD true then
       let owner ← callee.getObjVal? "object"
       if (field owner "type").toOption == some "Identifier" && (field owner "k").toOption == some "G" then

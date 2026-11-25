@@ -181,7 +181,6 @@ debundle_resolve_placements(
         "editor",
     ],
     ownership_subset = "deployment_smoke_subset.json",
-    package_roots = _PACKAGE_ROOTS,
     proposal_fragments = {
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/polygon_ellipse:polygon.yaml": "editor::packages/math/polygon",
         "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/polygon_ellipse:ellipse.yaml": "editor::packages/math/ellipse",

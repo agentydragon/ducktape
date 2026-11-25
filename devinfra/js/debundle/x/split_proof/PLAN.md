@@ -156,7 +156,7 @@ split X S = .ok Y →
   NormalEquivalent (Worlds premises) X Y  -- same successful final states, in both directions
 ```
 
-`X` is the lowering of the original module graph. `Y` is the lowering of the printed output. [`NormalEquivalent`](lean/EsmSplit/CoreJS/LinkedPivot.lean) and [`SameExports`](lean/EsmSplit/CoreJS/LinkedBehavior.lean) exist; `Places` does not yet. `Worlds premises` are the worlds that satisfy the host premises the verdict lists. When `Y` runs the units in the original order, `split` also proves that every ending matches, including throws.
+`X` is the lowering of the original module graph. `Y` is the lowering of the printed output. [`NormalEquivalent`](lean/EsmSplit/CoreJS/LinkedBehavior.lean) and [`SameExports`](lean/EsmSplit/CoreJS/LinkedBehavior.lean) describe the behavioral and linking guarantees. The [assembled deployment proof](lean/EsmSplit/CoreJS/JointStatic.lean) also carries [`Places`](lean/EsmSplit/CoreJS/DeploymentPlacement.lean) over the resolved assignment of executable units. The unified interface still needs to derive that assignment from `S`. `Worlds premises` are the worlds that satisfy the host premises the verdict lists. When `Y` runs the units in the original order, `split` also proves that every ending matches, including throws.
 
 The planner proposes a candidate and may use unproved heuristics. The checker inside `split` decides. A planner bug can cause a refusal, never a wrong accept.
 
@@ -204,25 +204,24 @@ The code reaches the [target](#target) through the steps below. Until they land,
 
 **Now.** Four code paths turn JavaScript into CoreJS:
 
-| Path                                                                                                                              | Used by                                                                                                                                                                               |
-| --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`model/to_core.mjs`](model/to_core.mjs), read by [`Decode.lean`](lean/EsmSplit/CoreJS/Decode.lean)                               | Node comparison suites (`corejs programs.jsonl`), `corejs --footprints` and `--moves`, `lowersplit --diagnostic --corejs`, [`translation/split_dump.mjs`](translation/split_dump.mjs) |
-| Basic [`FromESTree`](lean/EsmSplit/CoreJS/FromESTree.lean) rules (`expr`, `declaration`, `unit`)                                  | Closed-declaration certificates, `--diagnostic`                                                                                                                                       |
-| Linked `FromESTree` rules (`linkedUnit`, `linkedDeclaration`) through [`LinkedInput.lean`](lean/EsmSplit/CoreJS/LinkedInput.lean) | Linked certificates, structural pivot units, `corejs --ast` (`LinkedInput.program`)                                                                                                   |
-| [`OpaqueInput.lean`](lean/EsmSplit/CoreJS/OpaqueInput.lean)                                                                       | Structural units kept opaque                                                                                                                                                          |
+| Path                                                                                                                              | Used by                                                                                                                                                                                                                    |
+| --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`model/to_core.mjs`](model/to_core.mjs), read by [`Decode.lean`](lean/EsmSplit/CoreJS/Decode.lean)                               | Opaque cases and split checks of the Node comparison suites (`corejs programs.jsonl`), `corejs --footprints` and `--moves`, `lowersplit --diagnostic --corejs`, [`translation/split_dump.mjs`](translation/split_dump.mjs) |
+| Basic [`FromESTree`](lean/EsmSplit/CoreJS/FromESTree.lean) rules (`expr`, `declaration`, `unit`)                                  | Closed-declaration certificates, `--diagnostic`                                                                                                                                                                            |
+| Linked `FromESTree` rules (`linkedUnit`, `linkedDeclaration`) through [`LinkedInput.lean`](lean/EsmSplit/CoreJS/LinkedInput.lean) | Linked certificates, structural pivot units, `corejs --ast` (`LinkedInput.program`)                                                                                                                                        |
+| [`OpaqueInput.lean`](lean/EsmSplit/CoreJS/OpaqueInput.lean)                                                                       | Structural units kept opaque                                                                                                                                                                                               |
 
-The broad Node comparison runs through `to_core.mjs`. On 2026-11-25 none of its 222 hand-written and generated programs lowered through the linked rules: 171 print with `console`, 23 call host functions (`Math`, `String`, `Object`, `Symbol`), 14 use a top-level block, `while` or `switch`, 5 use default imports, and 7 hit other gaps (computed class keys, undeclared globals, `Symbol.iterator`, assignment to an import). The 42 opaque cases need whole opaque statements run by a scripted world, which only `to_core.mjs` produces. [`corejs_ast_lowering_test.mjs`](translation/corejs_ast_lowering_test.mjs) runs the linked rules through `corejs --ast` and compares them with `to_core.mjs` and Node on generated declaration lists. `to_core.mjs` also decides which assignment targets are imports and which names are host globals ([debts](#debts)).
+The Node comparison suites run their whole programs through `corejs --ast` under the recorded Node host: hand-written, module and generated programs and the binding and inheritance suites. Eight hand-written and module programs are expected refusals, listed with their reasons in `linkedRefusals` in [`model/differential.mjs`](model/differential.mjs); a new refusal fails the suite, and so does a listed program that lowers. The opaque cases need whole opaque statements run by a scripted world, which only `to_core.mjs` produces, and the split checks still lower their programs with `to_core.mjs`. [`corejs_ast_lowering_test.mjs`](translation/corejs_ast_lowering_test.mjs) also compares the linked rules with `to_core.mjs` and Node on generated declaration lists. `to_core.mjs` also decides which assignment targets are imports and which names are host globals ([debts](#debts)).
 
 **Target.** `LinkedInput` with the linked `FromESTree` rules is the only lowering. Keeping a unit opaque is one of its results, chosen per unit, with captures checked the same way in both graphs.
 
 **How.**
 
-1. Add a test-only host profile to the linked rules. Under it, `console.log` and the `Object` primitives become CoreJS primitives, the recorded host functions become `host` references, and an undeclared name reads an unbound variable. Certification profiles keep refusing these names.
-2. Port the remaining syntax to the linked rules, one feature per change with a certification test, because each one widens what certification accepts: top-level blocks, loops and `switch`; default imports; computed class keys; `Symbol.iterator`; assignment to an import.
-3. Make keeping a unit opaque a per-unit result of `LinkedInput`, with the structural capture checks, so the opaque cases run with their scripted worlds. Before moving opaque fallback, check which cells a deferred body captures, its part number, and the handling of direct `eval`, module identity and top-level `await`. Replay Excalidraw on the AST alone.
-4. Run every Node comparison suite through `corejs --ast` under the test profile: hand-written, module and opaque cases, generated programs, the binding and inheritance suites and the sweep. A model mismatch then reproduces on one program. An unsupported program is a reported refusal, never a fallback to `to_core.mjs`.
-5. Merge `OpaqueInput` into the same entry point.
-6. Delete `to_core.mjs`, the program decoder in `Decode.lean` (the world-recording decoders stay), `--corejs` and the basic `FromESTree` rules.
+1. Lower the expected refusals in `linkedRefusals`, one feature per change with a certification test when certification changes: assignment to an undeclared name, duplicate object properties, a class expression's own name, computed method and field keys, a repeated `var` across units, `JSON` under the recorded host, and a link-time missing export, which Node reports as a `SyntaxError`.
+2. Make keeping a unit opaque a per-unit result of `LinkedInput`, with the structural capture checks, so the opaque cases run with their scripted worlds. Before moving opaque fallback, check which cells a deferred body captures, its part number, and the handling of direct `eval`, module identity and top-level `await`. Replay Excalidraw on the AST alone.
+3. Move the opaque cases to `corejs --ast`, and the split checks to the certified path ([no unchecked output](#no-unchecked-output)). An unsupported program is a reported refusal, never a fallback to `to_core.mjs`.
+4. Merge `OpaqueInput` into the same entry point.
+5. Delete `to_core.mjs`, the program decoder in `Decode.lean` (the world-recording decoders stay), `--corejs` and the basic `FromESTree` rules.
 
 **Done when.** One Lean function lowers an annotated ESTree module graph to CoreJS, CI runs the Node comparison suites through it, and nothing imports `to_core.mjs`.
 
@@ -252,14 +251,14 @@ The linked statement implies `NormalEquivalent` over the worlds that satisfy its
 
 ### One proven checker
 
-**Now.** [`checkStructuralSchedule`](lean/EsmSplit/CoreJS/LinkedPivotCertificate.lean) carries a general theorem in its type and runs as compiled code. Linked mode has no general checker: [`LinkedCertificate.lean`](lean/EsmSplit/CoreJS/LinkedCertificate.lean) writes a new Lean proof for each run, and a separate Lean process checks it. No Lean function has the target theorem in its type. `checkLayout` and the lowering enforce placement outside the proved statement.
+**Now.** [`checkStructuralSchedule`](lean/EsmSplit/CoreJS/LinkedPivotCertificate.lean) carries a general theorem in its type and runs as compiled code. The assembled deployment checker proves placement over the decoded output alongside equivalence and public live-cell equality. Linked mode has no general checker: [`LinkedCertificate.lean`](lean/EsmSplit/CoreJS/LinkedCertificate.lean) writes a new Lean proof for each run, and a separate Lean process checks it. The singleton proof paths still rely on placement checks in the decoder.
 
 **Target.** The total `split` from the [target](#target). The planner runs inside it and stays unproved.
 
 **How.**
 
 1. Wrap planning and `checkStructuralSchedule` in `split`. The CLI emits ESTree for `Y`'s placement, and [checking the printed files](#check-the-printed-files) ties the files to `Y`.
-2. Define `Places` and prove that the placement check establishes it.
+2. Carry `Places` through the proof paths for singleton inputs as they converge on the assembled deployment checker.
 3. Add whole-program evaluation to the checker as a proven justification: a symbolic evaluator with a soundness theorem, so a move can rest on evaluating the units it crosses, as linked mode does today.
 4. Retire per-run proof generation once the proven evaluator certifies the linked test corpus.
 
@@ -267,14 +266,14 @@ The linked statement implies `NormalEquivalent` over the worlds that satisfy its
 
 ### Check the printed files
 
-**Now.** Before renaming the staged directory into place, [`SplitFiles.lean`](lean/EsmSplit/SplitFiles.lean) reparses the printed files and compares their ASTs, without scope annotations, with the certified ASTs. `--check-output` runs the same comparison on an existing directory. Neither lowers the reparsed files, so the AST comparator stands in for equality with `Y`.
+**Now.** Before publishing, [`SplitFiles.lean`](lean/EsmSplit/SplitFiles.lean) reparses the staged files and compares their normalized ASTs with the generated trees. The proof checks the candidate lowered from the reparsed ASTs. `--check-output` runs the same verification on an existing directory.
 
 **Target.** Before publishing, reparse the staged files and lower them with the one lowering. The result must equal `Y`. The emitter and printer leave the trusted parts. `--check-output` runs the same check on an existing directory.
 
 **How.**
 
-1. After printing into the staging directory, reparse and lower every module and compare the result with `Y`.
-2. Make `--check-output` call the same comparison.
+1. Expose the common lowering and its CoreJS result at the unified checker interface.
+2. Compare that result with `Y` on both emission and `--check-output`.
 
 **Done when.** A printer change that drops required parentheses is refused at emission.
 
