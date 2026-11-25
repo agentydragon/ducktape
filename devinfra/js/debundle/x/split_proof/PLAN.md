@@ -156,7 +156,7 @@ split X S = .ok Y →
   NormalEquivalent (Worlds premises) X Y  -- same successful final states, in both directions
 ```
 
-`X` is the lowering of the original module graph. `Y` is the lowering of the printed output. [`NormalEquivalent`](lean/EsmSplit/CoreJS/LinkedPivot.lean) and [`SameExports`](lean/EsmSplit/CoreJS/LinkedBehavior.lean) exist; `Places` does not yet. `Worlds premises` are the worlds that satisfy the host premises the verdict lists. When `Y` runs the units in the original order, `split` also proves that every ending matches, including throws.
+`X` is the lowering of the original module graph. `Y` is the lowering of the printed output. [`NormalEquivalent`](lean/EsmSplit/CoreJS/LinkedBehavior.lean) and [`SameExports`](lean/EsmSplit/CoreJS/LinkedBehavior.lean) describe the behavioral and linking guarantees. The [assembled deployment proof](lean/EsmSplit/CoreJS/JointStatic.lean) also carries [`Places`](lean/EsmSplit/CoreJS/DeploymentPlacement.lean) over the resolved assignment of executable units. The unified interface still needs to derive that assignment from `S`. `Worlds premises` are the worlds that satisfy the host premises the verdict lists. When `Y` runs the units in the original order, `split` also proves that every ending matches, including throws.
 
 The planner proposes a candidate and may use unproved heuristics. The checker inside `split` decides. A planner bug can cause a refusal, never a wrong accept.
 
@@ -252,14 +252,14 @@ The linked statement implies `NormalEquivalent` over the worlds that satisfy its
 
 ### One proven checker
 
-**Now.** [`checkStructuralSchedule`](lean/EsmSplit/CoreJS/LinkedPivotCertificate.lean) carries a general theorem in its type and runs as compiled code. Linked mode has no general checker: [`LinkedCertificate.lean`](lean/EsmSplit/CoreJS/LinkedCertificate.lean) writes a new Lean proof for each run, and a separate Lean process checks it. No Lean function has the target theorem in its type. `checkLayout` and the lowering enforce placement outside the proved statement.
+**Now.** [`checkStructuralSchedule`](lean/EsmSplit/CoreJS/LinkedPivotCertificate.lean) carries a general theorem in its type and runs as compiled code. The assembled deployment checker proves placement over the decoded output alongside equivalence and public live-cell equality. Linked mode has no general checker: [`LinkedCertificate.lean`](lean/EsmSplit/CoreJS/LinkedCertificate.lean) writes a new Lean proof for each run, and a separate Lean process checks it. The singleton proof paths still rely on placement checks in the decoder.
 
 **Target.** The total `split` from the [target](#target). The planner runs inside it and stays unproved.
 
 **How.**
 
 1. Wrap planning and `checkStructuralSchedule` in `split`. The CLI emits ESTree for `Y`'s placement, and [checking the printed files](#check-the-printed-files) ties the files to `Y`.
-2. Define `Places` and prove that the placement check establishes it.
+2. Carry `Places` through the proof paths for singleton inputs as they converge on the assembled deployment checker.
 3. Add whole-program evaluation to the checker as a proven justification: a symbolic evaluator with a soundness theorem, so a move can rest on evaluating the units it crosses, as linked mode does today.
 4. Retire per-run proof generation once the proven evaluator certifies the linked test corpus.
 
@@ -267,14 +267,14 @@ The linked statement implies `NormalEquivalent` over the worlds that satisfy its
 
 ### Check the printed files
 
-**Now.** Before renaming the staged directory into place, [`SplitFiles.lean`](lean/EsmSplit/SplitFiles.lean) reparses the printed files and compares their ASTs, without scope annotations, with the certified ASTs. `--check-output` runs the same comparison on an existing directory. Neither lowers the reparsed files, so the AST comparator stands in for equality with `Y`.
+**Now.** Before publishing, [`SplitFiles.lean`](lean/EsmSplit/SplitFiles.lean) reparses the staged files and compares their normalized ASTs with the generated trees. The proof checks the candidate lowered from the reparsed ASTs. `--check-output` runs the same verification on an existing directory.
 
 **Target.** Before publishing, reparse the staged files and lower them with the one lowering. The result must equal `Y`. The emitter and printer leave the trusted parts. `--check-output` runs the same check on an existing directory.
 
 **How.**
 
-1. After printing into the staging directory, reparse and lower every module and compare the result with `Y`.
-2. Make `--check-output` call the same comparison.
+1. Expose the common lowering and its CoreJS result at the unified checker interface.
+2. Compare that result with `Y` on both emission and `--check-output`.
 
 **Done when.** A printer change that drops required parentheses is refused at emission.
 
