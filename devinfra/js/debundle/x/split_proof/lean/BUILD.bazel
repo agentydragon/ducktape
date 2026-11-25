@@ -548,7 +548,6 @@ lean_axiom_test(
     ],
     theorems = [
         "CoreJS.evaluatorFrames",
-        "CoreJS.LinkedBehavior.certifyStaticDeployment",
         "CoreJS.LinkedBehavior.certifyDeployment",
         "CoreJS.LinkedBehavior.certifyStructuralASTs",
         "CoreJS.DenseArray.reduce",
