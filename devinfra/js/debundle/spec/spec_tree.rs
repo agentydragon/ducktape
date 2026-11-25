@@ -101,18 +101,17 @@ pub fn update_chunk_import_order(
 
 fn parse_authoring_config(bytes: &[u8]) -> Result<(AuthoringConfig, serde_yaml::Value)> {
     let value: serde_yaml::Value = serde_yaml::from_slice(bytes)?;
-    let config = serde_yaml::from_value(value.clone()).context("parsing authoring config")?;
+    let config = AuthoringConfig::deserialize(&value).context("parsing authoring config")?;
     Ok((config, value))
 }
 
 /// Read routing policy from provenance-verified authoring configuration bytes.
 /// Uses the same schema as compilation, without reopening an unchecked file.
 pub fn unassigned_mode_from_config(bytes: &[u8], chunk_id: &str) -> Result<UnassignedMode> {
-    let (config, _) = parse_authoring_config(bytes)?;
+    let (mut config, _) = parse_authoring_config(bytes)?;
     config
         .unassigned_mode
-        .get(chunk_id)
-        .cloned()
+        .remove(chunk_id)
         .with_context(|| format!("tree config has no unassigned_mode for graph chunk {chunk_id:?}"))
 }
 
