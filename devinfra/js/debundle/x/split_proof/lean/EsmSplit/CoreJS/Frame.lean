@@ -307,7 +307,8 @@ theorem addPrototype_keeps (a : Addr) (kind : FuncKind) {base s : State W} (hb :
   unfold addPrototype
   exact keeps_bind (alloc_keeps _ hb) fun p s' _ hb' => modifyObj_keeps a _ hb' ha
 
-theorem makeFunc_keeps (env : Env) (f : Func) {base s : State W} (hb : Extends base s) : (makeFunc env f f.name s).Keeps base := by
+theorem makeFunc_keeps (env : Env) (f : Func) {base s : State W} (hb : Extends base s)
+    (displayName : String := f.name) : (makeFunc env f displayName s).Keeps base := by
   unfold makeFunc
   refine keeps_bind (selfScope_keeps _ _ _ hb) fun env1 s1 h1 hb1 => ?_
   refine keeps_bind (alloc_keeps _ hb1) fun a s2 h2 hb2 => ?_
@@ -317,6 +318,14 @@ theorem makeFunc_keeps (env : Env) (f : Func) {base s : State W} (hb : Extends b
     · exact addPrototype_keeps a _ hb2 ha
     · exact (inert_pure _).keeps hb2
   · exact keeps_bind (initSelf_keeps _ h1 hb hb3) fun _ s4 _ hb4 => (inert_pure _).keeps hb4
+
+theorem makeClassMethod_keeps (env : Env) (home : Addr) (key : PropertyKey) (affix : String)
+    (f : Func) {base s : State W} (hb : Extends base s) :
+    (makeClassMethod env home key affix f s).Keeps base := by
+  cases key with
+  | str => exact makeFunc_keeps _ f hb _
+  | wellKnownSymbol => exact makeFunc_keeps _ f hb _
+  | symbol => exact (inert_unknown _).keeps hb
 
 /-- A property defined on an object that `base` does not have. -/
 theorem defineOwn_keeps (a : Addr) (k : PropertyKey) (d : Desc) {base s : State W} (hb : Extends base s)
@@ -357,7 +366,7 @@ theorem evalMembers_plain_keeps (n : Nat) (env : Env) (proto c : Addr) (ms : Lis
         unfold evalMembers
         refine keeps_bind ((evalExpr_str_inert n env _).keeps hb) fun key s1 _ hb1 => ?_
         refine keeps_bind ((inert_lift _).keeps hb1) fun name s2 _ hb2 => ?_
-        refine keeps_bind (makeFunc_keeps _ f hb2) fun value s3 _ hb3 => ?_
+        refine keeps_bind (makeClassMethod_keeps env _ name _ f hb2) fun value s3 _ hb3 => ?_
         refine keeps_bind (defineOwn_keeps _ name _ hb3 ?_) fun _ s4 _ hb4 => ?_
         · cases static <;> assumption
         · refine keeps_bind ((inert_pure _).keeps hb4) fun field s5 _ hb5 => ?_

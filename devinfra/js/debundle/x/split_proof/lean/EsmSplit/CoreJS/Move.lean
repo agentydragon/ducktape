@@ -359,7 +359,8 @@ theorem local_writeVar {env : Env} {x : Name} (hx : ∀ c, env.vars.lookup x = s
     · exact local_throwErr _ _
     · exact local_throwErr _ _
 
-theorem local_makeFunc (env : Env) (f : Func) : Local r R (makeFunc env f : M W Val) := by
+theorem local_makeFunc (env : Env) (f : Func) (displayName : String := f.name) :
+    Local r R (makeFunc env f displayName : M W Val) := by
   unfold makeFunc
   refine (local_selfScope env f.self f.name).bind fun env1 ⟨s1, s1', hr1, h1⟩ => ?_
   refine (local_alloc _).bind fun a ⟨s2, s2', hr2, h2⟩ => ?_
@@ -376,6 +377,13 @@ theorem local_makeFunc (env : Env) (f : Func) : Local r R (makeFunc env f : M W 
       obtain ⟨c, hc, hcr⟩ := selfScope_lookup h1
       exact local_initVar (fun c' hc' => by rw [hc] at hc'; cases hc'; exact hcr.trans hr1) _
     · exact local_pure _
+
+theorem local_makeClassMethod (env : Env) (home : Addr) (key : PropertyKey) (affix : String) (f : Func) :
+    Local r R (makeClassMethod env home key affix f : M W Val) := by
+  cases key with
+  | str => exact local_makeFunc _ f _
+  | wellKnownSymbol => exact local_makeFunc _ f _
+  | symbol => exact local_unknown _
 
 theorem local_evalExpr_str (n : Nat) (env : Env) (key : String) :
     Local r R (evalExpr n env (.str key) : M W Val) := by
@@ -400,7 +408,7 @@ theorem local_evalMembers_plain (n : Nat) (env : Env) (proto c : Addr) (ms : Lis
         unfold evalMembers
         refine (local_evalExpr_str n env _).bind' fun key => ?_
         refine (local_lift _).bind' fun name => ?_
-        refine (local_makeFunc _ f).bind' fun value => ?_
+        refine (local_makeClassMethod env _ name _ f).bind' fun value => ?_
         refine (local_defineOwn ?_ name _).bind' fun _ => ?_
         · cases static <;> assumption
         · exact (local_pure _).bind' fun field => (ih ms h).bind' fun _ => local_pure _
