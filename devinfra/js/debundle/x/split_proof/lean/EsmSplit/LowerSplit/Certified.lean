@@ -104,9 +104,22 @@ private def profileFields (profile : CoreJS.HostProfile) : List (String × Json)
 private def profilePremises (selected : CoreJS.HostProfile) (used : CoreJS.HostPremises) : List String :=
   (if selected == .empty then [] else [s!"Host profile: {selected.label}"]) ++ used.assumptions
 
+/-- The strongest ending statement established by a successful strategy. This
+is carried by the strategy result; it is never inferred from schedule shape. -/
+private inductive EndingGuarantee where
+  | normalCompletion
+  | allOutcomes
+  deriving Repr, DecidableEq
+
+private def EndingGuarantee.everyEndingMatches : EndingGuarantee → Bool
+  | .normalCompletion => false
+  | .allOutcomes => true
+
 private structure StrategyResult where
   scope : String
-  everyEndingMatches : Bool := false
+  /-- Structural preserved-order proofs can establish all outcomes; the linked
+  proof paths currently establish normal completion only. -/
+  endingGuarantee : EndingGuarantee
   premises : List String := []
 
 private structure CertifiedStrategy where
@@ -160,7 +173,7 @@ private def emitSelected (profile : CoreJS.HostProfile) (selection : SelectedStr
   let extra := profileFields profile ++ [
     ("strategy", toJson selection.strategy),
     ("premises", toJson selection.result.premises),
-    ("every_ending_matches", toJson selection.result.everyEndingMatches)
+    ("every_ending_matches", toJson selection.result.endingGuarantee.everyEndingMatches)
   ] ++
     (if selection.failures.isEmpty then [] else
       [("strategy_attempts", toJson (selection.failures.map strategyFailureJson))])
@@ -265,6 +278,9 @@ private def structuralResult (options : CertifiedOptions) (used : List CoreJS.St
     | .preservedOrder => "linked-structural-order"
     | .singlePivot => "linked-structural-pivot"
     | .multiplePivots => "linked-structural-moves"
+  let endingGuarantee := match proof with
+    | .preservedOrder => EndingGuarantee.allOutcomes
+    | .singlePivot | .multiplePivots => EndingGuarantee.normalCompletion
   let premises :=
     (if options.profile == .empty then [] else [s!"Host profile: {options.profile.label}"]) ++
     ["Retained source units use the same capability-closed opaque world in both layouts."] ++
@@ -275,10 +291,7 @@ private def structuralResult (options : CertifiedOptions) (used : List CoreJS.St
       s!"The static deployment at {origin} overlays only the planned module paths.",
       "The native ESM loader uses one module record per effective URL and resolves dynamic dependencies through the checked live cells."
     ])
-  let everyEndingMatches := match proof with
-    | .preservedOrder => true
-    | .singlePivot | .multiplePivots => false
-  { scope, everyEndingMatches, premises }
+  { scope, endingGuarantee, premises }
 
 private def checkPartLayout (part : Part) (timings : Bool) : IO Unit := do
   let ok ← timePhase timings "plan_checks" fun _ => checkLayout part.bundle part.plan (some part.spec) false
@@ -325,8 +338,6 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
         | .error reason =>
           pure (.error ({ reason, reasonCode := some "linked_input" } : CertificationRefusal))
         | .ok (original, candidate) => do
-          let order := fun (p : CoreJS.Program) => p.loaded.flatMap fun m => m.body.map Prod.fst
-          let everyEndingMatches := order original == order candidate
           match CoreJS.LinkedBehavior.probeWitness profile original candidate with
           | .error refusal => pure (.error (replayRefusal refusal))
           | .ok (premises, fuel) =>
@@ -349,7 +360,7 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
                 } : CertificationRefusal))
               | .ok _ => pure (.ok {
                   scope := "linked-programs"
-                  everyEndingMatches
+                  endingGuarantee := .normalCompletion
                   premises := profilePremises profile premises
                 })
     }
@@ -361,8 +372,6 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
         match decoded with
         | .error reason => pure (.error ({ reason, reasonCode := some "linked_input" } : CertificationRefusal))
         | .ok (original, candidate) => do
-          let order := fun (p : CoreJS.Program) => p.loaded.flatMap fun m => m.body.map Prod.fst
-          let everyEndingMatches := order original == order candidate
           let prepared : Except CertificationRefusal
               (CoreJS.LinkedBehavior.Certificate × Lean.NameMap Lean.ImportArtifacts) ←
             timePhase timings "certificate_preparation" fun _ => do
@@ -389,7 +398,7 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
             let active ← verifyExecution timings work cert dataArts
             pure (.ok {
               scope := "linked-programs"
-              everyEndingMatches
+              endingGuarantee := .normalCompletion
               premises := profilePremises profile active
             })
     }

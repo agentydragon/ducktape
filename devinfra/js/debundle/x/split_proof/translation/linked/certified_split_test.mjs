@@ -45,6 +45,22 @@ function check(out, status, ...args) {
   assert.equal(verdict.status, status, JSON.stringify(verdict));
   return verdict;
 }
+function requestWithStrategy(strategy, out) {
+  const result = spawnSync(process.env.LOWERSPLIT, [writeDeployment(input, placement, out), out], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      SPLIT_PROOF_STRATEGY_CENSUS: "1",
+      SPLIT_PROOF_CENSUS_STRATEGY: strategy,
+    },
+  });
+  if (result.error) throw result.error;
+  const diagnostics = result.stdout + result.stderr;
+  const verdict = JSON.parse(result.stdout.trim().split("\n").at(-1));
+  assert.equal(result.stdout.trim().split("\n").length, 1, diagnostics);
+  assert.equal(result.status, verdict.status === "certified" ? 0 : 1, diagnostics);
+  return verdict;
+}
 async function observe(url) {
   try {
     return Object.entries(await import(url));
@@ -157,6 +173,19 @@ for (const changed of ["const b = a, a = 1;", "let a = 1, b = a;", "const a = 2,
   fs.writeFileSync(groupedFile, groupedCode.replace("const a = 1, b = a;", changed));
   check(groupedOut, "rejected", "--check-output");
 }
+
+// The linked strategies establish normal equivalence only, even when source
+// and candidate keep the same unit order.
+prepare("const value = 1; export const result = value;", { [entry]: ["#0", "#1"] }, []);
+const replayOrderKept = requestWithStrategy("compiled-replay-premised", path.join(root, "replay-order-kept"));
+assert.equal(replayOrderKept.status, "certified", JSON.stringify(replayOrderKept));
+assert.equal(replayOrderKept.strategy, "compiled-replay-premised");
+assert.equal(replayOrderKept.every_ending_matches, false);
+const generatedOrderKept = requestWithStrategy("generated-proof", path.join(root, "generated-order-kept"));
+assert.equal(generatedOrderKept.status, "certified", JSON.stringify(generatedOrderKept));
+assert.equal(generatedOrderKept.strategy, "generated-proof");
+assert.equal(generatedOrderKept.every_ending_matches, false);
+
 // This cyclic placement needs the entry to expose a previously private binding to its peer.
 // Even an order-preserving CoreJS plan with all nine structural checks cannot certify that change.
 const leakingSource = "const first = later; var later = 1; export const publicValue = first;";
