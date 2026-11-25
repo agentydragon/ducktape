@@ -38,16 +38,16 @@ private theorem reachFrame_copySpreadKeys {r R cells A} (away : Away r R A) (cal
 /-- A spread snapshots keys, then checks each own descriptor in the state left by earlier getters. -/
 theorem reachFrame_copySpread {r R cells A} (away : Away r R A) (call : Call W)
     (getter : ∀ f base, SafeVal A f → SafeVal A base → ReachFrame r R cells A (SafeVal A) (call f base []))
-    {target : Addr} (ht : A (.obj target)) (source : Val) (hs : SafeVal A source) :
-    ReachFrame r R cells A (fun _ => True) (copySpread call target source) := by
+    {target : Addr} (ht : A (.obj target)) (excluded : List Name) (source : Val) (hs : SafeVal A source) :
+    ReachFrame r R cells A (fun _ => True) (copySpread call target excluded source) := by
   cases source <;> simp only [copySpread]
   case obj a =>
     exact (reachFrame_ownKeys away (.obj a) hs).bind fun keys _ =>
-      reachFrame_copySpreadKeys away call getter ht (safeVal_obj.1 hs) keys
+      reachFrame_copySpreadKeys away call getter ht (safeVal_obj.1 hs) _
   case str s =>
     split
     · apply ReachFrame.bind (P := fun _ => True) (Q := fun _ => True) _ (fun _ _ => reachFrame_pure r R cells A () trivial)
-      generalize s.toList.zipIdx = chars
+      generalize s.toList.zipIdx.filter (fun item => !excluded.contains (toString item.2)) = chars
       induction chars with
       | nil => exact reachFrame_pure r R cells A () trivial
       | cons c rest ih =>
@@ -134,9 +134,9 @@ theorem evalProps_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env
       intro setter safe
       exact (reachFrame_defineOwn away ha key _ ⟨descriptorNone_safe, descriptorNone_safe, descriptorField_safe safe⟩).bind
         fun _ _ => rest tail
-    | spread e =>
+    | spread e excluded =>
       exact (eval e).bind fun source hs =>
-        (reachFrame_copySpread away (callFn n) getter ha source hs).bind fun _ _ => rest tail
+        (reachFrame_copySpread away (callFn n) getter ha excluded source hs).bind fun _ _ => rest tail
     | proto e =>
       apply (eval e).bind
       intro v hv

@@ -219,8 +219,11 @@ trigger defaults from left to right, before the constructor body or its direct `
 Later parameters stay in the temporal dead zone, and the first default determines the constructor's
 `length`. Defaults follow the same receiver restrictions as the prefix. A body binding that would
 shadow an outer name used in a default is rejected.
-The prefix admits simple `let` and `const` bindings and expression statements. Prefixes and arguments
-that read `this` or define a nested callable are rejected. The parent receives the evaluated arguments
+Before `super()`, `var`, `let`, and `const` declarations can bind an object pattern. A trailing
+`...rest` copies enumerable own properties, including symbols, after the selected fields have
+been read. Each selected key must lower to a constant string for this rest binding.
+A direct read of `this` in the prefix or arguments is rejected. Arrows can capture the receiver
+cell and read it after the parent initializes it. The parent receives the evaluated arguments
 in source order. The rest of the constructor sees the same local bindings and the receiver returned by
 the parent, including a replacement object. If argument evaluation changes the active constructor’s
 prototype, CoreJS returns unknown because Node and ECMAScript can select different parents.

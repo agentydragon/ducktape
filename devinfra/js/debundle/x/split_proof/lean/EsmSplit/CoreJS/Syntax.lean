@@ -168,7 +168,8 @@ inductive PropDef where
   | setter (k : Expr) (f : Func)
   /-- `__proto__: v`. -/
   | proto (v : Expr)
-  | spread (source : Expr)
+  /-- CopyDataProperties. Object rest omits the statically selected keys. -/
+  | spread (source : Expr) (excluded : List Name := [])
 
 inductive ClassMember where
   | method (static : Bool) (k : Expr) (f : Func)
@@ -407,7 +408,7 @@ def Target.free : Target → List Name
 def PropDef.free : PropDef → List Name
   | .init k v => k.free ++ v.free
   | .method k f | .getter k f | .setter k f => k.free ++ f.free
-  | .proto v | .spread v => v.free
+  | .proto v | .spread v _ => v.free
 
 def ClassMember.free : ClassMember → List Name
   | .method _ k f | .getter _ k f | .setter _ k f => k.free ++ f.free

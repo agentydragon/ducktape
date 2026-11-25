@@ -858,9 +858,10 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
   for stmt in prefixStmts ++ commaPrefix do
     match ← field stmt "type" with
     | "VariableDeclaration" =>
-      for d in ← stmt.getObjValAs? (Array Json) "declarations" do
-        discard <| localBinding (← d.getObjVal? "id")
-      before := before ++ (← linkedBlockDeclarations profile imports .function (← prepareBeforeSuper stmt true))
+      let prepared ← prepareBeforeSuper stmt true
+      let kind ← field prepared "kind"
+      for d in ← prepared.getObjValAs? (Array Json) "declarations" do
+        before := before ++ (← linkedPrefixDeclarator (linkedExpr profile imports true) kind d before.size)
     | "ExpressionStatement" =>
       let expr ← prepareBeforeSuper (← stmt.getObjVal? "expression") true
       before := before.push (.expr (← linkedExpr profile imports true "" expr))
@@ -960,14 +961,7 @@ private partial def linkedBindingPattern (lower : Name → Json → Except Strin
   | "Identifier" => return .name (← binder j)
   | "ObjectPattern" =>
     let props ← j.getObjValAs? (List Json) "properties"
-    return .object (← props.mapM fun p => do
-      unless (← field p "type") == "Property" do throw "unsupported object binding property"
-      unless (← field p "kind") == "init" && !(← p.getObjValAs? Bool "method") do
-        throw "expected an object binding property initializer"
-      let key ← p.getObjVal? "key"
-      let key ← if ← p.getObjValAs? Bool "computed" then lower "" key else .str <$> staticPropertyName key
-      let target ← p.getObjVal? "value" >>= linkedBindingPattern lower binder
-      return (key, target))
+    return .object (← props.mapM (linkedBindingProperty lower binder))
   | "ArrayPattern" =>
     let mut items := #[]
     let mut rest := none
@@ -984,6 +978,16 @@ private partial def linkedBindingPattern (lower : Name → Json → Except Strin
     return .defaultValue target (← lower name (← j.getObjVal? "right"))
   | other => throw s!"unsupported binding pattern {other}"
 
+private partial def linkedBindingProperty (lower : Name → Json → Except String Expr)
+    (binder : Json → Except String Name) (p : Json) : Except String (Expr × BindingPattern) := do
+  unless (← field p "type") == "Property" do throw "unsupported object binding property"
+  unless (← field p "kind") == "init" && !(← p.getObjValAs? Bool "method") do
+    throw "expected an object binding property initializer"
+  let key ← p.getObjVal? "key"
+  let key ← if ← p.getObjValAs? Bool "computed" then lower "" key else .str <$> staticPropertyName key
+  let target ← p.getObjVal? "value" >>= linkedBindingPattern lower binder
+  return (key, target)
+
 private partial def linkedDeclarator (lower : Name → Json → Except String Expr)
     (binder : Json → Except String Name) (kind : String) (d : Json) : Except String (List Name × Stmt) := do
   let id ← d.getObjVal? "id"
@@ -995,6 +999,32 @@ private partial def linkedDeclarator (lower : Name → Json → Except String Ex
   let init ← d.getObjVal? "init"
   if init == .null then throw "binding pattern declaration needs an initializer"
   return (pattern.names, .bind (← parseDeclKind kind) pattern (← lower "" init))
+
+/-- Split off a trailing object rest binding only when the excluded property names are static.
+The saved RHS is outside the source identifier namespace. All user bindings keep their original
+declaration kind and share the constructor scope with the statements after super. -/
+private partial def linkedPrefixDeclarator (lower : Name → Json → Except String Expr)
+    (kind : String) (d : Json) (index : Nat) : Except String (Array Stmt) := do
+  let id ← d.getObjVal? "id"
+  unless (← field id "type") == "ObjectPattern" do
+    let (_, stmt) ← declaratorWith localBinding lower kind d
+    return #[stmt]
+  let props ← id.getObjValAs? (Array Json) "properties"
+  let some tail := props.back?.filter (fun p => (field p "type").toOption == some "RestElement") | do
+    let (_, stmt) ← linkedDeclarator lower localBinding kind d
+    return #[stmt]
+  let rest ← tail.getObjVal? "argument" >>= localBinding
+  let bindings ← props.pop.toList.mapM (linkedBindingProperty lower localBinding)
+  let excluded ← bindings.mapM fun (key, _) => do
+    let .str key := key | throw "unsupported computed object rest exclusion before super"
+    return key
+  unless (← field d "type") == "VariableDeclarator" do throw "expected a variable declarator"
+  let init ← d.getObjVal? "init"
+  if init == .null then throw "binding pattern declaration needs an initializer"
+  let saved := s!":derived:object:{index}"
+  let kind ← parseDeclKind kind
+  return #[.decl .const saved (← lower "" init), .bind kind (.object bindings) (.var saved),
+    .decl kind rest (.obj [.spread (.var saved) excluded])]
 
 private partial def linkedBlockDeclarations (profile : HostProfile) (imports : List Name) (scope : LinkedScope)
     (j : Json) : Except String (Array Stmt) := do
