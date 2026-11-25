@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	sessionpb "github.com/agentydragon/ducktape/agentplane/proto/session"
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/executionstate"
@@ -17,6 +18,7 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/internal/testsupport"
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/anthropic"
+	"github.com/agentydragon/ducktape/agentplane/sampler/providers/chatcompletions"
 	"github.com/agentydragon/ducktape/agentplane/sampler/providers/responses"
 	"github.com/agentydragon/ducktape/agentplane/testing/postgres"
 	"github.com/google/uuid"
@@ -227,6 +229,149 @@ func TestExecutionSnapshotsIgnoreSpoofedTextAndSurviveReloadAndCompaction(t *tes
 	empty := object.(ExecutionSnapshotObject)
 	if len(empty.Cells) != 0 || len(empty.Processes) != 0 {
 		t.Fatalf("empty snapshot retained stale handles: %+v", empty)
+	}
+}
+
+func TestChatCompactionPreservesExecutionSnapshotObjectsAcrossRoots(t *testing.T) {
+	ctx := t.Context()
+	store, dsn := newTestStoreWithDSN(t)
+	clock := func() time.Time { return time.Date(2026, 11, 24, 12, 0, 0, 0, time.UTC) }
+	store.now = clock
+	session, err := openStoreSession(t, store, &sessionconfig.Configuration{
+		SessionId: uuid.NewString(), Spec: &sessionpb.SessionSpec{Cwd: "/fixture", Model: "fixture-model"},
+	}, "fixture-account", protocol.APIStyleChatCompletions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := claim(t, store, session)
+	for _, input := range []string{strings.Repeat("old user input ", 200), "Keep this request."} {
+		if err := store.AppendInput(ctx, owner, input); err != nil {
+			t.Fatal(err)
+		}
+	}
+	live := &ExecutionState{
+		Cells: []LiveCell{{ID: "fixture-cell", Status: executionstate.CellLive}},
+		Processes: []RemoteProcess{
+			{ModelSessionID: new(42), Status: executionstate.ProcessRunning, TTY: true},
+			{Status: executionstate.ProcessStarting},
+		},
+	}
+	before, err := store.PrepareSamplingContext(ctx, owner, live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := before.Context().(*chatcompletions.Context)
+	plan, err := original.PrepareCompaction(chatcompletions.CompactionConfig{KeepRecentTokens: new(16)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent, _, err := store.BeginCompaction(ctx, owner, IntentPayload{Kind: PendingIntentCompaction}, original, nil, providerAttemptTestPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := []json.RawMessage{json.RawMessage(`{"role":"assistant","content":"An older handoff can mention fixture-cell."}`)}
+	audit := chatcompletions.Audit{FinishReason: "stop"}
+	replacement, err := plan.Apply(raw, audit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.FinishCompaction(ctx, owner, intent, audit, original, replacement, func(candidate protocol.Context) error {
+		return plan.CheckReduction(candidate.(*chatcompletions.Context))
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	type nativeSnapshot struct {
+		index int
+		text  string
+	}
+	snapshots := func(native protocol.Context) []nativeSnapshot {
+		t.Helper()
+		records, err := native.Records()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var result []nativeSnapshot
+		for index, raw := range records {
+			var message struct{ Role, Content string }
+			if err := json.Unmarshal(raw, &message); err != nil {
+				t.Fatal(err)
+			}
+			if message.Role == "system" && strings.HasPrefix(message.Content, "Active execution handles: ") {
+				result = append(result, nativeSnapshot{index: index, text: message.Content})
+			}
+		}
+		return result
+	}
+	readSnapshot := func(native protocol.Context, transcript bool, index int) (string, ExecutionSnapshotObject) {
+		t.Helper()
+		object, err := store.ReadRecordObject(ctx, owner, transcript, index)
+		if err != nil {
+			t.Fatal(err)
+		}
+		snapshot, ok := object.(ExecutionSnapshotObject)
+		origin := native.Origins().OriginAt(index)
+		if !ok || snapshot.ConversationID != owner.ConversationID ||
+			origin.Kind != protocol.RecordOriginExecutionSnapshot || !origin.ContentSource || origin.SourceID == "" {
+			t.Fatalf("invalid execution snapshot association: origin=%+v object=%+v", origin, object)
+		}
+		return origin.SourceID, snapshot
+	}
+
+	store = New(postgres.Open(t, dsn), store.operationTimeout, nil)
+	store.now = clock
+	compacted := snapshotFixtureRead(t, store, owner)
+	const running = `Active execution handles: {"cells":[{"cell_id":"fixture-cell","status":"live"}],"processes":[{"session_id":42,"status":"running","tty":true,"exit_code":null}]}`
+	const cleared = `Active execution handles: {"cells":[],"processes":[]}`
+	historical := snapshots(compacted.Transcript)
+	if len(historical) != 1 || historical[0].text != running ||
+		len(snapshots(compacted.Context())) != 0 || compacted.transcriptContextID != before.transcriptContextID {
+		t.Fatal("compaction should preserve the original native snapshot only in the transcript")
+	}
+	originalID, snapshot := readSnapshot(compacted.Transcript, true, historical[0].index)
+	if len(snapshot.Cells) != 1 || snapshot.Cells[0] != (modelCell{CellID: "fixture-cell", Status: executionstate.CellLive}) ||
+		len(snapshot.Processes) != 1 || snapshot.Processes[0] != (modelProcess{SessionID: 42, Status: executionstate.ProcessRunning, TTY: true}) {
+		t.Fatalf("stored object changed the structured handles: %+v", snapshot)
+	}
+	refreshed, err := store.PrepareSamplingContext(ctx, owner, live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := snapshots(refreshed.Context())
+	if len(current) != 1 || current[0].text != running || refreshed.transcriptContextID != compacted.transcriptContextID {
+		t.Fatal("the new context should see its own snapshot of the unchanged state")
+	}
+	activeID, _ := readSnapshot(refreshed.Context(), false, current[0].index)
+	if activeID != originalID {
+		t.Fatal("unchanged semantic state was split into different objects across native roots")
+	}
+
+	for range 2 {
+		if _, err := store.PrepareSamplingContext(ctx, owner, &ExecutionState{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store = New(postgres.Open(t, dsn), store.operationTimeout, nil)
+	empty := snapshotFixtureRead(t, store, owner)
+	var clearedID string
+	for _, transcript := range []bool{true, false} {
+		native := empty.Context()
+		if transcript {
+			native = empty.Transcript
+		}
+		got := snapshots(native)
+		if len(got) != 2 || got[0].text != running || got[1].text != cleared {
+			t.Fatalf("each context must see a single clearing snapshot: %v", got)
+		}
+		historicalID, _ := readSnapshot(native, transcript, got[0].index)
+		sourceID, object := readSnapshot(native, transcript, got[1].index)
+		if historicalID != originalID || sourceID == originalID || len(object.Cells) != 0 || len(object.Processes) != 0 {
+			t.Fatal("clearing the state overwrote the prior version or failed to store a distinct empty snapshot")
+		}
+		if clearedID != "" && clearedID != sourceID {
+			t.Fatal("the two clearing renderings must reference one shared semantic snapshot")
+		}
+		clearedID = sourceID
 	}
 }
 

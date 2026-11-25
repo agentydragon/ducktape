@@ -450,9 +450,10 @@ truncation at UTF-8 boundaries. The minimum configured budget is nine tokens, en
 and framing. A partial message is omitted when the remaining budget cannot fit its marker. History
 retains the complete authored text.
 
-Chat environment notices and execution snapshots use the system role and consume no authored-user
-budget. Legacy user-role records of unknown origin remain eligible, even if their content matches
-an environment notice.
+Chat environment notices and execution snapshots consume no authored-user budget. User messages
+retain their source command identity at their new record positions. The origin records shortened
+content as a truncated projection of that command. User-role records with absent or unrecognized
+origin remain eligible, even when their content matches an environment notice.
 
 The sampler compares serialized bytes for the whole candidate replacement and original active
 context before committing it. It freezes the request body before dispatch and reuses it on retry.
