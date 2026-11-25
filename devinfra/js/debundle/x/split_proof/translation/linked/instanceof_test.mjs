@@ -85,12 +85,17 @@ checkProtocol(
 );
 
 checkProtocol(
-  "instanceof-abrupt-hooks",
+  "instanceof-non-callable-hook",
+  `const primitiveHook = { [Symbol.hasInstance]: 7 };`,
+  `try { 2 instanceof primitiveHook; } catch (e) { return typeof e; }
+   return "did not throw";`,
+  "object"
+);
+
+checkProtocol(
+  "instanceof-throwing-getter",
   `class Throws { static get [Symbol.hasInstance]() { throw "getter"; } }`,
-  `const primitiveHook = { [Symbol.hasInstance]: 7 };
-   let errors = 0;
-   try { 2 instanceof primitiveHook; } catch { errors++; }
-   try { 1 instanceof Throws; } catch (e) { if (e === "getter") errors++; }
-   return errors;`,
-  2
+  `try { 1 instanceof Throws; } catch (e) { return e; }
+   return "did not throw";`,
+  "getter"
 );
