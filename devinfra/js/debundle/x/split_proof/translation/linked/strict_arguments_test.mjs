@@ -17,6 +17,10 @@ const run = workerSplit(
      if (!poisoned || original !== read() || nested === original || nested.length !== 1 ||
          nested[0] !== 8 || first !== 12 || second !== 3 || original[0] !== 2 ||
          original[1] !== 7 || original.length !== 3 || original[2] !== 4) throw "arguments";
+     original.length = 2.5;
+     const items = [...original];
+     if (items.length !== 2 || items[0] !== 2 || items[1] !== 7) throw "array-like iterator";
+     original.length = 3;
      return read;
    }
    export const result = (() => {

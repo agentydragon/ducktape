@@ -27,10 +27,10 @@ def getIterator (call : Call W) (value : Val) : M W IteratorCursor := do
   let method ← getProp call value (.wellKnownSymbol .iterator)
   if let .host "Array.prototype.values" := method then
     let a ← requireIteratorObject "array iterator receiver is not an object" value
-    if (← getObj a).array then
-      checkArrayIteratorNext
-      return .array a 0
-    else unknown "the array iterator receiver is not a modeled array"
+    -- Array.prototype.values is generic. Strict arguments objects inherit from
+    -- Object.prototype and have their own data property for this iterator.
+    checkArrayIteratorNext
+    return .array a 0
   let receiver ← requireIteratorObject "iterator method result is not an object" (← call method value [])
   let next ← getProp call (.obj receiver) (.str "next")
   return .object receiver next
@@ -42,7 +42,9 @@ def iteratorStep (call : Call W) (cursor : IteratorCursor) (readValue : Bool := 
   | .array source index =>
     let .num length ← getProp call (.obj source) (.str "length")
       | unknown "array iterator length is not a modeled number"
-    if !(Float.ofNat index < length) then return none
+    -- For a nonnegative integer index this compares against ToLength(length),
+    -- including fractional, nonfinite, and mutable array-like lengths.
+    if !(index < 9007199254740991 && Float.ofNat (index + 1) ≤ length) then return none
     -- The intrinsic next method reads the index even if its result's value is discarded.
     let v ← getProp call (.obj source) (.str (toString index))
     return some (if readValue then v else .undef, .array source (index + 1))
