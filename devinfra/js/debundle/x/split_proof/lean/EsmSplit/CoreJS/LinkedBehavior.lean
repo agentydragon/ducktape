@@ -17,6 +17,38 @@ theorem of_runs {source candidate : Program} (fuel : Nat)
   obtain ⟨t, hs, hc⟩ := runs W
   exact ⟨t, ⟨fuel, hs, by simp⟩, ⟨fuel, hc, by simp⟩⟩
 
+/-- The same normal outcomes at any evaluator bound, including the full final
+binding, heap, output and world state. A source that throws before the pivot
+does not promise the candidate throws with an identical partial state. -/
+def NormalEquivalent (worlds : World → Prop) (source candidate : Program) : Prop :=
+  ∀ w, worlds w → ∀ (final : State w), Ends w source (.ok () final) ↔ Ends w candidate (.ok () final)
+
+theorem normalEquivalent_of_bounded {worlds : World → Prop} {source candidate : Program}
+    (run : ∀ w, worlds w → ∀ n (final : State w),
+      runProgram w n source = .ok () final ↔ runProgram w n candidate = .ok () final) :
+    NormalEquivalent worlds source candidate := by
+  intro w hw final
+  constructor
+  · rintro ⟨n, before, existsOutcome⟩
+    exact ⟨n, (run w hw n final).mp before, existsOutcome⟩
+  · rintro ⟨n, after, existsOutcome⟩
+    exact ⟨n, (run w hw n final).mpr after, existsOutcome⟩
+
+/-- One shared normal final state in every allowed world gives the same successful final
+states in both directions: a run has at most one result. -/
+theorem normalEquivalent_of_shared {worlds : World → Prop} {source candidate : Program}
+    (shared : ∀ w, worlds w → ∃ t : State w, Ends w source (.ok () t) ∧ Ends w candidate (.ok () t)) :
+    NormalEquivalent worlds source candidate := by
+  intro w hw final
+  obtain ⟨t, hs, hc⟩ := shared w hw
+  constructor
+  · intro h
+    cases Ends.unique h hs
+    exact hc
+  · intro h
+    cases Ends.unique h hc
+    exact hs
+
 def normal {W : World} : Res W Unit → Bool
   | .ok .. => true
   | _ => false

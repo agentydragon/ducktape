@@ -4,23 +4,6 @@ import EsmSplit.CoreJS.Split
 
 namespace CoreJS.LinkedBehavior
 
-/-- The same normal outcomes at any evaluator bound, including the full final
-binding, heap, output and world state. A source that throws before the pivot
-does not promise the candidate throws with an identical partial state. -/
-def NormalEquivalent (worlds : World → Prop) (source candidate : Program) : Prop :=
-  ∀ w, worlds w → ∀ (final : State w), Ends w source (.ok () final) ↔ Ends w candidate (.ok () final)
-
-theorem normalEquivalent_of_bounded {worlds : World → Prop} {source candidate : Program}
-    (run : ∀ w, worlds w → ∀ n (final : State w),
-      runProgram w n source = .ok () final ↔ runProgram w n candidate = .ok () final) :
-    NormalEquivalent worlds source candidate := by
-  intro w hw final
-  constructor
-  · rintro ⟨n, before, existsOutcome⟩
-    exact ⟨n, (run w hw n final).mp before, existsOutcome⟩
-  · rintro ⟨n, after, existsOutcome⟩
-    exact ⟨n, (run w hw n final).mpr after, existsOutcome⟩
-
 def FramedUnits (w : World) (fuel pivotId : Nat) (R : Addr → Prop) (A : HeapNode → Prop)
     (steps : List LinkedUnit) : Prop :=
   ∀ u ∈ steps, u.id ≠ pivotId ∧ ∃ cells,
