@@ -844,6 +844,7 @@ py_library(
         ":app",
         ":app_settings",
         ":chart",
+        ":codex_models",
         ":command_sandbox",
         ":database",
         ":egress_credentials",

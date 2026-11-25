@@ -255,8 +255,10 @@ def test_staging_sampler_routes_use_the_provider_protocol() -> None:
             assert model.responses is not None
             if route.upstream.provider == Provider.CHATGPT:
                 assert (model.responses.dialect, model.exec_encoding) == ("lite", "freeform")
+                assert model.auto_compact_tokens is not None
             else:
                 assert (model.responses.dialect, model.exec_encoding) == ("standard", "json")
+                assert model.auto_compact_tokens is None
 
 
 if __name__ == "__main__":
