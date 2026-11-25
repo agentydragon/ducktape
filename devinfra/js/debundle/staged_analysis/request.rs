@@ -38,16 +38,8 @@ pub fn analyze_from_projection(
     );
     let package_roots = args.package_roots;
     let source_root = graph_provenance::absolute(&args.tree_source_root)?;
-    let mut packages = BTreeMap::new();
-    for (name, root) in &package_roots {
-        packages.insert(name.clone(), graph_provenance::absolute(root)?);
-    }
-    if let Some(root) = &args.packages_root {
-        packages.insert(
-            "__packages_root__".to_string(),
-            graph_provenance::absolute(root)?,
-        );
-    }
+    let packages =
+        graph_provenance::capture_package_roots(&package_roots, args.packages_root.as_deref())?;
     let projection_dir = graph_provenance::absolute(
         args.projection
             .parent()
@@ -64,7 +56,6 @@ pub fn analyze_from_projection(
         None,
         std::env::args().collect(),
     )?;
-    capture.set_source_root(&source_root)?;
     let inputs = spec.inputs_under(&source_root);
     let artifact = load_js_chunks(&inputs.input_root, &inputs.js_list_path)?;
     let embedded_loaders: BTreeMap<String, spec::BunLoader> = match &inputs.embedded_loaders_path {

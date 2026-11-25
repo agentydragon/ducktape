@@ -4,7 +4,7 @@
 //! the bytes returned to the parser, rather than reopening the path after analysis.
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::fs;
 use std::io::{self, BufReader, Read, Write};
@@ -448,18 +448,6 @@ impl InputCapture {
         })
     }
 
-    pub fn set_source_root(&self, path: &Path) -> Result<()> {
-        let path = absolute(path)?;
-        self.state
-            .lock()
-            .expect("capture lock")
-            .as_mut()
-            .expect("capture started")
-            .roots
-            .source = path;
-        Ok(())
-    }
-
     /// Record bytes already read by the caller so capture and parsing use the
     /// same snapshot. The subset is rooted separately because Bazel and local
     /// callers commonly keep it outside the spec tree.
@@ -778,7 +766,7 @@ impl GraphProvenance {
             .roots
             .packages
             .get_key_value(name)
-            .or_else(|| self.roots.packages.get_key_value("__packages_root__"))
+            .or_else(|| self.roots.packages.get_key_value(SHARED_PACKAGES_ROOT))
             .with_context(|| format!("missing captured root for package {name}"))?;
         if let Ok(relative) = absolute.strip_prefix(root) {
             return Ok((
@@ -930,7 +918,7 @@ impl GraphProvenance {
                     }
                     "--packages-root" => current
                         .packages
-                        .get("__packages_root__")
+                        .get(SHARED_PACKAGES_ROOT)
                         .map(PathBuf::as_path)
                         .map(absolute)
                         .transpose()?
@@ -1244,6 +1232,27 @@ pub fn collect_yaml(root: &Path) -> Result<Vec<PathBuf>> {
     walk(root, root, &mut out)?;
     out.sort();
     Ok(out)
+}
+
+/// Key used for the shared package fallback in captured and relocated provenance roots.
+pub const SHARED_PACKAGES_ROOT: &str = "__packages_root__";
+
+pub fn capture_package_roots(
+    named: &HashMap<String, PathBuf>,
+    shared: Option<&Path>,
+) -> Result<BTreeMap<String, PathBuf>> {
+    anyhow::ensure!(
+        !named.contains_key(SHARED_PACKAGES_ROOT),
+        "package name {SHARED_PACKAGES_ROOT} is reserved for the shared packages root in graph provenance"
+    );
+    let mut packages = BTreeMap::new();
+    for (name, path) in named {
+        packages.insert(name.clone(), absolute(path)?);
+    }
+    if let Some(path) = shared {
+        packages.insert(SHARED_PACKAGES_ROOT.to_owned(), absolute(path)?);
+    }
+    Ok(packages)
 }
 
 pub fn absolute(path: &Path) -> Result<PathBuf> {
