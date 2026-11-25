@@ -91,6 +91,10 @@ private def emitRefusal (requested : String) (refusal : CertificationRefusal)
   let details := reasonCodeFields ++ observationFields
   emitVerdict requested (.error (IO.userError refusal.reason).toString) scope details
 
+private def structuralRefusal (reason : String) : CertificationRefusal :=
+  let reasonCode := (CoreJS.LinkedBehavior.structuralRefusalCode reason).map fun code => code.label
+  { reason := reason, reasonCode := reasonCode }
+
 private def profileFields (profile : CoreJS.HostProfile) : List (String × Json) :=
   if profile == .empty then [] else [("hostProfile", toJson profile.label)]
 
@@ -278,9 +282,11 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
         timePhase timings "structural_certificate" fun _ => do
           let result ← IO.lazyPure fun _ =>
             CoreJS.LinkedBehavior.certifyStructuralASTs profile intrinsics program shared files P none
-          let ⟨used, level, proof, _⟩ ← IO.ofExcept result
-          requireGuarantee request level
-          pure (.ok (used, level, proof))
+          match result with
+          | .error reason => pure (.error (structuralRefusal reason))
+          | .ok ⟨used, level, proof, _⟩ => do
+            requireGuarantee request level
+            pure (.ok (used, level, proof))
       match checked with
       | .ok (used, level, proof) => return ← emitStructural options used level proof
       | .error refusal => return ← emitRefusal request.label refusal "linked-structural"
@@ -396,9 +402,11 @@ private def runDeployment (manifest : DeploymentManifest) (out work : System.Fil
       timePhase timings "structural_certificate" fun _ => do
         let result ← IO.lazyPure fun _ =>
           CoreJS.LinkedBehavior.certifyDeployment manifest.entry actual shared deployment profile intrinsics
-        let ⟨used, level, proof, _⟩ ← IO.ofExcept result
-        requireGuarantee request level
-        pure (.ok (used, level, proof))
+        match result with
+        | .error reason => pure (.error (structuralRefusal reason))
+        | .ok ⟨used, level, proof, _⟩ => do
+          requireGuarantee request level
+          pure (.ok (used, level, proof))
     match checked with
     | .ok (used, level, proof) => emitStructural options used level proof
     | .error refusal => emitRefusal request.label refusal "linked-structural"
