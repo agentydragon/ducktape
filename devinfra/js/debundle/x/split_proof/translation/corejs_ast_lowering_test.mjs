@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { acorn, dump as dumpSource, eslintScope } from "./parser.mjs";
@@ -138,6 +138,28 @@ for (const [i, source] of hostSources.entries()) {
     source
   );
 }
+
+// The line names its entry, so a provider can import the entry back.
+const cycleFiles = {
+  "main.mjs": 'import { read } from "./reader.mjs"; export const value = 7; console.log(read());',
+  "reader.mjs": 'import { value } from "./main.mjs"; export function read() { return value; }',
+};
+const cycleDir = path.join(dir, "cycle");
+mkdirSync(cycleDir, { recursive: true });
+for (const [name, text] of Object.entries(cycleFiles)) writeFileSync(path.join(cycleDir, name), text);
+const [cycle] = run(
+  [
+    {
+      ...dumpSource(cycleFiles["main.mjs"]),
+      entry: "main.mjs",
+      providers: { "reader.mjs": dumpSource(cycleFiles["reader.mjs"]) },
+    },
+  ],
+  true
+);
+const cycleNode = spawnSync(process.execPath, [path.join(cycleDir, "main.mjs")], { encoding: "utf8" });
+assert.equal(cycleNode.status, 0, cycleNode.stderr);
+assert.deepEqual([cycle.end, cycle.out], ["normal", cycleNode.stdout.split("\n").slice(0, -1)]);
 
 const spec = file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["a", "b"] } }));
 function split(source, args = []) {

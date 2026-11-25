@@ -15,7 +15,8 @@ statement it ended in; `order` is the order in which the modules run; `state` is
 of the final state, with its address.
 
 `corejs --ast dumps.jsonl` runs the same interpreter on annotated ESTree dumps. Each line is an entry module,
-optionally with `"providers"`: its relative dependencies by resolved filename. The entry point in
+optionally with `"entry"`, its filename (default `main`), and `"providers"`: its relative dependencies by
+resolved filename, which may import the entry back. The entry point in
 `CoreJSMain.lean` lowers them through `LinkedInput.program`, the lowering that certification uses.
 An unsupported AST produces a `malformed` result with its reason.
 
