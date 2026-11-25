@@ -281,15 +281,7 @@ fn project_apply_from_spec(
         (TransformSpecSource::Flat { .. }, _) => BTreeMap::new(),
     };
     let root = std::path::absolute(root)?;
-    let relative = |path: &Path| -> Result<PathBuf> {
-        let path = std::path::absolute(path)?;
-        Ok(path.strip_prefix(&root).unwrap_or(&path).to_path_buf())
-    };
-    let mut source = cli.spec_source.clone();
-    map_spec_source_paths(&mut source, &relative)?;
-    if let TransformSpecSource::Tree(tree) = &mut source {
-        tree.out_root = PathBuf::from(APPLY_OUTPUT_ROOT);
-    }
+    let source = projection_source(&cli.spec_source, &root)?;
     let mut rooted_paths = BTreeSet::new();
     map_apply_spec_paths(&mut spec, &mut |field, path| {
         if let Ok(relative) = path.strip_prefix(&root) {
@@ -312,23 +304,23 @@ fn project_apply_from_spec(
     .with_context(|| format!("write apply projection {}", out.display()))
 }
 
-fn map_spec_source_paths(
-    source: &mut TransformSpecSource,
-    map: &impl Fn(&Path) -> Result<PathBuf>,
-) -> Result<()> {
-    match source {
-        TransformSpecSource::Flat { path } => *path = map(path)?,
+fn projection_source(source: &TransformSpecSource, root: &Path) -> Result<TransformSpecSource> {
+    let relative = |path: &Path| -> Result<PathBuf> {
+        let path = std::path::absolute(path)?;
+        Ok(path.strip_prefix(root).unwrap_or(&path).to_path_buf())
+    };
+    let mut source = source.clone();
+    match &mut source {
+        TransformSpecSource::Flat { path } => *path = relative(path)?,
         TransformSpecSource::Tree(tree) => {
-            tree.config_path = map(&tree.config_path)?;
-            tree.modules_root = map(&tree.modules_root)?;
-            tree.vendor_marks_path = map(&tree.vendor_marks_path)?;
-            tree.out_root = map(&tree.out_root)?;
-            if let Some(root) = &mut tree.source_root {
-                *root = map(root)?;
-            }
+            tree.config_path = relative(&tree.config_path)?;
+            tree.modules_root = relative(&tree.modules_root)?;
+            tree.vendor_marks_path = relative(&tree.vendor_marks_path)?;
+            tree.out_root = PathBuf::from(APPLY_OUTPUT_ROOT);
+            tree.source_root = tree.source_root.as_deref().map(relative).transpose()?;
         }
     }
-    Ok(())
+    Ok(source)
 }
 
 /// Filesystem paths only: module IDs and specifiers are semantic strings.
@@ -428,16 +420,8 @@ pub fn run_transform_with_projection(
             );
             let mut projection = ApplyProjection::decode(&fs::read(path)?)?;
             let root = std::path::absolute(projection_root)?;
-            let mut source = cli.spec_source.clone();
-            map_spec_source_paths(&mut source, &|path| {
-                let path = std::path::absolute(path)?;
-                Ok(path.strip_prefix(&root).unwrap_or(&path).to_path_buf())
-            })?;
-            if let TransformSpecSource::Tree(tree) = &mut source {
-                tree.out_root = PathBuf::from(APPLY_OUTPUT_ROOT);
-            }
             anyhow::ensure!(
-                projection.source == source,
+                projection.source == projection_source(&cli.spec_source, &root)?,
                 "apply projection was compiled for other spec paths"
             );
             map_apply_spec_paths(&mut projection.spec, &mut |field, path| {
