@@ -37,6 +37,22 @@ _TEST_DATA = [
 
 _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"}
 
+# These valid Lean-backed shards exceed the medium budget or have timed out in CI.
+_LONG_TIMEOUT_TESTS = {
+    "browser_globals_test",
+    "flat_patterns_test",
+    "host_profile_test",
+    "if_test",
+    "literal_records_test",
+    "mutations_test",
+    "pre_super_test",
+    "programs_test",
+    "property_assignment_test",
+    "provider_programs_test",
+    "sequence_test",
+    "switch_test",
+}
+
 js_test(
     name = "joint_static_test",
     size = "medium",
@@ -55,6 +71,7 @@ js_test(
     js_test(
         name = name,
         size = "medium",
+        timeout = "long" if name in _LONG_TIMEOUT_TESTS else "moderate",
         data = _TEST_DATA,
         entry_point = name + ".mjs",
         env = _TEST_ENV,
@@ -116,6 +133,7 @@ js_test(
     js_test(
         name = name,
         size = "medium",
+        timeout = "long" if name in _LONG_TIMEOUT_TESTS else "moderate",
         data = _TEST_DATA,
         entry_point = name + ".mjs",
         env = _TEST_ENV,
@@ -166,6 +184,7 @@ js_test(
 js_test(
     name = "wide_table_reversal_test",
     size = "medium",
+    timeout = "long",
     data = _TEST_DATA,
     entry_point = "wide_table_reversal_test.mjs",
     env = _TEST_ENV,
@@ -184,6 +203,7 @@ js_test(
 js_test(
     name = "provider_programs_test",
     size = "medium",
+    timeout = "long",
     data = _TEST_DATA,
     entry_point = "provider_programs_test.mjs",
     env = _TEST_ENV,
@@ -193,6 +213,7 @@ js_test(
 js_test(
     name = "programs_test",
     size = "medium",
+    timeout = "long",
     data = _TEST_DATA,
     entry_point = "programs_test.mjs",
     env = _TEST_ENV,
@@ -202,6 +223,7 @@ js_test(
 js_test(
     name = "host_profile_test",
     size = "medium",
+    timeout = "long",
     data = _TEST_DATA,
     entry_point = "host_profile_test.mjs",
     env = _TEST_ENV,
@@ -233,6 +255,7 @@ js_test(
 js_test(
     name = "mutations_test",
     size = "medium",
+    timeout = "long",
     data = _TEST_DATA,
     entry_point = "mutations_test.mjs",
     env = _TEST_ENV,
@@ -242,6 +265,7 @@ js_test(
 js_test(
     name = "property_assignment_test",
     size = "medium",
+    timeout = "long",
     data = _TEST_DATA,
     entry_point = "property_assignment_test.mjs",
     env = _TEST_ENV,
