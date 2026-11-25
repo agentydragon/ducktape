@@ -518,10 +518,7 @@ impl DirectoryAccumulator {
 
 #[derive(Default)]
 struct DirectionalDirectoryAccumulator {
-    edge_count: usize,
-    edge_count_by_kind: BTreeMap<String, usize>,
-    symbols: BTreeMap<String, usize>,
-    external_files: BTreeMap<String, usize>,
+    counts: BoundaryCounts,
     edges: BTreeMap<(String, String), DirectoryEdgeAccumulator>,
 }
 
@@ -537,28 +534,26 @@ struct DirectionalDirectoryFact<'a> {
 
 impl DirectionalDirectoryAccumulator {
     fn add_fact(&mut self, fact: DirectionalDirectoryFact<'_>) {
-        let kind: &'static str = fact.edge_kind.into();
-        self.edge_count += 1;
-        *self.edge_count_by_kind.entry(kind.to_string()).or_default() += 1;
-        if let Some(symbol) = fact.symbol {
-            *self.symbols.entry(symbol.to_string()).or_default() += 1;
-        }
-        *self
-            .external_files
-            .entry(fact.external_file.to_string())
-            .or_default() += 1;
+        self.counts
+            .add_fact(fact.external_file, fact.edge_kind, fact.symbol);
         self.edges
             .entry((fact.source_dir, fact.target_dir))
             .or_default()
-            .add_fact(fact.source_file, fact.target_file, kind, fact.symbol);
+            .add_fact(
+                fact.source_file,
+                fact.target_file,
+                fact.edge_kind.into(),
+                fact.symbol,
+            );
     }
 
     fn into_summary(self) -> DirectoryBoundarySummary {
+        let counts = self.counts.into_file_summary();
         DirectoryBoundarySummary {
-            edge_count: self.edge_count,
-            edge_count_by_kind: histogram_into_pairs(self.edge_count_by_kind),
-            symbols: histogram_into_pairs(self.symbols),
-            files: histogram_into_pairs(self.external_files),
+            edge_count: counts.edge_count,
+            edge_count_by_kind: counts.edge_count_by_kind,
+            symbols: counts.symbols,
+            files: counts.files,
             edges: self
                 .edges
                 .into_iter()
@@ -618,19 +613,19 @@ fn histogram_into_pairs(map: BTreeMap<String, usize>) -> EdgeHistogram {
 
 #[derive(Default)]
 struct FileAccumulator {
-    incoming: DirectionalFileAccumulator,
-    outgoing: DirectionalFileAccumulator,
+    incoming: BoundaryCounts,
+    outgoing: BoundaryCounts,
 }
 
 #[derive(Default)]
-struct DirectionalFileAccumulator {
+struct BoundaryCounts {
     edge_count: usize,
     edge_count_by_kind: BTreeMap<String, usize>,
     symbols: BTreeMap<String, usize>,
     files: BTreeMap<String, usize>,
 }
 
-impl DirectionalFileAccumulator {
+impl BoundaryCounts {
     fn add_fact(&mut self, external_file: &str, edge_kind: DepKind, symbol: Option<&str>) {
         let kind: &'static str = edge_kind.into();
         self.edge_count += 1;
