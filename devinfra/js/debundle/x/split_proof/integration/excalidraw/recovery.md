@@ -342,3 +342,15 @@ A separate trial assigned `deconstructDiamondElement` to `element/utils` and
 resolved. Lean refused before emission because the linked initial state already
 exposes the region of `getDiamondPoints` (unit 1252).
 [Diamond placement refusal](https://app.buildbuddy.io/invocation/6636793f-2c68-4853-ae8b-f3175fcb3d8a).
+
+## Computed font keys and the default sidebar
+
+`FONT_FAMILY_FALLBACKS` constructs a fresh object using two previously
+initialized font names as property keys. `DEFAULT_SIDEBAR` uses an earlier
+string binding as its `defaultTab` value. Both belong to upstream
+[constants.ts](https://github.com/excalidraw/excalidraw/blob/v0.18.1/packages/excalidraw/constants.ts).
+The [record creation proof](https://github.com/agentydragon/ducktape/pull/19900)
+checks the actual linked prefixes before specializing either read. The
+[355-binding combined replay](https://app.buildbuddy.io/invocation/50fd3de4-ed08-45b7-bab6-d6c47ba006b8)
+uses the same host contract and upstream module owners as the transform-handle
+placement. The selector requests both declarations by their upstream names.
