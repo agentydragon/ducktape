@@ -1038,3 +1038,23 @@ lean_axiom_test(
     ],
     deps = [":corejs_runtime"],
 )
+
+lean_axiom_test(
+    name = "stack_read_composition_axioms_test",
+    srcs = [
+        "EsmSplit/CoreJS/SharedStackString.lean",
+        "EsmSplit/CoreJS/StackReadBoundary.lean",
+        "EsmSplit/CoreJS/StackReadComposition.lean",
+    ],
+    imports = ["EsmSplit.CoreJS.StackReadComposition"],
+    theorems = [
+        "CoreJS.StackReadComposition.movedWithReachedReads",
+        "CoreJS.StackReadComposition.exampleWithOverride",
+        "CoreJS.StackReadComposition.syntheticIdentityOnly",
+        "CoreJS.StackReadComposition.aliasShadowAndLookalike",
+        "CoreJS.StackReadComposition.ordinaryPrototypeLookalike",
+        "CoreJS.StackReadComposition.aliasConstructionUnknown",
+        "CoreJS.StackReadComposition.shadowConstructionUnknown",
+    ],
+    deps = [":corejs_runtime"],
+)
