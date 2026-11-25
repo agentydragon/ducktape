@@ -1075,6 +1075,26 @@ def checkForInWrite (base target key : Val) : M W Val := do
       unknown "for-in body writes through an accessor"
     else pure .undef
 
+/-- Each private name owns a fresh, unreachable null-prototype table. Keys encode
+heap receiver identity; the associated descriptor distinguishes writable fields
+from methods. JavaScript reflection only sees the receiver's public properties. -/
+def privateSlot (op : PrivateOp) (table receiver value : Val) : M W Val := do
+  let table ← requireObj "private name table" table
+  let receiver ← requireObj "private member receiver" receiver
+  let key := PropertyKey.symbol receiver
+  let present ← lookupProp table key
+  match op, present with
+  | .get, some (.data v ..) => pure v
+  | .set, some (.data _ true ..) =>
+    defineOwn table key { value := some value }
+    pure value
+  | .set, some (.data _ false ..) => throwErr .type "cannot assign to a private method"
+  | .addField, none | .addMethod, none =>
+    defineOwn table key { value := some value, writable := some (op == .addField) }
+    pure value
+  | .addField, some _ | .addMethod, some _ => throwErr .type "duplicate private element"
+  | _, _ => throwErr .type "receiver does not have this private element"
+
 def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
   let arg (i : Nat) : Val := args.getD i .undef
   match p with
@@ -1095,6 +1115,8 @@ def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
   | .opaqueAmbientRef name => unknown s!"ambient binding {name} is reached"
   | .opaqueConstructorRef name => unknown s!"ambient constructor {name} is reached"
   | .opaqueAmbientMemberRef receiver member => unknown s!"ambient member {receiver}.{member} is reached"
+  | .privateSlot op => privateSlot op (arg 0) (arg 1) (arg 2)
+  | .callWithReceiver => call (arg 0) (arg 1) (args.drop 2)
   | .forInKeys => forInKeys (arg 0)
   | .checkForInWrite => checkForInWrite (arg 0) (arg 1) (arg 2)
   | .log =>

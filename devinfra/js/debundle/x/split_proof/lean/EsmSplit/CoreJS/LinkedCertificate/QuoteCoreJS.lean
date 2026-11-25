@@ -16,6 +16,7 @@ deriving instance Lean.ToExpr for LogOp
 deriving instance Lean.ToExpr for RegExpData
 deriving instance Lean.ToExpr for RegExpGetter
 deriving instance Lean.ToExpr for WellKnownSymbol
+deriving instance Lean.ToExpr for PrivateOp
 deriving instance Lean.ToExpr for Prim
 deriving instance Lean.ToExpr for FuncKind
 deriving instance Lean.ToExpr for OpaqueRun

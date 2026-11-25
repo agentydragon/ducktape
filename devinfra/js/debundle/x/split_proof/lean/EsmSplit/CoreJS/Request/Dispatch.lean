@@ -142,6 +142,32 @@ private theorem reachFrame_checkForInWrite {r R cells A} (away : Away r R A)
         · exact reachFrame_unknown r R cells A _ _
         · exact reachFrame_pure r R cells A Val.undef (by simp [SafeVal, Val.nodes])
 
+private theorem reachFrame_privateSlot {r R cells A} (away : Away r R A)
+    (op : PrivateOp) (table receiver value : Val) (ht : SafeVal A table)
+    (hr : SafeVal A receiver) (hv : SafeVal A value) :
+    ReachFrame r R cells A (SafeVal A) (privateSlot op table receiver value : M W Val) := by
+  unfold privateSlot
+  apply (reachFrame_requireObj "private name table" table ht).bind
+  intro table ha
+  apply (reachFrame_requireObj "private member receiver" receiver hr).bind
+  intro receiver _
+  apply (reachFrame_lookupProp away ha (.symbol receiver)).bind
+  intro present hp
+  have save (w : Option Bool) : ReachFrame r R cells A (SafeVal A)
+      (do defineOwn table (.symbol receiver) { value := some value, writable := w }; pure value : M W Val) :=
+    (reachFrame_defineOwn away ha _ _
+      ⟨fun v h => by cases h; exact hv, fun _ h => by cases h, fun _ h => by cases h⟩).bind fun _ _ =>
+        reachFrame_pure r R cells A value hv
+  cases op <;> cases present <;> try exact reachFrame_throwErr r R cells A _ _ _
+  all_goals first
+    | exact save _
+    | rename_i property; cases property <;> try exact reachFrame_throwErr r R cells A _ _ _
+  · exact reachFrame_pure r R cells A _ (hp _ rfl)
+  · rename_i v writable enumerable configurable
+    cases writable
+    · exact reachFrame_throwErr r R cells A _ _ _
+    · exact save none
+
 theorem reachFrame_prim {r R cells A} (away : Away r R A) (call : Call W) (hf : CallFramed r R cells A call)
     (objects : ∀ a : Addr, a.region ≠ r → A (.obj a)) (root : A (.obj objectProto))
     (p : Prim) (args : List Val) (safe : ∀ x ∈ args, SafeVal A x) :
@@ -169,6 +195,9 @@ theorem reachFrame_prim {r R cells A} (away : Away r R A) (call : Call W) (hf : 
       | split
   | opaqueAmbientRef name | opaqueConstructorRef name => exact reachFrame_unknown r R cells A _ _
   | opaqueAmbientMemberRef receiver member => exact reachFrame_unknown r R cells A _ _
+  | privateSlot op => exact reachFrame_privateSlot away op _ _ _ (safe_arg safe 0) (safe_arg safe 1) (safe_arg safe 2)
+  | callWithReceiver => exact hf _ _ _ (safe_arg safe 0) (safe_arg safe 1)
+      (fun v h => safe v (List.mem_of_mem_drop h))
   | forInKeys => exact reachFrame_forInKeys away objects _ (safe_arg safe 0)
   | checkForInWrite =>
     exact reachFrame_checkForInWrite away _ _ _ (safe_arg safe 0) (safe_arg safe 1)
@@ -182,11 +211,12 @@ theorem perform_prim {r R cells A} (away : Away r R A) (call : Call W)
     (construct : Val → List Val → M W Val) (code) (hf : CallFramed r R cells A call)
     (objects : ∀ a : Addr, a.region ≠ r → A (.obj a)) (root : A (.obj objectProto))
     (p : Prim) (args : List WVal) :
-    ReachFrame r R cells A (fun _ => True) (perform call construct code cells (.prim p args)) :=
-  (ReachFrame.mapM args fun a _ => reachFrame_fromW r R cells A a).bind fun values safe =>
-    (reachFrame_prim away call hf objects root p values safe).bind fun result hr =>
+    ReachFrame r R cells A (fun _ => True) (perform call construct code cells (.prim p args)) := by
+  have regular (op : Prim) := (ReachFrame.mapM args fun a _ => reachFrame_fromW (W := W) r R cells A a).bind fun values safe =>
+    (reachFrame_prim away call hf objects root op values safe).bind fun result hr =>
       (reachFrame_toW r R cells A result hr).bind fun v _ =>
         reachFrame_pure r R cells A (Told.value v) trivial
+  cases p <;> first | exact regular _ | exact reachFrame_unknown r R cells A _ _
 
 /-- All requests frame separation when the invoked functions and constructors
 frame their smaller executions. End markers retain their existing refusal. -/
