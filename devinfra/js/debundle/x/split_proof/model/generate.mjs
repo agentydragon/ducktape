@@ -190,6 +190,7 @@ export function generatedOpaqueCase(seed) {
       console.log("after", independent);
     `,
     // The opaque closure captures add before its initializer runs, then reenters it after initialization.
+    recordedSlots: { "0/1": { 1: 0 } }, // The callable captures add directly.
     scripts: {
       "0/1": [
         ["get", ["r", 2], ["s", "value"]],
@@ -228,6 +229,7 @@ export function generatedObjectRequestCase(seed) {
       console.log(made.added);
       console.log(${fromBase ? `${root} === base` : `Object.getPrototypeOf(${root}) === Object.getPrototypeOf({})`});
     `,
+    recordedSlots: { "1/0": { 2: 1 } }, // Drop the ambient Object slot.
     scripts: { "1/0": steps },
     expectedOutput: [`${fromBase ? n : "undefined"} false`, String(n + 1), "true"],
   };

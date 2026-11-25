@@ -55,7 +55,7 @@ const tdz = sequentialSplit(
   `const trace = { value: "" };
    const computed = () => {
      try {
-       const skipped = class { static { trace.value += "incorrect;"; } [key] = 1; };
+       const skipped = class { static { trace.value += "incorrect;"; } [(trace.value += "key;", key)] = 1; };
        return skipped;
      } catch (error) {
        trace.value += "key threw;";
@@ -67,7 +67,7 @@ const tdz = sequentialSplit(
   { "trace.mjs": ["#0"], "entry.mjs": ["#1", "#2"] },
   ["trace.mjs"]
 );
-assertCertifiedResult(tdz, "key threw;");
+assertCertifiedResult(tdz, "key;key threw;");
 
 // An abrupt block completion skips all remaining static initialization.
 const abrupt = sequentialSplit(

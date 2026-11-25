@@ -573,7 +573,7 @@ def needsOpaqueContext (j : Json) (checkPrivateNames wholeUnit moduleLocationChe
 /-- LinkedInput numbers each callable by its original unit and lexical site and checks emitted syntax.
 The scope resolver supplies references to cells outside the retained callable. -/
 private def deferredFunction (j : Json) (kind : FuncKind) (name : Name) (self : Bool)
-    (arity : Nat) (reason : String) (checkPrivateNames := true) : Except String Func := do
+    (arity : Nat) (reason : String) (checkPrivateNames := true) (scripted := false) : Except String Func := do
   -- Linked lowering retains the entire parsed method and its lexical arrows. The
   -- closure keeps its home object, and invocation with a refusal always stops replay.
   let refusal (why : String) :=
@@ -592,7 +592,8 @@ private def deferredFunction (j : Json) (kind : FuncKind) (name : Name) (self : 
   let .ok code := j.getObjValAs? Nat ":opaque-unit" | throw (refusal "missing source unit")
   let .ok part := j.getObjValAs? Nat ":opaque-part" | throw (refusal "missing callable site")
   let privateCells := (namesOfType "CoreJSInstancePrivateIdentifier" j).eraseDups.map privateTable
-  return .opaque name kind self arity code part (captures ++ privateCells) (some reason)
+  return .opaque name kind self arity code part (captures ++ privateCells)
+    (if scripted then none else some reason)
 
 -- Every admitted body leaves the enumerated keys and prototype chain intact.
 -- A plain local assignment may bind a new object. Property writes must name a
@@ -904,7 +905,12 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
   let parameters ← j.getObjValAs? (Array Json) "params"
   let tags ← parameters.mapM fun param => field param "type"
   let arity := (tags.toList.takeWhile fun t => t != "AssignmentPattern" && t != "RestElement").length
-  if ← j.getObjValAs? Bool "generator" then
+  let generator ← j.getObjValAs? Bool "generator"
+  if profile == .nodeRecording && (j.getObjValAs? Bool ":opaque-scripted").toOption == some true then
+    if async || generator || needsOpaqueContext j (checkPrivateNames := true) then
+      throw "scripted callable requires unsupported invocation or lexical context"
+    return .complete (← deferredFunction j kind name self arity "scripted callable" (scripted := true))
+  if generator then
     if async then return .complete (← deferredFunction j .asyncGenerator name self arity
       "async generator invocation requires asynchronous suspension semantics")
     return .complete (← deferredFunction j .generator name self arity "generator invocation requires suspension semantics")
@@ -1153,10 +1159,9 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
           unless profile.ambientSymbols do throw "unsupported computed class key"
           pure (s!"[{sym.description}]", Expr.prim (.wellKnownSymbol sym) [])
         else pure ("", ← linkedExpr profile imports inFunction "" keyNode)
-      else if !static && (← field keyNode "type") == "Identifier" &&
-          (field keyNode "k").toOption.any (["L", "T", "V"].contains ·) then
+      else if !static then
         if ← isAnonymousDefinition value then throw "unsupported function or class named by a computed field key"
-        pure ("", ← reference imports inFunction keyNode profile)
+        pure ("", ← linkedExpr profile imports inFunction "" keyNode)
       else throw "unsupported computed class key"
     else do
       let name ← moduleExportName keyNode
