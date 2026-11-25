@@ -317,7 +317,10 @@ lean_library(
         "EsmSplit/CoreJS/LinkedCertificate/QuoteRecords.lean",
         "EsmSplit/CoreJS/LinkedCertificate/QuoteWrites.lean",
     ],
-    deps = [":corejs_certificate_proof"],
+    deps = [
+        ":corejs_certificate_proof",
+        ":corejs_structural",
+    ],
 )
 
 lean_library(
@@ -344,6 +347,7 @@ lean_library(
         "EsmSplit/CoreJS/ObjectFrame.lean",
         "EsmSplit/CoreJS/OpaqueClosureFrame.lean",
         "EsmSplit/CoreJS/PrefixProjection.lean",
+        "EsmSplit/CoreJS/ProbeReplay.lean",
         "EsmSplit/CoreJS/RecordOrigin.lean",
         "EsmSplit/CoreJS/Request/Allocation.lean",
         "EsmSplit/CoreJS/Request/Dispatch.lean",
@@ -540,6 +544,7 @@ lean_axiom_test(
         "EsmSplit.CoreJS.ObjectFrame",
         "EsmSplit.CoreJS.OpaqueClosureFrame",
         "EsmSplit.CoreJS.OpaqueFrame",
+        "EsmSplit.CoreJS.ProbeReplay",
         "EsmSplit.CoreJS.Reachability",
         "EsmSplit.CoreJS.ReachabilityExamples",
         "EsmSplit.CoreJS.RecordOrigin",
@@ -700,6 +705,9 @@ lean_axiom_test(
         "CoreJS.LinkedBehavior.link_from_probe",
         "CoreJS.LinkedBehavior.runUnits_pivot_normal",
         "CoreJS.LinkedBehavior.localPivotOk_sound",
+        "CoreJS.LinkedBehavior.replayPremised_hoisted",
+        "CoreJS.LinkedBehavior.replayPremised",
+        "CoreJS.LinkedBehavior.replayPremised_pair",
         "CoreJS.LinkedBehavior.checkPivot",
         "CoreJS.local_frame_units_commute",
         "CoreJS.frame_local_units_commute",

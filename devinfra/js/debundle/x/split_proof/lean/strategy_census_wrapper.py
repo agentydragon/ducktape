@@ -134,6 +134,7 @@ def record_attempt(
             "input_name": input_name,
             "case_name": os.environ.get("SPLIT_PROOF_STRATEGY_CENSUS_CASE", input_name),
             "strategy": "linked-programs" if forced_linked else strategy,
+            "certificate_strategy": verdict.get("strategy"),
             "status": verdict.get("status", "error"),
             "scope": verdict.get("scope"),
             "guarantee": verdict.get("guarantee"),

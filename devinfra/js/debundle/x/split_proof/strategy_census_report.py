@@ -51,6 +51,8 @@ def strategy_for_scope(scope: object) -> str | None:
 
 
 def strategy_for_attempt(row: dict) -> str:
+    if row.get("scope") == "linked-programs" and row.get("certificate_strategy"):
+        return str(row["certificate_strategy"])
     if strategy := strategy_for_scope(row.get("scope")):
         return strategy
     strategy = row.get("strategy") or "unknown strategy"
@@ -75,7 +77,7 @@ def main() -> int:
         for row in rows:
             if row.get("status") != "certified":
                 continue
-            strategy = strategy_for_scope(row.get("scope"))
+            strategy = strategy_for_attempt(row)
             if strategy:
                 strategies.add(strategy)
         certified[input_id] = strategies

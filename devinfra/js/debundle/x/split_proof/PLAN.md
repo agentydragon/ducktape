@@ -254,6 +254,12 @@ Median and 90th-percentile time per attempt were 765 ms and 958 ms for closed de
 
 **Target.** Every certified verdict states the same target theorem over the CoreJS programs produced from the decoded source and emitted modules. The checker picks the strategy. The verdict reports the evidence used, its premises and, when the order is kept, that every ending matches. Strategy-specific certificate statements are evidence for this common verdict; the dense slice representation, including empty blocks for skipped units, is not a separate user-facing guarantee.
 
+During the replay rollout, `linked-programs` also reports `strategy` as `compiled-replay-premised` or `generated-proof`, so the corpus census can compare its certification paths directly.
+
+**Linked replay regression gate.** The census found 48 inputs certified only by `linked-programs`: 20 with non-local allocating declarations, 17 with moved-region accesses, and 11 opaque units that need context. Compiled replay must certify all 48 and every other input the linked path certifies today. Rerun `run_strategy_census.sh` and confirm that no input loses certification before retiring per-run proof generation.
+
+**Current replay census (2026-11-25).** BuildBuddy invocation [`7d51ade6-1cf8-4454-81de-8bc408309a7c`](https://app.buildbuddy.io/invocation/7d51ade6-1cf8-4454-81de-8bc408309a7c) passed all 98 requested test targets and collected 181 JSONL outputs: 2,495 checker attempts over the same 1,078 distinct inputs. Overall strategy coverage is unchanged: 819 inputs certify and 259 refuse. The compiled replay certified 49 distinct linked inputs, including 1 of the 48 linked-only cases; the other 47 linked-only cases still use generated proofs. Keep the generated-proof path until replay covers every linked acceptance.
+
 For singletons, the planned order is the compiled slice strategy, then the compiled structural schedule with automatically chosen pivots, then linked fallback. The slice applies to one source module with no imports, providers, or template objects; it certifies all outcomes when order is kept and normal completion otherwise. Its `SliceKind` and checked premises are reported as evidence under the same guarantee as the other strategies. The census predates this strategy and should be rerun after it lands.
 
 **How.**
@@ -266,26 +272,28 @@ For singletons, the planned order is the compiled slice strategy, then the compi
 
 ### One proven checker
 
-**Now.** [`checkStructuralSchedule`](lean/EsmSplit/CoreJS/LinkedPivotCertificate.lean) carries a general theorem in its type and runs as compiled code. The assembled deployment checker proves placement over the decoded output alongside equivalence and public live-cell equality. Linked mode has no general checker: [`LinkedCertificate.lean`](lean/EsmSplit/CoreJS/LinkedCertificate.lean) writes a new Lean proof for each run, and a separate Lean process checks it. Those proofs run both programs with the world left abstract. Equal calls to `World.step`, `globalTypeof`, `hostRef`, and `talk` reduce to equal stuck terms, but Lean elaborates that fact separately for each input. The singleton proof paths still rely on placement checks in the decoder.
+**Now.** [`checkStructuralSchedule`](lean/EsmSplit/CoreJS/LinkedPivotCertificate.lean) carries a general theorem in its type and runs as compiled code. The assembled deployment checker proves placement over the decoded output alongside equivalence and public live-cell equality. Linked mode now tries a compiled replay checker for a restricted request-free schedule fragment before the per-run proof path. That compiled check carries linked equivalence and export theorems; inputs outside the fragment still use [`LinkedCertificate.lean`](lean/EsmSplit/CoreJS/LinkedCertificate.lean), which writes a new Lean proof and checks it with a separate Lean process. Those proofs run both programs with the world left abstract. Equal calls to `World.step`, `globalTypeof`, `hostRef`, and `talk` reduce to equal stuck terms, but Lean elaborates that fact separately for each input. The singleton proof paths still rely on placement checks in the decoder.
 
 **Measured phase cost (2026-11-25).** On source `512b8b24`, uncached BuildBuddy invocation [`b7f69c97-721d-4f97-a5be-5d28b0b2afb0`](https://app.buildbuddy.io/invocation/b7f69c97-721d-4f97-a5be-5d28b0b2afb0) ran the linked program and property-assignment shards with `SPLIT_PROOF_TIMINGS=1`. `execution_and_correspondence` times the per-case Lean proof recipe and its separate Lean process: `programs_test` spent 53.2–71.9 s per shard elaborating proofs, 48–53% of its 111.5–137.4 s shard runtimes. `property_assignment_test` spent up to 103.2 s of its slowest shard's 155.3 s runtime (66%). The pinned-certificate runner emitted only its case count, so this invocation produced no per-case phase timing for that target.
 
 **Target.** A compiled linked checker whose successful result carries [`ASTEquivalent`](lean/EsmSplit/CoreJS/LinkedCertificate/Proof.lean) for the decoded pair. Its general replay theorem covers world interactions, not only world-free runs. The total `split` from the [target](#target) can then select it alongside the other compiled strategies. The planner runs inside `split` and stays unproved.
 
-**First increment.** Before adding symbolic answers, measure how many accepted linked runs need them. Instrument the compiled probe in [`LinkedCertificate/Probe.lean`](lean/EsmSplit/CoreJS/LinkedCertificate/Probe.lean) to record `World.step`, `talk`, and observations absent from the collected `HostPremises`. For every currently certified linked corpus case, record whether either program makes any such request. Include the counts in this PR or a follow-up. Run the measurement on `translation/linked`, `debundle_cases:pinned_certificates_test`, `lowered_example_certificate_test`, and the certified Excalidraw cases. If most cases make no unpremised request, land the first increment and measure its coverage before building the symbolic evaluator.
-
-The first-increment checker accepts a successful probe run only when its trace contains no `World.step` or `talk` and every `globalTypeof` or `hostRef` request is present in `HostPremises`. Premised observations return the same value and preserve world state in every satisfying world. Define `replaceWorld probe w` to keep the probe state's heap, cells, region, output, and handed handles, while replacing its world state with `w.init`.
+**First increment.** Keep `Eval.lean` as the evaluator and extend the existing locality framework with a replayable linked-schedule fragment. The finite executable witness accepts hoisted declarations, declarations and expression statements whose expressions are allocation-only, class-free and read only already-linked bindings, and opaque units that initialize deferred closures. These rules make no world request during initialization. A witness outside this fragment falls through to the existing generated proof.
 
 ```lean
-theorem ProbeRun.replayPremised
-    (run : runProgram (premises.specialize World.probe) fuel p = .ok () probeState)
-    (onlyPremised : ProbeTrace.onlyPremised premises fuel p) :
-    ∀ w, premises.Satisfied w →
-      runProgram (premises.specialize w) fuel p =
-        .ok () (replaceWorld probeState w.init)
+theorem replayPremised
+    {premises : HostPremises} {p : Program} {fuel : Nat}
+    {probeState : State (premises.specialize World.probe)}
+    (checked : CheckedLink p World.probe)
+    (supported : ReplayableSchedule (unitsOf checked.linked))
+    (probeRun : runProgram (premises.specialize World.probe) fuel p =
+      .ok () probeState)
+    (w : World) :
+    runProgram (premises.specialize w) fuel p =
+      .ok () (replaceWorld (premises.specialize w) probeState)
 ```
 
-For a pair, apply this theorem to both programs. If their successful probe states agree apart from the world component, their complete results agree in every satisfying world. `of_host_evaluation` then gives `EquivalentFor`; the existing compiled export check supplies `SameExports`, and `certifyASTs` carries the result to the decoded AST pair. The trace must include every access to `World.step`, `globalTypeof`, `hostRef`, and `talk`; the theorem's side condition rejects all but premised observations. Audit the theorem with `#print axioms`, allowing only `propext`, `Classical.choice`, and `Quot.sound`.
+`replaceWorld` copies the complete CoreJS heap, bindings, region, output and handed-handle list from the probe result while setting the host state to the target world's `init`. The theorem runs in the specialized world, which supplies the collected premises; `HostPremises.specialize_eq` transports it to every satisfying world. The checker compares both complete probe states and the public exports before constructing `EquivalentFor`, `SameExports`, and the decoded `ASTEquivalent` result. The `ReplayableSchedule` witness is the executable guard on the supported fragment; cases it rejects keep the generated-proof fallback.
 
 **Measurement.** BuildBuddy invocation [`71623c3e-9b01-4640-94ab-cb9df58e7642`](https://app.buildbuddy.io/invocation/71623c3e-9b01-4640-94ab-cb9df58e7642) passed all 89 requested test targets (86 executed and 3 cached). The linked translation tests emitted 446 trace rows, which reduce to 368 distinct `(test target, source case)` inputs across 68 test targets after removing repeated emission and `--check-output` runs. All 368 had `step=0`, `talk=0`, and `unpremised_observation=0` for both programs. The pinned certificate baseline has 111 certified cases, all on the compiled structural path: 88 `linked-structural-order`, 19 `linked-structural-pivot`, and 4 `linked-structural-moves`; that target does not invoke `LinkedCertificate/Probe`. The lowered example test generates a diagnostic Lean example, and the Excalidraw smoke test explicitly certifies `linked-structural-moves`, so neither invokes the linked proof path. The current per-run proof cases in the measured linked translation corpus therefore all fit the first-increment request condition; the coverage of the realization theorem itself remains to be measured after it lands.
 
@@ -310,9 +318,9 @@ A separate symbolic evaluator needs a simulation proof against `Eval.lean` for e
 
 1. Wrap planning and `checkStructuralSchedule` in `split`. The CLI emits ESTree for `Y`'s placement, and [checking the printed files](#check-the-printed-files) ties the files to `Y`.
 2. Carry `Places` through the proof paths for singleton inputs as they converge on the assembled deployment checker.
-3. Measure the compiled probe traces on the linked corpus before building symbolic replay. Implement `ProbeRun.replayPremised` first; apply it to both programs when their probe states agree.
+3. Run the compiled replay before generating a per-run proof. Use the replayable-schedule witness as its guard and keep the generated proof as a fallback.
 4. Add the symbolic value domain and realization theorem only for the world interactions the measurement shows are needed. Run the concrete differential test whenever the symbolic evaluator or `Eval.lean` changes.
-5. Run the compiled check before per-run proof generation. Keep generated proofs as a fallback for cases the compiled checker cannot yet cover, report which path certified each case, and measure both paths on the linked test corpus. Keep current accepts and refusals unchanged. Retire per-run proof generation only after the compiled check covers every currently certified corpus case.
+5. Rerun the linked strategy census, compare compiled-replay coverage with the generated-proof baseline, and confirm every previously certified input still certifies. Retire per-run proof generation only after compiled replay covers every currently certified corpus case.
 
 **Done when.** The certified CLI calls only `split`, `split`'s type states the target theorem, and no split run starts Lean.
 

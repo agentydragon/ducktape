@@ -297,33 +297,49 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
         if request != .normalCompletion then
           pure (.error ({ reason := "linked execution proves only normal-completion" } : CertificationRefusal))
         else do
-          let prepared : Except CertificationRefusal
-              (CoreJS.LinkedBehavior.Certificate × Lean.NameMap Lean.ImportArtifacts) ←
-            timePhase timings "certificate_preparation" fun _ => do
-            let result ← IO.lazyPure fun _ =>
-              CoreJS.LinkedBehavior.certificate profile program providers files P original candidate
-            match result with
-            | .error refusal =>
-              pure (.error ({
-                reason := refusal.reason
-                reasonCode := some refusal.code.label
-                observation := refusal.observation
-              } : CertificationRefusal))
-            | .ok (cert, terms) =>
-              try
-                pure (.ok (cert, ← writeCertificateData work terms))
-              catch err =>
+          let replayed : Option CoreJS.HostPremises ←
+            timePhase timings "compiled_replay" fun _ => IO.lazyPure fun _ =>
+              match CoreJS.LinkedBehavior.probeWitness profile original candidate with
+              | .error _ => none
+              | .ok (premises, fuel) =>
+                match CoreJS.LinkedBehavior.replayPremisedPrograms premises fuel original candidate with
+                | none => none
+                | some semantics =>
+                  match CoreJS.LinkedBehavior.certifyASTs profile premises program providers files P original candidate semantics.down with
+                  | .error _ => none
+                  | .ok _ => some premises
+          if let some premises := replayed then
+            pure (.ok (premises, "compiled-replay-premised"))
+          else
+            let prepared : Except CertificationRefusal
+                (CoreJS.LinkedBehavior.Certificate × Lean.NameMap Lean.ImportArtifacts) ←
+              timePhase timings "certificate_preparation" fun _ => do
+              let result ← IO.lazyPure fun _ =>
+                CoreJS.LinkedBehavior.certificate profile program providers files P original candidate
+              match result with
+              | .error refusal =>
                 pure (.error ({
-                  reason := err.toString
-                  reasonCode := some "proof_preparation"
+                  reason := refusal.reason
+                  reasonCode := some refusal.code.label
+                  observation := refusal.observation
                 } : CertificationRefusal))
-          match prepared with
-          | .error refusal => pure (.error refusal)
-          | .ok (cert, dataArts) => do
-            let used ← verifyExecution timings work cert dataArts
-            pure (.ok used)
+              | .ok (cert, terms) =>
+                try
+                  pure (.ok (cert, ← writeCertificateData work terms))
+                catch err =>
+                  pure (.error ({
+                    reason := err.toString
+                    reasonCode := some "proof_preparation"
+                  } : CertificationRefusal))
+            match prepared with
+            | .error refusal => pure (.error refusal)
+            | .ok (cert, dataArts) => do
+              let used ← verifyExecution timings work cert dataArts
+              pure (.ok (used, "generated-proof"))
     match checked with
-    | .ok active => return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs" (profileVerdict profile active)
+    | .ok (active, strategy) =>
+      return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs"
+        (profileVerdict profile active ++ [("strategy", toJson strategy)])
     | .error refusal => return ← emitRefusal request.label refusal "linked-programs"
   catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs"
 
