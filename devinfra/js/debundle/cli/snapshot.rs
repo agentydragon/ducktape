@@ -185,28 +185,21 @@ fn create(args: CreateArgs, current: CurrentRoots) -> Result<SnapshotOutcome> {
     {
         fs::create_dir_all(staging.path().join(root))?;
     }
+    let staged_input = |root: &InputRoot, path: &Path| -> Result<PathBuf> {
+        let original = provenance.resolve(root, path, &CurrentRoots::default())?;
+        Ok(staging.path().join(placement(&original)?))
+    };
     for file in &provenance.files {
-        let original = provenance.resolve(&file.root, &file.path, &CurrentRoots::default())?;
+        let target = staged_input(&file.root, &file.path)?;
         let source = provenance.resolve(&file.root, &file.path, &current)?;
-        copy_verified(
-            &source,
-            &staging.path().join(placement(&original)?),
-            &file.sha256,
-        )?;
+        copy_verified(&source, &target, &file.sha256)?;
     }
     for directory in &provenance.present_directories {
-        let original =
-            provenance.resolve(&directory.root, &directory.path, &CurrentRoots::default())?;
-        fs::create_dir_all(staging.path().join(placement(&original)?))?;
+        fs::create_dir_all(staged_input(&directory.root, &directory.path)?)?;
     }
     // Empty module roots still participate in membership verification.
     for membership in &provenance.yaml_memberships {
-        let original = provenance.resolve(
-            &membership.root,
-            &membership.directory,
-            &CurrentRoots::default(),
-        )?;
-        fs::create_dir_all(staging.path().join(placement(&original)?))?;
+        fs::create_dir_all(staged_input(&membership.root, &membership.directory)?)?;
     }
     let options = CompileSpecTreeOptions {
         config_path: staging.path().join(&run.config),
@@ -411,18 +404,15 @@ fn placement(path: &Path) -> Result<PathBuf> {
         "captured path must be absolute: {}",
         path.display()
     );
+    let relative = path
+        .strip_prefix("/")
+        .with_context(|| format!("unsupported captured path {}", path.display()))?;
     let mut result = PathBuf::from("inputs");
-    for component in path.components() {
-        match component {
-            Component::RootDir | Component::CurDir => {}
-            Component::Normal(name) => result.push(name),
-            Component::ParentDir => {
-                ensure!(result != Path::new("inputs"), "captured path escapes root");
-                result.pop();
-            }
-            Component::Prefix(_) => bail!("unsupported captured path {}", path.display()),
-        }
-    }
+    result.extend(
+        lexically_within(relative)
+            .context("captured path escapes root")?
+            .components(),
+    );
     Ok(result)
 }
 
@@ -660,4 +650,26 @@ fn outcome(directory: &Path, manifest: &SnapshotManifest) -> Result<SnapshotOutc
         modules: directory.join(&manifest.run.modules),
         regeneration_argv: argv,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn placement_normalizes_within_the_captured_root() {
+        for (captured, placed) in [
+            ("/", "inputs"),
+            ("/one/..", "inputs"),
+            ("/old/../new/./file", "inputs/new/file"),
+        ] {
+            assert_eq!(
+                placement(Path::new(captured)).unwrap().as_os_str(),
+                Path::new(placed).as_os_str()
+            );
+        }
+        for invalid in ["relative/file", "/old/../../outside"] {
+            assert!(placement(Path::new(invalid)).is_err(), "{invalid}");
+        }
+    }
 }
