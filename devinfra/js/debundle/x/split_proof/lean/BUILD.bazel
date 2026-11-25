@@ -251,7 +251,6 @@ lean_library(
         "EsmSplit/CoreJS/LinkedBehavior.lean",
         "EsmSplit/CoreJS/LinkedCells.lean",
         "EsmSplit/CoreJS/LinkedDeployment.lean",
-        "EsmSplit/CoreJS/LinkedLocalMove.lean",
         "EsmSplit/CoreJS/LiteralRecord.lean",
         "EsmSplit/CoreJS/ModuleInput.lean",
         "EsmSplit/CoreJS/ModuleLocation.lean",
@@ -289,7 +288,10 @@ lean_library(
 # Generated certificates import the proof layer on its own.
 lean_library(
     name = "corejs_certificate_proof",
-    srcs = ["EsmSplit/CoreJS/LinkedCertificate/Proof.lean"],
+    srcs = [
+        "EsmSplit/CoreJS/LinkedCertificate/Proof.lean",
+        "EsmSplit/CoreJS/LinkedLocalMove.lean",
+    ],
     deps = [
         ":corejs_certificate_support",
         ":corejs_linked_input",
