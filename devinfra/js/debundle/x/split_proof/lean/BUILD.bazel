@@ -521,6 +521,7 @@ lean_axiom_test(
         "EsmSplit.CoreJS.LinkedBehaviorExamples",
         "EsmSplit.CoreJS.LinkedCells",
         "EsmSplit.CoreJS.LinkedPivot",
+        "EsmSplit.CoreJS.LinkedPivotCertificate",
         "EsmSplit.CoreJS.LinkedPivotCheck",
         "EsmSplit.CoreJS.LiteralRecord",
         "EsmSplit.CoreJS.MetadataCell",
@@ -548,6 +549,9 @@ lean_axiom_test(
     ],
     theorems = [
         "CoreJS.evaluatorFrames",
+        "CoreJS.LinkedBehavior.checkedPivot_move",
+        "CoreJS.LinkedBehavior.pivotFrameOk_move",
+        "CoreJS.LinkedBehavior.pivotFrameOk_sound",
         "CoreJS.LinkedBehavior.certifyDeployment",
         "CoreJS.LinkedBehavior.certifyStructuralASTs",
         "CoreJS.DenseArray.reduce",
