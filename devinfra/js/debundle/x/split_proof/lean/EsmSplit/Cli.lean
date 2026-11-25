@@ -78,7 +78,10 @@ def parseSpec (j : Json) : Except String Spec := do
       items.toList.mapM fun x => x.getStr?
     | .error _ => pure []
   let sequential := (j.getObjVal? "sequential" >>= Json.getBool?).toOption.getD false
-  pure { entry, modules, order, sequential }
+  let privateEntryBody ← match j.getObjVal? "privateEntryBody" with
+    | .ok v => v.getBool?
+    | .error _ => pure false
+  pure { entry, modules, order, sequential, privateEntryBody }
 
 /-- Read a selector-only ownership export. Its import priority orders requests;
 the untrusted planner and the linked checker decide the actual evaluation order. -/

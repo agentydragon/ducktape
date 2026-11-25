@@ -1,4 +1,5 @@
 // Certify the same owner assignment used for diagnostic comparison, from the JS bytes.
+import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { writeDeployment } from "../translation/testing/deployment_manifest.mjs";
 
@@ -16,7 +17,9 @@ function verdict(result) {
 
 export function certify({ stage, chunkFile, plan, want, run, lowersplit, nodeRun }) {
   const output = path.join(stage, "certified");
-  const manifest = writeDeployment(path.join(stage, chunkFile), path.join(stage, "lean_spec.json"), output);
+  const spec = path.join(stage, "certificate-spec.json");
+  writeFileSync(spec, JSON.stringify({ ...plan, privateEntryBody: true }));
+  const manifest = writeDeployment(path.join(stage, chunkFile), spec, output);
   const refusals = {};
   for (const mode of ["structural", "default"]) {
     const args = [
