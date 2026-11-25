@@ -16,8 +16,8 @@ use analysis_projection::{
 };
 use anyhow::{Context, Result, bail, ensure};
 use artifact::{
-    ArtifactIndexes, ChunkBundle, chunk_runtime_entry, export_policies, normalized_chunk_ids,
-    prune_artifact_to_chunk_ids,
+    ArtifactIndexes, ChunkBundle, JsFile, chunk_runtime_entry, export_policies,
+    normalized_chunk_ids, prune_artifact_to_chunk_ids,
 };
 use binding_targets::binding_names;
 use graph_provenance::{ChunkSource, GraphProvenance};
@@ -48,10 +48,8 @@ pub struct FrontendChunkInput<'a> {
 pub struct FrontendChunk<'a> {
     pub chunk_id: String,
     pub chunk_id_interned: ChunkId,
-    pub target_file: String,
+    pub runtime_file: &'a JsFile,
     pub runtime_ast: &'a js_ast::ParsedJsModule,
-    pub header_lines: Vec<String>,
-    pub source_path: String,
     pub ast_analysis: ChunkAstAnalysis,
     pub requests: Vec<LogicalRequest>,
     pub explicit_requests: Vec<LogicalRequest>,
@@ -880,10 +878,8 @@ fn select_one_source_declaration(
 struct PreparedChunk<'a> {
     chunk_id: String,
     chunk_id_interned: ChunkId,
-    target_file: String,
+    runtime_file: &'a JsFile,
     runtime_ast: &'a js_ast::ParsedJsModule,
-    header_lines: Vec<String>,
-    source_path: String,
     ast_analysis: ChunkAstAnalysis,
     requests: Vec<LogicalRequest>,
     explicit_requests: Vec<LogicalRequest>,
@@ -946,7 +942,6 @@ fn prepare_chunk<'a>(
     })?;
     let (chunk_id_interned, runtime_file, runtime_ast) =
         chunk_runtime_entry(artifact, chunk_id, file)?;
-    let source_path = runtime_file.metadata.source_path.clone();
     let ast_analysis = analyze_chunk_ast(&runtime_ast.module);
     let requests = logical_requests_for_chunk(
         logical_modules.get(chunk_id),
@@ -974,7 +969,7 @@ fn prepare_chunk<'a>(
     let structural_analysis = analysis::facts::collect_chunk_source_facts(
         &runtime_ast.module,
         Some(SourceLocator {
-            source_path: &source_path,
+            source_path: &runtime_file.metadata.source_path,
             lines: &line_index,
         }),
     );
@@ -1000,10 +995,8 @@ fn prepare_chunk<'a>(
     Ok(PreparedChunk {
         chunk_id: chunk_id.to_string(),
         chunk_id_interned,
-        target_file: runtime_file.path.clone(),
+        runtime_file,
         runtime_ast,
-        header_lines: runtime_file.header_lines.clone(),
-        source_path,
         ast_analysis,
         requests,
         explicit_requests,
@@ -1148,10 +1141,8 @@ fn finish_frontend_chunk<'a>(
     Ok(FrontendChunk {
         chunk_id: prepared.chunk_id,
         chunk_id_interned: prepared.chunk_id_interned,
-        target_file: prepared.target_file,
+        runtime_file: prepared.runtime_file,
         runtime_ast: prepared.runtime_ast,
-        header_lines: prepared.header_lines,
-        source_path: prepared.source_path,
         ast_analysis: prepared.ast_analysis,
         requests: prepared.requests,
         explicit_requests: prepared.explicit_requests,
