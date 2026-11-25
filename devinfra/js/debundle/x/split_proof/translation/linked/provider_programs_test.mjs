@@ -4,6 +4,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   assertCertified,
+  assertRejectedOrOrderKeptSlice,
   caseShard,
   root,
   id,
@@ -378,9 +379,10 @@ if (runCase("unsupported-catch-pattern")) {
   assert.deepEqual(observe(files.sourceFile, "result"), { result: 7 });
   const out = path.join(dir, "out");
   const refused = lower(files.sourceFile, files.specFile, out);
-  assert.equal(refused.verdict.status, "rejected", refused.log);
-  assert.match(refused.verdict.reason ?? "", /expected an identifier/i, refused.log);
-  assert(!existsSync(out), "an unsupported catch pattern publishes no modules");
+  const orderKept = assertRejectedOrOrderKeptSlice({ ...refused, out }, /expected an identifier/i);
+  if (orderKept) {
+    assert.deepEqual(observe(path.join(out, "entry.mjs"), "result"), { result: 7 });
+  }
 }
 
 // The provider's own import graph is discovered, copied beside the split and

@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { assertCertifiedResult, assertRejected, caseShard, lower, sequentialSplit } from "./harness.mjs";
+import {
+  assertCertifiedResult,
+  assertRejectedOrOrderKeptSlice,
+  caseShard,
+  lower,
+  sequentialSplit,
+} from "./harness.mjs";
 
 const runCase = caseShard();
 const modules = { "worker.mjs": ["#0"], "entry.mjs": ["#1"] };
@@ -112,5 +118,5 @@ if (runCase("deferred-arrow")) {
     source.replace("new Reader().later()", "new Reader().later()()"),
     modules
   );
-  assertRejected(invoked, /async invocation requires Promise semantics/);
+  assertRejectedOrOrderKeptSlice(invoked, /async invocation requires Promise semantics/);
 }

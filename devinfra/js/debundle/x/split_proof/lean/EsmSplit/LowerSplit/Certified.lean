@@ -7,6 +7,7 @@ import EsmSplit.CoreJS.Move
 import EsmSplit.CoreJS.StructuralCertificate
 import EsmSplit.ESTreeEmit
 import EsmSplit.LowerSplit.Input
+import EsmSplit.LowerSplit.SliceCertificate
 import EsmSplit.ReadDeployment
 
 /-! Certify a proposed split and publish its output or verify the existing tree. -/
@@ -288,36 +289,49 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
       match decoded with
       | .error reason => pure (.error ({ reason, reasonCode := some "linked_input" } : CertificationRefusal))
       | .ok (original, candidate) => do
-        if request != .normalCompletion then
-          pure (.error ({ reason := "linked execution proves only normal-completion" } : CertificationRefusal))
-        else do
-          let prepared : Except CertificationRefusal
-              (CoreJS.LinkedBehavior.Certificate × Lean.NameMap Lean.ImportArtifacts) ←
-            timePhase timings "certificate_preparation" fun _ => do
-            let result ← IO.lazyPure fun _ =>
-              CoreJS.LinkedBehavior.certificate profile program providers files P original candidate
-            match result with
-            | .error refusal =>
-              pure (.error ({
-                reason := refusal.reason
-                reasonCode := some refusal.code.label
-                observation := refusal.observation
-              } : CertificationRefusal))
-            | .ok (cert, terms) =>
-              try
-                pure (.ok (cert, ← writeCertificateData work terms))
-              catch err =>
+        let sliceResult ← timePhase timings "compiled_slice" fun _ =>
+          IO.lazyPure fun _ => certifySlice profile program providers files P B S
+        match sliceResult with
+        | .ok result =>
+          let kind := result.1
+          if request == .allOutcomes && kind.level != .allOutcomes then
+            pure (.error ({
+              reason := s!"the compiled {kind.scope} slice proves only normal-completion"
+              reasonCode := some "slice_guarantee"
+            } : CertificationRefusal))
+          else pure (.ok (some kind, {}))
+        | .error refusal => do
+          if request != .normalCompletion then
+            pure (.error ({ reason := "linked execution proves only normal-completion" } : CertificationRefusal))
+          else do
+            let prepared : Except CertificationRefusal
+                (CoreJS.LinkedBehavior.Certificate × Lean.NameMap Lean.ImportArtifacts) ←
+              timePhase timings "certificate_preparation" fun _ => do
+              let result ← IO.lazyPure fun _ =>
+                CoreJS.LinkedBehavior.certificate profile program providers files P original candidate
+              match result with
+              | .error refusal =>
                 pure (.error ({
-                  reason := err.toString
-                  reasonCode := some "proof_preparation"
+                  reason := refusal.reason
+                  reasonCode := some refusal.code.label
+                  observation := refusal.observation
                 } : CertificationRefusal))
-          match prepared with
-          | .error refusal => pure (.error refusal)
-          | .ok (cert, dataArts) => do
-            let used ← verifyExecution timings work cert dataArts
-            pure (.ok used)
+              | .ok (cert, terms) =>
+                try
+                  pure (.ok (cert, ← writeCertificateData work terms))
+                catch err =>
+                  pure (.error ({
+                    reason := err.toString
+                    reasonCode := some "proof_preparation"
+                  } : CertificationRefusal))
+            match prepared with
+            | .error refusal => pure (.error refusal)
+            | .ok (cert, dataArts) => do
+              let used ← verifyExecution timings work cert dataArts
+              pure (.ok (none, used))
     match checked with
-    | .ok active => return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs" (profileVerdict profile active)
+    | .ok (some kind, _) => return ← emitVerdict request.label (.ok kind.level) kind.scope (profileVerdict profile {})
+    | .ok (none, active) => return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs" (profileVerdict profile active)
     | .error refusal => return ← emitRefusal request.label refusal "linked-programs"
   catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs"
 

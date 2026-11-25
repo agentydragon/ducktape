@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   assertCertifiedResult,
-  assertRejected,
+  assertRejectedOrOrderKeptSlice,
   exportNamed,
   forcePreview,
   id,
@@ -125,7 +125,7 @@ for (const [name, base, body] of [
     class Child extends Base { constructor() { ${body} } }
     export const result = new Child();`;
   const test = sequentialSplit(name, source, { "base.mjs": ["#0"], [entry]: ["#1", "#2"] }, ["base.mjs"]);
-  assertRejected(test, /original threw during linked initialization/);
+  assertRejectedOrOrderKeptSlice(test, /original threw during linked initialization/);
   assert.deepEqual(observe(test.files.sourceFile, "result"), { error: "TypeError" });
 }
 

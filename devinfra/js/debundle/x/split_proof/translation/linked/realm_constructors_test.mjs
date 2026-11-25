@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -7,6 +7,7 @@ import {
   arrow,
   call,
   conditional,
+  assertRejectedOrOrderKeptSlice,
   exportNamed,
   id,
   literal,
@@ -63,10 +64,10 @@ for (const { name, args, observe, expected } of constructors) {
     const out = path.join(dir, "out");
     const opts = ["--host-contract", profile];
     const { verdict, log } = lower(files.sourceFile, files.specFile, out, opts);
-    if (reached) {
-      assert.equal(verdict.status, "rejected", log);
-      assert(verdict.reason.includes(`ambient constructor ${name} is reached`), log);
-      assert(!existsSync(out));
+    if (
+      reached &&
+      !assertRejectedOrOrderKeptSlice({ verdict, log, out }, new RegExp(`ambient constructor ${name} is reached`))
+    ) {
       continue;
     }
     assert.equal(verdict.status, "certified", log);
@@ -74,7 +75,8 @@ for (const { name, args, observe, expected } of constructors) {
     assert.deepEqual(lower(files.sourceFile, files.specFile, out, [...opts, "--check-output"]).verdict, verdict);
     for (const file of [files.sourceFile, path.join(out, entry)]) {
       const mod = await import(pathToFileURL(file).href);
-      assert.equal(mod.result, null);
+      if (reached) assert.deepEqual(observe(mod.result), expected);
+      else assert.equal(mod.result, null);
       const value = mod.make(true);
       assert.deepEqual(observe(value), expected);
       assert.notEqual(mod.make(true), value);

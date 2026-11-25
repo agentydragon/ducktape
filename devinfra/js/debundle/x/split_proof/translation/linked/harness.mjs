@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
@@ -138,7 +138,7 @@ export function observe(file, exportNames) {
   return Object.fromEntries(names.map((name) => [name, observed.values[name]]));
 }
 
-export function lower(source, spec, out, extra = [], scope = "linked-programs") {
+export function lower(source, spec, out, extra = [], scope = null) {
   const result = spawnSync(process.env.LOWERSPLIT, [writeDeployment(source, spec, out), out, ...extra], {
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
@@ -159,7 +159,21 @@ export function lower(source, spec, out, extra = [], scope = "linked-programs") 
   const verdict = JSON.parse(verdictLines[0]);
   const requireFlag = extra.indexOf("--require");
   assert.equal(verdict.requested, requireFlag === -1 ? "normal-completion" : extra[requireFlag + 1], log);
-  assert.equal(verdict.scope, scope, log);
+  if (scope === null) {
+    if (verdict.status === "certified") {
+      assert(
+        [
+          "closed-declarations",
+          "linked-programs",
+          "linked-slice-order-kept",
+          "linked-slice-moves",
+          "linked-slice-certified-bindings",
+          "linked-slice-heritage",
+        ].includes(verdict.scope),
+        `unexpected linked strategy scope ${verdict.scope}: ${log}`
+      );
+    }
+  } else assert.equal(verdict.scope, scope, log);
   assert.equal(result.status, verdict.status === "certified" ? 0 : 1, log);
   return { verdict, log };
 }
@@ -176,15 +190,29 @@ export function prepare(dir, { source, provider, extras = {}, sourceName = "sour
   return { sourceFile, providerFile, specFile };
 }
 
-export function threeUnitFixture(name, source, entry = "entry.mjs") {
+export function threeUnitFixture(name, source, entry = "entry.mjs", withProvider = false) {
   const dir = path.join(root, name);
   const files = prepare(dir, {
-    source,
-    provider: "",
-    spec: { entry, modules: { "worker.mjs": ["#0"], [entry]: ["#1", "#2"] }, order: ["worker.mjs"], sequential: true },
+    source: withProvider ? `import "./provider.mjs";\n${source}` : source,
+    provider: withProvider ? "export {};\n" : "",
+    spec: {
+      entry,
+      modules: withProvider
+        ? { "worker.mjs": ["#1"], [entry]: ["#0", "#2", "#3"] }
+        : { "worker.mjs": ["#0"], [entry]: ["#1", "#2"] },
+      order: ["worker.mjs"],
+      sequential: true,
+    },
   });
   const out = path.join(dir, "out");
-  return { ...files, out, run: (...opts) => lower(files.sourceFile, files.specFile, out, opts).verdict };
+  return {
+    ...files,
+    out,
+    run: (...opts) => {
+      if (!opts.includes("--check-output")) rmSync(out, { recursive: true, force: true });
+      return lower(files.sourceFile, files.specFile, out, opts).verdict;
+    },
+  };
 }
 
 // Compute evaluation order from the emitted requests, including the cycle a fixed
@@ -269,6 +297,25 @@ export function assertRejected({ verdict, log, out }, reason) {
   assert.equal(verdict.status, "rejected", log);
   assert.match(verdict.reason, reason, log);
   assert(!existsSync(out), out);
+}
+
+// The compiled order-kept slice can certify cases that used to reach the
+// per-run checker and refuse on an operation it cannot model. Keep those tests
+// meaningful by accepting only the stronger all-outcomes slice verdict.
+export function assertRejectedOrOrderKeptSlice({ verdict, log, out }, reason) {
+  return assertRefusedOrOrderKeptSlice(verdict, out, reason, log);
+}
+
+export function assertRefusedOrOrderKeptSlice(verdict, out, reason, log = JSON.stringify(verdict)) {
+  if (verdict.status === "certified" && verdict.scope === "linked-slice-order-kept") {
+    assert.equal(verdict.guarantee, "all-outcomes", log);
+    assert(existsSync(out), out);
+    return true;
+  }
+  assert.equal(verdict.status, "rejected", log);
+  assert.match(verdict.reason, reason, log);
+  assert(!existsSync(out), out);
+  return false;
 }
 
 export function assertWorkerResult(name, source, expected, entryUnits) {

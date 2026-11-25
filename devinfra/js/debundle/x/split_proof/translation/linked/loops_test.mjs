@@ -6,6 +6,7 @@ import {
   block,
   call,
   caseShard,
+  assertRejectedOrOrderKeptSlice,
   exportNamed,
   expression,
   forcePreview,
@@ -182,12 +183,14 @@ for (const [name, target, body, reason] of [
     for (const key in keys) ${body};
     export const result = 1;
   `;
-  const { verdict, log } = sequentialSplit(`unsafe-for-in-${name}`, source, {
+  const { files, verdict, log, out } = sequentialSplit(`unsafe-for-in-${name}`, source, {
     "worker.mjs": ["#0", "#1", "#2", "#3", "#4"],
     [entry]: ["#5"],
   });
-  assert.notEqual(verdict.status, "certified", log);
-  assert.match(log, reason);
+  const orderKept = assertRejectedOrOrderKeptSlice({ verdict, log, out }, reason);
+  if (orderKept) {
+    assert.deepEqual(observe(path.join(out, entry), "result"), observe(files.sourceFile, "result"));
+  }
 }
 
 if (runCase("iteration-capture")) {

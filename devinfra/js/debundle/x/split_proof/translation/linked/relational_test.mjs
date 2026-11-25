@@ -5,6 +5,7 @@ import {
   arrow,
   assertCertifiedResult,
   assertRejected,
+  assertRejectedOrOrderKeptSlice,
   binary,
   block,
   call,
@@ -114,7 +115,7 @@ const object = ownerReaderSplit(
   export { result };`
 );
 assert.deepEqual(observe(object.files.sourceFile, "result"), { result: true });
-assertRejected(object, /an object is converted to a primitive/);
+assertRejectedOrOrderKeptSlice(object, /an object is converted to a primitive/);
 
 const supplementary = ownerReaderSplit(
   "supplementary-property",
@@ -153,7 +154,7 @@ for (const index of [0, 1]) {
     `const read = () => "𐀀"[${index}] !== "\\ufffd"; const result = read(); export { result };`
   );
   assert.deepEqual(observe(half.files.sourceFile, "result"), { result: true });
-  assertRejected(half, /string index reads an isolated UTF-16 surrogate/);
+  assertRejectedOrOrderKeptSlice(half, /string index reads an isolated UTF-16 surrogate/);
 }
 
 // Replacing the isolated surrogate with U+FFFD would flip the result.
@@ -166,5 +167,5 @@ for (const [label, value] of [
     `const compare = () => ${value} < "\\ue000"; const result = compare(); export { result };`
   );
   assert.deepEqual(observe(isolated.files.sourceFile, "result"), { result: true });
-  assertRejected(isolated, /isolated UTF-16 surrogate/);
+  assertRejectedOrOrderKeptSlice(isolated, /isolated UTF-16 surrogate/);
 }

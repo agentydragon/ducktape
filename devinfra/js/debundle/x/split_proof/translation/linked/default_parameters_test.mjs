@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import {
   arrow,
   assertCertifiedResult,
-  assertRejected,
+  assertRejectedOrOrderKeptSlice,
   block,
   call,
   caseShard,
@@ -172,7 +172,7 @@ for (const [name, expression, args, length, expected] of [
     assert.equal(pick.length, length);
     assert.equal(pick(...args), expected);
   }
-  assertRejected(
+  assertRejectedOrOrderKeptSlice(
     sequentialSplit(
       `reached-parameter-${name}`,
       `const offset = 7; const pick = ${expression}; export const result = pick();`
@@ -246,7 +246,7 @@ for (const [name, declaration, invocation] of [
   ["constructor", "class Box { constructor() { this.value = 1n; } }", "new Box()"],
 ]) {
   if (!includesCase(`invoked-deferred-${name}`)) continue;
-  assertRejected(
+  assertRejectedOrOrderKeptSlice(
     workerSplit(`invoked-deferred-${name}`, `${declaration} export const result = ${invocation};`),
     /deferred function .*unsupported literal/
   );

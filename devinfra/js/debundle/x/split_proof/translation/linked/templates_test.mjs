@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   root,
@@ -21,6 +20,7 @@ import {
   lower,
   prepare,
   workerSplit,
+  assertRejectedOrOrderKeptSlice,
   assertWorkerResult,
   observedProgram,
 } from "./harness.mjs";
@@ -99,8 +99,8 @@ for (const [name, source, reason] of [
   ],
 ]) {
   if (!runCase(name)) continue;
-  const { verdict, out } = workerSplit(name, source);
-  assert.equal(verdict.status, "rejected");
-  assert.match(verdict.reason, reason);
-  assert(!existsSync(out));
+  const result = workerSplit(name, source);
+  if (assertRejectedOrOrderKeptSlice(result, reason)) {
+    assert.deepEqual(observe(path.join(result.out, "entry.mjs"), "result"), observe(result.files.sourceFile, "result"));
+  }
 }

@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   assertCertifiedResult,
-  assertRejected,
+  assertRejectedOrOrderKeptSlice,
   caseShard,
   lower,
   observe,
@@ -100,7 +100,7 @@ if (runCase("instanceof-non-callable-hook")) {
      export { result };`
   );
   const run = lower(f.sourceFile, f.specFile, f.out, options);
-  assertRejected({ ...run, out: f.out }, /original threw during linked initialization/);
+  assertRejectedOrOrderKeptSlice({ ...run, out: f.out }, /original threw during linked initialization/);
   assert.deepEqual(observe(f.sourceFile, "result"), { error: "TypeError" });
 }
 

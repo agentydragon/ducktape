@@ -113,6 +113,7 @@ js_test(
         "rest_parameters_test",
         "strict_arguments_test",
         "schedule_moves_test",
+        "slice_strategy_test",
         "regexp_test",
         "small_records_test",
         "structural_intrinsic_number_test",

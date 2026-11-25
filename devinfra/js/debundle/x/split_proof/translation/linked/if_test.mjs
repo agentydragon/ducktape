@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   assertCertified,
+  assertRejectedOrOrderKeptSlice,
   block,
   call,
   exportNamed,
@@ -171,6 +172,4 @@ const { out, verdict, log } = sequentialSplit(
   { "run.mjs": ["#0"], [entry]: ["#1"] },
   ["run.mjs"]
 );
-assert.equal(verdict.status, "rejected", log);
-assert.match(verdict.reason, /unsupported statement DoWhileStatement/, log);
-assert(!existsSync(out));
+assertRejectedOrOrderKeptSlice({ verdict, log, out }, /unsupported statement DoWhileStatement/);

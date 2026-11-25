@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { assertRejected, caseShard, lower, sequentialSplit, structuralFixture, workerSplit } from "./harness.mjs";
+import {
+  assertRejectedOrOrderKeptSlice,
+  caseShard,
+  lower,
+  sequentialSplit,
+  structuralFixture,
+  workerSplit,
+} from "./harness.mjs";
 
 const runCase = caseShard();
 
@@ -44,7 +51,8 @@ if (runCase("generator-creation-and-disk")) {
     ["offset.mjs", "functions.mjs"]
   );
   assert.equal(test.verdict.status, "certified", test.log);
-  assert.equal(test.verdict.guarantee, "normal-completion", test.log);
+  assert.equal(test.verdict.scope, "linked-slice-order-kept", test.log);
+  assert.equal(test.verdict.guarantee, "all-outcomes", test.log);
   const checked = lower(test.files.sourceFile, test.files.specFile, test.out, ["--check-output"]);
   assert.deepEqual(checked.verdict, test.verdict, checked.log);
 
@@ -108,7 +116,7 @@ for (const [name, definition, called] of [
   ["method", "const box = { *run() { yield 1; } };", "box.run()"],
 ]) {
   if (!runCase(`reached-generator-${name}`)) continue;
-  assertRejected(
+  assertRejectedOrOrderKeptSlice(
     workerSplit(`reached-generator-${name}`, `${definition} export const result = ${called};`),
     /generator invocation requires suspension semantics/
   );
@@ -148,7 +156,7 @@ if (runCase("async-generator-creation")) {
 }
 
 if (runCase("reached-async-generator")) {
-  assertRejected(
+  assertRejectedOrOrderKeptSlice(
     workerSplit("reached-async-generator", "async function* run() { yield 1; } export const result = run();"),
     /async generator invocation requires asynchronous suspension semantics/
   );

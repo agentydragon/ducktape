@@ -374,6 +374,7 @@ lean_library(
         "EsmSplit/LowerSplit/Certified.lean",
         "EsmSplit/LowerSplit/Diagnostic.lean",
         "EsmSplit/LowerSplit/Input.lean",
+        "EsmSplit/LowerSplit/SliceCertificate.lean",
     ],
     deps = [
         ":corejs_certificates",
@@ -382,6 +383,16 @@ lean_library(
         ":lowersplit_support",
         ":planner",
     ],
+)
+
+lean_axiom_test(
+    name = "slice_certificate_axioms_test",
+    imports = ["EsmSplit.LowerSplit.SliceCertificate"],
+    theorems = [
+        "EsmSplit.LowerSplit.runProgram_singleModuleMetadata",
+        "EsmSplit.LowerSplit.certifySlice_sound",
+    ],
+    deps = [":lowersplit_workflows"],
 )
 
 # The interpreted launcher loads the entry's imports on every invocation.

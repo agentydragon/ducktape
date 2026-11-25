@@ -3,7 +3,7 @@ import {
   array,
   arrow,
   assertCertifiedResult,
-  assertRejected,
+  assertRejectedOrOrderKeptSlice,
   binary,
   block,
   call,
@@ -26,7 +26,7 @@ const worker = "worker.mjs";
 const includesCase = caseShard();
 
 function assertRejectedObservation(test, reason, observation) {
-  assertRejected(test, reason);
+  assertRejectedOrOrderKeptSlice(test, reason);
   assert.deepEqual(observe(test.files.sourceFile, "result"), observation);
 }
 

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { assertRejected, lower, sequentialSplit, workerSplit } from "./harness.mjs";
+import { assertRejected, assertRejectedOrOrderKeptSlice, lower, sequentialSplit, workerSplit } from "./harness.mjs";
 
 const source = `
   const offset = 7;
@@ -53,11 +53,11 @@ assert.equal(
   "rejected"
 );
 
-assertRejected(
+assertRejectedOrOrderKeptSlice(
   workerSplit("reached-async-method", "const box = { async run() { return 1; } }; export const value = box.run();"),
   /deferred function run: async invocation requires Promise semantics/
 );
-assertRejected(
+assertRejectedOrOrderKeptSlice(
   workerSplit(
     "reached-async-super-method",
     "class Box { async read() { return super.read(); } } export const value = new Box().read();"
@@ -110,5 +110,8 @@ const invocation = workerSplit(
   "reached-async-function",
   "async function run() { return 1; } export const value = run();"
 );
-assertRejected(invocation, /deferred function run: async invocation requires Promise semantics/);
-assert.equal(invocation.verdict.reason_code, "probe_unknown", invocation.log);
+const orderKept = assertRejectedOrOrderKeptSlice(
+  invocation,
+  /deferred function run: async invocation requires Promise semantics/
+);
+if (!orderKept) assert.equal(invocation.verdict.reason_code, "probe_unknown", invocation.log);

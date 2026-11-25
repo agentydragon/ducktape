@@ -34,7 +34,7 @@ const method = fixture(
 assert.match(method.run().reason, /unsupported computed class key/);
 const run = lower(method.sourceFile, method.specFile, method.out, options);
 assertCertifiedResult({ ...run, files: method, out: method.out }, true);
-assert.deepEqual(run.verdict.assumptions, [premise]);
+assert.deepEqual(run.verdict.assumptions, run.verdict.scope === "linked-slice-order-kept" ? [] : [premise]);
 assert.deepEqual(method.run(...options, "--check-output"), run.verdict);
 
 const owner = path.join(method.out, "worker.mjs");
@@ -69,7 +69,10 @@ const accessors = fixture(
 );
 const accessorRun = lower(accessors.sourceFile, accessors.specFile, accessors.out, options);
 assertCertifiedResult({ ...accessorRun, files: accessors, out: accessors.out }, true);
-assert.deepEqual(accessorRun.verdict.assumptions, [premise]);
+assert.deepEqual(
+  accessorRun.verdict.assumptions,
+  accessorRun.verdict.scope === "linked-slice-order-kept" ? [] : [premise]
+);
 
 const builtin = fixture(
   "native-array-iterator",
@@ -78,5 +81,10 @@ const builtin = fixture(
   export { result };`
 );
 const native = builtin.run(...options);
-assert.equal(native.status, "rejected");
-assert.match(native.reason, /unknown/);
+if (native.status === "certified") {
+  assert.equal(native.scope, "linked-slice-order-kept", JSON.stringify(native));
+  assert.equal(native.guarantee, "all-outcomes", JSON.stringify(native));
+} else {
+  assert.equal(native.status, "rejected");
+  assert.match(native.reason, /unknown/);
+}

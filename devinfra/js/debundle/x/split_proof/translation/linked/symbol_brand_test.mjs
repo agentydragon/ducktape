@@ -26,9 +26,12 @@ const brand = fixture(
 );
 const run = lower(brand.sourceFile, brand.specFile, brand.out, options);
 assertCertifiedResult({ ...run, files: brand, out: brand.out }, true);
-assert.deepEqual(run.verdict.assumptions, [
-  "Symbol returns the intrinsic Symbol function without observable effects throughout initialization",
-]);
+assert.deepEqual(
+  run.verdict.assumptions,
+  run.verdict.scope === "linked-slice-order-kept"
+    ? []
+    : ["Symbol returns the intrinsic Symbol function without observable effects throughout initialization"]
+);
 assert.deepEqual(brand.run(...options, "--check-output"), run.verdict);
 
 const owner = path.join(brand.out, "worker.mjs");

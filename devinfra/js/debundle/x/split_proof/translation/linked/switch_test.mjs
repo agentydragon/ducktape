@@ -4,6 +4,7 @@ import {
   arrow,
   assertCertifiedResult,
   assertRejected,
+  assertRejectedOrOrderKeptSlice,
   block,
   call,
   exportNamed,
@@ -149,5 +150,5 @@ for (const [name, cases, reason] of [
     `function choose(n) { switch (n) { ${cases} } return 0; }
      const result = choose(0); export { result };`
   );
-  assertRejected(refused, reason);
+  assertRejectedOrOrderKeptSlice(refused, reason);
 }

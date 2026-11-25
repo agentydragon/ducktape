@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { assertCertifiedResult, assertRejected, lower, workerSplit } from "./harness.mjs";
+import { assertCertifiedResult, assertRejectedOrOrderKeptSlice, lower, workerSplit } from "./harness.mjs";
 
 const source = String.raw`const make = () => /[a/]+\s/ymi;
 const check = () => {
@@ -26,5 +26,5 @@ for (const changed of [original.replace("[a/]", "[b/]"), original.replace("ymi",
 }
 for (const method of ["exec", "test"]) {
   const matcher = workerSplit("regexp-" + method, `const rx = /a/g; export const result = rx.${method}("a");`);
-  assertRejected(matcher, new RegExp("RegExp\\.prototype\\." + method));
+  assertRejectedOrOrderKeptSlice(matcher, new RegExp("RegExp\\.prototype\\." + method));
 }

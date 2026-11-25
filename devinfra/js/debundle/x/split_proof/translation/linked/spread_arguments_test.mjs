@@ -2,7 +2,15 @@ import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { assertCertifiedResult, assertRejected, caseShard, lower, prepare, root, workerSplit } from "./harness.mjs";
+import {
+  assertCertifiedResult,
+  assertRejectedOrOrderKeptSlice,
+  caseShard,
+  lower,
+  prepare,
+  root,
+  workerSplit,
+} from "./harness.mjs";
 
 const entryUnits = ["#1", "#2"];
 const runCase = caseShard();
@@ -39,7 +47,7 @@ if (runCase("noniterable")) {
     "const worker = 42; const value = [...worker]; export {value as result};",
     entryUnits
   );
-  assertRejected(replay, /original threw during linked initialization/);
+  assertRejectedOrOrderKeptSlice(replay, /original threw during linked initialization/);
   await assert.rejects(import(pathToFileURL(replay.files.sourceFile).href), TypeError);
 }
 

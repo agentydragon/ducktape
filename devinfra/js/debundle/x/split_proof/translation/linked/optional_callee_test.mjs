@@ -4,6 +4,7 @@ import {
   arrow,
   assertCertifiedResult,
   assertRejected,
+  assertRejectedOrOrderKeptSlice,
   block,
   call,
   exportNamed,
@@ -94,7 +95,7 @@ for (const [name, expression, expectedError, thrown] of [
     export { result };`
   );
   assert.deepEqual(observe(test.files.sourceFile, "result"), { error: thrown });
-  assertRejected(test, /original threw during linked initialization/);
+  assertRejectedOrOrderKeptSlice(test, /original threw during linked initialization/);
 }
 
 function member(object, name) {
@@ -157,7 +158,7 @@ for (const [name, body, reason, expected] of [
       export { result };`
   );
   assert.deepEqual(observe(test.files.sourceFile, "result"), { result: expected });
-  assertRejected(test, reason);
+  assertRejectedOrOrderKeptSlice(test, reason);
 }
 
 const continued = ownerReaderSplit(
@@ -197,7 +198,7 @@ const returnedUndefined = ownerReaderSplit(
    const result = run({ method() { return undefined; } });
    export { result };`
 );
-assertRejected(returnedUndefined, /original threw during linked initialization/);
+assertRejectedOrOrderKeptSlice(returnedUndefined, /original threw during linked initialization/);
 assert.deepEqual(observe(returnedUndefined.files.sourceFile, "result"), { error: "TypeError" });
 
 const host = ownerReaderSplit(
@@ -207,4 +208,7 @@ const host = ownerReaderSplit(
    export { result };`
 );
 assert.deepEqual(observe(host.files.sourceFile, "result"), { result: "[object Object]" });
-assertRejected(host, /original reached an unknown result during linked initialization: host value .* is inspected/);
+assertRejectedOrOrderKeptSlice(
+  host,
+  /original reached an unknown result during linked initialization: host value .* is inspected/
+);

@@ -22,6 +22,7 @@ import {
   moduleEvaluationOrder,
   forcePreview,
   workerSplit,
+  assertRejectedOrOrderKeptSlice,
   assertWorkerResult,
   observedProgram,
 } from "./harness.mjs";
@@ -158,10 +159,10 @@ assertWorkerResult(
 // After retrying the wide record, report the actual TDZ on its final property.
 {
   const value = { type: "ObjectExpression", properties: [...fields, property("tail", id("result"))] };
-  const { verdict, out } = workerSplit("wide-record-tdz", observedProgram(literal(0), value));
-  assert.equal(verdict.status, "rejected");
-  assert.match(verdict.reason, /original threw during linked initialization/);
-  assert(!existsSync(out));
+  const result = workerSplit("wide-record-tdz", observedProgram(literal(0), value));
+  if (assertRejectedOrOrderKeptSlice(result, /original threw during linked initialization/)) {
+    assert.deepEqual(observe(path.join(result.out, "entry.mjs"), "result"), observe(result.files.sourceFile, "result"));
+  }
 }
 
 assertWorkerResult(
@@ -182,11 +183,11 @@ assertWorkerResult("record-duplicate", `const worker = () => ({ key: 1, "key": 2
   key: 2,
 });
 {
-  const { verdict, out } = workerSplit(
+  const result = workerSplit(
     "record-array-hole",
     "const worker = () => ({ nested: { key: [, 1] } }); export const result = worker();"
   );
-  assert.equal(verdict.status, "rejected");
-  assert.match(verdict.reason, /unsupported array hole/);
-  assert(!existsSync(out));
+  if (assertRejectedOrOrderKeptSlice(result, /unsupported array hole/)) {
+    assert.deepEqual(observe(path.join(result.out, "entry.mjs"), "result"), observe(result.files.sourceFile, "result"));
+  }
 }

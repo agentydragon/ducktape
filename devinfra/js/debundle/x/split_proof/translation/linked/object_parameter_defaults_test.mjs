@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { assertCertifiedResult, assertRejected, caseShard, lower, observe, sequentialSplit } from "./harness.mjs";
+import {
+  assertCertifiedResult,
+  assertRejectedOrOrderKeptSlice,
+  caseShard,
+  lower,
+  observe,
+  sequentialSplit,
+} from "./harness.mjs";
 
 const includesCase = caseShard();
 
@@ -81,7 +88,7 @@ if (includesCase("later-object-binding-tdz")) {
     { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3"] },
     ["base.mjs"]
   );
-  assertRejected(test, /original threw during linked initialization/);
+  assertRejectedOrOrderKeptSlice(test, /original threw during linked initialization/);
   assert.deepEqual(observe(test.files.sourceFile, "result"), { error: "ReferenceError" });
 }
 
@@ -97,7 +104,7 @@ if (includesCase("derived-default-shadowed-by-prefix-var")) {
     { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3"] },
     ["base.mjs"]
   );
-  assertRejected(test, /var before super overlaps default parameters or their references/);
+  assertRejectedOrOrderKeptSlice(test, /var before super overlaps default parameters or their references/);
   assert.deepEqual(observe(test.files.sourceFile, "result"), { result: "outer" });
 }
 
@@ -158,7 +165,7 @@ if (includesCase("whole-pattern-default-tdz")) {
      function read({ x } = later, later = {}) { return x; }
      export const result = read();`
   );
-  assertRejected(test, /original threw during linked initialization/);
+  assertRejectedOrOrderKeptSlice(test, /original threw during linked initialization/);
   assert.deepEqual(observe(test.files.sourceFile, "result"), { error: "ReferenceError" });
 }
 
@@ -169,6 +176,6 @@ if (includesCase("whole-pattern-body-var")) {
      function read({ x } = outer) { var outer; return x; }
      export const result = read();`
   );
-  assertRejected(test, /body var overlaps default parameters or their references/);
+  assertRejectedOrOrderKeptSlice(test, /body var overlaps default parameters or their references/);
   assert.deepEqual(observe(test.files.sourceFile, "result"), { result: 9 });
 }

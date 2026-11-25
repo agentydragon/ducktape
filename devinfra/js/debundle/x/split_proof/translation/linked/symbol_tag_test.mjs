@@ -26,11 +26,14 @@ const tag = fixture(
 assert.match(tag.run().reason, /unsupported computed class key/);
 const run = lower(tag.sourceFile, tag.specFile, tag.out, options);
 assertCertifiedResult({ ...run, files: tag, out: tag.out }, true);
-assert.ok(
-  run.verdict.assumptions.includes(
-    "Symbol.toStringTag returns the well-known toStringTag symbol without observable effects throughout initialization"
-  )
-);
+if (run.verdict.scope === "linked-slice-order-kept") assert.deepEqual(run.verdict.assumptions, []);
+else {
+  assert.ok(
+    run.verdict.assumptions.includes(
+      "Symbol.toStringTag returns the well-known toStringTag symbol without observable effects throughout initialization"
+    )
+  );
+}
 assert.deepEqual(tag.run(...options, "--check-output"), run.verdict);
 const file = path.join(tag.out, "worker.mjs");
 const source = readFileSync(file, "utf8");

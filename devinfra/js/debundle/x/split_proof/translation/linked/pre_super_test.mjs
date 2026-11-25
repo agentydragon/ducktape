@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { assertCertifiedResult, assertRejected, lower, observe, sequentialSplit } from "./harness.mjs";
+import { assertCertifiedResult, assertRejectedOrOrderKeptSlice, lower, observe, sequentialSplit } from "./harness.mjs";
 
 const source = `
   let trace = "";
@@ -65,7 +65,7 @@ const tdz = sequentialSplit(
   { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3"] },
   ["base.mjs"]
 );
-assertRejected(tdz, /original threw during linked initialization/);
+assertRejectedOrOrderKeptSlice(tdz, /original threw during linked initialization/);
 assert.deepEqual(observe(tdz.files.sourceFile, "result"), { error: "ReferenceError" });
 
 const vars = sequentialSplit(
@@ -104,7 +104,7 @@ const defaultShadow = sequentialSplit(
   { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3"] },
   ["base.mjs"]
 );
-assertRejected(defaultShadow, /var before super overlaps default parameters or their references/);
+assertRejectedOrOrderKeptSlice(defaultShadow, /var before super overlaps default parameters or their references/);
 assert.deepEqual(observe(defaultShadow.files.sourceFile, "result"), { result: 7 });
 
 const functionOverlap = sequentialSplit(
@@ -117,7 +117,7 @@ const functionOverlap = sequentialSplit(
   { "base.mjs": ["#0"], "entry.mjs": ["#1", "#2"] },
   ["base.mjs"]
 );
-assertRejected(functionOverlap, /local function declaration overlaps a var binding before super/);
+assertRejectedOrOrderKeptSlice(functionOverlap, /local function declaration overlaps a var binding before super/);
 assert.deepEqual(observe(functionOverlap.files.sourceFile, "result"), { result: 6 });
 
 // Super arguments run before the superclass constructor check, even with a null base.
@@ -214,7 +214,7 @@ const conditional = sequentialSplit(
   { "base.mjs": ["#0"], "entry.mjs": ["#1", "#2"] },
   ["base.mjs"]
 );
-assertRejected(conditional, /expected a direct super call/);
+assertRejectedOrOrderKeptSlice(conditional, /expected a direct super call/);
 
 const captured = sequentialSplit(
   "pre-super-arrow-receiver",
@@ -283,5 +283,5 @@ for (const [name, body] of [
     { "child.mjs": ["#0"], "entry.mjs": ["#1"] },
     ["child.mjs"]
   );
-  assertRejected(refused, /before super/i);
+  assertRejectedOrOrderKeptSlice(refused, /before super/i);
 }
