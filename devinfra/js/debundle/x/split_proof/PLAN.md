@@ -474,7 +474,7 @@ The next editor decision is whether to adopt the [scroll dependency proposal](in
 
 ### Proof track
 
-**N4. Widen the slice that moves code.** `moves_preserve` is proved; what `MayMove` covers is 69% of the large bundle's units.
+**N4. Widen the slice that moves code.** `moves_preserve` is proved; what `MayMove` covers is 69% of the large bundle's units. The [linked AST census](experiments/README.md#14-an-executable-model-of-a-core-of-javascript) measures the current rules, including refusals; its counts are not directly comparable to the historical 69%.
 
 The active [footprint soundness work](docs/footprint_soundness.md) establishes a compositional contract for checked Effects output, starting with binding-only statements and keeping unsupported analysis rules outside the proved slice.
 

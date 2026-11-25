@@ -271,6 +271,7 @@ lean_library(
         "EsmSplit/CoreJS/Reachability.lean",
         "EsmSplit/CoreJS/Scope.lean",
         "EsmSplit/CoreJS/Split.lean",
+        "EsmSplit/CoreJS/StableIntrinsicDescriptor.lean",
         "EsmSplit/CoreJS/StateMatch.lean",
         "EsmSplit/CoreJS/StructuralRefusal.lean",
         "EsmSplit/CoreJS/WriteExpr.lean",

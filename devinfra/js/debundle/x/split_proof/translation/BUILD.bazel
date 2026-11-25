@@ -626,6 +626,7 @@ js_test(
     timeout = "long",
     data = [
         ":annotated_estree",
+        ":dump_ast",
         ":frontend",
         ":parser",
         ":scope_metadata",
@@ -639,6 +640,7 @@ js_test(
     entry_point = "corejs_ast_lowering_test.mjs",
     env = {
         "COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:corejs)",
+        "DUMP_AST": "$(rootpath :dump_ast)",
         "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
     },
 )
