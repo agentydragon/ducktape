@@ -1,11 +1,12 @@
 // Exercise normal lowersplit output through Acorn and Node after ESTree printing.
 import { strict as assert } from "node:assert";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { acorn, dump } from "./parser.mjs";
 import { assertSelectedSourceUnits, parseSourceUnits } from "./testing/ast_assertions.mjs";
 import { writeDeployment } from "./testing/deployment_manifest.mjs";
+import { renderDiagnostic } from "./testing/diagnostic_split.mjs";
 import { split } from "./testing/split.mjs";
 import { lcg32 } from "../seeded_random.mjs";
 
@@ -97,11 +98,8 @@ assert.equal(certified.status, "refused", certified.log);
 assert.match(certified.reason, /unsupported literal/);
 assert.equal(certified.reasonCode, "linked_input");
 assert.equal(certified.files.length, 0, "the certified refusal publishes no modules");
-const lowered = spawnSync(process.env.LOWERSPLIT, ["--diagnostic", manifest, out], {
-  encoding: "utf8",
-});
+const lowered = renderDiagnostic({ manifest, out });
 assert.equal(lowered.status, 0, `${lowered.stdout}\n${lowered.stderr}`);
-assert.match(lowered.stdout, /model diagnostic: /, "this printer fixture remains a model-slice diagnostic");
 
 for (const [file, selectors] of Object.entries(modules)) {
   const emittedText = readFileSync(path.join(out, file), "utf8");

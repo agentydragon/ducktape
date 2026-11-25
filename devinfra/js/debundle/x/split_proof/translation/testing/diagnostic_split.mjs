@@ -8,6 +8,18 @@ import { split } from "./split.mjs";
 
 export const run = (binary, args) => spawnSync(binary, args, { encoding: "utf8" });
 
+/** Run the legacy diagnostic renderer for a prepared deployment. */
+export function renderDiagnostic({ manifest, input, spec, out }, ...flags) {
+  assert(manifest || (input && spec), "provide a deployment manifest or an input and spec");
+  assert(out, "out is required");
+  assert(process.env.LOWERSPLIT, "LOWERSPLIT is required");
+  const deployment = manifest ?? writeDeployment(input, spec, out);
+  const result = run(process.env.LOWERSPLIT, ["--diagnostic", deployment, out, ...flags]);
+  if (result.error) throw result.error;
+  assert.match(result.stdout, /model diagnostic: /, result.stdout + result.stderr);
+  return result;
+}
+
 const certificateResults = new Map();
 function certificateFor({ input, spec, dir }) {
   const key = `${path.resolve(input)}\n${path.resolve(spec)}\n${path.resolve(dir)}`;
@@ -57,7 +69,6 @@ export function lowerDiagnostic({ input, spec, dir }, ...flags) {
   const certification = certificateFor({ input, spec, dir });
   // Callers use this only to inspect the legacy model diagnostics. Comparison
   // output uses the certified helper and never falls back to a forced preview.
-  const result = run(process.env.LOWERSPLIT, ["--diagnostic", writeDeployment(input, spec, dir), dir, ...flags]);
-  assert.match(result.stdout, /model diagnostic: /, result.stdout + result.stderr);
+  const result = renderDiagnostic({ input, spec, out: dir }, ...flags);
   return Object.assign(result, { certification });
 }
