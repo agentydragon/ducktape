@@ -594,7 +594,7 @@ assert.deepEqual(
   await nodeOutcome(pathToFileURL(path.join(defaultDir, "main.mjs")).href)
 );
 
-function certifyFixture(directory, args = []) {
+function certificationResult(directory, args = []) {
   const out = path.join(directory, "out");
   const hostAt = args.indexOf("--host-contract");
   const result = certifySplit({
@@ -603,8 +603,32 @@ function certifyFixture(directory, args = []) {
     out,
     ...(hostAt >= 0 ? { hostContract: args[hostAt + 1] } : {}),
   });
+  return { out, result };
+}
+
+function certifyFixture(directory, args = []) {
+  const { out, result } = certificationResult(directory, args);
   assert.equal(result.status, "certified", result.log);
   return import(pathToFileURL(path.join(out, "entry.mjs")).href);
+}
+
+// A named class expression's inner name must not enable deferred ambient Symbol references in
+// eager class evaluation. The production profile has no Symbol premise, so both forms refuse
+// during certification instead of producing a runtime unknown.
+for (const [name, source] of [
+  ["static-initializer", "export const C = class Named { static value = Symbol.iterator; };"],
+  ["heritage", "export const C = class Named extends Symbol.iterator {};"],
+]) {
+  const directory = path.join(dir, `class-unprofiled-symbol-${name}`);
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path.join(directory, "bundle.mjs"), source);
+  writeFileSync(
+    path.join(directory, "spec.json"),
+    JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0"] } })
+  );
+  const { result } = certificationResult(directory);
+  assert.equal(result.status, "refused", source);
+  assert.match(result.reason, /unsupported ambient member Symbol\.iterator/, source);
 }
 
 // A certified split keeps `export default` in the entry and moves the binding it reads.
