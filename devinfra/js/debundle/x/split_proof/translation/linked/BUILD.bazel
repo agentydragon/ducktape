@@ -99,6 +99,10 @@ _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean
     js_test(
         name = name,
         size = "medium",
+        timeout = "long" if name in [
+            "classes_test",
+            "default_parameters_test",
+        ] else "moderate",
         data = _TEST_DATA,
         entry_point = name + ".mjs",
         env = _TEST_ENV,
@@ -214,12 +218,13 @@ js_test(
     data = _TEST_DATA,
     entry_point = "mutations_test.mjs",
     env = _TEST_ENV,
-    shard_count = 3,
+    shard_count = 6,
 )
 
 js_test(
     name = "property_assignment_test",
     size = "medium",
+    timeout = "long",
     data = _TEST_DATA,
     entry_point = "property_assignment_test.mjs",
     env = _TEST_ENV,

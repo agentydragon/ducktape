@@ -66,7 +66,7 @@ fs.writeFileSync(pageProfile, JSON.stringify({ profile: "browser-page" }));
 const browserArgs = ["--host-contract", pageProfile];
 const placement3 = { [entry]: ["#2"], [left]: ["#0"], [right]: ["#1"] };
 if (includesCase("output-mutations")) {
-  const ast = prepare(source, placement3, [left, right]);
+  prepare(source, placement3, [left, right]);
   const orderedVerdict = check(out, all, "certified");
   assert.equal(orderedVerdict.scope, "closed-declarations");
   assert.equal(orderedVerdict.guarantee, all);
