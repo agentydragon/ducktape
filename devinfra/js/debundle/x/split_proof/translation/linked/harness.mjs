@@ -262,11 +262,11 @@ export function assertCertified(verdict, log) {
   assert.equal(typeof verdict.strategy, "string", log);
   assert(Array.isArray(verdict.premises), log);
   assert.equal(typeof verdict.every_ending_matches, "boolean", log);
-  if (verdict.strategy === "linked") {
+  if (verdict.strategy === "compiled-replay-premised" || verdict.strategy === "generated-proof") {
     assert(Array.isArray(verdict.strategy_attempts), JSON.stringify(verdict));
     assert.deepEqual(
       verdict.strategy_attempts.map(({ strategy }) => strategy),
-      ["structural"]
+      ["structural", "compiled-replay-premised"].slice(0, verdict.strategy === "compiled-replay-premised" ? 1 : 2)
     );
     for (const attempt of verdict.strategy_attempts) {
       assert.equal(Object.hasOwn(attempt, "reason_code"), true, JSON.stringify(attempt));
@@ -282,7 +282,7 @@ export function assertStrategyAttempts(verdict, expectedCount) {
   assert.equal(verdict.strategy_attempts.length, expectedCount, JSON.stringify(verdict));
   assert.deepEqual(
     verdict.strategy_attempts.map(({ strategy }) => strategy),
-    ["structural", "linked"].slice(0, expectedCount)
+    ["structural", "compiled-replay-premised", "generated-proof"].slice(0, expectedCount)
   );
   for (const attempt of verdict.strategy_attempts) {
     assert.equal(typeof attempt.strategy, "string", JSON.stringify(attempt));

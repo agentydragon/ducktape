@@ -208,7 +208,12 @@ writeFileSync(
 assert.equal(first.type, "ImportDeclaration");
 assert.equal(verdict.status, "rejected");
 assert.equal(verdict.guarantee, null);
-assert.equal(verdict.reason, "statement 354: unsupported linked expression ImportExpression");
+assert.equal(verdict.reason_code, "structural_opaque_unit_context");
+assert.match(verdict.reason, /^statement 354: opaque unit requires source-module or method context$/);
+assert.deepEqual(
+  verdict.strategy_attempts.map(({ strategy }) => strategy),
+  ["structural", "compiled-replay-premised", "generated-proof"]
+);
 assert(!existsSync(out), "a rejected trial published modules");
 
 // The pinned editor exposes its public names through an export list. Read the actual

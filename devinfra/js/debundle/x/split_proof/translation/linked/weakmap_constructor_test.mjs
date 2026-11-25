@@ -27,12 +27,16 @@ for (const [reason, reasonCode] of [
   const { verdict } = lower(neutral.files.sourceFile, neutral.files.specFile, neutral.out, opts);
   assert.equal(verdict.status, "rejected");
   assert.equal(verdict.guarantee, null);
-  assert.match(verdict.reason, reason);
+  const attempts = assertStrategyAttempts(verdict, 3);
   if (reasonCode) {
     assert.equal(verdict.reason_code, reasonCode);
-    const structural = assertStrategyAttempts(verdict, 2).find(({ strategy }) => strategy === "structural");
+    const structural = attempts.find(({ strategy }) => strategy === "structural");
     assert.equal(structural.reason_code, reasonCode);
     assert.match(structural.reason, reason);
+    assert.match(verdict.reason, reason);
+  } else {
+    const linked = attempts.find(({ strategy }) => strategy === "generated-proof");
+    assert.match(linked.reason, reason);
   }
   assert(!existsSync(neutral.out));
 }

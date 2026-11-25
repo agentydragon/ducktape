@@ -176,7 +176,7 @@ assert.notDeepEqual(
   await observe(pathToFileURL(path.join(structuralOutput, entry))),
   await observe("data:text/javascript," + encodeURIComponent(leakingSource))
 );
-assert.match(check(leakage, "rejected").reason, /entry public exports/);
+assert.match(check(leakage, "rejected").reason, /entry exports resolve to different linked cells/);
 assert(!fs.existsSync(leakage));
 
 const reordered = path.join(root, "reordered");
@@ -189,7 +189,11 @@ assert.deepEqual(check(reordered, "certified", "--check-output"), movedVerdict);
 assert.deepEqual(await observe(pathToFileURL(path.join(reordered, entry))), [["result", 1]]);
 prepare("const sparse = [1, , 2];", { [entry]: ["#0"] }, []);
 const unsupported = path.join(root, "unsupported");
-assert.match(check(unsupported, "rejected").reason, /unsupported array hole/);
+const opaqueUnchanged = check(unsupported, "certified");
+assert.equal(opaqueUnchanged.strategy, "structural");
+assert.equal(opaqueUnchanged.every_ending_matches, true);
+assert.deepEqual(check(unsupported, "certified", "--check-output"), opaqueUnchanged);
+const sparseOutput = fs.readFileSync(path.join(unsupported, entry), "utf8");
 check(unsupported, "rejected", "--force");
 const mixed = spawnSync(process.env.LOWERSPLIT, [
   "--diagnostic",
@@ -199,7 +203,7 @@ const mixed = spawnSync(process.env.LOWERSPLIT, [
 ]);
 assert.notEqual(mixed.status, 0);
 assert.match(mixed.stderr.toString(), /cannot be combined/);
-assert(!fs.existsSync(unsupported));
+assert.equal(fs.readFileSync(path.join(unsupported, entry), "utf8"), sparseOutput);
 
 // Browser module scripts can use .js for both the entry and its imports.
 const browserTree = path.join(root, "browser-tree");
@@ -225,7 +229,7 @@ assert.match(check(browserTree, "rejected", ...browserArgs, "--check-output").re
 prepare("const local = 1;", { [entry]: [], "other.cjs": ["#0"] }, ["other.cjs"]);
 assert.match(check(unsupported, "rejected").reason, /\.mjs/);
 assert.match(check(unsupported, "rejected", ...browserArgs).reason, /safe relative/);
-assert(!fs.existsSync(unsupported));
+assert.equal(fs.readFileSync(path.join(unsupported, entry), "utf8"), sparseOutput);
 const escaping = "../escaped.mjs";
 prepare("const local = 1;", { [entry]: [], [escaping]: ["#0"] }, [escaping]);
 check(unsupported, "rejected");

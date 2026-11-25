@@ -24,9 +24,17 @@ function certificate(args) {
   assert.equal(verdict.status, status === 0 ? "certified" : "rejected", stdout);
   if (status === 0) {
     assert.equal(verdict.guarantee, "normal-equivalence", stdout);
-    assert.equal(verdict.strategy, "structural", stdout);
+    assert.equal(typeof verdict.strategy, "string", stdout);
     assert(Array.isArray(verdict.premises), stdout);
-  } else assert.equal(verdict.guarantee, null, stdout);
+    assert.equal(typeof verdict.every_ending_matches, "boolean", stdout);
+  } else {
+    assert.equal(verdict.guarantee, null, stdout);
+    assert.deepEqual(
+      verdict.strategy_attempts.map(({ strategy }) => strategy),
+      ["structural", "compiled-replay-premised", "generated-proof"],
+      stdout
+    );
+  }
   return verdict;
 }
 
@@ -67,7 +75,7 @@ for (const source of process.argv.slice(2)) {
     const verdict = certificate(args);
     if (verdict.status === "rejected") {
       // A refusal without an observed difference is inconclusive.
-      assert.equal(verdict.strategy, "structural");
+      assert(verdict.strategy_attempts.some(({ strategy }) => strategy === "structural"));
       assert(!existsSync(args[1]));
       assert.equal(strategy, "advance-second", JSON.stringify(verdict));
       results.push({ library, strategy, outcome: "unknown", reason: verdict.reason });

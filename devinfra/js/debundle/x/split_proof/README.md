@@ -42,7 +42,7 @@ bbr test "//$dir/lean:instance_freshness_test"
 
 Acorn supplies an unsplit module AST and eslint-scope annotates its binding occurrences. Lean enumerates source ordinals from the module body. It gives each declarator of a top-level `var`, `let` or `const` its own ordinal, including under a named export, and keeps each destructuring pattern together. Lean assembles an ESTree `Program` for each output file, including the imports and exports that connect the modules. Astring prints these trees as JavaScript. Functions, classes and methods retain their original source spelling because JavaScript exposes it through `Function.prototype.toString`. Unversioned input dumps are upgraded by reparsing the included source and checking its annotations.
 
-Closed declaration splits now use the same automatic selector as other singleton inputs. It tries the compiled structural schedule with automatically chosen pivots, then the linked fallback. The declaration-specific certification path is retired.
+Closed declaration splits now use the same automatic selector as other singleton inputs. It tries the compiled structural schedule with automatically chosen pivots, then compiled premised replay, then the generated proof fallback. The declaration-specific certification path is retired.
 
 ## Request a CoreJS guarantee
 
@@ -80,9 +80,9 @@ Class static blocks run in their own scope with the constructor as the
 receiver. The checker evaluates class member keys before it initializes
 fixed-name static fields and runs blocks in their source order.
 
-The command prints one JSON verdict. Every certified verdict states `guarantee: "normal-equivalence"`: for every modeled world satisfying the listed premises, the source and emitted CoreJS programs agree on their normally terminating final states. The verdict reports the selected `strategy` (`structural` or `linked`), its `premises`, its `scope`, and whether every ending matches. A rejected split exits nonzero with `status: "rejected"`, a null guarantee and a reason.
+The command prints one JSON verdict. Every certified verdict states `guarantee: "normal-equivalence"`: for every modeled world satisfying the listed premises, the source and emitted CoreJS programs agree on their normally terminating final states. The verdict reports the selected `strategy` (`structural`, `compiled-replay-premised`, or `generated-proof`), its `premises`, its `scope`, and whether every ending matches. A rejected split exits nonzero with `status: "rejected"`, a null guarantee and a reason.
 
-The checker selects strategies in this order: the compiled structural check with automatically chosen pivots, then the linked fallback. Multi-chunk deployments use the structural check. The strategy field records which check certified the split; `strategy_attempts` records each earlier refusal when a later strategy succeeds and every refusal when none succeeds. Each attempt includes the strategy name, nullable reason code, and reason text.
+The checker selects strategies in this order: the compiled structural check with automatically chosen pivots, compiled premised replay, then the generated linked proof. Multi-chunk deployments use the structural check. The strategy field records which check certified the split; `strategy_attempts` records each earlier refusal when a later strategy succeeds and every refusal when none succeeds. Each attempt includes the strategy name, nullable reason code, and reason text.
 
 To move an initializer such as `Math.PI / 12`, pass
 `{"profile":"browser-page","stableIntrinsicValues":["Math.PI@1"]}` with
@@ -170,7 +170,7 @@ For a page whose import map remains empty, `--deployment-import-map empty@1` rec
 
 [Lean's initializer](lean/EsmSplit/CoreJS/NativeRecord.lean) allocates that receiver and its nonconstructible resolver in a private model dependency before original module bodies run. Each referrer captures its immutable binding. The resolver runs in the common opaque world with its actual receiver and arguments. The record's properties can subsequently change; getter calls and objects reachable from them remain subject to the ordinary structural frame checks. All metadata sites, including deferred ones, must stay at their original referrer. The model dependency is never emitted. Pass the same preset to `--check-output`; without it the original deployment checks still apply.
 
-The strategy and scope identify the evidence behind one theorem. Each strategy checks the CoreJS programs that Lean lowers from the original annotated ESTree and the [generated module ASTs](lean/EsmSplit/ESTreeEmit.lean). The slice and structural strategies use compiled checks. The linked fallback checks the same statement for cases those compiled checks cannot certify. Its reported premises constrain host observations such as browser globals. The same verdict shape applies to every strategy.
+The strategy and scope identify the evidence behind one theorem. Each strategy checks the CoreJS programs that Lean lowers from the original annotated ESTree and the [generated module ASTs](lean/EsmSplit/ESTreeEmit.lean). Structural checking and premised replay use compiled checks. The generated proof fallback checks the same statement for cases those compiled checks cannot certify. Its reported premises constrain host observations such as browser globals. The same verdict shape applies to every strategy.
 
 [Publication](lean/EsmSplit/SplitFiles.lean) prints to staging, reparses the files, and checks their module set, syntax, and callable spelling. It requires copied providers to match the source text. The certificate consumes the annotated ASTs from those disk reads. `--check-output` repeats the same checks on an existing directory, including for regrouped declarations with the same ordered units. The theorems relate CoreJS programs. Their application to the files relies on the parser and scope annotator, the lowering and CoreJS model, and Lean's compiler and file IO.
 

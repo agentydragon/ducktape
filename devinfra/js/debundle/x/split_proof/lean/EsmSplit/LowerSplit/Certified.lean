@@ -93,6 +93,11 @@ private def emitRefusal (refusal : CertificationRefusal)
 private def structuralRefusal (refusal : CoreJS.LinkedBehavior.StructuralRefusal) : CertificationRefusal :=
   { reason := refusal.reason, reasonCode := refusal.reasonCode }
 
+private def replayRefusal (refusal : CoreJS.LinkedBehavior.Refusal) : CertificationRefusal :=
+  { reason := refusal.reason
+    reasonCode := some refusal.code.label
+    observation := refusal.observation }
+
 private def profileFields (profile : CoreJS.HostProfile) : List (String × Json) :=
   if profile == .empty then [] else [("hostProfile", toJson profile.label)]
 
@@ -121,11 +126,12 @@ private def strategyFailureJson (failure : StrategyFailure) : Json :=
   let reasonCode := match failure.refusal.reasonCode with
     | none => Json.null
     | some code => toJson code
-  Json.mkObj [
+  let fields : List (String × Json) := [
     ("strategy", toJson failure.strategy),
     ("reason_code", reasonCode),
     ("reason", toJson failure.refusal.reason)
-  ]
+  ] ++ failure.refusal.details
+  Json.mkObj fields
 
 /-- Try proof strategies in order. Each strategy has one typed result shape, so new
 compiled checks can be inserted without changing fallback control flow. -/
@@ -310,14 +316,53 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
           pure <| result.mapError structuralRefusal |>.map fun ⟨used, _, proof, _⟩ =>
             structuralResult options used proof
     }
+    let replay : CertifiedStrategy := {
+      name := "compiled-replay-premised"
+      certify := fun files => do
+        let decoded ← timePhase timings "linked_lowering" fun _ =>
+          IO.lazyPure fun _ => CoreJS.LinkedInput.decodePair program shared files P profile
+        match decoded with
+        | .error reason =>
+          pure (.error ({ reason, reasonCode := some "linked_input" } : CertificationRefusal))
+        | .ok (original, candidate) => do
+          let order := fun (p : CoreJS.Program) => p.loaded.flatMap fun m => m.body.map Prod.fst
+          let everyEndingMatches := order original == order candidate
+          match CoreJS.LinkedBehavior.probeWitness profile original candidate with
+          | .error refusal => pure (.error (replayRefusal refusal))
+          | .ok (premises, fuel) =>
+            match CoreJS.LinkedBehavior.replayPremisedPrograms premises fuel original candidate with
+            | none =>
+              let blockers := CoreJS.LinkedBehavior.replayPremisedBlockerKinds original candidate
+              let detail := if blockers.isEmpty then ""
+                else s!": unsupported linked replay forms: {String.intercalate ", " blockers}"
+              pure (.error ({
+                reason := "compiled linked replay did not cover the linked schedules" ++ detail
+                reasonCode := some "replay_unsupported"
+                details := [("replay_blockers", toJson blockers)]
+              } : CertificationRefusal))
+            | some semantics =>
+              match CoreJS.LinkedBehavior.certifyASTs profile premises program shared files P
+                  original candidate semantics.down with
+              | .error reason => pure (.error ({
+                  reason := reason
+                  reasonCode := some "linked_ast_mismatch"
+                } : CertificationRefusal))
+              | .ok _ => pure (.ok {
+                  scope := "linked-programs"
+                  everyEndingMatches
+                  premises := profilePremises profile premises
+                })
+    }
     let linked : CertifiedStrategy := {
-      name := "linked"
+      name := "generated-proof"
       certify := fun files => do
         let decoded ← timePhase timings "linked_lowering" fun _ =>
           IO.lazyPure fun _ => CoreJS.LinkedInput.decodePair program shared files P profile
         match decoded with
         | .error reason => pure (.error ({ reason, reasonCode := some "linked_input" } : CertificationRefusal))
         | .ok (original, candidate) => do
+          let order := fun (p : CoreJS.Program) => p.loaded.flatMap fun m => m.body.map Prod.fst
+          let everyEndingMatches := order original == order candidate
           let prepared : Except CertificationRefusal
               (CoreJS.LinkedBehavior.Certificate × Lean.NameMap Lean.ImportArtifacts) ←
             timePhase timings "certificate_preparation" fun _ => do
@@ -344,10 +389,16 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
             let active ← verifyExecution timings work cert dataArts
             pure (.ok {
               scope := "linked-programs"
+              everyEndingMatches
               premises := profilePremises profile active
             })
     }
-    let strategies := [structural, linked]
+    let allStrategies := [structural, replay, linked]
+    let strategies ← if (← IO.getEnv "SPLIT_PROOF_STRATEGY_CENSUS") == some "1" then
+        match ← IO.getEnv "SPLIT_PROOF_CENSUS_STRATEGY" with
+        | none => pure allStrategies
+        | some requested => pure (allStrategies.filter (·.name == requested))
+      else pure allStrategies
     let checked ← verify shared fun files => tryStrategies strategies files
     match checked with
     | .ok selected => emitSelected profile selected

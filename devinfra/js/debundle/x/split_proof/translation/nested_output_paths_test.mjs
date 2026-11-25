@@ -97,7 +97,7 @@ const certifiedVerdict = JSON.parse(certified.stdout.trim().split("\n").at(-1));
 assert.equal(certified.status, 0, certified.stdout + certified.stderr);
 assert.equal(certifiedVerdict.status, "certified", JSON.stringify(certifiedVerdict));
 assert.equal(certifiedVerdict.guarantee, "normal-equivalence");
-assert.equal(certifiedVerdict.strategy, "slice");
+assert.equal(certifiedVerdict.strategy, "structural");
 assert.equal(certifiedVerdict.every_ending_matches, true);
 assert.equal(
   spawnSync(

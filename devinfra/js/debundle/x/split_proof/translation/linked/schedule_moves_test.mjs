@@ -5,6 +5,11 @@ import { pathToFileURL } from "node:url";
 import { parse } from "acorn";
 import { assertStrategyAttempts, structuralFixture } from "./harness.mjs";
 
+function assertStructuralRefusal(verdict, reason) {
+  const attempts = assertStrategyAttempts(verdict, 3);
+  assert.match(attempts.find(({ strategy }) => strategy === "structural").reason, reason);
+}
+
 // Creating the class stores the initializer; only construction reads `later`.
 const instanceField = structuralFixture(
   "move-class-with-instance-field",
@@ -66,7 +71,7 @@ const opaqueContextVerdict = opaqueContext.run();
 assert.equal(opaqueContextVerdict.status, "rejected", JSON.stringify(opaqueContextVerdict));
 assert.match(opaqueContextVerdict.reason, /opaque unit requires source-module or method context/);
 assert.equal(opaqueContextVerdict.reason_code, "structural_opaque_unit_context");
-const opaqueAttempts = assertStrategyAttempts(opaqueContextVerdict, 2);
+const opaqueAttempts = assertStrategyAttempts(opaqueContextVerdict, 3);
 assert.equal(
   opaqueAttempts.find(({ strategy }) => strategy === "structural").reason_code,
   opaqueContextVerdict.reason_code
@@ -134,7 +139,7 @@ const capture = laterCapture.run();
 assert.equal(capture.status, "rejected", JSON.stringify(capture));
 assert.match(capture.reason, /unit 1 has access to the moved region of unit 3/);
 assert.equal(capture.reason_code, "structural_moved_region_access");
-const captureAttempts = assertStrategyAttempts(capture, 2);
+const captureAttempts = assertStrategyAttempts(capture, 3);
 assert.equal(captureAttempts.find(({ strategy }) => strategy === "structural").reason_code, capture.reason_code);
 assert(!existsSync(laterCapture.out));
 
@@ -201,7 +206,7 @@ for (const access of ["peek()", "receiver.value"]) {
   assert.equal((await import(pathToFileURL(active.sourceFile))).before, "undefined");
   const refused = active.run();
   assert.equal(refused.status, "rejected", JSON.stringify(refused));
-  assert.match(refused.reason, /linked state already exposes the region of unit 5/);
+  assertStructuralRefusal(refused, /linked state already exposes the region of unit 5/);
   assert(!existsSync(active.out));
 }
 
@@ -219,7 +224,7 @@ const reentry = structuralFixture(
 assert.equal((await import(pathToFileURL(reentry.sourceFile))).before, "undefined");
 const observed = reentry.run();
 assert.equal(observed.status, "rejected", JSON.stringify(observed));
-assert.match(observed.reason, /linked state already exposes the region of unit 4/);
+assertStructuralRefusal(observed, /linked state already exposes the region of unit 4/);
 assert(!existsSync(reentry.out));
 
 // The same retained closure is harmless to the first pivot but can read the

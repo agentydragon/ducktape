@@ -226,29 +226,28 @@ The Node comparison suites run their whole programs through `corejs --ast` under
 
 ### One guarantee
 
-**Now.** Certified verdicts have three scopes, and each proves a different statement:
+**Now.** Certified verdicts state the same normal-equivalence theorem. The scope identifies the proof shape and the strategy identifies the evidence:
 
-| Scope                 | Selected by                                                                       | Proves                                                                                            |
-| --------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| `closed-declarations` | Automatically, for a closed module of simple declarations, without `--structural` | Order kept: every ending matches. Moves: same successful states, both directions                  |
-| `linked-programs`     | Default                                                                           | In every allowed world, both programs finish normally in the same state                           |
-| `linked-structural-*` | `--structural`                                                                    | Exact linked schedule: every ending matches. Moves: same successful final states, both directions |
+| Scope                 | Selected by                                               | Evidence and result                                                                                |
+| --------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `linked-structural-*` | Automatically, with compiled pivots; also for deployments | Same normal-completion theorem. The order-kept proof also establishes that every ending matches.   |
+| `linked-programs`     | Automatically after structural and replay refusals        | Compiled `compiled-replay-premised` or `generated-proof`, with the same normal-completion theorem. |
 
-`--require all-outcomes|normal-completion` asks for a level.
+The checker reports the selected strategy, premises and `every_ending_matches` in each certified verdict. Closed declarations no longer have a separate certification path, and CLI flags no longer select a proof technique or guarantee level.
 
-The linked statement implies `NormalEquivalent` over the worlds that satisfy its host premises ([`ASTEquivalent.normal`](lean/EsmSplit/CoreJS/LinkedCertificate/Proof.lean)), so a linked or structural `normal-completion` verdict states the same guarantee.
+The linked statement implies `NormalEquivalent` over the worlds that satisfy its host premises ([`ASTEquivalent.normal`](lean/EsmSplit/CoreJS/LinkedCertificate/Proof.lean)).
 
-**Strategy census.** The rerunnable [`run_strategy_census.sh`](run_strategy_census.sh) ran on 2026-11-25 against base `ae5db989` in BuildBuddy invocation `9f492e5f-8380-4701-8db7-62144ab6a704`. All 98 requested test targets passed. It collected 181 JSONL test outputs: 2,495 timed checker attempts over 1,078 content-identified inputs. The full table records each verdict, scope, reason code or refusal text, and elapsed time.
+**Historical strategy census before automatic selection.** The rerunnable [`run_strategy_census.sh`](run_strategy_census.sh) ran on 2026-11-25 against base `ae5db989` in BuildBuddy invocation `9f492e5f-8380-4701-8db7-62144ab6a704`. All 98 requested test targets passed. It collected 181 JSONL test outputs: 2,495 timed checker attempts over 1,078 content-identified inputs. The full table records each verdict, scope, reason code or refusal text, and elapsed time.
 
 | Only strategy to certify | Inputs | Why the other strategies refused                                                                                                                                                                                                                                                                                                                             |
 | ------------------------ | -----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `closed-declarations`    |      0 | All 30 inputs certified by this path were also certified by the structural checker.                                                                                                                                                                                                                                                                          |
-| `linked-programs`        |     48 | Structural refused because a unit was not a local allocating declaration (20 inputs), accessed a moved region (17), or needed source-module or method context for an opaque unit (11). These refusals are currently reported as text, not reason codes.                                                                                                      |
+| `linked-programs`        |     48 | Structural refused with `structural_non_local_allocation` (20 inputs), `structural_moved_region_access` (17), or `structural_opaque_unit_context` (11). The structural error carries each code from its throw site, and certified verdicts expose the attempt's code and text.                                                                               |
 | `linked-structural-*`    |    309 | Linked refused with `linked_input` (158), `probe_unknown` (95), `probe_throw` (23), or `probe_fuel` (1); two linked proofs failed in Lean's simplifier, and six only proved normal completion. Another 21 needed `--structural` because of `--deployment-origin` (13) or `stableIntrinsicValues` (8); linked mode did not apply to three multi-chunk inputs. |
 | Multiple strategies      |    462 | At least two strategies certified the same input.                                                                                                                                                                                                                                                                                                            |
 | No strategy certified    |    259 | Includes negative controls and unsupported plans.                                                                                                                                                                                                                                                                                                            |
 
-The structural strategy retains opaque units and checks that their placement preserves the schedule. This covers syntax the linked lowering or probe cannot model; the linked strategy can still certify moves that fail the structural schedule restrictions. The structural checker now proves every ending for an order-preserving schedule. In this census, it also certified every input accepted by the closed-declaration path, so that path is redundant for the measured corpus and can be retired when structural becomes an automatic strategy.
+The structural strategy retains opaque units and checks that their placement preserves the schedule. This covers syntax the linked lowering or probe cannot model; linked replay and generated proofs can still certify moves that fail the structural schedule restrictions. The historical census also showed that structural certified every input accepted by the closed-declaration path, so that path was retired when structural became automatic.
 
 Median and 90th-percentile time per attempt were 765 ms and 958 ms for closed declarations, 872 ms and 2.35 s for structural, and 1.37 s and 25.13 s for linked. The census predates the compiled slice strategy, so its counts do not include `certifySlice`.
 
@@ -260,13 +259,13 @@ During the replay rollout, `linked-programs` also reports `strategy` as `compile
 
 **Current replay census (2026-11-25).** BuildBuddy invocation [`7d51ade6-1cf8-4454-81de-8bc408309a7c`](https://app.buildbuddy.io/invocation/7d51ade6-1cf8-4454-81de-8bc408309a7c) passed all 98 requested test targets and collected 181 JSONL outputs: 2,495 checker attempts over the same 1,078 distinct inputs. Overall strategy coverage is unchanged: 819 inputs certify and 259 refuse. The compiled replay certified 49 distinct linked inputs, including 1 of the 48 linked-only cases; the other 47 linked-only cases still use generated proofs. Keep the generated-proof path until replay covers every linked acceptance.
 
-For singletons, the planned order is the compiled slice strategy, then the compiled structural schedule with automatically chosen pivots, then linked fallback. The slice applies to one source module with no imports, providers, or template objects; it certifies all outcomes when order is kept and normal completion otherwise. Its `SliceKind` and checked premises are reported as evidence under the same guarantee as the other strategies. The census predates this strategy and should be rerun after it lands.
+For singletons, the planned order is compiled slice, compiled structural schedule with automatically chosen pivots, compiled premised replay, then generated-proof fallback. The slice applies to one source module with no imports, providers, or template objects; it certifies all outcomes when order is kept and normal completion otherwise. Its `SliceKind` and checked premises are reported as evidence under the same guarantee as the other strategies. The census predates automatic slice selection and should be rerun after it lands.
 
 **How.**
 
 1. Report every scope under the one guarantee.
 2. Pick the strategy automatically in the planned singleton order. Remove `--structural` and `--require`.
-3. Run the closed-declaration inputs through the remaining checker. In the census, structural certified all 30 inputs accepted by closed declarations, including all order-kept cases; retire that path when the automatic selector tries structural before linked fallback. [Declaration certificate](lean/EsmSplit/CoreJS/Declaration/Certificate.lean)
+3. Run the closed-declaration inputs through the remaining checker. In the census, structural certified all 30 inputs accepted by closed declarations, including all order-kept cases; retire that path when the automatic selector tries compiled checks before generated-proof fallback. [Declaration certificate](lean/EsmSplit/CoreJS/Declaration/Certificate.lean)
 
 **Done when.** No CLI flag chooses a proof technique or level, and the closed-declaration path is gone.
 
