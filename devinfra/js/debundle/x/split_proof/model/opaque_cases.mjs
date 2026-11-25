@@ -1,11 +1,27 @@
 // These programs compare Node with worlds that answer requests for opaque code.
-// A script key is "unit/part". Part zero stands for the whole unit. Callable
-// parts count every function in lexical order, including modeled functions.
-// A script can also give a part number to a function it creates via a request.
-// Variable request slots refer to the cells the lowering gives the script.
+// A script key is "unit/part". `unit` is the source ordinal from `ESTreeUnits.nodes`:
+// module imports and exports take ordinals, and each declarator in a multi-declarator
+// declaration gets its own. Part 0 selects the whole unit. Callable parts start at 1
+// and follow lexical source order across every callable in the unit, as assigned by
+// `LinkedInput.numberSites`.
+//
+// Variable slots are positions in the cell list Lean gives the script. For a whole
+// unit, `Stmt.opaque` orders them as declarations, hoisted functions, then other
+// referenced module cells; declarations/functions retain source order and the other
+// names are sorted lexically by `OpaqueInput`. Ambient globals are not cells. For a
+// callable body, slots follow `opaqueCaptures` (unique captured names in first-reference
+// order), followed by any private-name cells Lean appends. A function made with
+// `newFunction` inherits the current unit's cell list.
+//
+// Diagnostic split fixtures still use `to_core.mjs`; its opaque cell order is kept
+// aligned with these Lean-defined slots until those checks move to the certified path.
 // An operand is a primitive (`["u"]`, `["n"]`, `["b", true]`, `["d", bits]`, `["s", text]`) or a register,
 // `["r", k]`: register 0 is the callee, 1 is `this`, then the arguments, then the answer to each request in turn.
-import { bits } from "./to_core.mjs";
+const bits = (x) => {
+  const view = new DataView(new ArrayBuffer(8));
+  view.setFloat64(0, x);
+  return view.getBigUint64(0).toString(16).padStart(16, "0");
+};
 
 const num = (x) => ["d", bits(x)];
 const r = (k) => ["r", k];
@@ -239,15 +255,14 @@ export const opaqueCases = [
       const [last] = [Object.getOwnPropertyNames(box).at(-1)];
       console.log(first, last);
     `,
-    recordedSlots: { "1/0": { 2: 1 }, "4/0": { 2: 1 } }, // Drop the ambient Object slot.
     scripts: {
       "1/0": [
-        ["readVar", 2],
+        ["readVar", 1],
         ["keys", r(2)],
         ["initVar", 0, ["s", "0"]],
       ],
       "4/0": [
-        ["readVar", 2],
+        ["readVar", 1],
         ["keys", r(2)],
         ["initVar", 0, ["s", "tail"]],
       ],
@@ -261,10 +276,9 @@ export const opaqueCases = [
       const [first] = [Object.getOwnPropertyNames(box)[0]];
       console.log(first);
     `,
-    recordedSlots: { "1/0": { 2: 1 } }, // Drop the ambient Object slot.
     scripts: {
       "1/0": [
-        ["readVar", 2],
+        ["readVar", 1],
         ["keys", r(2)],
         ["initVar", 0, ["s", "2"]],
       ],
@@ -354,10 +368,9 @@ export const opaqueCases = [
       const [made, inherited] = [Object.create(base), base.inherited];
       console.log(made.inherited, inherited, Object.getPrototypeOf(made) === base);
     `,
-    recordedSlots: { "1/0": { 3: 2 } }, // Drop the ambient Object slot.
     scripts: {
       "1/0": [
-        ["readVar", 3],
+        ["readVar", 2],
         ["newObject", r(2)],
         ["prim", "getPrototypeOf", r(3)],
         ["get", r(4), ["s", "inherited"]],
@@ -519,13 +532,12 @@ export const opaqueCases = [
       switch (count) { default: count = 5; box.v = 2; }
       console.log(count, box.v);
     `,
-    // names of statement 2: count, box
-    recordedSlots: { "2/0": { 0: 1, 1: 0 } }, // Whole-unit captures sort by name.
+    // The whole-unit slots are box, count, in Lean's lexical name order.
     scripts: {
       "2/0": [
-        ["readVar", 0],
-        ["writeVar", 0, num(5)],
         ["readVar", 1],
+        ["writeVar", 1, num(5)],
+        ["readVar", 0],
         ["set", r(4), ["s", "v"], num(2)],
       ],
     },
@@ -567,22 +579,13 @@ export const opaqueCases = [
   },
 ];
 
-/** Recorded ESTree lowering supplies only captured cells. The diagnostic split
- * runner still uses the slots from the JavaScript lowering. */
-export function scriptsOf(c, { recorded = false } = {}) {
+/** Add sentinel scripts for selected but uncalled bodies, so their definitions are retained opaque. */
+export function scriptsOf(c, { includeUncalledBodies = false } = {}) {
   const scripts = { ...c.scripts };
-  if (recorded)
+  if (includeUncalledBodies)
     for (const key of c.bodyParts ?? []) scripts[key] ??= [["unknown", `unexpected invocation of opaque body ${key}`]];
   return Object.entries(scripts).map(([key, steps]) => {
     const [code, part] = key.split("/").map(Number);
-    const slots = recorded && c.recordedSlots?.[key];
-    const requests = slots
-      ? steps.map((step) =>
-          ["readVar", "initVar", "writeVar"].includes(step[0])
-            ? [step[0], slots[step[1]] ?? step[1], ...step.slice(2)]
-            : step
-        )
-      : steps;
-    return { code, part, steps: requests, expectedKeys: c.expectedKeys?.[key] ?? [] };
+    return { code, part, steps, expectedKeys: c.expectedKeys?.[key] ?? [] };
   });
 }

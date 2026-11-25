@@ -44,6 +44,20 @@ function resolvedVariable(ref) {
   return ref.resolved;
 }
 
+/** The live lexical cells an opaque deferred body closes over, in source-reference order. */
+export function opaqueCaptureNames(scope) {
+  const captures = scope.through.filter((ref) => {
+    if (ref.identifier.name !== "arguments") return ref.resolved && ref.resolved.scope.type !== "global";
+    const binding = resolvedVariable(ref);
+    if (!binding) return false;
+    for (let outer = scope.upper; outer; outer = outer.upper) if (outer === binding.scope) return true;
+    return false;
+  });
+  return [
+    ...new Set(captures.sort((a, b) => a.identifier.start - b.identifier.start).map((ref) => ref.identifier.name)),
+  ];
+}
+
 /** The ESTree and (when requested) scope manager for one JavaScript module.
  * Scope references point to identifier objects in this exact tree. */
 export function parseModule(code, parse, analyzer = null, scopeOptions = {}) {
@@ -144,22 +158,7 @@ function annotate(node, meaning, unitRanges, binders, legacy, scopes) {
   }
   if (scopes && ["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"].includes(node.type)) {
     const scope = scopes.acquire(node, true);
-    if (scope) {
-      // Scope-through references include children that capture the same outer
-      // cells. Ambient references stay in the callable body.
-      const captures = scope.through.filter((ref) => {
-        if (ref.identifier.name !== "arguments") return ref.resolved && ref.resolved.scope.type !== "global";
-        const binding = resolvedVariable(ref);
-        if (!binding) return false;
-        for (let outer = scope.upper; outer; outer = outer.upper) {
-          if (outer === binding.scope) return true;
-        }
-        return false;
-      });
-      out.opaqueCaptures = [
-        ...new Set(captures.sort((a, b) => a.identifier.start - b.identifier.start).map((ref) => ref.identifier.name)),
-      ];
-    }
+    if (scope) out.opaqueCaptures = opaqueCaptureNames(scope);
   }
   return out;
 }
