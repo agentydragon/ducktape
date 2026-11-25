@@ -1,0 +1,28 @@
+# packages/math/ellipse.ts, Excalidraw v0.18.1
+source_matches:
+  - match: |
+      function ellipse(center, halfWidth, halfHeight) { return {center:center, halfWidth:halfWidth, halfHeight:halfHeight}; }
+    bindings:
+      - ellipse
+  - match: |
+      var ellipseDistanceFromPoint = (p, shape) => {
+        STMT_LIST;
+        for (let i=0; i<3; i++) { STMT_LIST; }
+        let [x,y]=[a*tx*Math.sign(translated[0]), b*ty*Math.sign(translated[1])];
+        return pointDistance(pointFromVector(translated), pointFrom(x,y));
+      };
+    bindings:
+      - ellipseDistanceFromPoint
+  - match: |
+      function ellipseLineIntersectionPoints({center:center, halfWidth:w, halfHeight:h}, [g,k]) {
+        let [cx,cy]=center, x1=g[0]-cx, y1=g[1]-cy, x2=k[0]-cx, y2=k[1]-cy,
+          a=Math.pow(x2-x1,2)/Math.pow(w,2)+Math.pow(y2-y1,2)/Math.pow(h,2),
+          b=2*((x1*(x2-x1))/Math.pow(w,2)+(y1*(y2-y1))/Math.pow(h,2)),
+          c=Math.pow(x1,2)/Math.pow(w,2)+Math.pow(y1,2)/Math.pow(h,2)-1,
+          t1=(-b+Math.sqrt(Math.pow(b,2)-4*a*c))/(2*a),
+          t2=(-b-Math.sqrt(Math.pow(b,2)-4*a*c))/(2*a),
+          candidates=EXPR;
+        return candidates.length === 2 && pointsEqual(candidates[0],candidates[1]) ? [candidates[0]] : candidates;
+      }
+    bindings:
+      - ellipseLineIntersectionPoints
