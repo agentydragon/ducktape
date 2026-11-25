@@ -565,14 +565,27 @@ chunk-local owner path. Claims append to an existing module or create a new
 one; new owners without an explicit priority follow the shared tree's import
 priority in argument order. The priority is an input for a consumer to consider.
 
+For several chunks, use `spec resolve-placements --chunk CHUNK` once per
+requested chunk. It prepares the source artifact and resolves the full spec
+once, then writes `{"placements":[...]}` in the requested chunk order. Each
+placement has the same record shape as the singular command. Chunk IDs must be
+unique. Batch proposals use
+`--proposal-fragment CHUNK::OWNER=FILE.yaml`; the chunk qualifier chooses which
+spec tree receives the fragment. A batch `--ownership-subset` filters each
+chunk using the ordinary combined subset schema. When `--canonical-out` is
+also set, both output files use the batch envelope and come from the same
+solve. The batch command requires at least one `--chunk`.
+
 With `--ownership-subset VIEW.json --out selected.json --canonical-out full.json`,
 both files come from one full-context solve. An excluded ambiguous claim still
 fails the solve. Both JSON files identify the same chunk bytes by SHA-256;
 filtering retains the original ordinals. When supplying fragments or requesting
 both views, use fresh output paths. In Bazel, pass the fragment labels and
-owners in `debundle_resolve_placement(proposal_fragments = {...})` and the
-unfiltered output filename in `canonical_out`. The normal Rust emitter uses its
-own authored tree and gate.
+owners in `debundle_resolve_placement(proposal_fragments = {...})` for one
+chunk, or `debundle_resolve_placements(chunks = [...], proposal_fragments =
+{...})` for a batch; fragment values are `OWNER` and `CHUNK::OWNER`,
+respectively. The unfiltered output filename is set with `canonical_out`. The
+normal Rust emitter uses its own authored tree and gate.
 
 ### Residual placement
 

@@ -8,6 +8,7 @@ import { dumpParsed } from "./annotated_estree.mjs";
 import { coreFromParsed } from "../model/to_core.mjs";
 import { bundleFromParsed } from "./frontend.mjs";
 import { parseModule } from "./scope_metadata.mjs";
+import { writeDeployment } from "./testing/deployment_manifest.mjs";
 import { coreOf } from "./split_dump.mjs";
 
 const dir = process.env.TEST_TMPDIR;
@@ -210,6 +211,16 @@ assert.deepEqual(
   await nodeOutcome(pathToFileURL(path.join(defaultDir, "main.mjs")).href)
 );
 
+function certifyFixture(directory) {
+  const out = path.join(directory, "out");
+  const manifest = writeDeployment(path.join(directory, "bundle.mjs"), path.join(directory, "spec.json"), out);
+  const result = spawnSync(process.env.LOWERSPLIT, [manifest, out], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.error?.message ?? result.stdout + result.stderr);
+  const verdict = JSON.parse(result.stdout.trim().split("\n").at(-1));
+  assert.equal(verdict.status, "certified", result.stdout + result.stderr);
+  return import(pathToFileURL(path.join(out, "entry.mjs")).href);
+}
+
 // A certified split keeps `export default` in the entry and moves the binding it reads.
 const defaultSplit = path.join(dir, "default-split");
 mkdirSync(defaultSplit, { recursive: true });
@@ -222,15 +233,7 @@ writeFileSync(
   path.join(defaultSplit, "spec.json"),
   JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#2"], "m.mjs": ["#1"] } })
 );
-const defaultOut = path.join(defaultSplit, "out");
-const defaultRun = spawnSync(
-  process.env.LOWERSPLIT,
-  [path.join(defaultSplit, "bundle.mjs"), path.join(defaultSplit, "spec.json"), defaultOut],
-  { encoding: "utf8" }
-);
-const defaultVerdict = JSON.parse(defaultRun.stdout.trim().split("\n").at(-1));
-assert.equal(defaultVerdict.status, "certified", defaultRun.stdout + defaultRun.stderr);
-assert.equal((await import(pathToFileURL(path.join(defaultOut, "entry.mjs")).href)).default, 42);
+assert.equal((await certifyFixture(defaultSplit)).default, 42);
 
 // Top-level blocks, loops and switches: a var binds a module cell; let and const stay in the block.
 // A function declaration in a top-level block is still refused (function_declaration_test).
@@ -261,20 +264,14 @@ writeFileSync(
     sequential: true,
   })
 );
-const blockOut = path.join(blockSplit, "out");
-const blockRun = spawnSync(
-  process.env.LOWERSPLIT,
-  [path.join(blockSplit, "bundle.mjs"), path.join(blockSplit, "spec.json"), blockOut],
-  { encoding: "utf8" }
-);
-const blockVerdict = JSON.parse(blockRun.stdout.trim().split("\n").at(-1));
-assert.equal(blockVerdict.status, "certified", blockRun.stdout + blockRun.stderr);
-assert.equal((await import(pathToFileURL(path.join(blockOut, "entry.mjs")).href)).result, 3);
+assert.equal((await certifyFixture(blockSplit)).result, 3);
 
 const spec = file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["a", "b"] } }));
 function split(source, args = []) {
   const ast = file("bundle.json", JSON.stringify(dumpSource(source)));
-  return execFileSync(process.env.LOWERSPLIT, ["--diagnostic", ast, spec, dir, ...args], { encoding: "utf8" });
+  return execFileSync(process.env.LOWERSPLIT, ["--diagnostic", writeDeployment(ast, spec, dir), dir, ...args], {
+    encoding: "utf8",
+  });
 }
 
 const source = "var a = 1, b = a;";
@@ -298,7 +295,8 @@ const badRange = dumpSource("/*😀*/ var a = 1, b = a;");
 badRange.body[0].declarations[0].start = 3;
 const invalid = file("bad-range.json", JSON.stringify(badRange));
 assert.throws(
-  () => execFileSync(process.env.LOWERSPLIT, ["--diagnostic", invalid, spec, dir], { stdio: "pipe" }),
+  () =>
+    execFileSync(process.env.LOWERSPLIT, ["--diagnostic", writeDeployment(invalid, spec, dir), dir], { stdio: "pipe" }),
   /surrogate pair/
 );
 const moves = path.join(dir, "moves.json");

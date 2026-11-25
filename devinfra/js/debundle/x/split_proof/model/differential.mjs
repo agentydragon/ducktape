@@ -70,6 +70,7 @@ import {
 import { moduleCases } from "./module_cases.mjs";
 import { opaqueCases, inheritanceOpaqueCases, scriptsOf } from "./opaque_cases.mjs";
 import { BINARY, LOGICAL, UNARY, bits, HOST_GLOBALS, Refused, toCore, toCoreProgram } from "./to_core.mjs";
+import { writeDeployment } from "../translation/testing/deployment_manifest.mjs";
 import { mulberry32 } from "../seeded_random.mjs";
 
 const option = (name, fallback) => {
@@ -697,8 +698,7 @@ function split(job, bundle, dump, kind, spec, named) {
     lowersplit,
     [
       "--diagnostic",
-      path.join(dir, "ast.json"),
-      path.join(dir, "spec.json"),
+      writeDeployment(path.join(dir, "ast.json"), path.join(dir, "spec.json"), out),
       out,
       "--plan",
       plan,
@@ -782,8 +782,7 @@ function split(job, bundle, dump, kind, spec, named) {
         lowersplit,
         [
           "--diagnostic",
-          path.join(dir, "ast.json"),
-          path.join(dir, "spec.json"),
+          writeDeployment(path.join(dir, "ast.json"), path.join(dir, "spec.json"), path.join(dir, "replay")),
           path.join(dir, "replay"),
           "--corejs",
           path.join(dir, "program.json"),

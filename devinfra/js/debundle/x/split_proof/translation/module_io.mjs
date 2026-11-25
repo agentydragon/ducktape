@@ -3,23 +3,20 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { annotateProgram, literalKey, needsPrintRange, parseModule } from "./scope_metadata.mjs";
-import { acorn, dump, loadSnapshot } from "./parser.mjs";
+import { literalKey, needsPrintRange } from "./scope_metadata.mjs";
+import { dump, loadSnapshot } from "./parser.mjs";
 
 const linkedAnnotations = { includeOpaqueCaptures: true };
 
 const linkedProgram = (source) => dump(source, linkedAnnotations);
-
-// Output verification compares syntax and callable spelling. The expected trees still
-// carry the resolved bindings and captures used by the Lean certificate.
-const syntaxProgram = (source) => annotateProgram(parseModule(source, acorn.parse), new Map());
+const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
 function readProgram(file, parse, expectedHash) {
   try {
     const bytes = fs.readFileSync(file);
     if (expectedHash !== undefined && createHash("sha256").update(bytes).digest("hex") !== expectedHash)
       throw new Error("resolved placement source_sha256 differs from source bytes");
-    return parse(bytes.toString("utf8"));
+    return parse(utf8.decode(bytes));
   } catch (error) {
     throw new Error(`${file}: ${error.message}`);
   }
@@ -69,17 +66,23 @@ function comparableAst(node, source, description, taggedTemplateQuasi = false) {
   if (Array.isArray(node)) return node.map((child) => comparableAst(child, source, description, taggedTemplateQuasi));
   if (!node || typeof node !== "object") return node;
 
-  // JSON transport represents an infinite number as a string. The literal key
-  // retains its JavaScript type. Only synthesized literals lack this annotation.
-  const comparable = node.type === "Literal" ? { lit: node.lit ?? literalKey(node) } : {};
+  // The literal key retains the JavaScript value, including numeric type and
+  // isolated surrogates that do not survive the Lean JSON round trip.
+  const lit = node.type === "Literal" ? (node.lit ?? literalKey(node)) : undefined;
+  const comparable = lit === undefined ? {} : { lit };
   if (needsPrintRange(node)) comparable.callableSource = callableSource(node, source, description);
   for (const [key, value] of Object.entries(node)) {
     const isAnnotation =
       (node.type === "Program" && (key === "sourceText" || key === "annotationVersion")) ||
       key === "opaqueCaptures" ||
-      (node.type === "Literal" && (key === "raw" || key === "lit")) ||
+      (lit !== undefined && (key === "raw" || key === "lit" || (key === "value" && lit.startsWith("s16:")))) ||
       (node.type === "Identifier" && ["k", "b", "d"].includes(key));
     if (ignoredAstFields.has(key) || isAnnotation) continue;
+    if (node.type === "TemplateElement" && key === "value" && node.cookedWellFormed === false) {
+      // The source spelling preserves the escapes that produced the ill-formed cooked text.
+      comparable[key] = { raw: value.raw };
+      continue;
+    }
     if (node.type === "TemplateElement" && key === "value" && !taggedTemplateQuasi) {
       comparable[key] = { cooked: value.cooked };
       continue;
@@ -99,52 +102,66 @@ function readMap(file, description) {
   return value;
 }
 
-function checkOutput(manifestPath, originalSourcePath, providersManifestPath, dir, groupedPath) {
-  const expected = readMap(manifestPath, "generated-module manifest");
-  const providers = readMap(providersManifestPath, "provider manifest");
-  const originalSource = fs.readFileSync(originalSourcePath, "utf8");
+function checkOutput(manifestPath, dir, checkedPath) {
+  const { parts, providers } = readMap(manifestPath, "output manifest");
   if (!fs.lstatSync(dir).isDirectory()) throw new Error(`expected a module directory at ${dir}`);
 
-  const expectedNames = Object.keys(expected);
-  const providerNames = Object.keys(providers);
-  for (const name of providerNames) {
-    if (Object.hasOwn(expected, name)) throw new Error(`provider ${name} overlaps a generated module`);
+  const wanted = new Set(Object.keys(providers));
+  for (const { programs } of parts) {
+    for (const name of Object.keys(programs)) {
+      if (wanted.has(name)) throw new Error(`output module path collision: ${name}`);
+      wanted.add(name);
+    }
   }
 
   const actual = Object.fromEntries(moduleFiles(dir));
-  const wantedNames = [...expectedNames, ...providerNames].sort();
-  const actualNames = Object.keys(actual).sort();
-  if (!isDeepStrictEqual(actualNames, wantedNames)) {
-    const missing = wantedNames.filter((name) => !Object.hasOwn(actual, name));
-    const unexpected = actualNames.filter((name) => !Object.hasOwn(expected, name) && !Object.hasOwn(providers, name));
+  const missing = [...wanted].filter((name) => !Object.hasOwn(actual, name)).sort();
+  const unexpected = Object.keys(actual)
+    .filter((name) => !wanted.has(name))
+    .sort();
+  if (missing.length || unexpected.length) {
     throw new Error(
       `output module set differs${missing.length ? `; missing: ${missing.join(", ")}` : ""}${unexpected.length ? `; unexpected: ${unexpected.join(", ")}` : ""}`
     );
   }
 
   const grouped = [];
-  for (const name of expectedNames) {
-    const parsed = readProgram(actual[name], syntaxProgram);
-    if (parsed.sourceText.startsWith("#!")) parsed.hashbang = parsed.sourceText.split(/[\r\n\u2028\u2029]/, 1)[0];
-    const planned = comparableAst(expected[name], originalSource, `manifest module ${name}`);
-    const observed = comparableAst(parsed, parsed.sourceText, `output module ${name}`);
-    if (isDeepStrictEqual(planned, observed)) continue;
+  const files = Object.create(null);
+  for (const { programs, source } of parts) {
+    for (const [name, ast] of Object.entries(programs)) {
+      const parsed = readProgram(actual[name], linkedProgram);
+      files[name] = parsed;
+      if (parsed.sourceText.startsWith("#!")) parsed.hashbang = parsed.sourceText.split(/[\r\n\u2028\u2029]/, 1)[0];
+      const planned = comparableAst(ast, source, `manifest module ${name}`);
+      const observed = comparableAst(parsed, parsed.sourceText, `output module ${name}`);
+      if (isDeepStrictEqual(planned, observed)) continue;
 
-    // Lean splits module-level declarations into ordered units. Only a grouped
-    // declaration can account for a difference under that operation.
-    const hasGroup = observed.body.some((statement) => {
-      const decl = statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
-      return decl?.type === "VariableDeclaration" && decl.declarations.length > 1;
-    });
-    if (!hasGroup) throw new Error(`output module ${name} differs from its generated ESTree`);
-    grouped.push({ name, planned, observed });
+      // Lean splits module-level declarations into ordered units. Only a grouped
+      // declaration can account for a difference under that operation.
+      const hasGroup = observed.body.some((statement) => {
+        const decl = statement.type === "ExportNamedDeclaration" ? statement.declaration : statement;
+        return decl?.type === "VariableDeclaration" && decl.declarations.length > 1;
+      });
+      if (!hasGroup) throw new Error(`output module ${name} differs from its generated ESTree`);
+      grouped.push({ name, planned, observed });
+    }
   }
-  for (const name of providerNames) {
-    const sourceText = providers[name]?.sourceText;
-    if (typeof sourceText !== "string" || !fs.readFileSync(actual[name]).equals(Buffer.from(sourceText)))
+  for (const [name, sourceText] of Object.entries(providers)) {
+    if (!fs.readFileSync(actual[name]).equals(Buffer.from(sourceText)))
       throw new Error(`provider ${name} differs from the source graph`);
   }
-  writeJson(groupedPath, grouped);
+  writeJson(checkedPath, { files, grouped });
+}
+
+function checkNewRoutes(root, names) {
+  for (const name of names) {
+    const file = outputPath(root, name);
+    if (fs.lstatSync(file, { throwIfNoEntry: false })) throw new Error(`output path already exists: ${name}`);
+    for (let dir = path.dirname(file); dir !== root; dir = path.dirname(dir)) {
+      const stat = fs.lstatSync(dir, { throwIfNoEntry: false });
+      if (stat && !stat.isDirectory()) throw new Error(`output path crosses an original asset: ${name}`);
+    }
+  }
 }
 
 try {
@@ -189,16 +206,16 @@ try {
     const [input, output] = args;
     writeJson(output, loadSnapshot(readJson(input), linkedAnnotations));
   } else if (mode === "--check-output") {
-    const [manifestPath, originalSourcePath, providersManifestPath, dir, groupedPath] = args;
-    checkOutput(manifestPath, originalSourcePath, providersManifestPath, dir, groupedPath);
+    checkOutput(...args);
+  } else if (mode === "--check-new-routes") {
+    const [root, names] = args;
+    checkNewRoutes(fs.realpathSync(root), readJson(names));
   } else if (mode === "--read-modules") {
-    const [entry, names, output] = args;
-    const source = fs.realpathSync(entry);
-    const root = path.dirname(source);
+    const [directory, names, output] = args;
+    const root = fs.realpathSync(directory);
     const modules = readJson(names).map((name) => {
       const file = outputPath(root, name);
-      if (fs.realpathSync(file) !== file || file === source)
-        throw new Error(`unsupported module alias or request back to the source entry: ${name}`);
+      if (fs.realpathSync(file) !== file) throw new Error(`unsupported module alias: ${name}`);
       return [name, readProgram(file, linkedProgram)];
     });
     writeJson(output, Object.fromEntries(modules));

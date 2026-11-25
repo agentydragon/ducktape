@@ -2,7 +2,7 @@ load("@aspect_bazel_lib//lib:run_binary.bzl", "run_binary")
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
 load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@rules_rust//rust:defs.bzl", "rust_test")
-load("//devinfra/js/debundle:pipeline.bzl", "debundle_analysis", "debundle_apply", "debundle_resolve_placement")
+load("//devinfra/js/debundle:pipeline.bzl", "debundle_analysis", "debundle_apply", "debundle_resolve_placements")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_testonly = True)
@@ -173,37 +173,40 @@ filegroup(
 # One solve of the complete authored context, then two views of its claims.
 _PROPOSALS = "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/scroll:"
 
-debundle_resolve_placement(
-    name = "selected_editor_placement",
-    canonical_out = "canonical_editor_placement.json",
-    chunk = "editor",
-    ownership_subset = "editor_smoke_subset.json",
+debundle_resolve_placements(
+    name = "selected_deployment_placements",
+    canonical_out = "canonical_deployment_placements.json",
+    chunks = [
+        "main",
+        "editor",
+    ],
+    ownership_subset = "deployment_smoke_subset.json",
     proposal_fragments = {
-        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/polygon_ellipse:polygon.yaml": "packages/math/polygon",
-        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/polygon_ellipse:ellipse.yaml": "packages/math/ellipse",
-        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/transform_handles:transform.yaml": "packages/excalidraw/element/transformhandles",
-        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/math_geometry:line.yaml": "packages/math/line",
-        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/math_geometry:segment.yaml": "packages/math/segment",
-        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/math_geometry:rectangle.yaml": "packages/math/rectangle",
-        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/math_geometry:curve.yaml": "packages/math/curve",
-        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/math_geometry:triangle.yaml": "packages/math/triangle",
-        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/size_resize:size_helpers.yaml": "packages/excalidraw/element/sizehelpers",
-        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/size_resize:resize_test.yaml": "packages/excalidraw/element/resizetest",
-        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/heading:packages/excalidraw/element/heading.yaml": "packages/excalidraw/element/heading",
-        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/library_helpers:average.yaml": "packages/math/utils",
-        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/library_helpers:rtl_strings.yaml": "packages/excalidraw/utils",
-        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/library_helpers:utils_prefix.yaml": "packages/excalidraw/utils",
-        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/library_helpers:default_font_family.yaml": "packages/excalidraw/constants",
-        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/library_helpers:style_records.yaml": "packages/excalidraw/constants",
-        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/library_helpers:numeric_thresholds.yaml": "packages/excalidraw/constants",
-        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/library_helpers:shift_locking_angle.yaml": "packages/excalidraw/constants",
-        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/new_element:packages/excalidraw/colors.yaml": "packages/excalidraw/colors",
-        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/new_element:packages/excalidraw/constants.yaml": "packages/excalidraw/constants",
-        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/new_element:packages/excalidraw/groups.yaml": "packages/excalidraw/groups",
-        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/new_element:packages/excalidraw/random.yaml": "packages/excalidraw/random",
-        _PROPOSALS + "packages/excalidraw/element/bounds.yaml": "packages/excalidraw/element/bounds",
-        _PROPOSALS + "packages/excalidraw/scene/Shape.yaml": "packages/excalidraw/scene/shape",
-        _PROPOSALS + "packages/utils/geometry/shape.yaml": "packages/utils/geometry/shape",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/polygon_ellipse:polygon.yaml": "editor::packages/math/polygon",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/polygon_ellipse:ellipse.yaml": "editor::packages/math/ellipse",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/transform_handles:transform.yaml": "editor::packages/excalidraw/element/transformhandles",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/math_geometry:line.yaml": "editor::packages/math/line",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/math_geometry:segment.yaml": "editor::packages/math/segment",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/math_geometry:rectangle.yaml": "editor::packages/math/rectangle",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/math_geometry:curve.yaml": "editor::packages/math/curve",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/math_geometry:triangle.yaml": "editor::packages/math/triangle",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/size_resize:size_helpers.yaml": "editor::packages/excalidraw/element/sizehelpers",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/size_resize:resize_test.yaml": "editor::packages/excalidraw/element/resizetest",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/heading:packages/excalidraw/element/heading.yaml": "editor::packages/excalidraw/element/heading",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/library_helpers:average.yaml": "editor::packages/math/utils",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/library_helpers:rtl_strings.yaml": "editor::packages/excalidraw/utils",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/library_helpers:utils_prefix.yaml": "editor::packages/excalidraw/utils",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/library_helpers:default_font_family.yaml": "editor::packages/excalidraw/constants",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/library_helpers:style_records.yaml": "editor::packages/excalidraw/constants",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/library_helpers:numeric_thresholds.yaml": "editor::packages/excalidraw/constants",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/library_helpers:shift_locking_angle.yaml": "editor::packages/excalidraw/constants",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/new_element:packages/excalidraw/colors.yaml": "editor::packages/excalidraw/colors",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/new_element:packages/excalidraw/constants.yaml": "editor::packages/excalidraw/constants",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/new_element:packages/excalidraw/groups.yaml": "editor::packages/excalidraw/groups",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw/proposals/new_element:packages/excalidraw/random.yaml": "editor::packages/excalidraw/random",
+        _PROPOSALS + "packages/excalidraw/element/bounds.yaml": "editor::packages/excalidraw/element/bounds",
+        _PROPOSALS + "packages/excalidraw/scene/Shape.yaml": "editor::packages/excalidraw/scene/shape",
+        _PROPOSALS + "packages/utils/geometry/shape.yaml": "editor::packages/utils/geometry/shape",
     },
     spec_tree_inputs = [":spec"],
     tree_config = "config.yaml",
@@ -214,27 +217,8 @@ debundle_resolve_placement(
 )
 
 filegroup(
-    name = "canonical_editor_placement",
-    srcs = ["canonical_editor_placement.json"],
-    visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
-)
-
-debundle_resolve_placement(
-    name = "selected_main_placement",
-    canonical_out = "canonical_main_placement.json",
-    chunk = "main",
-    ownership_subset = "main_smoke_subset.json",
-    spec_tree_inputs = [":spec"],
-    tree_config = "config.yaml",
-    tree_modules = "spec/modules",
-    tree_source_root = ":source",
-    tree_vendor_marks = "spec/vendor_marks.yaml",
-    visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
-)
-
-filegroup(
-    name = "canonical_main_placement",
-    srcs = ["canonical_main_placement.json"],
+    name = "canonical_deployment_placements",
+    srcs = ["canonical_deployment_placements.json"],
     visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
 )
 
@@ -242,13 +226,13 @@ py_test(
     name = "test_proposal_fragments",
     srcs = ["test_proposal_fragments.py"],
     data = [
-        ":canonical_editor_placement",
+        ":canonical_deployment_placements",
         ":inputs",
-        ":selected_editor_placement",
+        ":selected_deployment_placements",
     ],
     env = {
-        "CANONICAL": "$(rlocationpath :canonical_editor_placement)",
-        "SELECTED": "$(rlocationpath :selected_editor_placement)",
+        "CANONICAL": "$(rlocationpath :canonical_deployment_placements)",
+        "SELECTED": "$(rlocationpath :selected_deployment_placements)",
         "INPUTS": "$(rlocationpaths :inputs)",
     },
     deps = [

@@ -9,14 +9,17 @@ import pytest_bazel
 from python.runfiles import Runfiles
 
 
-def test_editor_proposal_fragments(runfiles: Runfiles) -> None:
+def test_proposal_fragments(runfiles: Runfiles) -> None:
     def resolve(key: str) -> Path:
         path = runfiles.Rlocation(os.environ[key])
         assert path is not None
         return Path(path)
 
-    canonical = json.loads(resolve("CANONICAL").read_text())
-    selected = json.loads(resolve("SELECTED").read_text())
+    canonical_by_chunk = {p["chunk_id"]: p for p in json.loads(resolve("CANONICAL").read_text())["placements"]}
+    selected_by_chunk = {p["chunk_id"]: p for p in json.loads(resolve("SELECTED").read_text())["placements"]}
+    assert set(canonical_by_chunk) == set(selected_by_chunk) == {"main", "editor"}
+    canonical = canonical_by_chunk["editor"]
+    selected = selected_by_chunk["editor"]
     (chunks,) = (f for f in os.environ["INPUTS"].split() if f.endswith("/chunks"))
     directory = runfiles.Rlocation(chunks)
     assert directory is not None

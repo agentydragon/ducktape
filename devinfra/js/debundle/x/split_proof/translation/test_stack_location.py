@@ -50,7 +50,11 @@ def test_relocated_stack_key(tmp_path: Path) -> None:
     out = tmp_path / "split"
     splitter = Runfiles.CreateOrRaise().Rlocation(os.environ["LOWERSPLIT"])
     assert splitter is not None
-    args = [str(source), str(spec), str(out)]
+    deployment = tmp_path / "deployment.json"
+    deployment.write_text(
+        json.dumps({"entry": ENTRY, "chunks": [{"path": ENTRY, "source": source.name, "spec": spec.name}]})
+    )
+    args = [str(deployment), str(out)]
     checked = subprocess.run(
         [splitter, *args, "--require", "normal-completion"], text=True, capture_output=True, check=False
     )

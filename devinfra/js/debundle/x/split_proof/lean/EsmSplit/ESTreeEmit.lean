@@ -25,9 +25,9 @@ private def setField (j : Json) (key : String) (v : Json) : Except String Json :
   return .obj ((← j.getObj?).insert key v)
 
 /-- Retained and duplicated requests resolve relative to the file that now imports them. -/
-private def request (decl : Json) (file : String) : Except String Json := do
+private def request (decl : Json) (fromFile file : String) : Except String Json := do
   let original ← (← decl.getObjVal? "source").getObjValAs? String "value"
-  let target ← rebaseRelativeRequest file original
+  let target ← rebaseRelativeRequest fromFile file original
   if target == original then return decl
   setField decl "source" (literal target)
 
@@ -53,7 +53,7 @@ private def isRequest (s : Json) : Bool :=
 
 private def moduleProgram (asts : Array Json) (imports : List (Nat × Json)) (B : Bundle) (P : Plan)
     (exportsByModule : Std.HashMap ModName (List (Name × Name)))
-    (m : Module) (hashbang : List (String × Json)) : Except String Json := do
+    (m : Module) (hashbang : List (String × Json)) (fromFile : String) : Except String Json := do
   let held := Std.HashSet.ofList m.stmts
   let elsewhere := imports.filter fun (i, _) => !held.contains i
   let mut duplicated := #[]
@@ -63,7 +63,7 @@ private def moduleProgram (asts : Array Json) (imports : List (Nat × Json)) (B 
       let used := (Lower.items (Lower.fld decl "specifiers")).filter fun sp =>
         uses.contains (Lower.specName (Lower.fld sp "local"))
       unless used.isEmpty do
-        duplicated := duplicated.push (← request (← setField decl "specifiers" (.arr used)) m.name)
+        duplicated := duplicated.push (← request (← setField decl "specifiers" (.arr used)) fromFile m.name)
   let statements ← m.stmts.mapM fun i => do
     let some statement := asts[i]? | throw s!"statement {i} is missing from the input AST"
     return statement
@@ -71,12 +71,13 @@ private def moduleProgram (asts : Array Json) (imports : List (Nat × Json)) (B 
   let (directives, rest) := statements.partition fun s =>
     Lower.typ s == "ExpressionStatement" && (s.getObjValAs? String "directive").isOk
   let (requests, body) := rest.partition isRequest
-  let requests ← requests.mapM (request · m.name)
+  let requests ← requests.mapM (request · fromFile m.name)
   let output := directives ++ requests ++ duplicated.toList ++ glueImports exportsByModule m ++ body ++ glueExports m
   return node "Program" ([("sourceType", .str "module"), ("body", toJson output)] ++
     (if m.name == P.entry then hashbang else []))
 
-def programs (asts : Array Json) (B : Bundle) (P : Plan) (source : String) : Except String Json := do
+def programs (asts : Array Json) (B : Bundle) (P : Plan) (source : String)
+    (fromFile : String := "bundle.mjs") : Except String Json := do
   let imports := asts.toList.zipIdx.filterMap fun (s, i) =>
     if Lower.typ s == "ImportDeclaration" then some (i, s) else none
   let hashbang := if source.startsWith "#!" then
@@ -87,6 +88,6 @@ def programs (asts : Array Json) (B : Bundle) (P : Plan) (source : String) : Exc
   let exportsByModule : Std.HashMap ModName (List (Name × Name)) :=
     P.mods.foldr (fun m exports => exports.insert m.name (m.namedExportsFrom arr)) ∅
   return Json.mkObj (← P.mods.mapM fun m => do
-    return (m.name, ← moduleProgram asts imports B P exportsByModule m hashbang))
+    return (m.name, ← moduleProgram asts imports B P exportsByModule m hashbang fromFile))
 
 end EsmSplit.ESTreeEmit

@@ -18,6 +18,7 @@ lowered_certificate(
         _EXAMPLE + "controls/cycle_tdz.json",
         _EXAMPLE + "controls/effect_order.json",
     ],
+    entry = "main.mjs",
     namespace = "Example",
     source = _EXAMPLE + "input/bundle.mjs",
     spec = _EXAMPLE + "spec.json",
@@ -30,6 +31,7 @@ lowered_certificate(
     name = "generate_proof_fixture",
     out = "ProofFixture/Instance.lean",
     controls = [_PROOF_FIXTURE + "bad.json"],
+    entry = "main.mjs",
     namespace = "Example",
     source = _PROOF_FIXTURE + "bundle.mjs",
     spec = _PROOF_FIXTURE + "spec.json",
@@ -40,6 +42,7 @@ lowered_certificate(
 lowered_certificate(
     name = "generate_lowered_example_certificate",
     out = "Experiments/Generated.lean",
+    entry = "main.mjs",
     source = _ROOT + "example_ast",
     spec = _EXAMPLE + "spec.json",
     splitter = _SPLITTER,

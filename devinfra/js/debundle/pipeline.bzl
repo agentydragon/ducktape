@@ -95,6 +95,47 @@ def _resolve_placement_impl(ctx):
     )
     return [DefaultInfo(files = depset([out]))]
 
+def _resolve_placements_impl(ctx):
+    out = ctx.actions.declare_file(ctx.label.name + ".json")
+    plan = _spec_plan(ctx, {})
+    subset = ctx.file.ownership_subset
+    canonical = ctx.outputs.canonical_out
+    if not ctx.attr.chunks:
+        fail("chunks must contain at least one materialized chunk ID")
+    if len(ctx.attr.chunks) != len(depset(ctx.attr.chunks).to_list()):
+        fail("chunks must not contain duplicate IDs")
+    if canonical and not subset:
+        fail("canonical_out requires ownership_subset")
+
+    fragment_files = []
+    extra_args = []
+    for target, chunk_owner in ctx.attr.proposal_fragments.items():
+        files = target[DefaultInfo].files.to_list()
+        if len(files) != 1:
+            fail("proposal fragment {} must supply exactly one file".format(target.label))
+        fragment_files.append(files[0])
+
+        # _run_debundler starts in the bin tree, not the execroot.
+        extra_args += ["--proposal-fragment", shell.quote(chunk_owner + "=") + _shell_execroot_path(files[0].path)]
+    if canonical:
+        extra_args += ["--canonical-out", shell.quote(canonical.short_path)]
+    chunk_args = []
+    for chunk in ctx.attr.chunks:
+        chunk_args += ["--chunk", shell.quote(chunk)]
+    _run_debundler(
+        ctx,
+        inputs = depset(ctx.files.ownership_subset + fragment_files, transitive = [plan.inputs]),
+        outputs = [out] + ([canonical] if canonical else []),
+        tool = ctx.executable.resolver,
+        args = ["batch"] +
+               _spec_args(ctx, plan, ctx.label.name + ".unused") +
+               chunk_args + ["--out", shell.quote(out.short_path)] +
+               (["--ownership-subset", _shell_execroot_path(subset.path)] if subset else []) + extra_args,
+        mnemonic = "DebundleResolvePlacements",
+        progress = "Resolving authored source-unit owners for %{label}",
+    )
+    return [DefaultInfo(files = depset([out]))]
+
 def _debundle_analysis_impl(ctx):
     if ctx.attr.analysis_threads < 0:
         fail("analysis_threads must be nonnegative, got {}".format(ctx.attr.analysis_threads))
@@ -412,6 +453,25 @@ debundle_resolve_placement = rule(
         "ownership_subset": attr.label(allow_single_file = [".json"]),
     }),
     doc = "Export selector-resolved unit ownership for one chunk, before analysis, scheduling, gates or emission.",
+)
+
+debundle_resolve_placements = rule(
+    implementation = _resolve_placements_impl,
+    attrs = dict(_SPEC_ATTRS, **{
+        "canonical_out": attr.output(doc = "Optional unfiltered batch JSON from the same solve as ownership_subset."),
+        "chunks": attr.string_list(mandatory = True, doc = "Materialized chunk IDs to include, in output order."),
+        "proposal_fragments": attr.label_keyed_string_dict(
+            allow_files = [".yaml"],
+            doc = "Selector-only YAML files mapped to CHUNK::OWNER. New owners follow the shared tree priority within that chunk.",
+        ),
+        "resolver": attr.label(
+            executable = True,
+            cfg = "exec",
+            default = Label("//devinfra/js/debundle:debundle_resolve_placement"),
+        ),
+        "ownership_subset": attr.label(allow_single_file = [".json"]),
+    }),
+    doc = "Export selector-resolved unit ownership for several chunks using one shared source preparation and selector solve.",
 )
 
 debundle_analysis = rule(

@@ -153,46 +153,32 @@ lexical `Symbol` binding passes strict certification and the Node control in
 the existing local host-binding proof.
 [Scroll experiment](https://app.buildbuddy.io/invocation/15221e72-0c85-46fe-8be6-354e108878e3)
 
-### Browser smoke
+### Certified browser deployment
 
-The smoke extracts **365 bindings into 45 upstream modules** from the canonical
-[Excalidraw editor spec](../../../../excalidraw/spec/modules/editor/packages).
-The [Rust ownership subset](../../../../excalidraw/editor_smoke_subset.json) lists
-the retained names. See the [recovery notes](recovery.md) for the candidate
-selection, remaining blockers and checked placements.
-The smoke uses the browser-page contract with `Math.PI@1` for the shift-locking
-angle. Both certification verdicts report this premise. The
-[364-binding replay](https://app.buildbuddy.io/invocation/2e0b2820-9297-4755-81c6-d6fc99928ec2)
-compared the original and certified editor in Chromium.
-To change the placement, edit the subset's module paths and readable member names. To identify a new owner,
-read the pinned upstream declaration and its uses, then match the production
-bundle as described in the [spec authoring instructions](../../../../excalidraw/AGENTS.md).
-Rust's `spec resolve-placement` solves selectors in the full spec before applying
-the subset. It exports the source hash, one requested owner per source unit,
-and the author's import priority. The browser test checks the source hash and
-compares each selected owner with the full resolution. Unselected units stay in
-the entry. Lean builds the module graph, derives its evaluation order and
-certifies the resulting JavaScript trees. The browser test does not consume a
-Rust safety verdict or a schedule from the Rust emitter. The authored replay
-above remains a separate comparison with the Rust emitter.
+The [ownership subset](../../../../excalidraw/deployment_smoke_subset.json)
+selects the main renderer and 365 editor bindings in 45 upstream modules.
+Rust's `spec resolve-placements` solves selectors across both chunks and exports
+the canonical and selected placements. The smoke verifies the source hashes,
+checks each selected owner against the canonical result, and retains unselected
+units in their original entries. See the [recovery notes](recovery.md) for
+remaining editor candidates and the [spec authoring instructions](../../../../excalidraw/AGENTS.md)
+for choosing an owner from the pinned upstream source.
 
 ```sh
 p=//devinfra/js/debundle/x/split_proof/integration/excalidraw
-bbr test --config=ci "${p}:excalidraw_certified_editor_browser_smoke"
+bbr test --config=ci "${p}:excalidraw_certified_browser_smoke"
 ```
 
-Lean uses the editor's original public entry URL, certifies its generated modules
-with `--structural`, the `browser-page` profile and the live HTTP origin, then
-rechecks the files with `--check-output`. Chromium exercises both the original
-app and the certified overlay. The test compares the served module bytes and
-all 611 editor exports, draws a rectangle, checks Undo, and calls the moved
-scroll helper through the editor's public binding.
+Lean emits both splits and the fixed static providers as one deployment rooted
+at `main.js`. It certifies the staged files, then rechecks the published tree
+with `--check-output`. Both verdicts record the browser-page contract and the
+stable `Math.PI@1`, native metadata, and empty import-map premises. Chromium
+compares the original and checked deployments, including the served module
+bytes, editor export names, drawing, Undo, and the extracted helpers.
 
-The test checks every moved unit against the full Rust placement: its destination
-must be the same upstream module. All omitted units stay in the editor entry.
-Run `:excalidraw_original_editor_browser_smoke` for the original-only baseline.
-
-[Smoke test](browser_smoke_test.py)
+Run `:excalidraw_original_editor_browser_smoke` for the original app baseline.
+The [deployment notes](joint.md) and [smoke test](browser_smoke_test.py) describe
+the shared closure and browser replay.
 
 ### Direct AST lowering for negated initializers
 

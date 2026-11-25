@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import { acorn, eslintScope } from "../../translation/parser.mjs";
 import { parseModule, topLevelStatements } from "../../translation/scope_metadata.mjs";
 import { walk } from "../../translation/syntax_inventory.mjs";
+import { writeDeployment } from "../../translation/testing/deployment_manifest.mjs";
 import { dumpParsed } from "../../translation/annotated_estree.mjs";
 
 const chunks = process.env.EXCALIDRAW_INPUTS.split(" ").find((file) => file.endsWith("/chunks"));
@@ -162,8 +163,7 @@ if (strictSelection.length === 2) {
   const pair = spawnSync(
     process.env.LOWERSPLIT,
     [
-      strictSource,
-      spec,
+      writeDeployment(strictSource, spec, out),
       out,
       "--structural",
       "--host-contract",
@@ -184,7 +184,7 @@ if (strictSelection.length === 2) {
 
 const run = spawnSync(
   process.env.LOWERSPLIT,
-  [strictSource, spec, out, "--require", "normal-completion", "--host-contract", profile],
+  [writeDeployment(strictSource, spec, out), out, "--require", "normal-completion", "--host-contract", profile],
   { encoding: "utf8" }
 );
 if (run.error) throw run.error;
@@ -235,7 +235,7 @@ for (const moved of [selected, selected.slice(0, 1)]) {
   const candidate = path.join(process.env.TEST_TMPDIR, "candidate-" + tag + ".json");
   writeFileSync(candidate, JSON.stringify(placement(moved)));
   const plan = path.join(process.env.TEST_TMPDIR, "plan-" + tag + ".json");
-  const args = ["--diagnostic", ast, candidate, diagnostic, "--force", "--plan", plan];
+  const args = ["--diagnostic", writeDeployment(ast, candidate, diagnostic), diagnostic, "--force", "--plan", plan];
   if (moved.length === 1) args.push("--all-conflicts");
   const render = spawnSync(process.env.LOWERSPLIT, args, { encoding: "utf8" });
   if (render.error) throw render.error;

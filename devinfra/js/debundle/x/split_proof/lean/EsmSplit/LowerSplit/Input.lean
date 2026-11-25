@@ -29,10 +29,92 @@ private def toStmt (src : String) (ast : Json) (f : Lower.Footprint) : Stmt :=
 inside the counts below, and the verdict did not finish in 10 minutes. -/
 @[noinline] def footprintsOk (ss : List CoreJS.Stmt) (B : Bundle) : Bool := decide (CoreJS.FootprintsOfSyntax ss B)
 
-structure SplitPaths where
-  bundle : System.FilePath
-  spec : System.FilePath
-  out : System.FilePath
+inductive Placement where
+  | fixed
+  | authored (spec : Spec)
+  | resolved (chunkId : String) (placement : Json)
+
+structure DeploymentChunk where
+  path : String
+  source : System.FilePath
+  placement : Placement
+
+structure DeploymentManifest where
+  entry : String
+  chunks : List DeploymentChunk
+
+private def relativeTo (manifest : System.FilePath) (value : String) : System.FilePath :=
+  let path : System.FilePath := value
+  if path.isAbsolute then path else manifest.parent.getD "." / path
+
+def readDeploymentManifest (path : System.FilePath) : IO DeploymentManifest := do
+  let json ← readJson path
+  let fields ← IO.ofExcept json.getObj?
+  unless fields.toList.all (fun (field, _) => ["entry", "chunks"].contains field) do
+    throw (IO.userError "unexpected deployment manifest field")
+  let entry ← IO.ofExcept (json.getObjValAs? String "entry")
+  let chunks ← (← IO.ofExcept (json.getObjValAs? (List Json) "chunks")).mapM fun chunk => do
+    let route ← IO.ofExcept (chunk.getObjValAs? String "path")
+    let fields ← IO.ofExcept chunk.getObj?
+    unless fields.toList.all (fun (field, _) => ["path", "source", "spec", "placement", "chunk_id"].contains field) do
+      throw (IO.userError s!"{route}: unexpected deployment chunk field")
+    let source ← IO.ofExcept (chunk.getObjValAs? String "source")
+    if source.isEmpty then throw (IO.userError s!"{route}: expected a source path")
+    let resolve := relativeTo path
+    let chunkId ← IO.ofExcept <| (chunk.getObjVal? "chunk_id").toOption.mapM Json.getStr?
+    let placement : Placement ← match (chunk.getObjVal? "spec").toOption, (chunk.getObjVal? "placement").toOption with
+      | some specPath, none => do
+        unless chunkId.isNone do throw (IO.userError s!"{route}: chunk_id requires placement")
+        let spec ← loadSpec (resolve (← IO.ofExcept specPath.getStr?))
+        unless spec.entry == route do throw (IO.userError s!"{route}: spec entry differs from chunk path")
+        pure (.authored spec)
+      | none, some resolved => do
+        let resolvedId ← IO.ofExcept (resolved.getObjValAs? String "chunk_id")
+        if resolvedId.isEmpty then throw (IO.userError s!"{route}: expected a placement chunk_id")
+        pure (.resolved (chunkId.getD resolvedId) resolved)
+      | none, none =>
+        if chunkId.isNone then pure .fixed
+        else throw (IO.userError s!"{route}: chunk_id requires placement")
+      | some _, some _ => throw (IO.userError s!"{route}: supply either spec or placement")
+    return { path := route, source := resolve source, placement : DeploymentChunk }
+  let routes := chunks.map (·.path)
+  IO.ofExcept (validateModulePaths routes)
+  unless routes.Nodup do throw (IO.userError "duplicate original chunk path")
+  unless routes.contains entry do throw (IO.userError "deployment entry must name an original chunk")
+  return { entry, chunks }
+
+def DeploymentChunk.spec (chunk : DeploymentChunk) (unitCount : Nat) : Except String Spec := do
+  match chunk.placement with
+  | .fixed => throw s!"{chunk.path}: a fixed chunk has no placement"
+  | .authored spec => pure spec
+  | .resolved id placement => parseResolvedSpec placement id chunk.path unitCount
+
+def DeploymentChunk.sourceHash (chunk : DeploymentChunk) : Except String (Option String) := do
+  match chunk.placement with
+  | .resolved _ placement => some <$> placement.getObjValAs? String "source_sha256"
+  | _ => pure none
+
+def javascriptSource (path : System.FilePath) : Bool :=
+  path.extension == some "js" || path.extension == some "mjs"
+
+/-- A deployment mirrors the original JS tree. Verify its declared files have
+the named routes in that tree before collecting additional modules from it. -/
+def deploymentRoot (manifest : DeploymentManifest) : IO System.FilePath := do
+  let mut root := none
+  for chunk in manifest.chunks do
+    unless javascriptSource chunk.source do
+      throw (IO.userError s!"{chunk.path}: a deployment requires the original JavaScript file")
+    let mut dir ← IO.FS.realPath chunk.source
+    for segment in (chunk.path.splitOn "/").reverse do
+      unless dir.fileName == some segment do
+        throw (IO.userError s!"{chunk.source} does not have the deployment path {chunk.path}")
+      let some parent := dir.parent | throw (IO.userError s!"{chunk.source} has no deployment root")
+      dir := parent
+    if let some previous := root then
+      unless dir == previous do throw (IO.userError "original chunks must belong to one deployment tree")
+    root := some dir
+  let some directory := root | throw (IO.userError "expected at least one original source")
+  return directory
 
 structure BundleInput where
   program : Json

@@ -19,7 +19,7 @@ private def fragment (input : Json) : Except String CoreJS.LinkedInput.StaticSpl
 private def check (input : Json) : Except String Unit := do
   let app ← fragment (← input.getObjVal? "app")
   let provider ← fragment (← input.getObjVal? "provider")
-  let _ ← CoreJS.LinkedBehavior.certifyJointStatic app provider
+  let _ ← CoreJS.LinkedBehavior.certifyStaticDeployment app.plan.entry [app, provider] (.mkObj []) .empty []
   return ()
 
 def main : IO UInt32 := do

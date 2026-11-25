@@ -9,7 +9,6 @@ import math
 import os
 import subprocess
 from pathlib import Path, PurePosixPath
-from typing import Literal
 
 import httpx
 import pytest
@@ -52,49 +51,74 @@ def editor_source(runfiles: Runfiles) -> Path:
     return bundle / name
 
 
-def certify_split(runfiles: Runfiles, source: Path, origin: str, chunk: Literal["editor", "main"]) -> dict[str, Path]:
-    canonical = json.loads(resolve(runfiles, os.environ["CANONICAL_PLACEMENT"]).read_text())
-    resolved = resolve(runfiles, os.environ["SELECTED_PLACEMENT"])
-    selected = json.loads(resolved.read_text())
-    digest = hashlib.sha256(source.read_bytes()).hexdigest()
-    assert selected["chunk_id"] == canonical["chunk_id"] == chunk
-    assert selected["source_sha256"] == canonical["source_sha256"] == digest
-
-    for ordinal, (unit, full) in enumerate(zip(selected["units"], canonical["units"], strict=True)):
-        assert unit["ordinal"] == full["ordinal"] == ordinal
-        assert unit["owner"] is None or unit["owner"] == full["owner"], (ordinal, unit, full)
-    if chunk == "main":
-        assert len(selected["units"]) == 1628
-        assert selected["import_order"] == [RENDERER]
-        assert [(u["ordinal"], u["owner"]) for u in selected["units"] if u["owner"] is not None] == [(1486, RENDERER)]
-    files = [source.name, *(owner + ".mjs" for owner in selected["import_order"])]
-    artifacts = undeclared_outputs_dir()
-    (artifacts / "browser-origin.txt").write_text(f"{origin}\n")
-    (artifacts / "placement.json").write_bytes(resolved.read_bytes())
-    profile = artifacts / "host.json"
-    profile.write_text(
+def write_deployment(path: Path, source: Path, spec: Path) -> Path:
+    path.write_text(
         json.dumps(
-            {"profile": "browser-page", **({"stableIntrinsicValues": ["Math.PI@1"]} if chunk == "editor" else {})}
+            {
+                "entry": source.name,
+                "chunks": [{"path": source.name, "source": str(source.absolute()), "spec": str(spec.resolve())}],
+            }
         )
     )
-    out = artifacts / f"certified-{chunk}"
+    return path
+
+
+def certify_deployment(runfiles: Runfiles, editor: Path, origin: str, pinned: dict[str, str]) -> dict[str, Path]:
+    sources = {"main": editor.parent / "main.js", "editor": editor}
+    canonical = json.loads(resolve(runfiles, os.environ["CANONICAL_PLACEMENT"]).read_text())["placements"]
+    selected = json.loads(resolve(runfiles, os.environ["SELECTED_PLACEMENT"]).read_text())["placements"]
+    canonical_by_chunk = {placement["chunk_id"]: placement for placement in canonical}
+    assert {placement["chunk_id"] for placement in selected} == set(canonical_by_chunk) == set(sources)
+
+    chunks = []
+    added_paths = set()
+    for placement in selected:
+        chunk = placement["chunk_id"]
+        source = sources[chunk]
+        full = canonical_by_chunk[chunk]
+        assert placement["source_sha256"] == full["source_sha256"] == pinned[source.name]
+        for ordinal, (unit, canonical_unit) in enumerate(zip(placement["units"], full["units"], strict=True)):
+            assert unit["ordinal"] == canonical_unit["ordinal"] == ordinal
+            assert unit["owner"] is None or unit["owner"] == canonical_unit["owner"], (chunk, ordinal)
+        moved = [(unit["ordinal"], unit["owner"]) for unit in placement["units"] if unit["owner"] is not None]
+        if chunk == "main":
+            assert len(placement["units"]) == 1628
+            assert placement["import_order"] == [RENDERER]
+            assert moved == [(1486, RENDERER)]
+        else:
+            assert sum(len(unit.get("members", {})) for unit in placement["units"] if unit["owner"]) == 365
+            assert len(placement["import_order"]) == 45
+        for owner in placement["import_order"]:
+            name = f"{owner}.mjs"
+            assert name not in added_paths, name
+            assert name not in pinned, name
+            added_paths.add(name)
+        chunks.append({"path": source.name, "source": str(source.absolute()), "placement": placement})
+
+    artifacts = undeclared_outputs_dir()
+    (artifacts / "browser-origin.txt").write_text(f"{origin}\n")
+    (artifacts / "input-sha256.json").write_text(json.dumps(pinned, indent=2))
+    deployment = artifacts / "deployment.json"
+    deployment.write_text(json.dumps({"entry": "main.js", "chunks": chunks}))
+    profile = artifacts / "host.json"
+    profile.write_text(json.dumps({"profile": "browser-page", "stableIntrinsicValues": ["Math.PI@1"]}))
+    out = artifacts / "certified"
     command: list[str | Path] = [
         resolve(runfiles, os.environ["LOWERSPLIT"]),
-        source,
-        resolved,
+        deployment,
         out,
-        "--resolved-placement",
-        chunk,
         "--require",
         "normal-completion",
         "--host-contract",
         profile,
         "--deployment-origin",
         origin,
+        "--deployment-preset",
+        "native-browser-record@1",
+        "--deployment-import-map",
+        "empty@1",
         "--structural",
     ]
-    if chunk == "main":
-        command.extend(["--deployment-preset", "native-browser-record@1", "--deployment-import-map", "empty@1"])
     verdicts = []
     for stage, args in [("emit", []), ("check-output", ["--check-output"])]:
         run = subprocess.run([*command, *args], capture_output=True, text=True, check=False)
@@ -102,17 +126,17 @@ def certify_split(runfiles: Runfiles, source: Path, origin: str, chunk: Literal[
         assert run.returncode == 0, run.stdout + run.stderr
         verdict = json.loads(run.stdout.strip().splitlines()[-1])
         assert verdict["status"] == "certified", verdict
-        assert verdict["requested"] == "normal-completion", verdict
-        assert verdict["guarantee"] == "normal-completion", verdict
-        assert verdict["scope"] == ("linked-structural-moves" if chunk == "editor" else "linked-structural-pivot"), (
-            verdict
-        )
+        assert verdict["requested"] == verdict["guarantee"] == "normal-completion", verdict
+        assert verdict["scope"] == "linked-structural-moves", verdict
         assert verdict["hostProfile"] == "browser-page", verdict
-        for premise in ["Math.PI@1:"] if chunk == "editor" else ["native-browser-record@1:", "empty@1:"]:
-            assert any(a.startswith(premise) for a in verdict["assumptions"]), verdict
+        for premise in ["Math.PI@1:", "native-browser-record@1:", "empty@1:"]:
+            assert any(assumption.startswith(premise) for assumption in verdict["assumptions"]), verdict
         verdicts.append(verdict)
     assert verdicts[0] == verdicts[1]
-    return {name: out / name for name in files}
+    assert {path.relative_to(out).as_posix() for path in out.rglob("*") if path.is_file()} == set(pinned) | added_paths
+    for name in set(pinned) - {path.name for path in sources.values()}:
+        assert hashlib.sha256((out / name).read_bytes()).hexdigest() == pinned[name], name
+    return {name: out / name for name in set(pinned) | added_paths}
 
 
 def serve_file(url: str, file: Path) -> Route:
@@ -318,7 +342,7 @@ async def smoke(
             await expect(page.locator('.ttd-dialog[role="dialog"]')).to_be_visible()
             await page.wait_for_function("window.dialogFailures.length > 0")
             assert errors == []
-        elif overlay is not None:
+        if overlay is not None and editor in overlay:
             geometry = await page.evaluate(
                 """async () => {
                   const {al: line, K8: intersect} = await import("/packages/math/line.mjs");
@@ -417,8 +441,7 @@ async def test_bare_import(
     async with serve_app_in_loop(editor_app) as origin:
         command: list[Path | str] = [
             resolve(runfiles, os.environ["LOWERSPLIT"]),
-            entry,
-            spec,
+            write_deployment(tmp_path / "deployment.json", entry, spec),
             out,
             "--structural",
             "--host-contract",
@@ -506,8 +529,7 @@ async def test_native_metadata_preset(
     async with serve_app_in_loop(editor_app) as origin:
         command: list[str | Path] = [
             resolve(runfiles, os.environ["LOWERSPLIT"]),
-            source,
-            spec,
+            write_deployment(tmp_path / "deployment.json", source, spec),
             out,
             "--structural",
             "--host-contract",
@@ -565,41 +587,18 @@ async def test_native_metadata_preset(
                 ]
 
 
-async def test_certified_editor_split(
-    playwright_driver: Playwright,
-    runfiles: Runfiles,
-    editor_app: Starlette,
-    editor_source: Path,
-    editor_providers: list[str],
-) -> None:
-    async with serve_app_in_loop(editor_app) as origin:
-        files = await asyncio.to_thread(certify_split, runfiles, editor_source, origin, "editor")
-        original = await smoke(playwright_driver, origin, editor_source, editor_providers)
-        # The first browser context has closed. Switch only the certified routes on the running server.
-        install_editor_overlay(editor_app, editor_source, files)
-        assert await smoke(playwright_driver, origin, editor_source, editor_providers, files) == original
-
-
-async def test_certified_main_split(
+async def test_certified_deployment(
     playwright_driver: Playwright, runfiles: Runfiles, editor_app: Starlette, editor_source: Path
 ) -> None:
-    source = editor_source.parent / "main.js"
     pinned = json.loads(resolve(runfiles, os.environ["MAIN_STATIC_DIGESTS"]).read_text())
     for name, digest in pinned.items():
-        assert hashlib.sha256((source.parent / name).read_bytes()).hexdigest() == digest, name
+        assert hashlib.sha256((editor_source.parent / name).read_bytes()).hexdigest() == digest, name
     assert editor_source.name in pinned
-    providers = [p for p in pinned if p != source.name]
+    providers = sorted(set(pinned) - {"main.js", editor_source.name})
     async with serve_app_in_loop(editor_app) as origin:
-        files = await asyncio.to_thread(certify_split, runfiles, source, origin, "main")
-        assert set(files) == {source.name, RENDERER + ".mjs"}
-        # Publication and disk verification cover exactly these copied providers.
-        out = files[source.name].parent
-        assert {p.relative_to(out).as_posix() for p in out.rglob("*") if p.is_file()} == set(files) | set(providers)
-        for name in providers:
-            assert hashlib.sha256((out / name).read_bytes()).hexdigest() == pinned[name], name
-        (undeclared_outputs_dir() / "input-sha256.json").write_text(json.dumps(pinned, indent=2))
+        files = await asyncio.to_thread(certify_deployment, runfiles, editor_source, origin, pinned)
         original = await smoke(playwright_driver, origin, editor_source, providers, main_case=True)
-        install_editor_overlay(editor_app, source, files)
+        editor_app.router.routes[:0] = [serve_file(name, path) for name, path in files.items()]
         assert await smoke(playwright_driver, origin, editor_source, providers, files, main_case=True) == original
 
 

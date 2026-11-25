@@ -11,6 +11,7 @@ js_binary(
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
         "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
         "//devinfra/js/debundle/x/split_proof/translation:parser",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
     ],
     entry_point = "run_cases.mjs",
     env = {
@@ -43,6 +44,7 @@ js_test(
         _CORPUS_CHUNK,
         _PROBE,
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
     ],
     entry_point = "certificate_test.mjs",
     env = {

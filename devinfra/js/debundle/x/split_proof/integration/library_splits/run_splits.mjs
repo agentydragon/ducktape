@@ -21,6 +21,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { topLevelStatements } from "../../translation/scope_metadata.mjs";
 import { spec as makeSpec } from "./gen_spec.mjs";
+import { writeDeployment } from "../../translation/testing/deployment_manifest.mjs";
 import { smoke } from "./smoke.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -89,8 +90,7 @@ async function worker() {
       await writeFile(path.join(dir, "spec.json"), JSON.stringify(spec));
       const checked = await run(lowersplit, [
         "--diagnostic",
-        path.join(lowering, `${bundle}.json`),
-        path.join(dir, "spec.json"),
+        writeDeployment(path.join(lowering, `${bundle}.json`), path.join(dir, "spec.json"), path.join(dir, "out")),
         path.join(dir, "out"),
         "--footprints",
         footprints,

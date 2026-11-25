@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { writeDeployment } from "../translation/testing/deployment_manifest.mjs";
 import { pathToFileURL } from "node:url";
 
 const spec = path.join(process.env.TEST_TMPDIR, "spec.json");
@@ -14,9 +15,13 @@ function place(modules) {
 }
 function check(dir, status, ...args) {
   const request = "normal-completion";
-  const run = spawnSync(process.env.LOWERSPLIT, [source, spec, dir, "--require", request, ...args], {
-    encoding: "utf8",
-  });
+  const run = spawnSync(
+    process.env.LOWERSPLIT,
+    [writeDeployment(source, spec, dir), dir, "--require", request, ...args],
+    {
+      encoding: "utf8",
+    }
+  );
   assert.equal(run.status, status === "certified" ? 0 : 1, run.stdout + run.stderr);
   const verdict = JSON.parse(run.stdout);
   assert.equal(verdict.requested, request);

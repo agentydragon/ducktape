@@ -8,6 +8,7 @@ import { annotateProgram, parseModule, resolveIdentifiers } from "./scope_metada
 import { dumpParsed } from "./annotated_estree.mjs";
 import { acorn, dump, eslintScope, loadSnapshot } from "./parser.mjs";
 import { checkTranslation } from "./testing/check_translation.mjs";
+import { writeDeployment } from "./testing/deployment_manifest.mjs";
 import { lowerDiagnostic, prepareSideSplit, run } from "./testing/diagnostic_split.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -101,13 +102,23 @@ const callbacks = scopes.body[0].declarations.map((d) => d.init);
 assert.notEqual(callbacks[0].params[0].b, callbacks[1].params[0].b);
 for (const callback of callbacks) assert.equal(callback.params[0].b, callback.body.b);
 const leanCertificate = path.join(temp, "generated.lean");
-const emitted = run(process.env.LOWERSPLIT, ["--diagnostic", ast, spec, out, "--lean", leanCertificate]);
+const emitted = run(process.env.LOWERSPLIT, [
+  "--diagnostic",
+  writeDeployment(ast, spec, out),
+  out,
+  "--lean",
+  leanCertificate,
+]);
 assert.equal(emitted.status, 0, `annotated emitter must accept: ${emitted.stdout}\n${emitted.stderr}`);
 assert.match(emitted.stdout, /pass\s+OrderOk/);
 const legacyInput = path.join(temp, "legacy-ast.json");
 writeFileSync(legacyInput, legacyDump(parsed));
 const upgradedOut = path.join(temp, "upgraded");
-const upgraded = run(process.env.LOWERSPLIT, ["--diagnostic", legacyInput, spec, upgradedOut]);
+const upgraded = run(process.env.LOWERSPLIT, [
+  "--diagnostic",
+  writeDeployment(legacyInput, spec, upgradedOut),
+  upgradedOut,
+]);
 assert.equal(upgraded.status, 0, `${upgraded.stdout}\n${upgraded.stderr}`);
 for (const file of ["entry.mjs", "side.mjs"])
   assert.equal(readFileSync(path.join(upgradedOut, file), "utf8"), readFileSync(path.join(out, file), "utf8"));
@@ -126,8 +137,7 @@ assert.match(leanSource, /theorem plan_valid/);
   writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["seed", "left", "right"] } }));
   const result = run(process.env.LOWERSPLIT, [
     "--diagnostic",
-    source,
-    spec,
+    writeDeployment(source, spec, path.join(temp, "instance-out")),
     path.join(temp, "instance-out"),
     "--lean",
     instance,
@@ -270,7 +280,7 @@ console.log(import.meta.url, result);`;
   mkdirSync(dir, { recursive: true });
   writeFileSync(input, JSON.stringify(dump(codeWithFallback)));
   writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0", "#1", "#2"] } }));
-  const result = run(process.env.LOWERSPLIT, ["--diagnostic", input, spec, dir]);
+  const result = run(process.env.LOWERSPLIT, ["--diagnostic", writeDeployment(input, spec, dir), dir]);
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   assert.match(result.stdout, /1 with fallback nodes/);
 }

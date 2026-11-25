@@ -228,6 +228,96 @@ fn append_to_existing_and_new_modules_then_filter_the_joint_solve() {
 }
 
 #[test]
+fn batch_resolves_multiple_chunks_once_with_qualified_fragments_and_both_views() {
+    let secondary_modules = [(
+        "static/secondary",
+        vec![logical_module("shared", &[Member::new("seed")])],
+    )];
+    let opts = FixtureOpts::new(
+        "const seed = 0;",
+        vec![logical_module("shared", &[Member::new("seed")])],
+    )
+    .with_extra_chunks(&[("static/secondary", "const seed = 9; const local = 7;")])
+    .with_extra_chunk_logical_modules(&secondary_modules);
+    let fixture = write_validate_fixture_spec(opts);
+    let root = fixture.workspace();
+    let dir = root.path();
+    let fragment = dir.join("fragment.yaml");
+    let subset = dir.join("subset.json");
+    let selected = dir.join("selected.json");
+    let canonical = dir.join("canonical.json");
+    fs::write(&fragment, EXTRA).unwrap();
+    fs::write(
+        &subset,
+        json!({"modules":[{"chunk":"static/secondary","module":"added"}]}).to_string(),
+    )
+    .unwrap();
+    let run = command(&[
+        "spec",
+        "resolve-placements",
+        "--spec",
+        fixture.spec_path.to_str().unwrap(),
+        "--chunk",
+        "static/app",
+        "--chunk",
+        "static/secondary",
+        "--proposal-fragment",
+        &format!("static/secondary::added={}", fragment.display()),
+        "--ownership-subset",
+        subset.to_str().unwrap(),
+        "--canonical-out",
+        canonical.to_str().unwrap(),
+        "--out",
+        selected.to_str().unwrap(),
+    ]);
+    assert!(run.status.success(), "{}", run.stderr);
+    let selected: Value = serde_json::from_slice(&fs::read(selected).unwrap()).unwrap();
+    let canonical: Value = serde_json::from_slice(&fs::read(canonical).unwrap()).unwrap();
+    assert_eq!(selected.as_object().unwrap().len(), 1);
+    assert_eq!(canonical.as_object().unwrap().len(), 1);
+    assert_eq!(
+        canonical["placements"],
+        json!([
+            {
+                "chunk_id":"static/app",
+                "source_sha256":source_sha256("const seed = 0;"),
+                "import_order":["shared"],
+                "units":[{"ordinal":0,"owner":"shared","members":{"seed":"seed"}}]
+            },
+            {
+                "chunk_id":"static/secondary",
+                "source_sha256":source_sha256("const seed = 9; const local = 7;"),
+                "import_order":["shared","added"],
+                "units":[
+                    {"ordinal":0,"owner":"shared","members":{"seed":"seed"}},
+                    {"ordinal":1,"owner":"added","members":{"local":"extra"}}
+                ]
+            }
+        ])
+    );
+    assert_eq!(
+        selected["placements"],
+        json!([
+            {
+                "chunk_id":"static/app",
+                "source_sha256":source_sha256("const seed = 0;"),
+                "import_order":[],
+                "units":[{"ordinal":0,"owner":null}]
+            },
+            {
+                "chunk_id":"static/secondary",
+                "source_sha256":source_sha256("const seed = 9; const local = 7;"),
+                "import_order":["added"],
+                "units":[
+                    {"ordinal":0,"owner":null},
+                    {"ordinal":1,"owner":"added","members":{"local":"extra"}}
+                ]
+            }
+        ])
+    );
+}
+
+#[test]
 fn ambiguous_excluded_fragment_rejects_both_outputs() {
     let (run, full, selected) = resolve_fragments(
         "const seed = 0; const value = 7; const left = () => 1; const right = () => 1;",

@@ -32,6 +32,7 @@ import { fileURLToPath } from "node:url";
 import { acorn, eslintScope } from "../translation/parser.mjs";
 import { parse as parseYaml } from "yaml";
 import { dumpParsed } from "../translation/annotated_estree.mjs";
+import { writeDeployment } from "../translation/testing/deployment_manifest.mjs";
 import { parseModule, topLevelStatements } from "../translation/scope_metadata.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -343,8 +344,7 @@ function runCase(dir, specName, expected) {
     );
     const checkerArgs = [
       "--diagnostic",
-      path.join(stage, "bundle.json"),
-      path.join(stage, "lean_spec.json"),
+      writeDeployment(path.join(stage, "bundle.json"), path.join(stage, "lean_spec.json"), path.join(stage, "split")),
       path.join(stage, "split"),
       "--force",
     ];

@@ -5,6 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { acorn, dump } from "./parser.mjs";
 import { assertSelectedSourceUnits, parseSourceUnits } from "./testing/ast_assertions.mjs";
+import { writeDeployment } from "./testing/deployment_manifest.mjs";
 import { lcg32 } from "../seeded_random.mjs";
 
 const root = process.env.TEST_TMPDIR;
@@ -87,7 +88,9 @@ const modules = {
 };
 writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules }));
 
-const lowered = spawnSync(process.env.LOWERSPLIT, ["--diagnostic", ast, spec, out], { encoding: "utf8" });
+const lowered = spawnSync(process.env.LOWERSPLIT, ["--diagnostic", writeDeployment(ast, spec, out), out], {
+  encoding: "utf8",
+});
 assert.equal(lowered.status, 0, `${lowered.stdout}\n${lowered.stderr}`);
 
 for (const [file, selectors] of Object.entries(modules)) {
