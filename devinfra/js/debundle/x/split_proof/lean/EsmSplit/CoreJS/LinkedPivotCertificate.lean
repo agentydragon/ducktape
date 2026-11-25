@@ -348,4 +348,33 @@ def checkStructuralSchedule (intrinsics : List StableIntrinsic) (source candidat
   let after ← (checkLink candidate).mapError ("candidate linker: " ++ ·)
   checkLinkedSchedules intrinsics before after recordPivots
 
+/-- Stable reason categories for structural refusals. Keep the source-specific
+explanation alongside these codes at the CLI boundary. -/
+inductive StructuralRefusalCode where
+  | nonLocalAllocation
+  | movedRegionAccess
+  | opaqueUnitContext
+  deriving Repr, DecidableEq
+
+def StructuralRefusalCode.label : StructuralRefusalCode → String
+  | .nonLocalAllocation => "structural_non_local_allocation"
+  | .movedRegionAccess => "structural_moved_region_access"
+  | .opaqueUnitContext => "structural_opaque_unit_context"
+
+private def containsText (text fragment : String) : Bool :=
+  match text.splitOn fragment with
+  | _ :: _ :: _ => true
+  | _ => false
+
+/-- Classify the three structural limits measured among linked-only census
+inputs. Unknown structural refusals remain available as text without a code. -/
+def structuralRefusalCode (reason : String) : Option StructuralRefusalCode :=
+  if containsText reason "is not a local allocating declaration" then
+    some .nonLocalAllocation
+  else if containsText reason "has access to the moved region of unit" then
+    some .movedRegionAccess
+  else if containsText reason "opaque unit requires source-module or method context" then
+    some .opaqueUnitContext
+  else none
+
 end CoreJS.LinkedBehavior

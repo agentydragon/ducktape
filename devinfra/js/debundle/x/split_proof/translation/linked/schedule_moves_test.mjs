@@ -118,6 +118,7 @@ const laterCapture = structuralFixture(
 const capture = laterCapture.run(refusalScope);
 assert.equal(capture.status, "rejected", JSON.stringify(capture));
 assert.match(capture.reason, /unit 1 has access to the moved region of unit 3/);
+assert.equal(capture.reason_code, "structural_moved_region_access");
 assert(!existsSync(laterCapture.out));
 
 const deferredPair = structuralFixture(
@@ -224,4 +225,5 @@ const two = structuralFixture("retained-capture-two-pivots", retainedReader, ["#
 const twoVerdict = two.run(refusalScope);
 assert.equal(twoVerdict.status, "rejected", JSON.stringify(twoVerdict));
 assert.match(twoVerdict.reason, /unit 0 has access to the moved region of unit 3/);
+assert.equal(twoVerdict.reason_code, "structural_moved_region_access");
 assert(!existsSync(two.out));
