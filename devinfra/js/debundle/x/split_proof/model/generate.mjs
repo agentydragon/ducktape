@@ -190,8 +190,14 @@ export function generatedOpaqueCase(seed) {
       console.log("after", independent);
     `,
     // The opaque closure captures add before its initializer runs, then reenters it after initialization.
-    recordedSlots: { "0/1": { 1: 0 } }, // The callable captures add directly.
     scripts: {
+      // Keep this declaration opaque as a unit, as the diagnostic decoder does.
+      // `pick` is slot 0 and its captured `add` cell is slot 1.
+      "0/0": [
+        ["newFunction", 1, "pick", 1, false],
+        ["initVar", 0, ["r", 2]],
+        ["done", ["u"]],
+      ],
       "0/1": [
         ["get", ["r", 2], ["s", "value"]],
         ["readVar", 1],
@@ -209,7 +215,7 @@ export function generatedObjectRequestCase(seed) {
   const depth = 1 + ((seed >>> 1) % 4);
   const fromBase = seed % 2 === 0;
   const n = 1 + ((seed >>> 0) % 97);
-  const steps = fromBase ? [["readVar", 2]] : [["newObject"]];
+  const steps = fromBase ? [["readVar", 1]] : [["newObject"]];
   let expression = fromBase ? "base" : "{}";
   let root = "made";
   for (let i = 0; i < depth; i++) {
@@ -229,7 +235,6 @@ export function generatedObjectRequestCase(seed) {
       console.log(made.added);
       console.log(${fromBase ? `${root} === base` : `Object.getPrototypeOf(${root}) === Object.getPrototypeOf({})`});
     `,
-    recordedSlots: { "1/0": { 2: 1 } }, // Drop the ambient Object slot.
     scripts: { "1/0": steps },
     expectedOutput: [`${fromBase ? n : "undefined"} false`, String(n + 1), "true"],
   };

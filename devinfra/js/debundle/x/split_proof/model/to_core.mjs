@@ -28,7 +28,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "acorn";
-import { parseModule, topLevelStatements } from "../translation/scope_metadata.mjs";
+import { opaqueCaptureNames, parseModule, topLevelStatements } from "../translation/scope_metadata.mjs";
 
 export class Refused extends Error {
   constructor(node, why) {
@@ -39,6 +39,14 @@ export class Refused extends Error {
 
 const refuse = (node, why) => {
   throw new Refused(node, why);
+};
+
+/** Compare identifier names by Unicode scalar value, matching Lean's lexical `Name` order. */
+const compareNames = (left, right) => {
+  const a = Array.from(left, (char) => char.codePointAt(0));
+  const b = Array.from(right, (char) => char.codePointAt(0));
+  for (let i = 0; i < Math.min(a.length, b.length); i++) if (a[i] !== b[i]) return a[i] - b[i];
+  return a.length - b.length;
 };
 
 export const UNARY = { "-": "neg", "+": "pos", "!": "not", "~": "bitNot", typeof: "typeof", void: "void" };
@@ -175,8 +183,8 @@ const moduleName = (node) => (node.type === "Identifier" ? node.name : refuse(no
  * Throws `Refused` outside the fragment, and acorn's error on a syntax error.
  *
  * `opaque`, eslint-scope's module, turns a top-level statement outside the fragment into an opaque statement, which
- * the model's world runs: it carries the names the statement declares and the other names of the module scope or of
- * the host that it mentions, both from eslint-scope. Then `opaque` in the result lists each such statement with why,
+ * the model's world runs: it carries the names the statement declares and the other module bindings it mentions,
+ * ordered like the linked lowering. Then `opaque` in the result lists each such statement with why,
  * and a name the program does not declare is the host's in every statement. Refused all the same: a top-level `await`
  * (the order of evaluation would change), a direct `eval` (its names are not known from the text), and what depends
  * on the file the code is in: `import.meta`, `import()`. With `census`, such a statement does not end the translation:
@@ -276,11 +284,7 @@ export function coreFromParsed(
       visit(node);
       const scope = scopeManager.acquire(node, true);
       if (!scope || activeUnit === null || !functionParts.has(node)) throw e;
-      const free = [
-        ...new Set(
-          [...scope.through].sort((a, b) => a.identifier.start - b.identifier.start).map((ref) => ref.identifier.name)
-        ),
-      ];
+      const free = opaqueCaptureNames(scope);
       out.length = start;
       opaqueBodies.length = bodyStart;
       const part = functionParts.get(node);
@@ -815,7 +819,7 @@ export function coreFromParsed(
     }
   }
 
-  /** The module scope's declarations and the references to it or to the host, each sorted by position. */
+  /** The module scope's declarations and references to it, each sorted by position. */
   const moduleScope = scopeManager?.scopes.find((scope) => scope.type === "module");
   const defs = [];
   const refs = [];
@@ -826,8 +830,7 @@ export function coreFromParsed(
     for (const scope of scopeManager.scopes)
       for (const ref of scope.references) {
         const where = ref.resolved?.scope.type;
-        if (where === undefined || where === "module" || where === "global")
-          refs.push({ at: ref.identifier.start, name: ref.identifier.name });
+        if (where === "module") refs.push({ at: ref.identifier.start, name: ref.identifier.name });
       }
     defs.sort((a, b) => a.at - b.at);
     refs.sort((a, b) => a.at - b.at);
@@ -900,6 +903,9 @@ export function coreFromParsed(
         seen.add(name);
         free.push(name);
       }
+    // OpaqueInput assigns free cells in lexical name order. Keep the diagnostic
+    // decoder on that same numbering while it still consumes this format.
+    free.sort(compareNames);
     emit("opaque", id, decls, funs, free, closures(node, decls, funs));
   }
   /**

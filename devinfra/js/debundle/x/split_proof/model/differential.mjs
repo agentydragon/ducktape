@@ -545,7 +545,7 @@ for (const c of allOpaqueCases) {
   jobs.push({
     label: `opaque: ${c.name}`,
     source: c.source,
-    ast: { ...astOf(c.source), scripts: scriptsOf(c, { recorded: true }) },
+    ast: { ...astOf(c.source), scripts: scriptsOf(c, { includeUncalledBodies: true }) },
     expectEnd: c.end ?? "normal",
     set: null,
     opaqueCase: c,
