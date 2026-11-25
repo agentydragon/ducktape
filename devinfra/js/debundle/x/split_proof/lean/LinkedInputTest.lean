@@ -26,7 +26,9 @@ private def location (input : Json) : Except String Json := do
     ⟨"new/scroll.mjs", ← input.getObjValAs? (List Nat) "moved", [], []⟩] }
   let sites ← CoreJS.ModuleLocation.check (← input.getObjVal? "source") originalName plan
     (← assets (← input.getObjVal? "before")) (← assets (← input.getObjVal? "after"))
+    {emptyMap := (← input.getObjValAs? Bool "emptyMap")}
   return .arr (sites.map fun (id, use) => match use with
+    | .rejectedImport req => .arr #[toJson id, toJson "rejected unmapped import", toJson req]
     | .metadata => .arr #[toJson id, toJson "import.meta"]
     | .metaUrl => .arr #[toJson id, toJson "import.meta.url"]
     | .dynamicImport request target => .arr #[toJson id, toJson request, toJson target])

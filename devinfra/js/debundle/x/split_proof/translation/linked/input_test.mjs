@@ -53,6 +53,7 @@ const targetFile = "assets/lazy.js";
 const resource = (file, source) => ({ url: new URL(file, "https://example.org/app/").href, source });
 function locations({
   expr = '() => [import.meta.url, import("../assets/lazy.js")]',
+  emptyMap = false,
   originalName = entryFile,
   emittedName = entryFile,
   moved = [1],
@@ -67,6 +68,7 @@ function locations({
   return {
     source: parse(text),
     originalName,
+    emptyMap,
     emittedName,
     retained,
     moved,
@@ -88,7 +90,19 @@ cases.push({
     [0, "../assets/lazy.js", targetFile],
   ],
 });
+const bare = '() => import("@fixture/diagram")';
+cases.push({
+  kind: "location",
+  input: locations({ expr: bare, emptyMap: true }),
+  expected: [[0, "rejected unmapped import", "@fixture/diagram"]],
+});
 for (const [opts, expected] of [
+  [{ expr: bare }, /expected a relative module request/],
+  [{ expr: bare, emptyMap: true, moved: [0], retained: [1] }, /URL-sensitive unit 0 moved/],
+  [{ expr: '() => import("https://example.org/lib.js")', emptyMap: true }, /expected a relative module request/],
+  [{ expr: '() => import("/lib.js")', emptyMap: true }, /expected a relative module request/],
+  [{ expr: "() => import(name)", emptyMap: true }, /expected a string literal/],
+  [{ expr: '() => import("./missing.js")', emptyMap: true }, /missing original dynamic target/],
   [{ originalName: "alias.js" }, /source entry path differs/],
   [{ before: { [entryFile]: resource(entryFile, "different") } }, /parsed source differs/],
   [

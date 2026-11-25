@@ -19,13 +19,13 @@ private def absoluteOrigin (text : String) : Bool := Id.run do
   | _ => return false
 
 def readDeployment (program providers : Json) (bundlePath work : System.FilePath)
-    (origin : String) (P : EsmSplit.Plan) (nativeRecord : Bool := false) : IO LinkedDeployment.Input := do
+    (origin : String) (P : EsmSplit.Plan) (options : ModuleLocation.BrowserOptions := {}) : IO LinkedDeployment.Input := do
   unless absoluteOrigin origin do throw (IO.userError "deployment origin must be an HTTP(S) origin without a path")
   unless bundlePath.extension == some "js" || bundlePath.extension == some "mjs" do
     throw (IO.userError "deployment checks require the original JavaScript file")
   let some entry := bundlePath.fileName | throw (IO.userError "source module is missing a filename")
   let source ← IO.ofExcept (program.getObjValAs? String "sourceText")
-  let uses ← IO.ofExcept (ModuleLocation.entryUses program entry source nativeRecord)
+  let uses ← IO.ofExcept (ModuleLocation.entryUses program entry source options)
   let staticProviders ← IO.ofExcept providers.getObj?
   let linked := Std.HashSet.ofList (entry :: staticProviders.toList.map Prod.fst)
   let root := bundlePath.parent.getD "."
@@ -43,7 +43,7 @@ def readDeployment (program providers : Json) (bundlePath work : System.FilePath
     let text ← IO.ofExcept (ast.getObjValAs? String "sourceText")
     let res := asset name text
     resources := resources.insert name res
-    let sites ← IO.ofExcept ((ModuleLocation.providerUses ast name res nativeRecord).mapError fun why => s!"{name}: {why}")
+    let sites ← IO.ofExcept ((ModuleLocation.providerUses ast name res options).mapError fun why => s!"{name}: {why}")
     frontier := frontier ++ targets sites
   while !frontier.isEmpty do
     let mut requests := #[]
@@ -62,6 +62,6 @@ def readDeployment (program providers : Json) (bundlePath work : System.FilePath
       resources := resources.insert name resource
       let imports ← IO.ofExcept (DynamicImports.requests name ast resource)
       frontier := frontier ++ imports.map (·.source)
-  return { entry, nativeRecord, assets := .mkObj parsed.toList, before := resources }
+  return { entry, options, assets := .mkObj parsed.toList, before := resources }
 
 end EsmSplit.SplitFiles
