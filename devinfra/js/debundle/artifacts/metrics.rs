@@ -502,8 +502,6 @@ impl DirectoryAccumulator {
     }
 
     fn into_manifest(self, path: String) -> DirectoryManifestIndex {
-        let incoming = self.incoming.into_summary().into();
-        let outgoing = self.outgoing.into_summary().into();
         DirectoryManifestIndex {
             path,
             directories: self.directories.into_iter().collect(),
@@ -512,8 +510,8 @@ impl DirectoryAccumulator {
             modules: self.modules.into_iter().collect(),
             defined_symbols: self.defined_symbols,
             loc: self.loc,
-            incoming,
-            outgoing,
+            incoming: self.incoming.into_summary(),
+            outgoing: self.outgoing.into_summary(),
         }
     }
 }
@@ -550,25 +548,21 @@ impl DirectionalDirectoryAccumulator {
             .entry(fact.external_file.to_string())
             .or_default() += 1;
         self.edges
-            .entry((fact.source_dir.clone(), fact.target_dir.clone()))
-            .or_insert_with(|| DirectoryEdgeAccumulator {
-                source_dir: fact.source_dir,
-                target_dir: fact.target_dir,
-                ..Default::default()
-            })
+            .entry((fact.source_dir, fact.target_dir))
+            .or_default()
             .add_fact(fact.source_file, fact.target_file, kind, fact.symbol);
     }
 
-    fn into_summary(self) -> DirectionalSummary {
-        DirectionalSummary {
+    fn into_summary(self) -> DirectoryBoundarySummary {
+        DirectoryBoundarySummary {
             edge_count: self.edge_count,
-            edge_count_by_kind: self.edge_count_by_kind,
-            symbols: self.symbols,
-            external_files: self.external_files,
+            edge_count_by_kind: histogram_into_pairs(self.edge_count_by_kind),
+            symbols: histogram_into_pairs(self.symbols),
+            files: histogram_into_pairs(self.external_files),
             edges: self
                 .edges
-                .into_values()
-                .map(|edge| edge.into_manifest())
+                .into_iter()
+                .map(|((source, target), edge)| edge.into_manifest(source, target))
                 .collect(),
         }
     }
@@ -576,9 +570,6 @@ impl DirectionalDirectoryAccumulator {
 
 #[derive(Default)]
 struct DirectoryEdgeAccumulator {
-    source_dir: String,
-    target_dir: String,
-    edge_count: usize,
     edge_count_by_kind: BTreeMap<String, usize>,
     symbols: BTreeMap<String, usize>,
     source_files: BTreeMap<String, usize>,
@@ -587,7 +578,6 @@ struct DirectoryEdgeAccumulator {
 
 impl DirectoryEdgeAccumulator {
     fn add_fact(&mut self, source_file: &str, target_file: &str, kind: &str, symbol: Option<&str>) {
-        self.edge_count += 1;
         *self.edge_count_by_kind.entry(kind.to_string()).or_default() += 1;
         *self
             .source_files
@@ -602,10 +592,14 @@ impl DirectoryEdgeAccumulator {
         }
     }
 
-    fn into_manifest(self) -> DirectoryDependencyEdgeManifest {
+    fn into_manifest(
+        self,
+        source_dir: String,
+        target_dir: String,
+    ) -> DirectoryDependencyEdgeManifest {
         DirectoryDependencyEdgeManifest {
-            source_dir: self.source_dir,
-            target_dir: self.target_dir,
+            source_dir,
+            target_dir,
             edge_count_by_kind: histogram_into_pairs(self.edge_count_by_kind),
             symbols: histogram_into_pairs(self.symbols),
             source_files: histogram_into_pairs(self.source_files),
@@ -620,26 +614,6 @@ impl DirectoryEdgeAccumulator {
 /// closing a map for each per-edge field.
 fn histogram_into_pairs(map: BTreeMap<String, usize>) -> EdgeHistogram {
     map.into_iter().collect()
-}
-
-struct DirectionalSummary {
-    edge_count: usize,
-    edge_count_by_kind: BTreeMap<String, usize>,
-    symbols: BTreeMap<String, usize>,
-    external_files: BTreeMap<String, usize>,
-    edges: Vec<DirectoryDependencyEdgeManifest>,
-}
-
-impl From<DirectionalSummary> for DirectoryBoundarySummary {
-    fn from(summary: DirectionalSummary) -> Self {
-        Self {
-            edge_count: summary.edge_count,
-            edge_count_by_kind: histogram_into_pairs(summary.edge_count_by_kind),
-            symbols: histogram_into_pairs(summary.symbols),
-            files: histogram_into_pairs(summary.external_files),
-            edges: summary.edges,
-        }
-    }
 }
 
 #[derive(Default)]
