@@ -114,6 +114,28 @@ def get_user(user_id: str) -> User:
 # Reason: Temporary shim during refactoring (should be removed later)
 ```
 
+## Methods and properties
+
+The same test applies to methods and properties: does the body do anything beyond
+forwarding?
+
+```python
+class DataProcessor:
+    def process(self, data: dict) -> Result:
+        return self._process_impl(data)  # forwards unchanged arguments
+
+class Config:
+    @property
+    def value(self) -> str:
+        return self._value  # returns the stored attribute unchanged
+```
+
+Keep the member when its body adds validation, logging or transformation, or when the
+class needs it for a facade, a protocol or a dependency-injection point - the same
+legitimate reasons that keep a plain function alive above. Whether a property exists as
+scaffolding for a planned change is an architectural judgement, so read the class before
+removing it.
+
 ## Detection Strategy
 
 **MANDATORY Step 0**: Run single-line function body scanner.

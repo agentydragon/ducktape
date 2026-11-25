@@ -30,8 +30,7 @@ lives in <../../STYLE.md>; these scans operationalize specific rules from it.
 | <suspicious_nullability.md>         | Suspicious nullability                             |
 | <test_assertions.md>                | Test assertion antipatterns                        |
 | <timestamp_naming.md>               | Timestamp field naming                             |
-| <trivial_forwarder_methods.md>      | Trivial forwarder methods                          |
-| <trivial_forwarders.md>             | Functions that should be inlined                   |
+| <trivial_forwarders.md>             | Functions, methods and properties to inline        |
 | <type_ignore_suppressions.md>       | Type-checker suppression comments                  |
 | <unnecessary_verbosity.md>          | Unnecessary verbosity                              |
 | <useless_comments_and_docs.md>      | Useless comments, docstrings and documentation     |
