@@ -159,8 +159,9 @@ def replayPremisedPrograms (premises : HostPremises) (fuel : Nat) (source candid
     | .ok () candidateState => do
       let sourceChecked ← checkedProbeLink source
       let candidateChecked ← checkedProbeLink candidate
-      let some sourceSupported := replayPremisedDynamicWitness (premises := premises) fuel sourceChecked | none
-      let some candidateSupported := replayPremisedDynamicWitness (premises := premises) fuel candidateChecked | none
+      let allowLogical := source.modules.length == 1 && source.modules.all (fun m => m.imports.isEmpty)
+      let some sourceSupported := replayPremisedDynamicWitness (premises := premises) fuel allowLogical sourceChecked | none
+      let some candidateSupported := replayPremisedDynamicWitness (premises := premises) fuel allowLogical candidateChecked | none
       let some stateAgreement := premisedStateAgreement premises sourceState candidateState | none
       if exportsMatched : exportsMatchFrom sourceChecked candidateChecked then
         let semantics : EquivalentFor premises source candidate ∧ SameExports source candidate :=
