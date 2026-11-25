@@ -1,3 +1,4 @@
+import Std.Data.HashMap.Lemmas
 import EsmSplit.CoreJS.Iterator
 
 /-!
@@ -891,6 +892,32 @@ def declareTops : List (Nat × Stmt) → M W (List (Nat × List (Name × Addr)))
 (`var`) means the first one's binding. -/
 def Module.scope (frames : List (Nat × List (Name × Addr))) (m : Module) : List (Name × Addr) :=
   m.body.flatMap fun (id, _) => (frames.lookup id).getD []
+
+/-- Index the first frame for each ID, as in List.lookup (including on duplicate IDs). -/
+private def frameIndex (frames : List (Nat × List (Name × Addr))) :=
+  frames.foldr (fun (id, frame) (m : Std.HashMap Nat (List (Name × Addr))) => m.insert id frame) {}
+
+private theorem frameIndex_lookup (frames : List (Nat × List (Name × Addr))) (id : Nat) :
+    (frameIndex frames)[id]? = frames.lookup id := by
+  induction frames with
+  | nil => simp [frameIndex]
+  | cons p rest ih =>
+    obtain ⟨key, frame⟩ := p
+    change ((frameIndex rest).insert key frame)[id]? =
+      (match id == key with | true => some frame | false => rest.lookup id)
+    rw [Std.HashMap.getElem?_insert]
+    by_cases h : key = id
+    · subst id; simp
+    · rw [beq_eq_false_iff_ne.mpr h, beq_eq_false_iff_ne.mpr (Ne.symm h)]
+      exact ih
+
+private def Module.indexedScope (frames : List (Nat × List (Name × Addr))) (m : Module) : List (Name × Addr) :=
+  let index := frameIndex frames
+  m.body.flatMap fun (id, _) => (index[id]?).getD []
+
+@[csimp] private theorem Module.scope_eq_indexedScope : @Module.scope = @Module.indexedScope := by
+  funext frames m
+  simp only [Module.scope, Module.indexedScope, frameIndex_lookup]
 
 private def Program.resolveImportCell (P : Program) (frames : List (Nat × List (Name × Addr))) :
     Nat → String → Name → Except Abort Addr
