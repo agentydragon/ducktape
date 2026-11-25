@@ -141,6 +141,43 @@ for (const [i, source] of hostSources.entries()) {
   );
 }
 
+// Object rest excludes selected string keys and copies only enumerable own
+// properties, including symbols, after the selected getters have run.
+const objectRestSource = `
+  let trace = "";
+  const source = {
+    __proto__: { inherited: 8 },
+    get tab() { trace += "t"; return 3; },
+    get extra() { trace += "e"; return 4; },
+    [Symbol.iterator]: 7,
+    ["__proto__"]: 9
+  };
+  Object.defineProperty(source, "hidden", { value: 5, enumerable: false });
+  function pick({ tab: first, tab: second, ...rest }) {
+    var first;
+    return [first, second, rest];
+  }
+  const selected = pick(source), remaining = selected[2];
+  console.log(trace, selected[0], selected[1], remaining.extra, "tab" in remaining,
+    "hidden" in remaining, "inherited" in remaining, remaining[Symbol.iterator], remaining.__proto__,
+    Object.getPrototypeOf(remaining) === Object.getPrototypeOf({}), pick.length);
+  const copy = ({ ...rest }) => rest;
+  const chars = ({ "0": first, ...rest }) => [first, rest[1], "0" in rest];
+  const letters = chars("ab");
+  console.log(letters[0], letters[1], letters[2], copy(42).missing);
+  try { copy(null); } catch { console.log("null throws"); }
+  try { copy(); } catch { console.log("undefined throws"); }
+`;
+const [objectRest] = run([{ ...dumpSource(objectRestSource), symbolConstructor: true, iteratorSymbol: true }], true);
+const objectRestNode = spawnSync(process.execPath, ["--input-type=module", "-e", objectRestSource], {
+  encoding: "utf8",
+});
+assert.equal(objectRestNode.status, 0, objectRestNode.stderr);
+assert.deepEqual(
+  [objectRest.end, objectRest.detail, objectRest.out],
+  ["normal", "", objectRestNode.stdout.trimEnd().split("\n")]
+);
+
 // A callable in a parameter default comes before a callable in the body.
 // Distinct scripted results make both dispatch and lexical numbering observable.
 const scriptedSource =
