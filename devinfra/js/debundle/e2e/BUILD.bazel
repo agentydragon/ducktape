@@ -1319,7 +1319,10 @@ debundle_e2e_test(
 corpus_files(
     name = "corpus_files",
     srcs = glob(["cases/**"]),
-    visibility = ["//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__",
+    ],
 )
 
 rust_library(
