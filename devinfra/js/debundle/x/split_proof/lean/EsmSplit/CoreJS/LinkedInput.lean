@@ -109,7 +109,7 @@ private def BodyFormat.lowerDefault (format : BodyFormat) (profile : HostProfile
   return (s, name, sites.templates.toList)
 
 private def parse (format : BodyFormat) (profile : HostProfile) (path : String) (nodes : Array Json)
-    (base : Nat := 0) (origins : Option (Array Nat) := none) (provider : Bool := false) : Except String Parsed := do
+    (base : Nat := 0) (origins : Option (Array Nat) := none) (provider : Option String := none) : Except String Parsed := do
   let mut imports := #[]
   for j in nodes do
     if (← typ j) == "ImportDeclaration" then
@@ -125,7 +125,8 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
         | some id => pure id
         | none => throw "emitted body length differs from the placement"
     let decode (ast : Json) (exported : Bool) : Except String (Stmt × List Name × List TemplateSite) := do
-      format.lower profile names (← origin) (if provider then some (path, i) else none) ast exported
+      let unitOrigin ← origin
+      format.lower profile names unitOrigin (provider.map fun referrer => (referrer, unitOrigin - base)) ast exported
     match ← typ j with
     | "ImportDeclaration" => pure ()
     -- Neither statement changes the modeled state, so neither gets a unit.
@@ -162,17 +163,17 @@ private def Parsed.numbered (p : Parsed) (name : String) (base : Nat) : Module w
   body := p.units.map fun (i, s, _) => (base + i, s)
   exports := p.exports
 
-private def readProviders (format : BodyFormat) (profile : HostProfile) (providers : List (String × Json)) (base : Nat)
-    (entry : Option String := none) : Except String (List Module × List TemplateSite) := do
+private def readProviders (format : BodyFormat) (profile : HostProfile) (providers : List (String × Json))
+    (base : Nat) (roots : List String := []) : Except String (List Module × List TemplateSite) := do
   let mut templates := #[]
-  let names := providers.map Prod.fst
+  let names := roots ++ providers.map Prod.fst
   let mut modules := #[]
   let mut offset := base
   for (name, file) in providers do
     let nodes ← (ESTreeUnits.nodes file).mapError fun why => s!"{name}: {why}"
-    let p ← (parse format profile name nodes offset (provider := true)).mapError fun why => s!"{name}: {why}"
+    let p ← (parse format profile name nodes offset (provider := some name)).mapError fun why => s!"{name}: {why}"
     for req in p.imports do
-      unless names.contains req.source || entry == some req.source do
+      unless names.contains req.source do
         throw s!"{name}: missing provider dependency {req.source}"
     templates := templates ++ p.templates.toArray
     modules := modules.push (p.numbered name offset)
@@ -180,10 +181,11 @@ private def readProviders (format : BodyFormat) (profile : HostProfile) (provide
   return (modules.toList, templates.toList)
 
 private def readSplit (format : BodyFormat) (profile : HostProfile) (files : Json) (P : EsmSplit.Plan) (providers : List String) (original : Parsed)
-    (originalSyntax : Std.HashMap Nat Json) (m : EsmSplit.Module) (base : Nat := 0) : Except String (Module × List TemplateSite) := do
+    (originalSyntax : Std.HashMap Nat Json) (m : EsmSplit.Module) (base : Nat := 0)
+    (provider : Option String := none) : Except String (Module × List TemplateSite) := do
   let nodes ← ESTreeUnits.nodes (← files.getObjVal? m.name)
   let placed := m.stmts.filterMap fun i => originalSyntax[i]?.map (base + i, ·)
-  let p ← parse format profile m.name nodes (origins := some (placed.map Prod.fst).toArray)
+  let p ← parse format profile m.name nodes base (some (placed.map Prod.fst).toArray) provider
   let (external, glue) := p.imports.partition fun req => providers.contains req.source
   if m.name == P.entry then
     unless p.imports.take original.imports.length == original.imports && external == original.imports do
@@ -285,7 +287,7 @@ private structure Fragment where
   emittedTemplates : List TemplateSite
 
 private def decodeFragment (format : BodyFormat) (profile : HostProfile) (source files : Json) (P : EsmSplit.Plan)
-    (sourcePath : String) (providerNames : List String) (base : Nat) : Except String Fragment := do
+    (sourcePath : String) (providerNames : List String) (base : Nat) (provider : Option String := none) : Except String Fragment := do
   let fs := (← files.getObj?).toList.map Prod.fst
   EsmSplit.validateModulePaths (P.entry :: fs ++ providerNames)
   unless fs.Perm (P.mods.map (·.name)) && fs.contains P.entry do throw "output filenames differ from the plan"
@@ -297,16 +299,16 @@ private def decodeFragment (format : BodyFormat) (profile : HostProfile) (source
   for (j, i) in nodes.zipIdx do
     if ["ImportDeclaration", "ExportNamedDeclaration", "ExportDefaultDeclaration"].contains (← typ j) then
       unless entry.stmts.contains i do throw s!"original import or export unit {i} must stay in the entry"
-  let original ← parse format profile sourcePath nodes base
+  let original ← parse format profile sourcePath nodes base (provider := provider)
   if let .structural pivots _ := format then
-    let bodyIds := Std.HashSet.ofList (original.units.map (·.1))
+    let bodyIds := Std.HashSet.ofList (original.units.map fun u => base + u.1)
     for pivot in pivots do
       unless bodyIds.contains pivot do throw s!"pivot {pivot} is not an executable source unit"
   for req in original.imports do
     unless providerNames.contains req.source do throw s!"missing original dependency {req.source}"
   let originalSyntax := Std.HashMap.ofList (original.units.map fun (i, _, ast) => (i, ast))
   let split ← P.mods.mapM fun m =>
-    (readSplit format profile files P providerNames original originalSyntax m base).mapError fun why => s!"{m.name}: {why}"
+    (readSplit format profile files P providerNames original originalSyntax m base provider).mapError fun why => s!"{m.name}: {why}"
   return ⟨original.numbered P.entry base, split.map Prod.fst, nodes.size, original.templates, split.flatMap Prod.snd⟩
 
 private def decode (format : BodyFormat) (source providers files : Json) (P : EsmSplit.Plan)
@@ -379,10 +381,45 @@ def program (source providers : Json) (profile : HostProfile := .empty) (entry :
   let ps := (← providers.getObj?).toList
   for req in original.imports do
     unless ps.any (·.1 == req.source) do throw s!"missing original dependency {req.source}"
-  let (shared, providerSites) ← readProviders .linked profile ps nodes.size (some entry)
+  let (shared, providerSites) ← readProviders .linked profile ps nodes.size [entry]
   let p ← installTemplates { entry, modules := original.numbered entry 0 :: shared }
     (original.templates ++ providerSites)
   let _ ← scopes p
   return p
+
+/-- Lower both changed chunks against the same closure of providers and
+loader capabilities. The split provider keeps its original referrer and
+local ordinal even when its executable unit ID is rebased. -/
+def decodeJointDeployment (app provider : StaticSplit) (shared : Json) (inputs : LinkedDeployment.Input)
+    (profile : HostProfile) : Except String (Program × Program) := do
+  let names := (app.plan.mods ++ provider.plan.mods).map (·.name)
+  unless names.Nodup do throw "joint output path collision"
+  let others := (← shared.getObj?).toList
+  let otherNames := others.map Prod.fst
+  unless !names.any otherNames.contains do throw "shared provider overlaps joint output"
+  unless inputs.entry == app.plan.entry do throw "joint deployment root differs"
+  let access ← LinkedDeployment.check inputs app.source
+    (.mkObj ((provider.plan.entry, provider.source) :: others)) app.plan
+  let resources (path : String) := inputs.before[path]?
+  -- 'check' above already collected this provider's capabilities in the app
+  -- graph. Check that the editor split leaves its location-sensitive sites
+  -- in that very referrer, and that its new routes are fresh too.
+  let _ ← ModuleLocation.check provider.source provider.plan.entry provider.plan resources resources inputs.options
+  let moved (p : EsmSplit.Plan) (base : Nat) := Std.HashSet.ofList <|
+    (p.mods.filter (fun m => m.name != p.entry)).flatMap fun m => m.stmts.map (base + ·)
+  let a ← decodeFragment (.structural (moved app.plan 0) access) profile app.source app.files app.plan
+    app.plan.entry (provider.plan.entry :: otherNames) 0
+  let b ← decodeFragment (.structural (moved provider.plan a.unitCount) access) profile provider.source provider.files provider.plan
+    provider.plan.entry (app.plan.entry :: otherNames) a.unitCount (some provider.plan.entry)
+  let (fixed, fixedSites) ← readProviders (.structural {} access) profile others (a.unitCount + b.unitCount)
+    [app.plan.entry, provider.plan.entry]
+  let before ← installTemplates ⟨app.plan.entry, a.sourceModule :: b.sourceModule :: fixed⟩
+    (a.sourceTemplates ++ b.sourceTemplates ++ fixedSites)
+  let after ← installTemplates ⟨app.plan.entry, a.emitted ++ b.emitted ++ fixed⟩
+    (a.emittedTemplates ++ b.emittedTemplates ++ fixedSites)
+  let before ← access.attach before
+  let after ← access.attach after
+  checkScopes before after
+  return (before, after)
 
 end CoreJS.LinkedInput
