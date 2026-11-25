@@ -132,7 +132,7 @@ js_test(
         ("loops_test", 4),
         ("new_target_test", 3),
         ("numeric_property_keys_test", 2),
-        ("object_parameter_defaults_test", 2),
+        ("object_parameter_defaults_test", 4),
         ("pre_super_object_test", 5),
         ("private_elements_test", 4),
         ("optional_chain_test", 3),
