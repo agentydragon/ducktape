@@ -230,7 +230,8 @@ function translate(spec, chunk, statements, placement) {
 
 // ---------------------------------------------------------------- running
 
-const subprocessTimeoutMs = 30_000;
+// Keep Lean subprocesses bounded while allowing the slowest valid corpus cases to finish.
+const subprocessTimeoutMs = 90_000;
 
 function run(cmd, cmdArgs, options = {}) {
   const start = performance.now();

@@ -46,6 +46,7 @@ _EFFECTS_CASES_ENV = {
 js_test(
     name = "effects_cases_test",
     size = "medium",
+    timeout = "long",
     data = _EFFECTS_CASES_DATA,
     entry_point = "run.mjs",
     env = _EFFECTS_CASES_ENV,
