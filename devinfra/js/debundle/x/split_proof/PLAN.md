@@ -272,9 +272,8 @@ The broad Node comparison runs through `to_core.mjs`. [`corejs_ast_lowering_test
 
 **How.**
 
-1. Normalize the output path. With a trailing `/`, Lean's `FilePath.parent` returns the output directory itself, so staging lands inside it, and renaming the staging directory onto its own parent cannot succeed after the proof has passed.
-2. After printing into the staging directory, reparse and lower every module and compare the result with `Y`.
-3. Make `--check-output` call the same comparison.
+1. After printing into the staging directory, reparse and lower every module and compare the result with `Y`.
+2. Make `--check-output` call the same comparison.
 
 **Done when.** A printer change that drops required parentheses is refused at emission.
 
