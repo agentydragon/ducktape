@@ -94,6 +94,14 @@ def Env.capture (env : Env) (names : List Name) : Env where
   this := env.this
   home := env.home
 
+/-- A global environment's declarative bindings and object environment share one heap.
+The supplied object must be an ordinary modeled object with a complete property snapshot.
+`globalThis` can differ from that object (for example, a host global-this proxy). -/
+structure GlobalEnv where
+  declarative : List (Name × Addr)
+  object : Addr
+  globalThis : Val
+
 /-- What a callable object runs. `fields` are the instance fields of a class constructor. -/
 inductive Code where
   /-- An implicit derived constructor forwards to its current internal prototype. -/
@@ -452,6 +460,10 @@ def regexpGetters : List (String × RegExpGetter) := [
 
 def arrayIteratorProto : Addr := ⟨0, regexpProto.index + 1 + regexpGetters.length⟩
 
+/-- Reserved after the existing intrinsic objects. Hosts populate this ordinary object before use;
+an empty object describes an empty synthetic host, not an arbitrary real host. -/
+def globalObject : Addr := ⟨0, arrayIteratorProto.index + 1⟩
+
 def arrayIteratorPrototype : Obj :=
   { proto := some iteratorProto, props := hostMembers "ArrayIterator.prototype" ["next"] ++ [stringTag "Array Iterator"] }
 
@@ -482,7 +494,7 @@ def builtins : Array Obj := #[
     props := ("length", .data (.num 0) true false false) ::
       (hostMembers "Array.prototype" arrayProtoNames ++ [hostIterator "Array.prototype.values"]) },
   asyncFunctionPrototype, iteratorPrototype, generatorPrototype, generatorFunctionPrototype,
-  asyncIteratorPrototype, asyncGeneratorPrototype, asyncGeneratorFunctionPrototype, regexpPrototype] ++ (regexpGetters.map fun (k, g) => regexpGetterObject k g).toArray ++ #[arrayIteratorPrototype]
+  asyncIteratorPrototype, asyncGeneratorPrototype, asyncGeneratorFunctionPrototype, regexpPrototype] ++ (regexpGetters.map fun (k, g) => regexpGetterObject k g).toArray ++ #[arrayIteratorPrototype, { proto := none, props := [] }]
 
 /-! ## The host functions the world answers for -/
 
