@@ -172,7 +172,7 @@ if (includesCase("reached-retained-body")) {
 
 for (const args of [[], [literal("absent")]]) {
   for (const reached of [false, true]) {
-    const name = `opaque-error-${args.length}-${reached}`;
+    const name = `exported-error-${args.length}-${reached}`;
     if (!includesCase(name)) continue;
     const construction = { type: "NewExpression", callee: id("Error"), arguments: args };
     const source = program([
@@ -184,7 +184,8 @@ for (const args of [[], [literal("absent")]]) {
     assert.match(test.run().reason, /unsupported global Error/);
     const verdict = test.run("--host-contract", profile);
     if (reached) {
-      assert.match(verdict.reason, /unknown.*ambient constructor Error is reached/);
+      assert.equal(verdict.reason_code, "probe_unknown");
+      assert.match(verdict.reason, /native Error escapes linked initialization with an unmodeled stack/);
       assert(!existsSync(test.out));
     } else {
       assert.equal(verdict.status, "certified", JSON.stringify(verdict));
@@ -197,14 +198,18 @@ for (const args of [[], [literal("absent")]]) {
   }
 }
 
-// A catch cannot turn unknown host construction into a proved normal return.
-if (includesCase("caught-opaque-error")) {
+// An argument that throws enters the catch before the Error constructor runs.
+if (includesCase("caught-error-argument")) {
   const caught = fixture(
-    "caught-opaque-error",
+    "caught-error-argument",
     'const read = () => { try { throw new Error((() => { throw "argument"; })()); } catch { return 7; } }; const result = read(); export { result };'
   );
-  assert.match(caught.run("--host-contract", profile).reason, /unknown.*ambient constructor Error is reached/);
-  assert(!existsSync(caught.out));
+  const verdict = caught.run("--host-contract", profile);
+  assertCertified(verdict, JSON.stringify(verdict));
+  assert.deepEqual(caught.run("--host-contract", profile, "--check-output"), verdict);
+  for (const file of [caught.sourceFile, path.join(caught.out, entry)]) {
+    assert.equal((await import(pathToFileURL(file).href)).result, 7);
+  }
 }
 
 if (includesCase("shadowed-host-bindings")) {
@@ -277,7 +282,8 @@ for (const pageSkipsError of [true, false]) {
   const out = path.join(scope, "out");
   const { verdict, log } = lower(files.sourceFile, files.specFile, out, ["--host-contract", profile]);
   if (!pageSkipsError) {
-    assert.match(verdict.reason, /split reached an unknown result.*ambient constructor Error is reached/);
+    assert.equal(verdict.reason_code, "probe_throw", log);
+    assert.equal(verdict.reason, "split threw during linked initialization", log);
     assert(!existsSync(out));
     continue;
   }

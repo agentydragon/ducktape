@@ -44,6 +44,9 @@ def bindingIdentity (profile : HostProfile) (name : String) : Option String := d
 
 def identity (profile : HostProfile) : HostRef → Option String
   | .binding name => profile.bindingIdentity name
+  | .nativeErrorConstructor => do
+    guard (profile == .browserPage)
+    return "intrinsic.Error"
   | .property "window" name => do
     guard (profile == .browserPage)
     profile.bindingIdentity name
@@ -59,7 +62,7 @@ def identity (profile : HostProfile) : HostRef → Option String
 /-- An allowed opaque constructor can be retained in deferred code. A reached lookup ends
 the modeled execution before argument evaluation, even inside a catch clause. -/
 def opaqueConstructor : HostProfile → String → Bool
-  | .browserPage, name => ["Date", "Error", "RegExp", "Set", "URL"].contains name
+  | .browserPage, name => ["Date", "RegExp", "Set", "URL"].contains name
   | _, _ => false
 
 end HostProfile
@@ -81,9 +84,13 @@ def assumptions (p : HostPremises) : List String :=
   (p.typeofBindings.map fun (name, value) =>
     s!"typeof {name} is {value} without observable effects throughout initialization") ++
   (p.refs.map fun (ref, identity) =>
+    if ref == .nativeErrorConstructor && identity == "intrinsic.Error" then
+      "the selected page Error is the intrinsic Error constructor and construction with no options and an omitted, undefined, or string message has no observable effects beyond the fresh Error"
+    else
     let read := match ref with
       | .binding name => name
       | .property receiver key => receiver ++ "." ++ key
+      | .nativeErrorConstructor => "the native Error constructor observation"
     let result := if ref == .property "Symbol" "iterator" && identity == "Symbol.iterator" then
       "the well-known iterator symbol"
     else if ref == .property "Symbol" "toStringTag" && identity == "Symbol.toStringTag" then

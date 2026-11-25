@@ -114,6 +114,8 @@ theorem frames_talk (r : Nat) (R : Addr → Prop) (told : Told) : Frames r R (ta
 
 theorem frames_toW (r : Nat) (R : Addr → Prop) (v : Val) : Frames r R (toW v : M W WVal) := by
   cases v <;> try first | exact frames_pure r R _ | exact frames_unknown r R _
+  case error kind msg =>
+    cases kind <;> first | exact frames_pure r R _ | exact frames_unknown r R _
   case obj a =>
     constructor
     · intro s H C hr
@@ -135,7 +137,7 @@ theorem frames_fromW (r : Nat) (R : Addr → Prop) (v : WVal) : Frames r R (from
     · intro s hr
       simp only [fromW]
       split <;> exact Preserves.refl r R s
-  | error => exact frames_pure r R _
+  | error kind _ => cases kind <;> first | exact frames_pure r R _ | exact frames_unknown r R _
   | host => exact frames_pure r R _
 
 theorem frames_toldOf (r : Nat) (R : Addr → Prop) (result : Except Val Told) :

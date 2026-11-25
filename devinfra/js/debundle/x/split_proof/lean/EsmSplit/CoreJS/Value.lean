@@ -30,6 +30,9 @@ structure Addr where
 
 inductive ErrorKind where
   | type | reference | syntax | range | uri
+  /-- A freshly constructed native Error with an opaque stack and prototype. The
+  address is an identity token. Its message is available only if installed by construction. -/
+  | native (identity : Addr) (ownMessage : Bool)
   deriving DecidableEq, Repr
 
 inductive Val where
@@ -116,12 +119,44 @@ structure Obj where
   /-- An array: defining a property on it changes `length`, which is not modelled. -/
   array : Bool := false
   regexp : Option RegExpData := none
+  /-- A reserved identity, without an address the evaluator can dereference as an object value. -/
+  errorIdentity : Bool := false
 
 /-- A binding: `value` is `none` until it is initialized (the temporal dead zone). -/
 structure Binding where
   value : Option Val
   mutable : Bool
   deriving DecidableEq
+
+inductive HeapNode where
+  | obj (addr : Addr)
+  | cell (addr : Addr)
+  deriving DecidableEq, Hashable, Repr
+
+def HeapNode.addr : HeapNode → Addr
+  | .obj a | .cell a => a
+
+/-- Only object values grant access to heap records. Symbol addresses carry identity only. -/
+def Val.nodes : Val → List HeapNode
+  | .obj a => [.obj a]
+  | _ => []
+
+def Env.nodes (env : Env) : List HeapNode := env.vars.map (fun p => .cell p.2) ++ (env.home.toList.map .obj ++ env.this.nodes)
+
+def Code.nodes : Code → List HeapNode
+  | .derived => []
+  | .closure _ env _ | .derivedFields env _ | .derivedBody _ _ _ env _ => env.nodes
+  | .opaque _ _ cells _ => cells.filterMap (fun a => a.map HeapNode.cell)
+  | .host _ => []
+
+def Property.nodes : Property → List HeapNode
+  | .data v _ _ _ => v.nodes
+  | .accessor get set _ _ => get.nodes ++ set.nodes
+
+def Obj.nodes (o : Obj) : List HeapNode :=
+  o.proto.toList.map HeapNode.obj ++ o.props.flatMap (fun p => p.2.nodes) ++ o.code.toList.flatMap Code.nodes
+
+def Binding.nodes (b : Binding) : List HeapNode := b.value.toList.flatMap Val.nodes
 
 /-- A primitive value: what the program and the host hand each other. -/
 inductive Primitive where
@@ -201,6 +236,8 @@ inductive HostResult where
 inductive HostRef where
   | binding (name : String)
   | property (receiver key : String)
+  /-- The constructor selected through the page's Error reference has the supported native behavior. -/
+  | nativeErrorConstructor
   deriving DecidableEq, Repr
 
 /-- A direct host read can return an opaque identity or the exact bits of a Number.
@@ -543,6 +580,7 @@ def worldArgs (name : String) (this : Val) (args : List Val) : Option (Primitive
 def fromWorld (s : State W) : HostResult → Res W Val
   | .ret v => .ok v.val s
   | .throw v => .throw v.val s
+  | .error (.native ..) _ => .unknown "the host cannot supply a native Error identity" s
   | .error kind msg => .throw (.error kind msg) s
   | .unknown why => .unknown why s
 
@@ -605,6 +643,7 @@ def typeOf (s : State W) : Val → Except Abort String
 /-- `===`. Whether two error objects of the engine are one object is not recorded. -/
 def strictEq : Val → Val → Except Abort Bool
   | .host name, _ | _, .host name => inspectsHost name
+  | .error (.native a _) _, .error (.native b _) _ => pure (a == b)
   | .error .., .error .. => .error (.unknown "two engine errors are compared")
   | .undef, .undef | .null, .null => pure true
   | .wellKnownSymbol a, .wellKnownSymbol b => pure (a == b)
@@ -629,6 +668,7 @@ def looseEq (a b : Val) : Except Abort Bool :=
   match a, b with
   | .host name, _ | _, .host name => inspectsHost name
   | .obj x, .obj y => pure (x == y)
+  | .error (.native a _) _, .error (.native b _) _ => pure (a == b)
   | .error .., .error .. => .error (.unknown "two engine errors are compared")
   | .str x, .str y => pure (x == y)
   | .wellKnownSymbol a, .wellKnownSymbol b => pure (a == b)
@@ -844,6 +884,7 @@ def readHostRef (ref : HostRef) : M W Val := fun s =>
     let name := match ref with
       | .binding n => n
       | .property receiver key => s!"{receiver}.{key}"
+      | .nativeErrorConstructor => "native Error constructor"
     .unknown s!"unsupported host reference {name}" s
 
 /-- Receivers whose property lookup can be answered by a host observation.
@@ -858,6 +899,13 @@ def hostMember (name k : String) : M W Val :=
     readHostRef (.property name k)
   else unknown s!"a property of host value {name}"
 
+/-- A native Error has a portable own message when supplied to the constructor.
+Other reads can inspect engine-defined properties or the host prototype. -/
+def getNativeErrorProp (hasMessage : Bool) (message : String) : PropertyKey → M W Val
+  | .str "message" => if hasMessage then pure (.str message) else unknown "inherited Error.message is inspected"
+  | .str "stack" => unknown "native Error.stack depends on engine behavior and source locations"
+  | _ => unknown "an unmodeled native Error property is inspected"
+
 /-- `base[key]`. A getter runs with `base` as `this`. -/
 def getProp (call : Call W) (base key : Val) : M W Val := do
   match base with
@@ -871,6 +919,7 @@ def getProp (call : Call W) (base key : Val) : M W Val := do
   | .num _ => protoProp call "Number.prototype" numberProtoNames base (← toKey key)
   | .bool _ => protoProp call "Boolean.prototype" booleanProtoNames base (← toKey key)
   | .wellKnownSymbol _ | .symbol _ => unknown "a property of a symbol primitive"
+  | .error (.native _ hasMessage) message => getNativeErrorProp hasMessage message (← toKey key)
   | .error .. => unknown "a property of an engine error"
   | .host name =>
     match ← toKey key with
@@ -1020,7 +1069,7 @@ def ownPropertyKeys (props : List (PropertyKey × Property)) : List PropertyKey 
     props.filterMap fun (key, _) => if key.string?.isNone then some key else none
 
 private def ordinaryForIn (o : Obj) : Bool :=
-  !o.array && o.code.isNone && o.regexp.isNone
+  !o.array && o.code.isNone && o.regexp.isNone && !o.errorIdentity
 
 /-- Own string keys in order, with enumerability retained for inherited shadowing. -/
 def forInLevels : Nat → Addr → M W (List (Addr × List (String × Bool)))
@@ -1139,6 +1188,20 @@ def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
     defineOwn a k (← toDesc call (arg 2))
     pure (arg 0)
 
+/-- The profile can model direct construction with no options and no message
+coercion. The result reserves a fresh identity without simulating stack capture. -/
+def constructNativeError (target : Val) (args : List Val) : M W Val := do
+  if target != .host "window.Error" then unknown "a derived native Error is constructed" else do
+    let message ← lift (match args with
+      | [] | [.undef] => .ok none
+      | [.str msg] => .ok (some msg)
+      | _ => .error (.unknown "native Error construction requires an omitted, undefined, or string message and no options"))
+    match ← readHostRef .nativeErrorConstructor with
+    | .host "intrinsic.Error" =>
+      let identity ← alloc { proto := none, props := [], errorIdentity := true }
+      pure (.error (.native identity message.isSome) (message.getD ""))
+    | _ => unknown "unsupported native Error constructor"
+
 /-! ## The world, stage two: opaque code
 
 The world runs opaque code as a conversation (`converse` in `Eval.lean`): it makes a request, the model carries it out
@@ -1154,6 +1217,7 @@ def toW (v : Val) : M W WVal :=
     match s.world.handed.findIdx? (· == a) with
     | some k => .ok (.handle k) s
     | none => .ok (.handle s.world.handed.size) { s with world := { s.world with handed := s.world.handed.push a } }
+  | .error (.native ..) _ => unknown "native Error crosses the opaque host boundary"
   | .error kind msg => pure (.error kind msg)
   | .host name => pure (.host name)
   | .undef => pure (.prim .undef)
@@ -1172,6 +1236,7 @@ def fromW : WVal → M W Val
     match s.world.handed[k]? with
     | some a => .ok (.obj a) s
     | none => .unknown "the world names an object it was not handed" s
+  | .error (.native ..) _ => unknown "the host cannot supply a native Error identity"
   | .error kind msg => pure (.error kind msg)
   | .host name => pure (.host name)
 
