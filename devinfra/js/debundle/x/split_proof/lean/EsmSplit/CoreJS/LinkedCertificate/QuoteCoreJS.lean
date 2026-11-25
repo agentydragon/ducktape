@@ -21,7 +21,7 @@ deriving instance Lean.ToExpr for Prim
 deriving instance Lean.ToExpr for FuncKind
 deriving instance Lean.ToExpr for OpaqueRun
 deriving instance Lean.ToExpr for OpaqueHoistKind
-deriving instance Lean.ToExpr for Expr, Target, PropDef, ClassMember, Func, BindingPattern, Stmt
+deriving instance Lean.ToExpr for Expr, SuperCall, Target, PropDef, ClassMember, Func, BindingPattern, Stmt
 deriving instance Lean.ToExpr for Import
 deriving instance Lean.ToExpr for Module
 deriving instance Lean.ToExpr for Program
