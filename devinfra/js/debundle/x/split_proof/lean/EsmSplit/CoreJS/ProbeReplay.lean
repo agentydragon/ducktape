@@ -400,6 +400,16 @@ private theorem replay_bind {source target : World} {α β : Type}
   | unknown why next => rfl
   | fuel => rfl
 
+private theorem replay_attempt {source target : World} {α : Type}
+    {m : M source α} {n : M target α} (same : ReplayEquivalent m n) :
+    ReplayEquivalent (attempt m) (attempt n) := by
+  intro s
+  unfold attempt
+  rw [same s]
+  cases m s <;> rfl
+
+#print axioms replay_attempt
+
 private theorem replay_map {source target : World} {α β : Type} (f : α → β)
     {m : M source α} {n : M target α} (same : ReplayEquivalent m n) :
     ReplayEquivalent (f <$> m) (f <$> n) := by
@@ -895,6 +905,133 @@ private structure ReplaySuccess {source : World} {α : Type}
   next : State source
   run : m source s = .ok value next
   replay : ∀ target, m target (replaceWorld target s) = .ok value (replaceWorld target next)
+
+/-- The actual reached result, including a thrown value and its state, or an
+unknown/fuel result. The witness does not change the computation it records. -/
+private structure ReplayReached {source : World} {α : Type}
+    (m : (w : World) → M w α) (s : State source) where
+  result : Res source α
+  run : m source s = result
+  replay : ∀ target, m target (replaceWorld target s) = transportResult target result
+
+private def ReplaySuccess.toReached {source : World} {α : Type}
+    {m : (w : World) → M w α} {s : State source} (run : ReplaySuccess m s) : ReplayReached m s where
+  result := .ok run.value run.next
+  run := run.run
+  replay := by intro target; exact run.replay target
+
+private def replayReachedOfEquivalent {source : World} {α : Type}
+    (m : (w : World) → M w α) (s : State source)
+    (same : ∀ target, ReplayEquivalent (m source) (m target)) : ReplayReached m s where
+  result := m source s
+  run := rfl
+  replay := by intro target; exact same target s
+
+private def replayReachedBind {source : World} {α β : Type}
+    {m : (w : World) → M w α} {f : (w : World) → α → M w β} {s : State source}
+    (first : ReplayReached m s)
+    (next : ∀ a state, first.result = .ok a state → ReplayReached (fun w => f w a) state) :
+    ReplayReached (fun w => m w >>= f w) s :=
+  match h : first.result with
+  | .ok value state =>
+    let second := next value state h
+    { result := second.result
+      run := by simp only [M.bind_apply, first.run, h, second.run]
+      replay := by intro target; simp only [M.bind_apply, first.replay target, h, transportResult, second.replay target] }
+  | .throw value state =>
+    { result := .throw value state
+      run := by simp only [M.bind_apply, first.run, h]
+      replay := by intro target; simp only [M.bind_apply, first.replay target, h, transportResult] }
+  | .unknown why state =>
+    { result := .unknown why state
+      run := by simp only [M.bind_apply, first.run, h]
+      replay := by intro target; simp only [M.bind_apply, first.replay target, h, transportResult] }
+  | .fuel =>
+    { result := .fuel
+      run := by simp only [M.bind_apply, first.run, h]
+      replay := by intro target; simp only [M.bind_apply, first.replay target, h, transportResult] }
+
+private def replayReachedAttempt {source : World} {α : Type}
+    {m : (w : World) → M w α} {s : State source} (run : ReplayReached m s) :
+    ReplayReached (fun w => attempt (m w)) s where
+  result := attempt (m source) s
+  run := rfl
+  replay := by
+    intro target
+    simp only [attempt, run.replay target, run.run]
+    cases run.result <;> rfl
+
+private theorem replayReachedCaught {source : World} {α : Type}
+    {m : (w : World) → M w α} {s : State source} (run : ReplayReached m s)
+    {value : Val} {state : State source} (thrown : run.result = .throw value state) (target : World) :
+    attempt (m target) (replaceWorld target s) = .ok (.error value) (replaceWorld target state) := by
+  have replay := (replayReachedAttempt run).replay target
+  simpa only [replayReachedAttempt, attempt, run.run, thrown, transportResult] using replay
+
+private theorem replayReachedUnknown {source : World} {α : Type}
+    {m : (w : World) → M w α} {s : State source} (run : ReplayReached m s)
+    {why : String} {state : State source} (unknown : run.result = .unknown why state) (target : World) :
+    attempt (m target) (replaceWorld target s) = .unknown why (replaceWorld target state) := by
+  have replay := (replayReachedAttempt run).replay target
+  simpa only [replayReachedAttempt, attempt, run.run, unknown, transportResult] using replay
+
+private theorem replayReachedFuel {source : World} {α : Type}
+    {m : (w : World) → M w α} {s : State source} (run : ReplayReached m s)
+    (exhausted : run.result = .fuel) (target : World) :
+    attempt (m target) (replaceWorld target s) = .fuel := by
+  have replay := (replayReachedAttempt run).replay target
+  simpa only [replayReachedAttempt, attempt, run.run, exhausted, transportResult] using replay
+
+#print axioms replayReachedCaught
+#print axioms replayReachedUnknown
+#print axioms replayReachedFuel
+
+private def attemptExampleState : State World.probe where
+  heap := #[]
+  cells := #[#[{ value := some (.bool false), mutable := true }]]
+  region := 0
+  out := #[]
+  world := { state := (), handed := #[] }
+
+private def attemptExampleAfter : State World.probe :=
+  { attemptExampleState with cells := #[#[{ value := some (.bool true), mutable := true }]] }
+
+private def attemptExampleWrite (w : World) : M w Unit := setCell ⟨0, 0⟩ (.bool true)
+private def attemptExampleThrow (w : World) : M w Unit := throwVal (.str "caught")
+
+/-- Catching a throw retains the cell write that preceded it in every world. -/
+theorem replayAttemptCaughtMutation (target : World) :
+    attempt (do attemptExampleWrite target; attemptExampleThrow target) (replaceWorld target attemptExampleState) =
+        .ok (.error (.str "caught")) (replaceWorld target attemptExampleAfter) ∧
+      attemptExampleAfter.cellAt ⟨0, 0⟩ = some { value := some (.bool true), mutable := true } := by
+  let first : ReplaySuccess attemptExampleWrite attemptExampleState := {
+    value := ()
+    next := attemptExampleAfter
+    run := by rfl
+    replay := by intro target; rfl }
+  let run : ReplayReached (fun w => do attemptExampleWrite w; attemptExampleThrow w) attemptExampleState :=
+    replayReachedBind (f := fun w _ => attemptExampleThrow w) first.toReached (by
+      intro value state h
+      cases value
+      have sameState : state = attemptExampleAfter := by cases h; rfl
+      subst state
+      exact replayReachedOfEquivalent attemptExampleThrow attemptExampleAfter (by intro target state; rfl))
+  have thrown : run.result = .throw (.str "caught") attemptExampleAfter := by rfl
+  exact ⟨replayReachedCaught run thrown target, rfl⟩
+
+/-- `attempt` cannot turn an unknown result or exhausted fuel into a catch. -/
+theorem replayAttemptUnknownAndFuel (target : World) :
+    attempt (unknown "unknown" : M target Unit) (replaceWorld target attemptExampleState) =
+        .unknown "unknown" (replaceWorld target attemptExampleState) ∧
+      attempt (outOfFuel : M target Unit) (replaceWorld target attemptExampleState) = .fuel := by
+  let unknownRun := replayReachedOfEquivalent (fun w => (unknown "unknown" : M w Unit))
+    attemptExampleState (fun _ => replay_unknown "unknown")
+  let fuelRun := replayReachedOfEquivalent (fun w => (outOfFuel : M w Unit))
+    attemptExampleState (fun _ => replay_outOfFuel)
+  exact ⟨replayReachedUnknown unknownRun rfl target, replayReachedFuel fuelRun rfl target⟩
+
+#print axioms replayAttemptCaughtMutation
+#print axioms replayAttemptUnknownAndFuel
 
 private def replaySuccessOfPure {source : World} {α : Type} (value : α) (s : State source) :
     ReplaySuccess (fun w => (pure value : M w α)) s :=
