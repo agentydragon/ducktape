@@ -1257,13 +1257,4 @@ def unit (j : Json) : Except String (Option Stmt × List (Name × Name)) := do
     return (none, names)
   | _ => return (some (← statementWith expr (declaration []) false j), [])
 
-def program (asts : Array Json) : Except String Program := do
-  let mut body := #[]
-  let mut exports := #[]
-  for (j, i) in asts.zipIdx do
-    let (s, names) ← (unit j).mapError fun why => s!"statement {i}: {why}"
-    if let some st := s then body := body.push (i, st)
-    exports := exports ++ names.toArray
-  return { entry := "main", modules := [{ name := "main", imports := [], body := body.toList, exports := exports.toList }] }
-
 end CoreJS.FromESTree

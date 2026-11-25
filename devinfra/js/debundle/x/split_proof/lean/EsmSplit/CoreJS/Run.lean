@@ -14,8 +14,10 @@ import EsmSplit.CoreJS.Fragment
 statement it ended in; `order` is the order in which the modules run; `state` is a hash of every object and binding
 of the final state, with its address.
 
-`corejs --ast dumps.jsonl` runs the same interpreter on annotated ESTree dumps, one module per line.
-An unsupported AST produces a `malformed` result with its statement index and reason.
+`corejs --ast dumps.jsonl` runs the same interpreter on annotated ESTree dumps. Each line is an entry module,
+optionally with `"providers"`: its relative dependencies by resolved filename. The entry point in
+`CoreJSMain.lean` lowers them through `LinkedInput.program`, the lowering that certification uses.
+An unsupported AST produces a `malformed` result with its reason.
 
 **The world of a run** is a recording. A program may come with `"world": [call, …]`, the calls of host functions that
 a run of the program in Node made, in order, each with how it ended. The model runs in the world that answers exactly
@@ -482,10 +484,6 @@ def main (args : List String) : IO UInt32 := do
     match Json.parse (← IO.FS.readFile programFile) >>= Decode.program >>= (moveCensus · lines) with
     | .ok report => IO.println report; pure 0
     | .error msg => IO.eprintln msg; pure 1
-  | ["--ast", file] =>
-    for line in (← IO.FS.lines file) do
-      IO.println (runLine 100000 line fun j => ESTreeUnits.nodes j >>= FromESTree.program)
-    pure 0
   | [file] | [file, "--fuel", _] =>
     let fuel := (args[2]?.bind String.toNat?).getD 100000
     for line in (← IO.FS.lines file) do

@@ -95,6 +95,8 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
       format.lower profile names origin (if provider then some (path, i) else none) ast exported
     match ← typ j with
     | "ImportDeclaration" => pure ()
+    -- Neither statement changes the modeled state, so neither gets a unit.
+    | "EmptyStatement" | "DebuggerStatement" => pure ()
     | "ExportNamedDeclaration" =>
       ModuleInput.noAttributes j
       unless (← j.getObjVal? "source") == .null do throw "unsupported re-export from another module"
@@ -280,5 +282,19 @@ def decodeStaticSplits (app provider : StaticSplit) : Except String (Program × 
   let after : Program := ⟨app.plan.entry, a.emitted ++ b.emitted⟩
   checkScopes before after
   return (before, after)
+
+/-- Lower an unsplit module graph with the linked rules. The entry module is `main`; its units keep
+their source ordinals, and provider units follow them. Linking checks the same scopes and exports
+as `decodePair`. -/
+def program (source providers : Json) (profile : HostProfile := .empty) : Except String Program := do
+  let nodes ← ESTreeUnits.nodes source
+  let original ← parse .linked profile "bundle.mjs" nodes
+  let ps := (← providers.getObj?).toList
+  for req in original.imports do
+    unless ps.any (·.1 == req.source) do throw s!"missing original dependency {req.source}"
+  let shared ← readProviders .linked profile ps nodes.size
+  let p : Program := { entry := "main", modules := original.numbered "main" 0 :: shared }
+  let _ ← scopes p
+  return p
 
 end CoreJS.LinkedInput

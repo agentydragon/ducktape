@@ -471,7 +471,7 @@ lean_binary(
         "//devinfra/js/debundle/x/split_proof/model:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
     ],
-    deps = [":corejs_runtime"],
+    deps = [":corejs_linked_input"],
 )
 
 lean_axiom_test(
