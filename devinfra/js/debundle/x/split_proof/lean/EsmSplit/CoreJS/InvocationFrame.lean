@@ -292,7 +292,8 @@ theorem constructTarget_reachFrame_of_steps {r R cells A n} (away : Away r R A)
             | explicit es => exact evalArgsFrame env es he
             | conditional choice yes no =>
               apply (reachFrame_readVar away env choice he).bind
-              intro branch _
+              intro branch safeBranch
+              clear safeBranch
               cases branch <;> try exact reachFrame_unknown r R cells A _ _
               case bool chosen =>
                 cases chosen
