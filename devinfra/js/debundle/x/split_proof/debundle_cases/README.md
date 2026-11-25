@@ -34,9 +34,11 @@ DEBUNDLE_RESOLVER=/absolute/path/to/debundle_resolve_placement node run_cases.mj
 ## Which accepted cases have artifact certificates?
 
 [Per-case certificate results](results/certificates.jsonl) are separate from the diagnostic report.
-Of 122 saved `agree-accept` cases, 106 certified with the structural checker, passed a fresh
+Of 122 saved `agree-accept` cases, 107 certified with the structural checker, passed a fresh
 `--check-output` on the published files, and matched the fixture's expected stdout and exit status
-in Node for both original and emitted entry. These certificates request **normal completion**
+in Node for both original and emitted entry. With `privateEntryBody: true`, the planner may split the declaration prefix of the entry into
+a private implementation module to keep glue exports off the public entry namespace. The
+export-alias collision case exercises this layout. These certificates request **normal completion**
 under the default host profile; no fixture-specific host assumptions are supplied. This checks the
 diagnostic runner's stdout observation, not every Rust export or probe assertion.
 
@@ -53,14 +55,10 @@ CLI. It tries the structural checker first and the default checker on emission r
 tree that fails recheck is an error. Review a new census before updating the report: keep existing
 successes and add newly certified cases.
 
-### What to do about the 16 refusals
+### What to do about the 15 refusals
 
 These are first blockers, not claims that the splits are safe:
 
-- **Entry export mismatch (1):** start with `emission/residual_export_alias_collision`. The source
-  exports `X as av` and separately declares a local `av`. The candidate exposes an extra
-  `av$1` live cell. Inspect the emitted linkage, fix the planner's public surface, and verify
-  the entry namespace. Matching stdout misses this difference.
 - **Provider layout (1):** `chunk_renames/named_imports` imports `../vendor/entry.js` from
   `static/app.js`. Represent both routes in a deployment rooted above `static/` and rerun.
 - **Namespace imports (2):** the `member_of_module` cases use `import * as`. Model namespace
