@@ -204,7 +204,7 @@ private def linkedObjectPattern (j : Json) (binding : Json → Except String α)
     return (key, ← p.getObjVal? "value" >>= binding)
 
 private def linkedPatternIdentifier (binder : Json → Except String Name) (target : Json) : Except String Name := do
-  unless (← field target "type") == "Identifier" do throw "expected an identifier in object pattern"
+  unless (← field target "type") == "Identifier" do throw "expected an identifier in binding pattern"
   binder target
 
 private def splitBindingDefault (j : Json) : Except String (Json × Option Json) := do
@@ -215,6 +215,31 @@ private def splitBindingDefault (j : Json) : Except String (Json × Option Json)
 private def linkedParameterBinding (j : Json) : Except String (Name × Option Json) := do
   let (target, fallback) ← splitBindingDefault j
   return (← linkedPatternIdentifier localBinding target, fallback)
+
+/-- A trailing rest binding with static exclusions and no parameter expressions. -/
+private def linkedObjectRestParameter (j : Json) : Except String (List (Name × Name) × Name) := do
+  let props ← j.getObjValAs? (Array Json) "properties"
+  let some tail := props.back? | throw "expected an object rest parameter"
+  unless (← field tail "type") == "RestElement" do throw "expected an object rest parameter"
+  let rest ← tail.getObjVal? "argument" >>= localBinding
+  let selected := props.pop
+  let fields ← if selected.isEmpty then pure [] else do
+    let object := Json.obj ((← j.getObj?).insert "properties" (.arr selected))
+    linkedObjectPattern object linkedParameterBinding
+  let fields ← fields.mapM fun (key, name, fallback) => do
+    if fallback.isSome then throw "unsupported default in object rest parameter"
+    return (key, name)
+  return (fields, rest)
+
+/-- Flat rest-array bindings still use the array iterator, including for elisions. -/
+private def linkedRestArrayPattern (j : Json) : Except String BindingPattern := do
+  unless (← field j "type") == "ArrayPattern" do throw "expected an array rest pattern"
+  let elements ← j.getObjValAs? (List Json) "elements"
+  let items ← elements.mapM fun elem => do
+    if elem == .null then return none
+    let name ← linkedPatternIdentifier localBinding elem
+    return some (.name name)
+  return .array items none
 
 private def hasObjectParameterDefault (param : Json) : Bool :=
   (field param "type").toOption == some "ObjectPattern" &&
@@ -624,6 +649,19 @@ private def linkedArgument (lower : Json → Except String Expr) (j : Json) : Ex
   if (← field j "type") == "SpreadElement" then return .spreadArg (← lower (← j.getObjVal? "argument"))
   lower j
 
+/-- Primitive constant operands cannot observe the array's not-yet-exposed allocation. -/
+private def sparseConstant (j : Json) : Bool := Id.run do
+  if j == .null then return true
+  if (field j "type").toOption == some "Literal" then
+    return ((field j "lit").toOption.bind fun key => (literal key).toOption).isSome
+  if (field j "type").toOption == some "Identifier" && (field j "k").toOption == some "G" then
+    return (field j "name").toOption.any fun name => ["undefined", "NaN", "Infinity"].contains name
+  if (field j "type").toOption == some "UnaryExpression" && (field j "operator").toOption == some "-" then
+    let arg := (j.getObjVal? "argument").toOption.getD .null
+    return (field arg "type").toOption == some "Literal" &&
+      ((field arg "lit").toOption.any fun key => key.startsWith "n:")
+  return false
+
 /-- Named defaults initialize lexical parameter cells in order from the raw argument slots.
 Ordinary functions then enter a body block; derived constructors run their prefix before super. -/
 private inductive LinkedFunctionParts where
@@ -732,6 +770,11 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
   | "ArrayExpression" =>
     let elements ← j.getObjValAs? (List Json) "elements"
     let lower := linkedExpr profile imports inFunction ""
+    if elements.contains .null then
+      unless elements.all sparseConstant do throw "unsupported array hole"
+      let holes := (elements.zipIdx.filterMap fun (j, i) => if j == .null then some i else none)
+      let values ← elements.mapM fun j => if j == .null then pure .undef else lower j
+      return .prim (.sparseArray holes) values
     return .arr (← elements.mapM (linkedArgument lower))
   | "TaggedTemplateExpression" =>
     let slot ← field j ":template-binding"
@@ -938,6 +981,20 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
         let value ← fallback.mapM (linkedExpr profile imports true x)
         initializers := initializers.push (.decl .let_ x (withBindingDefault slot value))
     | "ObjectPattern" =>
+      let props ← target.getObjValAs? (Array Json) "properties"
+      if props.back?.any (fun p => (field p "type").toOption == some "RestElement") then
+        if hasDefaults then
+          return .complete (← deferPattern "unsupported defaults with object rest parameters")
+        let (fields, restName) ← match linkedObjectRestParameter target with
+          | .ok result => pure result
+          | .error reason => return .complete (← deferPattern reason)
+        slots := slots.push slot
+        bound := (bound ++ (fields.map Prod.snd).toArray).push restName
+        let bindings := fields.map fun (key, name) => (Expr.str key, BindingPattern.name name)
+        -- Even a rest-only pattern checks coercibility before copying properties.
+        initializers := initializers.push (.bind .var (.object bindings) (.var slot))
+        initializers := initializers.push (.decl .var restName (.obj [.spread (.var slot) (fields.map Prod.fst)]))
+        continue
       let fields ← match linkedObjectPattern target linkedParameterBinding with
         | .ok fields => pure fields
         | .error reason => return .complete (← deferPattern reason)
@@ -957,12 +1014,21 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
           initializers := initializers.push (.decl .var x (.get (.var slot) (.str key)))
     | "RestElement" =>
       let target ← param.getObjVal? "argument"
-      unless i + 1 == parameters.size && tags.toList.all (fun t => t == "Identifier" || t == "RestElement") &&
-          (← field target "type") == "Identifier" do
-        return .complete (← deferPattern "rest requires a terminal identifier and fixed identifier parameters")
-      let x ← localBinding target
-      rest := some x
-      bound := bound.push x
+      unless i + 1 == parameters.size && tags.toList.all (fun t => t == "Identifier" || t == "RestElement") do
+        return .complete (← deferPattern "rest requires a terminal binding and fixed identifier parameters")
+      match ← field target "type" with
+      | "Identifier" =>
+        let x ← localBinding target
+        rest := some x
+        bound := bound.push x
+      | "ArrayPattern" =>
+        let pattern ← match linkedRestArrayPattern target with
+          | .ok pattern => pure pattern
+          | .error reason => return .complete (← deferPattern reason)
+        rest := some slot
+        bound := bound ++ pattern.names.toArray
+        initializers := initializers.push (.bind .var pattern (.var slot))
+      | _ => return .complete (← deferPattern "unsupported rest parameter binding")
     | "ArrayPattern" => return .complete (← deferPattern "unsupported function parameter ArrayPattern")
     | other => throw s!"unsupported function parameter {other}"
   unless bound.toList.Nodup do throw "duplicate function parameter"
@@ -992,7 +1058,8 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
     return .defaults slots.toList arity initializers.toList stmts
   -- Static keys and identifier targets have no parameter expressions. The reads
   -- run before the body, using the same mutable cells as any body var redeclarations.
-  if let some restName := rest then return .complete (.withRest name kind self slots.toList restName stmts)
+  if let some restName := rest then
+    return .complete (.withRest name kind self slots.toList restName (initializers.toList ++ stmts))
   if initializers.isEmpty then return .complete (.mk name kind self slots.toList stmts)
   return .objectBindings slots.toList initializers.toList stmts
 

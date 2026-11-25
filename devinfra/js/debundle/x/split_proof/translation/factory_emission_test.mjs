@@ -12,12 +12,7 @@ console.log("side");
 result();`;
 function emit(name, code, selectedSide, force = false) {
   const fixture = prepareSideSplit(name, code, selectedSide);
-  const result = lowerDiagnostic(
-    fixture,
-    "--lean",
-    path.join(fixture.dir, "certificate.lean"),
-    ...(force ? ["--force"] : [])
-  );
+  const result = lowerDiagnostic(fixture, ...(force ? ["--force"] : []));
   return { ...fixture, result };
 }
 function assertOutput({ result, source, dir }, expected) {

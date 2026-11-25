@@ -73,7 +73,8 @@ eslint_test(
 _SEEDED_RANDOM = "//devinfra/js/debundle/x/split_proof:seeded_random"
 
 _SHIFT_FUZZ_DATA = [
-    "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
+    "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
+    "//devinfra/js/debundle/x/split_proof/translation/testing:split",
     ":parser",
     "shift_fuzz_worker.mjs",
     ":shift_candidate",
@@ -159,6 +160,7 @@ js_test(
         "//devinfra/js/debundle/x/split_proof/translation/testing:check_translation",
         "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
         "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
     ],
     entry_point = "identity_emission_test.mjs",
     env = {
@@ -169,6 +171,7 @@ js_test(
 
 _LOWER_CALLBACK_FUZZ_DATA = [
     "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
+    "//devinfra/js/debundle/x/split_proof/translation/testing:split",
     ":parser",
     ":scope_metadata",
     "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
@@ -198,6 +201,7 @@ js_test(
     data = [
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
         "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
         _SEEDED_RANDOM,
     ],
     entry_point = "lower_callback_fuzz_test.mjs",
@@ -211,6 +215,7 @@ js_test(
     data = [
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
         "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
         _SEEDED_RANDOM,
     ],
     entry_point = "lower_callback_fuzz_test.mjs",
@@ -224,6 +229,7 @@ js_test(
     data = [
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
         "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
     ],
     entry_point = "unary_literal_safety_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
@@ -232,12 +238,12 @@ js_test(
 js_test(
     name = "lower_exports_test",
     size = "medium",
-    data = _LOWER_CALLBACK_FUZZ_DATA + ["//devinfra/js/debundle/x/split_proof/lean:lower"],
+    data = [
+        ":parser",
+        "//devinfra/js/debundle/x/split_proof/lean:lower",
+    ],
     entry_point = "lower_exports_test.mjs",
-    env = {
-        "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
-        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
-    },
+    env = {"LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)"},
 )
 
 js_test(
@@ -282,6 +288,7 @@ js_test(
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
         "//devinfra/js/debundle/x/split_proof/translation/testing:check_translation",
         "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
         _TRANSLATE,
     ],
     entry_point = "inert_escape_test.mjs",
@@ -298,6 +305,7 @@ js_test(
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
         "//devinfra/js/debundle/x/split_proof/translation/testing:check_translation",
         "//devinfra/js/debundle/x/split_proof/translation/testing:diagnostic_split",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
         _TRANSLATE,
     ],
     entry_point = "factory_emission_test.mjs",
@@ -617,6 +625,7 @@ js_test(
     timeout = "long",
     data = [
         ":annotated_estree",
+        ":dump_ast",
         ":frontend",
         ":parser",
         ":scope_metadata",
@@ -625,10 +634,12 @@ js_test(
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
         "//devinfra/js/debundle/x/split_proof/model:to_core",
         "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:split",
     ],
     entry_point = "corejs_ast_lowering_test.mjs",
     env = {
         "COREJS": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:corejs)",
+        "DUMP_AST": "$(rootpath :dump_ast)",
         "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
     },
 )
@@ -680,14 +691,11 @@ js_test(
 
 py_test(
     name = "test_stack_location",
-    size = "medium",
     srcs = ["test_stack_location.py"],
-    data = ["//devinfra/js/debundle/x/split_proof/lean:lowersplit"],
-    env = {"LOWERSPLIT": "$(rlocationpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+    data = ["//devinfra/js/debundle/x/split_proof/translation/testing:split_cli"],
+    env = {"SPLIT_HELPER": "$(rlocationpath //devinfra/js/debundle/x/split_proof/translation/testing:split_cli)"},
     deps = [
         "//:conftest",
-        "//testing/browser:launcher",
-        "@pypi//playwright",
         "@pypi//pytest_bazel",
         "@rules_python//python/runfiles",
     ],

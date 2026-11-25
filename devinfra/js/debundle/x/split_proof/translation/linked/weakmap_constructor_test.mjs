@@ -20,14 +20,20 @@ function fixture(name, crossed, init = "new WeakMap()") {
 }
 
 const neutral = fixture("neutral", "var phase = 1");
-for (const [scope, flags, reason] of [
-  ["linked-structural", ["--structural"], /unit 1 is not a local allocating declaration/],
-  ["linked-programs", [], /host value window\.WeakMap is constructed/],
+for (const [scope, flags, reason, reasonCode] of [
+  [
+    "linked-structural",
+    ["--structural"],
+    /unit 1 is not a local allocating declaration/,
+    "structural_non_local_allocation",
+  ],
+  ["linked-programs", [], /host value window\.WeakMap is constructed/, undefined],
 ]) {
   const { verdict } = lower(neutral.files.sourceFile, neutral.files.specFile, neutral.out, [...opts, ...flags], scope);
   assert.equal(verdict.status, "rejected");
   assert.equal(verdict.guarantee, null);
   assert.match(verdict.reason, reason);
+  if (reasonCode) assert.equal(verdict.reason_code, reasonCode);
   assert(!existsSync(neutral.out));
 }
 

@@ -1,5 +1,7 @@
 import EsmSplit.CoreJS.LinkedCertificate.Proof
 import EsmSplit.CoreJS.LinkedCertificate.QuoteCoreJS
+import EsmSplit.CoreJS.ProbeReplay
+import EsmSplit.CoreJS.StateMatch
 
 namespace CoreJS.LinkedBehavior
 
@@ -62,7 +64,119 @@ theorem probeObservationMismatchRefutesEquivalent (profile : HostPremises) {sour
   rintro rfl
   simp [probeStatesEqual] at different
 
+private def checkedProbeLink (program : Program) : Option (CheckedLink program World.probe) :=
+  match linked : link program (initialState World.probe program.regions) with
+  | .ok scopes ready => some ⟨scopes, ready, linked⟩
+  | .throw .. | .unknown .. | .fuel => none
+
+/-- Syntax features that prevent the current replay fragment from applying to
+either linked schedule. This report does not participate in the check. -/
+def replayPremisedBlockerKinds (source candidate : Program) : List String :=
+  match checkedProbeLink source, checkedProbeLink candidate with
+  | some sourceChecked, some candidateChecked =>
+    (replayScheduleBlockerKinds (unitsOf sourceChecked.linked) ++
+      replayScheduleBlockerKinds (unitsOf candidateChecked.linked)).eraseDups
+  | _, _ => ["probe-link-unavailable"]
+
+private def premisedStateAgreement (premises : HostPremises)
+    (sourceState candidateState : State (premises.specialize World.probe)) :
+    Option (PLift (sourceState = candidateState)) := by
+  letI : DecidableEq (premises.specialize World.probe).σ := by
+    change DecidableEq Unit
+    infer_instance
+  exact StateMatch.state sourceState candidateState
+
+private theorem replayPremisedEquivalentFor {premises : HostPremises} {source candidate : Program} {fuel : Nat}
+    {sourceState candidateState : State (premises.specialize World.probe)}
+    (sourceReplay : ∀ w, runProgram (premises.specialize w) fuel source =
+      .ok () (replaceWorld (premises.specialize w) sourceState))
+    (candidateReplay : ∀ w, runProgram (premises.specialize w) fuel candidate =
+      .ok () (replaceWorld (premises.specialize w) candidateState))
+    (statesAgree : sourceState = candidateState) : EquivalentFor premises source candidate := by
+  by_cases empty : premises = {}
+  · subst premises
+    apply of_runs fuel
+    intro w
+    have satisfied : ({} : HostPremises).Satisfied w := by
+      simp [HostPremises.Satisfied]
+    have sourceRun := sourceReplay w
+    have candidateRun := candidateReplay w
+    rw [← statesAgree] at candidateRun
+    have specialized := HostPremises.specialize_eq ({} : HostPremises) w satisfied
+    have sourceRunAtWorld : runProgram w fuel source = .ok () (replaceWorld w sourceState) := by
+      have transport := congrArg
+        (fun world : World => runProgram world fuel source = .ok () (replaceWorld world sourceState))
+        specialized
+      exact transport.mp sourceRun
+    have candidateRunAtWorld : runProgram w fuel candidate = .ok () (replaceWorld w sourceState) := by
+      have transport := congrArg
+        (fun world : World => runProgram world fuel candidate = .ok () (replaceWorld world sourceState))
+        specialized
+      exact transport.mp candidateRun
+    exact ⟨_, sourceRunAtWorld, candidateRunAtWorld⟩
+  · simp [EquivalentFor, empty]
+    intro w satisfied
+    have sourceRun := sourceReplay w
+    have candidateRun := candidateReplay w
+    rw [← statesAgree] at candidateRun
+    have specialized := premises.specialize_eq w satisfied
+    have sourceRunAtWorld : runProgram w fuel source = .ok () (replaceWorld w sourceState) := by
+      have transport := congrArg
+        (fun world : World => runProgram world fuel source = .ok () (replaceWorld world sourceState))
+        specialized
+      exact transport.mp sourceRun
+    have candidateRunAtWorld : runProgram w fuel candidate = .ok () (replaceWorld w sourceState) := by
+      have transport := congrArg
+        (fun world : World => runProgram world fuel candidate = .ok () (replaceWorld world sourceState))
+        specialized
+      exact transport.mp candidateRun
+    exact ⟨replaceWorld w sourceState,
+      ⟨fuel, sourceRunAtWorld, by simp⟩,
+      ⟨fuel, candidateRunAtWorld, by simp⟩⟩
+
+private theorem replayPremisedSameExports {source candidate : Program}
+    (sourceChecked : CheckedLink source World.probe)
+    (candidateChecked : CheckedLink candidate World.probe)
+    (exportsMatched : exportsMatchFrom sourceChecked candidateChecked = true) : SameExports source candidate := by
+  apply sameExports_of_match
+  intro w
+  let sourceAtWorld : CheckedLink source w :=
+    ⟨sourceChecked.linked, linkState w sourceChecked.ready, link_from_probe sourceChecked w⟩
+  let candidateAtWorld : CheckedLink candidate w :=
+    ⟨candidateChecked.linked, linkState w candidateChecked.ready, link_from_probe candidateChecked w⟩
+  rw [exportsMatch_from_checked sourceAtWorld candidateAtWorld]
+  exact exportsMatched
+
+/-- A compiled replay check. It accepts only when both programs have a
+successful probe run, their complete probe states match, both reached schedules
+have replay witnesses, and their public exports match. -/
+def replayPremisedPrograms (premises : HostPremises) (fuel : Nat) (source candidate : Program) :
+    Option (PLift (EquivalentFor premises source candidate ∧ SameExports source candidate)) := do
+  let world := premises.specialize World.probe
+  match sourceRun : runProgram world fuel source with
+  | .ok () sourceState =>
+    match candidateRun : runProgram world fuel candidate with
+    | .ok () candidateState => do
+      let sourceChecked ← checkedProbeLink source
+      let candidateChecked ← checkedProbeLink candidate
+      let some sourceSupported := replayPremisedDynamicWitness (premises := premises) fuel sourceChecked | none
+      let some candidateSupported := replayPremisedDynamicWitness (premises := premises) fuel candidateChecked | none
+      let some stateAgreement := premisedStateAgreement premises sourceState candidateState | none
+      if exportsMatched : exportsMatchFrom sourceChecked candidateChecked then
+        let semantics : EquivalentFor premises source candidate ∧ SameExports source candidate :=
+          ⟨replayPremisedEquivalentFor
+              (sourceSupported.down sourceState sourceRun) (candidateSupported.down candidateState candidateRun)
+              stateAgreement.down,
+            replayPremisedSameExports sourceChecked candidateChecked exportsMatched⟩
+        return PLift.up semantics
+      else none
+    | .throw .. | .unknown .. | .fuel => none
+  | .throw .. | .unknown .. | .fuel => none
+
 #audit_linked_programs probeObservationMismatchRefutesEquivalent
+#audit_linked_programs replayPremisedEquivalentFor
+#audit_linked_programs replayPremisedSameExports
+#audit_linked_programs replayPremisedPrograms
 
 inductive RefusalCode where
   | probeMismatch | probeThrow | probeUnknown | probeFuel | proofPreparation

@@ -28,6 +28,16 @@ private def moveCensus (source : Lean.Json) (profile : CoreJS.HostProfile) : Exc
     ("refused", Lean.toJson refused), ("may_move", Lean.toJson (inert + allocate)),
     ("may_move_denominator", Lean.toJson units.size), ("problems", Lean.Json.arr problems)]
 
+private def loweringProfile (j : Lean.Json) : Except String CoreJS.HostProfile := do
+  if j == Lean.Json.mkObj [("profile", .str "empty")] then return .empty
+  if j == Lean.Json.mkObj [("profile", .str "ecmascript")] then return .ecmascript
+  CoreJS.HostProfile.read j
+
+private def runLoweringCensus (file : String) (profile : CoreJS.HostProfile) : IO UInt32 := do
+  match Lean.Json.parse (← IO.FS.readFile file) >>= (CoreJS.LinkedInput.concreteCensus · profile) with
+  | .ok report => IO.println report.compress; pure 0
+  | .error why => IO.eprintln why; pure 1
+
 /-- Census-only selection of production profiles and the two stable-intrinsic
 contracts accepted by `lowersplit`. Stable-value premises do not change the
 syntactic `MayMove` rule. Node recording is selected only by a separate flag. -/
@@ -41,7 +51,7 @@ private def censusProfile (j : Lean.Json) : Except String CoreJS.HostProfile := 
   if j == obj [("profile", .str "browser-page"),
       ("stableIntrinsicValues", Lean.toJson (["Math.PI@1"] : List String))] then
     return .browserPage
-  CoreJS.HostProfile.read j
+  loweringProfile j
 
 private def runCensus (file : String) (profile : CoreJS.HostProfile) : IO UInt32 := do
   match Lean.Json.parse (← IO.FS.readFile file) >>= (moveCensus · profile) with
@@ -56,6 +66,11 @@ def main (args : List String) : IO UInt32 := do
   | ["--moves-ast", file, "--host-contract", contract] =>
     match Lean.Json.parse (← IO.FS.readFile contract) >>= censusProfile with
     | .ok profile => runCensus file profile
+    | .error why => IO.eprintln why; pure 1
+  | ["--lowering-census", file] => runLoweringCensus file .empty
+  | ["--lowering-census", file, "--host-contract", contract] =>
+    match Lean.Json.parse (← IO.FS.readFile contract) >>= loweringProfile with
+    | .ok profile => runLoweringCensus file profile
     | .error why => IO.eprintln why; pure 1
   | ["--ast", file] =>
     for line in (← IO.FS.lines file) do
