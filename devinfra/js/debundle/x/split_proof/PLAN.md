@@ -276,24 +276,25 @@ For singletons, the planned order is the compiled slice strategy, then the compi
 
 **Measured phase cost (2026-11-25).** On source `512b8b24`, uncached BuildBuddy invocation [`b7f69c97-721d-4f97-a5be-5d28b0b2afb0`](https://app.buildbuddy.io/invocation/b7f69c97-721d-4f97-a5be-5d28b0b2afb0) ran the linked program and property-assignment shards with `SPLIT_PROOF_TIMINGS=1`. `execution_and_correspondence` times the per-case Lean proof recipe and its separate Lean process: `programs_test` spent 53.2–71.9 s per shard elaborating proofs, 48–53% of its 111.5–137.4 s shard runtimes. `property_assignment_test` spent up to 103.2 s of its slowest shard's 155.3 s runtime (66%). The pinned-certificate runner emitted only its case count, so this invocation produced no per-case phase timing for that target.
 
-**Target.** A compiled linked checker whose successful result carries [`ASTEquivalent`](lean/EsmSplit/CoreJS/LinkedCertificate/Proof.lean) for the decoded pair. Its general replay theorem covers world interactions, not only world-free runs. The total `split` from the [target](#target) can then select it alongside the other compiled strategies. The planner runs inside `split` and stays unproved.
+**Target.** A compiled linked checker whose successful result carries [`ASTEquivalent`](lean/EsmSplit/CoreJS/LinkedCertificate/Proof.lean) for the decoded pair. Its replay theorem is guarded by the _observed probe trace_, not by a syntax fragment: a successful instrumented probe run may be transported when it made no `World.step` or `talk` request and every `globalTypeof` or `hostRef` request is covered by `HostPremises`. The total `split` from the [target](#target) can then select it alongside the other compiled strategies. The planner runs inside `split` and stays unproved.
 
-**First increment.** Keep `Eval.lean` as the evaluator and extend the existing locality framework with a replayable linked-schedule fragment. The finite executable witness accepts hoisted declarations, declarations and expression statements whose expressions are allocation-only, class-free and read only already-linked bindings, and opaque units that initialize deferred closures. These rules make no world request during initialization. A witness outside this fragment falls through to the existing generated proof.
+**Dynamic-guard theorem target.** Instrument the compiled probe run to produce both its result and `ProbeTrace`. Define `ProbeTrace.onlyPremised` to mean that the trace contains no `World.step` or `talk`, and that every `globalTypeof` and `hostRef` observation is in the collected premises. The intended general theorem is:
 
 ```lean
-theorem replayPremised
+theorem ProbeRun.replayPremised
     {premises : HostPremises} {p : Program} {fuel : Nat}
     {probeState : State (premises.specialize World.probe)}
-    (checked : CheckedLink p World.probe)
-    (supported : ReplayableSchedule (unitsOf checked.linked))
-    (probeRun : runProgram (premises.specialize World.probe) fuel p =
-      .ok () probeState)
-    (w : World) :
-    runProgram (premises.specialize w) fuel p =
-      .ok () (replaceWorld (premises.specialize w) probeState)
+    {trace : ProbeTrace}
+    (probeRun : ProbeRun.run premises fuel p = .ok probeState trace)
+    (onlyPremised : ProbeTrace.onlyPremised premises trace) :
+    ∀ w, premises.Satisfied w →
+      runProgram (premises.specialize w) fuel p =
+        .ok () (replaceWorld (premises.specialize w) probeState)
 ```
 
-`replaceWorld` copies the complete CoreJS heap, bindings, region, output and handed-handle list from the probe result while setting the host state to the target world's `init`. The theorem runs in the specialized world, which supplies the collected premises; `HostPremises.specialize_eq` transports it to every satisfying world. The checker compares both complete probe states and the public exports before constructing `EquivalentFor`, `SameExports`, and the decoded `ASTEquivalent` result. The `ReplayableSchedule` witness is the executable guard on the supported fragment; cases it rejects keep the generated-proof fallback.
+`replaceWorld` copies the complete CoreJS heap, bindings, region, output and handed-handle list from the probe result while setting the host state to the target world's `init`. Premised observations return the same answer and preserve state in every satisfying world; `HostPremises.specialize_eq` then transports the result to that world. The checker compares both complete probe states and public exports before constructing `EquivalentFor`, `SameExports`, and the decoded `ASTEquivalent` result. The trace condition is the intended executable guard.
+
+**First increment (implemented here).** Keep `Eval.lean` unchanged and prove transport for a conservative syntactic fragment using the existing locality framework. `ReplayableSchedule` currently accepts hoisted declarations, declarations and expression statements whose expressions are allocation-only, class-free and read only already-linked bindings, plus opaque units that initialize deferred closures. This is only the first realization of the target theorem: it proves those executions make no world request, but its syntax witness is not the final guard. Unsupported schedules keep using generated proofs until dynamic trace replay is proved.
 
 **Measurement.** BuildBuddy invocation [`71623c3e-9b01-4640-94ab-cb9df58e7642`](https://app.buildbuddy.io/invocation/71623c3e-9b01-4640-94ab-cb9df58e7642) passed all 89 requested test targets (86 executed and 3 cached). The linked translation tests emitted 446 trace rows, which reduce to 368 distinct `(test target, source case)` inputs across 68 test targets after removing repeated emission and `--check-output` runs. All 368 had `step=0`, `talk=0`, and `unpremised_observation=0` for both programs. The pinned certificate baseline has 111 certified cases, all on the compiled structural path: 88 `linked-structural-order`, 19 `linked-structural-pivot`, and 4 `linked-structural-moves`; that target does not invoke `LinkedCertificate/Probe`. The lowered example test generates a diagnostic Lean example, and the Excalidraw smoke test explicitly certifies `linked-structural-moves`, so neither invokes the linked proof path. The current per-run proof cases in the measured linked translation corpus therefore all fit the first-increment request condition; the coverage of the realization theorem itself remains to be measured after it lands.
 
@@ -318,7 +319,7 @@ A separate symbolic evaluator needs a simulation proof against `Eval.lean` for e
 
 1. Wrap planning and `checkStructuralSchedule` in `split`. The CLI emits ESTree for `Y`'s placement, and [checking the printed files](#check-the-printed-files) ties the files to `Y`.
 2. Carry `Places` through the proof paths for singleton inputs as they converge on the assembled deployment checker.
-3. Run the compiled replay before generating a per-run proof. Use the replayable-schedule witness as its guard and keep the generated proof as a fallback.
+3. Use the replayable-schedule witness for the first compiled replay increment and keep the generated proof as a fallback. Replace this syntactic guard with `ProbeTrace.onlyPremised` when the general evaluator simulation is proved.
 4. Add the symbolic value domain and realization theorem only for the world interactions the measurement shows are needed. Run the concrete differential test whenever the symbolic evaluator or `Eval.lean` changes.
 5. Rerun the linked strategy census, compare compiled-replay coverage with the generated-proof baseline, and confirm every previously certified input still certifies. Retire per-run proof generation only after compiled replay covers every currently certified corpus case.
 
