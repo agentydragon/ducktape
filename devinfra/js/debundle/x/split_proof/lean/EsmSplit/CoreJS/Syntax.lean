@@ -73,6 +73,10 @@ inductive Prim where
   | opaqueAmbientRef (binding : String)
   | opaqueConstructorRef (binding : String)
   | opaqueAmbientMemberRef (receiver member : String)
+  /-- Construct the immutable dense array used for a template site. The cooked array receives the raw array first. -/
+  | templateArray (cooked : Bool)
+  | checkArrayFrom
+  | templateIterable
   | forInKeys
   | checkForInWrite
   | log | defineProperty | create | getPrototypeOf | setPrototypeOf

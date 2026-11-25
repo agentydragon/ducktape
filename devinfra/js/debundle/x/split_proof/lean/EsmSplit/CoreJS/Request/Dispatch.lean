@@ -142,9 +142,23 @@ private theorem reachFrame_checkForInWrite {r R cells A} (away : Away r R A)
         · exact reachFrame_unknown r R cells A _ _
         · exact reachFrame_pure r R cells A Val.undef (by simp [SafeVal, Val.nodes])
 
+private theorem templateArray_nodes {A : HeapNode → Prop} (root : A (.obj arrayProto))
+    (values : List Val) (raw : Option Val) (safe : ∀ v ∈ values, SafeVal A v)
+    (rawSafe : ∀ v ∈ raw, SafeVal A v) : ∀ n ∈ (templateArrayObject values raw).nodes, A n := by
+  intro node hn
+  simp only [templateArrayObject, Obj.nodes, List.mem_append, List.mem_flatMap, List.mem_map,
+    Option.toList_some, List.mem_singleton, Option.toList_none, List.flatMap_nil, List.mem_nil_iff, or_false] at hn
+  rcases hn with hroot | ⟨p, hmem, hnode⟩
+  · obtain ⟨_, rfl, rfl⟩ := hroot
+    exact root
+  · rcases hmem with (⟨item, hitem, rfl⟩ | rfl) | ⟨v, hv, rfl⟩
+    · exact safe item.1 (List.fst_mem_of_mem_zipIdx hitem) node hnode
+    · cases hnode
+    · exact rawSafe v (Option.mem_toList.mp hv) node hnode
+
 theorem reachFrame_prim {r R cells A} (away : Away r R A) (call : Call W) (hf : CallFramed r R cells A call)
     (objects : ∀ a : Addr, a.region ≠ r → A (.obj a)) (root : A (.obj objectProto))
-    (p : Prim) (args : List Val) (safe : ∀ x ∈ args, SafeVal A x) :
+    (arrayRoot : A (.obj arrayProto)) (p : Prim) (args : List Val) (safe : ∀ x ∈ args, SafeVal A x) :
     ReachFrame r R cells A (SafeVal A) (prim call p args) := by
   cases p with
   | regExpGet getter => exact reachFrame_readRegExp away call hf root getter _ (safe_arg safe 0)
@@ -169,6 +183,42 @@ theorem reachFrame_prim {r R cells A} (away : Away r R A) (call : Call W) (hf : 
       | split
   | opaqueAmbientRef name | opaqueConstructorRef name => exact reachFrame_unknown r R cells A _ _
   | opaqueAmbientMemberRef receiver member => exact reachFrame_unknown r R cells A _ _
+  | checkArrayFrom =>
+    apply (reachFrame_readHostRef r R cells A (.binding "Array")).bind
+    intro receiver _
+    split <;> try exact reachFrame_unknown r R cells A _ _
+    apply (reachFrame_readHostRef r R cells A (.property "intrinsic.Array" "from")).bind
+    intro method _
+    split <;> first
+      | exact reachFrame_unknown r R cells A _ _
+      | exact reachFrame_pure r R cells A Val.undef (by simp [SafeVal, Val.nodes])
+  | templateIterable =>
+    have sv := safe_arg safe 0
+    simp only [prim]
+    generalize eq : args.getD 0 .undef = v at sv ⊢
+    cases v <;> try exact reachFrame_unknown r R cells A _ _
+    case obj a =>
+      apply (reachFrame_getObj away (safeVal_obj.1 sv)).bind
+      intro o _
+      split
+      · exact reachFrame_unknown r R cells A _ _
+      · apply (reachFrame_lookupProp away (safeVal_obj.1 sv) (.wellKnownSymbol .iterator)).bind
+        intro method _
+        split <;> first
+          | exact reachFrame_unknown r R cells A _ _
+          | exact reachFrame_pure r R cells A _ sv
+  | templateArray cooked =>
+    apply (reachFrame_alloc _ (templateArray_nodes arrayRoot _ _ ?_ ?_) objects).bind
+    · intro a ha
+      exact reachFrame_pure r R cells A (Val.obj a) (safeVal_obj.2 ha)
+    · intro v hv
+      cases cooked
+      · exact safe v hv
+      · exact safe v (List.mem_of_mem_drop hv)
+    · intro v hv
+      cases cooked
+      · cases hv
+      · exact safe v (List.mem_of_mem_head? hv)
   | forInKeys => exact reachFrame_forInKeys away objects _ (safe_arg safe 0)
   | checkForInWrite =>
     exact reachFrame_checkForInWrite away _ _ _ (safe_arg safe 0) (safe_arg safe 1)
@@ -181,10 +231,10 @@ theorem reachFrame_prim {r R cells A} (away : Away r R A) (call : Call W) (hf : 
 theorem perform_prim {r R cells A} (away : Away r R A) (call : Call W)
     (construct : Val → List Val → M W Val) (code) (hf : CallFramed r R cells A call)
     (objects : ∀ a : Addr, a.region ≠ r → A (.obj a)) (root : A (.obj objectProto))
-    (p : Prim) (args : List WVal) :
+    (arrayRoot : A (.obj arrayProto)) (p : Prim) (args : List WVal) :
     ReachFrame r R cells A (fun _ => True) (perform call construct code cells (.prim p args)) :=
   (ReachFrame.mapM args fun a _ => reachFrame_fromW r R cells A a).bind fun values safe =>
-    (reachFrame_prim away call hf objects root p values safe).bind fun result hr =>
+    (reachFrame_prim away call hf objects root arrayRoot p values safe).bind fun result hr =>
       (reachFrame_toW r R cells A result hr).bind fun v _ =>
         reachFrame_pure r R cells A (Told.value v) trivial
 
@@ -211,7 +261,7 @@ theorem perform_reachFrame {r R cells} (hr : r ≠ 0) (call : Call W) (construct
   | newObject p => exact perform_newObject r R cells call construct code p (fun _ => Ne.symm hr)
   | newFunction part name length ctor =>
     exact perform_newFunction r R cells call construct code part name length ctor (Ne.symm hr)
-  | prim p args => exact perform_prim away call construct code hf objects root p args
+  | prim p args => exact perform_prim away call construct code hf objects root (objects arrayProto (Ne.symm hr)) p args
   | done v | throw v => exact reachFrame_unknown r R cells _ _ _
   | unknown why => exact reachFrame_unknown r R cells _ _ _
 

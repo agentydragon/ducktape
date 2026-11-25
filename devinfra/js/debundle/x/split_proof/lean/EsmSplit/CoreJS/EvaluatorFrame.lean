@@ -111,7 +111,7 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
       constructor
       · intro cells env e safe
         apply evalExpr_reachFrame_step away env safe objectRoot
-          (reachFrame_prim away (callFn n) (prev.call cells) object objectRoot)
+          (reachFrame_prim away (callFn n) (prev.call cells) object objectRoot arrayRoot)
           (fun e => prev.expr cells env e safe) (fun es => prev.args cells env es safe)
           (fun t => prev.target cells env t safe) (prev.call cells)
           (fun f es sf sa => prev.construct cells f f es sf sf sa) (make cells env safe)

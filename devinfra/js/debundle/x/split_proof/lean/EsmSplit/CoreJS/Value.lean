@@ -116,6 +116,7 @@ structure Obj where
   /-- An array: defining a property on it changes `length`, which is not modelled. -/
   array : Bool := false
   regexp : Option RegExpData := none
+  frozen : Bool := false
 
 /-- A binding: `value` is `none` until it is initialized (the temporal dead zone). -/
 structure Binding where
@@ -797,7 +798,8 @@ def applyDesc (current : Option Property) (d : Desc) : Except Abort (Option Prop
 /-- `DefinePropertyOrThrow` on the object at `a`. -/
 def defineOwn (a : Addr) (k : PropertyKey) (d : Desc) : M W Unit := do
   let o ← getObj a
-  if o.array && k.string?.isSome then unknown "a property is defined on an array" else
+  if o.frozen && (o.props.lookup k).isNone then throwErr .type "cannot add property to a frozen object" else
+  if o.array && !o.frozen && k.string?.isSome then unknown "a property is defined on an array" else
   match ← lift (applyDesc (o.props.lookup k) d) with
   | some p => modifyObj a fun o => { o with props := setOwn o.props k p }
   | none => throwErr .type s!"cannot redefine property: {k}"
@@ -850,7 +852,7 @@ def readHostRef (ref : HostRef) : M W Val := fun s =>
 /-- Receivers whose property lookup can be answered by a host observation.
 The portable Object contract exposes only the saved method reference. -/
 def observedHostProperty (owner key : String) : Bool :=
-  owner == "window" || owner.startsWith "window." || (owner == "intrinsic.Object" && key == "defineProperty")
+  owner == "window" || owner.startsWith "window." || owner == "intrinsic.Array" || (owner == "intrinsic.Object" && key == "defineProperty")
 
 /-- A member of a global of the host: a function the world answers for. -/
 def hostMember (name k : String) : M W Val :=
@@ -1076,6 +1078,14 @@ def checkForInWrite (base target key : Val) : M W Val := do
       unknown "for-in body writes through an accessor"
     else pure .undef
 
+/-- The raw and cooked objects have Array.prototype, frozen own indices and frozen length.
+The cooked object's non-enumerable raw property points to the separately frozen raw array. -/
+def templateArrayObject (values : List Val) (raw : Option Val) : Obj :=
+  let items := values.zipIdx.map fun (v, i) => (PropertyKey.str (toString i), Property.data v false true false)
+  let length := (PropertyKey.str "length", Property.data (.num (Float.ofNat values.length)) false false false)
+  let extra := raw.toList.map fun v => (PropertyKey.str "raw", Property.data v false false false)
+  { proto := some arrayProto, array := true, frozen := true, props := items ++ [length] ++ extra }
+
 def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
   let arg (i : Nat) : Val := args.getD i .undef
   match p with
@@ -1096,6 +1106,24 @@ def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
   | .opaqueAmbientRef name => unknown s!"ambient binding {name} is reached"
   | .opaqueConstructorRef name => unknown s!"ambient constructor {name} is reached"
   | .opaqueAmbientMemberRef receiver member => unknown s!"ambient member {receiver}.{member} is reached"
+  | .checkArrayFrom =>
+    let .host "intrinsic.Array" ← readHostRef (.binding "Array")
+      | unknown "Array.from requires the intrinsic Array constructor"
+    let .host "intrinsic.Array.from" ← readHostRef (.property "intrinsic.Array" "from")
+      | unknown "Array.from requires the intrinsic method"
+    pure .undef
+  | .templateIterable =>
+    let v := arg 0
+    let .obj a := v | unknown "Array.from source needs a modeled iterable"
+    let o ← getObj a
+    if !(o.array && o.frozen) then unknown "Array.from source is not a template array" else
+    match ← lookupProp a (.wellKnownSymbol .iterator) with
+    | some (.data (.host "Array.prototype.values") ..) => pure v
+    | _ => unknown "template Array.from requires the intrinsic array iterator"
+  | .templateArray cooked =>
+    let values := if cooked then args.drop 1 else args
+    let raw := if cooked then args.head? else none
+    return .obj (← alloc (templateArrayObject values raw))
   | .forInKeys => forInKeys (arg 0)
   | .checkForInWrite => checkForInWrite (arg 0) (arg 1) (arg 2)
   | .log =>
@@ -1126,8 +1154,10 @@ def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
     match arg 0 with
     | .obj a =>
       let s ← getState
-      if (← getObj a).proto == parent then pure (arg 0)
-      else if reaches s a s.objectCount parent then throwErr .type "cyclic __proto__ value"
+      let object ← getObj a
+      if object.proto == parent then pure (arg 0)
+      else if object.frozen || reaches s a s.objectCount parent then
+        throwErr .type (if object.frozen then "cannot change the prototype of a frozen object" else "cyclic __proto__ value")
       else
         modifyObj a fun o => { o with proto := parent }
         pure (arg 0)

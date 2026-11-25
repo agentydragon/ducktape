@@ -324,6 +324,8 @@ theorem defineOwn_keeps (a : Addr) (k : PropertyKey) (d : Desc) {base s : State 
   unfold defineOwn
   refine keeps_bind ((inert_getObj a).keeps hb) fun o s1 _ hb1 => ?_
   split
+  · exact (inert_throwErr _ _).keeps hb1
+  split
   · exact (inert_unknown _).keeps hb1
   · refine keeps_bind ((inert_lift _).keeps hb1) fun r s2 _ hb2 => ?_
     split
