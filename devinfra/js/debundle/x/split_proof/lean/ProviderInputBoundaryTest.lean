@@ -344,6 +344,7 @@ private def sourceFreeExercise {source candidate : Program}
   let injectedCandidate ← injectedExecution candidateLink sourceFreeWorld setter
   let .ok () injectedBefore := injectedSource | throw "injected original did not complete"
   let .ok () injectedAfter := injectedCandidate | throw "injected candidate did not complete"
+  letI : DecidableEq sourceFreeWorld.σ := by change DecidableEq Nat; infer_instance
   unless (StateMatch.state before injectedBefore).isSome && (StateMatch.state after injectedAfter).isSome do
     throw "injected provider execution differs"
   let turns : Nat := before.world.state
@@ -353,11 +354,11 @@ private def sourceFreeExercise {source candidate : Program}
     throw "source-free provider write was not observed"
   let .throw (.str a) thrown := runProgram sourceFreeThrowWorld 64 source | throw "original provider throw was not propagated"
   let .throw (.str b) thrown' := runProgram sourceFreeThrowWorld 64 candidate | throw "candidate provider throw was not propagated"
-  letI : DecidableEq sourceFreeThrowWorld.σ := by change DecidableEq Nat; infer_instance
   let injectedSourceThrow ← injectedExecution sourceLink sourceFreeThrowWorld setter
   let injectedCandidateThrow ← injectedExecution candidateLink sourceFreeThrowWorld setter
   let .throw (.str c) injectedThrow := injectedSourceThrow | throw "injected provider throw was not propagated"
   let .throw (.str d) injectedThrow' := injectedCandidateThrow | throw "injected candidate throw was not propagated"
+  letI : DecidableEq sourceFreeThrowWorld.σ := by change DecidableEq Nat; infer_instance
   let count : Nat := thrown.world.state
   unless a == "provider stopped" && b == a && c == a && d == a && count == 1 &&
       (thrown.cellAt snapshot).bind (·.value) == some .undef &&
