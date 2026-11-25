@@ -50,6 +50,21 @@ private def check (input : Json) : Except String Json := do
   let ordinals (p : CoreJS.Program) := p.loaded.flatMap fun m => m.body.map Prod.fst
   return toJson [ordinals original, ordinals emitted]
 
+private def singletonPlacement (input : Json) : Except String Json := do
+  let plan := placement (← input.getObjValAs? String "glueBinding")
+  let decoded ← CoreJS.LinkedInput.decodeSingleton (← input.getObjVal? "source")
+    (← input.getObjVal? "providers") (← input.getObjVal? "files") plan
+  let _ ← CoreJS.checkPlaces decoded.assignment decoded.before decoded.after
+  let some owner := decoded.after.find "lib/closures.mjs" | throw "missing fixture owner"
+  let unit :: rest := owner.body | throw "missing fixture unit"
+  let misplaced := { decoded.after with modules := decoded.after.modules.map fun m =>
+    if m.name == owner.name then { m with body := rest }
+    else if m.name == plan.entry then { m with body := m.body ++ [unit] }
+    else m }
+  let .error reason := CoreJS.checkPlaces decoded.assignment decoded.before misplaced
+    | throw "accepted a unit assigned to a different module"
+  return toJson (decoded.assignment, reason)
+
 private def structural (input : Json) : Except String Json := do
   let binding ← input.getObjValAs? String "glueBinding"
   let plan : EsmSplit.Plan := { entry := "entry.mjs", mods := [
@@ -101,6 +116,7 @@ private def fixtures (input : Json) : Except String Json := do
       | "imports" => pure (imports (← fixture.getObjVal? "input"))
       | "location" => pure (location (← fixture.getObjVal? "input"))
       | "linked" => pure (check (← fixture.getObjVal? "input"))
+      | "singletonPlacement" => pure (singletonPlacement (← fixture.getObjVal? "input"))
       | "structural" => pure (structural (← fixture.getObjVal? "input"))
       | "constructorContexts" => pure (constructorContexts (← fixture.getObjVal? "input"))
       | "opaque" => pure (opaqueUnits (← fixture.getObjVal? "input"))

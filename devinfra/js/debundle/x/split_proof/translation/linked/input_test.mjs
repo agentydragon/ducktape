@@ -38,6 +38,19 @@ const orders = [
   [5, 2, 3, 1],
 ];
 const cases = [{ kind: "linked", input: linked(), expected: orders }];
+cases.push({
+  kind: "singletonPlacement",
+  input: linked(),
+  expected: [
+    [
+      [1, "entry/main.mjs"],
+      [2, "lib/closures.mjs"],
+      [3, "lib/closures.mjs"],
+      [5, "providers/maker.mjs"],
+    ],
+    "decoded output units differ from the planned placement",
+  ],
+});
 for (const [controls, reason] of [
   [{ maker: "export const wrong = 0;" }, /original linker: the module providers\/maker\.mjs does not export build/],
   [{ glueBinding: "alternate" }, /unit 1: reference to extra resolves to a different linked cell/],

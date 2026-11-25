@@ -381,6 +381,22 @@ private structure Fragment where
   sourceTemplates : List TemplateSite
   emittedTemplates : List TemplateSite
 
+structure DecodedDeployment where
+  before : Program
+  after : Program
+  assignment : List UnitPlacement
+
+def DecodedDeployment.programs (decoded : DecodedDeployment) : Program × Program :=
+  (decoded.before, decoded.after)
+
+/-- Plans also number import and export lists. Keep only the ordinals present
+in the original executable body when building the CoreJS assignment. -/
+private def plannedPlacements (plan : EsmSplit.Plan) (source : Module) (base : Nat) : List UnitPlacement :=
+  let ids := Std.HashSet.ofList (source.body.map Prod.fst)
+  plan.mods.flatMap fun m => m.stmts.filterMap fun ordinal =>
+    let id := base + ordinal
+    if ids.contains id then some (id, m.name) else none
+
 private def decodeFragment (format : BodyFormat) (profile : HostProfile) (source files : Json) (P : EsmSplit.Plan)
     (sourcePath : String) (providerNames : List String) (base : Nat) (provider : Option String := none) :
     Except StructuralRefusal Fragment := do
@@ -414,7 +430,7 @@ private def decodeFragment (format : BodyFormat) (profile : HostProfile) (source
   return ⟨original.numbered P.entry base, split.map Prod.fst, nodes.size, original.templates, split.flatMap Prod.snd⟩
 
 private def decode (format : BodyFormat) (source providers files : Json) (P : EsmSplit.Plan)
-    (profile : HostProfile) : Except StructuralRefusal (Program × Program) := do
+    (profile : HostProfile) : Except StructuralRefusal DecodedDeployment := do
   let ps := (← (providers.getObj?).mapError StructuralRefusal.unclassified).toList
   let fragment ← decodeFragment format profile source files P "bundle.mjs" (ps.map Prod.fst) 0
   let (shared, providerSites) ← readProviders format profile ps fragment.unitCount
@@ -428,15 +444,21 @@ private def decode (format : BodyFormat) (source providers files : Json) (P : Es
       pure (← (location.attach before).mapError StructuralRefusal.unclassified,
         ← (location.attach after).mapError StructuralRefusal.unclassified)
   (checkScopes before after).mapError StructuralRefusal.unclassified
-  return (before, after)
+  let assignment := plannedPlacements P fragment.sourceModule 0 ++ shared.flatMap Module.unitPlacements
+  return ⟨before, after, assignment⟩
 
 /-- The original entry is at the virtual root. Provider and emitted file keys are canonical
 relative filenames in that same root, with no overlap. Plan ordinals refer to the full
 source unit array, including imports and export lists. The two programs share the
-providers, whose stable identities start after that array. -/
+providers, whose stable identities start after that array. The assignment comes from
+the requested plan and executable source units, including the fixed providers. -/
+def decodeSingleton (source providers files : Json) (P : EsmSplit.Plan) (profile : HostProfile := .empty) :
+    Except String DecodedDeployment :=
+  (decode .linked source providers files P profile).mapError StructuralRefusal.reason
+
 def decodePair (source providers files : Json) (P : EsmSplit.Plan) (profile : HostProfile := .empty) :
     Except String (Program × Program) :=
-  (decode .linked source providers files P profile).mapError StructuralRefusal.reason
+  DecodedDeployment.programs <$> decodeSingleton source providers files P profile
 
 /-- Experimental input for a structural schedule proof. The body of each returned module retains the
 original source ordinals, including when an emitted module has different positions. Providers use
@@ -444,12 +466,17 @@ disjoint ordinals. Selected pivots have their actual CoreJS statements on both s
 are decoded from their own syntax and carry the same source code ID between layouts.
 This verifies placement, unchanged unit syntax, import/export links and resolved captures. A proof
 of the order change and correspondence with the emitted source files are separate obligations. -/
-def decodeStructuralPair (source providers files : Json) (P : EsmSplit.Plan) (pivots : List Nat)
+def decodeStructuralSingleton (source providers files : Json) (P : EsmSplit.Plan) (pivots : List Nat)
     (profile : HostProfile := .empty) (deployment : Option LinkedDeployment.Input := none) :
-    Except StructuralRefusal (Program × Program) := do
+    Except StructuralRefusal DecodedDeployment := do
   let location ← deployment.mapM fun d =>
     (LinkedDeployment.check d source providers P).mapError StructuralRefusal.unclassified
   decode (.structural (Std.HashSet.ofList pivots) (location.getD {}) (if deployment.isSome then providers else .null)) source providers files P profile
+
+def decodeStructuralPair (source providers files : Json) (P : EsmSplit.Plan) (pivots : List Nat)
+    (profile : HostProfile := .empty) (deployment : Option LinkedDeployment.Input := none) :
+    Except StructuralRefusal (Program × Program) :=
+  DecodedDeployment.programs <$> decodeStructuralSingleton source providers files P pivots profile deployment
 
 /-- One original path and the reparsed output files of its plan. Filenames
 in both plans live in the same deployment root. -/
@@ -511,19 +538,6 @@ def concreteCensus (source : Json) (profile : HostProfile) : Except String Json 
 The candidate can also contain private files and model-only helper modules. -/
 def publicPaths (parts : List StaticSplit) (shared : Json) : Except String (List String) := do
   return parts.map (·.plan.entry) ++ (← shared.getObj?).toList.map Prod.fst
-
-structure DecodedDeployment where
-  before : Program
-  after : Program
-  assignment : List UnitPlacement
-
-/-- Plans also number import and export lists. Keep only the ordinals present
-in the original executable body when building the CoreJS assignment. -/
-private def plannedPlacements (plan : EsmSplit.Plan) (source : Module) (base : Nat) : List UnitPlacement :=
-  let ids := Std.HashSet.ofList (source.body.map Prod.fst)
-  plan.mods.flatMap fun m => m.stmts.filterMap fun ordinal =>
-    let id := base + ordinal
-    if ids.contains id then some (id, m.name) else none
 
 /-- Decode all placements in one namespace. IDs follow the input list and the
 sorted fixed-file map, independently of either graph's evaluation order. In
