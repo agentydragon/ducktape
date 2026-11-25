@@ -79,44 +79,39 @@ struct CoarseResidualBucket {
     export_surface: PublicExportSurface,
 }
 
-/// Declared names and syntax location of every dependency-graph source unit.
-struct SourceUnitIndex {
-    declared_names: HashMap<SourceUnitId, Vec<Id>>,
-    statements: HashMap<SourceUnitId, StatementId>,
+/// Borrow the graph and its layout after checking that every node has a syntax location.
+struct PlacementSourceUnits<'a> {
+    graph: &'a analysis::DependencyGraph,
+    layout: &'a SourceUnitLayout,
 }
 
-impl SourceUnitIndex {
+impl<'a> PlacementSourceUnits<'a> {
     fn new(
-        precomputed: &DependencyGraphAndAtomicGroups,
-        layout: &SourceUnitLayout,
+        precomputed: &'a DependencyGraphAndAtomicGroups,
+        layout: &'a SourceUnitLayout,
     ) -> Result<Self> {
-        let mut declared_names: HashMap<SourceUnitId, Vec<Id>> = HashMap::new();
-        let mut statements = HashMap::<SourceUnitId, StatementId>::new();
-        for node in precomputed.dependency_graph.iter_nodes() {
-            declared_names.insert(node.id, node.declared.iter().cloned().collect());
-            let location = layout.by_source_unit(node.id).with_context(|| {
+        let graph = &precomputed.dependency_graph;
+        for node in graph.iter_nodes() {
+            layout.by_source_unit(node.id).with_context(|| {
                 format!("source unit {} has no checked syntax location", node.id.0)
             })?;
-            statements.insert(node.id, location.statement);
         }
-        Ok(Self {
-            declared_names,
-            statements,
-        })
+        Ok(Self { graph, layout })
     }
 
-    fn declared_names(&self, source_unit: SourceUnitId) -> &[Id] {
-        self.declared_names
-            .get(&source_unit)
-            .map(Vec::as_slice)
-            .unwrap_or(&[])
+    fn declared_names(&self, unit: SourceUnitId) -> &BTreeSet<Id> {
+        &self
+            .graph
+            .node(unit)
+            .expect("atomic groups contain graph nodes")
+            .declared
     }
 
-    fn statement(&self, source_unit: SourceUnitId) -> StatementId {
-        *self
-            .statements
-            .get(&source_unit)
+    fn statement(&self, unit: SourceUnitId) -> StatementId {
+        self.layout
+            .by_source_unit(unit)
             .expect("every graph node was checked against the source-unit layout")
+            .statement
     }
 }
 
@@ -1431,7 +1426,7 @@ impl ChunkPlanBuilder {
             return Ok(());
         }
 
-        let source_units = SourceUnitIndex::new(precomputed, layout)?;
+        let source_units = PlacementSourceUnits::new(precomputed, layout)?;
 
         let opted_in_owner_paths: BTreeSet<String> = opted_in_owner_paths.iter().cloned().collect();
         let mut atomic_groups: Vec<&BTreeSet<SourceUnitId>> = precomputed
@@ -1557,7 +1552,7 @@ impl ChunkPlanBuilder {
             return Ok(BTreeMap::new());
         }
 
-        let source_units = SourceUnitIndex::new(precomputed, layout)?;
+        let source_units = PlacementSourceUnits::new(precomputed, layout)?;
 
         let opted_in_owner_paths: BTreeSet<&str> =
             opted_in_owner_paths.iter().map(String::as_str).collect();
@@ -1653,7 +1648,7 @@ impl ChunkPlanBuilder {
         precomputed: &'a DependencyGraphAndAtomicGroups,
         layout: &SourceUnitLayout,
     ) -> Result<Vec<&'a BTreeSet<SourceUnitId>>> {
-        let source_units = SourceUnitIndex::new(precomputed, layout)?;
+        let source_units = PlacementSourceUnits::new(precomputed, layout)?;
 
         let residual_plan_index = self.residual_plan_index;
         let bindings_catalogue = &self.bindings_catalogue;
@@ -1867,7 +1862,7 @@ impl ChunkPlanBuilder {
         path_prefix: &str,
         generated_residual: bool,
     ) -> Result<()> {
-        let source_units = SourceUnitIndex::new(precomputed, layout)?;
+        let source_units = PlacementSourceUnits::new(precomputed, layout)?;
 
         let residual_plan_index = self.residual_plan_index;
         for (idx, members) in groups.into_iter().enumerate() {
