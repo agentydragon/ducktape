@@ -993,3 +993,21 @@ lean_axiom_test(
     ],
     deps = [":corejs_runtime"],
 )
+
+lean_axiom_test(
+    name = "stack_read_boundary_axioms_test",
+    srcs = ["EsmSplit/CoreJS/StackReadBoundary.lean"],
+    imports = ["EsmSplit.CoreJS.StackReadBoundary"],
+    theorems = [
+        "CoreJS.StackReadBoundary.getPropAt",
+        "CoreJS.StackReadBoundary.twoReadsAt",
+        "CoreJS.StackReadBoundary.evalReadAt",
+        "CoreJS.StackReadBoundary.receiverThrow",
+        "CoreJS.StackReadBoundary.evalReceiverEffect",
+        "CoreJS.StackReadBoundary.sampleReached",
+        "CoreJS.StackReadBoundary.overrideRetained",
+        "CoreJS.StackReadBoundary.errorConstructionUnknown",
+        "CoreJS.StackReadBoundary.engineErrorReadUnknown",
+    ],
+    deps = [":corejs_runtime"],
+)
