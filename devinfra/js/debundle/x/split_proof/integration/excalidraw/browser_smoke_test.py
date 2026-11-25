@@ -318,6 +318,21 @@ async def smoke(
             await expect(page.locator('.ttd-dialog[role="dialog"]')).to_be_visible()
             await page.wait_for_function("window.dialogFailures.length > 0")
             assert errors == []
+        elif overlay is not None:
+            shape_results = await page.evaluate(
+                """async () => {
+                  const {A1: polygon, Er: fromPoints, C1: inside, t7: onEdge} = await import("/packages/math/polygon.mjs");
+                  const {Ls: ellipse, Hu: intersect, Bu: distance} = await import("/packages/math/ellipse.mjs");
+                  const pts = [[0,0],[4,0],[4,4],[0,4]];
+                  const ring = polygon(...pts), e = ellipse([0,0], 2, 1);
+                  return [ring.length, ring[0] === ring[4], fromPoints(ring) === ring,
+                    inside([2,2],ring),inside([5,2],ring),onEdge([2,0],ring),onEdge([2,2],ring),
+                    intersect(e,[[-3,0],[3,0]]).map(p=>p[0]).sort((a,b)=>a-b),
+                    intersect(e,[[-3,1],[3,1]]).length,intersect(e,[[-3,2],[3,2]]).length,
+                    Math.abs(distance([3,0], e) - 1) < 1e-4];
+                }"""
+            )
+            assert shape_results == [5, True, True, True, False, True, False, [-2, 2], 1, 0, True]
         return list(namespace["names"])
 
 

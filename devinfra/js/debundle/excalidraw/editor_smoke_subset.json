@@ -558,6 +558,25 @@
         "shouldShowBoundingBox"
       ],
       "anonymous_statements": []
+    },
+    {
+      "module": "packages/math/polygon",
+      "chunk": "editor",
+      "bindings": [
+        "polygon",
+        "polygonFromPoints",
+        "polygonIncludesPoint",
+        "pointOnPolygon",
+        "polygonClose",
+        "polygonIsClosed"
+      ],
+      "anonymous_statements": []
+    },
+    {
+      "module": "packages/math/ellipse",
+      "chunk": "editor",
+      "bindings": ["ellipse", "ellipseDistanceFromPoint", "ellipseLineIntersectionPoints"],
+      "anonymous_statements": []
     }
   ]
 }
