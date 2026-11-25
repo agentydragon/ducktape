@@ -503,7 +503,7 @@ fn vendor_map(
 }
 
 impl VendorMarkSource {
-    fn into_vendor_level(self, source_root: Option<&Path>) -> Result<VendorLevel> {
+    fn into_vendor_level(mut self, source_root: Option<&Path>) -> Result<VendorLevel> {
         match self.level {
             VendorLevelSource::Swap => {
                 self.ensure_no_partial_swap_payload()?;
@@ -523,89 +523,63 @@ impl VendorMarkSource {
             }
             VendorLevelSource::PartialSwap => {
                 self.ensure_no_swap_payload()?;
-                let packages = self.packages.clone().with_context(|| {
-                    format!(
-                        "vendor mark {} (partial_swap) missing `packages`",
-                        self.chunk_path
-                    )
-                })?;
-                let symbols = self.symbols.clone().with_context(|| {
-                    format!(
-                        "vendor mark {} (partial_swap) missing `symbols`",
-                        self.chunk_path
-                    )
-                })?;
-                self.ensure_symbols_reference_known_packages("partial_swap", &packages, &symbols)?;
+                let (packages, symbols) = self.into_partial_tables(
+                    "partial_swap",
+                    VendorPackageSource::into_partial_swap_package,
+                )?;
                 Ok(VendorLevel::PartialSwap(PartialSwapMark {
-                    packages: packages
-                        .into_iter()
-                        .map(|(name, package)| {
-                            Ok((name, package.into_partial_swap_package(&self.chunk_path)?))
-                        })
-                        .collect::<Result<_>>()?,
+                    packages,
                     symbols,
                 }))
             }
             VendorLevelSource::BundledPartialSwap => {
                 self.ensure_no_swap_payload()?;
-                let bundle = self.bundle.clone().with_context(|| {
+                let bundle = self.bundle.take().with_context(|| {
                     format!(
                         "vendor mark {} (bundled_partial_swap) missing `bundle`",
                         self.chunk_path
                     )
                 })?;
-                let packages = self.packages.clone().with_context(|| {
-                    format!(
-                        "vendor mark {} (bundled_partial_swap) missing `packages`",
-                        self.chunk_path
-                    )
-                })?;
-                let symbols = self.symbols.clone().with_context(|| {
-                    format!(
-                        "vendor mark {} (bundled_partial_swap) missing `symbols`",
-                        self.chunk_path
-                    )
-                })?;
-                self.ensure_symbols_reference_known_packages(
+                let (packages, symbols) = self.into_partial_tables(
                     "bundled_partial_swap",
-                    &packages,
-                    &symbols,
+                    VendorPackageSource::into_bundled_partial_swap_package,
                 )?;
                 Ok(VendorLevel::BundledPartialSwap(BundledPartialSwapMark {
                     bundle: BundledPartialSwapBundle {
                         path: source_path(source_root, bundle.path),
                     },
-                    packages: packages
-                        .into_iter()
-                        .map(|(name, package)| {
-                            Ok((
-                                name,
-                                package.into_bundled_partial_swap_package(&self.chunk_path)?,
-                            ))
-                        })
-                        .collect::<Result<_>>()?,
+                    packages,
                     symbols,
                 }))
             }
         }
     }
 
-    fn ensure_symbols_reference_known_packages(
-        &self,
+    fn into_partial_tables<P>(
+        self,
         level: &str,
-        packages: &BTreeMap<String, VendorPackageSource>,
-        symbols: &BTreeMap<String, PartialSwapSymbol>,
-    ) -> Result<()> {
-        for (chunk_export, symbol) in symbols {
+        compile_package: fn(VendorPackageSource, &str) -> Result<P>,
+    ) -> Result<(BTreeMap<String, P>, BTreeMap<String, PartialSwapSymbol>)> {
+        let path = &self.chunk_path;
+        let packages = self
+            .packages
+            .with_context(|| format!("vendor mark {path} ({level}) missing `packages`"))?;
+        let symbols = self
+            .symbols
+            .with_context(|| format!("vendor mark {path} ({level}) missing `symbols`"))?;
+        for (chunk_export, symbol) in &symbols {
             if !packages.contains_key(&symbol.package) {
                 bail!(
-                    "vendor mark {} ({level}) symbol {chunk_export} references unknown package `{}`",
-                    self.chunk_path,
+                    "vendor mark {path} ({level}) symbol {chunk_export} references unknown package `{}`",
                     symbol.package
                 );
             }
         }
-        Ok(())
+        let packages = packages
+            .into_iter()
+            .map(|(name, package)| Ok((name, compile_package(package, path)?)))
+            .collect::<Result<_>>()?;
+        Ok((packages, symbols))
     }
 
     fn ensure_no_swap_payload(&self) -> Result<()> {
