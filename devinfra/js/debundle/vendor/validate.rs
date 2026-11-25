@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
 
-use artifact::{ArtifactIndexes, ChunkBundle, list_chunk_file_paths};
+use artifact::{ArtifactIndexes, ChunkBundle};
 use binding_targets::{imported_export_name, module_export_name};
 use js_ast::{ParsedJsModule, is_binding_identifier};
 use spec::{BundledPartialSwapPackage, PartialSwapKind, PartialSwapPackage, PartialSwapSymbol};
@@ -270,12 +270,9 @@ pub(super) fn check_partial_swap_consumers(
             continue;
         }
         let caller_name = chunk_table.name(caller);
-        for file_path in list_chunk_file_paths(&chunk_artifact.js) {
-            let Some(ast) = chunk_artifact
-                .js
-                .get_file(&file_path)
-                .and_then(|file| file.ast())
-            else {
+        for file in chunk_artifact.js.ordered_files() {
+            let file_path = file.path.as_str();
+            let Some(ast) = file.ast() else {
                 continue;
             };
             let consumer = format!("{caller_name}/{file_path}");
@@ -290,7 +287,7 @@ pub(super) fn check_partial_swap_consumers(
                 let Some(target) = resolve_partial_swap_import_target(
                     &source,
                     caller,
-                    &file_path,
+                    file_path,
                     references,
                     chunk_table,
                     &materialized_index,

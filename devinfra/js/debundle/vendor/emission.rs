@@ -28,9 +28,7 @@ use swc_common::GLOBALS;
 use swc_ecma_ast::Id;
 use swc_ecma_visit::VisitMutWith;
 
-use artifact::{
-    ArtifactIndexes, ChunkBundle, FileRole, JsFile, JsFileAstParts, list_chunk_file_paths,
-};
+use artifact::{ArtifactIndexes, ChunkBundle, FileRole, JsFile, JsFileAstParts};
 use js_ast::{GlobalUseElisions, ParsedGlobalUses, ParsedJsModule};
 use spec::PartialSwapSymbol;
 
@@ -72,16 +70,7 @@ pub fn apply_emission_rewrites_in_place(
             continue;
         }
         let chunk_name = chunk_table.name(chunk_id).to_string();
-        for file_path in list_chunk_file_paths(&chunk_artifact.js) {
-            let Some(file) = chunk_artifact.js.get_file(&file_path) else {
-                continue;
-            };
-            // Materialized module files' specifiers are constructed by
-            // lowering from the same plan; only pass-through files
-            // (entries, runtime files) are rewritten here.
-            if file.metadata.role == FileRole::Module || file.ast().is_none() {
-                continue;
-            }
+        for file_path in passthrough_ast_paths(&chunk_artifact.js) {
             let (parts, ast) = chunk_artifact
                 .js
                 .remove_file(&file_path)
@@ -253,13 +242,7 @@ fn extract_residual_job<'a>(
     }
     let mut files = Vec::new();
     let mut has_entry_ast = false;
-    for file_path in list_chunk_file_paths(js_chunk) {
-        let Some(file) = js_chunk.get_file(&file_path) else {
-            continue;
-        };
-        if file.metadata.role == FileRole::Module || file.ast().is_none() {
-            continue;
-        }
+    for file_path in passthrough_ast_paths(js_chunk) {
         let (parts, ast) = js_chunk
             .remove_file(&file_path)
             .and_then(|file| file.into_ast_parts())
@@ -400,4 +383,15 @@ pub fn write_planned_vendor_outputs(plan: &VendorResolutionPlan) -> Result<()> {
         write_planned_bundled_assets(&bundled.assets)?;
     }
     Ok(())
+}
+
+// Lowering constructs module imports from the same plan. Only pass-through
+// entries and runtime files with a retained AST need a rewrite job.
+fn passthrough_ast_paths(chunk: &artifact::JsChunk) -> Vec<String> {
+    chunk
+        .ordered_files()
+        .into_iter()
+        .filter(|file| file.metadata.role != FileRole::Module && file.ast().is_some())
+        .map(|file| file.path.clone())
+        .collect()
 }

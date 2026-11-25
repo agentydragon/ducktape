@@ -5,7 +5,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use rayon::prelude::*;
 use swc_common::GLOBALS;
 
@@ -14,7 +14,7 @@ use artifact::paths::{join_module_path, path_from_module_path};
 use artifact::reports::{
     ChunkDecompositionOutput, ChunkManifest, ChunkValidationSummary, SelectedModuleLowering,
 };
-use artifact::{ChunkBundle, EmissionFiles, FileRole, JsChunk, list_chunk_file_paths};
+use artifact::{ChunkBundle, EmissionFiles, FileRole, JsFile};
 use output_layout::CHUNK_REPORT;
 use report_io::write_json;
 
@@ -92,11 +92,11 @@ fn materialize_chunk_scripts(
     let chunk = &chunk_artifact.js;
     let chunk_out_dir = app_root.join(path_from_module_path(&chunk_name));
     fs::create_dir_all(&chunk_out_dir)?;
-    let metrics = list_chunk_file_paths(chunk)
+    let metrics = chunk
+        .ordered_files()
         .into_iter()
         .map(|file| {
             materialize_chunk_file(
-                chunk,
                 &chunk_name,
                 &chunk_out_dir,
                 selected_module_by_chunk_file,
@@ -131,25 +131,22 @@ fn materialize_chunk_scripts(
 }
 
 fn materialize_chunk_file(
-    chunk: &JsChunk,
     chunk_id: &str,
     chunk_out_dir: &Path,
     selected_module_by_chunk_file: &HashMap<(String, String), &SelectedModuleLowering>,
-    file: String,
+    file_artifact: &JsFile,
 ) -> Result<OutputFileMetric> {
-    let file_artifact = chunk
-        .get_file(&file)
-        .with_context(|| format!("missing artifact file {chunk_id}/{file}"))?;
+    let file = file_artifact.path.as_str();
     let rendered = file_artifact.render_source()?;
-    let output_path = join_module_path(&[chunk_id, &file]);
-    let target_path = chunk_out_dir.join(path_from_module_path(&file));
+    let output_path = join_module_path(&[chunk_id, file]);
+    let target_path = chunk_out_dir.join(path_from_module_path(file));
     if let Some(parent) = target_path.parent() {
         fs::create_dir_all(parent)?;
     }
     let metric = output_file_metric(
         chunk_id,
         &output_path,
-        &file,
+        file,
         &rendered,
         selected_module_by_chunk_file,
         file_artifact.metadata.role,

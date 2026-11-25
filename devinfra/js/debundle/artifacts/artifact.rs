@@ -76,8 +76,10 @@ impl JsChunk {
         }
     }
 
-    fn file_paths(&self) -> impl Iterator<Item = &str> {
-        self.files.iter().map(|f| f.path.as_str())
+    pub fn ordered_files(&self) -> Vec<&JsFile> {
+        let mut files: Vec<_> = self.files.iter().collect();
+        files.sort_by_key(|file| (file.path != self.entry_file, file.path.as_str()));
+        files
     }
 }
 
@@ -318,13 +320,6 @@ impl ChunkBundle {
         self.chunks.retain(|chunk| keep(chunk.chunk_id));
     }
 
-    fn chunk_source_path(&self, chunk_id: ChunkId) -> String {
-        self.find_chunk(chunk_id).map_or_else(
-            || format!("{}.js", self.chunk_table.name(chunk_id)),
-            |chunk| chunk.analysis.source_path.clone(),
-        )
-    }
-
     pub fn source_import_resolver<'a>(
         &'a self,
         indexes: &'a ArtifactIndexes,
@@ -419,7 +414,7 @@ impl ArtifactIndexes {
             if let Some(entry) = chunk_entry_path(chunk_artifact) {
                 entry_files.insert(chunk_id, entry.to_string());
             }
-            let source_path = artifact.chunk_source_path(chunk_id);
+            let source_path = chunk_artifact.analysis.source_path.clone();
             if let Some(existing) = source_chunk_index.insert(source_path.clone(), chunk_id) {
                 bail!(
                     "Duplicate chunk sourcePath {source_path}: {} and {}",
@@ -428,13 +423,11 @@ impl ArtifactIndexes {
                 );
             }
             chunk_source_paths.insert(chunk_id, source_path);
-            for file_path in list_chunk_file_paths(chunk) {
-                let Some(file) = chunk.get_file(&file_path) else {
-                    continue;
-                };
+            for file in chunk.ordered_files() {
+                let file_path = &file.path;
                 let key = (chunk_id, file_path.clone());
                 file_source_paths.insert(key.clone(), file.metadata.source_path.clone());
-                let output_path = join_module_path(&[chunk_name, &file_path]);
+                let output_path = join_module_path(&[chunk_name, file_path]);
                 if let Some(existing) = output_path_index.insert(output_path.clone(), key.clone()) {
                     bail!(
                         "Duplicate artifact output path {output_path}: {}/{} and {}/{}",
@@ -674,23 +667,6 @@ fn select_entry_file<'a>(
             }
         })
         .map(|(path, _)| path)
-}
-
-pub fn list_chunk_file_paths(chunk: &JsChunk) -> Vec<String> {
-    let mut paths = chunk
-        .file_paths()
-        .map(|s| s.to_string())
-        .collect::<Vec<_>>();
-    paths.sort_by(|left, right| {
-        if left == &chunk.entry_file {
-            std::cmp::Ordering::Less
-        } else if right == &chunk.entry_file {
-            std::cmp::Ordering::Greater
-        } else {
-            left.cmp(right)
-        }
-    });
-    paths
 }
 
 #[cfg(test)]
