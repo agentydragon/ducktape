@@ -22,7 +22,7 @@ private def codeMatch : MatchEq Code
     return ⟨c ▸ inits ▸ rfl⟩
   | .derivedBody before args f env fields, .derivedBody before' args' g env' fields' => do
     let ⟨p⟩ ← listEq SyntaxMatch.stmtEq before before'
-    let ⟨a⟩ ← optionEq (listEq SyntaxMatch.exprEq) args args'
+    let ⟨a⟩ ← SyntaxMatch.superCallEq args args'
     let ⟨b⟩ ← SyntaxMatch.funcEq f g
     let ⟨c⟩ ← scalarEq env env'
     let ⟨inits⟩ ← listEq fieldMatch fields fields'

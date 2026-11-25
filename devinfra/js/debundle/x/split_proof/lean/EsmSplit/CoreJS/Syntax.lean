@@ -133,9 +133,9 @@ inductive Expr where
   | spreadArg (source : Expr)
   /-- `class name { … }`; `self` when the body sees the name. -/
   | cls (name : String) (self : Bool) (ctor : Func) (members : List ClassMember)
-  /-- A derived class. An explicit constructor splits its body at the direct super call. -/
+  /-- A derived class. An explicit constructor separates the prefix, superclass arguments and continuation. -/
   | derived (name : String) (self : Bool) (parent : Expr) (members : List ClassMember)
-      (ctor : Option (List Stmt × Option (List Expr) × Func))
+      (ctor : Option (List Stmt × SuperCall × Func))
   | get (o k : Expr)
   /-- Read from the current prototype of the lexical home object, using the active receiver. -/
   | getSuper (k : Expr)
@@ -164,6 +164,13 @@ inductive Expr where
   | logical (op : LogOp) (a b : Expr)
   | cond (c t e : Expr)
   | seq (a b : Expr)
+
+/-- The superclass arguments selected after the prefix has executed. A conditional
+prefix saves its choice and the lexical environments of each selected argument. -/
+inductive SuperCall where
+  | forward
+  | explicit (args : List Expr)
+  | conditional (choice : Name) (consequent alternate : List Expr)
 
 inductive Target where
   | var (x : Name)
@@ -434,13 +441,14 @@ def ClassMember.free : ClassMember → List Name
   | .field _ k init => k.free ++ init.free
   | .staticBlock body => body.free
 
-def freeSuperArgs : Option (List Expr) → List Name
-  | some args => freeExprs args
-  | none => []
+def freeSuperArgs : SuperCall → List Name
+  | .forward => []
+  | .explicit args => freeExprs args
+  | .conditional choice yes no => choice :: (freeExprs yes ++ freeExprs no)
 
-/-- An absent argument list forwards the fresh strict arguments object through its intrinsic iterator.
-The prefix, super arguments and remaining body share the constructor's scope. -/
-def derivedCtorFree : Option (List Stmt × Option (List Expr) × Func) → List Name
+/-- The prefix, super arguments and remaining body share the constructor's scope.
+The forwarding form checks the fresh arguments object's intrinsic iterator. -/
+def derivedCtorFree : Option (List Stmt × SuperCall × Func) → List Name
   | some (before, args, .mk _ _ _ params body) | some (before, args, .withDefaults _ _ _ params _ body) =>
     freeFunctionNames ("arguments" :: derivedReceiverName :: newTargetName :: params) (before ++ body) (freeStmts before ++ freeSuperArgs args ++ freeStmts body)
   | some (before, args, .withRest _ _ _ fixed rest body) =>

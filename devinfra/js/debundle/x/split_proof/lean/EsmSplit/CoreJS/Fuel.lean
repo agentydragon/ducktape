@@ -361,12 +361,20 @@ theorem Mono.call_succ (callee this : Val) (args : List Val) :
 
 theorem Mono.construct_succ (target callee : Val) (args : List Val) :
     (constructTarget (n + 1) target callee args : M W _) ⊑ constructTarget (m + 1) target callee args := by
-  have superArgsMono (argExprs : Option (List Expr)) (env : Env) :
-      (argExprs.elim (forwardFreshArguments args) (evalArgs n env) : M W _) ⊑
-        argExprs.elim (forwardFreshArguments args) (evalArgs m env) := by
+  have superArgsMono (argExprs : SuperCall) (env : Env) :
+      (evalSuperArguments (evalArgs n env) env args argExprs : M W _) ⊑
+        evalSuperArguments (evalArgs m env) env args argExprs := by
     cases argExprs with
-    | none => exact M.le_refl _
-    | some es => exact ih.args env es
+    | forward => exact M.le_refl _
+    | explicit es => exact ih.args env es
+    | conditional choice yes no =>
+      unfold evalSuperArguments
+      refine M.le_bind (M.le_refl _) fun value => ?_
+      cases value <;> try exact M.le_refl _
+      case bool selected =>
+        cases selected
+        · exact ih.args env no
+        · exact ih.args env yes
   unfold constructTarget constructParent initDerivedFields
   mono ih
   exact superArgsMono _ _

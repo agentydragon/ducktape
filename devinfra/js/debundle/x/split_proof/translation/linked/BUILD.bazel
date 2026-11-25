@@ -108,6 +108,7 @@ _TEST_ENV = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean
     )
     for name, shards in [
         ("browser_globals_test", 4),
+        ("conditional_super_test", 3),
         ("default_parameters_test", 3),
         ("flat_patterns_test", 6),
         ("generator_test", 4),

@@ -101,7 +101,7 @@ inductive Code where
   /-- An implicit derived constructor with public instance fields initialized on the superclass result. -/
   | derivedFields (closed : Env) (fields : List (PropertyKey × Expr))
   /-- Execute the prefix, call super, initialize fields, then run the remaining body. -/
-  | derivedBody (before : List Stmt) (superArgs : Option (List Expr)) (body : Func) (closed : Env)
+  | derivedBody (before : List Stmt) (superArgs : SuperCall) (body : Func) (closed : Env)
       (fields : List (PropertyKey × Expr))
   | closure (f : Func) (env : Env) (fields : List (PropertyKey × Expr))
   | host (name : String)

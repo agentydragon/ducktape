@@ -231,7 +231,7 @@ def classParents (call : Call W) : Val → M W (Addr × Option Addr)
   | .null => pure (functionProto, none)
   | base => classParentsNonNull call base
 
-def derivedCtorCode (env : Env) (ctor : Option (List Stmt × Option (List Expr) × Func))
+def derivedCtorCode (env : Env) (ctor : Option (List Stmt × SuperCall × Func))
     (fields : List (PropertyKey × Expr)) : Code × Nat :=
   let closed := env.capture (derivedCtorFree ctor ++ fields.flatMap (·.2.free))
   match ctor, fields with
@@ -240,7 +240,7 @@ def derivedCtorCode (env : Env) (ctor : Option (List Stmt × Option (List Expr) 
   | some (before, args, body), _ => (.derivedBody before args body closed fields, body.length)
 
 /-- Only constructors with pre-super receiver captures allocate this extra cell. -/
-def capturesDerivedReceiver (before : List Stmt) (args : Option (List Expr)) : Bool :=
+def capturesDerivedReceiver (before : List Stmt) (args : SuperCall) : Bool :=
   (freeStmts before ++ freeSuperArgs args).contains derivedReceiverName
 
 def initCapturedReceiver (env : Env) (receiver : Val) (captured : Bool) : M W Unit :=
@@ -249,7 +249,7 @@ def initCapturedReceiver (env : Env) (receiver : Val) (captured : Bool) : M W Un
 /-- The two parts share parameters and declarations. Scope entry reserves the
 captured receiver cell in its dead zone, so a superclass cannot read it via an
 arrow before returning. The synthetic declaration is never executed. -/
-def derivedScope (before : List Stmt) (args : Option (List Expr)) (body : Func) (captured : Bool) : Func :=
+def derivedScope (before : List Stmt) (args : SuperCall) (body : Func) (captured : Bool) : Func :=
   -- super arguments share the constructor activation with both statement lists.
   let implicitUses := [newTargetName, "arguments"].filter (freeSuperArgs args).contains
   let statements := before ++ body.body ++ implicitUses.map (fun name => .expr (.var name))
@@ -261,7 +261,7 @@ def derivedScope (before : List Stmt) (args : Option (List Expr)) (body : Func) 
 /-- Build the class after evaluating and checking its heritage. -/
 def finishDerived (runMembers : Env → Addr → Addr → List ClassMember → M W (List (Bool × PropertyKey)))
     (env : Env) (name : Name) (self : Bool) (members : List ClassMember) (parents : Addr × Option Addr)
-    (ctor : Option (List Stmt × Option (List Expr) × Func) := none)
+    (ctor : Option (List Stmt × SuperCall × Func) := none)
     (initStatic : Addr → List (Bool × PropertyKey) → M W Unit := fun _ _ => pure ()) : M W Val := do
   let proto ← alloc { proto := parents.2, props := [] }
   let ctorEnv := { env with home := some proto }
@@ -304,6 +304,16 @@ def forwardFreshArguments (args : List Val) : M W (List Val) := do
   match (← getObj arrayIteratorProto).props.lookup (.str "next") with
   | some (.data (.host "ArrayIterator.prototype.next") ..) => pure args
   | _ => unknown "arguments spread uses a modified array iterator"
+
+def evalSuperArguments (evalArgs : List Expr → M W (List Val)) (env : Env) (received : List Val) :
+    SuperCall → M W (List Val)
+  | .forward => forwardFreshArguments received
+  | .explicit args => evalArgs args
+  | .conditional choice yes no => do
+    match ← readVar env choice with
+    | .bool true => evalArgs yes
+    | .bool false => evalArgs no
+    | _ => unknown "invalid conditional super choice"
 
 /-- Start at the home object's current prototype. Any accessor uses the receiver retained by the reference. -/
 def getSuperProp (call : Call W) (home : Option Addr) (receiver key : Val) : M W Val := do
@@ -647,7 +657,7 @@ def constructTarget : Nat → Val → Val → List Val → M W Val
         match ← execStmts n env before with
         | .normal => do
           let parent := (← getObj a).proto
-          let argv ← superArgs.elim (forwardFreshArguments args) (evalArgs n env)
+          let argv ← evalSuperArguments (evalArgs n env) env args superArgs
           -- ECMA-262 selects the superclass before evaluating arguments. V8 can select it after.
           if (← getObj a).proto != parent then unknown "superclass changed while evaluating super arguments"
           else do

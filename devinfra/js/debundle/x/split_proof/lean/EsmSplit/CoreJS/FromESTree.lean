@@ -442,6 +442,33 @@ private def directSuper? (stmt : Json) : Option (List Json × Json × Option Jso
   let fields ← stmt.getObj?.toOption
   return (prior, call, some (.obj (fields.insert fieldName residual)))
 
+/-- An if/else can select the superclass call when both arms end with a direct call.
+Keep each arm's prefix, including lexical declaration scope. -/
+private def terminalSuper? (arm : Json) : Option (List Json × Json) := do
+  let statements ← if (field arm "type").toOption == some "BlockStatement" then
+    (arm.getObjValAs? (List Json) "body").toOption else pure [arm]
+  let last ← statements.getLast?
+  let (prefix, call, residual) ← directSuper? last
+  if residual.isNone then some (statements.dropLast ++ prefix, call) else none
+
+private def conditionalSuper? (stmt : Json) : Option (Json × (List Json × Json) × (List Json × Json)) := do
+  guard ((field stmt "type").toOption == some "IfStatement")
+  let test ← (stmt.getObjVal? "test").toOption
+  let yes ← (stmt.getObjVal? "consequent").toOption >>= terminalSuper?
+  let no ← (stmt.getObjVal? "alternate").toOption >>= terminalSuper?
+  return (test, yes, no)
+
+/-- Each closure reads the selected arm's actual cells. Creating it does not
+evaluate its argument. A spread still attempts iteration at the original argument position. -/
+private def delayedSuperArguments (arm : Nat) (args : List Expr) : List Name × List Stmt × List Expr :=
+  let wrapped := args.zipIdx.map fun (arg, i) =>
+    let slot := s!":super-argument:{arm}:{i}"
+    let (spread, operand) := arg.argument
+    let thunk := Expr.func (.mk "" .arrow false [] [.ret operand])
+    let call := Expr.call (.var slot) []
+    (slot, Stmt.expr (.assign (.var slot) thunk), if spread then .spreadArg call else call)
+  (wrapped.map (·.1), wrapped.map (·.2.1), wrapped.map (·.2.2))
+
 /-- Lower new.target only within its owning function and lexical arrows. A nested ordinary
 function is prepared at its own entry. Nested classes have separate contexts for methods,
 fields and keys, so leave those nodes for class lowering. -/
@@ -924,10 +951,38 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
   if initializers.isEmpty then return .complete (.mk name kind self slots.toList stmts)
   return .objectBindings slots.toList initializers.toList stmts
 
-/-- Split a derived constructor at its direct super call, including a call among
-comma operands. All three parts run with the same parameter and local cells. -/
+private partial def linkedBeforeSuper (profile : HostProfile) (imports : List Name)
+    (statements : List Json) : Except String (List Stmt) := do
+  let mut before := #[]
+  for stmt in statements do
+    match ← field stmt "type" with
+    | "VariableDeclaration" =>
+      let prepared ← prepareBeforeSuper stmt true
+      let kind ← field prepared "kind"
+      for d in ← prepared.getObjValAs? (Array Json) "declarations" do
+        before := before ++ (← linkedPrefixDeclarator (linkedExpr profile imports true) kind d before.size)
+    | "ExpressionStatement" =>
+      let expr ← prepareBeforeSuper (← stmt.getObjVal? "expression") true
+      before := before.push (.expr (← linkedExpr profile imports true "" expr))
+    | other => throw s!"unsupported {other} before super"
+  return before.toList
+
+private partial def linkedSuperArguments (profile : HostProfile) (imports : List Name)
+    (rawArgs : List Json) : Except String (List Expr) :=
+  rawArgs.mapM fun arg => do
+    linkedArgument (linkedExpr profile imports true "") (← prepareBeforeSuper arg true)
+
+private partial def linkedSuperArm (profile : HostProfile) (imports : List Name) (arm : Nat)
+    (prefix : List Json) (call : Json) : Except String (List Name × Stmt × List Expr) := do
+  let before ← linkedBeforeSuper profile imports prefix
+  let args ← linkedSuperArguments profile imports (← call.getObjValAs? (List Json) "arguments")
+  let (slots, assign, delayed) := delayedSuperArguments arm args
+  return (slots, .block (before ++ assign), delayed)
+
+/-- Split a derived constructor around the superclass call. The prefix and
+the remaining function body run with the same parameter and local cells. -/
 private partial def linkedDerivedConstructor (profile : HostProfile) (imports : List Name)
-    (name : Name) (fn : Json) : Except String (List Stmt × Option (List Expr) × Func) := do
+    (name : Name) (fn : Json) : Except String (List Stmt × SuperCall × Func) := do
   let fn ← prepareNewTargetFunction fn
   for param in ← fn.getObjValAs? (Array Json) "params" do
     if (← field param "type") == "AssignmentPattern" then
@@ -941,34 +996,35 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
     else discard <| localBinding param
   let block ← fn.getObjVal? "body"
   let statements ← block.getObjValAs? (List Json) "body"
-  let (prefixStmts, remaining) := statements.span (fun stmt => (directSuper? stmt).isNone)
+  let (prefixStmts, remaining) := statements.span fun stmt =>
+    (directSuper? stmt).isNone && (conditionalSuper? stmt).isNone
   let first :: tail := remaining | throw "expected a direct super call"
-  let some (commaPrefix, call, rest) := directSuper? first | throw "expected a direct super call"
-  let mut before := #[]
-  for stmt in prefixStmts ++ commaPrefix do
-    match ← field stmt "type" with
-    | "VariableDeclaration" =>
-      let prepared ← prepareBeforeSuper stmt true
-      let kind ← field prepared "kind"
-      for d in ← prepared.getObjValAs? (Array Json) "declarations" do
-        before := before ++ (← linkedPrefixDeclarator (linkedExpr profile imports true) kind d before.size)
-    | "ExpressionStatement" =>
-      let expr ← prepareBeforeSuper (← stmt.getObjVal? "expression") true
-      before := before.push (.expr (← linkedExpr profile imports true "" expr))
-    | other => throw s!"unsupported {other} before super"
-  let rawArgs ← call.getObjValAs? (List Json) "arguments"
-  let forward := match rawArgs with
-    | [arg] => (field arg "type").toOption == some "SpreadElement" &&
-      (arg.getObjVal? "argument" >>= identifier).toOption == some "arguments" &&
-      (arg.getObjVal? "argument" >>= (field · "k")).toOption == some "L"
-    | _ => false
-  let args ← if forward && before.isEmpty && (← fn.getObjValAs? (Array Json) "params").isEmpty then
-    pure none
-  else some <$> rawArgs.mapM fun arg => do
-    linkedArgument (linkedExpr profile imports true "") (← prepareBeforeSuper arg true)
-  let stmts := rest.toList ++ tail
+  let (before, args, stmts) ←
+    if let some (commaPrefix, call, rest) := directSuper? first then do
+      let before ← linkedBeforeSuper profile imports (prefixStmts ++ commaPrefix)
+      let rawArgs ← call.getObjValAs? (List Json) "arguments"
+      let forward := match rawArgs with
+        | [arg] => (field arg "type").toOption == some "SpreadElement" &&
+          (arg.getObjVal? "argument" >>= identifier).toOption == some "arguments" &&
+          (arg.getObjVal? "argument" >>= (field · "k")).toOption == some "L"
+        | _ => false
+      let args ← if forward && before.isEmpty && (← fn.getObjValAs? (Array Json) "params").isEmpty then
+        pure SuperCall.forward
+      else SuperCall.explicit <$> linkedSuperArguments profile imports rawArgs
+      pure (before, args, rest.toList ++ tail)
+    else if let some (test, (yesPrefix, yesCall), (noPrefix, noCall)) := conditionalSuper? first then do
+      let before ← linkedBeforeSuper profile imports prefixStmts
+      let test ← linkedExpr profile imports true "" (← prepareBeforeSuper test true)
+      let (yesSlots, yes, yesArgs) ← linkedSuperArm profile imports 0 yesPrefix yesCall
+      let (noSlots, no, noArgs) ← linkedSuperArm profile imports 1 noPrefix noCall
+      let choice := ":super-branch"
+      let declareSlots := (yesSlots ++ noSlots).map fun slot => Stmt.decl .let_ slot .undef
+      let testChoice := Stmt.decl .const choice (.cond test (.bool true) (.bool false))
+      let branch := Stmt.ite (.var choice) yes no
+      pure (before ++ declareSlots ++ [testChoice, branch], SuperCall.conditional choice yesArgs noArgs, tail)
+    else throw "expected a direct super call"
   let post := Json.obj ((← block.getObj?).insert "body" (.arr stmts.toArray))
-  let prefixVars := varNamesOf before.toList
+  let prefixVars := varNamesOf before
   let checkFunctionOverlap := fun body =>
     if (funDecls body).any (fun f => prefixVars.contains f.name) then
       throw "local function declaration overlaps a var binding before super"
@@ -978,23 +1034,23 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
     -- The argument slots are already bound. A getter or coercion can throw before
     -- any constructor statement, superclass call or instance-field initializer runs.
     checkFunctionOverlap body
-    return (initializers ++ before.toList, args, .mk name .classCtor false slots body)
+    return (initializers ++ before, args, .mk name .classCtor false slots body)
   | .complete body =>
     -- An opaque body may depend on the derived constructor's home object or new.target.
     if let some (_, _, _, why) := body.opaqueBody then throw (why.getD "unsupported derived constructor body")
     checkFunctionOverlap body.body
-    return (before.toList, args, body)
+    return (before, args, body)
   | .defaults slots arity initializers body =>
     -- derivedScope enters both halves of the body at once. A body lexical binding must
     -- not hide an outer name used by a default. Check prefix vars against the parameter
     -- cells and default references, as linkedFunctionParts does for vars in the tail.
     let reads := freeStmts initializers
-    if (lexNames (before.toList ++ body)).any reads.contains then
+    if (lexNames (before ++ body)).any reads.contains then
       throw "derived constructor body binding shadows a default parameter reference"
     if prefixVars.any reads.contains then
       throw "var before super overlaps default parameters or their references"
     checkFunctionOverlap body
-    return (initializers ++ before.toList, args, .withDefaults name .classCtor false slots arity body)
+    return (initializers ++ before, args, .withDefaults name .classCtor false slots arity body)
 
 /-- Public, static-name class elements with default or explicit derived constructors. -/
 private partial def linkedClass (profile : HostProfile) (imports : List Name) (inFunction : Bool) (hint : Name) (j : Json) :

@@ -287,10 +287,18 @@ theorem constructTarget_reachFrame_of_steps {r R cells A n} (away : Away r R A)
           apply active.bind
           intro original safeObj
           have argvFrame : ReachFrame r R cells A (fun vs => ∀ v ∈ vs, SafeVal A v)
-              (superArgs.elim (forwardFreshArguments args) (evalArgs n env) : M W (List Val)) := by
+              (evalSuperArguments (evalArgs n env) env args superArgs : M W (List Val)) := by
             cases superArgs with
-            | some es => exact evalArgsFrame env es he
-            | none =>
+            | explicit es => exact evalArgsFrame env es he
+            | conditional choice yes no =>
+              apply (reachFrame_readVar away env choice he).bind
+              intro branch _
+              cases branch <;> try exact reachFrame_unknown r R cells A _ _
+              case bool chosen =>
+                cases chosen
+                · exact evalArgsFrame env no he
+                · exact evalArgsFrame env yes he
+            | forward =>
               apply (reachFrame_getObj away iteratorRoot).bind
               intro proto _
               split <;> first | exact reachFrame_pure r R cells A args safeArgs | exact reachFrame_unknown r R cells A _ _
