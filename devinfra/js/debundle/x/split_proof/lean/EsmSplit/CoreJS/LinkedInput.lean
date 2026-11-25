@@ -100,11 +100,19 @@ private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (impo
     return (s, bindings, sites.templates.toList)
   return (← FromESTree.linkedUnit imports ast profile, [], sites.templates.toList)
 
-/-- `export default …` lowers concretely. A structural proof can keep it only as a pivot. -/
+/-- A named default declaration exports its module binding. A retained named
+declaration uses the same checked captures and execution as the corresponding
+ordinary declaration. Anonymous defaults still require concrete lowering. -/
 private def BodyFormat.lowerDefault (format : BodyFormat) (profile : HostProfile) (imports : List Name)
-    (origin : Nat) (j : Json) : Except String (Stmt × Name × List TemplateSite) := do
+    (origin : Nat) (providerSite : Option (String × Nat)) (j : Json) : Except String (Stmt × Name × List TemplateSite) := do
   if let .structural pivots _ := format then
-    unless pivots.contains origin do throw "unsupported opaque default export"
+    unless pivots.contains origin do
+      unless ["FunctionDeclaration", "ClassDeclaration"].contains (Lower.typ j) &&
+          Lower.typ (Lower.fld j "id") == "Identifier" do throw "unsupported opaque default export"
+      let name ← j.getObjVal? "id" >>= FromESTree.moduleBinding
+      let (s, bindings, sites) ← format.lower profile imports origin providerSite j true
+      unless bindings == [name] do throw "expected one named default binding"
+      return (s, name, sites)
   let (ast, sites) := (numberSites origin j).run {}
   let (name, s) ← FromESTree.linkedDefaultExport imports ast profile
   return (s, name, sites.templates.toList)
@@ -147,7 +155,9 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
         units := units.push (i, s, declaration)
         for name in names do exports := exports.push (name, name)
     | "ExportDefaultDeclaration" =>
-      let (s, name, sites) ← (format.lowerDefault profile names (← origin) (← j.getObjVal? "declaration")).mapError
+      let unitOrigin ← origin
+      let (s, name, sites) ← (format.lowerDefault profile names unitOrigin
+        (provider.map fun referrer => (referrer, unitOrigin - base)) (← j.getObjVal? "declaration")).mapError
         fun why => s!"statement {i}: {why}"
       templates := templates ++ sites.toArray
       units := units.push (i, s, j)
