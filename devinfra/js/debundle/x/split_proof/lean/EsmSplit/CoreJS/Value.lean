@@ -460,9 +460,21 @@ def regexpGetters : List (String × RegExpGetter) := [
 
 def arrayIteratorProto : Addr := ⟨0, regexpProto.index + 1 + regexpGetters.length⟩
 
-/-- Reserved after the existing intrinsic objects. Hosts populate this ordinary object before use;
-an empty object describes an empty synthetic host, not an arbitrary real host. -/
-def globalObject : Addr := ⟨0, arrayIteratorProto.index + 1⟩
+/-- Slots reserved after the existing prototype objects. The global object is host-owned. -/
+inductive RealmSlot where
+  | errorPrototype | errorConstructor | globalObject
+  deriving DecidableEq, BEq, Repr
+
+/-- The same ordered list determines addresses and materializes the corresponding objects. -/
+def realmSlots : List RealmSlot := [.errorPrototype, .errorConstructor, .globalObject]
+
+def realmSlotAddr (slot : RealmSlot) (_present : realmSlots.contains slot = true) : Addr :=
+  ⟨0, arrayIteratorProto.index + 1 + realmSlots.idxOf slot⟩
+
+def errorProto : Addr := realmSlotAddr .errorPrototype (by decide)
+def errorConstructor : Addr := realmSlotAddr .errorConstructor (by decide)
+/-- An empty synthetic global object. Hosts must supply a complete snapshot before use. -/
+def globalObject : Addr := realmSlotAddr .globalObject (by decide)
 
 def arrayIteratorPrototype : Obj :=
   { proto := some iteratorProto, props := hostMembers "ArrayIterator.prototype" ["next"] ++ [stringTag "Array Iterator"] }
@@ -482,6 +494,29 @@ private def regexpGetterObject (name : String) (getter : RegExpGetter) : Obj :=
 def regexpObject (data : RegExpData) : Obj :=
   { proto := some regexpProto, regexp := some data, props := [("lastIndex", .data (.num 0) true false false)] }
 
+/-- The standard own properties of %Error.prototype%. `toString` is still opaque.
+The host must supply any additional properties of its actual realm. -/
+def errorPrototype : Obj :=
+  { proto := some objectProto, props := [
+    ("constructor", .data (.obj errorConstructor) true false true),
+    ("name", .data (.str "Error") true false true),
+    ("message", .data (.str "") true false true),
+    ("toString", .data (.host "Error.prototype.toString") true false true)] }
+
+/-- Until Error construction is modeled, a call or construct ends in unknown.
+The host must supply any nonstandard own properties before exposing this object. -/
+def errorConstructorObject : Obj :=
+  { proto := some functionProto, code := some (.host "%Error%"), props := [
+    ("length", .data (.num 1) false false true),
+    ("name", .data (.str "Error") false false true),
+    ("prototype", .data (.obj errorProto) false false false)] }
+
+/-- Materialize the reserved slots in the same order used by `realmSlotAddr`. -/
+def realmSlotObject : RealmSlot → Obj
+  | .errorPrototype => errorPrototype
+  | .errorConstructor => errorConstructorObject
+  | .globalObject => { proto := none, props := [] }
+
 /-- The intrinsic prototypes, with every member a value of the host. `Function.prototype` is itself callable. -/
 def builtins : Array Obj := #[
   { proto := none, props := hostMembers "Object.prototype" objectProtoNames ++ [hostAccessor "Object.prototype" "__proto__"] },
@@ -494,7 +529,11 @@ def builtins : Array Obj := #[
     props := ("length", .data (.num 0) true false false) ::
       (hostMembers "Array.prototype" arrayProtoNames ++ [hostIterator "Array.prototype.values"]) },
   asyncFunctionPrototype, iteratorPrototype, generatorPrototype, generatorFunctionPrototype,
-  asyncIteratorPrototype, asyncGeneratorPrototype, asyncGeneratorFunctionPrototype, regexpPrototype] ++ (regexpGetters.map fun (k, g) => regexpGetterObject k g).toArray ++ #[arrayIteratorPrototype, { proto := none, props := [] }]
+  asyncIteratorPrototype, asyncGeneratorPrototype, asyncGeneratorFunctionPrototype, regexpPrototype] ++ (regexpGetters.map fun (k, g) => regexpGetterObject k g).toArray ++ #[arrayIteratorPrototype] ++ (realmSlots.map realmSlotObject).toArray
+
+#guard builtins.size == arrayIteratorProto.index + 1 + realmSlots.length
+#guard realmSlots.eraseDups.length == realmSlots.length
+#guard errorProto != errorConstructor && errorProto != globalObject && errorConstructor != globalObject
 
 /-! ## The host functions the world answers for -/
 
@@ -1153,6 +1192,13 @@ def templateArrayObject (values : List Val) (raw : Option Val) : Obj :=
   let extra := raw.toList.map fun v => (PropertyKey.str "raw", Property.data v false false false)
   { proto := some arrayProto, array := true, frozen := true, props := items ++ [length] ++ extra }
 
+/-- Array elisions increase length without defining the corresponding index. -/
+def sparseArrayObject (holes : List Nat) (values : List Val) : Obj :=
+  let items := (values.zipIdx.filter fun (_, i) => !(holes.contains i)).map fun (v, i) =>
+    (PropertyKey.str (toString i), Property.data v true true true)
+  { proto := some arrayProto, array := true,
+    props := items ++ [(PropertyKey.str "length", Property.data (.num (Float.ofNat values.length)) true false false)] }
+
 def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
   let arg (i : Nat) : Val := args.getD i .undef
   match p with
@@ -1194,6 +1240,7 @@ def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
     let values := if cooked then args.drop 1 else args
     let raw := if cooked then args.head? else none
     return .obj (← alloc (templateArrayObject values raw))
+  | .sparseArray holes => .obj <$> alloc (sparseArrayObject holes args)
   | .forInKeys => forInKeys (arg 0)
   | .checkForInWrite => checkForInWrite (arg 0) (arg 1) (arg 2)
   | .log =>

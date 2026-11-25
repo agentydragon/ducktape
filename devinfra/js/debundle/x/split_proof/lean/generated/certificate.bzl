@@ -27,11 +27,9 @@ def _lowered_certificate_impl(ctx):
         arguments = [args],
         command = """
 set -eu
-work=$(mktemp -d "$(dirname "$3")/split.XXXXXX")
-trap 'rm -rf "$work"' EXIT
 splitter=$1 manifest=$2 instance=$3
 shift 3
-"$splitter" --diagnostic "$manifest" "$work" --lean "$instance" "$@"
+"$splitter" --generate-instance "$manifest" "$instance" "$@"
 """,
         mnemonic = "GenerateSplitCertificate",
     )

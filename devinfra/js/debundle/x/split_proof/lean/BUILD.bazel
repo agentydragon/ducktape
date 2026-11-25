@@ -221,6 +221,7 @@ sh_binary(
         "//devinfra/js/debundle/x/split_proof/model:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:__pkg__",
     ],
 )
 
@@ -262,6 +263,7 @@ lean_library(
         "EsmSplit/CoreJS/Scope.lean",
         "EsmSplit/CoreJS/Split.lean",
         "EsmSplit/CoreJS/StateMatch.lean",
+        "EsmSplit/CoreJS/StructuralRefusal.lean",
         "EsmSplit/CoreJS/WriteExpr.lean",
     ],
     deps = [
@@ -374,6 +376,7 @@ lean_library(
         "EsmSplit/LowerSplit/Certified.lean",
         "EsmSplit/LowerSplit/Diagnostic.lean",
         "EsmSplit/LowerSplit/Input.lean",
+        "EsmSplit/LowerSplit/InstanceGenerator.lean",
     ],
     deps = [
         ":corejs_certificates",
@@ -463,6 +466,15 @@ lean_library(
         "EsmSplit/CoreJS/Value.lean",
     ],
     deps = [":estree"],
+)
+
+lean_binary(
+    name = "error_realm_test_runner",
+    testonly = True,
+    srcs = ["ErrorRealmTest.lean"],
+    entry = "ErrorRealmTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
+    deps = [":corejs_runtime"],
 )
 
 lean_binary(
@@ -756,6 +768,7 @@ lean_axiom_test(
         "CoreJS.reachFrame_prim_defineProperty",
         "CoreJS.reachFrame_prim_getPrototypeOf",
         "CoreJS.reachFrame_prim_setPrototypeOf",
+        "CoreJS.sparseArray_nodes",
         "CoreJS.ReachFrame.attempt",
         "CoreJS.converse_reachFrame",
         "CoreJS.opaque_world_reachFrame",

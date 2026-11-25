@@ -9,6 +9,7 @@ import { coreFromParsed } from "../model/to_core.mjs";
 import { bundleFromParsed } from "./frontend.mjs";
 import { parseModule } from "./scope_metadata.mjs";
 import { writeDeployment } from "./testing/deployment_manifest.mjs";
+import { split as certifySplit } from "./testing/split.mjs";
 import { coreOf } from "./split_dump.mjs";
 
 const dir = process.env.TEST_TMPDIR;
@@ -141,6 +142,43 @@ for (const [i, source] of hostSources.entries()) {
   );
 }
 
+// Object rest excludes selected string keys and copies only enumerable own
+// properties, including symbols, after the selected getters have run.
+const objectRestSource = `
+  let trace = "";
+  const source = {
+    __proto__: { inherited: 8 },
+    get tab() { trace += "t"; return 3; },
+    get extra() { trace += "e"; return 4; },
+    [Symbol.iterator]: 7,
+    ["__proto__"]: 9
+  };
+  Object.defineProperty(source, "hidden", { value: 5, enumerable: false });
+  function pick({ tab: first, tab: second, ...rest }) {
+    var first;
+    return [first, second, rest];
+  }
+  const selected = pick(source), remaining = selected[2];
+  console.log(trace, selected[0], selected[1], remaining.extra, "tab" in remaining,
+    "hidden" in remaining, "inherited" in remaining, remaining[Symbol.iterator], remaining.__proto__,
+    Object.getPrototypeOf(remaining) === Object.getPrototypeOf({}), pick.length);
+  const copy = ({ ...rest }) => rest;
+  const chars = ({ "0": first, ...rest }) => [first, rest[1], "0" in rest];
+  const letters = chars("ab");
+  console.log(letters[0], letters[1], letters[2], copy(42).missing);
+  try { copy(null); } catch { console.log("null throws"); }
+  try { copy(); } catch { console.log("undefined throws"); }
+`;
+const [objectRest] = run([{ ...dumpSource(objectRestSource), symbolConstructor: true, iteratorSymbol: true }], true);
+const objectRestNode = spawnSync(process.execPath, ["--input-type=module", "-e", objectRestSource], {
+  encoding: "utf8",
+});
+assert.equal(objectRestNode.status, 0, objectRestNode.stderr);
+assert.deepEqual(
+  [objectRest.end, objectRest.detail, objectRest.out],
+  ["normal", "", objectRestNode.stdout.trimEnd().split("\n")]
+);
+
 // A callable in a parameter default comes before a callable in the body.
 // Distinct scripted results make both dispatch and lexical numbering observable.
 const scriptedSource =
@@ -181,6 +219,36 @@ const guardedResults = run(
 for (const [i, { source, reason }] of guardedScripts.entries()) {
   assert.equal(guardedResults[i].end, "malformed", source);
   assert.match(guardedResults[i].detail, reason, source);
+}
+
+// Array elisions are absent own properties, while explicit undefined is present.
+const sparseSource = `
+  const sparse = [, -0, , 3];
+  const empty = [,,];
+  const explicit = [, undefined];
+  const constants = [, NaN, Infinity];
+  const copy = [...sparse];
+  console.log(sparse.length, 0 in sparse, 1 in sparse, 2 in sparse, 3 in sparse, 1 / sparse[1]);
+  console.log(empty.length, 0 in empty, 1 in empty, 0 in explicit, 1 in explicit, explicit[1]);
+  console.log(constants.length, 0 in constants, constants[1], constants[2]);
+  console.log(copy.length, 0 in copy, 2 in copy, copy[0], 1 / copy[1]);
+  const parent = { 0: "inherited" };
+  Object.setPrototypeOf(sparse, parent);
+  console.log(0 in sparse, sparse[0], 2 in sparse);
+`;
+const [sparse] = run([dumpSource(sparseSource)], true);
+const sparseNode = spawnSync(process.execPath, ["--input-type=module", "-e", sparseSource], { encoding: "utf8" });
+assert.equal(sparseNode.status, 0, sparseNode.stderr);
+assert.deepEqual([sparse.end, sparse.detail, sparse.out], ["normal", "", sparseNode.stdout.trimEnd().split("\n")]);
+
+for (const source of [
+  "const mark = () => 1; const value = [, mark()];",
+  "const value = [, ...[1]];",
+  "const undefined = 1; const value = [, undefined];",
+]) {
+  const [refusal] = run([dumpSource(source)], true);
+  assert.equal(refusal.end, "malformed");
+  assert.match(refusal.detail, /unsupported array hole/);
 }
 
 // Duplicate definitions update one property without moving its original position.
@@ -438,11 +506,14 @@ assert.deepEqual(
 
 function certifyFixture(directory, args = []) {
   const out = path.join(directory, "out");
-  const manifest = writeDeployment(path.join(directory, "bundle.mjs"), path.join(directory, "spec.json"), out);
-  const result = spawnSync(process.env.LOWERSPLIT, [manifest, out, ...args], { encoding: "utf8" });
-  assert.equal(result.status, 0, result.error?.message ?? result.stdout + result.stderr);
-  const verdict = JSON.parse(result.stdout.trim().split("\n").at(-1));
-  assert.equal(verdict.status, "certified", result.stdout + result.stderr);
+  const hostAt = args.indexOf("--host-contract");
+  const result = certifySplit({
+    source: path.join(directory, "bundle.mjs"),
+    spec: path.join(directory, "spec.json"),
+    out,
+    ...(hostAt >= 0 ? { hostContract: args[hostAt + 1] } : {}),
+  });
+  assert.equal(result.status, "certified", result.log);
   return import(pathToFileURL(path.join(out, "entry.mjs")).href);
 }
 

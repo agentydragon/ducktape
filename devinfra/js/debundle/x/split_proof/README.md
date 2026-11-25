@@ -205,6 +205,8 @@ Module-level `var`, `let`, and `const` declarations can use object binding patte
 
 Local declarations use the same object binding rules. Linked ordinary functions and arrows also accept nonempty flat object patterns with identifier or string keys in parameters. For example, `function read(first, {x, label: name = first} = {})` has length one. If its second argument is missing or `undefined`, the function evaluates `{}` before reading `x` and then `label`. Passing `null` throws during parameter initialization. These rules also apply before the first `super()` in a derived constructor.
 
+In ordinary functions, arrows, methods and base constructors, a parameter may end in an object-rest identifier, as in `({ tab, ...options }) => options`. Static selected properties are read in order before the rest object copies enumerable own properties, including symbols, except the selected keys. A rest-only pattern still rejects `null` and `undefined`. Defaults, computed keys and nested bindings with object rest remain deferred; derived constructors still refuse them.
+
 Array binding patterns and synchronous `for…of` loops take the source's iterator and cache its `next` method. Array patterns support elisions, defaults, nested bindings and a trailing rest binding. An elision advances the iterator without reading the iterator result's `value` property. A lexical loop head creates fresh cells for each iteration. An assignment head can write an identifier or a property. The iterator's `return` method runs if binding or the body exits abruptly, and when a finite array pattern leaves the iterator open. The native array path checks the iterator method and the array iterator prototype. String iteration, host iterator methods, and `for await…of` remain unsupported.
 
 In linked programs, conditional expressions and `if` statements inside functions evaluate the test once and run the selected branch with the state left by the test. Both branches must lower to CoreJS, including code that initialization never executes. Branch blocks have their own lexical scope, and `var` declarations in either branch belong to the enclosing function. A false test with no `else` continues to the following statement.
@@ -275,7 +277,7 @@ A logical expression in a static data property, such as `{mode: config.mode || "
 
 A linked `void` expression evaluates its operand and returns `undefined` on normal completion. Side effects and thrown exceptions from the operand are observable.
 
-Dense array literals, calls and constructors evaluate each ordinary or spread operand left to right. A spread operand consumes its synchronous iterator before evaluation proceeds to the next operand. The iterator model covers linked iterator methods and the native array iterator with its modeled next method. Array holes are rejected during lowering.
+Dense array literals, calls and constructors evaluate each ordinary or spread operand left to right. A spread operand consumes its synchronous iterator before evaluation proceeds to the next operand. The iterator model covers linked iterator methods and the native array iterator with its modeled next method. Sparse literals with primitive literals, including negative numeric literals, or unshadowed `undefined`, `NaN` and `Infinity` preserve missing own indices and array length. Sparse literals containing other binding reads, spreads or other expressions remain refusals.
 
 Untagged template literals use their cooked text and evaluate substitutions from left to right. CoreJS converts each primitive substitution to a string before evaluating the next expression. A linked initialization that needs object-to-primitive conversion reaches an unknown result and cannot certify.
 
@@ -484,7 +486,7 @@ The abstract theorem assumes footprint soundness for the supplied program.
 [`Lower.lean`](lean/EsmSplit/Lower.lean) scans declarations, eager and deferred
 names, and assignment sites. [The Effects analysis](effects/README.md) supplies
 writes, indirect reads and world effects under its printed premises.
-`lowersplit --diagnostic … --lean` uses both for the checked-in example.
+`lowersplit --generate-instance` uses both to write the checked-in example's Lean source without rendering JavaScript modules.
 
 `Meaning` models one flat environment. Using that theorem for JavaScript assumes
 that `Hygienic` justifies flattening and that `Plan.visit` agrees with module

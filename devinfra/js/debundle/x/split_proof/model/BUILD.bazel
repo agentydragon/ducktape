@@ -47,6 +47,13 @@ _DIFFERENTIAL_ENV = {
 }
 
 js_test(
+    name = "error_realm_differential_test",
+    data = ["//devinfra/js/debundle/x/split_proof/lean:error_realm_test_runner"],
+    entry_point = "error_realm_differential.mjs",
+    env = {"ERROR_REALM_TEST": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:error_realm_test_runner)"},
+)
+
+js_test(
     name = "global_env_differential_test",
     data = ["//devinfra/js/debundle/x/split_proof/lean:global_env_test_runner"],
     entry_point = "global_env_differential.mjs",
