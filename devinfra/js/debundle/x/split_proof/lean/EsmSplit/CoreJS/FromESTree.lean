@@ -105,8 +105,6 @@ private def reference (imports : List Name) (inFunction : Bool) (j : Json)
     | "NaN" => return .num Num.nan
     | _ =>
       if profile.undeclaredGlobal x then return .var x
-      -- The recorded host holds the other catalog globals as opaque values.
-      if profile == .nodeRecording then return .host x
       throw s!"unsupported global {x}"
   | k => throw s!"unsupported binding class {k}"
 
