@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::{cell::RefCell, rc::Rc};
 
 use anyhow::{Context, Result, bail};
+use artifact::ChunkBundle;
 use artifact::paths::{
     chunk_id_for_js_path, module_path_from_path, normalize_module_path, path_from_module_path,
 };
@@ -14,7 +15,6 @@ use artifact::runtime_resources::{
     RuntimeResourceDestination, RuntimeResourceKind, RuntimeResourceResolution,
     UnresolvedResourceReason, local_resource_path,
 };
-use artifact::{ChunkBundle, get_chunk_entry_path};
 use lol_html::{RewriteStrSettings, element, end, end_tag, html_content::ContentType, rewrite_str};
 use output_layout::DebundleOutputLayout;
 use serde::Deserialize;
@@ -149,11 +149,13 @@ fn runtime_js_href(artifact: &ChunkBundle, js_path: &str, app_root: &Path) -> Re
         .chunk_table
         .get(chunk_name)
         .with_context(|| format!("Unknown chunk: {chunk_name}"))?;
-    let entry_file = get_chunk_entry_path(artifact, chunk_id)
+    let entry_file = artifact
+        .find_chunk(chunk_id)
+        .and_then(|chunk| chunk.entry_path())
         .with_context(|| format!("Missing chunk entry file for {chunk_name}"))?;
     let entry_path = app_root
         .join(path_from_module_path(chunk_name))
-        .join(path_from_module_path(&entry_file));
+        .join(path_from_module_path(entry_file));
     Ok(artifact::paths::relative_module_specifier(
         app_root,
         &entry_path,
@@ -435,11 +437,11 @@ fn resolve_runtime_resources(
             RuntimeResourceDestination::Replacement {
                 package: (*package).to_owned(),
             }
-        } else if let Some(entry) = get_chunk_entry_path(artifact, chunk.chunk_id) {
+        } else if let Some(entry) = chunk.entry_path() {
             RuntimeResourceDestination::Emitted {
                 path: artifact::paths::join_module_path(&[
                     artifact.chunk_table.name(chunk.chunk_id),
-                    &entry,
+                    entry,
                 ]),
             }
         } else {

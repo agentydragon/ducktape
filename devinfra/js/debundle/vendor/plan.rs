@@ -27,7 +27,7 @@ use serde_json::Value;
 use swc_common::GLOBALS;
 
 use artifact::paths::{join_module_path, manifest_relative_path};
-use artifact::{ArtifactIndexes, ChunkBundle, get_chunk_entry_path};
+use artifact::{ArtifactIndexes, ChunkBundle};
 use js_ast::parse_js_module;
 use spec::{
     PartialSwapKind, PartialSwapPackage, PartialSwapSymbol, VendorLevel, VendorMark, WrapperShape,
@@ -438,15 +438,18 @@ pub fn build_vendor_resolution_plan(
         let chunk_id = artifact.chunk_table.get(&chunk_name).with_context(|| {
             format!("vendor entry {chunk_path} targets unknown chunk: {chunk_name}")
         })?;
-        let entry_file = get_chunk_entry_path(artifact, chunk_id).with_context(|| {
-            format!("vendor entry {chunk_path} targets missing chunk (chunk_id={chunk_name})")
-        })?;
+        let entry_file = artifact
+            .find_chunk(chunk_id)
+            .and_then(|chunk| chunk.entry_path())
+            .with_context(|| {
+                format!("vendor entry {chunk_path} targets missing chunk (chunk_id={chunk_name})")
+            })?;
         resolved_chunks.insert(
             chunk_path.as_str(),
             ResolvedVendorChunk {
                 chunk_id,
                 chunk_name,
-                entry_file,
+                entry_file: entry_file.to_owned(),
             },
         );
     }
