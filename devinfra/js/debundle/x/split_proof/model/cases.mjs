@@ -598,6 +598,15 @@ export const cases = [
     end: "unknown",
   },
   {
+    name: "indirect eval replays its recorded host call",
+    source: `
+      console.log("before");
+      const value = (0, eval)("1 + " + Number(-0));
+      console.log("after", Math.abs(value));
+    `,
+    end: "normal",
+  },
+  {
     name: "the world: methods of a string",
     source: `
       const s = "  Hello, World  ";

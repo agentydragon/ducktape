@@ -71,7 +71,7 @@ import {
 } from "./generate.mjs";
 import { moduleCases } from "./module_cases.mjs";
 import { opaqueCases, inheritanceOpaqueCases, scriptsOf } from "./opaque_cases.mjs";
-import { BINARY, LOGICAL, UNARY, bits, HOST_GLOBALS, Refused, toCore, toCoreProgram } from "./to_core.mjs";
+import { BINARY, LOGICAL, UNARY, bits, Refused, toCore, toCoreProgram } from "./to_core.mjs";
 import { writeDeployment } from "../translation/testing/deployment_manifest.mjs";
 import { mulberry32 } from "../seeded_random.mjs";
 import { acorn, dump } from "../translation/parser.mjs";
@@ -342,7 +342,8 @@ function runCorejs(args, lines, label) {
   writeFileSync(input, lines.map((line) => JSON.stringify(line)).join("\n") + "\n");
   checkpoint(`CoreJS batch: ${label}`);
   const started = Date.now();
-  const model = spawnSync(corejs, [...args, input], { encoding: "utf8", maxBuffer: 1 << 28 });
+  const hostArgs = args.includes("--ast") ? [...args, "--host-contract", process.env.NODE_HOST_PROFILE] : args;
+  const model = spawnSync(corejs, [...hostArgs, input], { encoding: "utf8", maxBuffer: 1 << 28 });
   modelSeconds += (Date.now() - started) / 1000;
   checkpoint(`CoreJS returned: ${model.status}`);
   assert.equal(model.status, 0, `corejs failed: ${model.stderr}`);
@@ -1098,10 +1099,7 @@ for (const job of splitJobs) {
   tally.agree++;
 }
 
-// The members the model gives the host's prototypes are the ones this Node has, and the front end lets through the
-// globals the model has a rule for.
-if (!same([...host.globals].sort(), [...HOST_GLOBALS].sort()))
-  failures.push(`the front end lets through ${HOST_GLOBALS}, the model has rules for ${host.globals}`);
+// The members the model gives the host's prototypes are the ones this Node has.
 const generator = function* () {};
 const asyncGenerator = async function* () {};
 const intrinsicPrototypes = {

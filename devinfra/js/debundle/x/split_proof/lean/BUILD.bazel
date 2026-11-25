@@ -449,14 +449,18 @@ lean_binary(
 lean_library(
     name = "corejs_runtime",
     srcs = [
-        "EsmSplit/CoreJS/BrowserGlobals.lean",
+        "EsmSplit/CoreJS/BrowserPageHost.lean",
         "EsmSplit/CoreJS/Decode.lean",
+        "EsmSplit/CoreJS/ECMAScriptHost.lean",
         "EsmSplit/CoreJS/Eval.lean",
         "EsmSplit/CoreJS/Fragment.lean",
         "EsmSplit/CoreJS/FromESTree.lean",
+        "EsmSplit/CoreJS/HostLayer.lean",
         "EsmSplit/CoreJS/HostProfile.lean",
         "EsmSplit/CoreJS/Iterator.lean",
+        "EsmSplit/CoreJS/NodeHost.lean",
         "EsmSplit/CoreJS/Number.lean",
+        "EsmSplit/CoreJS/RecordedNodeHost.lean",
         "EsmSplit/CoreJS/Run.lean",
         "EsmSplit/CoreJS/Syntax.lean",
         "EsmSplit/CoreJS/SyntaxMatch.lean",
@@ -467,7 +471,10 @@ lean_library(
 
 lean_test(
     name = "host_profile_test",
-    srcs = ["EsmSplit/CoreJS/HostProfileExamples.lean"],
+    srcs = [
+        "EsmSplit/CoreJS/BrowserGlobals.lean",
+        "EsmSplit/CoreJS/HostProfileExamples.lean",
+    ],
     entry = "EsmSplit/CoreJS/HostProfileExamples.lean",
     deps = [":corejs_runtime"],
 )

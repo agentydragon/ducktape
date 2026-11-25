@@ -58,7 +58,11 @@ For browser module scripts, the `browser-page` contract also permits `.js` outpu
 
 For a module loaded as a browser page entry, you can pass `--host-contract browser.json` with `{"profile":"browser-page"}` on emission and on `--check-output`. Under this profile, ambient `window`, `globalThis`, and `self` may return the same opaque page object, and their `typeof` may return `"object"`. The browser fallback `typeof global` may return `"undefined"`; a page with a Node-style shim can violate that premise. Each selected observation must preserve host state throughout initialization. A direct read of ambient `global` remains opaque and stops the proof if reached. Lexical and imported names use their actual bindings.
 
-The [browser globals catalog](lean/EsmSplit/CoreJS/BrowserGlobals.lean) covers ECMAScript and browser APIs, including DOM bindings, timers, networking, storage, and static method references such as `Object.defineProperty` and `Date.now`. A reached lookup can assume a specific `typeof` or stable reference. For example, a reference to `FileReader` requires it to exist on that page. Reading `window.Error` and reading the bare `Error` binding can return the same opaque reference under separate premises. The checker records observations from both initializers and the generated Lean theorem checks them in every world satisfying the listed premises. A deferred or untaken lookup adds no premise. A reference to a method supplies no result for a call. Volatile page values, including scroll coordinates, and operations such as reading Error stacks or writing to the DOM stay opaque.
+The [`ECMAScriptHost` layer](lean/EsmSplit/CoreJS/ECMAScriptHost.lean) describes standard globals and modeled member operations once. The [`BrowserPageHost` layer](lean/EsmSplit/CoreJS/BrowserPageHost.lean) adds page aliases, DOM names, and web APIs; [`NodeHost`](lean/EsmSplit/CoreJS/NodeHost.lean) adds Node globals. The recorded Node comparison harness selects `node-recording.json`, which adds recorded values and output handling to the Node profile. `BrowserGlobals.lean` remains only as a migration snapshot for old-versus-new compatibility checks; runtime host lookups and the Node catalog do not read it.
+
+`--host-contract` reads a profile JSON file. A profile can add typed extension layers; entries that assert behavior must include a named premise, which the verdict reports when that fact is used. Recorded values are answered by the world and assert no behavior, so they need no premise.
+
+A reached lookup can require a `typeof`, stable-reference, or stable-data premise. For example, a reference to `FileReader` requires it to exist on that page. Bare intrinsic bindings and their `window` properties use the same ECMAScript-layer identity premise. The checker records observations from both initializers and the generated Lean theorem checks them in every world satisfying the listed premises. A deferred or untaken lookup adds no per-reference premise; the selected profile's capabilities and opaque-constructor allowances are reported as layer premises. A reference to a method supplies no result for a call. Volatile page values, including scroll coordinates, and operations such as reading Error stacks or writing to the DOM stay opaque.
 
 CoreJS allocates a fresh object for each regular-expression literal. It preserves the pattern, flags, and `lastIndex` descriptor. The shared prototype implements `source`, the individual flag getters, and `flags`, including reads of overridden flag properties. Calls to the intrinsic matching methods currently produce an unknown result.
 
@@ -524,6 +528,12 @@ Specs and plans that must fail. Each failure is a Lean theorem (`¬ OrderOk …`
 
 These are tests, not proofs. The Bazel target `fuzz:render_fuzz` runs [`fuzz/fuzz.py`](fuzz/fuzz.py):
 510 random placements of the 12 statements, each rendered and run in Node.
+
+Host profiles are checked data declarations, not proved facts about a deployment. Each entry that
+asserts host behavior has a named premise, and certificates report the premises they use. The Node
+comparison and debundle certification tests select the recorded Node profile from
+[`model/node-recording.json`](model/node-recording.json); recorded values remain answers supplied
+by the test world.
 
 - 157 accepted. All 157 print what the bundle prints. 95 of them run statements in a different order than the bundle.
 - 353 rejected. 325 really break in Node. 28 are harmless: the checker is conservative.

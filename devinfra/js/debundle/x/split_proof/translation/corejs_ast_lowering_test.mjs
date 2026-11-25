@@ -25,7 +25,8 @@ function reference(source) {
 
 function run(programs, ast) {
   const input = file(ast ? "asts.jsonl" : "programs.jsonl", programs.map((p) => JSON.stringify(p)).join("\n") + "\n");
-  return execFileSync(process.env.COREJS, [...(ast ? ["--ast"] : []), input], { encoding: "utf8" })
+  const host = ast ? ["--ast", "--host-contract", process.env.NODE_HOST_PROFILE] : [];
+  return execFileSync(process.env.COREJS, [...host, input], { encoding: "utf8" })
     .trim()
     .split("\n")
     .map((line) => JSON.parse(line));

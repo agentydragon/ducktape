@@ -94,8 +94,8 @@ private def reference (imports : List Name) (inFunction : Bool) (j : Json)
     unless imports.contains x do throw s!"unlinked imported name {x}"
     return .var x
   | "G" =>
-    if (profile.bindingIdentity x).isSome then return .prim (.globalRef x) []
     if profile.recordedHostValue x then return .host x
+    if (profile.bindingIdentity x).isSome then return .prim (.globalRef x) []
     -- A successful typeof guard does not establish what a direct lookup would do.
     if profile.opaqueBinding x then
       return .prim (.opaqueAmbientRef x) []
@@ -906,7 +906,7 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
   let tags ← parameters.mapM fun param => field param "type"
   let arity := (tags.toList.takeWhile fun t => t != "AssignmentPattern" && t != "RestElement").length
   let generator ← j.getObjValAs? Bool "generator"
-  if profile.hasCapability .scriptedRecording && (j.getObjValAs? Bool ":opaque-scripted").toOption == some true then
+  if (j.getObjValAs? Bool ":opaque-scripted").toOption == some true then
     if async || generator || needsOpaqueContext j (checkPrivateNames := true) then
       throw "scripted callable requires unsupported invocation or lexical context"
     return .complete (← deferredFunction j kind name self arity "scripted callable" (scripted := true))

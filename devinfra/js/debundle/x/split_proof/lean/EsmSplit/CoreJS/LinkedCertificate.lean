@@ -3,11 +3,20 @@ import EsmSplit.CoreJS.LinkedCertificate.Probe
 import EsmSplit.CoreJS.LinkedCertificate.QuoteJson
 import EsmSplit.CoreJS.LinkedCertificate.QuoteRecords
 import EsmSplit.CoreJS.LinkedCertificate.QuoteWrites
+import Lean.Elab.Deriving.ToExpr
 
 namespace CoreJS.LinkedBehavior
 
 deriving instance Lean.ToExpr for EsmSplit.Module
 deriving instance Lean.ToExpr for EsmSplit.Plan
+deriving instance Lean.ToExpr for CoreJS.HostCapability
+deriving instance Lean.ToExpr for CoreJS.HostValue
+deriving instance Lean.ToExpr for CoreJS.HostGlobalEntry
+deriving instance Lean.ToExpr for CoreJS.HostMemberEntry
+deriving instance Lean.ToExpr for CoreJS.HostCapabilityEntry
+deriving instance Lean.ToExpr for CoreJS.HostConstructorEntry
+deriving instance Lean.ToExpr for CoreJS.HostLayer
+deriving instance Lean.ToExpr for CoreJS.HostProfile
 
 structure ProofModule where
   name : Lean.Name
@@ -125,13 +134,13 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   let recordTerms ← records.definitions sourceTerm candidateTerm move.isSome
   let writeTerms ← writes.definitions
   let p ← EsmSplit.CertificateData.quote "plan" (Lean.toExpr plan)
+  let profileTerm ← EsmSplit.CertificateData.quote "profile" (Lean.toExpr profile)
   let (asts, astData) := jsonDefinitions [("sourceAST", sourceAST), ("providers", providers), ("files", files)]
   modify (· ++ astData)
   -- The generated declarations are short. Estimate the compiler's workload from
   -- the quoted terms when deciding whether to run correspondence separately.
   let stagedGate := astData.foldl (fun bytes (_, term) => bytes + expandedBytes term) 0 ≥ 512 * 1024
   let writeImports := if writes.isEmpty then "" else "import EsmSplit.Fast\n"
-  let profileTerm := fun (p : HostProfile) => reprStr p
   let ordinaryTactic := s!"verify_linked_programs {fuel}{strategy}"
   -- This only selects the proof attempt. The theorem checks the complete units,
   -- free-name cells, hoisted state and entry exports from the actual links.
@@ -154,8 +163,8 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   let raw := String.join asts.toList ++ "private def plan : EsmSplit.Plan := " ++ p ++ "\n"
   let programs := s!"def source : Program := {s}\ndef candidate : Program := {c}\n"
   let profiles := fun (visibility : String) =>
-    s!"{visibility}def profile := {profileTerm profile}\n" ++
-    s!"{visibility}def premises : HostPremises := ⟨{reprStr premises.typeofBindings}, {reprStr premises.refs}⟩\n"
+    s!"{visibility}def profile : HostProfile := {profileTerm}\n" ++
+    s!"{visibility}def premises : HostPremises := ⟨{reprStr premises.typeofBindings}, {reprStr premises.refs}, {reprStr premises.profileFacts}⟩\n"
   let execution := "namespace LinkedExecutionProof\n" ++ data ++ programs ++ profiles "" ++ layouts ++
     "theorem executions : LinkedBehavior.EquivalentFor premises source candidate ∧ LinkedBehavior.SameExports source candidate := by\n" ++
     tactic ++ "end LinkedExecutionProof\n"

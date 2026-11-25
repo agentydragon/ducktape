@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.Number
+import EsmSplit.CoreJS.ECMAScriptHost
 import EsmSplit.CoreJS.Syntax
 
 /-!
@@ -204,13 +205,6 @@ inductive HostRef where
   | property (receiver key : String)
   deriving DecidableEq, Repr
 
-/-- A direct host read can return an opaque identity or the exact bits of a Number.
-Neither result grants a handle to a CoreJS heap object. -/
-inductive HostValue where
-  | identity (name : String)
-  | number (bits : UInt64)
-  deriving DecidableEq
-
 def HostValue.val : HostValue → Val
   | .identity name => .host name
   | .number bits => .num (Float.ofBits bits)
@@ -387,17 +381,11 @@ def Func.intrinsicProto (f : Func) : Addr :=
   else functionProto
 
 /-- The string-keyed members of `Object.prototype`. A program reads one from any object that has no property of that name. -/
-def objectProtoNames : List String :=
-  ["constructor", "__defineGetter__", "__defineSetter__", "hasOwnProperty", "__lookupGetter__", "__lookupSetter__",
-    "isPrototypeOf", "propertyIsEnumerable", "toString", "valueOf", "toLocaleString"]
+def objectProtoNames : List String := ECMAScriptHost.objectPrototypeNames
 
-def functionProtoNames : List String := ["apply", "bind", "call", "constructor", "toString"]
+def functionProtoNames : List String := ECMAScriptHost.functionPrototypeNames
 
-def arrayProtoNames : List String :=
-  ["constructor", "at", "concat", "copyWithin", "fill", "find", "findIndex", "findLast", "findLastIndex", "lastIndexOf",
-    "pop", "push", "reverse", "shift", "unshift", "slice", "sort", "splice", "includes", "indexOf", "join", "keys",
-    "entries", "values", "forEach", "filter", "flat", "flatMap", "map", "every", "some", "reduce", "reduceRight",
-    "toReversed", "toSorted", "toSpliced", "with", "toLocaleString", "toString"]
+def arrayProtoNames : List String := ECMAScriptHost.arrayPrototypeNames
 
 private def hostMembers (owner : String) (names : List String) : List (PropertyKey × Property) :=
   names.map fun k => (.str k, .data (.host s!"{owner}.{k}") true false true)
@@ -488,48 +476,28 @@ def builtins : Array Obj := #[
 
 /-- The string-keyed members of `String.prototype`. A property of a string that is none of them is looked up on
 `Object.prototype`, which the program can change. -/
-def stringProtoNames : List String :=
-  ["length", "constructor", "anchor", "at", "big", "blink", "bold", "charAt", "charCodeAt", "codePointAt", "concat",
-    "endsWith", "fontcolor", "fontsize", "fixed", "includes", "indexOf", "isWellFormed", "italics", "lastIndexOf",
-    "link", "localeCompare", "match", "matchAll", "normalize", "padEnd", "padStart", "repeat", "replace", "replaceAll",
-    "search", "slice", "small", "split", "strike", "sub", "substr", "substring", "sup", "startsWith", "toString",
-    "toWellFormed", "trim", "trimStart", "trimLeft", "trimEnd", "trimRight", "toLocaleLowerCase", "toLocaleUpperCase",
-    "toLowerCase", "toUpperCase", "valueOf"]
+def stringProtoNames : List String := ECMAScriptHost.stringPrototypeNames
 
-def numberProtoNames : List String :=
-  ["constructor", "toExponential", "toFixed", "toPrecision", "toString", "valueOf", "toLocaleString"]
+def numberProtoNames : List String := ECMAScriptHost.numberPrototypeNames
 
-def booleanProtoNames : List String := ["constructor", "toString", "valueOf"]
+def booleanProtoNames : List String := ECMAScriptHost.booleanPrototypeNames
 
 /-- The methods the world answers for, by prototype. Left out: `match`, `matchAll` and `split`, which return objects;
 the methods that depend on the locale of the host beyond `localeCompare`; the ones that write HTML. -/
-def worldMethodNames : List (String × List String) :=
-  [("String.prototype",
-      ["at", "charAt", "charCodeAt", "codePointAt", "concat", "endsWith", "includes", "indexOf", "isWellFormed",
-        "lastIndexOf", "localeCompare", "normalize", "padEnd", "padStart", "repeat", "replace", "replaceAll", "search",
-        "slice", "startsWith", "substr", "substring", "toLowerCase", "toString", "toUpperCase", "toWellFormed", "trim",
-        "trimEnd", "trimLeft", "trimRight", "trimStart", "valueOf"]),
-    ("Number.prototype", ["toExponential", "toFixed", "toPrecision", "toString", "valueOf"]),
-    ("Boolean.prototype", ["toString", "valueOf"])]
+def worldMethodNames : List (String × List String) := ECMAScriptHost.worldMethodNames
 
 /-- The globals of the host that hold functions the world answers for, with those members. A read of such a member
 gives the function: a program that had replaced it would have ended as `unknown` at the write. -/
-def hostNamespaces : List (String × List String) :=
-  [("Math",
-      ["abs", "acos", "acosh", "asin", "asinh", "atan", "atanh", "atan2", "ceil", "cbrt", "expm1", "clz32", "cos",
-        "cosh", "exp", "floor", "fround", "hypot", "imul", "log", "log1p", "log2", "log10", "max", "min", "pow",
-        "random", "round", "sign", "sin", "sinh", "sqrt", "tan", "tanh", "trunc"]),
-    ("Number", ["isFinite", "isInteger", "isNaN", "isSafeInteger", "parseFloat", "parseInt"]),
-    ("String", ["fromCharCode", "fromCodePoint"])]
+def hostNamespaces : List (String × List String) := ECMAScriptHost.hostNamespaces
 
 /-- The globals of the host that the world answers for when they are called. -/
-def hostFunctions : List String := ["Boolean", "Number", "isFinite", "isNaN", "parseFloat", "parseInt"]
+def hostFunctions : List String := ECMAScriptHost.hostFunctions
 
-def qualified (table : List (String × List String)) : List String :=
-  table.flatMap fun (owner, members) => members.map fun k => s!"{owner}.{k}"
+def qualified (table : List (String × List String)) : List String := ECMAScriptHost.qualified table
 
 /-- Does the world answer for the host function `name`? `some true`: a method, which also takes its receiver. -/
 def worldFunction (name : String) : Option Bool :=
+  let name := (name.dropPrefix? "intrinsic.").map ToString.toString |>.getD name
   if (qualified worldMethodNames).contains name then some true
   else if hostFunctions.contains name || (qualified hostNamespaces).contains name then some false
   else none
@@ -551,7 +519,7 @@ def fromWorld (s : State W) : HostResult → Res W Val
 /-- A call of the host function `name`: the world's step, if the world answers for it. -/
 def hostCall (name : String) (this : Val) (args : List Val) : M W Val :=
   if name == "%ThrowTypeError%" then throwErr .type "strict arguments callee" else
-  match worldArgs name this args with
+  match worldArgs ((name.dropPrefix? "intrinsic.").map ToString.toString |>.getD name) this args with
   | none => unknown s!"host function {name} is called"
   | some (this, args) => fun s =>
     let (result, state) := W.step name this args s.world.state
@@ -852,8 +820,9 @@ def readHostRef (ref : HostRef) : M W Val := fun s =>
 
 /-- Receivers whose property lookup can be answered by a host observation.
 The portable Object contract exposes only the saved method reference. -/
-def observedHostProperty (owner key : String) : Bool :=
-  owner == "window" || owner.startsWith "window." || owner == "intrinsic.Array" || (owner == "intrinsic.Object" && key == "defineProperty")
+def observedHostProperty (owner _key : String) : Bool :=
+  owner == "window" || owner.startsWith "window." || owner.startsWith "intrinsic." ||
+    owner.startsWith "node."
 
 /-- A member of a global of the host: a function the world answers for. -/
 def hostMember (name k : String) : M W Val :=

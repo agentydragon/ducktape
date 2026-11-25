@@ -14,7 +14,8 @@ import EsmSplit.CoreJS.Fragment
 statement it ended in; `order` is the order in which the modules run; `state` is a hash of every object and binding
 of the final state, with its address.
 
-`corejs --ast dumps.jsonl` runs the same interpreter on annotated ESTree dumps. Each line is an entry module,
+`corejs --ast --host-contract PROFILE.json dumps.jsonl` runs the same interpreter on annotated ESTree dumps under
+the supplied host profile. Each line is an entry module,
 optionally with `"entry"`, its filename (default `main`), and `"providers"`: its relative dependencies by
 resolved filename, which may import the entry back. The entry point in
 `CoreJSMain.lean` lowers them through `LinkedInput.program`, the lowering that certification uses.
@@ -28,9 +29,9 @@ recording, if they did, and `left` how many recorded calls the model did not mak
 `"iteratorSymbol": true` supplies the stable, effect-free observation of the ambient `Symbol.iterator`.
 `"symbolConstructor": true` supplies the stable, effect-free observation of the ambient `Symbol` intrinsic.
 
-`corejs --host-names` prints the members the model gives the host's prototypes, and the host functions it asks the
-world about. `corejs --footprints` checks footprints against a program (`checkFootprints`), and `corejs --moves`
-counts the statements whose footprint is proved (`moveCensus`).
+`corejs --host-names` prints the modeled prototype members and world calls used by the differential harness.
+`corejs --footprints` checks footprints against a program (`checkFootprints`), and `corejs --moves` counts the
+statements whose footprint is proved (`moveCensus`).
 -/
 
 open Lean (Json)
@@ -147,10 +148,14 @@ def showCall (fn : String) (this : Option Primitive) (args : List (Option Primit
   s!"{fn} on {showArg this} with ({", ".intercalate (args.map showArg)})"
 
 /-- The world a recording describes. A call that is not the next recorded one stops the replay and throws. -/
-def replay (calls : List Recorded) (scripts : Scripts := []) (refs : List (HostRef × String) := []) : World where
+def replay (calls : List Recorded) (scripts : Scripts := []) (refs : List (HostRef × String) := [])
+    (profile : HostProfile := .empty) : World where
   σ := Replay
   init := { left := calls, scripts }
   talk := Replay.told
+  globalTypeof name st := do
+    let value ← profile.bindingType name
+    return (.ret (.str value), st)
   hostRef ref st := (refs.lookup ref).map fun identity => (.identity identity, st)
   step fn this args st :=
     let stop (why : String) : HostResult × Replay :=
@@ -358,26 +363,31 @@ def showState {W : World} (s : State W) : String :=
 /-- `s`: the state the run ended in. Its region says where: 0 outside every statement, `i + 1` in the statement
 with identity `i`. `state` is a hash of `showState`. -/
 def report {calls : List Recorded} {scripts : Scripts} {refs : List (HostRef × String)}
-    (order : List String) (s : State (replay calls scripts refs)) (ending detail : String) : String :=
+    (profile : HostProfile) (order : List String) (s : State (replay calls scripts refs profile))
+    (ending detail : String) : String :=
   (Json.mkObj [("out", Json.arr (s.out.map Json.str)), ("end", ending), ("detail", detail), ("region", s.region),
     ("order", Json.arr (order.toArray.map Json.str)), ("world", s.world.state.problem.getD ""),
     ("left", s.world.state.left.length), ("handed", s.world.handed.size),
     ("state", toString (hash (showState s)))]).compress
 
-def runLine (fuel : Nat) (line : String)
+def runLineWithProfile (fuel : Nat) (line : String) (profile : HostProfile)
     (decode : Json → Scripts → Except String Program := fun j _ => Decode.program j) : String :=
   match Json.parse line >>= fun j => do
     let scripts ← Decode.scripts j
     pure (← decode j scripts, ← Decode.world j, scripts, ← Decode.hostRefs j) with
-  | .error msg => report [] (initialState (replay [] []) 0) "malformed" msg
+  | .error msg => report profile [] (initialState (replay [] [] [] profile) 0) "malformed" msg
   | .ok (program, calls, scripts, refs) =>
     let order := program.evalOrder
-    let recorded := replay calls scripts refs
+    let recorded := replay calls scripts refs profile
     match runProgram recorded fuel program with
-    | .ok () s => report order s "normal" ""
-    | .throw v s => report order s "throw" (describe s v)
-    | .unknown why s => report order s "unknown" why
-    | .fuel => report order (initialState recorded 0) "fuel" ""
+    | .ok () s => report profile order s "normal" ""
+    | .throw v s => report profile order s "throw" (describe s v)
+    | .unknown why s => report profile order s "unknown" why
+    | .fuel => report profile order (initialState recorded 0) "fuel" ""
+
+def runLine (fuel : Nat) (line : String)
+    (decode : Json → Scripts → Except String Program := fun j _ => Decode.program j) : String :=
+  runLineWithProfile fuel line .empty decode
 
 def strings (names : List String) : Json := Json.arr (names.toArray.map Json.str)
 
@@ -477,8 +487,7 @@ def main (args : List String) : IO UInt32 := do
         ("Number.prototype", strings numberProtoNames),
         ("Boolean.prototype", strings booleanProtoNames)]),
       ("methods", strings (qualified worldMethodNames)),
-      ("functions", strings (hostFunctions ++ qualified hostNamespaces)),
-      ("globals", strings (hostFunctions ++ hostNamespaces.map (·.1)).eraseDups)]).compress
+      ("functions", strings (hostFunctions ++ qualified hostNamespaces))]).compress
     pure 0
   | ["--footprints", programFile, footprintsFile] =>
     let lines := ((← IO.FS.readFile footprintsFile).splitOn "\n").filter (· != "")
@@ -499,7 +508,7 @@ def main (args : List String) : IO UInt32 := do
       IO.println (runLine fuel line)
     pure 0
   | _ =>
-    IO.eprintln "usage: corejs programs.jsonl [--fuel N] | corejs --ast dumps.jsonl | corejs --host-names | corejs --footprints program.json footprints.jsonl | corejs --moves program.json [footprints.jsonl]"
+    IO.eprintln "usage: corejs programs.jsonl [--fuel N] | corejs --ast --host-contract PROFILE.json dumps.jsonl | corejs --host-names | corejs --footprints program.json footprints.jsonl | corejs --moves program.json [footprints.jsonl]"
     pure 2
 
 end CoreJS
