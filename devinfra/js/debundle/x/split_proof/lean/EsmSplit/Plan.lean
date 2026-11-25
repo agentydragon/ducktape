@@ -35,6 +35,8 @@ structure Spec where
   /-- The modules run in exactly this order, the entry last: in `order` when it is given, else in the order of their
   first statements. `mkPlan` then adds the imports that make ES evaluation follow it (`Split.nest`). -/
   sequential : Bool := false
+  /-- Allow entry body units to live behind the public entry when glue would expose private cells. -/
+  privateEntryBody : Bool := false
   deriving Repr
 
 def Selector.claims (B : Bundle) (i : Nat) : Selector → Bool
