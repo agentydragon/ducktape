@@ -1,7 +1,8 @@
 import EsmSplit.CoreJS.LinkedBehavior
 
 /-! A static import boundary with one unavailable provider initializer.
-The provider's two declarations run once before either importer continuation. -/
+The linked schedule contains the provider's declarations once before the importer;
+an abrupt completion prevents the remaining steps. -/
 
 namespace CoreJS.StaticProviderBoundary
 
