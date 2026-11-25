@@ -459,8 +459,13 @@ A prior handoff alone does not trigger another compaction.
 
 `chat_compaction.summary_prompt_template` and `chat_compaction.replacement.template` are Go text
 templates. Both receive `.KeepRecentTokens`. The replacement also receives `.Summary` and must
-include it verbatim. Choose `assistant` or `user` for the replacement role. Without custom
-templates, the sampler uses its built-in handoff prompt and assistant-message wrapper.
+include it verbatim. Choose `assistant` or `user` for the replacement role. During rollout, omitted
+templates use the built-in handoff prompt and assistant-message wrapper.
+
+After staging has rolled out a release with both templates explicitly configured for every Chat
+Completions model that enables compaction, require both fields and remove the built-in fallbacks.
+Before removing recovery support for omitted replacements, check that no pending compaction
+still uses the old representation.
 
 ```yaml
 chat_compaction:
