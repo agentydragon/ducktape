@@ -204,10 +204,14 @@ private def linkedPatternIdentifier (binder : Json → Except String Name) (targ
   unless (← field target "type") == "Identifier" do throw "expected an identifier in object pattern"
   binder target
 
+private def splitBindingDefault (j : Json) : Except String (Json × Option Json) := do
+  if (← field j "type") == "AssignmentPattern" then
+    return (← j.getObjVal? "left", some (← j.getObjVal? "right"))
+  return (j, none)
+
 private def linkedParameterBinding (j : Json) : Except String (Name × Option Json) := do
-  let binder := linkedPatternIdentifier localBinding
-  if (← field j "type") != "AssignmentPattern" then return (← binder j, none)
-  return (← j.getObjVal? "left" >>= binder, some (← j.getObjVal? "right"))
+  let (target, fallback) ← splitBindingDefault j
+  return (← linkedPatternIdentifier localBinding target, fallback)
 
 private def hasObjectParameterDefault (param : Json) : Bool :=
   (field param "type").toOption == some "ObjectPattern" &&
@@ -894,32 +898,24 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
   let j ← if kind == .arrow then pure j else prepareNewTargetFunction j
   let parameters ← j.getObjValAs? (Array Json) "params"
   let deferPattern := deferredFunction j kind name self arity (checkPrivateNames := true)
-  let hasNamedDefaults := tags.contains "AssignmentPattern"
-  let hasDefaults := hasNamedDefaults || parameters.any hasObjectParameterDefault
+  let hasDefaults := tags.contains "AssignmentPattern" || parameters.any hasObjectParameterDefault
   let mut rest : Option Name := none
   let mut slots : Array Name := #[]
   let mut bound : Array Name := #[]
   let mut initializers : Array Stmt := #[]
-  for ((param, tag), i) in (parameters.zip tags).zipIdx do
+  for (param, i) in parameters.zipIdx do
     let slot := s!":parameter:{i}"
-    match tag with
+    let (target, fallback) ← splitBindingDefault param
+    match ← field target "type" with
     | "Identifier" =>
-      let x ← localBinding param
+      let x ← localBinding target
       slots := slots.push (if hasDefaults then slot else x)
       bound := bound.push x
-      if hasDefaults then initializers := initializers.push (.decl .let_ x (.var slot))
-    | "AssignmentPattern" =>
-      let target ← param.getObjVal? "left"
-      unless (← field target "type") == "Identifier" do
-        return .complete (← deferPattern "expected an identifier in a default parameter")
-      let x ← localBinding target
-      let value ← linkedExpr profile imports true x (← param.getObjVal? "right")
-      slots := slots.push slot
-      bound := bound.push x
-      initializers := initializers.push (.decl .let_ x (withBindingDefault slot (some value)))
+      if hasDefaults then
+        let value ← fallback.mapM (linkedExpr profile imports true x)
+        initializers := initializers.push (.decl .let_ x (withBindingDefault slot value))
     | "ObjectPattern" =>
-      if hasNamedDefaults then return .complete (← deferPattern "unsupported object pattern alongside default parameters")
-      let fields ← match linkedObjectPattern param linkedParameterBinding with
+      let fields ← match linkedObjectPattern target linkedParameterBinding with
         | .ok fields => pure fields
         | .error reason => return .complete (← deferPattern reason)
       slots := slots.push slot
@@ -931,7 +927,8 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
             | none => pure bind
             | some e => .defaultValue bind <$> linkedExpr profile imports true x e
           pure (Expr.str key, pattern)
-        initializers := initializers.push (.bind .let_ (.object props) (.var slot))
+        let value ← fallback.mapM (linkedExpr profile imports true "")
+        initializers := initializers.push (.bind .let_ (.object props) (withBindingDefault slot value))
       else
         for (key, x, _) in fields do
           initializers := initializers.push (.decl .var x (.get (.var slot) (.str key)))
@@ -943,7 +940,7 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
       let x ← localBinding target
       rest := some x
       bound := bound.push x
-    | "ArrayPattern" => return .complete (← deferPattern s!"unsupported function parameter {tag}")
+    | "ArrayPattern" => return .complete (← deferPattern "unsupported function parameter ArrayPattern")
     | other => throw s!"unsupported function parameter {other}"
   unless bound.toList.Nodup do throw "duplicate function parameter"
   let body ← j.getObjVal? "body"
@@ -1020,15 +1017,14 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
     (name : Name) (fn : Json) : Except String (List Stmt × SuperCall × Func) := do
   let fn ← prepareNewTargetFunction fn
   for param in ← fn.getObjValAs? (Array Json) "params" do
-    if (← field param "type") == "AssignmentPattern" then
-      discard <| localBinding (← param.getObjVal? "left")
-      discard <| prepareBeforeSuper (← param.getObjVal? "right") false
-    else if (← field param "type") == "ObjectPattern" then
-      for (_, _, fallback) in ← linkedObjectPattern param linkedParameterBinding do
-        if let some e := fallback then discard <| prepareBeforeSuper e false
-    else if (← field param "type") == "RestElement" then
-      discard <| localBinding (← param.getObjVal? "argument")
-    else discard <| localBinding param
+    let (target, fallback) ← splitBindingDefault param
+    if let some e := fallback then discard <| prepareBeforeSuper e false
+    match ← field target "type" with
+    | "ObjectPattern" =>
+      for (_, _, propertyDefault) in ← linkedObjectPattern target linkedParameterBinding do
+        if let some e := propertyDefault then discard <| prepareBeforeSuper e false
+    | "RestElement" => discard <| localBinding (← target.getObjVal? "argument")
+    | _ => discard <| localBinding target
   let block ← fn.getObjVal? "body"
   let statements ← block.getObjValAs? (List Json) "body"
   let (prefixStmts, remaining) := statements.span fun stmt =>
