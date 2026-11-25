@@ -944,12 +944,8 @@ fn prepare_chunk<'a>(
     let chunk_unassigned_mode = unassigned_mode.get(chunk_id).cloned().with_context(|| {
         format!("materialize_logical_modules missing unassigned_mode for chunk: {chunk_id}")
     })?;
-    let chunk_id_interned = artifact
-        .chunk_table
-        .get(chunk_id)
-        .with_context(|| format!("materialize_logical_modules unknown chunk: {chunk_id}"))?;
-    let (target_file, runtime_file, runtime_ast) =
-        chunk_runtime_entry(artifact, chunk_id, chunk_id_interned, file)?;
+    let (chunk_id_interned, runtime_file, runtime_ast) =
+        chunk_runtime_entry(artifact, chunk_id, file)?;
     let source_path = runtime_file.metadata.source_path.clone();
     let ast_analysis = analyze_chunk_ast(&runtime_ast.module);
     let requests = logical_requests_for_chunk(
@@ -1004,7 +1000,7 @@ fn prepare_chunk<'a>(
     Ok(PreparedChunk {
         chunk_id: chunk_id.to_string(),
         chunk_id_interned,
-        target_file,
+        target_file: runtime_file.path.clone(),
         runtime_ast,
         header_lines: runtime_file.header_lines.clone(),
         source_path,

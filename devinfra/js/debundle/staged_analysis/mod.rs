@@ -136,11 +136,7 @@ fn context_ordinals(
 ) -> Result<ContextOrdinals> {
     let mut modules = Vec::new();
     for chunk_id in analysed_chunk_ids {
-        let interned = artifact
-            .chunk_table
-            .get(chunk_id)
-            .with_context(|| format!("materialize_logical_modules unknown chunk: {chunk_id}"))?;
-        let (_, _, runtime_ast) = chunk_runtime_entry(artifact, chunk_id, interned, file)?;
+        let (_, _, runtime_ast) = chunk_runtime_entry(artifact, chunk_id, file)?;
         modules.push(&runtime_ast.module);
     }
     for chunk in &artifact.chunks {
