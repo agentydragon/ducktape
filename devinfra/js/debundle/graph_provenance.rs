@@ -4,7 +4,7 @@
 //! the bytes returned to the parser, rather than reopening the path after analysis.
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::fs;
 use std::io::{self, BufReader, Read, Write};
@@ -140,28 +140,43 @@ fn read_json_header<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T> {
         .with_context(|| format!("parsing header of {}", path.display()))
 }
 
-pub fn read_graph_header(path: &Path) -> Result<GraphHeader> {
-    let graph: ChunkGraphHeader = read_json_header(path)?;
-    let program: ProgramGraphHeader =
-        read_json_header(&program_graph_path(path, &graph.program_graph))?;
+/// Read the companion program graph and check it describes the chunk's selected owners.
+pub fn read_program_provenance(
+    path: &Path,
+    program_graph: &Path,
+    chunk_id: &str,
+    ownership_subset: Option<&[SelectedOwnershipModule]>,
+) -> Result<Option<GraphProvenance>> {
+    let program: ProgramGraphHeader = read_json_header(&program_graph_path(path, program_graph))?;
     if let Some(provenance) = &program.provenance {
-        let expected = provenance.selected_ownership_by_chunk.get(&graph.chunk_id);
+        let expected = provenance.selected_ownership_by_chunk.get(chunk_id);
         anyhow::ensure!(
-            graph.ownership_subset.as_ref() == expected,
+            ownership_subset == expected.map(Vec::as_slice),
             "dependency graph selected ownership for chunk {} does not match its program provenance",
-            graph.chunk_id
+            chunk_id
         );
     } else {
         anyhow::ensure!(
-            graph.ownership_subset.is_none(),
+            ownership_subset.is_none(),
             "dependency graph selected ownership has no program provenance"
         );
     }
+    Ok(program.provenance)
+}
+
+pub fn read_graph_header(path: &Path) -> Result<GraphHeader> {
+    let graph: ChunkGraphHeader = read_json_header(path)?;
+    let provenance = read_program_provenance(
+        path,
+        &graph.program_graph,
+        &graph.chunk_id,
+        graph.ownership_subset.as_deref(),
+    )?;
     Ok(GraphHeader {
         selected_ownership: graph.ownership_subset,
         chunk_id: graph.chunk_id,
         program_graph: graph.program_graph,
-        provenance: program.provenance,
+        provenance,
     })
 }
 
@@ -431,18 +446,6 @@ impl InputCapture {
             *slot.borrow_mut() = Some(state.clone());
             Ok(Self { state })
         })
-    }
-
-    pub fn set_source_root(&self, path: &Path) -> Result<()> {
-        let path = absolute(path)?;
-        self.state
-            .lock()
-            .expect("capture lock")
-            .as_mut()
-            .expect("capture started")
-            .roots
-            .source = path;
-        Ok(())
     }
 
     /// Record bytes already read by the caller so capture and parsing use the
@@ -763,7 +766,7 @@ impl GraphProvenance {
             .roots
             .packages
             .get_key_value(name)
-            .or_else(|| self.roots.packages.get_key_value("__packages_root__"))
+            .or_else(|| self.roots.packages.get_key_value(SHARED_PACKAGES_ROOT))
             .with_context(|| format!("missing captured root for package {name}"))?;
         if let Ok(relative) = absolute.strip_prefix(root) {
             return Ok((
@@ -915,7 +918,7 @@ impl GraphProvenance {
                     }
                     "--packages-root" => current
                         .packages
-                        .get("__packages_root__")
+                        .get(SHARED_PACKAGES_ROOT)
                         .map(PathBuf::as_path)
                         .map(absolute)
                         .transpose()?
@@ -1229,6 +1232,27 @@ pub fn collect_yaml(root: &Path) -> Result<Vec<PathBuf>> {
     walk(root, root, &mut out)?;
     out.sort();
     Ok(out)
+}
+
+/// Key used for the shared package fallback in captured and relocated provenance roots.
+pub const SHARED_PACKAGES_ROOT: &str = "__packages_root__";
+
+pub fn capture_package_roots(
+    named: &HashMap<String, PathBuf>,
+    shared: Option<&Path>,
+) -> Result<BTreeMap<String, PathBuf>> {
+    anyhow::ensure!(
+        !named.contains_key(SHARED_PACKAGES_ROOT),
+        "package name {SHARED_PACKAGES_ROOT} is reserved for the shared packages root in graph provenance"
+    );
+    let mut packages = BTreeMap::new();
+    for (name, path) in named {
+        packages.insert(name.clone(), absolute(path)?);
+    }
+    if let Some(path) = shared {
+        packages.insert(SHARED_PACKAGES_ROOT.to_owned(), absolute(path)?);
+    }
+    Ok(packages)
 }
 
 pub fn absolute(path: &Path) -> Result<PathBuf> {

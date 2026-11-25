@@ -144,9 +144,21 @@ for (const explicit of [false, true]) {
   }
 }
 
+for (const [name, expression, call, expected] of [
+  ["default-destructuring", "({ x } = { x: offset }) => x", "pick()", 7],
+  ["mixed-destructuring", "(x = offset, { y }) => x + y", "pick(undefined, { y: 3 })", 10],
+]) {
+  if (!includesCase(`parameter-${name}`)) continue;
+  assertCertifiedResult(
+    sequentialSplit(
+      `reached-parameter-${name}`,
+      `const offset = 7; const pick = ${expression}; export const result = [pick.length, ${call}];`
+    ),
+    [0, expected]
+  );
+}
+
 for (const [name, expression, args, length, expected] of [
-  ["default-destructuring", "({ x } = { x: offset }) => x", [], 0, 7],
-  ["mixed-destructuring", "(x = offset, { y }) => x + y", [undefined, { y: 3 }], 0, 10],
   ["nested-object", "({ x: { y = offset } }) => y", [{ x: {} }], 1, 7],
   ["array-pattern", "([x, y], z = offset) => x + y + z", [[1, 2]], 1, 10],
   ["rest-pattern", "(...[x, y]) => x + y", [4, 3], 0, 7],

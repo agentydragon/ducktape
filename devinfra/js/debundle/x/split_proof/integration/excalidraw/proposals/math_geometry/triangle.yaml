@@ -1,0 +1,11 @@
+# v0.18.1 packages/math/triangle.ts.
+source_matches:
+  - match: |
+      function triangleIncludesPoint([a, b, c], point) {
+        let sign = (p, q, r) => (p[0] - r[0]) * (q[1] - r[1]) - (q[0] - r[0]) * (p[1] - r[1]),
+          d1 = sign(point, a, b), d2 = sign(point, b, c), d3 = sign(point, c, a),
+          negative = d1 < 0 || d2 < 0 || d3 < 0, positive = d1 > 0 || d2 > 0 || d3 > 0;
+        return !(negative && positive);
+      }
+    bindings:
+      - triangleIncludesPoint

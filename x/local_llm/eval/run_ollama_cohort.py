@@ -17,7 +17,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
-PROMPTS_SHA256 = "6c3741d0b8be9dd9adeb29eae100372b891cb0939484b5dcfc0b973604de8cbd"
+from x.local_llm.eval.frozen_inputs import PROMPTS_SHA256, read_frozen_cohort, read_frozen_prompts
+
 SEEDS = (20261013, 20261014, 20261015)
 OPTIONS = {"temperature": 0.2, "top_p": 0.95, "num_predict": 2048, "num_ctx": 32768}
 
@@ -91,11 +92,9 @@ def resolve_model(base_url: str, model: str, timeout: float) -> tuple[str, str]:
 
 
 def load_frozen_inputs(prompts_path: Path, cohort_path: Path) -> tuple[list[dict], str]:
-    raw = prompts_path.read_bytes()
-    if sha256(raw) != PROMPTS_SHA256:
-        raise ValueError(f"prompt file hash mismatch: {sha256(raw)}")
+    raw = read_frozen_prompts(prompts_path)
     prompts = [json.loads(line) for line in raw.splitlines() if line.strip()]
-    cohort = json.loads(cohort_path.read_text())
+    cohort, cohort_digest = read_frozen_cohort(cohort_path)
     ids = cohort["task_ids"]
     generation = cohort["generation"]
     if (
@@ -117,7 +116,7 @@ def load_frozen_inputs(prompts_path: Path, cohort_path: Path) -> tuple[list[dict
             raise ValueError(f"invalid frozen messages for {row['task_id']}")
         if sha256(row["prompt"].encode()) != row["prompt_sha256"]:
             raise ValueError(f"prompt hash mismatch for {row['task_id']}")
-    return prompts, sha256(cohort_path.read_bytes())
+    return prompts, cohort_digest
 
 
 def write_new_json(path: Path, value: object) -> None:

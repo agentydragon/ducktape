@@ -4,9 +4,7 @@ use crate::comment::{ModuleCommentArgs, run_module_comment_cmd};
 use crate::edit_gate::GraphEditArgs;
 use crate::emit_report;
 use crate::module::{DeleteArgs, MergeArgs, run_delete, run_merge};
-use crate::module_apply::{
-    ModulesApplyArgs, physical_plan_changes, read_assignment_request, run_modules_apply,
-};
+use crate::module_apply::{ModulesApplyArgs, read_assignment_request, run_modules_apply};
 use crate::module_proposals::{GraphCorpusScope, discover_graphs, scope_graphs_to_tree};
 use crate::source_unit_apply::{SourceUnitApplyOptions, run_source_unit_apply};
 use anyhow::{Context, Result, ensure};
@@ -293,11 +291,11 @@ fn run_modules_check(
                 .source_root
                 .as_deref()
                 .context("executable plan check requires --source-root for selector preflight")?;
-            preflight_assignment(
+            run_source_unit_apply(
                 stderr,
-                input,
-                &args.common.dependency_graph_path,
                 &args.common.modules_root,
+                &args.common.dependency_graph_path,
+                input,
                 source_root,
                 source_context,
                 preview_options(args.tree_config.as_deref(), changes.clone(), &import_order),
@@ -456,6 +454,7 @@ fn preview_options<'a>(
     import_order: &[spec::ModulePath],
 ) -> SourceUnitApplyOptions<'a> {
     SourceUnitApplyOptions {
+        chunk_logical_destinations: true,
         tree_config,
         assignments,
         import_order: Some(import_order.to_vec()),
@@ -464,34 +463,6 @@ fn preview_options<'a>(
         dry_run: true,
         effect_assessment_context: None,
     }
-}
-
-fn preflight_assignment(
-    stderr: &mut (dyn std::io::Write + Send),
-    input: analysis::DependencyGraphInput,
-    graph: &Path,
-    modules_root: &Path,
-    source_root: &Path,
-    source_context: Option<&VerifiedGraphSourceContext>,
-    mut preview: SourceUnitApplyOptions<'_>,
-) -> Result<()> {
-    preview.assignments = physical_plan_changes(
-        preview.assignments,
-        &input,
-        preview.tree_config,
-        modules_root,
-        source_context,
-    )?;
-    run_source_unit_apply(
-        stderr,
-        modules_root,
-        graph,
-        input,
-        source_root,
-        source_context,
-        preview,
-    )?;
-    Ok(())
 }
 
 fn preflight_one_proposal(
@@ -512,20 +483,14 @@ fn preflight_one_proposal(
         return;
     };
     let context = context.filter(|context| context.chunk_id() == proposal.chunk_id);
-    let modules_root = args
-        .tree_config
-        .as_ref()
-        .and(context)
-        .and_then(VerifiedGraphSourceContext::modules_root)
-        .unwrap_or(&args.modules_root);
-    if let Err(error) = preflight_assignment(
+    if let Err(error) = run_source_unit_apply(
         stderr,
+        &args.modules_root,
+        &proposal.graph,
         proposal
             .input
             .take()
             .expect("found proposal retains its graph"),
-        &proposal.graph,
-        modules_root,
         source_root,
         context,
         preview_options(
@@ -582,26 +547,16 @@ fn preflight_selected_corpus(
         if proposal.search.status != peel::search::SearchStatus::Found {
             continue;
         }
-        if args.source_root.is_none()
-            || proposal
-                .input
-                .as_ref()
-                .expect("found proposal retains its graph")
-                .report()
-                .ownership_subset
-                .is_none()
-        {
+        let input = proposal
+            .input
+            .as_ref()
+            .expect("found proposal retains its graph");
+        if args.source_root.is_none() || input.report().ownership_subset.is_none() {
             preflight_one_proposal(args, proposal, stderr, Some(context));
             continue;
         }
-        let header = graph_provenance::read_graph_header(&proposal.graph)?;
-        ensure!(
-            header.chunk_id == proposal.chunk_id,
-            "graph chunk changed during proposal preparation"
-        );
-        let provenance = header
-            .provenance
-            .context("selected-view editing requires graph provenance")?;
+        let provenance =
+            crate::selected_view_apply::selected_provenance(context, &proposal.graph, input)?;
         let key = pipeline::SelectedOwnershipProgram::key(context, &provenance)?;
         match groups.entry(key) {
             std::collections::btree_map::Entry::Vacant(entry) => {

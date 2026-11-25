@@ -157,7 +157,8 @@ private def readProviders (format : BodyFormat) (profile : HostProfile) (provide
     let nodes ← (ESTreeUnits.nodes file).mapError fun why => s!"{name}: {why}"
     let p ← (parse format profile name nodes offset (provider := some name)).mapError fun why => s!"{name}: {why}"
     for req in p.imports do
-      unless names.contains req.source do throw s!"{name}: missing provider dependency {req.source}"
+      unless names.contains req.source do
+        throw s!"{name}: missing provider dependency {req.source}"
     templates := templates ++ p.templates.toArray
     modules := modules.push (p.numbered name offset)
     offset := offset + nodes.size
@@ -354,17 +355,18 @@ def decodeStaticSplits (app provider : StaticSplit) : Except String (Program × 
   checkScopes before after
   return (before, after)
 
-/-- Lower an unsplit module graph with the linked rules. The entry module is `main`; its units keep
-their source ordinals, and provider units follow them. Linking checks the same scopes and exports
-as `decodePair`. -/
-def program (source providers : Json) (profile : HostProfile := .empty) : Except String Program := do
+/-- Lower an unsplit module graph with the linked rules. The entry module is named `entry`, and a
+provider may import it back. Its units keep their source ordinals, and provider units follow them.
+Linking checks the same scopes and exports as `decodePair`. -/
+def program (source providers : Json) (profile : HostProfile := .empty) (entry : String := "main") :
+    Except String Program := do
   let nodes ← ESTreeUnits.nodes source
-  let original ← parse .linked profile "bundle.mjs" nodes
+  let original ← parse .linked profile entry nodes
   let ps := (← providers.getObj?).toList
   for req in original.imports do
     unless ps.any (·.1 == req.source) do throw s!"missing original dependency {req.source}"
-  let (shared, providerSites) ← readProviders .linked profile ps nodes.size
-  let p ← installTemplates { entry := "main", modules := original.numbered "main" 0 :: shared }
+  let (shared, providerSites) ← readProviders .linked profile ps nodes.size [entry]
+  let p ← installTemplates { entry, modules := original.numbered entry 0 :: shared }
     (original.templates ++ providerSites)
   let _ ← scopes p
   return p

@@ -319,6 +319,21 @@ async def smoke(
             await page.wait_for_function("window.dialogFailures.length > 0")
             assert errors == []
         elif overlay is not None:
+            geometry = await page.evaluate(
+                """async () => {
+                  const {al: line, K8: intersect} = await import("/packages/math/line.mjs");
+                  const {ci: contains} = await import("/packages/math/triangle.mjs");
+                  const horizontal = line([0, 2], [1, 2]);
+                  const triangle = [[0, 0], [4, 0], [0, 4]];
+                  return {
+                    crossing: intersect(horizontal, line([3, 0], [3, 1])),
+                    parallel: intersect(horizontal, line([0, 3], [1, 3])),
+                    inside: contains(triangle, [1, 1]),
+                    outside: contains(triangle, [3, 3]),
+                  };
+                }"""
+            )
+            assert geometry == {"crossing": [3, 2], "parallel": None, "inside": True, "outside": False}
             shape_results = await page.evaluate(
                 """async () => {
                   const {A1: polygon, Er: fromPoints, C1: inside, t7: onEdge} = await import("/packages/math/polygon.mjs");

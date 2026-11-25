@@ -57,17 +57,26 @@ def addPrototype (a : Addr) (kind : FuncKind := .normal) : M W Unit := do
     [(PropertyKey.str "prototype", Property.data (.obj p) true false false)] }
 
 /-- A function object for `f`, closed over the bindings of `env` that its code can mean. -/
-def makeFunc (env : Env) (f : Func) : M W Val := do
+def makeFunc (env : Env) (f : Func) (displayName : String := f.name) : M W Val := do
   let env ← selfScope env f.self f.name
   let closed := env.capture f.closes
   let closed := if f.kind == .normal then { closed with home := none } else closed
   let a ← alloc {
     proto := some f.intrinsicProto, code := some (.closure f closed []),
     props := [("length", .data (.num (Float.ofNat f.length)) false false true),
-      ("name", .data (.str f.name) false false true)] }
+      ("name", .data (.str displayName) false false true)] }
   (if f.kind.hasOwnPrototype then addPrototype a f.kind else pure ())
   initSelf env f.self f.name (.obj a)
   pure (.obj a)
+
+/-- Class methods use the evaluated property key for SetFunctionName. The
+visible name and the closure's lexical name are independent. -/
+def makeClassMethod (env : Env) (home : Addr) (key : PropertyKey) (affix : String)
+    (f : Func) : M W Val :=
+  match key with
+  | .str name => makeFunc { env with home := some home } f (affix ++ name)
+  | .wellKnownSymbol sym => makeFunc { env with home := some home } f (affix ++ s!"[{sym.description}]")
+  | .symbol _ => unknown "computed class method needs an unmodeled symbol description"
 
 /-- A function whose body is part `part` of the opaque code `code`, closed over `cells`. -/
 def makeOpaque (code part : Nat) (cells : List (Option Addr)) (name : String) (length : Nat) (constructor : Bool)
@@ -587,15 +596,15 @@ def evalMembers : Nat → Env → Addr → Addr → List ClassMember → M W (Li
       | .method static k f => do
         let key ← toKey (← evalExpr n env k)
         defineOwn (home static) key
-          { value := some (← makeFunc { env with home := some (home static) } f), writable := some true, enumerable := some false, configurable := some true }
+          { value := some (← makeClassMethod env (home static) key "" f), writable := some true, enumerable := some false, configurable := some true }
         pure none
       | .getter static k f => do
         let key ← toKey (← evalExpr n env k)
-        defineOwn (home static) key { get := some (← makeFunc { env with home := some (home static) } f), enumerable := some false, configurable := some true }
+        defineOwn (home static) key { get := some (← makeClassMethod env (home static) key "get " f), enumerable := some false, configurable := some true }
         pure none
       | .setter static k f => do
         let key ← toKey (← evalExpr n env k)
-        defineOwn (home static) key { set := some (← makeFunc { env with home := some (home static) } f), enumerable := some false, configurable := some true }
+        defineOwn (home static) key { set := some (← makeClassMethod env (home static) key "set " f), enumerable := some false, configurable := some true }
         pure none
       | .field static k _ => do pure (some (static, ← toKey (← evalExpr n env k)))
       | .staticBlock _ => pure none

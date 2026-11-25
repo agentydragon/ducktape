@@ -64,7 +64,6 @@ class CentralSamplerProps:
     connection_credentials: Mapping[str, SecretKey] = field(default_factory=dict)
     executor_initialize_timeout_seconds: int = settings.DEFAULT_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS
     turn_timeout_seconds: int | None = None
-    auto_compact_tokens: int | None = None
     actions: settings.ActionsConfig | None = None
     context_source_writes: bool = False
     event_block_writes: bool = False

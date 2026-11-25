@@ -95,6 +95,7 @@ private def reference (imports : List Name) (inFunction : Bool) (j : Json)
     return .var x
   | "G" =>
     if (profile.bindingIdentity x).isSome then return .prim (.globalRef x) []
+    if profile.recordedHostValue x then return .host x
     -- A successful typeof guard does not establish what a direct lookup would do.
     if profile.opaqueBinding x then
       return .prim (.opaqueAmbientRef x) []
@@ -102,7 +103,9 @@ private def reference (imports : List Name) (inFunction : Bool) (j : Json)
     | "undefined" => return .undef
     | "Infinity" => return .num Num.inf
     | "NaN" => return .num Num.nan
-    | _ => throw s!"unsupported global {x}"
+    | _ =>
+      if profile.undeclaredGlobal x then return .var x
+      throw s!"unsupported global {x}"
   | k => throw s!"unsupported binding class {k}"
 
 private def unary (op : String) (argument : Json) (lower : Unit → Except String Expr) :
@@ -204,10 +207,14 @@ private def linkedPatternIdentifier (binder : Json → Except String Name) (targ
   unless (← field target "type") == "Identifier" do throw "expected an identifier in object pattern"
   binder target
 
+private def splitBindingDefault (j : Json) : Except String (Json × Option Json) := do
+  if (← field j "type") == "AssignmentPattern" then
+    return (← j.getObjVal? "left", some (← j.getObjVal? "right"))
+  return (j, none)
+
 private def linkedParameterBinding (j : Json) : Except String (Name × Option Json) := do
-  let binder := linkedPatternIdentifier localBinding
-  if (← field j "type") != "AssignmentPattern" then return (← binder j, none)
-  return (← j.getObjVal? "left" >>= binder, some (← j.getObjVal? "right"))
+  let (target, fallback) ← splitBindingDefault j
+  return (← linkedPatternIdentifier localBinding target, fallback)
 
 private def hasObjectParameterDefault (param : Json) : Bool :=
   (field param "type").toOption == some "ObjectPattern" &&
@@ -376,7 +383,7 @@ private partial def linkedMember (lower : Json → Except String Expr) (j : Json
     | none => reason
   return (base, ← memberKey lower j)
 
-private def linkedTarget (imports : List Name) (inFunction allowFrozen : Bool)
+private def linkedTarget (imports : List Name) (inFunction : Bool)
     (lower : Json → Except String Expr) (j : Json) : Except String Target := do
   match ← field j "type" with
   | "Identifier" =>
@@ -385,7 +392,6 @@ private def linkedTarget (imports : List Name) (inFunction allowFrozen : Bool)
     -- Glue imports keep the original module reference annotation. Local references shadow imports.
     let scope ← field j "k"
     if scope != "L" && imports.contains name then
-      unless allowFrozen do throw s!"unsupported linked assignment to imported binding {name}"
       return .frozen name
     return .var name
   | "MemberExpression" =>
@@ -643,7 +649,7 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
   | "CoreJSNewTarget" => return .var newTargetName
   | "MemberExpression" =>
     if let some sym := (ambientSymbolMember? j).bind WellKnownSymbol.ofMember? then
-      if profile == .browserPage then return .prim (.wellKnownSymbol sym) []
+      if profile.ambientSymbols then return .prim (.wellKnownSymbol sym) []
       if inFunction then return .prim (.opaqueAmbientMemberRef "Symbol" sym.member) []
     let lower := linkedExpr profile imports inFunction ""
     if let some name := privateMember? j then
@@ -688,7 +694,7 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
       unless op == "=" do throw "unsupported compound private field assignment"
       return .prim (.privateSlot .set) [.var (privateTable name), ← lower (← left.getObjVal? "object"),
         ← lower (← j.getObjVal? "right")]
-    let target ← linkedTarget imports inFunction (op == "=") lower left
+    let target ← linkedTarget imports inFunction lower left
     let rhs ← j.getObjVal? "right"
     let targetName := match target with
       | .var name | .frozen name => name
@@ -716,7 +722,7 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
       | "++" => pure true
       | "--" => pure false
       | op => throw s!"unsupported linked update operator {op}"
-    let target ← j.getObjVal? "argument" >>= linkedTarget imports inFunction false (linkedExpr profile imports inFunction "")
+    let target ← j.getObjVal? "argument" >>= linkedTarget imports inFunction (linkedExpr profile imports inFunction "")
     return .update target inc (← j.getObjValAs? Bool "prefix")
   | "ObjectExpression" =>
     linkedObject (linkedExpr profile imports inFunction) (fun name => linkedFunction profile imports .method name false) j
@@ -833,13 +839,20 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
           -- Observe the constructor and method before evaluating the argument. On the
           -- supported fresh-realm template iterable, Array.from creates a mutable copy.
           return .seq (.prim .checkArrayFrom []) (.arr [.spreadArg (.prim .templateIterable [← lower source])])
-    if profile == .browserPage && (field callee "type").toOption == some "Identifier" &&
+    if profile.ambientSymbols && (field callee "type").toOption == some "Identifier" &&
         (field callee "k").toOption == some "G" && (identifier callee).toOption == some "Symbol" then
       match args with
       | [] => return .prim .freshSymbol []
       | [arg] =>
         if let .ok description := stringLiteral arg then return .prim .freshSymbol [.str description]
       | _ => pure ()
+    if (field callee "type").toOption == some "MemberExpression" && !(callee.getObjValAs? Bool "computed").toOption.getD true then
+      let owner ← callee.getObjVal? "object"
+      if (field owner "type").toOption == some "Identifier" && (field owner "k").toOption == some "G" then
+        if let some p := profile.recordedPrim (← identifier owner) (← identifier (← callee.getObjVal? "property")) then
+          if args.any (fun a => (field a "type").toOption == some "SpreadElement") then
+            throw "unsupported spread argument to a recorded host primitive"
+          return .prim p (← args.mapM lower)
     match ← field callee "type" with
     | "MemberExpression" =>
       if let some name := privateMember? callee then
@@ -894,32 +907,24 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
   let j ← if kind == .arrow then pure j else prepareNewTargetFunction j
   let parameters ← j.getObjValAs? (Array Json) "params"
   let deferPattern := deferredFunction j kind name self arity (checkPrivateNames := true)
-  let hasNamedDefaults := tags.contains "AssignmentPattern"
-  let hasDefaults := hasNamedDefaults || parameters.any hasObjectParameterDefault
+  let hasDefaults := tags.contains "AssignmentPattern" || parameters.any hasObjectParameterDefault
   let mut rest : Option Name := none
   let mut slots : Array Name := #[]
   let mut bound : Array Name := #[]
   let mut initializers : Array Stmt := #[]
-  for ((param, tag), i) in (parameters.zip tags).zipIdx do
+  for (param, i) in parameters.zipIdx do
     let slot := s!":parameter:{i}"
-    match tag with
+    let (target, fallback) ← splitBindingDefault param
+    match ← field target "type" with
     | "Identifier" =>
-      let x ← localBinding param
+      let x ← localBinding target
       slots := slots.push (if hasDefaults then slot else x)
       bound := bound.push x
-      if hasDefaults then initializers := initializers.push (.decl .let_ x (.var slot))
-    | "AssignmentPattern" =>
-      let target ← param.getObjVal? "left"
-      unless (← field target "type") == "Identifier" do
-        return .complete (← deferPattern "expected an identifier in a default parameter")
-      let x ← localBinding target
-      let value ← linkedExpr profile imports true x (← param.getObjVal? "right")
-      slots := slots.push slot
-      bound := bound.push x
-      initializers := initializers.push (.decl .let_ x (withBindingDefault slot (some value)))
+      if hasDefaults then
+        let value ← fallback.mapM (linkedExpr profile imports true x)
+        initializers := initializers.push (.decl .let_ x (withBindingDefault slot value))
     | "ObjectPattern" =>
-      if hasNamedDefaults then return .complete (← deferPattern "unsupported object pattern alongside default parameters")
-      let fields ← match linkedObjectPattern param linkedParameterBinding with
+      let fields ← match linkedObjectPattern target linkedParameterBinding with
         | .ok fields => pure fields
         | .error reason => return .complete (← deferPattern reason)
       slots := slots.push slot
@@ -931,7 +936,8 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
             | none => pure bind
             | some e => .defaultValue bind <$> linkedExpr profile imports true x e
           pure (Expr.str key, pattern)
-        initializers := initializers.push (.bind .let_ (.object props) (.var slot))
+        let value ← fallback.mapM (linkedExpr profile imports true "")
+        initializers := initializers.push (.bind .let_ (.object props) (withBindingDefault slot value))
       else
         for (key, x, _) in fields do
           initializers := initializers.push (.decl .var x (.get (.var slot) (.str key)))
@@ -943,7 +949,7 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
       let x ← localBinding target
       rest := some x
       bound := bound.push x
-    | "ArrayPattern" => return .complete (← deferPattern s!"unsupported function parameter {tag}")
+    | "ArrayPattern" => return .complete (← deferPattern "unsupported function parameter ArrayPattern")
     | other => throw s!"unsupported function parameter {other}"
   unless bound.toList.Nodup do throw "duplicate function parameter"
   let body ← j.getObjVal? "body"
@@ -989,6 +995,16 @@ private partial def linkedBeforeSuper (profile : HostProfile) (imports : List Na
     | "ExpressionStatement" =>
       let expr ← prepareBeforeSuper (← stmt.getObjVal? "expression") true
       before := before.push (.expr (← linkedExpr profile imports true "" expr))
+    | "IfStatement" =>
+      let consequent ← stmt.getObjVal? "consequent"
+      let branch ← if (← field consequent "type") == "BlockStatement" then
+        consequent.getObjValAs? (List Json) "body"
+      else pure [consequent]
+      unless (← stmt.getObjVal? "alternate") == .null &&
+          branch.length == 1 && branch.head?.any (fun arm => (field arm "type").toOption == some "ThrowStatement") do
+        throw "unsupported IfStatement before super"
+      -- The guard either falls through or throws before selecting the superclass.
+      before := before.push (← linkedStatement profile imports .function (← prepareBeforeSuper stmt true))
     | other => throw s!"unsupported {other} before super"
   return before.toList
 
@@ -1010,15 +1026,14 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
     (name : Name) (fn : Json) : Except String (List Stmt × SuperCall × Func) := do
   let fn ← prepareNewTargetFunction fn
   for param in ← fn.getObjValAs? (Array Json) "params" do
-    if (← field param "type") == "AssignmentPattern" then
-      discard <| localBinding (← param.getObjVal? "left")
-      discard <| prepareBeforeSuper (← param.getObjVal? "right") false
-    else if (← field param "type") == "ObjectPattern" then
-      for (_, _, fallback) in ← linkedObjectPattern param linkedParameterBinding do
-        if let some e := fallback then discard <| prepareBeforeSuper e false
-    else if (← field param "type") == "RestElement" then
-      discard <| localBinding (← param.getObjVal? "argument")
-    else discard <| localBinding param
+    let (target, fallback) ← splitBindingDefault param
+    if let some e := fallback then discard <| prepareBeforeSuper e false
+    match ← field target "type" with
+    | "ObjectPattern" =>
+      for (_, _, propertyDefault) in ← linkedObjectPattern target linkedParameterBinding do
+        if let some e := propertyDefault then discard <| prepareBeforeSuper e false
+    | "RestElement" => discard <| localBinding (← target.getObjVal? "argument")
+    | _ => discard <| localBinding target
   let block ← fn.getObjVal? "body"
   let statements ← block.getObjValAs? (List Json) "body"
   let (prefixStmts, remaining) := statements.span fun stmt =>
@@ -1077,7 +1092,7 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
     checkFunctionOverlap body
     return (initializers ++ before, args, .withDefaults name .classCtor false slots arity body)
 
-/-- Public, static-name class elements with default or explicit derived constructors. -/
+/-- Class elements with default or explicit derived constructors. -/
 private partial def linkedClass (profile : HostProfile) (imports : List Name) (inFunction : Bool) (hint : Name) (j : Json) :
     Except String Expr := do
   let id ← j.getObjVal? "id"
@@ -1125,11 +1140,12 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
         brands := brands.push (.field false make (.prim (.privateSlot .addMethod) [table, .this, .var binding]))
       continue
     let (key, keyExpr) ← if ← member.getObjValAs? Bool "computed" then do
-      if let some sym := (ambientSymbolMember? keyNode).bind WellKnownSymbol.ofMember? then
-        unless tag == "MethodDefinition" && profile == .browserPage do throw "unsupported computed class key"
-        -- SetFunctionName wraps a symbol’s description in brackets.
-        pure (s!"[{sym.description}]", Expr.prim (.wellKnownSymbol sym) [])
-      else if tag == "PropertyDefinition" && !static && (← field keyNode "type") == "Identifier" &&
+      if tag == "MethodDefinition" then
+        if let some sym := (ambientSymbolMember? keyNode).bind WellKnownSymbol.ofMember? then
+          unless profile.ambientSymbols do throw "unsupported computed class key"
+          pure (s!"[{sym.description}]", Expr.prim (.wellKnownSymbol sym) [])
+        else pure ("", ← linkedExpr profile imports inFunction "" keyNode)
+      else if !static && (← field keyNode "type") == "Identifier" &&
           (field keyNode "k").toOption.any (["L", "T", "V"].contains ·) then
         if ← isAnonymousDefinition value then throw "unsupported function or class named by a computed field key"
         pure ("", ← reference imports inFunction keyNode profile)
@@ -1368,7 +1384,7 @@ private partial def linkedStatement (profile : HostProfile) (imports : List Name
       let source ← lower "" (← j.getObjVal? "right")
       let body ← linkedStatement profile imports blockScope (← j.getObjVal? "body")
       if (← field left "type") != "VariableDeclaration" then
-        let target ← linkedTarget imports true true (lower "") left
+        let target ← linkedTarget imports true (lower "") left
         let slot := ":for-of"
         return .forOf .const (.name slot) source (.block [.expr (.assign target (.var slot)), body])
       let #[d] ← left.getObjValAs? (Array Json) "declarations" | throw "expected one for-of binding declarator"

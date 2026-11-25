@@ -1332,7 +1332,7 @@ pub fn resolve_imported_callable_summaries(
                     prepared_module.value_input_errors().join("; ")
                 );
             }
-            prepared_module.locate_value_inputs(facts.source.as_ref());
+            prepared_module.locate_value_inputs(facts.locator());
             let module_inputs = prepared_module.resolved_value_inputs();
             if !module_inputs.is_empty() && facts.source.is_none() {
                 bail!(
@@ -1348,7 +1348,7 @@ pub fn resolve_imported_callable_summaries(
                     prepared_module.native_operation_input_errors().join("; ")
                 );
             }
-            prepared_module.locate_native_operation_inputs(facts.source.as_ref());
+            prepared_module.locate_native_operation_inputs(facts.locator());
             let module_native_inputs = prepared_module.resolved_native_operation_inputs();
             if !module_native_inputs.is_empty() && facts.source.is_none() {
                 bail!(
@@ -1358,7 +1358,7 @@ pub fn resolve_imported_callable_summaries(
             if !module_native_inputs.is_empty() {
                 resolved_native_operation_inputs.insert(module.clone(), module_native_inputs);
             }
-            prepared_module.locate_native_writes(module, facts.source.as_ref());
+            prepared_module.locate_native_writes(module, facts.locator());
             prepared.insert(module, prepared_module);
         }
         Ok((
@@ -1663,7 +1663,7 @@ pub fn resolve_imported_callable_summaries(
                 .get(module.as_str())
                 .expect("every prepared module has an import projection"),
         );
-        facts.locate_native_writes(module, modules[*module].source.as_ref());
+        facts.locate_native_writes(module, modules[*module].locator());
     }
     let mut native_integrity =
         crate::facts::sync_effects::execution_index::resolve_native_integrity(

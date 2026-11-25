@@ -148,7 +148,6 @@ class AnthropicCompactionConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     max_tokens: int = Field(gt=0)
-    auto_compact_tokens: int | None = Field(default=None, gt=0)
     keep_recent_turns: int = Field(default=0, ge=0)
 
 
@@ -194,7 +193,6 @@ class ChatCompactionConfig(BaseModel):
     keep_recent_tokens: int | None = Field(default=None, ge=9)
     # CLEANUP(added 2026-11-24): Remove after staging has rolled out settings with keep_recent_tokens.
     keep_recent_turns: int | None = Field(default=None, gt=0)
-    auto_compact_tokens: int | None = Field(default=None, gt=0)
 
     summary_prompt_template: str | None = None
     replacement: ChatCompactionReplacement | None = None
@@ -387,7 +385,6 @@ class Settings(BaseModel):
         default=55, gt=0, description="Maximum shutdown cleanup budget; must fit inside the Pod termination grace."
     )
     lease_seconds: int = Field(gt=30)
-    auto_compact_tokens: int | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")
     def validate_listeners(self) -> Self:

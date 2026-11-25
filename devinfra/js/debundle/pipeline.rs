@@ -14,7 +14,6 @@ use std::sync::Arc;
 use anyhow::{Context, Result, bail};
 
 use analysis_projection::AnalysisSpec;
-use artifact::EmissionFiles;
 use artifact::reports::{ArtifactChunkRecord, ArtifactCounts, ChunkDecompositionOutput};
 use emit_harness::emit_browser_harness;
 use final_global_resolution::GlobalResolutionSources;
@@ -33,13 +32,8 @@ use prepare_chunks::prepare_js_chunks;
 use reconstruction::{EmittablePlan, RejectedPlan, VendorManifestOutput, validate_reconstruction};
 use spec::{ChunkExportPurity, LogicalModule, NodeBuiltinModuleExt, TransformSpec};
 use spec_modules::read_flat_transform_spec;
-use spec_tree::{
-    CompileSpecTreeOptions, compile_spec_tree, compile_spec_tree_with_roots, graph_module_roots,
-};
-use vendor::{
-    VendorPlanOptions, VendorResolutionPlan, VendorSwapsReport, build_partial_swap_resolutions,
-    build_vendor_resolution_plan,
-};
+use spec_tree::{CompileSpecTreeOptions, compile_spec_tree_with_roots, graph_module_roots};
+use vendor::{VendorPlanOptions, VendorResolutionPlan, build_vendor_resolution_plan};
 use write_tree::{RejectedArtifacts, WriteTreeInput, write_gate_rejected_marker, write_js_tree};
 
 /// Exit status of `debundle run --emit-on-rejection` when the realizability
@@ -259,8 +253,8 @@ enum ApplyPath {
 }
 
 pub fn project_apply(cli: &TransformRequest, root: &Path, out: &Path) -> Result<()> {
-    let spec = load_transform_spec_source(&cli.spec_source)?;
-    project_apply_from_spec(cli, root, out, spec, None)
+    let (spec, roots) = load_transform_spec_with_roots(&cli.spec_source)?;
+    project_apply_from_spec(cli, root, out, spec, roots)
 }
 
 fn project_apply_from_spec(
@@ -268,7 +262,7 @@ fn project_apply_from_spec(
     root: &Path,
     out: &Path,
     mut spec: TransformSpec,
-    compiled_roots: Option<&BTreeMap<String, Vec<PathBuf>>>,
+    module_roots_by_chunk: BTreeMap<String, Vec<PathBuf>>,
 ) -> Result<()> {
     validate_transform_spec(&spec)?;
     if let TransformSpecSource::Tree(tree) = &cli.spec_source {
@@ -279,21 +273,8 @@ fn project_apply_from_spec(
             module.note = None;
         }
     }
-    let module_roots_by_chunk = match (&cli.spec_source, compiled_roots) {
-        (TransformSpecSource::Tree(_), Some(roots)) => roots.clone(),
-        (TransformSpecSource::Tree(tree), None) => graph_module_roots(&tree.config_path)?,
-        (TransformSpecSource::Flat { .. }, _) => BTreeMap::new(),
-    };
     let root = std::path::absolute(root)?;
-    let relative = |path: &Path| -> Result<PathBuf> {
-        let path = std::path::absolute(path)?;
-        Ok(path.strip_prefix(&root).unwrap_or(&path).to_path_buf())
-    };
-    let mut source = cli.spec_source.clone();
-    map_spec_source_paths(&mut source, &relative)?;
-    if let TransformSpecSource::Tree(tree) = &mut source {
-        tree.out_root = PathBuf::from(APPLY_OUTPUT_ROOT);
-    }
+    let source = projection_source(&cli.spec_source, &root)?;
     let mut rooted_paths = BTreeSet::new();
     map_apply_spec_paths(&mut spec, &mut |field, path| {
         if let Ok(relative) = path.strip_prefix(&root) {
@@ -316,23 +297,23 @@ fn project_apply_from_spec(
     .with_context(|| format!("write apply projection {}", out.display()))
 }
 
-fn map_spec_source_paths(
-    source: &mut TransformSpecSource,
-    map: &impl Fn(&Path) -> Result<PathBuf>,
-) -> Result<()> {
-    match source {
-        TransformSpecSource::Flat { path } => *path = map(path)?,
+fn projection_source(source: &TransformSpecSource, root: &Path) -> Result<TransformSpecSource> {
+    let relative = |path: &Path| -> Result<PathBuf> {
+        let path = std::path::absolute(path)?;
+        Ok(path.strip_prefix(root).unwrap_or(&path).to_path_buf())
+    };
+    let mut source = source.clone();
+    match &mut source {
+        TransformSpecSource::Flat { path } => *path = relative(path)?,
         TransformSpecSource::Tree(tree) => {
-            tree.config_path = map(&tree.config_path)?;
-            tree.modules_root = map(&tree.modules_root)?;
-            tree.vendor_marks_path = map(&tree.vendor_marks_path)?;
-            tree.out_root = map(&tree.out_root)?;
-            if let Some(root) = &mut tree.source_root {
-                *root = map(root)?;
-            }
+            tree.config_path = relative(&tree.config_path)?;
+            tree.modules_root = relative(&tree.modules_root)?;
+            tree.vendor_marks_path = relative(&tree.vendor_marks_path)?;
+            tree.out_root = PathBuf::from(APPLY_OUTPUT_ROOT);
+            tree.source_root = tree.source_root.as_deref().map(relative).transpose()?;
         }
     }
-    Ok(())
+    Ok(source)
 }
 
 /// Filesystem paths only: module IDs and specifiers are semantic strings.
@@ -432,16 +413,8 @@ pub fn run_transform_with_projection(
             );
             let mut projection = ApplyProjection::decode(&fs::read(path)?)?;
             let root = std::path::absolute(projection_root)?;
-            let mut source = cli.spec_source.clone();
-            map_spec_source_paths(&mut source, &|path| {
-                let path = std::path::absolute(path)?;
-                Ok(path.strip_prefix(&root).unwrap_or(&path).to_path_buf())
-            })?;
-            if let TransformSpecSource::Tree(tree) = &mut source {
-                tree.out_root = PathBuf::from(APPLY_OUTPUT_ROOT);
-            }
             anyhow::ensure!(
-                projection.source == source,
+                projection.source == projection_source(&cli.spec_source, &root)?,
                 "apply projection was compiled for other spec paths"
             );
             map_apply_spec_paths(&mut projection.spec, &mut |field, path| {
@@ -495,7 +468,10 @@ pub fn run_transform_with_projection(
             path,
             analysis_engine_sha256,
         }) => AnalysisMode::Load {
-            base: Box::new(AnalysisSpec::from_transform(&spec, &prepared.source_root)?),
+            base: Box::new(AnalysisSpec::from_transform(
+                &spec,
+                &prepared.provenance.roots.source,
+            )?),
             artifact: fs::read(path)
                 .with_context(|| format!("read analysis artifact {}", path.display()))?,
             analysis_engine_sha256: analysis_engine_sha256.to_string(),
@@ -590,7 +566,10 @@ pub fn assess_candidate_effect_relocation(
     let artifact = fs::read(analysis.path)
         .with_context(|| format!("read analysis artifact {}", analysis.path.display()))?;
     let mode = AnalysisMode::Load {
-        base: Box::new(AnalysisSpec::from_transform(&spec, &prepared.source_root)?),
+        base: Box::new(AnalysisSpec::from_transform(
+            &spec,
+            &prepared.provenance.roots.source,
+        )?),
         artifact,
         analysis_engine_sha256: analysis.analysis_engine_sha256.to_string(),
     };
@@ -659,10 +638,10 @@ pub fn project_analysis_and_apply(
             root,
             out,
             spec.clone(),
-            Some(&prepared.module_roots_by_chunk),
+            prepared.provenance.module_roots_by_chunk.clone(),
         )?;
     }
-    let base = AnalysisSpec::from_transform(&spec, &prepared.source_root)?;
+    let base = AnalysisSpec::from_transform(&spec, &prepared.provenance.roots.source)?;
     let artifact = prepared.source.into_artifact();
     let projection = frontend_elaboration::project_analysis(
         artifact,
@@ -684,9 +663,6 @@ struct PreparedTransform {
     provenance: GraphProvenance,
     /// Host loader per embedded input file.
     embedded_loaders: BTreeMap<String, spec::BunLoader>,
-    /// The root the spec's source paths resolve against.
-    source_root: PathBuf,
-    module_roots_by_chunk: BTreeMap<String, Vec<PathBuf>>,
 }
 
 /// Exact capture identity used to group selected corpus rows. Reuse is local
@@ -1100,16 +1076,12 @@ fn prepare_transform(
             graph_provenance::read_bytes(path)?;
         }
     }
-    let (spec, module_roots_by_chunk) = match (projection, &cli.spec_source) {
-        (Some(projection), _) => (
+    let (spec, module_roots_by_chunk) = match projection {
+        Some(projection) => (
             projection.spec.clone(),
             projection.module_roots_by_chunk.clone(),
         ),
-        (None, TransformSpecSource::Tree(tree)) => compile_spec_tree_with_roots(tree)?,
-        (None, TransformSpecSource::Flat { .. }) => (
-            load_transform_spec_source(&cli.spec_source)?,
-            BTreeMap::new(),
-        ),
+        None => load_transform_spec_with_roots(&cli.spec_source)?,
     };
     if let Some(expected) = expected_spec {
         anyhow::ensure!(
@@ -1124,15 +1096,8 @@ fn prepare_transform(
             ))?;
     }
     if let TransformSpecSource::Tree(tree) = &cli.spec_source {
-        capture.set_tree_scope(&tree.config_path, module_roots_by_chunk.clone())?;
+        capture.set_tree_scope(&tree.config_path, module_roots_by_chunk)?;
     }
-    let source_root = match &cli.spec_source {
-        TransformSpecSource::Tree(tree) => tree.source_root.clone(),
-        TransformSpecSource::Flat { .. } => None,
-    }
-    .unwrap_or_else(|| std::env::current_dir().expect("current directory"));
-    let source_root = graph_provenance::absolute(&source_root)?;
-    capture.set_source_root(&source_root)?;
     validate_transform_spec(&spec)?;
     if let RunArtifacts::ReportsOnly { out_root } = &options.artifacts {
         preflight_roots(vec![out_root.clone()])?;
@@ -1179,8 +1144,6 @@ fn prepare_transform(
             vendor_plan: Arc::new(vendor_plan),
             provenance: graph_provenance,
             embedded_loaders,
-            source_root,
-            module_roots_by_chunk,
         },
     ))
 }
@@ -1206,7 +1169,10 @@ fn run_prepared_transform(
         embedded_loaders,
         ..
     } = prepared;
-    let (counts, chunk_records) = source_report_records(&source_program.artifact().chunks);
+    let (counts, emitted_chunk_records) = source_report_records(
+        &source_program.artifact().chunks,
+        &vendor_plan.full_swap_chunk_ids(),
+    );
     let materialise_chunk_ids: Vec<String> = spec.materialize_chunk_ids().into_iter().collect();
     anyhow::ensure!(
         options.ownership_subset.is_none() || !materialise_chunk_ids.is_empty(),
@@ -1250,15 +1216,7 @@ fn run_prepared_transform(
         bail!("{requested} requires a configured report output directory");
     }
     let swap_cfg = &spec.swap_vendor_chunks;
-    let mut vendor_report = VendorSwapsReport::default();
     let write_vendor_outputs = swap_cfg.write && write_program;
-
-    // Full swaps are an emission-set exclusion: the swapped chunks stay in
-    // the bundle — nothing removes them, and the dependency graph never
-    // contained vendor chunks — but emission, the rename queue, the
-    // emit-shape check, and the chunk reports skip them. Their
-    // wire-facing resolutions are projections of the plan.
-    vendor_report.full = vendor_plan.full_swap_resolutions();
 
     let mut decomposition_by_chunk: HashMap<ChunkId, ChunkDecompositionOutput> = HashMap::new();
     // Spec member claims whose `binding.name` did not resolve to a
@@ -1344,8 +1302,7 @@ fn run_prepared_transform(
     // The draft runs naturalization, vendor emission rewrites, and both
     // prune passes in their fixed order; its finalized files are immutable.
     let (candidate, selected_lowerings) = candidate_draft.finalize()?;
-    (vendor_report.partial, vendor_report.bundled_partial) =
-        build_partial_swap_resolutions(&vendor_plan, candidate.references_by_symbol())?;
+    let vendor_report = vendor_plan.swaps_report(candidate.references_by_symbol())?;
 
     // A gate-rejected program never reaches final program validation (as
     // without the flag, where the gate already failed the run): freeze it for
@@ -1367,11 +1324,7 @@ fn run_prepared_transform(
                 out_dir,
                 lowerings: &selected_lowerings,
                 counts: &counts,
-                chunk_records: &emitted_chunk_records(
-                    chunk_records,
-                    rejected_plan.files(),
-                    rejected_plan.excluded_chunk_ids(),
-                ),
+                chunk_records: &emitted_chunk_records,
                 decomposition_by_chunk: &decomposition_by_chunk,
             })?;
         }
@@ -1387,8 +1340,6 @@ fn run_prepared_transform(
         spec.emit_browser_harness.as_ref(),
         VendorManifestOutput::prepare(swap_cfg.output_manifest_path.as_deref(), vendor_report),
     )?;
-    let emission_files = validated_plan.files();
-    let excluded_chunk_ids = validated_plan.excluded_chunk_ids();
 
     if !dry_run
         && !suppress_reports
@@ -1408,9 +1359,6 @@ fn run_prepared_transform(
     if write_vendor_outputs {
         validated_plan.write_vendor_outputs()?;
     }
-
-    let emitted_chunk_records =
-        emitted_chunk_records(chunk_records, emission_files, excluded_chunk_ids);
 
     if write_program && let Some(cfg) = &spec.write_js_tree {
         write_js_tree(&WriteTreeInput {
@@ -1434,8 +1382,10 @@ fn run_prepared_transform(
     Ok(PreparedTransformResult::Completed)
 }
 
+/// Totals describe the source bundle; chunk records describe the emission set.
 fn source_report_records(
     chunks: &[artifact::ChunkArtifact],
+    excluded_chunk_ids: &BTreeSet<ChunkId>,
 ) -> (ArtifactCounts, Vec<ArtifactChunkRecord>) {
     let mut counts = ArtifactCounts {
         kept_top_level_declarations: 0,
@@ -1450,29 +1400,15 @@ fn source_report_records(
         counts.top_level_side_effects += analysis.counts.top_level_side_effects;
         counts.export_aliases += analysis.counts.export_aliases;
         counts.unresolved_exports += analysis.counts.unresolved_exports;
+        if excluded_chunk_ids.contains(&chunk.chunk_id) {
+            continue;
+        }
         chunk_records.push(ArtifactChunkRecord {
             chunk_id: analysis.chunk_id.clone(),
             source_path: analysis.source_path.clone(),
         });
     }
     (counts, chunk_records)
-}
-
-/// Chunk records of the emission set: records of excluded (fully-swapped)
-/// chunks are dropped from the emitted reports.
-fn emitted_chunk_records(
-    chunk_records: Vec<ArtifactChunkRecord>,
-    emission_files: &EmissionFiles,
-    excluded_chunk_ids: &BTreeSet<ChunkId>,
-) -> Vec<ArtifactChunkRecord> {
-    let excluded_chunk_names: BTreeSet<&str> = excluded_chunk_ids
-        .iter()
-        .map(|chunk_id| emission_files.files().chunk_table.name(*chunk_id))
-        .collect();
-    chunk_records
-        .into_iter()
-        .filter(|record| !excluded_chunk_names.contains(record.chunk_id.as_str()))
-        .collect()
 }
 
 fn provenance_roots(cli: &TransformRequest) -> Result<(ProvenanceRoots, Option<PathBuf>)> {
@@ -1519,20 +1455,8 @@ fn provenance_roots(cli: &TransformRequest) -> Result<(ProvenanceRoots, Option<P
         TransformSpecSource::Flat { .. } => None,
     }
     .unwrap_or(std::env::current_dir()?);
-    let mut packages = std::collections::BTreeMap::new();
-    anyhow::ensure!(
-        !cli.package_roots.contains_key("__packages_root__"),
-        "package name __packages_root__ is reserved for the shared packages root in graph provenance"
-    );
-    for (name, root) in &cli.package_roots {
-        packages.insert(name.clone(), graph_provenance::absolute(root)?);
-    }
-    if let Some(root) = &cli.packages_root {
-        packages.insert(
-            "__packages_root__".to_string(),
-            graph_provenance::absolute(root)?,
-        );
-    }
+    let packages =
+        graph_provenance::capture_package_roots(&cli.package_roots, cli.packages_root.as_deref())?;
     Ok((
         ProvenanceRoots {
             spec: spec_root,
@@ -1554,11 +1478,14 @@ fn canonical_generation_command(
     roots: &ProvenanceRoots,
     loaded_analysis: Option<&Path>,
 ) -> Result<Vec<String>> {
-    fn path_arg(path: &Path) -> Result<String> {
-        Ok(graph_provenance::absolute(path)?
+    fn resolved_arg(path: &Path) -> Result<String> {
+        Ok(path
             .to_str()
             .with_context(|| format!("non-UTF-8 generation path {}", path.display()))?
             .to_string())
+    }
+    fn path_arg(path: &Path) -> Result<String> {
+        resolved_arg(&graph_provenance::absolute(path)?)
     }
     let mut argv = vec![path_arg(&std::env::current_exe()?)?, "run".to_string()];
     match &cli.spec_source {
@@ -1574,23 +1501,26 @@ fn canonical_generation_command(
             ]);
             // Explicitly preserve the effective compile root when it came
             // from DEBUNDLE_TREE_SOURCE_ROOT or the original cwd.
-            argv.extend(["--tree-source-root".to_string(), path_arg(&roots.source)?]);
+            argv.extend([
+                "--tree-source-root".to_string(),
+                resolved_arg(&roots.source)?,
+            ]);
             argv.extend(["--out-root".to_string(), path_arg(&tree.out_root)?]);
         }
     }
-    let mut package_roots = cli.package_roots.iter().collect::<Vec<_>>();
-    package_roots.sort_by_key(|(name, _)| *name);
-    for (name, path) in package_roots {
-        argv.extend([
-            "--package-root".to_string(),
-            format!("{name}={}", path_arg(path)?),
-        ]);
+    for (name, path) in &roots.packages {
+        if name != graph_provenance::SHARED_PACKAGES_ROOT {
+            argv.extend([
+                "--package-root".to_string(),
+                format!("{name}={}", resolved_arg(path)?),
+            ]);
+        }
     }
     if let Some(input) = &options.ownership_subset_input {
         argv.extend(["--ownership-subset".to_string(), path_arg(&input.path)?]);
     }
-    if let Some(root) = &cli.packages_root {
-        argv.extend(["--packages-root".to_string(), path_arg(root)?]);
+    if let Some(root) = roots.packages.get(graph_provenance::SHARED_PACKAGES_ROOT) {
+        argv.extend(["--packages-root".to_string(), resolved_arg(root)?]);
     }
     match options.output {
         RunOutput::DryRun => argv.push("--dry-run".to_string()),
@@ -1626,9 +1556,17 @@ fn canonical_generation_command(
 }
 
 pub fn load_transform_spec_source(source: &TransformSpecSource) -> Result<TransformSpec> {
+    Ok(load_transform_spec_with_roots(source)?.0)
+}
+
+fn load_transform_spec_with_roots(
+    source: &TransformSpecSource,
+) -> Result<(TransformSpec, BTreeMap<String, Vec<PathBuf>>)> {
     match source {
-        TransformSpecSource::Flat { path } => read_flat_transform_spec(path),
-        TransformSpecSource::Tree(options) => compile_spec_tree(options),
+        TransformSpecSource::Flat { path } => {
+            Ok((read_flat_transform_spec(path)?, BTreeMap::new()))
+        }
+        TransformSpecSource::Tree(options) => compile_spec_tree_with_roots(options),
     }
 }
 
@@ -1711,8 +1649,6 @@ fn validate_transform_spec(spec: &TransformSpec) -> Result<()> {
     Ok(())
 }
 
-/// Fold one application site's per-symbol rewrite counts into the
-/// merged map `build_partial_swap_resolutions` projects from.
 fn preflight_output_roots(spec: &TransformSpec) -> Result<()> {
     let mut roots = Vec::<PathBuf>::new();
     if let Some(cfg) = &spec.write_js_tree {

@@ -100,3 +100,75 @@ if (includesCase("derived-default-shadowed-by-prefix-var")) {
   assertRejected(test, /var before super overlaps default parameters or their references/);
   assert.deepEqual(observe(test.files.sourceFile, "result"), { result: "outer" });
 }
+
+if (includesCase("defaulted-derived-pattern")) {
+  const test = sequentialSplit(
+    "defaulted-derived-pattern",
+    `const trace = { events: "" };
+    class Base { constructor(label) { trace.events += "b"; this.label = label; } }
+    class Child extends Base {
+      save(value) { this.value = value; }
+      constructor(label, { payload: data } = {}) { (super(label), this.save(data)); }
+    }
+    export const result = (() => {
+      const absent = new Child("a"), explicit = new Child("u", undefined);
+      const present = new Child("p", { get payload() { trace.events += "g"; return 7; } });
+      let nullThrows = false;
+      try { new Child("n", null); } catch { nullThrows = true; }
+      if (Child.length !== 1 || trace.events !== "bbgb" || !nullThrows ||
+        absent.value !== undefined || explicit.value !== undefined || present.value !== 7) throw "binding order";
+      return [absent.label, explicit.label, present.label, present.value, trace.events];
+    })();`,
+    { "base.mjs": ["#0", "#1"], "child.mjs": ["#2"], "entry.mjs": ["#3"] },
+    ["base.mjs", "child.mjs"]
+  );
+  assertCertifiedResult(test, ["a", "u", "p", 7, "bbgb"]);
+  const verify = () => lower(test.files.sourceFile, test.files.specFile, test.out, ["--check-output"]);
+  assert.deepEqual(verify().verdict, test.verdict);
+  const file = path.join(test.out, "child.mjs");
+  const source = readFileSync(file, "utf8");
+  const mutated = source.replace(/(payload\s*:\s*data\s*}\s*=\s*)\{\}/, "$1{payload: 19}");
+  assert.notEqual(mutated, source);
+  writeFileSync(file, mutated);
+  assert.equal(verify().verdict.status, "rejected");
+}
+
+if (includesCase("whole-pattern-default-scope")) {
+  assertCertifiedResult(
+    sequentialSplit(
+      "whole-pattern-default-scope",
+      `const trace = { events: "" };
+      function read(first, { x: value = first, y = value } =
+        (trace.events += "d", { get x() { trace.events += "x"; }, get y() { trace.events += "y"; } })) {
+        const count = arguments.length;
+        first = "changed";
+        if (count > 0 && arguments[0] !== "original") throw "mapped arguments";
+        return [value, y, count];
+      }
+      export const result = [read.length, read("original"), read("original", undefined), read("original", { x: null }), trace.events];`
+    ),
+    [1, ["original", "original", 1], ["original", "original", 2], [null, null, 2], "dxydxy"]
+  );
+}
+
+if (includesCase("whole-pattern-default-tdz")) {
+  const test = sequentialSplit(
+    "whole-pattern-default-tdz",
+    `const later = { x: 12 };
+     function read({ x } = later, later = {}) { return x; }
+     export const result = read();`
+  );
+  assertRejected(test, /original threw during linked initialization/);
+  assert.deepEqual(observe(test.files.sourceFile, "result"), { error: "ReferenceError" });
+}
+
+if (includesCase("whole-pattern-body-var")) {
+  const test = sequentialSplit(
+    "whole-pattern-body-var",
+    `const outer = { x: 9 };
+     function read({ x } = outer) { var outer; return x; }
+     export const result = read();`
+  );
+  assertRejected(test, /body var overlaps default parameters or their references/);
+  assert.deepEqual(observe(test.files.sourceFile, "result"), { result: 9 });
+}

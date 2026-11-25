@@ -40,7 +40,7 @@ use crate::export_surface::{
 use crate::manifests::{
     BundledPartialSwapBundleResolution, BundledPartialSwapPackageResolution,
     ChunkBundledPartialSwapResolution, ChunkPartialSwapResolution, PartialSwapPackageResolution,
-    VendorResolution,
+    VendorResolution, VendorSwapsReport,
 };
 use crate::packages::{read_installed_package_metadata, resolve_package_subpath};
 use crate::validate::{
@@ -254,14 +254,60 @@ impl VendorResolutionPlan {
         })
     }
 
-    /// Wire-facing full-swap resolutions keyed by chunk path — the
-    /// `full` section of the combined vendor swaps report, projected
-    /// straight from the plan.
-    pub fn full_swap_resolutions(&self) -> BTreeMap<String, VendorResolution> {
-        self.full_swaps
+    /// Project finalized rewrite counts and all planned replacements into the wire manifest.
+    pub fn swaps_report(
+        &self,
+        rewrite_counts: &BTreeMap<(ChunkId, String), usize>,
+    ) -> Result<VendorSwapsReport> {
+        let full = self
+            .full_swaps
             .iter()
             .map(|swap| (swap.resolution.chunk_path.clone(), swap.resolution.clone()))
-            .collect()
+            .collect();
+        let mut partial: BTreeMap<String, ChunkPartialSwapResolution> = self
+            .partial_swaps
+            .values()
+            .map(|entry| {
+                (
+                    entry.resolution.chunk_path.clone(),
+                    entry.resolution.clone(),
+                )
+            })
+            .collect();
+        let mut bundled: BTreeMap<String, ChunkBundledPartialSwapResolution> = self
+            .bundled_partial_swaps
+            .values()
+            .map(|entry| {
+                (
+                    entry.resolution.chunk_path.clone(),
+                    entry.resolution.clone(),
+                )
+            })
+            .collect();
+        for ((chunk_id, chunk_export), count) in rewrite_counts {
+            let symbol_resolution = if let Some(entry) = self.partial_swaps.get(chunk_id) {
+                partial
+                    .get_mut(&entry.resolution.chunk_path)
+                    .and_then(|resolution| resolution.symbols.get_mut(chunk_export))
+            } else if let Some(entry) = self.bundled_partial_swaps.get(chunk_id) {
+                bundled
+                    .get_mut(&entry.resolution.chunk_path)
+                    .and_then(|resolution| resolution.symbols.get_mut(chunk_export))
+            } else {
+                bail!(
+                    "vendor rewrite counts reference `{chunk_export}` on chunk #{}, which has no partial-swap plan",
+                    chunk_id.0,
+                );
+            };
+            if let Some(symbol_resolution) = symbol_resolution {
+                symbol_resolution.references_rewritten += count;
+            }
+        }
+        Ok(VendorSwapsReport {
+            full,
+            partial,
+            bundled_partial: bundled,
+        })
     }
 
     /// Entry file of a whole-chunk `swap` — the only file
@@ -346,7 +392,6 @@ pub(crate) struct PlannedWrapper {
 }
 
 pub(crate) struct ChunkPartialSwapPlan {
-    pub(crate) chunk_path: String,
     pub(crate) entry_file: String,
     /// package_name → upstream coords (namespace, version, subpath).
     pub(crate) packages: BTreeMap<String, PartialSwapPackage>,
@@ -357,7 +402,6 @@ pub(crate) struct ChunkPartialSwapPlan {
 }
 
 pub(crate) struct ChunkBundledPartialSwapPlan {
-    pub(crate) chunk_path: String,
     pub(crate) entry_file: String,
     /// package_name → namespace + generated facade target.
     pub(crate) packages: BTreeMap<String, BundledPartialSwapPackageTarget>,
@@ -811,7 +855,6 @@ fn plan_partial_swaps(
         plans.insert(
             chunk.chunk_id,
             ChunkPartialSwapPlan {
-                chunk_path: chunk_path.clone(),
                 entry_file: chunk.entry_file.clone(),
                 packages: partial.packages.clone(),
                 symbols: partial.symbols.clone(),
@@ -932,7 +975,6 @@ fn plan_bundled_partial_swaps(
         plans.insert(
             chunk.chunk_id,
             ChunkBundledPartialSwapPlan {
-                chunk_path: chunk_path.clone(),
                 entry_file: chunk.entry_file.clone(),
                 packages: package_targets,
                 symbols: bundled.symbols.clone(),

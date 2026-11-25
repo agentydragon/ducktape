@@ -204,33 +204,15 @@ pub fn load_analysis(
     Ok((header, body))
 }
 
-/// Inputs to [`analyze_program`] besides the parsed program.
-pub struct AnalyzeProgramInputs<'a> {
-    pub diagnostics: &'a analysis::diagnostics::Diagnostics<'a>,
-    pub spec: &'a AnalysisSpec,
-    /// Host loader per embedded input file (`inputs.embedded_loaders_path`).
-    pub embedded_loaders: &'a BTreeMap<String, spec::BunLoader>,
-    pub vendor_plan: &'a vendor::VendorResolutionPlan,
-    pub graph_provenance: &'a GraphProvenance,
-    pub analysis_engine_sha256: &'a str,
-}
-
-/// `debundle analyze`: the cross-module pass and every analysed chunk's facts,
-/// from the parsed program and a projection alone, encoded as an analysis
-/// artifact. A run with the same projection, engine and parser inputs reads it
-/// instead of recomputing them.
-pub fn analyze_program(
+/// Compute the facts and context ordinals needed to encode the saved analysis.
+fn analyze_program(
     mut artifact: ChunkBundle,
-    inputs: AnalyzeProgramInputs<'_>,
-) -> Result<Vec<u8>> {
-    let AnalyzeProgramInputs {
-        diagnostics,
-        spec,
-        embedded_loaders,
-        vendor_plan,
-        graph_provenance,
-        analysis_engine_sha256,
-    } = inputs;
+    spec: &AnalysisSpec,
+    embedded_loaders: &BTreeMap<String, spec::BunLoader>,
+    vendor_plan: &vendor::VendorResolutionPlan,
+    graph_provenance: &GraphProvenance,
+    diagnostics: &analysis::diagnostics::Diagnostics<'_>,
+) -> Result<(AnalysisArtifactBody, ContextOrdinals)> {
     let selected_chunk_ids = normalized_chunk_ids(spec.analysed_chunks())?;
     let resolved_export_purity =
         export_policies::resolve_source_export_policies(&artifact, &spec.chunk_export_purity)?;
@@ -302,11 +284,6 @@ pub fn analyze_program(
     // All chunk consumers have joined. Only their derived facts are persisted;
     // retire the transient shared flow before allocating the encoded artifact.
     program_summary.structural_flows = Default::default();
-    let header = AnalysisArtifactHeader {
-        analysis_engine_sha256: analysis_engine_sha256.to_string(),
-        projection: spec.encode()?,
-        chunk_sources: chunk_source_digests(graph_provenance),
-    };
     let body = AnalysisArtifactBody {
         program_summary,
         export_reentry: export_reentry_reports
@@ -315,11 +292,7 @@ pub fn analyze_program(
             .collect(),
         chunks,
     };
-    // Facts and context ordinals own everything encoding needs. Release the
-    // parsed program and its indexes before allocating the encoded artifact.
-    drop(artifact_indexes);
-    drop(artifact);
-    analysis_artifact::write_artifact(&header, &body, &ordinals)
+    Ok((body, ordinals))
 }
 
 pub fn export_reentry_reports(

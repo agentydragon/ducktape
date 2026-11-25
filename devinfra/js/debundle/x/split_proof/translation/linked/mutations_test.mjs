@@ -190,13 +190,14 @@ if (includesCase("delete-own-property")) {
   );
 }
 
+// Updating an imported binding throws TypeError on the write; the catch returns the unchanged import.
 for (const [name, mutation] of [
   ["arithmetic-import", "shared += 1"],
   ["update-import", "shared++"],
   ["short-circuited-import", 'shared ||= "updated"'],
 ]) {
   if (!includesCase(name)) continue;
-  assertRejectedObservation(
+  assertCertifiedResult(
     sequentialSplit(
       name,
       `import { shared } from "./provider.mjs";
@@ -206,8 +207,7 @@ for (const [name, mutation] of [
       [worker],
       'export let shared = "original";'
     ),
-    /unsupported linked assignment to imported binding shared/,
-    { result: "original" }
+    "original"
   );
 }
 

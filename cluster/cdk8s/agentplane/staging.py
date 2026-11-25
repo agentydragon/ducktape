@@ -86,6 +86,7 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
 )
 from cluster.cdk8s.agentplane.app_settings import runtime_catalog
 from cluster.cdk8s.agentplane.chart import environment_chart
+from cluster.cdk8s.agentplane.codex_models import codex_auto_compact_tokens
 from cluster.cdk8s.agentplane.database import DbProps
 from cluster.cdk8s.agentplane.egress_credentials import (
     EXTERNAL_CREDS_STORE,
@@ -140,7 +141,7 @@ from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSec
 from cluster.cdk8s.public_coder import egress as public_coder_egress
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.ssh_mcp import config as ssh_mcp
-from model_catalog.catalog import TABBYAPI_QWEN_ABLITERATED, TABBYAPI_QWEN_STOCK, Provider
+from model_catalog.catalog import TABBYAPI_QWEN_ABLITERATED, TABBYAPI_QWEN_STOCK, Provider, Route, TokenLimits
 
 _HOSTNAME = "agentplane-staging.allegedly.works"
 _ACTIONS_HOSTNAME = "agentplane-actions-staging.allegedly.works"
@@ -177,7 +178,7 @@ _ANTHROPIC_MESSAGES = AnthropicMessagesConfig(
     per_message_effort=True,
     strict_tool_input=True,
     eager_input_streaming=True,
-    compaction=AnthropicCompactionConfig(max_tokens=8_192, auto_compact_tokens=750_000),
+    compaction=AnthropicCompactionConfig(max_tokens=8_192),
 )
 
 
@@ -447,8 +448,19 @@ _SPEND_LOGS_FIELDS = {
 }
 
 
+def _anthropic_auto_compact_tokens(route: Route) -> int:
+    limits = route.model.limits
+    if not isinstance(limits, TokenLimits):
+        raise ValueError(f"Missing Anthropic API token limits for {route.id}")
+    # The direct API catalog records Anthropic's published context window as the input ceiling.
+    return limits.max_input_tokens * 9 // 10
+
+
 def environment(*, identity_catalog: bool) -> Environment:
     """Build staging with the selected policy catalog for both app and orchestration presets."""
+    openai_compaction_tokens = codex_auto_compact_tokens(
+        [route for route in STAGING_APP_MODELS.central_sampler if route.upstream.provider is Provider.CHATGPT]
+    )
     app_origin = f"https://{_HOSTNAME}"
     oidc_issuer = f"{_AUTHENTIK}/application/o/agentplane-staging/"
     config = staging_config.config(
@@ -509,6 +521,7 @@ def environment(*, identity_catalog: bool) -> Environment:
                         provider_model=route.model.id,
                         api="anthropic_messages",
                         anthropic_messages=_ANTHROPIC_MESSAGES,
+                        auto_compact_tokens=_anthropic_auto_compact_tokens(route),
                         exec_encoding="json",
                         reasoning_efforts=set(route.reasoning_efforts),
                     )
@@ -518,6 +531,7 @@ def environment(*, identity_catalog: bool) -> Environment:
                         provider_model=route.id,
                         response_header_timeout_seconds=360 if route == TABBYAPI_QWEN_STOCK else None,
                         api="responses",
+                        auto_compact_tokens=openai_compaction_tokens.get(route),
                         responses=(
                             _LITE_RESPONSES if route.upstream.provider == Provider.CHATGPT else _STANDARD_RESPONSES
                         ),
@@ -537,10 +551,10 @@ def environment(*, identity_catalog: bool) -> Environment:
                     api="chat_completions",
                     exec_encoding="json",
                     reasoning_efforts={"", *route.reasoning_efforts},
+                    auto_compact_tokens=192 * 1024,
                     chat_compaction=ChatCompactionConfig(
                         max_tokens=8_192,
                         keep_recent_turns=2,
-                        auto_compact_tokens=192 * 1024,
                         summary_prompt_template=(
                             "Write a handoff for the assistant continuing this conversation. "
                             "Summarize the conversation preceding this request, including any earlier handoff.\n\n"
