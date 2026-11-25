@@ -149,6 +149,7 @@ private def parseCertifiedOptions (label : String) (args : List String) : IO (Sp
   let usage := IO.userError "usage: lowersplit <bundle.mjs|bundle.json> spec.json outdir [--require LEVEL] [--resolved-placement CHUNK] [--check-output] [--host-contract PROFILE.json] [--structural [--deployment-origin ORIGIN [--deployment-preset native-browser-record@1]]]; use --diagnostic for plan and preview options"
   let [bundle, spec, out] := args | throw usage
   if args.any (·.startsWith "--") then throw usage
+  let out ← IO.ofExcept (outputDirectory out)
   return (⟨bundle, spec, out⟩, { request, profile, intrinsics, structural, deploymentOrigin, checkOnly, nativeRecord, resolvedChunk })
 
 private def runCertified (paths : SplitPaths) (options : CertifiedOptions) (work : System.FilePath) : IO UInt32 := do

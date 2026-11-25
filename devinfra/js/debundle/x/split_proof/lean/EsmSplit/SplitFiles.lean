@@ -106,6 +106,14 @@ private def unitProgram (ast : Json) : Except String Json := do
   let units ← ESTreeUnits.nodes ast
   return .obj ((← ast.getObj?).insert "body" (.arr units))
 
+/-- Publication renames a sibling staging directory onto this path. Trailing separators and `.`
+segments name the same directory. A path without a final directory name has no parent to stage in. -/
+def outputDirectory (out : System.FilePath) : Except String System.FilePath := do
+  let parts := ((out.toString.splitOn "/").reverse.dropWhile fun p => p.isEmpty || p == ".").reverse
+  let dir : System.FilePath := ⟨"/".intercalate parts⟩
+  unless dir.fileName.isSome do throw s!"output path {out} must end in a directory name"
+  return dir
+
 /-- Certify the exact program map handed to the printer or compared with an existing directory. -/
 def certifyOutput {α : Type} (providers : Json) (B : Bundle) (P : Plan)
     (out work input : System.FilePath) (checkOnly timings : Bool) (asts : Array Json) (source : String)
