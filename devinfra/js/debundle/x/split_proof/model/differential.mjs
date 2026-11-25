@@ -211,13 +211,13 @@ const encode = (v) => {
   if (typeof v === "number") return ["d", bits(v)];
   return Reflect.apply(isWellFormed, v, []) ? ["s", v] : ["x"];
 };
-let recording = null; // the calls of the program that is running
+let recording = null; // the directory and host calls of the program that is running
 let inHost = false; // inside a recorded call, or inside this harness
 /**
- * Is the function that called a wrapped host function a function of the program? Node's own code runs while a
- * program is loaded and calls host functions too; a program is a file of the work directory.
+ * Loading a program can also run Node's own code or callbacks queued by an earlier program.
+ * Attribute observations only to callers in the active program's directory.
  */
-function calledByProgram() {
+function calledByProgram(directory) {
   const prepare = Error.prepareStackTrace;
   Error.prepareStackTrace = (_, sites) => sites;
   const holder = {};
@@ -225,7 +225,9 @@ function calledByProgram() {
   const sites = holder.stack;
   Error.prepareStackTrace = prepare;
   // sites[0] is the wrapper, sites[1] its caller
-  return (sites[1]?.getFileName() ?? "").includes(path.basename(work));
+  const filename = sites[1]?.getFileName() ?? "";
+  const caller = filename.startsWith("file:") ? fileURLToPath(filename) : filename;
+  return caller.startsWith(directory + path.sep);
 }
 const wrapped = [...host.methods.map((name) => [name, true]), ...host.functions.map((name) => [name, false])].map(
   ([name, method]) => {
@@ -240,10 +242,10 @@ const wrapped = [...host.methods.map((name) => [name, true]), ...host.functions.
         inHost = true;
         try {
           const self = method ? receiver : undefined;
-          if (!isPrimitive(self) || !args.every(isPrimitive) || !calledByProgram())
+          if (!isPrimitive(self) || !args.every(isPrimitive) || !calledByProgram(recording.directory))
             return Reflect.apply(target, receiver, args);
           const call = { fn: name, this: encode(self), args: args.map(encode) };
-          recording.push(call);
+          recording.calls.push(call);
           try {
             const result = Reflect.apply(target, receiver, args);
             if (isPrimitive(result)) call.ret = encode(result);
@@ -268,16 +270,21 @@ const wrapped = [...host.methods.map((name) => [name, true]), ...host.functions.
 
 /** Run a Node module and record its host calls. */
 async function runFileInNode(file) {
+  const directory = path.dirname(file);
+  const activeRecording = { directory, calls: [] };
   const out = [];
   const log = console.log;
   console.log = (...args) => {
     const before = inHost;
     inHost = true;
-    out.push(format(...args));
-    inHost = before;
+    try {
+      if (recording === activeRecording && calledByProgram(directory)) out.push(format(...args));
+    } finally {
+      inHost = before;
+    }
   };
   const initialSymbols = symbolObservations();
-  recording = [];
+  recording = activeRecording;
   for (const w of wrapped) Object.defineProperty(w.owner, w.key, { ...w.descriptor, value: w.proxy });
   let ending;
   try {
@@ -287,7 +294,6 @@ async function runFileInNode(file) {
     ending = { end: "throw", detail: null, thrown: e };
   }
   for (const w of wrapped) Object.defineProperty(w.owner, w.key, w.descriptor);
-  const world = recording;
   recording = null;
   console.log = log;
   if (ending.thrown !== undefined || ending.detail === null) ending.detail = describe(ending.thrown);
@@ -296,7 +302,7 @@ async function runFileInNode(file) {
     out,
     end: ending.end,
     detail: ending.detail,
-    world,
+    world: activeRecording.calls,
     iteratorSymbol: initialSymbols.iteratorSymbol && finalSymbols.iteratorSymbol,
     hasInstanceSymbol: initialSymbols.hasInstanceSymbol && finalSymbols.hasInstanceSymbol,
     toStringTagSymbol: initialSymbols.toStringTagSymbol && finalSymbols.toStringTagSymbol,
@@ -435,6 +441,32 @@ function acceptUnits(generatedJobs) {
 // { label, source, entry, ast or program, node, result, expectEnd, set }: `ast` or `program` is what `corejs` reads
 const jobs = [];
 if (broad) {
+  // Release the previous program's callback while the next program is being recorded.
+  const releaseKey = "corejsDifferentialRelease";
+  const release = `globalThis[${JSON.stringify(releaseKey)}]`;
+  try {
+    const previous = await runInNode(`
+      const savedLog = console.log;
+      new Promise((resolve) => { ${release} = resolve; }).then(() => {
+        console.log("previous", Math.abs(-7));
+        savedLog("previous via saved console");
+        ${release} = true;
+      });
+    `);
+    const dir = writeFiles({
+      "main.mjs": `import { observe } from "./worker.mjs"; ${release}(); await 0; observe();`,
+      "worker.mjs": `export function observe() { console.log("active", Math.abs(-11)); }`,
+    });
+    const active = await runFileInNode(path.join(dir, "main.mjs"));
+    assert.equal(globalThis[releaseKey], true, "the previous program's callback must run");
+    assert.deepEqual(previous.out, []);
+    assert.equal(active.end, "normal", active.detail);
+    assert.deepEqual(active.out, ["active 11"]);
+    assert.deepEqual(asked(active), [["Math.abs", ["u"], [["d", bits(-11)]]]]);
+  } finally {
+    delete globalThis[releaseKey];
+  }
+
   for (const source of [String.raw`"\ud800";`, String.raw`({ "\udfff": 1 });`, "`\udfff`;"]) {
     assert.throws(
       () => toCore(source),
