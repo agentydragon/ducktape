@@ -2,7 +2,7 @@
 //
 //   node prove.mjs <Generated.lean> [--ladder "decide +kernel;native_decide"] [--timeout 120]
 //
-// The file contains `theorem plan_valid : Valid bundle spec plan := by decide +kernel` (what `lowersplit --diagnostic --lean` writes).
+// The file contains `theorem plan_valid : Valid bundle spec plan := by decide +kernel` (what `lowersplit --generate-instance` writes).
 // For each strategy the tactic after `by` is replaced, the file is run with `lake env lean --json`, and the first
 // strategy that Lean accepts wins. A strategy that runs past the timeout is killed and counts as a failure.
 //

@@ -54,7 +54,6 @@ js_library(
 js_library(
     name = "split",
     srcs = ["split.mjs"],
-    data = ["node_recording_host.json"],
     visibility = ["//devinfra/js/debundle/x/split_proof:__subpackages__"],
     deps = [":deployment_manifest"],
 )

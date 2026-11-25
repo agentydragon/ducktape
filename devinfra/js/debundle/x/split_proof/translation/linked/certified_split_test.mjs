@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { nodeRecordingHostContract, split } from "../testing/split.mjs";
+import { split } from "../testing/split.mjs";
 import { dump } from "../parser.mjs";
 
 const root = process.env.TEST_TMPDIR;
@@ -24,7 +24,6 @@ function requestFile(file, out, requested, ...args) {
     require: requested,
     checkOutput,
     allowExistingOut: fs.existsSync(out),
-    hostContract: nodeRecordingHostContract,
     ...(hostAt >= 0 ? { hostContract: args[hostAt + 1] } : {}),
   });
   return result.verdict;

@@ -9,7 +9,7 @@ import { coreFromParsed } from "../model/to_core.mjs";
 import { bundleFromParsed } from "./frontend.mjs";
 import { parseModule } from "./scope_metadata.mjs";
 import { writeDeployment } from "./testing/deployment_manifest.mjs";
-import { nodeRecordingHostContract, split as certifySplit } from "./testing/split.mjs";
+import { split as certifySplit } from "./testing/split.mjs";
 import { coreOf } from "./split_dump.mjs";
 
 const dir = process.env.TEST_TMPDIR;
@@ -444,7 +444,7 @@ function certifyFixture(directory, args = []) {
     source: path.join(directory, "bundle.mjs"),
     spec: path.join(directory, "spec.json"),
     out,
-    hostContract: hostAt >= 0 ? args[hostAt + 1] : nodeRecordingHostContract,
+    ...(hostAt >= 0 ? { hostContract: args[hostAt + 1] } : {}),
   });
   assert.equal(result.status, "certified", result.log);
   return import(pathToFileURL(path.join(out, "entry.mjs")).href);

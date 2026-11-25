@@ -42,13 +42,11 @@ def recordedPrim (p : HostProfile) (owner key : String) : Option Prim := do
   | "Object", "setPrototypeOf" => some .setPrototypeOf
   | _, _ => none
 
-/-- Read a supported deployment profile or the test-only recorded Node host. -/
+/-- Read a supported deployment profile. -/
 def read (j : Lean.Json) : Except String HostProfile := do
   if j == Lean.Json.mkObj [("profile", .str "browser-page")] then
     return .browserPage
-  if j == Lean.Json.mkObj [("profile", .str "node-recording")] then
-    return .nodeRecording
-  throw "unsupported host contract (expected browser-page or the test-only node-recording profile)"
+  throw "unsupported host contract (expected browser-page)"
 
 def aliases := ["window", "globalThis", "self"]
 

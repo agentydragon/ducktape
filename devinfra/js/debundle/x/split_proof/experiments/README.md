@@ -190,7 +190,7 @@ One mutant, forgetting a catch parameter is local, is on the safe side and is co
 The bundles also contain statements that assign to a top-level name (lodash 1, acorn 2, zod 7), which the model cannot place in another module.
 
 **End to end in one program.** [`LowerSplit.lean`](../lean/EsmSplit/LowerSplit.lean) (198 lines) takes the JSON and a spec, computes footprints in Lean,
-plans, checks, writes the modules, and in diagnostic mode with `--lean` writes a legacy Lean file for the kernel. On the example the modules are identical to the first prototype’s output
+plans, checks, and writes the modules. The old `--diagnostic --lean` combination has been replaced by the separate `--generate-instance` command, which writes Lean proof source without rendering modules. On the example the modules are identical to the first prototype’s output
 except the order of names inside two `export { … }` lists (Lean's JSON parser sorts object keys, so the spec's file order is lost).
 The generated certificate is accepted by the kernel; its axioms are `propext`, `Classical.choice` and `Quot.sound`. Whole run, compiled: 2 ms.
 
@@ -271,7 +271,7 @@ One JSON line per split is in [split results](../integration/library_splits/resu
 
 ## 8. How a proof is produced
 
-**The shape.** `lowersplit --diagnostic … --lean` writes a Lean file with bundle data and a proof about the plan based on the supplied footprints. The example is [`Instance.lean`](../lean/EsmSplit/Instance.lean).
+**The shape.** `lowersplit --generate-instance <deployment.json> <Generated.lean>` writes a Lean file with bundle data and a proof about the plan based on the supplied footprints, without writing module previews. The example is [`Instance.lean`](../lean/EsmSplit/Instance.lean).
 
 ```lean
 def bundle : Bundle := [

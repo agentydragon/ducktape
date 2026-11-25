@@ -3,26 +3,20 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { frontBundle } from "./frontend.mjs";
 import { checkTranslation } from "./testing/check_translation.mjs";
-import { prepareSideSplit, run } from "./testing/diagnostic_split.mjs";
-import { split } from "./testing/split.mjs";
+import { lowerDiagnostic, prepareSideSplit, run } from "./testing/diagnostic_split.mjs";
 
-const good = `function factory(f) { return (...args) => f(...args); }
+const good = `function factory(f) { return async (...args) => f(...args); }
 function callback() { console.log("callback"); }
 const result = factory(callback);
 console.log("side");
 result();`;
-function emit(name, code, selectedSide) {
+function emit(name, code, selectedSide, force = false) {
   const fixture = prepareSideSplit(name, code, selectedSide);
-  const result = split({
-    ast: fixture.input,
-    spec: fixture.spec,
-    out: fixture.certifiedOut,
-    hostContract: fixture.hostContract,
-  });
-  return { ...fixture, dir: fixture.certifiedOut, result };
+  const result = lowerDiagnostic(fixture, ...(force ? ["--force"] : []));
+  return { ...fixture, result };
 }
 function assertOutput({ result, source, dir }, expected) {
-  assert.equal(result.status, "certified", result.log);
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
   const before = run(process.execPath, [source]);
   const after = run(process.execPath, [path.join(dir, "entry.mjs")]);
   assert.equal(before.status, 0, before.stderr);
@@ -35,17 +29,6 @@ const goodResult = emit("good", good);
 assertOutput(goodResult, "side\ncallback\n");
 const checked = checkTranslation(frontBundle(goodResult.source), goodResult.dir);
 assert.equal(checked.status, 0, `${checked.stdout}\n${checked.stderr}`);
-const certifiedRefusals = [];
-{
-  const asyncCode = good.replace("return (...args) => f(...args)", "return async (...args) => f(...args)");
-  const { dir, result } = emit("async_closure", asyncCode);
-  assert.equal(result.status, "refused", result.log);
-  assert.equal(result.reasonCode, "probe_unknown", result.log);
-  assert(result.reason, result.log);
-  assert.equal(result.files.length, 0);
-  assert(!existsSync(path.join(dir, "entry.mjs")));
-  certifiedRefusals.push("async_closure");
-}
 const multi = good
   .replace("const result = factory(callback);", "const result = factory(callback);\nconst result2 = factory(callback);")
   .replace("result();", "void (result(), result2());");
@@ -54,36 +37,38 @@ assertOutput(multiResult, "side\ncallback\ncallback\n");
 // An external observer receives the actual fresh closure and invokes it later.
 const escape = `globalThis.capture = f => { globalThis.saved = f; };\n${good.replace("result();", "globalThis.capture(result);\nglobalThis.saved();")}`;
 const escapeResult = emit("escape", escape, [0, 4]);
-assert.equal(escapeResult.result.status, "refused", escapeResult.result.log);
-assert.equal(escapeResult.result.reasonCode, "linked_input", escapeResult.result.log);
-assert.match(escapeResult.result.reason, /unbound reference to globalThis/);
-assert.deepEqual(escapeResult.result.files, []);
-assert(!existsSync(path.join(escapeResult.dir, "entry.mjs")));
-certifiedRefusals.push("escape");
+assertOutput(escapeResult, "side\ncallback\n");
 // Moving an observer/call before the result exists must be rejected.
 for (const observer of ["result();", "globalThis.observe(result);"]) {
   const bad = good.replace('console.log("side");', observer);
   const { dir, result } = emit(`observer${observer.length}`, bad);
-  assert.equal(result.status, "refused", `${observer}: ${result.log}`);
-  assert(result.reason, observer);
-  assert.equal(result.files.length, 0);
+  assert.notEqual(result.status, 0, `${observer}: ${result.stdout}\n${result.stderr}`);
   assert(!existsSync(path.join(dir, "entry.mjs")), observer);
 }
 // Moving the side statement before the factory call changes the output when the call or the factory can print.
 for (const [name, bad] of [
-  ["body", good.replace("return (...args) => f(...args)", 'console.log("body"); return (...args) => f(...args)')],
+  ["body", good.replace("return async", 'console.log("body"); return async')],
   ["argument", good.replace("factory(callback)", 'factory((console.log("argument"), callback))')],
   ["reassign", good.replace("const result", 'factory = f => { console.log("changed"); return f; };\nconst result')],
-  ["eager_callback", good.replace("return (...args) => f(...args)", "return (f(), (...args) => f(...args))")],
+  [
+    "eager_callback",
+    good.replace("return async (...args) => f(...args)", "return (f(), async (...args) => f(...args))"),
+  ],
   [
     "returned_eager_call",
-    good.replace("return (...args) => f(...args)", 'return (console.log("eager"), (...args) => f(...args))'),
+    good.replace(
+      "return async (...args) => f(...args)",
+      'return (console.log("eager"), async (...args) => f(...args))'
+    ),
   ],
 ]) {
+  const forcedVariant = emit(`${name}-forced`, bad, undefined, true);
+  const original = run(process.execPath, [forcedVariant.source]);
+  const split = run(process.execPath, [path.join(forcedVariant.dir, "entry.mjs")]);
+  assert.notEqual(split.stdout, original.stdout, `${name}: the split should change the output`);
   const { dir, result } = emit(name, bad);
-  assert.equal(result.status, "refused", `${name}: ${result.log}`);
-  assert(result.reason, name);
-  assert.equal(result.files.length, 0);
+  assert.equal(result.status, 1, `${name}: ${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /FAIL\s+OrderOk/, name);
   assert(!existsSync(path.join(dir, "entry.mjs")), name);
 }
 
@@ -138,30 +123,29 @@ trigger();`,
   ],
 ]) {
   const rejected = emit(name, code, side);
-  assert.equal(rejected.result.status, "refused", `${name}: ${rejected.result.log}`);
-  assert(rejected.result.reason, name);
-  assert.equal(rejected.result.files.length, 0);
+  assert.equal(rejected.result.status, 1, `${name}: ${rejected.result.stdout}\n${rejected.result.stderr}`);
+  assert.match(rejected.result.stdout, /FAIL\s+OrderOk/, name);
   assert(!existsSync(path.join(rejected.dir, "entry.mjs")), name);
+  const forced = emit(`${name}-forced`, code, side, true);
+  assert.equal(forced.result.status, 1, name);
+  const original = run(process.execPath, [forced.source]);
+  const emitted = run(process.execPath, [path.join(forced.dir, "entry.mjs")]);
+  assert.equal(original.status, 0, original.stderr);
+  assert.notEqual(emitted.status, 0, name);
+  assert.match(emitted.stderr, /ReferenceError/, name);
+  const checkedForced = checkTranslation(frontBundle(forced.source), forced.dir);
+  assert.equal(checkedForced.status, 4, `${name}: ${checkedForced.stdout}\n${checkedForced.stderr}`);
+  assert.match(checkedForced.stdout, /FAIL\s+OrderOk/, name);
 }
 
-// A fallback syntax node may hide deferred behavior; the certified lowering
-// refuses it without publishing an unchecked preview.
+// A fallback syntax node may hide deferred behavior; the statement is
+// reported with its fallback nodes.
 {
   const code = `function factory(f) { return () => f(); }
 function callback() {}
 const result = factory(callback);
 console.log(import.meta.url, result);`;
-  const fixture = prepareSideSplit("fallback_factory", code, []);
-  const result = split({
-    ast: fixture.input,
-    spec: fixture.spec,
-    out: fixture.certifiedOut,
-    hostContract: fixture.hostContract,
-  });
-  assert.equal(result.status, "refused", result.log);
-  assert.equal(result.reasonCode, "linked_input");
-  assert.equal(result.files.length, 0);
-  certifiedRefusals.push("fallback_factory");
+  const result = emit("fallback_factory", code, []);
+  assert.equal(result.result.status, 0, `${result.result.stdout}\n${result.result.stderr}`);
+  assert.match(result.result.stdout, /1 with fallback nodes/);
 }
-assert.deepEqual(certifiedRefusals, ["async_closure", "escape", "fallback_factory"]);
-console.log("certified factory refusals:", JSON.stringify({ attempted: 3, refused: certifiedRefusals }));

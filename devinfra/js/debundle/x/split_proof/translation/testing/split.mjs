@@ -2,10 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { writeDeployment } from "./deployment_manifest.mjs";
-
-export const nodeRecordingHostContract = fileURLToPath(new URL("./node_recording_host.json", import.meta.url));
 
 function filesUnder(directory) {
   if (!existsSync(directory)) return [];
