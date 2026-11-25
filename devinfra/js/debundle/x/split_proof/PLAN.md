@@ -238,14 +238,15 @@ The broad Node comparison runs through `to_core.mjs`. [`corejs_ast_lowering_test
 
 `--require all-outcomes|normal-completion` asks for a level.
 
+The linked statement implies `NormalEquivalent` over the worlds that satisfy its host premises ([`ASTEquivalent.normal`](lean/EsmSplit/CoreJS/LinkedCertificate/Proof.lean)), so a linked or structural `normal-completion` verdict states the same guarantee.
+
 **Target.** Every certified verdict states the target theorem. The checker picks the strategy. The verdict reports the evidence used, its premises and, when the order is kept, that every ending matches.
 
 **How.**
 
-1. Prove that linked `EquivalentFor` implies `NormalEquivalent` over the same worlds. It should follow from determinism of `Ends`.
-2. Report every scope under the one guarantee.
-3. Pick the strategy automatically. Remove `--structural` and `--require`.
-4. Run the closed-declaration tests through the remaining checker. Retire that path when they certify, or record what is missing. [Declaration certificate](lean/EsmSplit/CoreJS/Declaration/Certificate.lean)
+1. Report every scope under the one guarantee.
+2. Pick the strategy automatically. Remove `--structural` and `--require`.
+3. Run the closed-declaration tests through the remaining checker. Retire that path when they certify, or record what is missing. [Declaration certificate](lean/EsmSplit/CoreJS/Declaration/Certificate.lean)
 
 **Done when.** No CLI flag chooses a proof technique or level, and the closed-declaration path is gone.
 
