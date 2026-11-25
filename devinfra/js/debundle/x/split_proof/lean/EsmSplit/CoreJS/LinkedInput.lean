@@ -496,10 +496,11 @@ def concreteCensus (source : Json) (profile : HostProfile) : Except String Json 
     units := units + 1
     let result : Except String Unit := do
       if kind == "ExportDefaultDeclaration" then
-        let _ ← BodyFormat.lowerDefault .linked profile imports i none ast
+        let _ ← (BodyFormat.lowerDefault .linked profile imports i none ast).mapError StructuralRefusal.reason
         pure ()
       else
-        let _ ← BodyFormat.lower .linked profile imports i none ast (kind == "ExportNamedDeclaration")
+        let _ ← (BodyFormat.lower .linked profile imports i none ast
+          (kind == "ExportNamedDeclaration")).mapError StructuralRefusal.reason
         pure ()
     if let .error why := result then
       refusals := refusals.push (Json.mkObj [("unit", Lean.toJson i), ("reason", .str why)])
