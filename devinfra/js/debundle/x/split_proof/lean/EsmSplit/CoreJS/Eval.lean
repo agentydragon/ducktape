@@ -156,12 +156,18 @@ def parameterBindings (f : Func) (args : List Val) : M W (List (Name × Binding)
     return fixedParameterBindings fixed args ++ [(rest, { value := some (.obj packed), mutable := true })]
   | _ => pure (fixedParameterBindings f.params args)
 
+def newTargetBindings (f : Func) (newTarget : Val) : List (Name × Binding) :=
+  if f.kind != .arrow && (freeStmts f.body).contains newTargetName then
+    [(newTargetName, { value := some newTarget, mutable := false })]
+  else []
+
 /-- Enter a function body: the parameters, the `var` names, then the scope of the body. An arrow keeps the `this` it closed over. -/
-def enterFunction (f : Func) (closed : Env) (this : Val) (args : List Val) : M W Env := do
+def enterFunction (f : Func) (closed : Env) (this : Val) (args : List Val)
+    (newTarget : Val := .undef) : M W Env := do
   let params ← parameterBindings f args
   let vars := ((varNamesOf f.body).eraseDups.filter (!f.params.contains ·)).map fun x =>
     (x, { value := some .undef, mutable := true : Binding })
-  let env ← declare { closed with this := if f.kind == .arrow then closed.this else this } (params ++ vars)
+  let env ← declare { closed with this := if f.kind == .arrow then closed.this else this } ((params ++ vars) ++ newTargetBindings f newTarget)
   enterBlock env f.body
 
 /-- The bindings of `names` as they are in `s`. -/
@@ -224,8 +230,10 @@ def initCapturedReceiver (env : Env) (receiver : Val) (captured : Bool) : M W Un
 /-- The two parts share parameters and declarations. Scope entry reserves the
 captured receiver cell in its dead zone, so a superclass cannot read it via an
 arrow before returning. The synthetic declaration is never executed. -/
-def derivedScope (before : List Stmt) (body : Func) (captured : Bool) : Func :=
-  let statements := before ++ body.body
+def derivedScope (before : List Stmt) (args : Option (List Expr)) (body : Func) (captured : Bool) : Func :=
+  -- The argument list runs outside these statement lists but shares their new target cell.
+  let targetUse := if (freeSuperArgs args).contains newTargetName then [.expr (.var newTargetName)] else []
+  let statements := before ++ body.body ++ targetUse
   let statements := if captured then .decl .let_ derivedReceiverName .undef :: statements else statements
   match body with
   | .withRest name _ _ fixed rest _ => .withRest name .classCtor false fixed rest statements
@@ -615,7 +623,7 @@ def constructTarget : Nat → Val → Val → List Val → M W Val
         pure receiver
       | some (.derivedBody before superArgs body closed fields) => do
         let captured := capturesDerivedReceiver before superArgs
-        let env ← enterFunction (derivedScope before body captured) closed .undef args
+        let env ← enterFunction (derivedScope before superArgs body captured) closed .undef args newTarget
         match ← execStmts n env before with
         | .normal => do
           let parent := (← getObj a).proto
@@ -645,7 +653,7 @@ def constructTarget : Nat → Val → Val → List Val → M W Val
             converse n code (free.map (closed.vars.lookup ·))
               (.run code part (← toW callee) (← toW (.obj this)) (← args.mapM toW) true)
           | none =>
-            let env ← enterFunction f closed (.obj this) args
+            let env ← enterFunction f closed (.obj this) args newTarget
             match ← execStmts n env f.body with
             | .ret value => pure value
             | _ => pure .undef

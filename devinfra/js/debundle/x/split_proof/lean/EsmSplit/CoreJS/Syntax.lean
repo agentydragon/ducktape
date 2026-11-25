@@ -370,6 +370,9 @@ private def freeFunctionNames (params : List Name) (body : List Stmt) (names : L
 /-- The receiver binding shared by pre-super arrows, outside the source identifier namespace. -/
 def derivedReceiverName : Name := ":derived-this"
 
+/-- A constructor or ordinary call owns its new target. Lexical arrows close over this cell. -/
+def newTargetName : Name := ":new-target"
+
 mutual
 
 def Expr.free : Expr → List Name
@@ -426,9 +429,9 @@ def freeSuperArgs : Option (List Expr) → List Name
 The prefix, super arguments and remaining body share the constructor's scope. -/
 def derivedCtorFree : Option (List Stmt × Option (List Expr) × Func) → List Name
   | some (before, args, .mk _ _ _ params body) | some (before, args, .withDefaults _ _ _ params _ body) =>
-    freeFunctionNames (derivedReceiverName :: params) (before ++ body) (freeStmts before ++ freeSuperArgs args ++ freeStmts body)
+    freeFunctionNames (derivedReceiverName :: newTargetName :: params) (before ++ body) (freeStmts before ++ freeSuperArgs args ++ freeStmts body)
   | some (before, args, .withRest _ _ _ fixed rest body) =>
-    freeFunctionNames (derivedReceiverName :: fixed ++ [rest]) (before ++ body)
+    freeFunctionNames (derivedReceiverName :: newTargetName :: fixed ++ [rest]) (before ++ body)
       (freeStmts before ++ freeSuperArgs args ++ freeStmts body)
   | some (before, args, .opaque ..) => freeFunctionNames [] before (freeStmts before ++ freeSuperArgs args)
   | none => []
@@ -436,10 +439,12 @@ def derivedCtorFree : Option (List Stmt × Option (List Expr) × Func) → List 
 /-- The names of the scope around a function that its code can mean. -/
 def Func.free : Func → List Name
   | .opaque name _ self _ _ _ free _ => free.filter fun x => !(self && x == name)
-  | .mk name _ self params body | .withDefaults name _ self params _ body =>
-    freeFunctionNames (if self then name :: params else params) body (freeStmts body)
-  | .withRest name _ self fixed rest body =>
-    freeFunctionNames ((if self then name :: fixed else fixed) ++ [rest]) body (freeStmts body)
+  | .mk name kind self params body | .withDefaults name kind self params _ body =>
+    freeFunctionNames (if self then name :: params else params) body
+      ((freeStmts body).filter fun x => kind == .arrow || x != newTargetName)
+  | .withRest name kind self fixed rest body =>
+    freeFunctionNames ((if self then name :: fixed else fixed) ++ [rest]) body
+      ((freeStmts body).filter fun x => kind == .arrow || x != newTargetName)
 
 def BindingPattern.free : BindingPattern → List Name
   | .name x => [x]

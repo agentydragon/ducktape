@@ -409,6 +409,29 @@ private def directSuper? (stmt : Json) : Option (List Json × Json × Option Jso
   let fields ← stmt.getObj?.toOption
   return (prior, call, some (.obj (fields.insert fieldName residual)))
 
+/-- Lower new.target only within its owning function and lexical arrows. A nested ordinary
+function is prepared at its own entry. Nested classes have separate contexts for methods,
+fields and keys, so leave those nodes for class lowering. -/
+private partial def prepareNewTarget (j : Json) : Json :=
+  match j with
+  | .obj fields =>
+    let kind := (field j "type").toOption.getD ""
+    if kind == "MetaProperty" &&
+        (j.getObjVal? "meta" >>= identifier).toOption == some "new" &&
+        (j.getObjVal? "property" >>= identifier).toOption == some "target" then
+      Json.mkObj [("type", .str "CoreJSNewTarget")]
+    else if ["FunctionExpression", "FunctionDeclaration", "ClassExpression", "ClassDeclaration"].contains kind then
+      j
+    else Json.mkObj (fields.toList.map fun (key, value) => (key, prepareNewTarget value))
+  | .arr entries => .arr (entries.map prepareNewTarget)
+  | _ => j
+
+private def prepareNewTargetFunction (j : Json) : Except String Json := do
+  let fields ← j.getObj?
+  let params := prepareNewTarget (← j.getObjVal? "params")
+  let body := prepareNewTarget (← j.getObjVal? "body")
+  return .obj ((fields.insert "params" params).insert "body" body)
+
 /-- Resolve lexical `this` in prefix and argument arrows to the constructor's
 receiver cell. Ordinary functions, including object methods, bind their own receiver. -/
 private partial def prepareBeforeSuper (j : Json) (allowFunctions : Bool) (underArrow := false) : Except String Json := do
@@ -456,7 +479,7 @@ private partial def opaqueContext? (checkPrivateNames wholeUnit moduleLocationCh
     let retainedMember := retainedSuperMembers && (match parents with
       | ("object", parent) :: _ => isSuperMember parent
       | _ => false)
-    if kind == "CoreJSDerivedReceiver" ||
+    if kind == "CoreJSDerivedReceiver" || kind == "CoreJSNewTarget" ||
         (kind == "Super" && !retainedMember && !(wholeUnit && enclosedSuperCall parents)) ||
         (kind == "ImportExpression" && !moduleLocationChecked) ||
         (kind == "MetaProperty" && !(moduleLocationChecked &&
@@ -558,6 +581,7 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
   | "Identifier" => reference imports inFunction j profile
   | "ThisExpression" => return .this
   | "CoreJSDerivedReceiver" => return .var derivedReceiverName
+  | "CoreJSNewTarget" => return .var newTargetName
   | "MemberExpression" =>
     if let some sym := (ambientSymbolMember? j).bind WellKnownSymbol.ofMember? then
       if profile == .browserPage then return .prim (.wellKnownSymbol sym) []
@@ -769,6 +793,8 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
     -- makeFunc captures the enclosing this as well as named cells. No async
     -- callable enters the ordinary function evaluator.
     return .complete (← deferredFunction j .asyncFn name self arity "async invocation requires Promise semantics")
+  let j ← if kind == .arrow then pure j else prepareNewTargetFunction j
+  let parameters ← j.getObjValAs? (Array Json) "params"
   let deferPattern := deferredFunction j kind name self arity (checkPrivateNames := true)
   let hasNamedDefaults := tags.contains "AssignmentPattern"
   let hasDefaults := hasNamedDefaults || parameters.any hasObjectParameterDefault
@@ -856,6 +882,7 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
 comma operands. All three parts run with the same parameter and local cells. -/
 private partial def linkedDerivedConstructor (profile : HostProfile) (imports : List Name)
     (name : Name) (fn : Json) : Except String (List Stmt × Option (List Expr) × Func) := do
+  let fn ← prepareNewTargetFunction fn
   for param in ← fn.getObjValAs? (Array Json) "params" do
     if (← field param "type") == "AssignmentPattern" then
       discard <| localBinding (← param.getObjVal? "left")

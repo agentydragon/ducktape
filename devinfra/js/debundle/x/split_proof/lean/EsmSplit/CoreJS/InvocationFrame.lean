@@ -230,9 +230,9 @@ theorem constructTarget_reachFrame_of_steps {r R cells A n} (away : Away r R A)
       ReachFrame r R inner A (SafeVal A) (converse n code inner told : M W Val))
     (fields : ∀ env a fs, (∀ n ∈ Env.nodes env, A n) → A (.obj a) →
       ReachFrame r R cells A (fun _ => True) (evalFields n env a fs : M W Unit))
-    (enter : ∀ f closed this args, (∀ node ∈ Env.nodes closed, A node) → SafeVal A this →
-      (∀ a ∈ args, SafeVal A a) →
-      ReachFrame r R cells A (fun env => ∀ node ∈ env.nodes, A node) (enterFunction f closed this args : M W Env))
+    (enter : ∀ f closed this args target, (∀ node ∈ Env.nodes closed, A node) → SafeVal A this →
+      (∀ a ∈ args, SafeVal A a) → SafeVal A target →
+      ReachFrame r R cells A (fun env => ∀ node ∈ env.nodes, A node) (enterFunction f closed this args target : M W Env))
     (stmts : ∀ env ss, (∀ node ∈ Env.nodes env, A node) →
       ReachFrame r R cells A (fun flow => ∀ v, flow = .ret v → SafeVal A v) (execStmts n env ss : M W Flow))
     (evalArgsFrame : ∀ env es, (∀ node ∈ Env.nodes env, A node) →
@@ -278,7 +278,7 @@ theorem constructTarget_reachFrame_of_steps {r R cells A n} (away : Away r R A)
           reachFrame_pure r R cells A receiver hr
       | derivedBody before superArgs body closed fs =>
         let captured := capturesDerivedReceiver before superArgs
-        apply (enter (derivedScope before body captured) closed .undef args caps (fun _ h => by cases h) safeArgs).bind
+        apply (enter (derivedScope before superArgs body captured) closed .undef args target caps (fun _ h => by cases h) safeArgs safeTarget).bind
         intro env he
         apply (stmts env before he).bind
         intro initialFlow _
@@ -373,7 +373,7 @@ theorem constructTarget_reachFrame_of_steps {r R cells A n} (away : Away r R A)
           cases h : f.opaqueBody with
           | none =>
             simp only []
-            apply (enter f closed (.obj receiver) args caps hr safeArgs).bind
+            apply (enter f closed (.obj receiver) args target caps hr safeArgs safeTarget).bind
             intro env he
             apply (stmts env f.body he).bind
             intro flow hflow

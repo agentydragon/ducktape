@@ -63,9 +63,10 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
       ReachFrame r R cells A (fun env' => ∀ node ∈ env'.nodes, A node) (enterBlock env ss : M W Env) :=
     reachFrame_enterBlock away cell prototypeRoot intrinsicRoot (allocate cells) env safe ss
   have enterCall (cells : List (Option Addr)) (f : Func) (env : Env) (this : Val) (args : List Val)
-      (safe : ∀ node ∈ env.nodes, A node) (ht : SafeVal A this) (ha : ∀ arg ∈ args, SafeVal A arg) :
-      ReachFrame r R cells A (fun env' => ∀ node ∈ env'.nodes, A node) (enterFunction f env this args : M W Env) :=
-    reachFrame_enterFunction away cell prototypeRoot intrinsicRoot arrayRoot (allocate cells) f env safe this ht args ha
+      (target : Val) (safe : ∀ node ∈ env.nodes, A node) (ht : SafeVal A this)
+      (ha : ∀ arg ∈ args, SafeVal A arg) (hn : SafeVal A target) :
+      ReachFrame r R cells A (fun env' => ∀ node ∈ env'.nodes, A node) (enterFunction f env this args target : M W Env) :=
+    reachFrame_enterFunction away cell prototypeRoot intrinsicRoot arrayRoot (allocate cells) f env safe this ht args ha target hn
   induction n using Nat.strongRecOn with
   | ind n ih =>
     cases n with
@@ -101,7 +102,7 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
             match ← execStmts n env f.body with
             | .ret v => pure v
             | _ => pure .undef : M W Val) := by
-        apply (enterCall cells f closed this args safe ht ha).bind
+        apply (enterCall cells f closed this args .undef safe ht ha (fun _ h => by cases h)).bind
         intro env henv
         apply (prev.stmts cells env f.body henv).bind
         intro flow safe
