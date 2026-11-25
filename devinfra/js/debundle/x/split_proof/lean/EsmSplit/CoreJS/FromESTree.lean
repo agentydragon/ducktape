@@ -252,7 +252,6 @@ private def isAnonymousDefinition (value : Json) : Except String Bool := do
 sets the prototype. Shorthand properties and methods with that name define own properties. -/
 private def linkedObject (lower : Name → Json → Except String Expr)
     (method : Name → Json → Except String Func) (j : Json) : Except String Expr := do
-  let mut seen : Std.HashMap String String := {}
   let mut props := #[]
   for p in ← j.getObjValAs? (Array Json) "properties" do
     let propType ← field p "type"
@@ -263,19 +262,22 @@ private def linkedObject (lower : Name → Json → Except String Expr)
     let kind ← field p "kind"
     let value ← p.getObjVal? "value"
     if ← p.getObjValAs? Bool "computed" then
-      -- Methods, accessors and anonymous definitions get their name from the evaluated key.
-      if kind != "init" || (← p.getObjValAs? Bool "method") then
-        throw "unsupported method or accessor named by a computed key"
+      let key ← lower "" (← p.getObjVal? "key")
+      if kind != "init" then
+        let prop ← match kind with
+          | "get" => pure (.getter key (← method "" value))
+          | "set" => pure (.setter key (← method "" value))
+          | _ => throw "unsupported object property kind"
+        props := props.push prop
+        continue
+      if ← p.getObjValAs? Bool "method" then
+        props := props.push (.method key (← method "" value))
+        continue
       if ← isAnonymousDefinition value then throw "unsupported function or class named by a computed key"
-      props := props.push (.init (← lower "" (← p.getObjVal? "key")) (← lower "" value))
+      props := props.push (.init key (← lower "" value))
       continue
     let key ← staticPropertyName (← p.getObjVal? "key")
     let keyExpr := Expr.str key
-    if let some previous := seen[key]? then
-      unless (previous == "get" && kind == "set") || (previous == "set" && kind == "get") do
-        throw "duplicate object property"
-      seen := seen.insert key "pair"
-    else seen := seen.insert key kind
     let prop ← match kind with
       | "get" => pure (.getter keyExpr (← method ("get " ++ key) value))
       | "set" => pure (.setter keyExpr (← method ("set " ++ key) value))

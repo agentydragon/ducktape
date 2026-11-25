@@ -128,8 +128,13 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
       · intro cells env t safe
         exact evalTarget_reachFrame_step (fun e => prev.expr cells env e safe) t
       · intro cells env a ps safe ha
-        have makeMethod (home : Addr) (h : A (.obj home)) :=
-          fun f => make cells { env with home := some home } (Env.nodes_setHome safe (some home) (by simpa)) f
+        have makeMethod (home : Addr) (h : A (.obj home)) (key : PropertyKey) (affix : String) (f : Func) :
+            ReachFrame r R cells A (SafeVal A) (makeClassMethod env home key affix f : M W Val) := by
+          have available := Env.nodes_setHome safe (some home) (by simpa using h)
+          cases key with
+          | str name => exact make cells _ available f (affix ++ name)
+          | wellKnownSymbol sym => exact make cells _ available f (affix ++ s!"[{sym.description}]")
+          | symbol => exact reachFrame_unknown r R cells A _ _
         exact evalProps_reachFrame_step away env ha (prev.call cells).getter (fun e => prev.expr cells env e safe) makeMethod
           (fun ps => prev.props cells env a ps safe ha) ps
       · intro cells env p c ms safe hp hc

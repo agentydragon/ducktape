@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import {
+  assertWorkerResult,
   assertRejected,
   block,
   exportNamed,
@@ -112,13 +113,28 @@ for (const file of [computed.files.sourceFile, path.join(computed.out, entry)]) 
   assert.deepEqual(observe(file, "result"), { result: true });
 }
 
-for (const [name, field] of [
-  ["arrow", "[k]: () => 1"],
-  ["method", "[k]() {}"],
-  ["getter", "get [k]() {}"],
-]) {
-  assertRejected(
-    workerSplit("computed-name-" + name, `const k = "x"; export const result = { ${field} };`),
-    /named by a computed key/
-  );
-}
+assertRejected(
+  workerSplit("computed-name-arrow", `const k = "x"; export const result = { [k]: () => 1 };`),
+  /function or class named by a computed key/
+);
+assertWorkerResult(
+  "computed-name-method",
+  `const worker = () => {
+     const k = "x";
+     const obj = { [k]() { return this.value; }, value: "method" };
+     return obj[k]();
+   };
+   export const result = worker();`,
+  "method"
+);
+assertWorkerResult(
+  "computed-name-accessor",
+  `const worker = () => {
+     const k = "x";
+     const obj = { get [k]() { return this.value; }, set [k](next) { this.value = next; }, value: "old" };
+     obj[k] = "new";
+     return obj[k];
+   };
+   export const result = worker();`,
+  "new"
+);

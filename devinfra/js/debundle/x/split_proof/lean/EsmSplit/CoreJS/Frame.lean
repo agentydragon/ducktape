@@ -508,7 +508,7 @@ theorem allocOnly_keeps (n : Nat) :
           unfold evalProps
           refine keeps_bind (ihE env (.str key) base s rfl hb) fun _ s1 _ hb1 => ?_
           refine keeps_bind ((inert_lift _).keeps hb1) fun name s2 _ hb2 => ?_
-          refine keeps_bind (makeFunc_keeps _ f hb2) fun _ s3 _ hb3 => ?_
+          refine keeps_bind (makeClassMethod_keeps env a name "" f hb2) fun _ s3 _ hb3 => ?_
           exact keeps_bind (defineOwn_keeps a name _ hb3 ha) fun _ s4 _ hb4 => ihP env a ps base s4 he hb4 ha
         | getter | setter | proto | spread => simp only [allocOnlyProps, Bool.false_eq_true] at he
 

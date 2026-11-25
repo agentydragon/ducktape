@@ -69,7 +69,7 @@ for (const file of [sourceFile, path.join(out, entry)]) {
 }
 
 // A computed key does not get a per-key equation from the quoted syntax.
-// The exact ordinary lookup handles a primitive key and still refuses object coercion.
+// Duplicate static keys keep ordinary object-literal replacement semantics.
 for (const kind of ["string", "object", "duplicate"]) {
   const objectKey = kind === "object";
   const key = objectKey ? { type: "ObjectExpression", properties: [] } : literal("field95");
@@ -95,9 +95,21 @@ for (const kind of ["string", "object", "duplicate"]) {
   const out = path.join(dir, "out");
   const { verdict, log } = lower(sourceFile, specFile, out);
   if (kind === "duplicate") {
-    assert.equal(verdict.status, "rejected", log);
-    assert.match(verdict.reason, /duplicate object property/);
-    assert(!existsSync(out));
+    assertCertified(verdict, log);
+    for (const file of [sourceFile, path.join(out, entry)]) {
+      const { result } = await import(pathToFileURL(file).href);
+      assert.deepEqual(result, [
+        "value95",
+        "value0",
+        "value1",
+        "last",
+        "value3",
+        "value4",
+        "value5",
+        "value6",
+        "value7",
+      ]);
+    }
   } else if (objectKey) {
     assert.equal(verdict.status, "rejected", log);
     assert.match(verdict.reason, /object is converted to a primitive/);
