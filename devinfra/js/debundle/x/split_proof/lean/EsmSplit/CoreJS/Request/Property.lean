@@ -757,7 +757,8 @@ theorem reachFrame_chainContains {r R cells A} (away : Away r R A) {target : Add
   · intro s H C hs _
     let t := s.put r H C
     have same (a : Addr) (ha : A (.obj a)) : s.objAt a = t.objAt a := by
-      simp [t, State.objAt_put, away.region _ ha]
+      have excluded : a.region ≠ r := away.region _ ha
+      rw [State.objAt_put, ite_eq_right excluded]
     simp only [chainContains, M.bind_apply, getObj, getState]
     rw [← same target ht]
     cases present : s.objAt target with
