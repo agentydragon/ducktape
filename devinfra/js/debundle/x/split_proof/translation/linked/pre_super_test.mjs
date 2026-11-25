@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { assertCertifiedResult, assertRejected, lower, observe, sequentialSplit } from "./harness.mjs";
+import { assertCertifiedResult, caseShard, assertRejected, lower, observe, sequentialSplit } from "./harness.mjs";
 
-const source = `
+const runCase = caseShard();
+
+if (runCase("prefix-disk-replay")) {
+  const source = `
   let trace = "";
   const mark = (step, value) => { trace += step; return value; };
   class Base {
@@ -32,27 +35,29 @@ const source = `
   })();
   export const result = checked;
 `;
-const split = sequentialSplit(
-  "pre-super-prefix",
-  source,
-  { "base.mjs": ["#0", "#1", "#2"], "child.mjs": ["#3"], "entry.mjs": ["#4", "#5", "#6"] },
-  ["base.mjs", "child.mjs"]
-);
-assertCertifiedResult(split, true);
-const checked = lower(split.files.sourceFile, split.files.specFile, split.out, ["--check-output"]);
-assert.deepEqual(checked.verdict, split.verdict, checked.log);
+  const split = sequentialSplit(
+    "pre-super-prefix",
+    source,
+    { "base.mjs": ["#0", "#1", "#2"], "child.mjs": ["#3"], "entry.mjs": ["#4", "#5", "#6"] },
+    ["base.mjs", "child.mjs"]
+  );
+  assertCertifiedResult(split, true);
+  const checked = lower(split.files.sourceFile, split.files.specFile, split.out, ["--check-output"]);
+  assert.deepEqual(checked.verdict, split.verdict, checked.log);
 
-const childPath = path.join(split.out, "child.mjs");
-const original = readFileSync(childPath, "utf8");
-const changed = original.replace("is unavailable", "could not be read");
-assert.notEqual(changed, original);
-writeFileSync(childPath, changed);
-const disk = lower(split.files.sourceFile, split.files.specFile, split.out, ["--check-output"]);
-assert.equal(disk.verdict.status, "rejected", disk.log);
+  const childPath = path.join(split.out, "child.mjs");
+  const original = readFileSync(childPath, "utf8");
+  const changed = original.replace("is unavailable", "could not be read");
+  assert.notEqual(changed, original);
+  writeFileSync(childPath, changed);
+  const disk = lower(split.files.sourceFile, split.files.specFile, split.out, ["--check-output"]);
+  assert.equal(disk.verdict.status, "rejected", disk.log);
+}
 
-const tdz = sequentialSplit(
-  "pre-super-tdz",
-  `const latest = 1;
+if (runCase("tdz")) {
+  const tdz = sequentialSplit(
+    "pre-super-tdz",
+    `const latest = 1;
   class Base {}
   class Child extends Base {
     constructor() {
@@ -62,15 +67,17 @@ const tdz = sequentialSplit(
     }
   }
   export const result = new Child();`,
-  { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3"] },
-  ["base.mjs"]
-);
-assertRejected(tdz, /original threw during linked initialization/);
-assert.deepEqual(observe(tdz.files.sourceFile, "result"), { error: "ReferenceError" });
+    { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3"] },
+    ["base.mjs"]
+  );
+  assertRejected(tdz, /original threw during linked initialization/);
+  assert.deepEqual(observe(tdz.files.sourceFile, "result"), { error: "ReferenceError" });
+}
 
-const vars = sequentialSplit(
-  "pre-super-var",
-  `const trace = { value: "" };
+if (runCase("vars")) {
+  const vars = sequentialSplit(
+    "pre-super-var",
+    `const trace = { value: "" };
    class Base { constructor(value) { trace.value += value + ";"; } }
    class Child extends Base {
      constructor(value) {
@@ -88,42 +95,48 @@ const vars = sequentialSplit(
    const a = new Child(7);
    const b = new Defaults();
    export const result = [trace.value, a.scratch, b.scratch];`,
-  { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3", "#4", "#5", "#6"] },
-  ["base.mjs"]
-);
-assertCertifiedResult(vars, ["undefined;7;5;", 8, 5]);
+    { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3", "#4", "#5", "#6"] },
+    ["base.mjs"]
+  );
+  assertCertifiedResult(vars, ["undefined;7;5;", 8, 5]);
+}
 
-const defaultShadow = sequentialSplit(
-  "pre-super-var-default-shadow",
-  `const source = 7;
+if (runCase("default-shadow")) {
+  const defaultShadow = sequentialSplit(
+    "pre-super-var-default-shadow",
+    `const source = 7;
    class Base { constructor(value) { this.value = value; } }
    class Child extends Base {
      constructor(value = source) { var source = 9; super(value); }
    }
    export const result = new Child().value;`,
-  { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3"] },
-  ["base.mjs"]
-);
-assertRejected(defaultShadow, /var before super overlaps default parameters or their references/);
-assert.deepEqual(observe(defaultShadow.files.sourceFile, "result"), { result: 7 });
+    { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3"] },
+    ["base.mjs"]
+  );
+  assertRejected(defaultShadow, /var before super overlaps default parameters or their references/);
+  assert.deepEqual(observe(defaultShadow.files.sourceFile, "result"), { result: 7 });
+}
 
-const functionOverlap = sequentialSplit(
-  "pre-super-var-function-overlap",
-  `class Base { constructor(value) { this.value = value; } }
+if (runCase("function-overlap")) {
+  const functionOverlap = sequentialSplit(
+    "pre-super-var-function-overlap",
+    `class Base { constructor(value) { this.value = value; } }
    class Child extends Base {
      constructor() { var same = 6; super(same); function same() {} }
    }
    export const result = new Child().value;`,
-  { "base.mjs": ["#0"], "entry.mjs": ["#1", "#2"] },
-  ["base.mjs"]
-);
-assertRejected(functionOverlap, /local function declaration overlaps a var binding before super/);
-assert.deepEqual(observe(functionOverlap.files.sourceFile, "result"), { result: 6 });
+    { "base.mjs": ["#0"], "entry.mjs": ["#1", "#2"] },
+    ["base.mjs"]
+  );
+  assertRejected(functionOverlap, /local function declaration overlaps a var binding before super/);
+  assert.deepEqual(observe(functionOverlap.files.sourceFile, "result"), { result: 6 });
+}
 
-// Super arguments run before the superclass constructor check, even with a null base.
-const nullBase = sequentialSplit(
-  "pre-super-null-base",
-  `const trace = { value: "" };
+if (runCase("null-base")) {
+  // Super arguments run before the superclass constructor check, even with a null base.
+  const nullBase = sequentialSplit(
+    "pre-super-null-base",
+    `const trace = { value: "" };
   class Child extends null {
     constructor() {
       trace.value += "prefix;";
@@ -138,14 +151,16 @@ const nullBase = sequentialSplit(
     }
     throw 1;
   })();`,
-  { "state.mjs": ["#0"], "entry.mjs": ["#1", "#2"] },
-  ["state.mjs"]
-);
-assertCertifiedResult(nullBase, "prefix;first;second;");
+    { "state.mjs": ["#0"], "entry.mjs": ["#1", "#2"] },
+    ["state.mjs"]
+  );
+  assertCertifiedResult(nullBase, "prefix;first;second;");
+}
 
-const continuation = sequentialSplit(
-  "super-expression-continuation",
-  `const trace = { value: "" };
+if (runCase("continuation")) {
+  const continuation = sequentialSplit(
+    "super-expression-continuation",
+    `const trace = { value: "" };
    class Base { constructor() { trace.value += "base;"; return { value: "replacement" }; } }
    class Child extends Base {
      field = "initialized";
@@ -167,23 +182,25 @@ const continuation = sequentialSplit(
    const returned = new Returned();
    const expression = new ReturningExpression();
    export const result = [trace.value, returned.field, returned.value, expression.wrapped.value];`,
-  { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3", "#4", "#5", "#6", "#7", "#8", "#9"] },
-  ["base.mjs"]
-);
-assertCertifiedResult(continuation, [
-  "base;initialized;replacement;base;initialized;else;base;base;evaluated;",
-  "returned",
-  "replacement",
-  "replacement",
-]);
-assert.deepEqual(
-  lower(continuation.files.sourceFile, continuation.files.specFile, continuation.out, ["--check-output"]).verdict,
-  continuation.verdict
-);
+    { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3", "#4", "#5", "#6", "#7", "#8", "#9"] },
+    ["base.mjs"]
+  );
+  assertCertifiedResult(continuation, [
+    "base;initialized;replacement;base;initialized;else;base;base;evaluated;",
+    "returned",
+    "replacement",
+    "replacement",
+  ]);
+  assert.deepEqual(
+    lower(continuation.files.sourceFile, continuation.files.specFile, continuation.out, ["--check-output"]).verdict,
+    continuation.verdict
+  );
+}
 
-const commaPrefix = sequentialSplit(
-  "super-comma-prefix",
-  `const trace = { value: "" };
+if (runCase("comma-prefix")) {
+  const commaPrefix = sequentialSplit(
+    "super-comma-prefix",
+    `const trace = { value: "" };
    const mark = (step, value) => { trace.value += step; return value; };
    const check = (ok) => { if (!ok) throw 5; };
    class Base { constructor(value) { trace.value += value; } }
@@ -197,28 +214,32 @@ const commaPrefix = sequentialSplit(
    new Child(true);
    try { new Child(false); } catch (error) { if (error !== 5) throw error; mark("caught;"); }
    export const result = trace.value;`,
-  { "base.mjs": ["#0", "#1", "#2", "#3"], "entry.mjs": ["#4", "#5", "#6", "#7"] },
-  ["base.mjs"]
-);
-assertCertifiedResult(commaPrefix, "before;argument;base;field;body;before;caught;");
-assert.deepEqual(
-  lower(commaPrefix.files.sourceFile, commaPrefix.files.specFile, commaPrefix.out, ["--check-output"]).verdict,
-  commaPrefix.verdict
-);
+    { "base.mjs": ["#0", "#1", "#2", "#3"], "entry.mjs": ["#4", "#5", "#6", "#7"] },
+    ["base.mjs"]
+  );
+  assertCertifiedResult(commaPrefix, "before;argument;base;field;body;before;caught;");
+  assert.deepEqual(
+    lower(commaPrefix.files.sourceFile, commaPrefix.files.specFile, commaPrefix.out, ["--check-output"]).verdict,
+    commaPrefix.verdict
+  );
+}
 
-const conditional = sequentialSplit(
-  "conditional-super-refused",
-  `class Base {}
+if (runCase("conditional")) {
+  const conditional = sequentialSplit(
+    "conditional-super-refused",
+    `class Base {}
    class Child extends Base { constructor(flag) { if (flag && super()) this.ok = true; } }
    export const result = Child;`,
-  { "base.mjs": ["#0"], "entry.mjs": ["#1", "#2"] },
-  ["base.mjs"]
-);
-assertRejected(conditional, /expected a direct super call/);
+    { "base.mjs": ["#0"], "entry.mjs": ["#1", "#2"] },
+    ["base.mjs"]
+  );
+  assertRejected(conditional, /expected a direct super call/);
+}
 
-const captured = sequentialSplit(
-  "pre-super-arrow-receiver",
-  `const trace = { value: "" };
+if (runCase("captured-receiver")) {
+  const captured = sequentialSplit(
+    "pre-super-arrow-receiver",
+    `const trace = { value: "" };
    class Base {
      constructor(read, value) {
        try { trace.value += read(); }
@@ -235,18 +256,20 @@ const captured = sequentialSplit(
    }
    const child = new Child("late:");
    export const result = [trace.value, child.read(), child.value()];`,
-  { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3", "#4"] },
-  ["base.mjs"]
-);
-assertCertifiedResult(captured, ["uninitialized;", "object", "late:9"]);
-assert.deepEqual(
-  lower(captured.files.sourceFile, captured.files.specFile, captured.out, ["--check-output"]).verdict,
-  captured.verdict
-);
+    { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3", "#4"] },
+    ["base.mjs"]
+  );
+  assertCertifiedResult(captured, ["uninitialized;", "object", "late:9"]);
+  assert.deepEqual(
+    lower(captured.files.sourceFile, captured.files.specFile, captured.out, ["--check-output"]).verdict,
+    captured.verdict
+  );
+}
 
-const ordinaryReceivers = sequentialSplit(
-  "pre-super-ordinary-receivers",
-  `class Base {
+if (runCase("ordinary-receivers")) {
+  const ordinaryReceivers = sequentialSplit(
+    "pre-super-ordinary-receivers",
+    `class Base {
      constructor(options, fn) {
        options.value = 4;
        return { first: options.method(9), second: { value: 2, fn }.fn(13) };
@@ -265,10 +288,11 @@ const ordinaryReceivers = sequentialSplit(
    }
    const child = new Child(5);
    export const result = [child.first, child.second];`,
-  { "base.mjs": ["#0"], "entry.mjs": ["#1", "#2", "#3"] },
-  ["base.mjs"]
-);
-assertCertifiedResult(ordinaryReceivers, [18, 20]);
+    { "base.mjs": ["#0"], "entry.mjs": ["#1", "#2", "#3"] },
+    ["base.mjs"]
+  );
+  assertCertifiedResult(ordinaryReceivers, [18, 20]);
+}
 
 for (const [name, body] of [
   ["nested-receiver", "const x = 1 + this.x; super(x);"],
@@ -277,6 +301,7 @@ for (const [name, body] of [
   ["object-method-computed-key", "super({ [this.x]() {} });"],
   ["comma-prefix-receiver", "(this.x, super());"],
 ]) {
+  if (!runCase(`pre-super-${name}`)) continue;
   const refused = sequentialSplit(
     `pre-super-${name}`,
     `const Child = class extends null { constructor() { ${body} } }; export const result = Child;`,

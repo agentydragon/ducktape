@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import {
+  caseShard,
   assertCertified,
   root,
   id,
@@ -26,8 +27,11 @@ import {
   observedProgram,
 } from "./harness.mjs";
 
+const runCase = caseShard();
+
 // Vary the number, spelling and values of static properties across a module boundary.
 for (const seed of [0, 1, 2, 3, 14]) {
+  if (!runCase(`generated-record-${seed}`)) continue;
   const expected = {};
   const properties = Array.from({ length: seed }, (_, i) => {
     const key = i % 2 ? `quoted-key-${i}` : `field${i}`;
@@ -42,17 +46,20 @@ for (const seed of [0, 1, 2, 3, 14]) {
   );
 }
 
-assertWorkerResult(
-  "record-nested-values",
-  `const worker = { source: ["first", { value: 42 }] };
+if (runCase("record-nested-values")) {
+  assertWorkerResult(
+    "record-nested-values",
+    `const worker = { source: ["first", { value: 42 }] };
   export const result = {
     nested: { field: worker.source[1].value },
     list: [worker.source[0], { key: worker.source.length }],
   };`,
-  { nested: { field: 42 }, list: ["first", { key: 2 }] }
-);
+    { nested: { field: 42 }, list: ["first", { key: 2 }] }
+  );
+}
 
 for (const [seed, key] of [id("value"), literal("quoted-key")].entries()) {
+  if (!runCase(`generated-record-values-${seed}`)) continue;
   const value = seed + 10;
   const provider = { type: "ObjectExpression", properties: [{ ...property("value", literal(value)), key }] };
   const read = {
@@ -72,9 +79,10 @@ for (const [seed, key] of [id("value"), literal("quoted-key")].entries()) {
 
 // The first read throws a number. Reading the second value out of order
 // throws a ReferenceError, which must not reach the catch instead.
-assertWorkerResult(
-  "record-value-order",
-  `const worker = () => {
+if (runCase("record-value-order")) {
+  assertWorkerResult(
+    "record-value-order",
+    `const worker = () => {
     const key = () => { throw 7; };
     try {
       return { first: ({})[key()], second: later.field };
@@ -84,13 +92,15 @@ assertWorkerResult(
     }
   };
   export const result = worker() === "number" ? "number" : (() => { throw 0; })();`,
-  "number"
-);
+    "number"
+  );
+}
 
 // The first property must call with its receiver and its throw must skip the second property.
-assertWorkerResult(
-  "record-call-receiver-and-order",
-  `const worker = () => {
+if (runCase("record-call-receiver-and-order")) {
+  assertWorkerResult(
+    "record-call-receiver-and-order",
+    `const worker = () => {
     const read = function () { throw this.value; };
     const receiver = { value: "first", read };
     try {
@@ -100,11 +110,12 @@ assertWorkerResult(
     }
   };
   export const result = worker() === "first" ? "first" : (() => { throw 0; })();`,
-  "first"
-);
+    "first"
+  );
+}
 
 // The same call returns the fallback before `later` initializes and reads the live binding after it initializes.
-{
+if (runCase("record-live-binding-order")) {
   const read = arrow(
     [id("fallback")],
     block([tryStatement(block([returns(id("later"))]), catchClause(null, block([returns(id("fallback"))])))])
@@ -149,14 +160,16 @@ assertWorkerResult(
 
 // A wide, straight-line initializer consumes one level of fuel per property.
 const fields = Array.from({ length: 65 }, (_, i) => property(`field${i}`, literal(i)));
-assertWorkerResult(
-  "wide-record",
-  observedProgram(literal(0), { type: "ObjectExpression", properties: fields }),
-  Object.fromEntries(fields.map((field, i) => [field.key.name, i]))
-);
+if (runCase("wide-record")) {
+  assertWorkerResult(
+    "wide-record",
+    observedProgram(literal(0), { type: "ObjectExpression", properties: fields }),
+    Object.fromEntries(fields.map((field, i) => [field.key.name, i]))
+  );
+}
 
 // After retrying the wide record, report the actual TDZ on its final property.
-{
+if (runCase("wide-record-tdz")) {
   const value = { type: "ObjectExpression", properties: [...fields, property("tail", id("result"))] };
   const { verdict, out } = workerSplit("wide-record-tdz", observedProgram(literal(0), value));
   assert.equal(verdict.status, "rejected");
@@ -164,20 +177,30 @@ assertWorkerResult(
   assert(!existsSync(out));
 }
 
-assertWorkerResult(
-  "record-optional-member",
-  "const worker = { field: 1 }; export const result = { key: worker?.field };",
-  { key: 1 }
-);
-assertWorkerResult("record-spread", "const worker = () => ({ ...worker }); export const result = worker();", {});
-assertWorkerResult("record-computed", 'const worker = () => ({ ["key"]: 1 }); export const result = worker();', {
-  key: 1,
-});
+if (runCase("record-optional-member")) {
+  assertWorkerResult(
+    "record-optional-member",
+    "const worker = { field: 1 }; export const result = { key: worker?.field };",
+    { key: 1 }
+  );
+}
+
+if (runCase("record-spread")) {
+  assertWorkerResult("record-spread", "const worker = () => ({ ...worker }); export const result = worker();", {});
+}
+
+if (runCase("record-computed")) {
+  assertWorkerResult("record-computed", 'const worker = () => ({ ["key"]: 1 }); export const result = worker();', {
+    key: 1,
+  });
+}
+
 for (const [name, expr, reason] of [
   ["computed-getter", '({ get ["key"]() { return 1; } })', /accessor named by a computed key/],
   ["record-duplicate", '({ key: 1, "key": 2 })', /duplicate object property/],
   ["record-array-hole", "({ nested: { key: [, 1] } })", /unsupported array hole/],
 ]) {
+  if (!runCase(name)) continue;
   const { verdict, out } = workerSplit(name, `const worker = () => ${expr}; export const result = worker();`);
   assert.equal(verdict.status, "rejected");
   assert.match(verdict.reason, reason, name);
