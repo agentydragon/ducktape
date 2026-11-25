@@ -132,6 +132,32 @@ const ecmaStable = contract("ecma-stable", {
 assert.deepEqual(censusFor(["--host-contract", ecmaStable]), ecmaCensus);
 const browserStable = contract("browser-stable", { profile: "browser-page", stableIntrinsicValues: ["Math.PI@1"] });
 assert.deepEqual(censusFor(["--host-contract", browserStable]), browserCensus);
+// Both reports use the certified contract reader and preserve the same
+// first refusals, including for supported stable-intrinsic contracts.
+for (const [contractPath, expected] of [
+  [ecmaStable, ecmaCensus],
+  [browserStable, browserCensus],
+]) {
+  const concrete = JSON.parse(
+    execFileSync(process.env.COREJS, ["--lowering-census", globalsFile, "--host-contract", contractPath], {
+      encoding: "utf8",
+    })
+  );
+  assert.equal(concrete.hostProfile, expected.hostProfile);
+  assert.deepEqual(concrete.lowering_refusals, expected.lowering_refusals);
+}
+const invalidContract = contract("invalid-stable", {
+  profile: "browser-page",
+  stableIntrinsicValues: ["Object.defineProperty@1"],
+});
+const malformedContract = file("malformed-contract.json", "{");
+for (const mode of ["--moves-ast", "--lowering-census"]) {
+  for (const invalidContractPath of [invalidContract, malformedContract]) {
+    const invalid = spawnSync(process.env.COREJS, [mode, globalsFile, "--host-contract", invalidContractPath]);
+    assert.notEqual(invalid.status, 0, `${mode} must reject malformed or mismatched contracts`);
+  }
+}
+
 const forbidden = contract("bad-profile", { profile: "node-recording" });
 assert.notEqual(spawnSync(process.env.COREJS, ["--moves-ast", globalsFile, "--host-contract", forbidden]).status, 0);
 assert.notEqual(
