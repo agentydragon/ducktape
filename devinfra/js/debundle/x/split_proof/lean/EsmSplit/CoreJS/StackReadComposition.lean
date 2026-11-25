@@ -5,9 +5,11 @@ import EsmSplit.CoreJS.StackReadBoundary
 # A registry write with reached-state stack evidence
 
 The CoreJS heap supplies the actual receiver and descriptor checks. The host
-premises below identify the genuine getter and describe only the four calls
-reached in this example. This does not identify a real Error getter or prove
-its construction; it is not a public certificate. Strings are restricted to
+premises below identify the getter and describe only the four calls reached in
+this example. A caller-supplied predicate does not establish that this receiver
+was allocated by the realm's `%Error%` intrinsic, that a getter is not borrowed,
+or that an overridden read is safe. Real V1 eligibility needs those separately
+checked facts. This is not a public certificate. Strings are restricted to
 CoreJS's representable `String` domain.
 -/
 
@@ -48,7 +50,8 @@ def siteRead (calls : Nat → Call W) (site : Nat) : M W Val :=
 
 /-- Host/profile facts: the getter identity is genuine, and the two calls at
 these particular sites, receiver and reached state return the shared string
-without effects. This says nothing about unrelated objects or other states. -/
+without effects. This says nothing about unrelated objects or other states.
+The predicate is a supplied assumption, not evidence of Error allocation. -/
 def HostPair (genuine : Val → Prop) (calls : Nat → Call W) (state : State W)
     (first second : Nat) (stack : String) : Prop :=
   genuine (.obj getter) ∧
@@ -155,7 +158,89 @@ theorem exampleWithOverride (stack : String) :
   have compared := movedWithReachedReads stack genuine (exampleCalls stack) (exampleCalls stack) leftHost rightHost
   exact ⟨compared.1, compared.2.1, rfl⟩
 
+/-- A synthetic caller predicate can satisfy the local read premise for an
+ordinary receiver. It is not evidence of intrinsic Error allocation, a real
+builtin getter, or eligibility for the V1 substitution. -/
+theorem syntheticIdentityOnly (stack : String) :
+    HostPair (fun v => v = .obj getter) (exampleCalls stack) (initial W) 2 3 stack ∧
+    receiverObject.proto = none ∧
+    getProp (exampleCalls stack 2) (.obj receiver) (.str "stack") (initial W) =
+      .ok (.str stack) (initial W) := by
+  exact ⟨⟨rfl, rfl, rfl⟩, rfl, rfl⟩
+
+/-! These controls exercise the existing realm identity and object representation.
+They do not certify any real Error construction or stack substitution. -/
+
+def shadowConstructor : Addr := ⟨1, 0⟩
+def lookalike : Addr := ⟨1, 1⟩
+
+def shadowObject : Obj :=
+  { proto := some functionProto, code := some (.host "user Error"),
+    props := [(.str "name", .data (.str "Error") false false true)] }
+
+def lookalikeObject : Obj := { proto := some errorProto, props := [] }
+
+def identityState (w : World) : State w :=
+  { initialState w 1 with
+    heap := #[builtins, #[shadowObject, lookalikeObject]],
+    cells := #[#[{ value := some (.obj errorConstructor), mutable := false },
+      { value := some (.obj shadowConstructor), mutable := false }]] }
+
+def identityEnv : Env := { vars := [("Alias", ⟨0, 0⟩), ("Error", ⟨0, 1⟩)], this := .undef }
+
+/-- The alias has the actual realm constructor identity, while a shadowing
+binding named `Error` is a different constructor. A separate ordinary object
+can have Error.prototype without acquiring allocation provenance. -/
+theorem aliasShadowAndLookalike :
+    evalExpr 1 identityEnv (.var "Alias") (identityState W) =
+      .ok (.obj errorConstructor) (identityState W) ∧
+    evalExpr 1 identityEnv (.var "Error") (identityState W) =
+      .ok (.obj shadowConstructor) (identityState W) ∧
+    getProp noCall (.obj shadowConstructor) (.str "name") (identityState W) =
+      .ok (.str "Error") (identityState W) ∧
+    (identityState W).objAt lookalike = some lookalikeObject ∧
+    lookalikeObject.proto = some errorProto ∧
+    (Val.obj shadowConstructor : Val) ≠ .obj errorConstructor := by
+  refine ⟨rfl, rfl, rfl, rfl, rfl, ?_⟩
+  intro equal
+  have addresses := Val.obj.inj equal
+  have regions := congrArg Addr.region addresses
+  simp [shadowConstructor, errorConstructor, realmSlotAddr] at regions
+
+def ordinaryBase (w : World) : State w := { initialState w 1 with region := 1 }
+
+/-- An ordinary allocation can have `Error.prototype` without invoking the
+intrinsic constructor. Prototype shape therefore cannot prove V1 provenance. -/
+theorem ordinaryPrototypeLookalike :
+    alloc lookalikeObject (ordinaryBase W) =
+      .ok ⟨1, 0⟩ { ordinaryBase W with heap := #[builtins, #[lookalikeObject]] } ∧
+    lookalikeObject.proto = some errorProto := by
+  exact ⟨rfl, rfl⟩
+
+/-- Even the alias of the modeled realm intrinsic cannot yet produce an
+Error instance: construction is unknown, so there is no V1 provenance bridge. -/
+theorem aliasConstructionUnknown (fuel : Nat) :
+    evalExpr (fuel + 2) identityEnv (.new (.var "Alias") []) (identityState W) =
+      .unknown "host function %Error% is constructed" (identityState W) := by
+  have constructor : (identityState W).objAt errorConstructor = some errorConstructorObject := by rfl
+  have unknown := StackReadBoundary.errorConstructionUnknown fuel (identityState W) constructor
+  change (do let callee ← readVar identityEnv "Alias"
+             constructTarget (fuel + 1) callee callee []) (identityState W) = _
+  simpa [bind, readVar, identityEnv, identityState, getState, State.cellAt, pure] using unknown
+
+/-- A same-named shadow constructor is not the intrinsic. Its unmodeled host
+body also remains unknown when actually constructed. -/
+theorem shadowConstructionUnknown (fuel : Nat) :
+    constructTarget (fuel + 1) (.obj shadowConstructor) (.obj shadowConstructor) [] (identityState W) =
+      .unknown "host function user Error is constructed" (identityState W) := by
+  rfl
+
 #print axioms movedWithReachedReads
 #print axioms exampleWithOverride
+#print axioms syntheticIdentityOnly
+#print axioms aliasShadowAndLookalike
+#print axioms ordinaryPrototypeLookalike
+#print axioms aliasConstructionUnknown
+#print axioms shadowConstructionUnknown
 
 end CoreJS.StackReadComposition

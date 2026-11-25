@@ -1050,6 +1050,11 @@ lean_axiom_test(
     theorems = [
         "CoreJS.StackReadComposition.movedWithReachedReads",
         "CoreJS.StackReadComposition.exampleWithOverride",
+        "CoreJS.StackReadComposition.syntheticIdentityOnly",
+        "CoreJS.StackReadComposition.aliasShadowAndLookalike",
+        "CoreJS.StackReadComposition.ordinaryPrototypeLookalike",
+        "CoreJS.StackReadComposition.aliasConstructionUnknown",
+        "CoreJS.StackReadComposition.shadowConstructionUnknown",
     ],
     deps = [":corejs_runtime"],
 )
