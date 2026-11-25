@@ -107,6 +107,16 @@ for (const [i, source] of unarySources.entries()) {
   );
 }
 
+// The standalone AST path also needs the realm's template registry. Two
+// evaluations of the same site share one object; different sites stay distinct.
+const taggedSource =
+  "const tag = x => x; const site = () => tag`same`; throw site() === site() && site() !== tag`same`;";
+const [tagged] = run([dumpSource(taggedSource)], true);
+assert.deepEqual(
+  [tagged.end, tagged.detail],
+  await nodeOutcome(`data:text/javascript,${encodeURIComponent(taggedSource)}`)
+);
+
 const spec = file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["a", "b"] } }));
 function split(source, args = []) {
   const ast = file("bundle.json", JSON.stringify(dumpSource(source)));

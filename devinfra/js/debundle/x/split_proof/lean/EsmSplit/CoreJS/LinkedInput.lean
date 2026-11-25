@@ -361,8 +361,9 @@ def program (source providers : Json) (profile : HostProfile := .empty) : Except
   let ps := (← providers.getObj?).toList
   for req in original.imports do
     unless ps.any (·.1 == req.source) do throw s!"missing original dependency {req.source}"
-  let shared ← readProviders .linked profile ps nodes.size
-  let p : Program := { entry := "main", modules := original.numbered "main" 0 :: shared }
+  let (shared, providerSites) ← readProviders .linked profile ps nodes.size
+  let p ← installTemplates { entry := "main", modules := original.numbered "main" 0 :: shared }
+    (original.templates ++ providerSites)
   let _ ← scopes p
   return p
 
