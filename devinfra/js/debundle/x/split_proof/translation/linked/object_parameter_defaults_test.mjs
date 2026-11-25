@@ -3,14 +3,46 @@ import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   assertCertifiedResult,
-  assertRejectedOrOrderKeptSlice,
+  assertRejected,
   caseShard,
   lower,
   observe,
   sequentialSplit,
+  workerSplit,
 } from "./harness.mjs";
 
 const includesCase = caseShard();
+
+if (includesCase("object-rest-parameter")) {
+  const test = workerSplit(
+    "object-rest-parameter",
+    `function pick({ tab: first, tab: second, ...rest }) {
+       var first;
+       return [first, second, rest];
+     }
+     export const result = (() => {
+       let trace = "";
+       const source = { get tab() { trace += "t"; return 3; }, get extra() { trace += "e"; return 4; } };
+       const [first, second, rest] = pick(source);
+       let nullThrows = false;
+       try { pick(null); } catch { nullThrows = true; }
+       return [first, second, rest.extra, "tab" in rest, trace, nullThrows, pick.length];
+     })();`
+  );
+  assertCertifiedResult(test, [3, 3, 4, false, "tte", true, 1]);
+  assert.deepEqual(
+    lower(test.files.sourceFile, test.files.specFile, test.out, ["--check-output"]).verdict,
+    test.verdict
+  );
+}
+
+for (const [name, expression] of [
+  ["object-rest-default", "({ tab = 1, ...rest }) => tab"],
+  ["object-rest-computed", "({ ['tab']: tab, ...rest }) => tab"],
+]) {
+  if (!includesCase(name)) continue;
+  assertRejected(workerSplit(name, `const pick = ${expression}; export const result = pick({});`), /deferred function/);
+}
 
 if (includesCase("derived-getter-and-default-order")) {
   const test = sequentialSplit(
@@ -88,7 +120,7 @@ if (includesCase("later-object-binding-tdz")) {
     { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3"] },
     ["base.mjs"]
   );
-  assertRejectedOrOrderKeptSlice(test, /original threw during linked initialization/);
+  assertRejected(test, /original threw during linked initialization/);
   assert.deepEqual(observe(test.files.sourceFile, "result"), { error: "ReferenceError" });
 }
 
@@ -104,7 +136,7 @@ if (includesCase("derived-default-shadowed-by-prefix-var")) {
     { "base.mjs": ["#0", "#1"], "entry.mjs": ["#2", "#3"] },
     ["base.mjs"]
   );
-  assertRejectedOrOrderKeptSlice(test, /var before super overlaps default parameters or their references/);
+  assertRejected(test, /var before super overlaps default parameters or their references/);
   assert.deepEqual(observe(test.files.sourceFile, "result"), { result: "outer" });
 }
 
@@ -165,7 +197,7 @@ if (includesCase("whole-pattern-default-tdz")) {
      function read({ x } = later, later = {}) { return x; }
      export const result = read();`
   );
-  assertRejectedOrOrderKeptSlice(test, /original threw during linked initialization/);
+  assertRejected(test, /original threw during linked initialization/);
   assert.deepEqual(observe(test.files.sourceFile, "result"), { error: "ReferenceError" });
 }
 
@@ -176,6 +208,6 @@ if (includesCase("whole-pattern-body-var")) {
      function read({ x } = outer) { var outer; return x; }
      export const result = read();`
   );
-  assertRejectedOrOrderKeptSlice(test, /body var overlaps default parameters or their references/);
+  assertRejected(test, /body var overlaps default parameters or their references/);
   assert.deepEqual(observe(test.files.sourceFile, "result"), { result: 9 });
 }

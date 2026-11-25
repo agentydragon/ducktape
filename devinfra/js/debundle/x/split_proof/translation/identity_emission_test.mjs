@@ -10,6 +10,7 @@ import { acorn, dump, eslintScope, loadSnapshot } from "./parser.mjs";
 import { checkTranslation } from "./testing/check_translation.mjs";
 import { writeDeployment } from "./testing/deployment_manifest.mjs";
 import { lowerDiagnostic, prepareSideSplit, run } from "./testing/diagnostic_split.mjs";
+import { generateInstance } from "./testing/split.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const temp = process.env.TEST_TMPDIR;
@@ -102,13 +103,8 @@ const callbacks = scopes.body[0].declarations.map((d) => d.init);
 assert.notEqual(callbacks[0].params[0].b, callbacks[1].params[0].b);
 for (const callback of callbacks) assert.equal(callback.params[0].b, callback.body.b);
 const leanCertificate = path.join(temp, "generated.lean");
-const emitted = run(process.env.LOWERSPLIT, [
-  "--diagnostic",
-  writeDeployment(ast, spec, out),
-  out,
-  "--lean",
-  leanCertificate,
-]);
+generateInstance({ ast, spec, out: leanCertificate, preview: path.join(temp, "instance-generator-preview") });
+const emitted = run(process.env.LOWERSPLIT, ["--diagnostic", writeDeployment(ast, spec, out), out]);
 assert.equal(emitted.status, 0, `annotated emitter must accept: ${emitted.stdout}\n${emitted.stderr}`);
 assert.match(emitted.stdout, /pass\s+OrderOk/);
 const legacyInput = path.join(temp, "legacy-ast.json");
@@ -126,7 +122,7 @@ const leanSource = readFileSync(leanCertificate, "utf8");
 assert.match(leanSource, /kernel checks this supplied bundle and plan, not the source-to-footprint analysis/);
 assert.match(leanSource, /theorem plan_valid/);
 
-// A diagnostic instance retains the original spelling of whole statements
+// A generated instance retains the original spelling of whole statements
 // and standalone declarations for units split out of a declaration list.
 {
   const source = path.join(temp, "instance-source.mjs");
@@ -135,14 +131,7 @@ assert.match(leanSource, /theorem plan_valid/);
   const original = "const /* retained */ seed = 1;";
   writeFileSync(source, `${original}\nconst left = seed, right = 2;\n`);
   writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["seed", "left", "right"] } }));
-  const result = run(process.env.LOWERSPLIT, [
-    "--diagnostic",
-    writeDeployment(source, spec, path.join(temp, "instance-out")),
-    path.join(temp, "instance-out"),
-    "--lean",
-    instance,
-  ]);
-  assert.equal(result.status, 0, result.stdout + result.stderr);
+  generateInstance({ source, spec, out: instance, preview: path.join(temp, "instance-out") });
   const generated = readFileSync(instance, "utf8");
   for (const unit of [original, "const left = seed;", "const right = 2;"])
     assert(generated.includes(`src := ${JSON.stringify(unit)}`), unit);

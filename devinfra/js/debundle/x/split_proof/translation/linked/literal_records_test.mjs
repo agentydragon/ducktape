@@ -22,7 +22,6 @@ import {
   moduleEvaluationOrder,
   forcePreview,
   workerSplit,
-  assertRejectedOrOrderKeptSlice,
   assertWorkerResult,
   observedProgram,
 } from "./harness.mjs";
@@ -159,10 +158,10 @@ assertWorkerResult(
 // After retrying the wide record, report the actual TDZ on its final property.
 {
   const value = { type: "ObjectExpression", properties: [...fields, property("tail", id("result"))] };
-  const result = workerSplit("wide-record-tdz", observedProgram(literal(0), value));
-  if (assertRejectedOrOrderKeptSlice(result, /original threw during linked initialization/)) {
-    assert.deepEqual(observe(path.join(result.out, "entry.mjs"), "result"), observe(result.files.sourceFile, "result"));
-  }
+  const { verdict, out } = workerSplit("wide-record-tdz", observedProgram(literal(0), value));
+  assert.equal(verdict.status, "rejected");
+  assert.match(verdict.reason, /original threw during linked initialization/);
+  assert(!existsSync(out));
 }
 
 assertWorkerResult(
@@ -182,12 +181,8 @@ assertWorkerResult(
 assertWorkerResult("record-duplicate", `const worker = () => ({ key: 1, "key": 2 }); export const result = worker();`, {
   key: 2,
 });
-{
-  const result = workerSplit(
-    "record-array-hole",
-    "const worker = () => ({ nested: { key: [, 1] } }); export const result = worker();"
-  );
-  if (assertRejectedOrOrderKeptSlice(result, /unsupported array hole/)) {
-    assert.deepEqual(observe(path.join(result.out, "entry.mjs"), "result"), observe(result.files.sourceFile, "result"));
-  }
-}
+assertWorkerResult(
+  "record-array-hole",
+  "const worker = () => ({ nested: { key: [, 1] } }); export const result = worker();",
+  { nested: { key: [null, 1] } }
+);

@@ -190,7 +190,7 @@ One mutant, forgetting a catch parameter is local, is on the safe side and is co
 The bundles also contain statements that assign to a top-level name (lodash 1, acorn 2, zod 7), which the model cannot place in another module.
 
 **End to end in one program.** [`LowerSplit.lean`](../lean/EsmSplit/LowerSplit.lean) (198 lines) takes the JSON and a spec, computes footprints in Lean,
-plans, checks, writes the modules, and in diagnostic mode with `--lean` writes a legacy Lean file for the kernel. On the example the modules are identical to the first prototype’s output
+plans, checks, and writes the modules. The old `--diagnostic --lean` combination has been replaced by the separate `--generate-instance` command, which writes Lean proof source without rendering modules. On the example the modules are identical to the first prototype’s output
 except the order of names inside two `export { … }` lists (Lean's JSON parser sorts object keys, so the spec's file order is lost).
 The generated certificate is accepted by the kernel; its axioms are `propext`, `Classical.choice` and `Quot.sound`. Whole run, compiled: 2 ms.
 
@@ -271,7 +271,7 @@ One JSON line per split is in [split results](../integration/library_splits/resu
 
 ## 8. How a proof is produced
 
-**The shape.** `lowersplit --diagnostic … --lean` writes a Lean file with bundle data and a proof about the plan based on the supplied footprints. The example is [`Instance.lean`](../lean/EsmSplit/Instance.lean).
+**The shape.** `lowersplit --generate-instance <deployment.json> <Generated.lean>` writes a Lean file with bundle data and a proof about the plan based on the supplied footprints, without writing module previews. The example is [`Instance.lean`](../lean/EsmSplit/Instance.lean).
 
 ```lean
 def bundle : Bundle := [
@@ -596,6 +596,8 @@ theorem moves_preserve (hvalid : EsmSplit.Valid B S P) (hfp : FootprintsOfSyntax
 - _Why it holds._ Statement `i` allocates in its own region. A declaration whose initializer only allocates reads only its own region and the bindings it names, and writes only its own region (`Local`, `decl_local`); an opaque statement that only makes functions reads only its own region (`closures_local`). Two such statements commute when neither reads the other's binding (`local_units_commute`); an inert statement commutes with any statement (`commute_inert`). The reorder argument of [`Semantics.lean`](../lean/EsmSplit/Semantics.lean) (`foldl_reorder`) then carries the commutations through the run, and `split_units_agree` gives each moved statement the scope it had in the bundle.
 - _Only normal endings._ The theorem says nothing about a run that throws or reaches unknown code. That is why it needs no invariant that an allocating expression never ends `unknown`: a run that ends normally ran every statement to its end.
 - _Class boundary:_ fixed-string-key classes may have deferred instance fields and allocation-only static initializers. The proof tracks static initializers' eager binding reads; static blocks, effectful initializers and heritage remain outside `Expr.allocOnly`.
+
+`corejs --lowering-census bundle.json [--host-contract contract.json]` reports every executable unit refused by concrete linked lowering, including units that structural mode can retain as opaque. The annotated ESTree is produced by `translation:dump_ast`. The default profile is `empty`; select `ecmascript` or `browser-page` with a contract such as `{"profile":"ecmascript"}`. Refusals include the unit ordinal and its first reason. The census does not link providers or certify a split; callable bodies may be deferred opaque code. [Public corpus results](../PLAN.md#one-lowering-in-lean).
 
 `corejs --moves program.json [footprints.jsonl]` counts, per statement, what `MayMove` can move. On the large bundle (9,707 units) 3,136 are inert (764 in the model's syntax, 2,372 opaque function declarations: async, generator, or destructuring parameters) and 3,606 only allocate (2,921 declarations in the model's syntax, 685 opaque declarations of a function or an arrow): 6,742, 69% of the units. The other 2,579 opaque units run code: 1,333 declarations that call a function or construct, 607 expression statements, 421 classes and 218 other declarations. Against the footprints of `lower` without P3 (one line per identity), the analysis calls none of the 6,742 an effect and lists every name the allocating ones read; it describes all 3,606 as writing their names, which is more than is proved, not wrong.
 

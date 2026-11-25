@@ -40,6 +40,27 @@ function observedProgram(initializer, result) {
   ]);
 }
 
+// Elisions stay absent after certification and emission, including trailing holes.
+{
+  const { files, out, verdict, log } = workerSplit(
+    "sparse-array",
+    "const worker = [, -0, , 3, ,]; const value = worker; export { value as result };",
+    entryUnits
+  );
+  assertCertified(verdict, log);
+  assert.deepEqual(lower(files.sourceFile, files.specFile, out, ["--check-output"]).verdict, verdict);
+  const expected = new Array(5);
+  expected[1] = -0;
+  expected[3] = 3;
+  for (const file of [files.sourceFile, path.join(out, "entry.mjs")]) {
+    const { result } = await import(pathToFileURL(file).href);
+    assert(Array.isArray(result));
+    assert.equal(Object.getPrototypeOf(result), Array.prototype);
+    assert.deepEqual(Object.getOwnPropertyDescriptors(result), Object.getOwnPropertyDescriptors(expected));
+    assert.deepEqual([...result], [undefined, -0, undefined, 3, undefined]);
+  }
+}
+
 // An explicit undefined element is an own property. The linked array must also
 // preserve nested values, ordinary Array.prototype and the length descriptor.
 {

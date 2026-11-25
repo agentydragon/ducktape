@@ -8,6 +8,7 @@ function checkSlice(test, scope, guarantee) {
   assertCertified(test.verdict, test.log);
   assert.equal(test.verdict.scope, scope, test.log);
   assert.equal(test.verdict.guarantee, guarantee, test.log);
+  assert.equal(test.verdict.every_ending_matches, guarantee === "all-outcomes", test.log);
   assert.deepEqual(
     lower(test.files.sourceFile, test.files.specFile, test.out, ["--check-output"]).verdict,
     test.verdict

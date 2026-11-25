@@ -78,10 +78,17 @@ private def verifyExecution (timings : Bool) (work : System.FilePath) (cert : Co
   return cert.premises
 
 private def emitVerdict (requested : String) (outcome : Except String Guarantee) (scope : Option String := none) (extra : List (String × Json) := []) : IO UInt32 := do
+  let everyEndingMatches := match outcome with
+    | .ok .allOutcomes => true
+    | _ => false
   let fields := match outcome with
     | .error why => [("status", toJson "rejected"), ("guarantee", Json.null), ("reason", toJson why)]
     | .ok level => [("status", toJson "certified"), ("guarantee", toJson level.label)]
-  IO.println (Json.mkObj ([("requested", toJson requested), ("scope", toJson scope)] ++ fields ++ extra)).compress
+  IO.println (Json.mkObj ([
+    ("requested", toJson requested),
+    ("scope", toJson scope),
+    ("every_ending_matches", toJson everyEndingMatches),
+  ] ++ fields ++ extra)).compress
   return if outcome.isOk then 0 else 1
 
 /-- Convert a typed refusal into the existing verdict fields at the CLI boundary. -/
@@ -91,6 +98,9 @@ private def emitRefusal (requested : String) (refusal : CertificationRefusal)
   let observationFields := refusal.observation.toList.map fun observation => ("observation", observation)
   let details := reasonCodeFields ++ observationFields
   emitVerdict requested (.error (IO.userError refusal.reason).toString) scope details
+
+private def structuralRefusal (refusal : CoreJS.LinkedBehavior.StructuralRefusal) : CertificationRefusal :=
+  { reason := refusal.reason, reasonCode := refusal.reasonCode }
 
 private def profileFields (profile : CoreJS.HostProfile) : List (String × Json) :=
   if profile == .empty then [] else [("hostProfile", toJson profile.label)]
@@ -251,7 +261,13 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
         pure (path.fileName.getD "bundle.mjs", path.parent)
       else pure ("bundle.mjs", none)
     Json.mkObj <$> loadProviders entry (Std.HashMap.ofList [(entry, program)]) root work (allowEntryImport := false)
-  let declaration := if structural then none else declarations.bind fun groups =>
+  -- The opt-in census wrapper must be able to measure linked execution even
+  -- when the ordinary selector would take the closed-declaration fast path.
+  let censusLinked ← do
+    let enabled ← IO.getEnv "SPLIT_PROOF_STRATEGY_CENSUS"
+    let forceLinked ← IO.getEnv "SPLIT_PROOF_CENSUS_FORCE_LINKED"
+    pure (enabled == some "1" && forceLinked == some "1")
+  let declaration := if structural || censusLinked then none else declarations.bind fun groups =>
     CoreJS.DeclarationArtifacts.prepare? program (CoreJS.DeclarationProgram.statements groups) B S P
   if let some prepared := declaration then
     let level := prepared.level
@@ -273,9 +289,11 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
         timePhase timings "structural_certificate" fun _ => do
           let result ← IO.lazyPure fun _ =>
             CoreJS.LinkedBehavior.certifyStructuralASTs profile intrinsics program shared files P none
-          let ⟨used, level, proof, _⟩ ← IO.ofExcept result
-          requireGuarantee request level
-          pure (.ok (used, level, proof))
+          match result with
+          | .error reason => pure (.error (structuralRefusal reason))
+          | .ok ⟨used, level, proof, _⟩ => do
+            requireGuarantee request level
+            pure (.ok (used, level, proof))
       match checked with
       | .ok (used, level, proof) => return ← emitStructural options used level proof
       | .error refusal => return ← emitRefusal request.label refusal "linked-structural"
@@ -292,46 +310,70 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
         let sliceResult ← timePhase timings "compiled_slice" fun _ =>
           IO.lazyPure fun _ => certifySlice profile program providers files P B S
         match sliceResult with
-        | .ok result =>
-          let kind := result.1
+        | .ok (kind, _statement) =>
           if request == .allOutcomes && kind.level != .allOutcomes then
             pure (.error ({
               reason := s!"the compiled {kind.scope} slice proves only normal-completion"
               reasonCode := some "slice_guarantee"
             } : CertificationRefusal))
-          else pure (.ok (some kind, {}))
-        | .error refusal => do
+          else pure (.ok (some kind, {}, "compiled-slice", []))
+        | .error _refusal =>
           if request != .normalCompletion then
             pure (.error ({ reason := "linked execution proves only normal-completion" } : CertificationRefusal))
           else do
-            let prepared : Except CertificationRefusal
-                (CoreJS.LinkedBehavior.Certificate × Lean.NameMap Lean.ImportArtifacts) ←
-              timePhase timings "certificate_preparation" fun _ => do
-              let result ← IO.lazyPure fun _ =>
-                CoreJS.LinkedBehavior.certificate profile program providers files P original candidate
-              match result with
-              | .error refusal =>
-                pure (.error ({
-                  reason := refusal.reason
-                  reasonCode := some refusal.code.label
-                  observation := refusal.observation
-                } : CertificationRefusal))
-              | .ok (cert, terms) =>
-                try
-                  pure (.ok (cert, ← writeCertificateData work terms))
-                catch err =>
-                  pure (.error ({
-                    reason := err.toString
-                    reasonCode := some "proof_preparation"
-                  } : CertificationRefusal))
-            match prepared with
-            | .error refusal => pure (.error refusal)
-            | .ok (cert, dataArts) => do
-              let used ← verifyExecution timings work cert dataArts
-              pure (.ok (none, used))
+            let census ← IO.getEnv "SPLIT_PROOF_STRATEGY_CENSUS"
+            let replayBlockers :=
+              if census == some "1" then
+                CoreJS.LinkedBehavior.replayPremisedBlockerKinds original candidate
+              else []
+            let replayed : Option CoreJS.HostPremises ←
+              timePhase timings "compiled_replay" fun _ => IO.lazyPure fun _ =>
+                match CoreJS.LinkedBehavior.probeWitness profile original candidate with
+                | .error _ => none
+                | .ok (premises, fuel) =>
+                  match CoreJS.LinkedBehavior.replayPremisedPrograms premises fuel original candidate with
+                  | none => none
+                  | some semantics =>
+                    match CoreJS.LinkedBehavior.certifyASTs profile premises program providers files P original candidate semantics.down with
+                    | .error _ => none
+                    | .ok _ => some premises
+            if let some premises := replayed then
+              pure (.ok (none, premises, "compiled-replay-premised", []))
+            else
+              let prepared : Except CertificationRefusal
+                  (CoreJS.LinkedBehavior.Certificate × Lean.NameMap Lean.ImportArtifacts) ←
+                timePhase timings "certificate_preparation" fun _ => do
+                  let result ← IO.lazyPure fun _ =>
+                    CoreJS.LinkedBehavior.certificate profile program providers files P original candidate
+                  match result with
+                  | .error refusal =>
+                    pure (.error ({
+                      reason := refusal.reason
+                      reasonCode := some refusal.code.label
+                      observation := refusal.observation
+                    } : CertificationRefusal))
+                  | .ok (cert, terms) =>
+                    try
+                      pure (.ok (cert, ← writeCertificateData work terms))
+                    catch err =>
+                      pure (.error ({
+                        reason := err.toString
+                        reasonCode := some "proof_preparation"
+                      } : CertificationRefusal))
+              match prepared with
+              | .error refusal => pure (.error refusal)
+              | .ok (cert, dataArts) => do
+                let used ← verifyExecution timings work cert dataArts
+                pure (.ok (none, used, "generated-proof", replayBlockers))
     match checked with
-    | .ok (some kind, _) => return ← emitVerdict request.label (.ok kind.level) kind.scope (profileVerdict profile {})
-    | .ok (none, active) => return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs" (profileVerdict profile active)
+    | .ok (some kind, active, strategy, blockers) => do
+      let blockerFields := if blockers.isEmpty then [] else [("replay_blockers", toJson blockers)]
+      return ← emitVerdict request.label (.ok kind.level) kind.scope
+        (profileVerdict profile active ++ [("strategy", toJson strategy)] ++ blockerFields)
+    | .ok (none, active, strategy, blockers) => do
+      let blockerFields := if blockers.isEmpty then [] else [("replay_blockers", toJson blockers)]
+      return ← emitVerdict request.label (.ok .normalCompletion) "linked-programs"
+        (profileVerdict profile active ++ [("strategy", toJson strategy)] ++ blockerFields)
     | .error refusal => return ← emitRefusal request.label refusal "linked-programs"
   catch e => return ← emitVerdict request.label (.error e.toString) "linked-programs"
 
@@ -382,9 +424,11 @@ private def runDeployment (manifest : DeploymentManifest) (out work : System.Fil
       timePhase timings "structural_certificate" fun _ => do
         let result ← IO.lazyPure fun _ =>
           CoreJS.LinkedBehavior.certifyDeployment manifest.entry actual shared deployment profile intrinsics
-        let ⟨used, level, proof, _⟩ ← IO.ofExcept result
-        requireGuarantee request level
-        pure (.ok (used, level, proof))
+        match result with
+        | .error reason => pure (.error (structuralRefusal reason))
+        | .ok ⟨used, level, proof, _⟩ => do
+          requireGuarantee request level
+          pure (.ok (used, level, proof))
     match checked with
     | .ok (used, level, proof) => emitStructural options used level proof
     | .error refusal => emitRefusal request.label refusal "linked-structural"
