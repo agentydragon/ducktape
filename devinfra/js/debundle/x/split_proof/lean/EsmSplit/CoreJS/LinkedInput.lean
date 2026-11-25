@@ -21,13 +21,18 @@ private def typ (j : Json) := field j "type"
 
 /-- Reparsing can change offsets, literal spellings, and local binder indices. A module
 binding marked `T` can become an import marked `V`. The linker checks its actual cell. -/
-private partial def unitSyntax : Json → Json
+private partial def unitSyntax (j : Json) (taggedQuasi := false) : Json :=
+  match j with
   | .obj fields => Json.mkObj <| fields.toList.filterMap fun (k, v) =>
-    if ["start", "end", "loc", "range", "raw", "b"].contains k then none
+    if ["start", "end", "loc", "range", "b"].contains k || (k == "raw" && !taggedQuasi) then none
     else if k == "k" && (v == .str "T" || v == .str "V") then some (k, .str "T")
-    else some (k, unitSyntax v)
-  | .arr nodes => .arr (nodes.map unitSyntax)
-  | j => j
+    else
+      -- A tag observes segment spellings, including when the enclosing function is opaque.
+      let quasi := (k == "quasi" && fields.get? "type" == some (.str "TaggedTemplateExpression")) ||
+        (taggedQuasi && (k == "quasis" || k == "value"))
+      some (k, unitSyntax v quasi)
+  | .arr nodes => .arr (nodes.map fun node => unitSyntax node taggedQuasi)
+  | _ => j
 
 private structure TemplateSite where
   unit : Nat
@@ -176,13 +181,6 @@ private def readSplit (format : BodyFormat) (profile : HostProfile) (files : Jso
   unless glue = expectedGlue do throw "module's glue imports differ from the plan"
   unless p.exports.Perm (exportsOf m) do throw "module's named exports differ from the plan"
   unless p.units.length == placed.length do throw "emitted body length differs from the placement"
-  let byBinding := Std.HashMap.ofList (original.templates.map fun site => (site.binding, site.quasis))
-  for site in p.templates do
-    -- TemplateElement.value.raw is observable to a tag even when its cooked text agrees.
-    let text := fun (segments : Json) => segments.getArr?.toOption.map fun qs => qs.map fun q =>
-      (q.getObjVal? "value").toOption
-    let some originalText := byBinding[site.binding]? | throw "missing original tagged template site"
-    unless text site.quasis == text originalText do throw s!"emitted tagged template differs from original unit {site.unit}"
   let body ← (p.units.zip placed).mapM fun ((_, actual, ast), (id, expected)) => do
     unless unitSyntax ast == unitSyntax expected do throw s!"emitted syntax differs from original unit {id}"
     return (id, actual)
