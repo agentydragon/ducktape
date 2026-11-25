@@ -14,7 +14,7 @@ use artifact::paths::{join_module_path, path_from_module_path};
 use artifact::reports::{
     ChunkDecompositionOutput, ChunkManifest, ChunkValidationSummary, SelectedModuleLowering,
 };
-use artifact::{ChunkBundle, EmissionFiles, FileRole, JsFile};
+use artifact::{ChunkArtifact, EmissionFiles, FileRole, JsFile};
 use output_layout::CHUNK_REPORT;
 use report_io::write_json;
 
@@ -31,9 +31,8 @@ pub(super) fn materialize_artifact_scripts(
     excluded_chunk_ids: &BTreeSet<ChunkId>,
 ) -> Result<MaterializedScripts> {
     let artifact = files.files();
-    let selected_module_by_chunk_file = selected_module_by_chunk_file(decomposition_by_chunk);
     // Per-chunk materialization is pure data-parallel: each call reads
-    // `artifact`/`decomposition_by_chunk`/`selected_module_by_chunk_file`
+    // `artifact` and `decomposition_by_chunk`
     // immutably, writes only into its own per-chunk output directory
     // (`app_root/<chunk_name>/...`) and its own per-chunk report path
     // under `report_tree_root`. No two chunk ids share a chunk_name (the
@@ -50,20 +49,19 @@ pub(super) fn materialize_artifact_scripts(
     let file_metrics: Vec<OutputFileMetric> = GLOBALS
         .with(|globals| -> Result<Vec<_>> {
             artifact
-                .list_chunk_ids()
-                .into_par_iter()
+                .chunks
+                .par_iter()
                 // Emission-set exclusion: fully vendor-swapped chunks
                 // stay in the bundle but are not emitted.
-                .filter(|chunk_id| !excluded_chunk_ids.contains(chunk_id))
-                .map(|chunk_id| {
+                .filter(|chunk| !excluded_chunk_ids.contains(&chunk.chunk_id))
+                .map(|chunk| {
                     GLOBALS.set(globals, || {
                         materialize_chunk_scripts(
-                            artifact,
+                            chunk,
+                            artifact.chunk_table.name(chunk.chunk_id),
                             app_root,
                             report_tree_root,
-                            &selected_module_by_chunk_file,
-                            decomposition_by_chunk,
-                            chunk_id,
+                            decomposition_by_chunk.get(&chunk.chunk_id),
                         )
                     })
                 })
@@ -80,26 +78,28 @@ pub(super) fn materialize_artifact_scripts(
 }
 
 fn materialize_chunk_scripts(
-    artifact: &ChunkBundle,
+    chunk_artifact: &ChunkArtifact,
+    chunk_name: &str,
     app_root: &Path,
     report_tree_root: &Path,
-    selected_module_by_chunk_file: &HashMap<(String, String), &SelectedModuleLowering>,
-    decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
-    chunk_id: ChunkId,
+    decomposition: Option<&ChunkDecompositionOutput>,
 ) -> Result<Vec<OutputFileMetric>> {
-    let chunk_name = artifact.chunk_table.name(chunk_id).to_string();
-    let chunk_artifact = artifact.chunk(chunk_id)?;
+    let lowerings = decomposition.map_or(&[][..], |d| d.selected_module_lowerings.as_slice());
+    let by_file: HashMap<_, _> = lowerings
+        .iter()
+        .map(|lowering| (lowering.target_file.as_str(), lowering))
+        .collect();
     let chunk = &chunk_artifact.js;
-    let chunk_out_dir = app_root.join(path_from_module_path(&chunk_name));
+    let chunk_out_dir = app_root.join(path_from_module_path(chunk_name));
     fs::create_dir_all(&chunk_out_dir)?;
     let metrics = chunk
         .ordered_files()
         .into_iter()
         .map(|file| {
             materialize_chunk_file(
-                &chunk_name,
+                chunk_name,
                 &chunk_out_dir,
-                selected_module_by_chunk_file,
+                by_file.get(file.path.as_str()).copied(),
                 file,
             )
         })
@@ -107,9 +107,8 @@ fn materialize_chunk_scripts(
     let metrics_output = OutputMetrics::from_file_metrics(
         metrics
             .iter()
-            .map(|metric| chunk_relative_metric(&chunk_name, metric)),
+            .map(|metric| chunk_relative_metric(chunk_name, metric)),
     );
-    let decomposition = decomposition_by_chunk.get(&chunk_id);
     let empty_validation = ChunkValidationSummary {
         linker_order: Vec::new(),
     };
@@ -117,13 +116,12 @@ fn materialize_chunk_scripts(
         analysis: &chunk_artifact.analysis,
         validation: decomposition.map_or(&empty_validation, |d| &d.validation),
         logical_modules: decomposition.map(|d| &d.logical_modules),
-        selected_module_lowerings: decomposition
-            .map_or(&[], |d| d.selected_module_lowerings.as_slice()),
+        selected_module_lowerings: lowerings,
         output_metrics: metrics_output,
     };
     write_json(
         report_tree_root
-            .join(path_from_module_path(&chunk_name))
+            .join(path_from_module_path(chunk_name))
             .join(CHUNK_REPORT),
         &written,
     )?;
@@ -133,7 +131,7 @@ fn materialize_chunk_scripts(
 fn materialize_chunk_file(
     chunk_id: &str,
     chunk_out_dir: &Path,
-    selected_module_by_chunk_file: &HashMap<(String, String), &SelectedModuleLowering>,
+    lowering: Option<&SelectedModuleLowering>,
     file_artifact: &JsFile,
 ) -> Result<OutputFileMetric> {
     let file = file_artifact.path.as_str();
@@ -144,11 +142,9 @@ fn materialize_chunk_file(
         fs::create_dir_all(parent)?;
     }
     let metric = output_file_metric(
-        chunk_id,
         &output_path,
-        file,
         &rendered,
-        selected_module_by_chunk_file,
+        lowering,
         file_artifact.metadata.role,
     );
     fs::write(&target_path, rendered)?;
@@ -167,32 +163,12 @@ fn chunk_relative_metric(chunk_id: &str, metric: &OutputFileMetric) -> OutputFil
     }
 }
 
-fn selected_module_by_chunk_file(
-    decomposition_by_chunk: &HashMap<ChunkId, ChunkDecompositionOutput>,
-) -> HashMap<(String, String), &SelectedModuleLowering> {
-    decomposition_by_chunk
-        .values()
-        .flat_map(|d| d.selected_module_lowerings.iter())
-        .map(|lowering| {
-            (
-                (lowering.chunk_id.clone(), lowering.target_file.clone()),
-                lowering,
-            )
-        })
-        .collect()
-}
-
 fn output_file_metric(
-    chunk_id: &str,
     output_path: &str,
-    artifact_file_path: &str,
     rendered: &str,
-    selected_module_by_chunk_file: &HashMap<(String, String), &SelectedModuleLowering>,
+    lowering: Option<&SelectedModuleLowering>,
     role: FileRole,
 ) -> OutputFileMetric {
-    let lowering = selected_module_by_chunk_file
-        .get(&(chunk_id.to_string(), artifact_file_path.to_string()))
-        .copied();
     let role = if let Some(lowering) = lowering {
         if lowering.residual {
             OutputRole::ResidualModule
