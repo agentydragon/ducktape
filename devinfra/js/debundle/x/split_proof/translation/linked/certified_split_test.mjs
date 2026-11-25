@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -9,10 +10,13 @@ import { dump } from "../parser.mjs";
 const root = process.env.TEST_TMPDIR;
 const input = path.join(root, "input.json");
 const placement = path.join(root, "placement.json");
-function prepare(source, modules, order, entry = "entry.mjs") {
+function prepare(source, modules, order, entry = "entry.mjs", bindings) {
   const ast = dump(source);
   fs.writeFileSync(input, JSON.stringify(ast));
-  fs.writeFileSync(placement, JSON.stringify({ entry, order, sequential: true, modules }));
+  fs.writeFileSync(
+    placement,
+    JSON.stringify({ entry, order, sequential: true, modules, renames: bindings && { bindings } })
+  );
   return ast;
 }
 function requestFile(file, out, requested, ...args) {
@@ -296,3 +300,72 @@ const literalOut = path.join(root, "literal-type");
 check(literalOut, all, "certified");
 fs.writeFileSync(path.join(literalOut, entry), "export const value = 1e999;");
 check(literalOut, all, "rejected", "--check-output");
+
+const renameSource = "const a = 1; let b = !a; var c = b; export const result = c;";
+const renameOwners = { [left]: ["a", "b", "c"], [entry]: ["result"] };
+for (const [name, bindings, declaration, reference] of [
+  ["readable", { a: "ready", b: "pending", c: "outcome" }, "let pending = !ready", "result = outcome"],
+  ["swap", { a: "b", b: "a" }, "let a = !b", "result = c"],
+]) {
+  prepare(renameSource, renameOwners, [left], entry, bindings);
+  const output = path.join(root, "binding-rename-" + name);
+  const verdict = check(output, all, "certified");
+  assert.deepEqual(verdict.assumptions, []);
+  assert(fs.readFileSync(path.join(output, left), "utf8").includes(declaration));
+  const entryPath = path.join(output, entry);
+  const code = fs.readFileSync(entryPath, "utf8");
+  assert(code.includes(reference), code);
+  assert.deepEqual(
+    await observe(pathToFileURL(entryPath)),
+    await observe("data:text/javascript," + encodeURIComponent(renameSource))
+  );
+  check(output, all, "certified", "--check-output");
+  fs.writeFileSync(entryPath, code.replace(reference, "result = 123"));
+  check(output, all, "rejected", "--check-output");
+}
+
+const resolvedSource = "export const result = a; var a = 2;";
+const resolvedInput = path.join(root, "resolved.mjs");
+fs.writeFileSync(resolvedInput, resolvedSource);
+fs.writeFileSync(
+  placement,
+  JSON.stringify({
+    chunk_id: "resolved",
+    source_sha256: createHash("sha256").update(resolvedSource).digest("hex"),
+    import_order: [],
+    units: [
+      { ordinal: 0, owner: null },
+      { ordinal: 1, owner: null },
+    ],
+    renames: { bindings: { a: "readable" } },
+  })
+);
+const resolvedOut = path.join(root, "binding-rename-resolved");
+assert.equal(requestFile(resolvedInput, resolvedOut, all).status, "certified");
+const resolvedFile = path.join(resolvedOut, "resolved.mjs");
+assert(fs.readFileSync(resolvedFile, "utf8").includes("result = readable"));
+assert.deepEqual(await observe(pathToFileURL(resolvedFile)), await observe(pathToFileURL(resolvedInput)));
+assert.equal(requestFile(resolvedInput, resolvedOut, all, "--check-output").status, "certified");
+
+const caught = (name) =>
+  `let result; try { result = ${name}; } catch (e) { result = e.message; } const ${name} = 1; export { result };`;
+assert.notDeepEqual(
+  await observe("data:text/javascript," + encodeURIComponent(caught("a"))),
+  await observe("data:text/javascript," + encodeURIComponent(caught("readable")))
+);
+for (const [name, code, bindings, reason] of [
+  ["collision", renameSource, { a: "b" }, /captures another module binding/],
+  ["public", renameSource, { result: "answer" }, /would change the public name/],
+  ["missing", renameSource, { absent: "readable" }, /unknown module binding/],
+  ["tdz", "const b = a; const a = 1;", { a: "readable" }, /temporal dead zone error/],
+  ["tdz-stack", "const b = c; const a = 1; const c = 2;", { a: "readable" }, /temporal dead zone error/],
+  ["source", "const a = 1; export function read() { return a; }", { a: "readable" }, /closed declaration graph/],
+  ["stack", "const a = 1; export const x = new Error(a).stack;", { a: "readable" }, /closed declaration graph/],
+  ["catch", caught("a"), { a: "readable" }, /closed declaration graph/],
+]) {
+  const n = dump(code).body.length;
+  prepare(code, { [entry]: Array.from({ length: n }, (_, i) => `#${i}`) }, [], entry, bindings);
+  const output = path.join(root, "binding-rename-" + name);
+  assert.match(check(output, all, "rejected").reason, reason);
+  assert(!fs.existsSync(output));
+}

@@ -1,4 +1,5 @@
 import EsmSplit.CoreJS.DeploymentPlacement
+import EsmSplit.CoreJS.Declaration.Input
 import EsmSplit.CoreJS.EntryExports
 import EsmSplit.CoreJS.LinkedDeployment
 import EsmSplit.CoreJS.Eval
@@ -414,6 +415,49 @@ providers, whose stable identities start after that array. -/
 def decodePair (source providers files : Json) (P : EsmSplit.Plan) (profile : HostProfile := .empty) :
     Except String (Program × Program) := decode .linked source providers files P profile
 
+/- In this fragment the original names serve as canonical lexical keys. All
+initializers are primitive expressions and read only initialized cells. No
+reference error can expose a renamed spelling or a changed stack frame. -/
+def checkBindingRenames (source : Json) (plan : EsmSplit.Plan)
+    (renames : List (Name × Name)) : Except String Unit := do
+  let groups ← (DeclarationInput.decode source).mapError fun why =>
+    s!"binding renames require a closed declaration graph: {why}"
+  let units := DeclarationGroup.compileGroups 0 groups
+  unless plan.execOrder == units.map Prod.fst do throw "binding renames require source declaration order"
+  let names := units.flatMap fun (_, stmt) => stmt.bindings.map Prod.fst
+  unless names.Nodup do throw "binding renames require unique declarations"
+  let publicNames := groups.flatMap fun g => g.exports.map Prod.fst
+  for (name, target) in renames do
+    unless names.contains name do throw s!"rename names an unknown module binding {name}"
+    if name != target && publicNames.contains name then throw s!"rename would change the public name {name}"
+  unless (names.map fun name => (renames.lookup name).getD name).Nodup do
+    throw "binding rename captures another module binding"
+  let mut initialized : Std.HashSet Name := {}
+  for (_, stmt) in units do
+    match stmt with
+    | .decl .var name _ | .varDecl name => initialized := initialized.insert name
+    | _ => pure ()
+  for (id, stmt) in units do
+    if let .decl _ name initializer := stmt then
+      for read in initializer.free do
+        unless initialized.contains read do
+          throw s!"unit {id}: a temporal dead zone error for {read} can expose a changed stack or message"
+      initialized := initialized.insert name
+
+private def decodeRenamedPair (source providers files : Json) (plan : EsmSplit.Plan)
+    (profile : HostProfile) (renames : List (Name × Name)) : Except String (Program × Program) := do
+  unless (← providers.getObj?).isEmpty do throw "binding renames require a closed declaration graph"
+  unless (renames.map Prod.fst).Nodup do throw "duplicate binding rename"
+  checkBindingRenames source plan renames
+  let inverse := renames.map Prod.swap
+  let actual ← ESTreeUnits.mapModuleBindings (fun name => do
+    let key := (inverse.lookup name).getD name
+    unless (renames.lookup key).getD key == name do throw s!"expected the requested rename of {key}"
+    return key) files
+  -- Use executable declarations for every unit. The ordinary linked decoder
+  -- checks the canonical ASTs and resolves imports and exports to actual cells.
+  decode .linked source providers actual plan profile
+
 /-- Experimental input for a structural schedule proof. The body of each returned module retains the
 original source ordinals, including when an emitted module has different positions. Providers use
 disjoint ordinals. Selected pivots have their actual CoreJS statements on both sides. Retained statements
@@ -421,8 +465,12 @@ are decoded from their own syntax and carry the same source code ID between layo
 This verifies placement, unchanged unit syntax, import/export links and resolved captures. A proof
 of the order change and correspondence with the emitted source files are separate obligations. -/
 def decodeStructuralPair (source providers files : Json) (P : EsmSplit.Plan) (pivots : List Nat)
-    (profile : HostProfile := .empty) (deployment : Option LinkedDeployment.Input := none) :
+    (profile : HostProfile := .empty) (deployment : Option LinkedDeployment.Input := none)
+    (renames : List (Name × Name) := []) :
     Except String (Program × Program) := do
+  unless renames.isEmpty do
+    unless deployment.isNone do throw "binding renames require a closed declaration graph"
+    return ← decodeRenamedPair source providers files P profile renames
   let location ← deployment.mapM (LinkedDeployment.check · source providers P)
   decode (.structural (Std.HashSet.ofList pivots) (location.getD {}) (if deployment.isSome then providers else .null)) source providers files P profile
 

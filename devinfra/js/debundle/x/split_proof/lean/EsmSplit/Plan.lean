@@ -37,6 +37,8 @@ structure Spec where
   sequential : Bool := false
   /-- Allow entry body units to live behind the public entry when glue would expose private cells. -/
   privateEntryBody : Bool := false
+  /-- Requested local spellings, keyed by the original module binding. -/
+  bindingRenames : List (Name × Name) := []
   deriving Repr
 
 def Selector.claims (B : Bundle) (i : Nat) : Selector → Bool

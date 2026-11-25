@@ -57,6 +57,15 @@ def reportPlanChecks (B : Bundle) (S : Spec) (P : Plan) : IO Bool := do
   let orderOk ← timedCheck "OrderOk" fun _ => decide (OrderOk B P)
   return layout && orderOk
 
+private def parseBindingRenames (j : Json) : Except String (List (Name × Name)) := do
+  let .ok renames := j.getObjVal? "renames" | return []
+  let fields ← renames.getObj?
+  unless fields.toList.all (fun p => p.1 == "bindings") do
+    throw "only module binding renames are supported"
+  let .ok bindings := renames.getObjVal? "bindings" | return []
+  (← bindings.getObj?).toList.mapM fun (name, target) => do
+    return (name, ← target.getStr?)
+
 /-- Read a spec file: `{"entry": "main.mjs", "modules": {"a.mjs": ["name", "#7"], …}, "order": ["a.mjs", …]}`.
 Module order follows the sorted keys of the parsed object; `order` is optional and keeps its order;
 `"sequential": true` makes the modules run in exactly that order (`Spec.sequential`). -/
@@ -81,14 +90,15 @@ def parseSpec (j : Json) : Except String Spec := do
   let privateEntryBody ← match j.getObjVal? "privateEntryBody" with
     | .ok v => v.getBool?
     | .error _ => pure false
-  pure { entry, modules, order, sequential, privateEntryBody }
+  let bindingRenames ← parseBindingRenames j
+  pure { entry, modules, order, sequential, privateEntryBody, bindingRenames }
 
 /-- Read a selector-only ownership export. Its import priority orders requests;
 the untrusted planner and the linked checker decide the actual evaluation order. -/
 def parseResolvedSpec (j : Json) (chunk entry : String) (unitCount : Nat) : Except String Spec := do
   unless (← j.getObjValAs? String "chunk_id") == chunk do throw "resolved placement chunk ID differs"
   -- A caller with a required evaluation order must supply an ordinary sequential spec.
-  unless (← j.getObj?).toList.all (fun e => ["chunk_id", "source_sha256", "import_order", "units"].contains e.1) do
+  unless (← j.getObj?).toList.all (fun e => ["chunk_id", "source_sha256", "import_order", "units", "renames"].contains e.1) do
     throw "unexpected resolved placement field"
   let owners ← j.getObjValAs? (List String) "import_order"
   validateModulePaths owners
@@ -109,7 +119,9 @@ def parseResolvedSpec (j : Json) (chunk entry : String) (unitCount : Nat) : Exce
       pure (owner ++ ".mjs")
     groups := groups.insert dest (.stmt i :: groups.getD dest [])
   unless order.all groups.contains do throw "resolved import priority includes an owner with no units"
-  return { entry, modules := names.map fun name => (name, (groups.getD name []).reverse), order }
+  let modules := names.map fun name => (name, (groups.getD name []).reverse)
+  let bindingRenames ← parseBindingRenames j
+  return { entry, modules, order, bindingRenames }
 
 def loadSpec (path : System.FilePath) : IO Spec := do
   IO.ofExcept (Json.parse (← IO.FS.readFile path) >>= parseSpec)

@@ -333,6 +333,7 @@ private def runDiagnostic (chunk : DeploymentChunk) (out : System.FilePath) (opt
     else pure #[]
   let B := bundleOfFootprints asts fps texts
   let S ← IO.ofExcept (chunk.spec asts.size)
+  unless S.bindingRenames.isEmpty do throw (IO.userError "binding renames require certified splitting")
   let t3 ← reportElapsed "load spec" t2
   IO.println s!"{B.length} statements; footprints computed in Lean; {(fps.filter (·.effect)).size} touch the world; {(fps.filter (·.fallback ≠ [])).size} with fallback nodes"
   let mut bad := false

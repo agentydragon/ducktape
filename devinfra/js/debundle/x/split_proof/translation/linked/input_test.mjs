@@ -274,6 +274,24 @@ for (const [controls, expected] of [
   cases.push({ kind: "structural", input: structural(controls), expected });
 }
 
+for (const [entry, lib, expected] of [
+  ["import { a as readable }", "export { readable as a };", ["entry.mjs", "entry.mjs"]],
+  ["import { a as readable }", "export { readable };", /named exports differ/],
+  ["import { readable }", "export { readable as a };", /glue imports differ/],
+]) {
+  cases.push({
+    kind: "renamed",
+    input: {
+      source: parse("const a = 1; export const result = a;"),
+      files: {
+        "entry.mjs": parse(entry + ' from "./lib.mjs"; export const result = readable;'),
+        "lib.mjs": parse("const readable = 1; " + lib),
+      },
+    },
+    expected,
+  });
+}
+
 // Lean elaborates the test entry once for the whole fixture table.
 const result = spawnSync(process.env.LINKED_INPUT_CHECKER, [], {
   encoding: "utf8",

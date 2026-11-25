@@ -185,6 +185,8 @@ private def prepare (chunk : DeploymentChunk) (input : BundleInput) (work : Syst
       pure (bundleOfFootprints asts fps #[])
     else timePhase timings "layout_scan" fun _ => IO.lazyPure fun _ => linkedLayoutBundle asts units
   let S ← IO.ofExcept (chunk.spec asts.size)
+  unless S.bindingRenames.isEmpty || !retainEntryRoute do
+    throw (IO.userError "binding renames require a closed declaration graph")
   for name in S.entry :: S.modules.map Prod.fst do
     let moduleExtension := name.endsWith ".mjs" ||
       ((profile == .browserPage || (retainEntryRoute && name == sourcePath)) && name.endsWith ".js")
@@ -198,8 +200,10 @@ private def prepare (chunk : DeploymentChunk) (input : BundleInput) (work : Syst
     | some physical => do
       unless ← checkLayout B P (some S) false do throw (IO.userError "invalid logical placement before entry facade")
       pure (physical, ← planSplit B physical timings)
+  unless S.bindingRenames.isEmpty do
+    IO.ofExcept (CoreJS.LinkedInput.checkBindingRenames program P S.bindingRenames)
   let programs ← timePhase timings "output_ast" fun _ =>
-    IO.ofExcept (ESTreeEmit.programs asts B P source sourcePath)
+    IO.ofExcept (ESTreeEmit.programs asts B P source sourcePath S.bindingRenames)
   return { original := program, bundle := B, spec := S, plan := P, output := { programs, source, input, work } }
 
 private def requireGuarantee (request proved : Guarantee) : IO Unit := do
@@ -207,13 +211,13 @@ private def requireGuarantee (request proved : Guarantee) : IO Unit := do
     throw (IO.userError "the certificate proves only normal-completion")
 
 private def emitStructural (options : CertifiedOptions) (used : List CoreJS.StableIntrinsic)
-    (level : Guarantee) (proof : CoreJS.LinkedBehavior.StructuralProof) : IO UInt32 := do
+    (level : Guarantee) (proof : CoreJS.LinkedBehavior.StructuralProof) (retainsOpaque := true) : IO UInt32 := do
   let scope := match proof with
     | .preservedOrder => "linked-structural-order"
     | .singlePivot => "linked-structural-pivot"
     | .multiplePivots => "linked-structural-moves"
   let assumptions :=
-    ["Retained source units use the same capability-closed opaque world in both layouts."] ++
+    (if retainsOpaque then ["Retained source units use the same capability-closed opaque world in both layouts."] else []) ++
     (if options.browserOptions.nativeRecord then [s!"{CoreJS.NativeRecord.preset}: Initializing retained module metadata is unobservable except for a fresh null-prototype object with only native writable, enumerable, configurable url and resolve data properties. Each per-record resolver uses the unchanged module URL and static resolution context."] else []) ++
     (if options.browserOptions.emptyMap then ["empty@1: The browser's import map remains empty and the native module resolver is unchanged. Retained bare imports reject their promises on resolution failure, with ordinary browser promise scheduling and rejection reporting."] else []) ++
     used.map (·.assumption) ++
@@ -236,12 +240,12 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
   let request := options.request
   let profile := options.profile
   let intrinsics := options.intrinsics
-  let structural := options.structural
   let checkOnly := options.checkOnly
   let src ← readBundle chunk.source work true timings (← IO.ofExcept chunk.sourceHash)
   let declarations := (CoreJS.DeclarationInput.decode src.program).toOption
   let part ← prepare chunk src work profile "bundle.mjs" timings declarations
   let { original := program, bundle := B, spec := S, plan := P, output } := part
+  let structural := options.structural || !S.bindingRenames.isEmpty
   let verify {α : Type} (providers : Json) (check : Json → IO (Except CertificationRefusal α)) :=
     certifyOutput [output] providers out work checkOnly timings check
   let providers := fun _ => timePhase timings "provider_loading" fun _ => do
@@ -271,12 +275,12 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
       let checked ← verify shared fun files => do
         timePhase timings "structural_certificate" fun _ => do
           let result ← IO.lazyPure fun _ =>
-            CoreJS.LinkedBehavior.certifyStructuralASTs profile intrinsics program shared files P none
+            CoreJS.LinkedBehavior.certifyStructuralASTs profile intrinsics program shared files P none S.bindingRenames
           let ⟨used, level, proof, _⟩ ← IO.ofExcept result
           requireGuarantee request level
           pure (.ok (used, level, proof))
       match checked with
-      | .ok (used, level, proof) => return ← emitStructural options used level proof
+      | .ok (used, level, proof) => return ← emitStructural options used level proof S.bindingRenames.isEmpty
       | .error refusal => return ← emitRefusal request.label refusal "linked-structural"
     catch e => return ← emitVerdict request.label (.error e.toString) "linked-structural"
   try

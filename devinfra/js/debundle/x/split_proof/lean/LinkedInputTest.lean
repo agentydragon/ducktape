@@ -69,6 +69,14 @@ private def structural (input : Json) : Except String Json := do
     | _ => throw "unexpected structural statement"
   return toJson [← inspect pair.1, ← inspect pair.2]
 
+private def renamed (input : Json) : Except String Json := do
+  let plan : EsmSplit.Plan := { entry := "entry.mjs", mods := [
+    ⟨"entry.mjs", [1], [("lib.mjs", ["a"])], []⟩,
+    ⟨"lib.mjs", [0], [], [("a", "a")]⟩] }
+  let pair ← CoreJS.LinkedInput.decodeStructuralPair (← input.getObjVal? "source") (Json.mkObj [])
+    (← input.getObjVal? "files") plan [] (renames := [("a", "readable")])
+  return toJson [pair.1.entry, pair.2.entry]
+
 private def constructorContexts (source : Json) : Except String Json := do
   let #[cls] ← ESTreeUnits.nodes source | throw "expected one class"
   let #[method] ← (← cls.getObjVal? "body").getObjValAs? (Array Json) "body" | throw "expected one constructor"
@@ -102,6 +110,7 @@ private def fixtures (input : Json) : Except String Json := do
       | "location" => pure (location (← fixture.getObjVal? "input"))
       | "linked" => pure (check (← fixture.getObjVal? "input"))
       | "structural" => pure (structural (← fixture.getObjVal? "input"))
+      | "renamed" => pure (renamed (← fixture.getObjVal? "input"))
       | "constructorContexts" => pure (constructorContexts (← fixture.getObjVal? "input"))
       | "opaque" => pure (opaqueUnits (← fixture.getObjVal? "input"))
       | kind => throw s!"unknown test case {kind}"

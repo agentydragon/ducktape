@@ -124,6 +124,15 @@ the linked execution from `entry`. Each selected owner gets a distinct `.mjs`
 route. A fixture can supply `spec` in place of `placement` to use a handcrafted
 positional or binding-name plan.
 
+For a single chunk containing only supported identifier declarations, add
+`"renames":{"bindings":{"a":"subtotal"}}` to its spec or resolved
+placement. Placement selectors still use `a`. The checker requires the
+original declaration order and refuses changes to public export names. It
+checks that initializer reads can only see initialized bindings and that the
+reparsed files link them to the original cells. Generated imports can use
+`import { a as subtotal }` across the new module boundary. `--check-output`
+checks the same spec against the files on disk.
+
 The untrusted planner derives module requests from the bindings each owner needs. Capturing a
 binding can require an import without reading its value at initialization. The authored priority
 orders requests. ES module evaluation visits dependencies before finishing the importing module

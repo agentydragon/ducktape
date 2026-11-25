@@ -1,5 +1,6 @@
 import Lean.Data.Json
 import EsmSplit.Lower
+import EsmSplit.ESTreeUnits
 import EsmSplit.ModulePath
 import EsmSplit.Plan
 
@@ -31,19 +32,20 @@ private def request (decl : Json) (fromFile file : String) : Except String Json 
   if target == original then return decl
   setField decl "source" (literal target)
 
-private def glueImports (exportsByModule : Std.HashMap ModName (List (Name × Name))) (m : Module) :=
+private def glueImports (exportsByModule : Std.HashMap ModName (List (Name × Name)))
+    (rename : Name → Name) (m : Module) :=
   m.imports.map fun (src, names) =>
     let exports := exportsByModule.getD src []
     let specs := names.map fun localName =>
       let publicName := exportNameFor exports localName
-      node "ImportSpecifier" [("local", identifier localName), ("imported", moduleName publicName)]
+      node "ImportSpecifier" [("local", identifier (rename localName)), ("imported", moduleName publicName)]
     node "ImportDeclaration" [("source", literal (relativeUrlSpecifier m.name src)), ("specifiers", toJson specs),
       ("attributes", .arr #[])]
 
-private def glueExports (m : Module) : List Json :=
+private def glueExports (rename : Name → Name) (m : Module) : List Json :=
   if m.exports.isEmpty then [] else
     let specs := m.exports.map fun (published, localName) =>
-      node "ExportSpecifier" [("local", identifier localName), ("exported", moduleName published)]
+      node "ExportSpecifier" [("local", identifier (rename localName)), ("exported", moduleName published)]
     [node "ExportNamedDeclaration" [("declaration", .null), ("source", .null), ("specifiers", toJson specs),
       ("attributes", .arr #[])]]
 
@@ -53,7 +55,9 @@ private def isRequest (s : Json) : Bool :=
 
 private def moduleProgram (asts : Array Json) (imports : List (Nat × Json)) (B : Bundle) (P : Plan)
     (exportsByModule : Std.HashMap ModName (List (Name × Name)))
-    (m : Module) (hashbang : List (String × Json)) (fromFile : String) : Except String Json := do
+    (m : Module) (hashbang : List (String × Json)) (fromFile : String)
+    (renames : List (Name × Name)) : Except String Json := do
+  let rename := fun name => (renames.lookup name).getD name
   let held := Std.HashSet.ofList m.stmts
   let elsewhere := imports.filter fun (i, _) => !held.contains i
   let mut duplicated := #[]
@@ -66,18 +70,18 @@ private def moduleProgram (asts : Array Json) (imports : List (Nat × Json)) (B 
         duplicated := duplicated.push (← request (← setField decl "specifiers" (.arr used)) fromFile m.name)
   let statements ← m.stmts.mapM fun i => do
     let some statement := asts[i]? | throw s!"statement {i} is missing from the input AST"
-    return statement
+    if renames.isEmpty then pure statement else ESTreeUnits.mapModuleBindings (pure ∘ rename) statement
   -- Keep original directive strings in the prologue even when the plan adds imports.
   let (directives, rest) := statements.partition fun s =>
     Lower.typ s == "ExpressionStatement" && (s.getObjValAs? String "directive").isOk
   let (requests, body) := rest.partition isRequest
   let requests ← requests.mapM (request · fromFile m.name)
-  let output := directives ++ requests ++ duplicated.toList ++ glueImports exportsByModule m ++ body ++ glueExports m
+  let output := directives ++ requests ++ duplicated.toList ++ glueImports exportsByModule rename m ++ body ++ glueExports rename m
   return node "Program" ([("sourceType", .str "module"), ("body", toJson output)] ++
     (if m.name == P.entry then hashbang else []))
 
 def programs (asts : Array Json) (B : Bundle) (P : Plan) (source : String)
-    (fromFile : String := "bundle.mjs") : Except String Json := do
+    (fromFile : String := "bundle.mjs") (renames : List (Name × Name) := []) : Except String Json := do
   let imports := asts.toList.zipIdx.filterMap fun (s, i) =>
     if Lower.typ s == "ImportDeclaration" then some (i, s) else none
   let hashbang := if source.startsWith "#!" then
@@ -88,6 +92,6 @@ def programs (asts : Array Json) (B : Bundle) (P : Plan) (source : String)
   let exportsByModule : Std.HashMap ModName (List (Name × Name)) :=
     P.mods.foldr (fun m exports => exports.insert m.name (m.namedExportsFrom arr)) ∅
   return Json.mkObj (← P.mods.mapM fun m => do
-    return (m.name, ← moduleProgram asts imports B P exportsByModule m hashbang fromFile))
+    return (m.name, ← moduleProgram asts imports B P exportsByModule m hashbang fromFile renames))
 
 end EsmSplit.ESTreeEmit

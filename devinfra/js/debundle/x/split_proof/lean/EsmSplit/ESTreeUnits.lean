@@ -42,4 +42,20 @@ def checkedNodes (program : Json) (source : String) : Except String (Array Json)
       for d in ds do offsets.validate d
   return units
 
+/-- Map module lexical occurrences in a checked declaration graph. Acorn can
+share an identifier between the two sides of a shorthand import or export. -/
+partial def mapModuleBindings (rename : String → Except String String) : Json → Except String Json
+  | .obj fields => do
+    let kind := fields.get? "type"
+    if kind == some (.str "Identifier") &&
+        (fields.get? "k" == some (.str "T") || fields.get? "k" == some (.str "V")) then
+      let name ← (Json.obj fields).getObjValAs? String "name"
+      return .obj (fields.insert "name" (.str (← rename name)))
+    return Json.mkObj (← fields.toList.mapM fun (key, value) => do
+      let label := (kind == some (.str "ImportSpecifier") && key == "imported") ||
+        (kind == some (.str "ExportSpecifier") && key == "exported")
+      if label then pure (key, value) else return (key, ← mapModuleBindings rename value))
+  | .arr values => return .arr (← values.mapM (mapModuleBindings rename))
+  | value => pure value
+
 end ESTreeUnits
