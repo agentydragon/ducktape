@@ -452,6 +452,10 @@ def regexpGetters : List (String × RegExpGetter) := [
 
 def arrayIteratorProto : Addr := ⟨0, regexpProto.index + 1 + regexpGetters.length⟩
 
+/-- The first constructor and its prototype have distinct realm identities. -/
+def errorProto : Addr := ⟨0, arrayIteratorProto.index + 1⟩
+def errorConstructor : Addr := ⟨0, errorProto.index + 1⟩
+
 def arrayIteratorPrototype : Obj :=
   { proto := some iteratorProto, props := hostMembers "ArrayIterator.prototype" ["next"] ++ [stringTag "Array Iterator"] }
 
@@ -470,6 +474,23 @@ private def regexpGetterObject (name : String) (getter : RegExpGetter) : Obj :=
 def regexpObject (data : RegExpData) : Obj :=
   { proto := some regexpProto, regexp := some data, props := [("lastIndex", .data (.num 0) true false false)] }
 
+/-- The standard own properties of %Error.prototype%. `toString` is still opaque.
+The host must supply any additional properties of its actual realm. -/
+def errorPrototype : Obj :=
+  { proto := some objectProto, props := [
+    ("constructor", .data (.obj errorConstructor) true false true),
+    ("name", .data (.str "Error") true false true),
+    ("message", .data (.str "") true false true),
+    ("toString", .data (.host "Error.prototype.toString") true false true)] }
+
+/-- Until Error construction is modeled, a call or construct ends in unknown.
+The host must supply any nonstandard own properties before exposing this object. -/
+def errorConstructorObject : Obj :=
+  { proto := some functionProto, code := some (.host "%Error%"), props := [
+    ("length", .data (.num 1) false false true),
+    ("name", .data (.str "Error") false false true),
+    ("prototype", .data (.obj errorProto) false false false)] }
+
 /-- The intrinsic prototypes, with every member a value of the host. `Function.prototype` is itself callable. -/
 def builtins : Array Obj := #[
   { proto := none, props := hostMembers "Object.prototype" objectProtoNames ++ [hostAccessor "Object.prototype" "__proto__"] },
@@ -482,7 +503,7 @@ def builtins : Array Obj := #[
     props := ("length", .data (.num 0) true false false) ::
       (hostMembers "Array.prototype" arrayProtoNames ++ [hostIterator "Array.prototype.values"]) },
   asyncFunctionPrototype, iteratorPrototype, generatorPrototype, generatorFunctionPrototype,
-  asyncIteratorPrototype, asyncGeneratorPrototype, asyncGeneratorFunctionPrototype, regexpPrototype] ++ (regexpGetters.map fun (k, g) => regexpGetterObject k g).toArray ++ #[arrayIteratorPrototype]
+  asyncIteratorPrototype, asyncGeneratorPrototype, asyncGeneratorFunctionPrototype, regexpPrototype] ++ (regexpGetters.map fun (k, g) => regexpGetterObject k g).toArray ++ #[arrayIteratorPrototype, errorPrototype, errorConstructorObject]
 
 /-! ## The host functions the world answers for -/
 

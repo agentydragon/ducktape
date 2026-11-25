@@ -465,6 +465,15 @@ lean_library(
     deps = [":estree"],
 )
 
+lean_binary(
+    name = "error_realm_test_runner",
+    testonly = True,
+    srcs = ["ErrorRealmTest.lean"],
+    entry = "ErrorRealmTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
+    deps = [":corejs_runtime"],
+)
+
 # The CoreJS model. `model/differential.mjs` runs it against Node.
 lean_binary(
     name = "corejs",
