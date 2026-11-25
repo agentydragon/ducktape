@@ -429,9 +429,9 @@ def freeSuperArgs : Option (List Expr) → List Name
 The prefix, super arguments and remaining body share the constructor's scope. -/
 def derivedCtorFree : Option (List Stmt × Option (List Expr) × Func) → List Name
   | some (before, args, .mk _ _ _ params body) | some (before, args, .withDefaults _ _ _ params _ body) =>
-    freeFunctionNames (derivedReceiverName :: newTargetName :: params) (before ++ body) (freeStmts before ++ freeSuperArgs args ++ freeStmts body)
+    freeFunctionNames ("arguments" :: derivedReceiverName :: newTargetName :: params) (before ++ body) (freeStmts before ++ freeSuperArgs args ++ freeStmts body)
   | some (before, args, .withRest _ _ _ fixed rest body) =>
-    freeFunctionNames (derivedReceiverName :: newTargetName :: fixed ++ [rest]) (before ++ body)
+    freeFunctionNames ("arguments" :: derivedReceiverName :: newTargetName :: fixed ++ [rest]) (before ++ body)
       (freeStmts before ++ freeSuperArgs args ++ freeStmts body)
   | some (before, args, .opaque ..) => freeFunctionNames [] before (freeStmts before ++ freeSuperArgs args)
   | none => []
@@ -441,10 +441,10 @@ def Func.free : Func → List Name
   | .opaque name _ self _ _ _ free _ => free.filter fun x => !(self && x == name)
   | .mk name kind self params body | .withDefaults name kind self params _ body =>
     freeFunctionNames (if self then name :: params else params) body
-      ((freeStmts body).filter fun x => kind == .arrow || x != newTargetName)
+      ((freeStmts body).filter fun x => kind == .arrow || (x != newTargetName && x != "arguments"))
   | .withRest name kind self fixed rest body =>
     freeFunctionNames ((if self then name :: fixed else fixed) ++ [rest]) body
-      ((freeStmts body).filter fun x => kind == .arrow || x != newTargetName)
+      ((freeStmts body).filter fun x => kind == .arrow || (x != newTargetName && x != "arguments"))
 
 def BindingPattern.free : BindingPattern → List Name
   | .name x => [x]

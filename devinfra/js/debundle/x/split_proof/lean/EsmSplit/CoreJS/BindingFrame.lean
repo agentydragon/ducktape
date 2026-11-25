@@ -427,7 +427,7 @@ private theorem strictArguments_nodes {A : HeapNode → Prop} (root : A (.obj ob
     exact root
   · rcases hmem with ⟨item, _, rfl⟩ | extras
     · exact h item.1 (List.fst_mem_of_mem_zipIdx (by assumption)) node hnode
-    · simp only [List.mem_cons, List.mem_singleton] at extras
+    · simp only [List.mem_cons, List.mem_nil_iff, or_false] at extras
       rcases extras with rfl | rfl | rfl <;> cases hnode
 
 theorem reachFrame_enterFunction {r R cells A} (away : Away r R A)
