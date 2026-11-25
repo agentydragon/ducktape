@@ -92,9 +92,10 @@ private theorem evalMembers_instance_preserves_ctor (n : Nat) (env : Env) (proto
         have hs2 := (inert_lift _).ok hn
         subst s2
         obtain ⟨value, s3, hf, h3⟩ := bind_ok h2
-        have hfunc := makeFunc_keeps { env with home := some proto } f (Extends.refl s)
         simp only [Bool.false_eq_true, ite_false] at hf
-        rw [hf] at hfunc
+        have hfunc : (Res.ok value s3).Keeps s := by
+          rw [← hf]
+          exact makeClassMethod_keeps _ _ _ _ _ (Extends.refl s)
         obtain ⟨_, s4, hd, h4⟩ := bind_ok h3
         have hother := defineOwn_preserves_other hne hd
         obtain ⟨field, s5, hnone, h5⟩ := bind_ok h4
