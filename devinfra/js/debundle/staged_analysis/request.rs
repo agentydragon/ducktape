@@ -1,6 +1,6 @@
 //! Source/projection application service with explicit, resolved inputs.
 
-use super::{AnalysisSpec, AnalyzeProgramInputs};
+use super::AnalysisSpec;
 use anyhow::{Context, Result};
 use artifact::load_js_chunks;
 use graph_provenance::{InputCapture, ProvenanceRoots};
@@ -92,17 +92,20 @@ pub fn analyze_from_projection(
         },
     )?;
     let provenance = capture.finish_inputs()?;
-    let bytes = super::analyze_program(
+    let (body, ordinals) = super::analyze_program(
         source.into_artifact(),
-        AnalyzeProgramInputs {
-            diagnostics,
-            spec: &spec,
-            embedded_loaders: &embedded_loaders,
-            vendor_plan: &vendor_plan,
-            graph_provenance: &provenance,
-            analysis_engine_sha256,
-        },
+        &spec,
+        &embedded_loaders,
+        &vendor_plan,
+        &provenance,
+        diagnostics,
     )?;
+    let header = super::analysis_artifact::AnalysisArtifactHeader {
+        analysis_engine_sha256: analysis_engine_sha256.to_owned(),
+        projection: projection_bytes,
+        chunk_sources: super::chunk_source_digests(&provenance),
+    };
+    let bytes = super::analysis_artifact::write_artifact(&header, &body, &ordinals)?;
     fs::write(&args.out, bytes)
         .with_context(|| format!("write analysis artifact {}", args.out.display()))
 }
