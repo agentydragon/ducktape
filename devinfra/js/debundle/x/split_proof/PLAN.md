@@ -211,17 +211,18 @@ The code reaches the [target](#target) through the steps below. Until they land,
 | Linked `FromESTree` rules (`linkedUnit`, `linkedDeclaration`) through [`LinkedInput.lean`](lean/EsmSplit/CoreJS/LinkedInput.lean) | Linked certificates, structural pivot units, `corejs --ast` (`LinkedInput.program`)                                                                                                   |
 | [`OpaqueInput.lean`](lean/EsmSplit/CoreJS/OpaqueInput.lean)                                                                       | Structural units kept opaque                                                                                                                                                          |
 
-The broad Node comparison runs through `to_core.mjs`. [`corejs_ast_lowering_test.mjs`](translation/corejs_ast_lowering_test.mjs) runs the linked rules through `corejs --ast` and compares them with `to_core.mjs` and Node on generated declaration lists. `to_core.mjs` also decides which assignment targets are imports and which names are host globals ([debts](#debts)).
+The broad Node comparison runs through `to_core.mjs`. On 2026-11-25 none of its 222 hand-written and generated programs lowered through the linked rules: 171 print with `console`, 23 call host functions (`Math`, `String`, `Object`, `Symbol`), 14 use a top-level block, `while` or `switch`, 5 use default imports, and 7 hit other gaps (computed class keys, undeclared globals, `Symbol.iterator`, assignment to an import). The 42 opaque cases need whole opaque statements run by a scripted world, which only `to_core.mjs` produces. [`corejs_ast_lowering_test.mjs`](translation/corejs_ast_lowering_test.mjs) runs the linked rules through `corejs --ast` and compares them with `to_core.mjs` and Node on generated declaration lists. `to_core.mjs` also decides which assignment targets are imports and which names are host globals ([debts](#debts)).
 
 **Target.** `LinkedInput` with the linked `FromESTree` rules is the only lowering. Keeping a unit opaque is one of its results, chosen per unit, with captures checked the same way in both graphs.
 
 **How.**
 
-1. Run every Node comparison suite through `corejs --ast`: hand-written, module and opaque cases, generated programs, the binding and inheritance suites and the sweep. A model mismatch then reproduces on one program. An unsupported program is a reported refusal, never a fallback to `to_core.mjs`.
-2. List the programs only `to_core.mjs` accepts. Port each feature to the linked rules, or record it as refused.
-3. Before moving opaque fallback, check which cells a deferred body captures, its part number, and the handling of direct `eval`, module identity and top-level `await`. Replay Excalidraw on the AST alone.
-4. Merge `OpaqueInput` into the same entry point.
-5. Delete `to_core.mjs`, the program decoder in `Decode.lean` (the world-recording decoders stay), `--corejs` and the basic `FromESTree` rules.
+1. Add a test-only host profile to the linked rules. Under it, `console.log` and the `Object` primitives become CoreJS primitives, the recorded host functions become `host` references, and an undeclared name reads an unbound variable. Certification profiles keep refusing these names.
+2. Port the remaining syntax to the linked rules, one feature per change with a certification test, because each one widens what certification accepts: top-level blocks, loops and `switch`; default imports; computed class keys; `Symbol.iterator`; assignment to an import.
+3. Make keeping a unit opaque a per-unit result of `LinkedInput`, with the structural capture checks, so the opaque cases run with their scripted worlds. Before moving opaque fallback, check which cells a deferred body captures, its part number, and the handling of direct `eval`, module identity and top-level `await`. Replay Excalidraw on the AST alone.
+4. Run every Node comparison suite through `corejs --ast` under the test profile: hand-written, module and opaque cases, generated programs, the binding and inheritance suites and the sweep. A model mismatch then reproduces on one program. An unsupported program is a reported refusal, never a fallback to `to_core.mjs`.
+5. Merge `OpaqueInput` into the same entry point.
+6. Delete `to_core.mjs`, the program decoder in `Decode.lean` (the world-recording decoders stay), `--corejs` and the basic `FromESTree` rules.
 
 **Done when.** One Lean function lowers an annotated ESTree module graph to CoreJS, CI runs the Node comparison suites through it, and nothing imports `to_core.mjs`.
 
@@ -279,16 +280,19 @@ The linked statement implies `NormalEquivalent` over the worlds that satisfy its
 
 ### No unchecked output
 
-**Now.** `lowersplit --diagnostic` writes uncertified previews. The Node comparison suites send split plans through diagnostic mode ([`model/README.md`](model/README.md)).
+**Now.** `lowersplit --diagnostic` writes uncertified previews. It also reports the model slices: order kept (`valid_order_kept_preserves`), moves (`moves_preserve`), certified bindings (`moves_preserve_of_certifiedMovesOk`) and class heritage. These theorems hold for every accepted program, but they compare the model's `Program.single ss` with `splitProgram ss B P`, and nothing relates those programs to the emitted files. 24 files call diagnostic mode, among them the Node comparison suites, other tests, the integration scripts and the example `Instance.lean` generator (`--lean`).
 
-**Target.** Diagnostic mode reports plans, refusals and footprints and writes no module files.
+**Target.** `lowersplit` has no diagnostic mode. The slice theorems are strategies of the certified checker.
 
 **How.**
 
-1. Move the split checks of the Node comparison suites to the certified path. A plan it refuses is counted as a refusal; its program still runs unsplit through the model.
-2. Remove module output from `--diagnostic`. Plan reports, `--lean` and `--move-report` stay.
+1. Bridge the slices to decoded programs. Either state the slice theorems for named modules with exports, or prove that the module name and exports of a single module do not change a run. Then check that the decoded source is the single program of `ss` and the decoded emitted files are `splitProgram ss B P`, with `ss` from the linked lowering.
+2. Add the slice checks to the certified checker as strategies, ahead of the per-split linked proof. The order-kept slice gives every ending and replaces the closed-declaration path's `all-outcomes`.
+3. Move the split checks of the Node comparison suites and the other diagnostic tests to the certified path. A refused plan is counted as a refusal; its program still runs unsplit through the model.
+4. Move `--lean` example generation to its own generator and the integration scripts to the certified command.
+5. Delete `--diagnostic`.
 
-**Done when.** `--diagnostic` takes no output directory.
+**Done when.** `lowersplit --diagnostic` no longer exists.
 
 ### Renames inside the checked split
 
