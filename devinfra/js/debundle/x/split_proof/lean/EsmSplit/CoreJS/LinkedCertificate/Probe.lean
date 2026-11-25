@@ -185,7 +185,7 @@ private def witnessFuel (profile : HostPremises) (source candidate : Program) : 
 
 /-- Collect host observations from both concrete executions to select the theorem's hypotheses. -/
 private def observePremises (profile : HostProfile) (source candidate : Program) : HostPremises := Id.run do
-  if profile == .empty then return {}
+  if profile.isEmpty then return {}
   let world := HostPremises.observations profile
   let limit := max (recordFuelLimit source) (recordFuelLimit candidate)
   let observed := fun (program : Program) =>

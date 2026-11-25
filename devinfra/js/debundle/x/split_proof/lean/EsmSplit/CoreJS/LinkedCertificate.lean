@@ -131,11 +131,7 @@ private def certificateText (profile : HostProfile) (sourceAST providers files :
   -- the quoted terms when deciding whether to run correspondence separately.
   let stagedGate := astData.foldl (fun bytes (_, term) => bytes + expandedBytes term) 0 ≥ 512 * 1024
   let writeImports := if writes.isEmpty then "" else "import EsmSplit.Fast\n"
-  let profileTerm := fun (p : HostProfile) => match p with
-    | .empty => "CoreJS.HostProfile.empty"
-    | .browserPage => "CoreJS.HostProfile.browserPage"
-    | .ecmascript => "CoreJS.HostProfile.ecmascript"
-    | .nodeRecording => "CoreJS.HostProfile.nodeRecording"
+  let profileTerm := fun (p : HostProfile) => reprStr p
   let ordinaryTactic := s!"verify_linked_programs {fuel}{strategy}"
   -- This only selects the proof attempt. The theorem checks the complete units,
   -- free-name cells, hoisted state and entry exports from the actual links.

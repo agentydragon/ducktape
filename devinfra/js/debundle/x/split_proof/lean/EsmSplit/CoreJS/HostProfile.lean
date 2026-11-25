@@ -4,97 +4,214 @@ import Lean.Data.Json
 
 namespace CoreJS
 
-inductive HostProfile where
-  | empty | browserPage | ecmascript
-  /-- Test-only: the host the Node comparison harness records. `read` never returns it, so
-  certification cannot select it. -/
-  | nodeRecording
+/-! A host contract is data assembled from layers. The built-in layers below keep the
+existing observations while the semantic rules migrate to the shared ECMAScript layer. -/
+
+inductive HostCapability where
+  | ambientSymbols
+  | pageEnvironment
+  | arrayFromTemplate
+  | recordedStringConversion
+  | scriptedRecording
+  | undeclaredOutsideCatalog
+  deriving DecidableEq, Repr
+
+structure HostGlobalEntry where
+  name : String
+  typeTag : Option String := none
+  identity : Option String := none
+  opaqueRef : Bool := false
+  recordedValue : Bool := false
+  deriving DecidableEq, Repr
+
+structure HostMemberEntry where
+  owner : String
+  key : String
+  identity : Option String := none
+  primitive : Option Prim := none
+  deriving DecidableEq, Repr
+
+structure HostLayer where
+  name : String
+  globals : List HostGlobalEntry := []
+  members : List HostMemberEntry := []
+  opaqueConstructors : List String := []
+  capabilities : List HostCapability := []
+  deriving DecidableEq, Repr
+
+structure HostProfile where
+  name : String
+  layers : List HostLayer := []
   deriving DecidableEq, Repr
 
 namespace HostProfile
 
-def label : HostProfile → String
-  | .empty => "empty"
-  | .browserPage => "browser-page"
-  | .ecmascript => "ecmascript"
-  | .nodeRecording => "node-recording"
+def label (p : HostProfile) : String := p.name
+
+def hasCapability (p : HostProfile) (capability : HostCapability) : Bool :=
+  p.layers.any fun layer => layer.capabilities.contains capability
+
+private def mergeField {α : Type} [BEq α] (left right : Option α) : Option (Option α) :=
+  match left, right with
+  | some a, some b => if a == b then some (some a) else none
+  | some a, none | none, some a => some (some a)
+  | none, none => some none
+
+private def mergeGlobal (left right : HostGlobalEntry) : Option HostGlobalEntry := do
+  guard (left.name == right.name)
+  if left.opaqueRef && right.typeTag.isSome && right.typeTag != some "undefined" then none else
+  if right.opaqueRef && left.typeTag.isSome && left.typeTag != some "undefined" then none else
+  let typeTag ← mergeField left.typeTag right.typeTag
+  let identity ← mergeField left.identity right.identity
+  pure ⟨left.name, typeTag, identity, left.opaqueRef || right.opaqueRef,
+    left.recordedValue || right.recordedValue⟩
+
+private def mergeMember (left right : HostMemberEntry) : Option HostMemberEntry := do
+  guard (left.owner == right.owner && left.key == right.key)
+  let identity ← mergeField left.identity right.identity
+  let primitive ← mergeField left.primitive right.primitive
+  pure ⟨left.owner, left.key, identity, primitive⟩
+
+def globalEntry? (p : HostProfile) (name : String) : Option HostGlobalEntry := Id.run do
+  let mut found : Option HostGlobalEntry := none
+  for entry in p.layers.flatMap (·.globals) do
+    if entry.name == name then
+      found := match found with
+        | none => some entry
+        | some prior => mergeGlobal prior entry
+      if found.isNone then return none
+  return found
+
+def memberEntry? (p : HostProfile) (owner key : String) : Option HostMemberEntry := Id.run do
+  let mut found : Option HostMemberEntry := none
+  for entry in p.layers.flatMap (·.members) do
+    if entry.owner == owner && entry.key == key then
+      found := match found with
+        | none => some entry
+        | some prior => mergeMember prior entry
+      if found.isNone then return none
+  return found
+
+def valid (p : HostProfile) : Bool := Id.run do
+  for (entry, i) in (p.layers.flatMap (·.globals)).zipIdx do
+    if (p.layers.flatMap (·.globals)).drop (i + 1) |>.any fun next =>
+        next.name == entry.name && (mergeGlobal entry next).isNone then
+      return false
+  for (entry, i) in (p.layers.flatMap (·.members)).zipIdx do
+    if (p.layers.flatMap (·.members)).drop (i + 1) |>.any fun next =>
+        next.owner == entry.owner && next.key == entry.key && (mergeMember entry next).isNone then
+      return false
+  return true
+
+private def catalogGlobals : List HostGlobalEntry :=
+  (BrowserGlobals.functions.map fun name => ⟨name, some "function", none, false, false⟩) ++
+  (BrowserGlobals.objects.map fun name => ⟨name, some "object", none, false, false⟩) ++
+  (BrowserGlobals.opaqueBindings.map fun name => ⟨name, none, none, true, false⟩) ++
+  (BrowserGlobals.shims.map fun name => ⟨name, some "undefined", none, true, false⟩)
+
+private def browserMembers : List HostMemberEntry :=
+  BrowserGlobals.methods.flatMap fun (owner, keys) => keys.map fun key =>
+    ⟨owner, key,
+      some (if owner == "Array" && key == "from" then "intrinsic.Array.from"
+        else "window." ++ owner ++ "." ++ key), none⟩
+
+private def ecmascriptLayer : HostLayer :=
+  { name := "ecmascript", globals := [⟨"Object", none, some "intrinsic.Object", false, false⟩] }
+
+private def hostCatalogLayer : HostLayer :=
+  { name := "host-catalog", globals := catalogGlobals }
+
+private def browserPageLayer : HostLayer :=
+  { name := "browser-page", globals :=
+      [⟨"window", some "object", some "window", false, false⟩,
+       ⟨"globalThis", some "object", some "window", false, false⟩,
+       ⟨"self", some "object", some "window", false, false⟩],
+    members := browserMembers,
+    opaqueConstructors := ["Date", "Error", "RegExp", "Set", "URL"],
+    capabilities := [.pageEnvironment, .arrayFromTemplate] }
+
+private def nodeRecordingLayer : HostLayer :=
+  { name := "recorded-node",
+    globals := (catalogGlobals.filter fun entry =>
+      entry.typeTag == some "function" || entry.typeTag == some "object").map fun entry =>
+        { entry with recordedValue := true },
+    members := [
+      ⟨"console", "log", none, some .log⟩,
+      ⟨"Object", "defineProperty", none, some .defineProperty⟩,
+      ⟨"Object", "create", none, some .create⟩,
+      ⟨"Object", "getPrototypeOf", none, some .getPrototypeOf⟩,
+      ⟨"Object", "setPrototypeOf", none, some .setPrototypeOf⟩],
+    capabilities := [.ambientSymbols, .recordedStringConversion,
+      .scriptedRecording, .undeclaredOutsideCatalog] }
+
+def empty : HostProfile := ⟨"empty", []⟩
+def browserPage : HostProfile := ⟨"browser-page", [hostCatalogLayer, browserPageLayer]⟩
+def ecmascript : HostProfile := ⟨"ecmascript", [ecmascriptLayer]⟩
+def nodeRecording : HostProfile := ⟨"node-recording", [hostCatalogLayer, nodeRecordingLayer]⟩
+
+def isEmpty (p : HostProfile) : Bool := p.layers.isEmpty
 
 /-- Fresh `Symbol(…)` calls and the ambient well-known symbols are host observations. -/
-def ambientSymbols (p : HostProfile) : Bool := p == .browserPage || p == .nodeRecording
+def ambientSymbols (p : HostProfile) : Bool := p.hasCapability .ambientSymbols || p.hasCapability .pageEnvironment
 
-/-- Under the recorded host, the host catalog's globals are opaque host values. The world answers calls of
-`hostFunctions` and of the members of `hostNamespaces`. -/
+/-- The recorded Node layer marks globals whose references the harness records. The model-defined
+calls are an additional part of that layer. -/
 def recordedHostValue (p : HostProfile) (name : String) : Bool :=
-  p == .nodeRecording && (hostFunctions.contains name || (hostNamespaces.lookup name).isSome ||
-    BrowserGlobals.functions.contains name || BrowserGlobals.objects.contains name)
+  (p.globalEntry? name).any (·.recordedValue)
 
 /-- Under the recorded host, a name outside the host catalog is undeclared: reading it throws. -/
 def undeclaredGlobal (p : HostProfile) (name : String) : Bool :=
-  p == .nodeRecording && !(BrowserGlobals.functions.contains name || BrowserGlobals.objects.contains name)
+  p.hasCapability .undeclaredOutsideCatalog &&
+    !((p.globalEntry? name).any fun entry => entry.typeTag == some "function" || entry.typeTag == some "object")
 
 /-- The recorded host's primitive calls: `console.log` and the `Object` functions the model defines. -/
 def recordedPrim (p : HostProfile) (owner key : String) : Option Prim := do
-  guard (p == .nodeRecording)
-  match owner, key with
-  | "console", "log" => some .log
-  | "Object", "defineProperty" => some .defineProperty
-  | "Object", "create" => some .create
-  | "Object", "getPrototypeOf" => some .getPrototypeOf
-  | "Object", "setPrototypeOf" => some .setPrototypeOf
-  | _, _ => none
+  p.memberEntry? owner key >>= (·.primitive)
 
 def read (j : Lean.Json) : Except String HostProfile := do
   unless j == Lean.Json.mkObj [("profile", .str "browser-page")] do
     throw "unsupported host contract (expected the browser-page profile)"
-  return .browserPage
+  return browserPage
 
 def aliases := ["window", "globalThis", "self"]
 
 def bindingType (profile : HostProfile) (name : String) : Option String := do
-  guard (profile == .browserPage)
-  if aliases.contains name || BrowserGlobals.objects.contains name then return "object"
-  if BrowserGlobals.functions.contains name then return "function"
-  if BrowserGlobals.shims.contains name then return "undefined"
-  none
+  guard (profile.hasCapability .pageEnvironment)
+  (profile.globalEntry? name).bind (·.typeTag)
 
 def opaqueBinding (profile : HostProfile) (name : String) : Bool :=
-  profile == .browserPage && (BrowserGlobals.opaqueBindings.contains name || BrowserGlobals.shims.contains name)
+  profile.hasCapability .pageEnvironment && (profile.globalEntry? name).any (·.opaqueRef)
 
 def bindingIdentity (profile : HostProfile) (name : String) : Option String := do
-  if profile == .ecmascript then
-    guard (name == "Object")
-    return "intrinsic.Object"
-  guard (profile == .browserPage)
+  if let some identity := (profile.globalEntry? name).bind (·.identity) then return identity
+  guard (profile.hasCapability .pageEnvironment)
   if aliases.contains name then return "window"
   if name == "Array" then return "intrinsic.Array"
   if name == "Symbol" then return "intrinsic.Symbol"
-  guard (BrowserGlobals.functions.contains name || BrowserGlobals.objects.contains name)
+  let entry ← profile.globalEntry? name
+  guard (entry.typeTag == some "function" || entry.typeTag == some "object")
   return "window." ++ name
 
 def identity (profile : HostProfile) : HostRef → Option String
   | .binding name => profile.bindingIdentity name
   | .property "window" name => do
-    guard (profile == .browserPage)
+    guard (profile.hasCapability .pageEnvironment)
     profile.bindingIdentity name
   | .property "intrinsic.Array" key => do
-    guard (profile == .browserPage)
-    if key == "from" then return "intrinsic.Array.from"
-    guard (((BrowserGlobals.methods.lookup "Array").getD []).contains key)
-    return "window.Array." ++ key
+    guard (profile.hasCapability .pageEnvironment)
+    (profile.memberEntry? "Array" key).bind (·.identity)
   | .property "Symbol" member => do
-    guard (profile == .browserPage)
+    guard (profile.ambientSymbols)
     return (← WellKnownSymbol.ofMember? member).description
   | .property receiver key => do
-    guard (profile == .browserPage)
+    guard (profile.hasCapability .pageEnvironment)
     let owner ← receiver.dropPrefix? "window."
-    guard (((BrowserGlobals.methods.lookup owner.toString).getD []).contains key)
-    return receiver ++ "." ++ key
+    (profile.memberEntry? owner.toString key).bind (·.identity)
 
 /-- An allowed opaque constructor can be retained in deferred code. A reached lookup ends
 the modeled execution before argument evaluation, even inside a catch clause. -/
 def opaqueConstructor : HostProfile → String → Bool
-  | .browserPage, name => ["Date", "Error", "RegExp", "Set", "URL"].contains name
-  | _, _ => false
+  | profile, name => profile.layers.any fun layer => layer.opaqueConstructors.contains name
 
 end HostProfile
 
