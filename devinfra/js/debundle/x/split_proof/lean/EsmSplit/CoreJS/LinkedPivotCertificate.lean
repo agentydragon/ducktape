@@ -3,6 +3,7 @@ import EsmSplit.CoreJS.PrefixProjection
 import EsmSplit.CoreJS.LinkedPivotCheck
 import EsmSplit.CoreJS.LinkWorld
 import EsmSplit.CoreJS.StateMatch
+import EsmSplit.CoreJS.StructuralRefusal
 
 namespace CoreJS.LinkedBehavior
 
@@ -112,7 +113,7 @@ private def checkMaskedMove? (intrinsics : List StableIntrinsic) (ready : State 
 inert body step, even a crossed unit that calls the function commutes with it.
 An allocating initializer still needs the region and capture checks. -/
 private def checkMove (intrinsics : List StableIntrinsic) (ready : State World.probe) (pre crossed suffix : List PreparedUnit) (pivot : PreparedUnit) :
-    Except String (PLift (∀ w, StableIntrinsic.Worlds intrinsics w → ∀ n (final : State w),
+    Except StructuralRefusal (PLift (∀ w, StableIntrinsic.Worlds intrinsics w → ∀ n (final : State w),
       runUnits n ((pre ++ crossed ++ [pivot] ++ suffix).map (·.unit)) (linkState w ready) = .ok () final ↔
         runUnits n ((pre ++ [pivot] ++ crossed ++ suffix).map (·.unit)) (linkState w ready) = .ok () final)) := do
   if inert : pivot.unit.stmt.inert = true then
@@ -124,7 +125,8 @@ private def checkMove (intrinsics : List StableIntrinsic) (ready : State World.p
         (fun _ _ => trivial) (fun _ _ _ _ _ _ _ => trivial)
       intro u _
       exact ⟨fun s _ => inert_commute inert s, fun s _ => commute_inert inert s⟩⟩
-  let some ⟨localStep⟩ := checkedLocal? intrinsics pivot.unit | throw s!"unit {pivot.unit.id} is not a local allocating declaration"
+  let some ⟨localStep⟩ := checkedLocal? intrinsics pivot.unit | throw (.coded .nonLocalAllocation
+    s!"unit {pivot.unit.id} is not a local allocating declaration")
   match checkPivot ready pre crossed pivot.unit with
   | .ok ⟨checks⟩ => return ⟨by
       intro w hw n final
@@ -213,9 +215,9 @@ private def forwardGap? (regions : List Nat) : List PreparedUnit → List Nat �
 /-- Match the requested order from left to right. Each move is checked against
 the prefix already placed, including units moved by previous steps. -/
 private def checkSchedule (intrinsics : List StableIntrinsic) (ready : State World.probe) (prefixRev remaining : List PreparedUnit) :
-    List Nat → Except String (CheckedSchedule intrinsics ready (prefixRev.reverse ++ remaining))
+    List Nat → Except StructuralRefusal (CheckedSchedule intrinsics ready (prefixRev.reverse ++ remaining))
   | [] => do
-    unless remaining.isEmpty do throw "the candidate schedule omits linked units"
+    unless remaining.isEmpty do throw (.unclassified "the candidate schedule omits linked units")
     return ⟨original (prefixRev.reverse ++ remaining), 0, fun _ _ _ _ => Iff.rfl⟩
   | id :: rest => do
     match h : remaining with
@@ -227,7 +229,7 @@ private def checkSchedule (intrinsics : List StableIntrinsic) (ready : State Wor
     | [] => pure ()
     let crossed := remaining.takeWhile (fun u => u.unit.id != id)
     match h : remaining.dropWhile (fun u => u.unit.id != id) with
-    | [] => throw s!"unit {id} is missing from the remaining linked schedule"
+    | [] => throw (.unclassified s!"unit {id} is missing from the remaining linked schedule")
     | pivot :: suffix =>
       have split : remaining = crossed ++ pivot :: suffix := by
         have joined := List.takeWhile_append_dropWhile (p := fun u : PreparedUnit => u.unit.id != id) (l := remaining)
@@ -274,11 +276,11 @@ inductive StructuralProof where
 have already been related to the original unit lists. -/
 private def checkRuns (intrinsics : List StableIntrinsic) (ready : State World.probe)
     (source candidate : List LinkedUnit) :
-    Except String (Nat × PLift (∀ w, StableIntrinsic.Worlds intrinsics w → ∀ n (final : State w),
+    Except StructuralRefusal (Nat × PLift (∀ w, StableIntrinsic.Worlds intrinsics w → ∀ n (final : State w),
       runUnits n source (linkState w ready) = .ok () final ↔ runUnits n candidate (linkState w ready) = .ok () final)) := do
   let schedule ← checkSchedule intrinsics ready [] (source.map PreparedUnit.ofUnit) (candidate.map LinkedUnit.id)
   let some ⟨same⟩ := sameUnits? schedule.units candidate |
-    throw "the linked schedules differ in unit order, syntax, or scope"
+    throw (.unclassified "the linked schedules differ in unit order, syntax, or scope")
   return (schedule.moves, ⟨by
     intro w hw n final
     rw [← runUnits_same n same]
@@ -293,15 +295,17 @@ interfaces can use the same linker witnesses. -/
 def checkLinkedSchedules (intrinsics : List StableIntrinsic) {source candidate : Program}
     (before : CheckedLink source World.probe) (after : CheckedLink candidate World.probe)
     (recordPivots : Std.HashSet Nat) :
-    Except String (ScheduleResult intrinsics source candidate) := do
+    Except StructuralRefusal (ScheduleResult intrinsics source candidate) := do
   let some ⟨initial⟩ := StateMatch.probe before.ready after.ready |
-    throw "the linked initial states differ"
+    throw (.unclassified "the linked initial states differ")
   let ⟨exportsEqual⟩ ←
     if checked : exportsMatchFrom before after = true then pure (PLift.up checked)
     else do
-      let a ← (EntryExports.resolve source.entry before.linked).mapError ("original entry: " ++ ·)
-      let b ← (EntryExports.resolve candidate.entry after.linked).mapError ("candidate entry: " ++ ·)
-      throw (EntryExports.mismatch a b)
+      let a ← (EntryExports.resolve source.entry before.linked).mapError fun why =>
+        .unclassified ("original entry: " ++ why)
+      let b ← (EntryExports.resolve candidate.entry after.linked).mapError fun why =>
+        .unclassified ("candidate entry: " ++ why)
+      throw (.unclassified (EntryExports.mismatch a b))
   have sameExports : SameExports source candidate := sameExports_of_match fun w => by
     rw [exportsMatch_from_checked (before.forWorld w) (after.forWorld w)]
     exact exportsEqual
@@ -343,9 +347,9 @@ def checkLinkedSchedules (intrinsics : List StableIntrinsic) {source candidate :
 
 def checkStructuralSchedule (intrinsics : List StableIntrinsic) (source candidate : Program)
     (recordPivots : Std.HashSet Nat) :
-    Except String (ScheduleResult intrinsics source candidate) := do
-  let before ← (checkLink source).mapError ("original linker: " ++ ·)
-  let after ← (checkLink candidate).mapError ("candidate linker: " ++ ·)
+    Except StructuralRefusal (ScheduleResult intrinsics source candidate) := do
+  let before ← (checkLink source).mapError fun why => .unclassified ("original linker: " ++ why)
+  let after ← (checkLink candidate).mapError fun why => .unclassified ("candidate linker: " ++ why)
   checkLinkedSchedules intrinsics before after recordPivots
 
 end CoreJS.LinkedBehavior
