@@ -15,7 +15,7 @@ namespace EsmSplit.LowerSplit
 
 open Lean EsmSplit.SplitFiles
 
-open CoreJS.DeclarationArtifacts (Guarantee)
+open CoreJS (Guarantee)
 
 /-- Check the generated proof with the same toolchain and model as the splitter. -/
 private def checkLean (work : System.FilePath) (args : Array String) : IO Unit := do
@@ -201,8 +201,12 @@ private def prepare (chunk : DeploymentChunk) (input : BundleInput) (work : Syst
     IO.ofExcept (ESTreeEmit.programs asts B P source sourcePath)
   return { original := program, bundle := B, spec := S, plan := P, output := { programs, source, input, work } }
 
+private def requireGuarantee (request proved : Guarantee) : IO Unit := do
+  if request == .allOutcomes && proved != .allOutcomes then
+    throw (IO.userError "the certificate proves only normal-completion")
+
 private def emitStructural (options : CertifiedOptions) (used : List CoreJS.StableIntrinsic)
-    (proof : CoreJS.LinkedBehavior.StructuralProof) : IO UInt32 := do
+    (level : Guarantee) (proof : CoreJS.LinkedBehavior.StructuralProof) : IO UInt32 := do
   let scope := match proof with
     | .preservedOrder => "linked-structural-order"
     | .singlePivot => "linked-structural-pivot"
@@ -216,7 +220,7 @@ private def emitStructural (options : CertifiedOptions) (used : List CoreJS.Stab
       s!"The static deployment at {origin} overlays only the planned module paths.",
       "The native ESM loader uses one module record per effective URL and resolves dynamic dependencies through the checked live cells."
     ])
-  emitVerdict options.request.label (.ok .normalCompletion) scope
+  emitVerdict options.request.label (.ok level) scope
     (profileFields options.profile ++ [("assumptions", toJson assumptions)])
 
 private def checkPartLayout (part : Part) (timings : Bool) : IO Unit := do
@@ -250,8 +254,7 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
   if let some prepared := declaration then
     let level := prepared.level
     try
-      if request == .allOutcomes && level != .allOutcomes then
-        throw (IO.userError "the checked reorder proves only normal-completion")
+      requireGuarantee request level
       let checked ← verify (Json.mkObj []) fun files => do
         timePhase timings "closed_declarations" fun _ => do
           let _ ← IO.ofExcept (prepared.certify files)
@@ -262,18 +265,17 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
     catch e => return ← emitVerdict request.label (.error e.toString) "closed-declarations"
   if structural then
     try
-      unless request == .normalCompletion do
-        throw (IO.userError "the structural schedule certificate proves only normal-completion")
       checkPartLayout part timings
       let shared ← providers ()
       let checked ← verify shared fun files => do
         timePhase timings "structural_certificate" fun _ => do
           let result ← IO.lazyPure fun _ =>
             CoreJS.LinkedBehavior.certifyStructuralASTs profile intrinsics program shared files P none
-          let value ← IO.ofExcept (result.map fun r => (r.1, r.2.1))
-          pure (.ok value)
+          let ⟨used, level, proof, _⟩ ← IO.ofExcept result
+          requireGuarantee request level
+          pure (.ok (used, level, proof))
       match checked with
-      | .ok (used, proof) => return ← emitStructural options used proof
+      | .ok (used, level, proof) => return ← emitStructural options used level proof
       | .error refusal => return ← emitRefusal request.label refusal "linked-structural"
     catch e => return ← emitVerdict request.label (.error e.toString) "linked-structural"
   try
@@ -325,8 +327,6 @@ private def runDeployment (manifest : DeploymentManifest) (out work : System.Fil
   let { request, profile, intrinsics, structural, deploymentOrigin, checkOnly, browserOptions } := options
   try
     unless structural do throw (IO.userError "a deployment with multiple chunks requires --structural")
-    unless request == .normalCompletion do
-      throw (IO.userError "the structural schedule certificate proves only normal-completion")
     let root ← deploymentRoot manifest
     let mut originals := #[]
     let mut parts := #[]
@@ -366,14 +366,12 @@ private def runDeployment (manifest : DeploymentManifest) (out work : System.Fil
         pure ({ source := part.original, files := Json.mkObj outputs, plan := part.plan } : CoreJS.LinkedInput.StaticSplit)
       timePhase timings "structural_certificate" fun _ => do
         let result ← IO.lazyPure fun _ =>
-          match deployment with
-          | none =>
-            (CoreJS.LinkedBehavior.certifyStaticDeployment manifest.entry actual shared profile intrinsics).map fun r => (r.1, r.2.1)
-          | some inputs =>
-            (CoreJS.LinkedBehavior.certifyDeployment manifest.entry actual shared inputs profile intrinsics).map fun r => (r.1, r.2.1)
-        pure (.ok (← IO.ofExcept result))
+          CoreJS.LinkedBehavior.certifyDeployment manifest.entry actual shared deployment profile intrinsics
+        let ⟨used, level, proof, _⟩ ← IO.ofExcept result
+        requireGuarantee request level
+        pure (.ok (used, level, proof))
     match checked with
-    | .ok (used, proof) => emitStructural options used proof
+    | .ok (used, level, proof) => emitStructural options used level proof
     | .error refusal => emitRefusal request.label refusal "linked-structural"
   catch e => emitVerdict request.label (.error e.toString) "linked-structural"
 

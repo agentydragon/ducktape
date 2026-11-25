@@ -23,7 +23,8 @@ function certificate(args) {
   const verdict = JSON.parse(stdout);
   assert.equal(verdict.requested, "normal-completion", stdout);
   assert.equal(verdict.status, status === 0 ? "certified" : "rejected", stdout);
-  assert.equal(verdict.guarantee, status === 0 ? "normal-completion" : null, stdout);
+  if (status === 0) assert(["all-outcomes", "normal-completion"].includes(verdict.guarantee), stdout);
+  else assert.equal(verdict.guarantee, null, stdout);
   return verdict;
 }
 

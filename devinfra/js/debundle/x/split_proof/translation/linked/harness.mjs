@@ -157,7 +157,8 @@ export function lower(source, spec, out, extra = [], scope = "linked-programs") 
   });
   assert.equal(verdictLines.length, 1, log);
   const verdict = JSON.parse(verdictLines[0]);
-  assert.equal(verdict.requested, "normal-completion", log);
+  const requireFlag = extra.indexOf("--require");
+  assert.equal(verdict.requested, requireFlag === -1 ? "normal-completion" : extra[requireFlag + 1], log);
   assert.equal(verdict.scope, scope, log);
   assert.equal(result.status, verdict.status === "certified" ? 0 : 1, log);
   return { verdict, log };
@@ -254,7 +255,7 @@ export function workerSplit(name, source, entryUnits = ["#1"]) {
 
 export function assertCertified(verdict, log) {
   assert.equal(verdict.status, "certified", log);
-  assert.equal(verdict.guarantee, "normal-completion", log);
+  assert(["all-outcomes", "normal-completion"].includes(verdict.guarantee), log);
 }
 
 export function assertCertifiedResult({ files, out, verdict, log }, result) {

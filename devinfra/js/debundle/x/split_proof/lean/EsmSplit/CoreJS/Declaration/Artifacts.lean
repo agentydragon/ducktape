@@ -1,5 +1,6 @@
 import EsmSplit.Fast
 import EsmSplit.CoreJS.ModuleInput
+import EsmSplit.CoreJS.LinkedBehavior
 import EsmSplit.CoreJS.Declaration.Certificate
 
 /-! Decode the output ESTree of a closed declaration split. An output declaration gets its
@@ -150,16 +151,8 @@ theorem moves {W : World} {source files ss B S P} (accepted : check source files
   rw [DeclarationCertificate.moves h.covered valid footprints order, eval, h.decoded]
   simp [Except.map]
 
-inductive Guarantee where
-  | allOutcomes | normalCompletion
-  deriving DecidableEq
-
-def Guarantee.label : Guarantee → String
-  | .allOutcomes => "all-outcomes"
-  | .normalCompletion => "normal-completion"
-
 /-- The level determines what can be observed about initialization of the decoded output. -/
-def Guarantee.Holds (level : Guarantee) (source : Json) (actual : Program) : Prop :=
+private def holds (level : Guarantee) (source : Json) (actual : Program) : Prop :=
   match level with
   | .allOutcomes => ∀ w n, DeclarationCertificate.eval w n source = .ok (runProgram w n actual)
   | .normalCompletion => ∀ w n (s : State w),
@@ -170,14 +163,14 @@ ASTs can produce the execution proof at the advertised level for those modules. 
 structure Prepared (source : Json) (P : EsmSplit.Plan) where
   level : Guarantee
   certify : (files : Json) → Except String (PLift (∃ actual,
-    decode files P = .ok actual ∧ SameSurface source actual ∧ level.Holds source actual))
+    decode files P = .ok actual ∧ SameSurface source actual ∧ holds level source actual))
 
 def prepare? (source : Json) (ss : List Stmt) (B : EsmSplit.Bundle) (S : EsmSplit.Spec) (P : EsmSplit.Plan) :
     Option (Prepared source P) := do
   if fp : FootprintsOfSyntax ss B then
     if valid : EsmSplit.Valid B S P then
       let finish (level : Guarantee)
-          (rule : DeclarationCertificate.covers source ss = true → level.Holds source (splitProgram ss B P)) :
+          (rule : DeclarationCertificate.covers source ss = true → holds level source (splitProgram ss B P)) :
           Prepared source P :=
         ⟨level, fun files => do
           let ⟨matched⟩ ← verify source files ss B P

@@ -32,7 +32,7 @@ function split(entry, owner, owners, inputDir = dir, preview = false) {
   const spec = path.join(root, chunk + "-" + owner + ".json");
   writeFileSync(spec, JSON.stringify(placement));
   const out = spec + ".out";
-  const opts = ["--structural"];
+  const opts = ["--structural", "--require", "all-outcomes"];
   if (preview) {
     const modules = { [entry]: [], [owner + ".mjs"]: [] };
     for (const row of placement.units) modules[row.owner === null ? entry : owner + ".mjs"].push("#" + row.ordinal);
@@ -261,6 +261,7 @@ assert.equal(tagged.stdout.trim(), "certified");
     );
   const emitted = run(out);
   assert.equal(emitted.status, 0, emitted.stdout + emitted.stderr);
+  assert.equal(JSON.parse(emitted.stdout).guarantee, "all-outcomes");
   assert.equal((await import(pathToFileURL(path.join(out, entry)))).total, 6);
   const checked = run(out, "--check-output");
   assert.equal(checked.status, 0, checked.stdout + checked.stderr);
@@ -278,4 +279,67 @@ assert.equal(tagged.stdout.trim(), "certified");
   assert.equal(collision.status, 1, collision.stdout + collision.stderr);
   assert.match(JSON.parse(collision.stdout).reason, /output path already exists: second-body\.mjs/);
   assert(!existsSync(collisionPath));
+}
+
+// An ordered deployment preserves abrupt initialization and the state at the
+// throw. A valid reorder of the independent declarations has a weaker proof.
+{
+  const original = path.join(root, "throwing-deployment");
+  mkdirSync(original);
+  const entry = "app.mjs";
+  const route = "provider.mjs";
+  const message = "startup failure";
+  writeFileSync(path.join(original, entry), `import { label } from "./${route}"; export { label };`);
+  const provider =
+    'const label = "startup"; const detail = " failure"; throw label + detail; export { label, detail };';
+  writeFileSync(path.join(original, route), provider);
+  const manifest = path.join(original, "deployment.json");
+  const setOrder = (order) =>
+    writeFileSync(
+      manifest,
+      JSON.stringify({
+        entry,
+        chunks: [
+          { path: entry, source: entry },
+          {
+            path: route,
+            source: route,
+            placement: {
+              chunk_id: "provider",
+              source_sha256: createHash("sha256").update(provider).digest("hex"),
+              import_order: order,
+              units: ["label", "detail", null, null].map((owner, ordinal) => ({ ordinal, owner })),
+            },
+          },
+        ],
+      })
+    );
+  const run = (dest, ...args) => {
+    const result = spawnSync(process.env.LOWERSPLIT, [manifest, dest, "--structural", ...args], { encoding: "utf8" });
+    assert.ifError(result.error);
+    assert(result.stdout, result.stderr);
+    return { exit: result.status, verdict: JSON.parse(result.stdout) };
+  };
+
+  const out = path.join(root, "throwing-deployment-out");
+  setOrder(["label", "detail"]);
+  const required = ["--require", "all-outcomes"];
+  const emitted = run(out, ...required);
+  assert.equal(emitted.exit, 0, JSON.stringify(emitted.verdict));
+  assert.equal(emitted.verdict.guarantee, "all-outcomes");
+  assert.equal(emitted.verdict.scope, "linked-structural-order");
+  assert.deepEqual(run(out, ...required, "--check-output"), emitted);
+  for (const dir of [original, out])
+    await assert.rejects(import(pathToFileURL(path.join(dir, entry))), (thrown) => thrown === message);
+
+  setOrder(["detail", "label"]);
+  const reordered = path.join(root, "throwing-deployment-reordered");
+  const refused = run(reordered, ...required);
+  assert.equal(refused.exit, 1, JSON.stringify(refused.verdict));
+  assert.match(refused.verdict.reason, /proves only normal-completion/);
+  assert(!existsSync(reordered));
+  const normal = run(reordered);
+  assert.equal(normal.exit, 0, JSON.stringify(normal.verdict));
+  assert.equal(normal.verdict.guarantee, "normal-completion");
+  assert.equal(run(reordered, ...required, "--check-output").exit, 1);
 }

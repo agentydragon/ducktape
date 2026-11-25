@@ -273,12 +273,16 @@ private def checkRuns (intrinsics : List StableIntrinsic) (ready : State World.p
     rw [← runUnits_same n same]
     simpa [List.map_map, Function.comp_def, PreparedUnit.ofUnit] using schedule.equivalent w hw n final⟩)
 
+abbrev ScheduleResult (intrinsics : List StableIntrinsic) (source candidate : Program) :=
+  (level : Guarantee) × StructuralProof ×
+    PLift (ScheduleEquivalent level (StableIntrinsic.Worlds intrinsics) source candidate ∧ SameExports source candidate)
+
 /-- Check the complete linked schedules. Callers checking additional public
 interfaces can use the same linker witnesses. -/
 def checkLinkedSchedules (intrinsics : List StableIntrinsic) {source candidate : Program}
     (before : CheckedLink source World.probe) (after : CheckedLink candidate World.probe)
     (recordPivots : Std.HashSet Nat) :
-    Except String (StructuralProof × PLift (NormalEquivalent (StableIntrinsic.Worlds intrinsics) source candidate ∧ SameExports source candidate)) := do
+    Except String (ScheduleResult intrinsics source candidate) := do
   let some ⟨initial⟩ := StateMatch.probe before.ready after.ready |
     throw "the linked initial states differ"
   let ⟨exportsEqual⟩ ←
@@ -292,6 +296,14 @@ def checkLinkedSchedules (intrinsics : List StableIntrinsic) {source candidate :
     exact exportsEqual
   let sourceUnits := unitsOf before.linked
   let candidateUnits := unitsOf after.linked
+  if let some ⟨same⟩ := sameUnits? sourceUnits candidateUnits then
+    have equivalent : ScheduleEquivalent .allOutcomes (StableIntrinsic.Worlds intrinsics) source candidate := by
+      intro w _ n
+      rw [run_after_link n (before.forWorld w), run_after_link n (after.forWorld w)]
+      change runUnits n sourceUnits (linkState w before.ready) =
+        runUnits n candidateUnits (linkState w after.ready)
+      rw [← congrArg (linkState w) initial, runUnits_same n same]
+    return ⟨.allOutcomes, .preservedOrder, ⟨equivalent, sameExports⟩⟩
   let runs ← match checkRuns intrinsics before.ready sourceUnits candidateUnits with
     | .ok ok => pure ok
     | .error why => do
@@ -316,11 +328,11 @@ def checkLinkedSchedules (intrinsics : List StableIntrinsic) {source candidate :
     | 0 => .preservedOrder
     | 1 => .singlePivot
     | _ => .multiplePivots
-  return (method, ⟨⟨equivalent, sameExports⟩⟩)
+  return ⟨.normalCompletion, method, ⟨equivalent, sameExports⟩⟩
 
 def checkStructuralSchedule (intrinsics : List StableIntrinsic) (source candidate : Program)
     (recordPivots : Std.HashSet Nat) :
-    Except String (StructuralProof × PLift (NormalEquivalent (StableIntrinsic.Worlds intrinsics) source candidate ∧ SameExports source candidate)) := do
+    Except String (ScheduleResult intrinsics source candidate) := do
   let before ← (checkLink source).mapError ("original linker: " ++ ·)
   let after ← (checkLink candidate).mapError ("candidate linker: " ++ ·)
   checkLinkedSchedules intrinsics before after recordPivots

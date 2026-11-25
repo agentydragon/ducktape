@@ -68,10 +68,10 @@ def projectionHints (source : Lean.Json) (pivots : List Nat) : Except String (Li
 Unchanged units run against the same opaque-code world in both graphs. -/
 def StructuralASTEquivalent (profile : HostProfile) (offered used : List StableIntrinsic) (source providers files : Lean.Json)
     (plan : EsmSplit.Plan)
-    (deployment : Option LinkedDeployment.Input) : Prop :=
+    (deployment : Option LinkedDeployment.Input) (level : Guarantee) : Prop :=
   used ⊆ offered ∧ ∃ pivots original candidate,
     LinkedInput.decodeStructuralPair source providers files plan pivots profile deployment = .ok (original, candidate) ∧
-    NormalEquivalent (StableIntrinsic.Worlds used) original candidate ∧ SameExports original candidate
+    ScheduleEquivalent level (StableIntrinsic.Worlds used) original candidate ∧ SameExports original candidate
 
 /-- Only a concretely lowered initializer can use one of the offered host values. -/
 def usedIntrinsics (offered : List StableIntrinsic) (original : Program) : List StableIntrinsic :=
@@ -90,18 +90,20 @@ private def certifyWith (recordPivots : Std.HashSet Nat) (pivots : List Nat) (pr
     (plan : EsmSplit.Plan)
     (deployment : Option LinkedDeployment.Input) :
     Except String ((used : List StableIntrinsic) ×
-      StructuralProof × PLift (StructuralASTEquivalent profile offered used source providers files plan deployment)) := do
+      (level : Guarantee) × StructuralProof ×
+        PLift (StructuralASTEquivalent profile offered used source providers files plan deployment level)) := do
   match decoded : LinkedInput.decodeStructuralPair source providers files plan pivots profile deployment with
   | .error reason => throw reason
   | .ok (original, candidate) =>
     let used := usedIntrinsics offered original
-    let (method, ⟨certified⟩) ← checkStructuralSchedule used original candidate recordPivots
-    return ⟨used, method, ⟨usedIntrinsics_subset offered original, pivots, original, candidate, decoded, certified⟩⟩
+    let ⟨level, method, ⟨certified⟩⟩ ← checkStructuralSchedule used original candidate recordPivots
+    return ⟨used, level, method, ⟨usedIntrinsics_subset offered original, pivots, original, candidate, decoded, certified⟩⟩
 
 def certifyStructuralASTs (profile : HostProfile) (offered : List StableIntrinsic) (source providers files : Lean.Json)
     (plan : EsmSplit.Plan) (deployment : Option LinkedDeployment.Input) :
     Except String ((used : List StableIntrinsic) ×
-      StructuralProof × PLift (StructuralASTEquivalent profile offered used source providers files plan deployment)) := do
+      (level : Guarantee) × StructuralProof ×
+        PLift (StructuralASTEquivalent profile offered used source providers files plan deployment level)) := do
   let pivots ← pivotHints source plan
   let set := Std.HashSet.ofList pivots
   let check := fun ids => certifyWith set ids profile offered source providers files plan deployment
