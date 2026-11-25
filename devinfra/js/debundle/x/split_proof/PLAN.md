@@ -207,22 +207,21 @@ The code reaches the [target](#target) through the steps below. Until they land,
 | Path                                                                                                                              | Used by                                                                                                                                                                               |
 | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [`model/to_core.mjs`](model/to_core.mjs), read by [`Decode.lean`](lean/EsmSplit/CoreJS/Decode.lean)                               | Node comparison suites (`corejs programs.jsonl`), `corejs --footprints` and `--moves`, `lowersplit --diagnostic --corejs`, [`translation/split_dump.mjs`](translation/split_dump.mjs) |
-| Basic [`FromESTree`](lean/EsmSplit/CoreJS/FromESTree.lean) rules (`expr`, `declaration`, `unit`, `program`)                       | `corejs --ast`, closed-declaration certificates, `--diagnostic`                                                                                                                       |
-| Linked `FromESTree` rules (`linkedUnit`, `linkedDeclaration`) through [`LinkedInput.lean`](lean/EsmSplit/CoreJS/LinkedInput.lean) | Linked certificates, structural pivot units                                                                                                                                           |
+| Basic [`FromESTree`](lean/EsmSplit/CoreJS/FromESTree.lean) rules (`expr`, `declaration`, `unit`)                                  | Closed-declaration certificates, `--diagnostic`                                                                                                                                       |
+| Linked `FromESTree` rules (`linkedUnit`, `linkedDeclaration`) through [`LinkedInput.lean`](lean/EsmSplit/CoreJS/LinkedInput.lean) | Linked certificates, structural pivot units, `corejs --ast` (`LinkedInput.program`)                                                                                                   |
 | [`OpaqueInput.lean`](lean/EsmSplit/CoreJS/OpaqueInput.lean)                                                                       | Structural units kept opaque                                                                                                                                                          |
 
-The broad Node comparison runs through `to_core.mjs`. [`corejs_ast_lowering_test.mjs`](translation/corejs_ast_lowering_test.mjs) compares the basic Lean rules with `to_core.mjs` and Node. No test runs the linked rules and the interpreter against Node on a single program; the linked tests run accepted splits in Node. `to_core.mjs` also decides which assignment targets are imports and which names are host globals ([debts](#debts)).
+The broad Node comparison runs through `to_core.mjs`. [`corejs_ast_lowering_test.mjs`](translation/corejs_ast_lowering_test.mjs) runs the linked rules through `corejs --ast` and compares them with `to_core.mjs` and Node on generated declaration lists. `to_core.mjs` also decides which assignment targets are imports and which names are host globals ([debts](#debts)).
 
 **Target.** `LinkedInput` with the linked `FromESTree` rules is the only lowering. Keeping a unit opaque is one of its results, chosen per unit, with captures checked the same way in both graphs.
 
 **How.**
 
-1. Make `corejs --ast` lower module graphs through `LinkedInput`.
-2. Run every Node comparison suite through it: hand-written, module and opaque cases, generated programs, the binding and inheritance suites and the sweep. A model mismatch then reproduces on one program. An unsupported program is a reported refusal, never a fallback to `to_core.mjs`.
-3. List the programs only `to_core.mjs` accepts. Port each feature to the linked rules, or record it as refused.
-4. Before moving opaque fallback, check which cells a deferred body captures, its part number, and the handling of direct `eval`, module identity and top-level `await`. Replay Excalidraw on the AST alone.
-5. Merge `OpaqueInput` into the same entry point.
-6. Delete `to_core.mjs`, the program decoder in `Decode.lean` (the world-recording decoders stay), `--corejs` and the basic `FromESTree` rules.
+1. Run every Node comparison suite through `corejs --ast`: hand-written, module and opaque cases, generated programs, the binding and inheritance suites and the sweep. A model mismatch then reproduces on one program. An unsupported program is a reported refusal, never a fallback to `to_core.mjs`.
+2. List the programs only `to_core.mjs` accepts. Port each feature to the linked rules, or record it as refused.
+3. Before moving opaque fallback, check which cells a deferred body captures, its part number, and the handling of direct `eval`, module identity and top-level `await`. Replay Excalidraw on the AST alone.
+4. Merge `OpaqueInput` into the same entry point.
+5. Delete `to_core.mjs`, the program decoder in `Decode.lean` (the world-recording decoders stay), `--corejs` and the basic `FromESTree` rules.
 
 **Done when.** One Lean function lowers an annotated ESTree module graph to CoreJS, CI runs the Node comparison suites through it, and nothing imports `to_core.mjs`.
 
