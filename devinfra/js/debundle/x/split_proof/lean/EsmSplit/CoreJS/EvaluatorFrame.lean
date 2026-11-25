@@ -56,9 +56,10 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
   have allocate (cells : List (Option Addr)) (o : Obj) (ho : ∀ node ∈ o.nodes, A node) :
       ReachFrame r R cells A (fun a => A (.obj a)) (alloc o : M W Addr) :=
     reachFrame_alloc o ho object
-  have make (cells : List (Option Addr)) (env : Env) (safe : ∀ node ∈ env.nodes, A node) (f : Func) :
-      ReachFrame r R cells A (SafeVal A) (makeFunc env f : M W Val) :=
-    reachFrame_makeFunc away cell prototypeRoot intrinsicRoot (allocate cells) env safe f
+  have make (cells : List (Option Addr)) (env : Env) (safe : ∀ node ∈ env.nodes, A node)
+      (f : Func) (displayName : String := f.name) :
+      ReachFrame r R cells A (SafeVal A) (makeFunc env f displayName : M W Val) :=
+    reachFrame_makeFunc away cell prototypeRoot intrinsicRoot (allocate cells) env safe f displayName
   have enter (cells : List (Option Addr)) (env : Env) (ss : List Stmt) (safe : ∀ node ∈ env.nodes, A node) :
       ReachFrame r R cells A (fun env' => ∀ node ∈ env'.nodes, A node) (enterBlock env ss : M W Env) :=
     reachFrame_enterBlock away cell prototypeRoot intrinsicRoot (allocate cells) env safe ss
@@ -115,7 +116,7 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
           (reachFrame_prim away (callFn n) (prev.call cells) object objectRoot arrayRoot)
           (fun e => prev.expr cells env e safe) (fun es => prev.args cells env es safe)
           (fun t => prev.target cells env t safe) (prev.call cells)
-          (fun f es sf sa => prev.construct cells f f es sf sf sa) (make cells env safe)
+          (fun f es sf sa => prev.construct cells f f es sf sf sa) (fun f => make cells env safe f)
           regexpRoot (allocate cells) (createObject cells env safe)
         · exact evalArray_reachFrame_step env arrayRoot (fun es => prev.args cells env es safe) (allocate cells)
         · exact evalClass_reachFrame_step away object cell objectRoot functionRoot env safe (prev.members cells) (prev.expr cells)
@@ -128,12 +129,17 @@ theorem evaluatorFrames (W : World) {r : Nat} (hr : r ≠ 0) {R : Addr → Prop}
         exact evalTarget_reachFrame_step (fun e => prev.expr cells env e safe) t
       · intro cells env a ps safe ha
         have makeMethod (home : Addr) (h : A (.obj home)) :=
-          make cells { env with home := some home } (Env.nodes_setHome safe (some home) (by simpa))
+          fun f => make cells { env with home := some home } (Env.nodes_setHome safe (some home) (by simpa)) f
         exact evalProps_reachFrame_step away env ha (prev.call cells).getter (fun e => prev.expr cells env e safe) makeMethod
           (fun ps => prev.props cells env a ps safe ha) ps
       · intro cells env p c ms safe hp hc
-        have makeMethod (home : Addr) (h : A (.obj home)) :=
-          make cells { env with home := some home } (Env.nodes_setHome safe (some home) (by simpa))
+        have makeMethod (home : Addr) (h : A (.obj home)) (key : PropertyKey) (affix : String) (f : Func) :
+            ReachFrame r R cells A (SafeVal A) (makeClassMethod env home key affix f : M W Val) := by
+          have available := Env.nodes_setHome safe (some home) (by simpa using h)
+          cases key with
+          | str name => exact make cells _ available f (affix ++ name)
+          | wellKnownSymbol sym => exact make cells _ available f (affix ++ s!"[{sym.description}]")
+          | symbol => exact reachFrame_unknown r R cells A _ _
         exact evalMembers_reachFrame_step away env hp hc (fun e => prev.expr cells env e safe) makeMethod
           (fun ms => prev.members cells env p c ms safe hp hc) ms
       · intro cells env a fs safe ha

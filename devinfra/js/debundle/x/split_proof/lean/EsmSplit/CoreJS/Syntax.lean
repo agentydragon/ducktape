@@ -49,12 +49,13 @@ inductive RegExpGetter where
   deriving DecidableEq, Repr
 
 inductive WellKnownSymbol where
-  | iterator | toStringTag | hasInstance
+  | iterator | asyncIterator | toStringTag | hasInstance
   deriving DecidableEq, Hashable, Repr
 
 def WellKnownSymbol.member : WellKnownSymbol → String
   | .hasInstance => "hasInstance"
   | .iterator => "iterator"
+  | .asyncIterator => "asyncIterator"
   | .toStringTag => "toStringTag"
 
 def WellKnownSymbol.description (sym : WellKnownSymbol) : String := "Symbol." ++ sym.member
@@ -62,6 +63,7 @@ def WellKnownSymbol.description (sym : WellKnownSymbol) : String := "Symbol." ++
 def WellKnownSymbol.ofMember? : String → Option WellKnownSymbol
   | "hasInstance" => some .hasInstance
   | "iterator" => some .iterator
+  | "asyncIterator" => some .asyncIterator
   | "toStringTag" => some .toStringTag
   | _ => none
 
