@@ -228,7 +228,7 @@ class EnvironmentSandboxTemplate(Construct):
                 self.env, [*sandbox_pod.proxy_environment(), *(key.env() for key in self.key_files)]
             ),
             resources=self.executor_resources
-            or container_resources(cpu="250m", memory="512Mi", cpu_limit="2", memory_limit="2Gi"),
+            or container_resources(cpu="250m", memory="1Gi", cpu_limit="2", memory_limit="4Gi"),
             liveness_probe=liveness_probe,
             readiness_probe=readiness_probe,
             volume_mounts=[
