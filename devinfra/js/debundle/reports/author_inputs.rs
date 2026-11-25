@@ -60,21 +60,19 @@ impl<'a> AuthorInputLocations<'a> {
         let provenance =
             provenance.context("author inputs require explicit graph parser-input provenance")?;
         let mut parser_input_files = BTreeMap::new();
-        for chunk in with_inputs {
-            // Analysis rejects an input whose chunk has no recorded source.
-            let Some(source) = provenance
-                .chunk_sources
-                .iter()
-                .find(|source| source.chunk_id == *chunk)
-            else {
+        for source in &provenance.chunk_sources {
+            if !with_inputs.remove(&source.chunk_id) {
                 continue;
-            };
+            }
             let path = provenance.resolve(
                 &source.input_file.root,
                 &source.input_file.path,
                 &CurrentRoots::default(),
             )?;
-            parser_input_files.insert(chunk.clone(), path.to_string_lossy().into_owned());
+            parser_input_files.insert(source.chunk_id.clone(), path.to_string_lossy().into_owned());
+            if with_inputs.is_empty() {
+                break;
+            }
         }
         Ok(Self {
             spec_path: Some(provenance.author_spec_path()?),
