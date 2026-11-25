@@ -282,3 +282,10 @@ shared_analysis_test = analysistest.make(
         "distinct_variants": attr.label_list(aspects = [_baseline_actions]),
     },
 )
+
+def _invalid_package_root_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    asserts.expect_failure(env, "must provide exactly one directory artifact")
+    return analysistest.end(env)
+
+invalid_package_root_test = analysistest.make(_invalid_package_root_test_impl, expect_failure = True)
