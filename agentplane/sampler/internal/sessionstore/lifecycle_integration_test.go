@@ -24,7 +24,7 @@ func TestProtocolEventsDoNotLoadRetainedConversationItems(t *testing.T) {
 
 func TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction(t *testing.T) {
 	store, session, owner := claimedSession(t)
-	if _, err := store.PrepareSamplingContext(t.Context(), owner, nil); err != nil {
+	if _, err := store.PrepareSamplingContext(t.Context(), owner); err != nil {
 		t.Fatal(err)
 	}
 	for _, input := range []string{"first input", "second input"} {

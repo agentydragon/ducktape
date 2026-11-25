@@ -369,8 +369,8 @@ compaction blocks. Eager argument deltas are logged as they arrive; no tool is e
 leaves the intent unknown. Unsupported blocks and stop reasons fail without executing partial tools.
 Images use base64 image blocks, and repeated asynchronous outputs become contextual user messages.
 
-The adapter sends a stable system prompt and tool schema. Environment and execution-handle changes
-are appended durably. Effort changes append an empty system control using Anthropic's beta, keeping
+The adapter sends a stable system prompt and tool schema. Environment changes are appended durably.
+Effort changes append an empty system control using Anthropic's beta, keeping
 the launch effort fixed at the top level. Cache diagnostics compare against the last ordinary
 provider response ID, including across sampler restarts. Cache counters and full native diagnostics
 are retained in the DB; an unavailable diagnostic is not a cache miss.
@@ -381,8 +381,8 @@ summarizes all context; positive values preserve that many completed turns and a
 Boundaries move backward over an effort control to keep signed thinking valid. The signed summary
 goes first, followed directly by the unchanged suffix. Summarized effort is restored after the next
 new user message. Compaction waits for model tool calls to be answered. Yielded cells keep running
-on their existing host. The next sample sees the current execution handles and any queued cell
-notifications. Failed compaction preserves old context. Background compaction and dynamic
+on their existing host. The replacement context includes a snapshot of the handles at compaction
+commit and any queued cell notifications. Failed compaction preserves old context. Background compaction and dynamic
 definitions remain in the [task DAG](../plans/task_dag.md).
 Langfuse export is an independent deferred follow-up; native exchanges are already retained in
 the sampler DB.
@@ -397,6 +397,9 @@ and encrypted-reasoning includes entirely.
 `json` exposes only a function `exec`: pass `{code, yield_time_ms?, max_output_tokens?}` to execute
 JavaScript, or `{cell_id, yield_time_ms?, max_output_tokens?, terminate?}` to resume or terminate a
 yielded cell. Both use the same JavaScript host, nested tools, output limits and effect journal.
+The paired tool result reports a cell's ID on yield and its outcome on settlement without adding
+a separate inventory. From JavaScript, use the process `session_id` returned by `exec_command` to
+continue with `write_stdin`.
 Standard requests send text-only function results as strings and multimodal results as content
 arrays. Asynchronous `notify()` output becomes a developer message identifying its original call,
 so the public API receives only one tool result per call.
