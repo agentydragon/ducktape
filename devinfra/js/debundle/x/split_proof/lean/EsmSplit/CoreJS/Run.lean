@@ -271,9 +271,11 @@ def hostRefs (j : Json) : Except String (List (HostRef × String)) := do
     | .ok value => value.getBool?
     | .error _ => pure false
   let iteratorSymbol ← observed "iteratorSymbol"
+  let hasInstance ← observed "hasInstanceSymbol"
   let tag ← observed "toStringTagSymbol"
   let symbolConstructor ← observed "symbolConstructor"
   return (if iteratorSymbol then [(.property "Symbol" "iterator", "Symbol.iterator")] else []) ++
+    (if hasInstance then [(.property "Symbol" "hasInstance", "Symbol.hasInstance")] else []) ++
     (if tag then [(.property "Symbol" "toStringTag", "Symbol.toStringTag")] else []) ++
     (if symbolConstructor then [(.binding "Symbol", "intrinsic.Symbol")] else [])
 

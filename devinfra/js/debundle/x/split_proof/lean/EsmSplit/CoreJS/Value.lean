@@ -474,6 +474,7 @@ def builtins : Array Obj := #[
   { proto := none, props := hostMembers "Object.prototype" objectProtoNames ++ [hostAccessor "Object.prototype" "__proto__"] },
   { proto := some objectProto, code := some (.host "Function.prototype"),
     props := [(PropertyKey.str "length", Property.data (.num 0) false false true), ("name", .data (.str "") false false true),
+      (.wellKnownSymbol .hasInstance, .data (.host "Function.prototype[Symbol.hasInstance]") false false false),
       hostAccessor "Function.prototype" "arguments", hostAccessor "Function.prototype" "caller"] ++
       hostMembers "Function.prototype" functionProtoNames },
   { proto := some objectProto, array := true,
@@ -972,6 +973,40 @@ def reaches (s : State W) (a : Addr) : Nat → Option Addr → Bool
   | _, none | 0, _ => false
   | steps + 1, some b => b == a || reaches s a steps ((s.objAt b).bind (·.proto))
 
+/-- Test the prototype chain, starting at the instance's parent. Both addresses
+come from modeled objects. Check the target exists before traversing the heap. -/
+def chainContains (target : Addr) (parent : Option Addr) : M W Bool := do
+  let _ ← getObj target
+  let s ← getState
+  pure (reaches s target s.objectCount parent)
+
+/-- OrdinaryHasInstance, after the callable check. A primitive left operand
+returns false before looking up the constructor's prototype. -/
+def ordinaryInstance (call : Call W) (value ctor : Val) : M W Val := do
+  match value with
+  | .obj a =>
+    let proto ← getProp call ctor (.str "prototype")
+    let target ← requireObj "constructor prototype" proto
+    let o ← getObj a
+    return .bool (← chainContains target o.proto)
+  | .error .. | .host _ => unknown "instanceof on an unmodeled object"
+  | _ => pure (.bool false)
+
+/-- InstanceofOperator reads @@hasInstance before testing callability. A
+custom method receives the RHS as its receiver and the LHS as its argument. -/
+def instanceOf (call : Call W) (value ctor : Val) : M W Val := do
+  let _ ← requireObj "right-hand side of instanceof" ctor
+  let method ← getProp call ctor (.wellKnownSymbol .hasInstance)
+  if method == .host "Function.prototype[Symbol.hasInstance]" then
+    if ← (do pure (isCallable (← getState) ctor) : M W Bool) then ordinaryInstance call value ctor
+    else pure (.bool false)
+  else if method == .null || method == .undef then
+    if ← (do pure (isCallable (← getState) ctor) : M W Bool) then ordinaryInstance call value ctor
+    else throwErr .type "right-hand side of instanceof is not callable"
+  else
+    let result ← call method ctor [value]
+    return .bool (← lift (toBoolean result))
+
 def observeGlobalTypeof (name : String) : M W Val := fun s =>
   match W.globalTypeof name s.world.state with
   | some (result, state) => fromWorld { s with world := { s.world with state } } result
@@ -1095,6 +1130,7 @@ def prim (call : Call W) (p : Prim) (args : List Val) : M W Val := do
   | .opaqueAmbientRef name => unknown s!"ambient binding {name} is reached"
   | .opaqueConstructorRef name => unknown s!"ambient constructor {name} is reached"
   | .opaqueAmbientMemberRef receiver member => unknown s!"ambient member {receiver}.{member} is reached"
+  | .instanceOf => instanceOf call (arg 0) (arg 1)
   | .forInKeys => forInKeys (arg 0)
   | .checkForInWrite => checkForInWrite (arg 0) (arg 1) (arg 2)
   | .log =>

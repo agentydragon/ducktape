@@ -604,7 +604,7 @@ theorem reachFrame_requireObj {r R cells A} (what : String) (v : Val) (safe : Sa
     | exact reachFrame_throwErr r R cells A _ _ _
     | exact reachFrame_pure r R cells A _ (safeVal_obj.1 safe)
 
-private theorem reachFrame_isCallable {r R cells A} (away : Away r R A) (v : Val) (safe : SafeVal A v) :
+theorem reachFrame_isCallable {r R cells A} (away : Away r R A) (v : Val) (safe : SafeVal A v) :
     ReachFrame r R cells A (fun _ => True) (do pure (isCallable (← getState) v) : M W Bool) := by
   constructor
   · intro s H C _ _
@@ -749,6 +749,29 @@ private theorem reaches_same {cells A} {s t : State W} (hs : Access cells A s) (
   | some p =>
     simp only [Option.bind_some]
     rw [findOnPrototype_same hs ht same _ (parentSafe p rfl)]
+
+theorem reachFrame_chainContains {r R cells A} (away : Away r R A) {target : Addr}
+    (ht : A (.obj target)) (parent : Option Addr) (hp : ∀ a ∈ parent, A (.obj a)) :
+    ReachFrame r R cells A (fun _ => True) (chainContains target parent : M W Bool) := by
+  constructor
+  · intro s H C hs _
+    let t := s.put r H C
+    have same (a : Addr) (ha : A (.obj a)) : s.objAt a = t.objAt a := by
+      simp [t, State.objAt_put, away.region _ ha]
+    simp only [chainContains, M.bind_apply, getObj, getState]
+    rw [← same target ht]
+    cases present : s.objAt target with
+    | none => rfl
+    | some o =>
+      dsimp only
+      rw [reaches_same hs (hs.put away H C) same present ht parent hp]
+      rfl
+  · intro s _ _
+    simp only [chainContains, M.bind_apply, getObj, getState]
+    cases s.objAt target <;> exact Preserves.refl r R s
+  · intro s hs _
+    simp only [chainContains, M.bind_apply, getObj, getState]
+    cases s.objAt target <;> first | exact hs | exact ⟨trivial, hs⟩
 
 private theorem reachFrame_checkPrototype {r R cells A} (away : Away r R A)
     {target : Addr} (safeTarget : A (.obj target)) (parent : Option Addr)
