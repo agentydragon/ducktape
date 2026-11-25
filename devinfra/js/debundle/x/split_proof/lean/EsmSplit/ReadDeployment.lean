@@ -36,11 +36,15 @@ def readDeployment (program providers : Json) (bundlePath work : System.FilePath
   let mut resources := Std.HashMap.ofList [(entry, asset entry source)]
   let mut parsed : Array (String × Json) := #[]
   let mut seen := linked
+  let targets := fun (sites : Array (Nat × ModuleLocation.Use)) => sites.filterMap fun (_, use) =>
+    match use with | .dynamicImport _ target => some target | _ => none
+  let mut frontier := targets uses
   for (name, ast) in staticProviders.toList do
     let text ← IO.ofExcept (ast.getObjValAs? String "sourceText")
-    resources := resources.insert name (asset name text)
-  let mut frontier := uses.filterMap fun (_, use) =>
-    match use with | .dynamicImport _ target => some target | .metaUrl | .metadata => none
+    let res := asset name text
+    resources := resources.insert name res
+    let sites ← IO.ofExcept ((ModuleLocation.providerUses ast name res nativeRecord).mapError fun why => s!"{name}: {why}")
+    frontier := frontier ++ targets sites
   while !frontier.isEmpty do
     let mut requests := #[]
     for name in frontier do
