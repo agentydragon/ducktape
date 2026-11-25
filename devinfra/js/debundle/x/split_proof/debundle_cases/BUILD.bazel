@@ -8,6 +8,7 @@ _RUNNER_DATA = [
     "//devinfra/js/debundle:debundle_resolve_placement",
     "//devinfra/js/debundle/e2e:corpus_files",
     "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
+    "//devinfra/js/debundle/x/split_proof/model:node_recording_host_profile",
     "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
     "//devinfra/js/debundle/x/split_proof/translation:parser",
     "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
@@ -16,6 +17,7 @@ _RUNNER_DATA = [
 _RUNNER_ENV = {
     "DEBUNDLE_RESOLVER": "$(rootpath //devinfra/js/debundle:debundle_resolve_placement)",
     "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+    "HOST_CONTRACT": "$(rootpath //devinfra/js/debundle/x/split_proof/model:node_recording_host_profile)",
 }
 
 js_binary(

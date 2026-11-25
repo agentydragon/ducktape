@@ -1,6 +1,20 @@
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
 load("//devinfra/lint:linters.bzl", "eslint_test")
 
+exports_files(
+    ["node-recording.json"],
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation:__pkg__"],
+)
+
+js_library(
+    name = "node_recording_host_profile",
+    srcs = ["node-recording.json"],
+    visibility = [
+        "//devinfra/js/debundle/x/split_proof/debundle_cases:__pkg__",
+        "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
+    ],
+)
+
 js_library(
     name = "to_core",
     srcs = ["to_core.mjs"],
@@ -24,6 +38,7 @@ eslint_test(
 )
 
 _DIFFERENTIAL_DATA = [
+    "node-recording.json",
     "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
     "cases.mjs",
     "generate.mjs",
@@ -44,6 +59,7 @@ _DIFFERENTIAL_ENV = {
     "EVALORDER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:evalorder)",
     "LOWER": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lower)",
     "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+    "NODE_HOST_PROFILE": "$(rootpath //devinfra/js/debundle/x/split_proof/model:node-recording.json)",
 }
 
 js_test(

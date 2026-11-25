@@ -10,14 +10,28 @@ structure StableIntrinsic where
   owner : String
   key : String
   value : HostValue
+  premise : String
   deriving DecidableEq
 
 namespace StableIntrinsic
 
-def mathPI : StableIntrinsic := ⟨"Math.PI@1", "Math", "window.Math", "PI", .number 0x400921fb54442d18⟩
-
-def objectDefineProperty : StableIntrinsic :=
-  ⟨"Object.defineProperty@1", "Object", "intrinsic.Object", "defineProperty", .identity "intrinsic.Object.defineProperty"⟩
+def fromProfile? (profile : HostProfile) (id : String) : Option StableIntrinsic := do
+  let [path, version] := id.splitOn "@" | none
+  guard (version == "1")
+  let [binding, key] := path.splitOn "." | none
+  guard (!profile.recordedHostValue binding)
+  let entry ← profile.memberEntry? binding key
+  let value ← match entry.dataValue, entry.identity with
+    | some value, none => some value
+    | none, some identity => some (.identity identity)
+    | _, _ => none
+  let owner ← profile.bindingIdentity binding
+  let bindingPremise := s!"the ambient binding {binding} returns {owner} throughout initialization"
+  let propertyPremise ← entry.premise
+  let propertyValue := match value with
+    | .identity identity => s!"the stable host reference {identity}"
+    | .number bits => s!"a Number with binary64 bits {bits.toNat}"
+  return ⟨id, binding, owner, key, value, s!"{bindingPremise}; {propertyPremise}; it returns {propertyValue}"⟩
 
 /-- Neither observation changes host state. The binding must keep returning the
 same receiver throughout initialization, including across retained units. -/
@@ -28,10 +42,7 @@ def Satisfied (d : StableIntrinsic) (w : World) : Prop :=
 abbrev Worlds (ds : List StableIntrinsic) (w : World) : Prop := ∀ d ∈ ds, d.Satisfied w
 
 def assumption (d : StableIntrinsic) : String :=
-  let result := match d.value with
-    | .identity name => s!"the stable host reference {name}"
-    | .number bits => s!"the Number with binary64 bits {bits.toNat}"
-  s!"{d.id}: Throughout initialization, reading the ambient binding {d.binding} returns {d.owner}, and reading its own data property {d.key} returns {result}; both reads have no observable effects."
+  s!"{d.id}: {d.premise}; both reads have no observable effects throughout initialization."
 
 def readExpr (d : StableIntrinsic) : Expr :=
   .get (.prim (.globalRef d.binding) []) (.str d.key)

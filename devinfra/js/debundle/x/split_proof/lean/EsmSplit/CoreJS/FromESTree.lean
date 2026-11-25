@@ -94,8 +94,8 @@ private def reference (imports : List Name) (inFunction : Bool) (j : Json)
     unless imports.contains x do throw s!"unlinked imported name {x}"
     return .var x
   | "G" =>
-    if (profile.bindingIdentity x).isSome then return .prim (.globalRef x) []
     if profile.recordedHostValue x then return .host x
+    if (profile.bindingIdentity x).isSome then return .prim (.globalRef x) []
     -- A successful typeof guard does not establish what a direct lookup would do.
     if profile.opaqueBinding x then
       return .prim (.opaqueAmbientRef x) []
@@ -832,7 +832,7 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     let lower := linkedExpr profile imports inFunction ""
     let callee ← j.getObjVal? "callee"
     let args ← j.getObjValAs? (List Json) "arguments"
-    if profile == .browserPage && (field callee "type").toOption == some "MemberExpression" &&
+    if profile.hasCapability .arrayFromTemplate && (field callee "type").toOption == some "MemberExpression" &&
         (callee.getObjValAs? Bool "computed").toOption == some false &&
         (callee.getObjVal? "object" >>= (field · "k")).toOption == some "G" &&
         (callee.getObjVal? "object" >>= identifier).toOption == some "Array" &&
@@ -850,7 +850,7 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
         if let .ok description := stringLiteral arg then return .prim .freshSymbol [.str description]
       | _ => pure ()
     -- The recorded Node host's ambient `String` is the intrinsic conversion of its one argument.
-    if profile == .nodeRecording && (field callee "type").toOption == some "Identifier" &&
+    if profile.hasCapability .recordedStringConversion && (field callee "type").toOption == some "Identifier" &&
         (field callee "k").toOption == some "G" && (identifier callee).toOption == some "String" then
       if let [arg] := args then
         unless (field arg "type").toOption == some "SpreadElement" do
@@ -906,7 +906,7 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
   let tags ← parameters.mapM fun param => field param "type"
   let arity := (tags.toList.takeWhile fun t => t != "AssignmentPattern" && t != "RestElement").length
   let generator ← j.getObjValAs? Bool "generator"
-  if profile == .nodeRecording && (j.getObjValAs? Bool ":opaque-scripted").toOption == some true then
+  if (j.getObjValAs? Bool ":opaque-scripted").toOption == some true then
     if async || generator || needsOpaqueContext j (checkPrivateNames := true) then
       throw "scripted callable requires unsupported invocation or lexical context"
     return .complete (← deferredFunction j kind name self arity "scripted callable" (scripted := true))

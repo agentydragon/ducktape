@@ -19,7 +19,7 @@ function verdict(result, phase) {
   throw new Error("inconsistent lowersplit status or verdict: " + result.stdout);
 }
 
-export function certify({ stage, chunkFile, plan, want, providers, run, lowersplit, nodeRun }) {
+export function certify({ stage, chunkFile, plan, want, providers, run, lowersplit, nodeRun, hostContract }) {
   const output = path.join(stage, "certified");
   const spec = path.join(stage, "certificate-spec.json");
   let manifest,
@@ -53,6 +53,7 @@ export function certify({ stage, chunkFile, plan, want, providers, run, lowerspl
       output,
       "--require",
       "normal-completion",
+      ...(hostContract ? ["--host-contract", hostContract] : []),
       ...(mode === "structural" ? ["--structural"] : []),
       ...(deployment ? ["--deployment-origin", "https://corpus.example"] : []),
     ];

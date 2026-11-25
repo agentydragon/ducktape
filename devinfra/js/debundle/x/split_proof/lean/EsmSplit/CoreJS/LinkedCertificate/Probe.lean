@@ -185,7 +185,7 @@ private def witnessFuel (profile : HostPremises) (source candidate : Program) : 
 
 /-- Collect host observations from both concrete executions to select the theorem's hypotheses. -/
 private def observePremises (profile : HostProfile) (source candidate : Program) : HostPremises := Id.run do
-  if profile == .empty then return {}
+  if profile.isEmpty then return {}
   let world := HostPremises.observations profile
   let limit := max (recordFuelLimit source) (recordFuelLimit candidate)
   let observed := fun (program : Program) =>
@@ -195,7 +195,8 @@ private def observePremises (profile : HostProfile) (source candidate : Program)
   let left := observed source
   let right := observed candidate
   return { typeofBindings := (left.typeofBindings ++ right.typeofBindings).eraseDups.mergeSort (fun a b => a.1 ≤ b.1)
-           refs := (left.refs ++ right.refs).eraseDups.reverse }
+           refs := (left.refs ++ right.refs).eraseDups.reverse,
+           profileFacts := (left.profileFacts ++ right.profileFacts).eraseDups }
 
 /-- Find the concrete fuel witness before generating the all-world proof. -/
 def probeWitness (profile : HostProfile) (source candidate : Program) : Except Refusal (HostPremises × Nat) := do
