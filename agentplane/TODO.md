@@ -28,14 +28,14 @@
       Options: keep them failed, rebuild their projection from validated binary History (verify first
       that every input decodes and the projection is reconstructible), or retire them. A rebuild or
       retirement needs separate operator authorization.
-- [ ] Settle on one placement of harnesses and their tool commands. In Pods today a Claude harness
-      runs in the runner container with its direct Bash children, sharing one memory budget, while the
-      shared Codex app-server runs in Environment Runtime and every Codex Session's commands run in the
-      separate executor container ([execution isolation](env/runtime/execution/ISOLATION.md)). The two
-      harnesses therefore have different resource boundaries and failure coupling, and the container
-      that runs an agent's commands is not the one its harness runs in. On 2026-11-25 an eight-Session
-      staging sandbox's executor (2 GiB limit) was OOM-killed, which fenced the backend and dropped
-      every Session's in-flight commands (PR #19996 raised the limit). Investigate a single topology
-      for every harness, so a harness and the commands it runs live in the same environment, while
-      still keeping the harness outside its commands' memory budget (for example per-command or
-      per-Session cgroups inside one container).
+- [ ] Run every harness's tool commands in the exec server's container. The Codex app-server keeps its
+      own container and executes commands through the exec server it is pointed at
+      (`CODEX_EXEC_SERVER_URL`), in the executor container. A Claude harness in a Pod instead runs its
+      direct Bash children inside its own runner container, sharing the harness's memory budget
+      ([execution isolation](env/runtime/execution/ISOLATION.md)). Investigate the same arrangement for
+      Claude: the harness stays in its own container and its commands run through the exec server, so
+      every harness's commands share one execution environment and no command can exhaust a harness's
+      memory. The executor then needs protection from its own commands, for example per-command or
+      per-Session cgroups: on 2026-11-25 an eight-Session staging sandbox's executor (2 GiB limit) was
+      OOM-killed, which fenced the backend and dropped every Session's in-flight commands (PR #19996
+      raised the limit).
