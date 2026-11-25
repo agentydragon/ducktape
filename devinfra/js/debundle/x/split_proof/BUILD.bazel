@@ -29,6 +29,13 @@ exports_files(
 )
 
 js_library(
+    name = "case_shard",
+    testonly = True,
+    srcs = ["case_shard.mjs"],
+    visibility = ["//devinfra/js/debundle/x/split_proof:__subpackages__"],
+)
+
+js_library(
     name = "seeded_random",
     srcs = ["seeded_random.mjs"],
     visibility = ["//devinfra/js/debundle/x/split_proof:__subpackages__"],
@@ -52,6 +59,7 @@ js_library(
 eslint_test(
     name = "eslint_test",
     srcs = [
+        ":case_shard",
         ":lint_sources",
         ":reporting",
         ":seeded_random",

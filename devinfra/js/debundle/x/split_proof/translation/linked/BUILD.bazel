@@ -8,6 +8,7 @@ js_library(
     name = "harness",
     srcs = ["harness.mjs"],
     deps = [
+        "//devinfra/js/debundle/x/split_proof:case_shard",
         "//devinfra/js/debundle/x/split_proof/translation:node_modules/acorn",
         "//devinfra/js/debundle/x/split_proof/translation:node_modules/astring",
     ],
@@ -251,12 +252,15 @@ js_test(
 
 js_test(
     name = "certified_split_test",
+    size = "medium",
     data = [
+        "//devinfra/js/debundle/x/split_proof:case_shard",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
         "//devinfra/js/debundle/x/split_proof/translation:parser",
     ],
     entry_point = "certified_split_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+    shard_count = 8,
 )
 
 js_library(
