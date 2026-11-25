@@ -950,15 +950,12 @@ impl ChunkPlanBuilder {
         for (&statement, &module) in &self.whole_statement_assignment {
             let locations = layout.for_statement(statement);
             ensure!(
-                !locations.is_empty(),
+                locations.len() != 0,
                 "selected anonymous statement {} has no canonical source unit",
                 statement.0
             );
-            source_unit_claims.extend(
-                locations
-                    .into_iter()
-                    .map(|location| (location.source_unit, ModuleId(module))),
-            );
+            source_unit_claims
+                .extend(locations.map(|location| (location.source_unit, ModuleId(module))));
         }
         let assembled = assemble_assignment_with_source_unit_claims(
             &precomputed.dependency_graph,
