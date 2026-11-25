@@ -16,9 +16,11 @@ if (runCase("ordinary prototype chain")) {
        class Child extends Parent {}
        const child = new Child();
        if (!(child instanceof Parent) || !(child instanceof Child) || new Parent() instanceof Child) throw 1;
-       Object.setPrototypeOf(child, null);
-       if (child instanceof Parent || 0 instanceof Child || Child.prototype instanceof Child) throw 2;
+       if (({ __proto__: null }) instanceof Parent || 0 instanceof Child || Child.prototype instanceof Child) throw 2;
        function C() {}
+       const previous = new C();
+       C.prototype = {};
+       if (previous instanceof C || !(new C() instanceof C)) throw 4;
        C.prototype = 3;
        if (1 instanceof C) throw 3;
        let errors = 0;
@@ -55,14 +57,14 @@ if (runCase("custom hasInstance protocol")) {
        const left = () => { Predicate.trace += "L"; return 42; };
        const right = () => { Predicate.trace += "R"; return Predicate; };
        if (!(left() instanceof right()) || 2 instanceof Predicate) throw 1;
-       const inherited = Object.create(Predicate);
+       const inherited = { __proto__: Predicate };
        inherited.expected = 7;
        if (!(7 instanceof inherited) || inherited.trace !== "LRGCGCGC") throw 2;
        let errors = 0;
        const primitiveHook = { [Symbol.hasInstance]: 7 };
        try { 2 instanceof primitiveHook; } catch { errors = errors + 1; }
-       const throws = { get [Symbol.hasInstance]() { throw "getter"; } };
-       try { 1 instanceof throws; } catch (e) { if (e === "getter") errors = errors + 1; }
+       class Throws { static get [Symbol.hasInstance]() { throw "getter"; } }
+       try { 1 instanceof Throws; } catch (e) { if (e === "getter") errors = errors + 1; }
        if (errors !== 2) throw 3;
        return Predicate.trace;
      })();
