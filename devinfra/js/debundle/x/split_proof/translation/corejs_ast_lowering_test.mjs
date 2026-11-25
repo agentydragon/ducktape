@@ -460,6 +460,57 @@ writeFileSync(
 );
 assert.equal((await certifyFixture(defaultSplit)).default, 42);
 
+// The checked referrer stays at its original URL. A call which avoids the import
+// remains executable; actual imports have fresh promises and share a namespace
+// whose exported function reads the entry's live cell.
+const lazySplit = path.join(dir, "checked-lazy");
+mkdirSync(lazySplit, { recursive: true });
+const lazySource =
+  'var current = 1; var load = (go) => go ? import("./lazy.mjs") : 42; ' +
+  "var render = () => 7; var update = (value) => { current = value; }; export { load, render, update };";
+const lazyAsset = 'import { current } from "./entry.mjs"; export const read = () => current;';
+// The lazy target may link back only to a public entry binding.
+writeFileSync(path.join(lazySplit, "entry.mjs"), lazySource.replace("export { load", "export { current, load"));
+writeFileSync(path.join(lazySplit, "lazy.mjs"), lazyAsset);
+writeFileSync(
+  path.join(lazySplit, "spec.json"),
+  JSON.stringify({
+    entry: "entry.mjs",
+    modules: { "worker.mjs": ["#2"], "entry.mjs": ["#0", "#1", "#3", "#4"] },
+    order: ["worker.mjs"],
+    sequential: true,
+  })
+);
+const lazyOut = path.join(lazySplit, "out");
+const lazyManifest = writeDeployment(path.join(lazySplit, "entry.mjs"), path.join(lazySplit, "spec.json"), lazyOut);
+const lazyArgs = [lazyManifest, lazyOut, "--structural", "--deployment-origin", "https://example.org"];
+for (const args of [lazyArgs, [...lazyArgs, "--check-output"]]) {
+  const result = spawnSync(process.env.LOWERSPLIT, args, { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(JSON.parse(result.stdout.trim().split("\n").at(-1)).status, "certified");
+}
+const emittedEntry = path.join(lazyOut, "entry.mjs");
+const emittedSource = readFileSync(emittedEntry, "utf8");
+assert.match(emittedSource, /lazy\.mjs/);
+writeFileSync(emittedEntry, emittedSource.replace("lazy.mjs", "other.mjs"));
+const retargeted = spawnSync(process.env.LOWERSPLIT, [...lazyArgs, "--check-output"], { encoding: "utf8" });
+assert.equal(retargeted.status, 1, retargeted.stdout + retargeted.stderr);
+assert.equal(JSON.parse(retargeted.stdout.trim().split("\n").at(-1)).status, "rejected");
+writeFileSync(emittedEntry, emittedSource);
+writeFileSync(path.join(lazyOut, "lazy.mjs"), lazyAsset);
+for (const entry of [path.join(lazySplit, "entry.mjs"), path.join(lazyOut, "entry.mjs")]) {
+  const api = await import(pathToFileURL(entry).href);
+  assert.equal(api.load(false), 42);
+  const first = api.load(true),
+    second = api.load(true);
+  assert.notEqual(first, second);
+  const ns = await first;
+  assert.equal(await second, ns);
+  assert.equal(ns.read(), 1);
+  api.update(9);
+  assert.equal(ns.read(), 9);
+}
+
 // Top-level blocks, loops and switches: a var binds a module cell; let and const stay in the block.
 // A function declaration in a top-level block is still refused (function_declaration_test).
 const blockSource = [

@@ -38,6 +38,38 @@ const orders = [
   [5, 2, 3, 1],
 ];
 const cases = [{ kind: "linked", input: linked(), expected: orders }];
+for (const [source, cells, expected] of [
+  ['var load = (go) => go ? import("./lazy.mjs") : 42; throw load(false);', [], "throw"],
+  ['var load = (go) => go ? import("./lazy.mjs") : 42; load(true);', [], "unknown"],
+  ['var load = (go) => go ? import("./lazy.mjs") : 42;', [":module-loader:0:0"], [":module-loader:0:0"]],
+  ['var load = () => import("./other.mjs");', [], /dynamic import requires a checked deployment/],
+]) {
+  cases.push({ kind: "checkedDynamic", input: { source: parse(source), cells }, expected });
+}
+const dynamicSource = 'var current = 1; var load = () => import("./lazy.mjs"); export { current, load };';
+const dynamicPair = (lazy, emitted = dynamicSource) => ({
+  source: parse(dynamicSource),
+  emitted: parse(emitted),
+  lazy: parse(lazy),
+});
+cases.push({
+  kind: "checkedDynamicPair",
+  input: dynamicPair('import {current} from "./entry.mjs"; export const read = () => current;'),
+  expected: [[":module-loader:1:0"], [":module-loader:1:0"]],
+});
+cases.push({
+  kind: "checkedDynamicPair",
+  input: dynamicPair('import {missing} from "./entry.mjs"; export const read = () => missing;'),
+  expected: /does not export missing/,
+});
+cases.push({
+  kind: "checkedDynamicPair",
+  input: dynamicPair(
+    'import {current} from "./entry.mjs"; export const read = () => current;',
+    dynamicSource.replace("./lazy.mjs", "./other.mjs")
+  ),
+  expected: /dynamic import requires a checked deployment|emitted syntax differs/,
+});
 for (const [controls, reason] of [
   [{ maker: "export const wrong = 0;" }, /original linker: the module providers\/maker\.mjs does not export build/],
   [{ glueBinding: "alternate" }, /unit 1: reference to extra resolves to a different linked cell/],

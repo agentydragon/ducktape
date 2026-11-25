@@ -102,6 +102,16 @@ private def BodyFormat.scripts : BodyFormat → Std.HashSet (Nat × Nat)
   | .recorded scripts => scripts
   | _ => {}
 
+private def BodyFormat.checkedImports (format : BodyFormat) (origin : Nat)
+    (providerSite : Option (String × Nat)) : List Name :=
+  match format with
+  | .structural _ location _ =>
+    let (access, id) := match providerSite with
+      | none => (location.entryAccess, origin)
+      | some (name, ordinal) => (location.forModule name, ordinal)
+    (access.importSites[id]?.getD []).map LinkedDeployment.ImportSite.marker
+  | _ => []
+
 private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (imports : List Name)
     (origin : Nat) (providerSite : Option (String × Nat)) (j : Json) (exported : Bool) : Except String (Stmt × List Name × List TemplateSite) := do
   let retain (loaderNames : Option (List Name)) := do
@@ -122,6 +132,7 @@ private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (impo
     if scripts.contains (origin, 0) then return ← retain none
   | .linked => pure ()
   let (ast, sites) := numberSites origin format.scripts j
+  let imports := imports ++ format.checkedImports origin providerSite
   if exported then
     let (bindings, s) ← FromESTree.linkedDeclaration imports ast profile
     return (s, bindings, sites.templates.toList)
@@ -142,8 +153,38 @@ private def BodyFormat.lowerDefault (format : BodyFormat) (profile : HostProfile
       return (s, name, sites)
   if format.scripts.contains (origin, 0) then throw "unsupported opaque default export"
   let (ast, sites) := numberSites origin format.scripts j
+  let imports := imports ++ format.checkedImports origin providerSite
   let (name, s) ← FromESTree.linkedDefaultExport imports ast profile
   return (s, name, sites.templates.toList)
+
+/-- Candidate hints use the same lowering as certification. A site with other
+unsupported syntax stays opaque, and the linked checker still validates all
+selected units and their captures. -/
+def dynamicImportCandidates (source : Json) (profile : HostProfile) (access : LinkedDeployment.ModuleAccess) :
+    Except String (List Nat) := do
+  let nodes ← ESTreeUnits.nodes source
+  let mut imports := []
+  for node in nodes do
+    if (← typ node) == "ImportDeclaration" then
+      for spec in ← node.getObjValAs? (Array Json) "specifiers" do
+        imports := imports ++ [← FromESTree.identifier (← spec.getObjVal? "local")]
+  let mut candidates := []
+  for (id, sites) in access.importSites.toArray.qsort (fun a b => a.1 < b.1) do
+    unless sites.isEmpty do
+      let some node := nodes[id]? | continue
+      let kind ← typ node
+      let ast ← if kind == "ExportNamedDeclaration" || kind == "ExportDefaultDeclaration" then
+        node.getObjVal? "declaration"
+      else pure node
+      if ast == .null then continue
+      let names := imports ++ sites.map LinkedDeployment.ImportSite.marker
+      let result : Except String Unit := do
+        if kind == "ExportDefaultDeclaration" then
+          discard <| BodyFormat.lowerDefault .linked profile names id none ast
+        else
+          discard <| BodyFormat.lower .linked profile names id none ast (kind == "ExportNamedDeclaration")
+      if result.isOk then candidates := id :: candidates
+  return candidates.reverse
 
 /-- A retained unit can observe every live export through a namespace, even when the
 source spells only a method call (the receiver is the namespace). Give opaque code

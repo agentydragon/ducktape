@@ -20,6 +20,9 @@ namespace CoreJS
 
 abbrev Name := String
 
+/-- Prefix for checked dynamic-import capabilities; source identifiers cannot use it. -/
+def checkedImportPrefix : Name := ":checked-import:"
+
 inductive DeclKind where
   | var | let_ | const
   deriving DecidableEq, Repr

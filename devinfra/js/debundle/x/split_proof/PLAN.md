@@ -215,6 +215,8 @@ The Node comparison suites run their whole programs through `corejs --ast` under
 
 **Target.** `LinkedInput` with the linked `FromESTree` rules is the only lowering. Keeping a unit opaque is one of its results, chosen per unit, with captures checked the same way in both graphs.
 
+**Checked dynamic imports.** A public-corpus probe found four Excalidraw units that lower when their literal relative import sites have checked capabilities; ordinary production-profile counts remain 397 refusals in 10,291 executable units. This is a syntax counterfactual, not a count of verified deployments. All four stay at their original module locations in the existing two-chunk browser deployment. A forced-concrete probe certifies that deployment with at least one such unit selected; it finds no newly certified split. A fifth corpus hit imports its own linked chunk and is rejected by the deployment check. Reaching an import still returns unknown: fresh promises and loader scheduling are not yet modeled.
+
 **How.**
 
 1. Lower the expected refusals in `linkedRefusals`, one feature per change with a certification test when certification changes: assignment to an undeclared name, duplicate object properties, a class expression's own name, computed method and field keys, a repeated `var` across units, `JSON` under the recorded host, and a link-time missing export, which Node reports as a `SyntaxError`.

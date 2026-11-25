@@ -54,6 +54,8 @@ bb run //devinfra/js/debundle/x/split_proof/lean:lowersplit -- deployment.json o
 
 An ordinary call to ambient `Symbol.for` can be retained in deferred code without a host assumption. If initialization reaches the callee, the model reports an unknown result before evaluating the arguments.
 
+For a checked deployment, a literal relative dynamic import can remain in a concretely lowered unit at its original module location. The checker resolves the target and captures the live linked cells accessible through its static dependencies. If execution reaches the import, the model reports an unknown result: promise creation, loading, rejection and scheduling are not yet modeled.
+
 For browser module scripts, the `browser-page` contract also permits `.js` output paths on emission and disk checking.
 
 For a module loaded as a browser page entry, you can pass `--host-contract browser.json` with `{"profile":"browser-page"}` on emission and on `--check-output`. Under this profile, ambient `window`, `globalThis`, and `self` may return the same opaque page object, and their `typeof` may return `"object"`. The browser fallback `typeof global` may return `"undefined"`; a page with a Node-style shim can violate that premise. Each selected observation must preserve host state throughout initialization. A direct read of ambient `global` remains opaque and stops the proof if reached. Lexical and imported names use their actual bindings.

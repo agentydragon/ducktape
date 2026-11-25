@@ -75,6 +75,18 @@ def certifyDeployment (entry : String) (parts : List LinkedInput.StaticSplit) (s
         let ⟨level, method, ⟨equivalent, exports⟩⟩ ← checkLinkedSchedules used a b recordPivots
         return ⟨used, level, method, ⟨usedIntrinsics_subset offered before, hints, deployment, paths,
           decoded, publicPaths, placed, equivalent, exports, fun w => ⟨a.forWorld w, b.forWorld w, cells⟩⟩⟩
+  if let some snapshot := inputs then
+    if let .ok access := LinkedDeployment.checkGraph snapshot (parts.map fun p => (p.source, p.plan)) shared then
+      let mut concrete := primary
+      let mut changed := false
+      for part in parts do
+        let ids := primary[part.plan.entry]?.getD []
+        if let .ok extra := LinkedInput.dynamicImportCandidates part.source profile (access.forModule part.plan.entry) then
+          unless extra.all ids.contains do
+            concrete := concrete.insert part.plan.entry (extra ++ ids)
+            changed := true
+      if changed then
+        if let .ok result := check concrete then return result
   match check primary with
   | .ok result => return result
   | .error why =>

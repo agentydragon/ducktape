@@ -77,6 +77,49 @@ private def constructorContexts (source : Json) : Except String Json := do
     CoreJS.FromESTree.needsOpaqueContext cls (wholeUnit := true),
     CoreJS.FromESTree.needsOpaqueContext body (wholeUnit := true)]
 
+/-- Exercise the expression in isolation with the same reserved capability the
+deployment checker produces. The production entry point checks the graph first. -/
+private def checkedDynamic (input : Json) : Except String Json := do
+  let source ← input.getObjVal? "source"
+  let cells ← input.getObjValAs? (List String) "cells"
+  let site : CoreJS.LinkedDeployment.ImportSite := ⟨"./lazy.mjs", "lazy.mjs", cells⟩
+  let nodes ← ESTreeUnits.nodes source
+  let mut body : List (Nat × CoreJS.Stmt) := []
+  for (node, id) in nodes.zipIdx do
+    body := body ++ [(id, ← CoreJS.FromESTree.linkedUnit [site.marker] node)]
+  let some (_, .decl _ _ (.func fn)) := body.head? | throw "expected a concrete function"
+  unless fn.opaqueBody.isNone do throw "function was retained opaque"
+  if !cells.isEmpty then return toJson fn.free
+  let program : CoreJS.Program := ⟨"main", [⟨"main", [], body, []⟩]⟩
+  match CoreJS.runProgram CoreJS.World.probe 1000 program with
+  | .throw _ _ => return toJson "throw"
+  | .unknown reason _ =>
+    unless reason.endsWith "dynamic import requires loader and promise semantics" do throw reason
+    return toJson "unknown"
+  | .ok _ _ => return toJson "normal"
+  | .fuel => throw "fixture exhausted fuel"
+
+/-- Decode both graphs with a real checked target that imports an entry cell. -/
+private def checkedDynamicPair (input : Json) : Except String Json := do
+  let source ← input.getObjVal? "source"
+  let emitted ← input.getObjVal? "emitted"
+  let targetAst ← input.getObjVal? "lazy"
+  let resources : Std.HashMap String CoreJS.ModuleLocation.Resource := Std.HashMap.ofList [
+    ("entry.mjs", ⟨"https://example.org/entry.mjs", ← source.getObjValAs? String "sourceText"⟩),
+    ("lazy.mjs", ⟨"https://example.org/lazy.mjs", ← targetAst.getObjValAs? String "sourceText"⟩)]
+  let deployment : CoreJS.LinkedDeployment.Input :=
+    ⟨"entry.mjs", {}, Json.mkObj [("lazy.mjs", targetAst)], resources⟩
+  let plan : EsmSplit.Plan := { entry := "entry.mjs", mods := [⟨"entry.mjs", [0, 1, 2], [], []⟩] }
+  let pair ← CoreJS.LinkedInput.decodeStructuralPair source (Json.mkObj [])
+    (Json.mkObj [("entry.mjs", emitted)]) plan [1] .empty (some deployment)
+  let inspect (p : CoreJS.Program) : Except String (List String) := do
+    let some entry := p.find "entry.mjs" | throw "missing entry"
+    let some (_, .decl _ _ (.func fn)) := entry.body.find? (fun (id, _) => id == 1)
+      | throw "expected concrete loader function"
+    unless fn.opaqueBody.isNone do throw "loader function remained opaque"
+    return fn.free
+  return toJson [← inspect pair.1, ← inspect pair.2]
+
 private def opaqueUnits (input : Json) : Except String Json := do
   let mut units := #[]
   for (j, i) in (← ESTreeUnits.nodes input).zipIdx do
@@ -103,6 +146,8 @@ private def fixtures (input : Json) : Except String Json := do
       | "linked" => pure (check (← fixture.getObjVal? "input"))
       | "structural" => pure (structural (← fixture.getObjVal? "input"))
       | "constructorContexts" => pure (constructorContexts (← fixture.getObjVal? "input"))
+      | "checkedDynamic" => pure (checkedDynamic (← fixture.getObjVal? "input"))
+      | "checkedDynamicPair" => pure (checkedDynamicPair (← fixture.getObjVal? "input"))
       | "opaque" => pure (opaqueUnits (← fixture.getObjVal? "input"))
       | kind => throw s!"unknown test case {kind}"
     return match result with

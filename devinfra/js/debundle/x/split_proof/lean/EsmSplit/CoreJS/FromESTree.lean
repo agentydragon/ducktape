@@ -647,6 +647,23 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     if key.startsWith "s:" then return .str (← stringLiteral j)
     literal key
   | "Identifier" => reference imports inFunction j profile
+  | "ImportExpression" =>
+    unless (j.getObjVal? "options").toOption.getD .null == .null do
+      throw "unsupported dynamic import options"
+    let request ← j.getObjVal? "source" >>= stringLiteral
+    let mut checked : Option (String × List Name) := none
+    for marker in imports do
+      if marker.startsWith checkedImportPrefix then
+        if let .ok data := Json.parse (marker.drop checkedImportPrefix.length).toString then
+          if (data.getObjValAs? String "request").toOption == some request then
+            if let (.ok target, .ok cells) := (data.getObjValAs? String "target", data.getObjValAs? (List Name) "cells") then
+              checked := some (target, cells)
+    let some (target, cells) := checked | throw "dynamic import requires a checked deployment"
+    -- The real ImportCall returns a fresh promise and schedules loader work. Until
+    -- those operations are modeled, stop before any result or effect is invented.
+    -- Capturing the checked cells keeps the containing closure's scope honest.
+    return .call (.func (.opaque s!"import({request}) from {target}" .arrow false 0 0 0 cells
+      (some "dynamic import requires loader and promise semantics"))) []
   | "ThisExpression" => return .this
   | "CoreJSDerivedReceiver" => return .var derivedReceiverName
   | "CoreJSNewTarget" => return .var newTargetName

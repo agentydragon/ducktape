@@ -15,8 +15,20 @@ structure Input where
   assets : Json
   before : Std.HashMap String ModuleLocation.Resource
 
+/-- The checked target and linked cells accessible through one literal request. -/
+structure ImportSite where
+  request : String
+  target : String
+  cells : List Name
+  deriving BEq
+
+def ImportSite.marker (site : ImportSite) : Name :=
+  checkedImportPrefix ++ (Json.mkObj [("request", .str site.request), ("target", .str site.target),
+    ("cells", Lean.toJson site.cells)]).compress
+
 structure ModuleAccess where
   unitNames : Std.HashMap Nat (List Name) := {}
+  importSites : Std.HashMap Nat (List ImportSite) := {}
   imports : List Import := []
   nativeUrl : Option String := none
 
@@ -31,6 +43,7 @@ private def checkSites (inputs : Input) (name : String) (linked : List String)
     (sites : Array (Nat × ModuleLocation.Use)) : Except String ModuleAccess := do
   let resources (path : String) := inputs.before[path]?
   let mut requirements : Std.HashMap Nat (List (String × Name)) := {}
+  let mut siteRequests : Std.HashMap Nat (List (String × String × List (String × Name))) := {}
   for (id, use) in sites do
     let bindings ← match use with
       -- Resolution fails before fetching or acquiring a namespace. The retained
@@ -39,6 +52,8 @@ private def checkSites (inputs : Input) (name : String) (linked : List String)
       | .dynamicImport _ target => do
         let boundary ← DynamicImports.check target linked inputs.assets resources resources
         pure <| boundary.requests.flatMap fun edge => edge.exports.map (edge.source, ·)
+    if let .dynamicImport request target := use then
+      siteRequests := siteRequests.insert id (siteRequests[id]?.getD [] ++ [(request, target, bindings)])
     requirements := requirements.insert id ((requirements[id]?.getD [] ++ bindings).eraseDups)
   let mut access : ModuleAccess := {}
   for (id, requests) in requirements.toArray.qsort (fun a b => a.1 < b.1) do
@@ -48,6 +63,10 @@ private def checkSites (inputs : Input) (name : String) (linked : List String)
       names := localName :: names
       access := { access with imports := ⟨source, [(exported, localName)]⟩ :: access.imports }
     access := { access with unitNames := access.unitNames.insert id names.reverse }
+    let localName := fun binding => s!":module-loader:{id}:{requests.idxOf binding}"
+    let checked := (siteRequests[id]?.getD []).map fun (request, target, bindings) =>
+      ({ request, target, cells := bindings.map localName } : ImportSite)
+    access := { access with importSites := access.importSites.insert id checked }
   for (id, use) in sites do
     if use == .metadata then
       let some old := resources name | throw "missing metadata resource"
