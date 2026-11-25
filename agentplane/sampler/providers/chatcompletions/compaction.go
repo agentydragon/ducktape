@@ -17,8 +17,6 @@ The continuation will receive the same system instructions and tool definitions 
 
 Preserve the user's current goals and constraints, decisions, completed and pending work, relevant tool results, exact identifiers needed to resume, and unresolved questions or uncertainties. Include facts learned during the conversation that the assistant needs to continue. Preserve exact wording when it is needed to continue. Treat the preceding messages as source material. Return only the handoff.`
 
-const defaultReplacementTemplate = "Summary of earlier conversation:\n{{.Summary}}"
-
 const (
 	userMessageFramingTokens = 5
 	userTruncationMarker     = " [truncated] "
@@ -27,6 +25,10 @@ const (
 type CompactionReplacement struct {
 	Role     string `json:"role"`
 	Template string `json:"template"`
+}
+
+func DefaultCompactionReplacement() CompactionReplacement {
+	return CompactionReplacement{Role: "assistant", Template: "Summary of earlier conversation:\n{{.Summary}}"}
 }
 
 type CompactionConfig struct {
@@ -78,9 +80,9 @@ func (c CompactionConfig) summaryPrompt() (string, error) {
 }
 
 func (c CompactionConfig) replacementMessage(summary string) (message, error) {
-	config := c.Replacement
-	if config == nil {
-		config = &CompactionReplacement{Role: "assistant", Template: defaultReplacementTemplate}
+	config := DefaultCompactionReplacement()
+	if c.Replacement != nil {
+		config = *c.Replacement
 	}
 	text, err := renderTemplate("replacement.template", config.Template, struct {
 		Summary          string
