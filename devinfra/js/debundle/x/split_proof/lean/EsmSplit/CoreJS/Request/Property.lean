@@ -243,7 +243,7 @@ theorem reachFrame_lookupProp {r R cells A} (away : Away r R A) {a : Addr} (ha :
     obtain ⟨_, path, _⟩ := findOnPrototype_path hp
     exact path.propertySafe hs ha
 
-private theorem reachFrame_throwErr {α : Type} (r R cells A) (P : α → Prop) (kind : ErrorKind) (message : String) :
+theorem reachFrame_throwErr {α : Type} (r R cells A) (P : α → Prop) (kind : ErrorKind) (message : String) :
     ReachFrame r R cells A P (throwErr kind message : M W α) :=
   ⟨fun _ _ _ _ _ => rfl, fun s _ _ => Preserves.refl r R s,
     fun _ hs _ => ⟨by simp [SafeVal, Val.nodes], hs⟩⟩
