@@ -81,6 +81,34 @@ private theorem reachFrame_readRegExp {r R cells A} (away : Away r R A) (call : 
     exact (flags regexpFlagOrder).bind fun text _ =>
       reachFrame_pure r R cells A (P := SafeVal A) (Val.str text) (fun _ hn => by cases hn)
 
+private theorem reachFrame_instanceOf {r R cells A} (away : Away r R A) (call : Call W)
+    (hf : CallFramed r R cells A call) (root : A (.obj objectProto)) (value ctor : Val)
+    (hv : SafeVal A value) (hc : SafeVal A ctor) :
+    ReachFrame r R cells A (SafeVal A) (instanceOf call value ctor) := by
+  have boolean (b : Bool) := reachFrame_pure r R cells A (P := SafeVal A) (Val.bool b) (fun _ h => by cases h)
+  have ordinary : ReachFrame r R cells A (SafeVal A) (ordinaryInstance call value ctor) := by
+    cases value <;> simp only [ordinaryInstance] <;> try exact boolean false
+    all_goals try exact reachFrame_unknown r R cells A _ _
+    case obj a =>
+      refine (reachFrame_getProp away call hf.getter root ctor (.str "prototype") hc).bind fun proto h => ?_
+      refine (reachFrame_requireObj _ proto h).bind fun target ht => ?_
+      refine (reachFrame_getObj away (safeVal_obj.1 hv)).bind fun o ho => ?_
+      exact (reachFrame_chainContains away ht o.proto (fun p hp => ho _ (by simp [Obj.nodes, hp]))).bind
+        fun b _ => boolean b
+  unfold instanceOf
+  refine (reachFrame_requireObj _ ctor hc).bind fun _ _ => ?_
+  refine (reachFrame_getProp away call hf.getter root ctor (.wellKnownSymbol .hasInstance) hc).bind fun method hm => ?_
+  split
+  · apply (reachFrame_isCallable away ctor hc).bind
+    intro b _
+    split <;> first | exact ordinary | exact boolean false
+  split
+  · apply (reachFrame_isCallable away ctor hc).bind
+    intro b _
+    split <;> first | exact ordinary | exact reachFrame_typeError _
+  · refine (hf method ctor [value] hm hc (by simpa using hv)).bind fun result _ => ?_
+    exact (reachFrame_lift (P := fun _ => True) (toBoolean result) (fun _ _ => trivial)).bind fun b _ => boolean b
+
 private theorem reachFrame_forInLevels {r R cells A} (away : Away r R A) (n : Nat)
     (a : Addr) (address : A (.obj a)) :
     ReachFrame r R cells A (fun _ => True) (forInLevels n a : M W _) := by
@@ -169,6 +197,7 @@ theorem reachFrame_prim {r R cells A} (away : Away r R A) (call : Call W) (hf : 
       | split
   | opaqueAmbientRef name | opaqueConstructorRef name => exact reachFrame_unknown r R cells A _ _
   | opaqueAmbientMemberRef receiver member => exact reachFrame_unknown r R cells A _ _
+  | instanceOf => exact reachFrame_instanceOf away call hf root _ _ (safe_arg safe 0) (safe_arg safe 1)
   | forInKeys => exact reachFrame_forInKeys away objects _ (safe_arg safe 0)
   | checkForInWrite =>
     exact reachFrame_checkForInWrite away _ _ _ (safe_arg safe 0) (safe_arg safe 1)

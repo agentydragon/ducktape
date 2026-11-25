@@ -679,6 +679,7 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
     | ">=" => return .binary .ge left right
     | "===" => return .binary .strictEq left right
     | "!==" => return .binary .strictNe left right
+    | "instanceof" => return .prim .instanceOf [left, right]
     | "in" => return .hasProp left right
     | "==" => return .binary .eq left right
     | "!=" => return .binary .ne left right

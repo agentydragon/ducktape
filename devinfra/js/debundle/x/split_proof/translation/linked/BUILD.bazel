@@ -125,6 +125,7 @@ js_test(
         ("flat_patterns_test", 6),
         ("generator_test", 4),
         ("identifier_assignment_test", 3),
+        ("instanceof_test", 2),
         ("loops_test", 4),
         ("numeric_property_keys_test", 2),
         ("object_parameter_defaults_test", 2),
