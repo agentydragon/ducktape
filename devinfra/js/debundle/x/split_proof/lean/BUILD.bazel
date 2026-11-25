@@ -455,6 +455,31 @@ lean_binary(
 )
 
 lean_binary(
+    name = "provider_input_boundary_test_runner",
+    testonly = True,
+    srcs = ["ProviderInputBoundaryTest.lean"],
+    entry = "ProviderInputBoundaryTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+    deps = [
+        ":corejs_linked_input",
+        ":corejs_structural",
+        ":shared_provider_boundary",
+    ],
+)
+
+lean_axiom_test(
+    name = "provider_input_boundary_axioms_test",
+    srcs = ["ProviderInputBoundaryTest.lean"],
+    imports = ["ProviderInputBoundaryTest"],
+    theorems = ["ProviderBoundaryFixture.certify"],
+    deps = [
+        ":corejs_linked_input",
+        ":corejs_structural",
+        ":shared_provider_boundary",
+    ],
+)
+
+lean_binary(
     name = "joint_static_test_runner",
     testonly = True,
     srcs = ["JointStaticTest.lean"],
