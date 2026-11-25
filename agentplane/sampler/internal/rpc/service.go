@@ -230,7 +230,7 @@ func (s *Sampler) commandUsing(
 				return errEffortFixed
 			}
 		}
-		if command.GetCompact() != nil && ((currentConfig.API == protocol.APIStyleChatCompletions && currentConfig.ChatCompaction == nil) || currentConfig.Responses.Dialect == responses.DialectStandard || (currentConfig.API == protocol.APIStyleAnthropicMessages && currentConfig.AnthropicMessages.Compaction == nil)) {
+		if command.GetCompact() != nil && !currentConfig.SupportsCompaction() {
 			return errCompactionUnavailable
 		}
 		return nil

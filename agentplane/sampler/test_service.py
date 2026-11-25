@@ -928,9 +928,8 @@ async def test_chat_completions_tool_round_trip(
         reasoning_efforts={"", "medium", "low"},
         api="chat_completions",
         exec_encoding="json",
-        chat_compaction=ChatCompactionConfig(max_tokens=1024, keep_recent_tokens=128, auto_compact_tokens=256)
-        if compact
-        else None,
+        auto_compact_tokens=256 if compact else None,
+        chat_compaction=ChatCompactionConfig(max_tokens=1024, keep_recent_tokens=128) if compact else None,
     )
     request = create_request(tmp_path)
     request.spec.reasoning_effort = "medium"
@@ -1119,10 +1118,10 @@ async def test_chat_completions_compaction(
         reasoning_efforts={"", "medium", "low"},
         api="chat_completions",
         exec_encoding="json",
+        auto_compact_tokens=256 if automatic else None,
         chat_compaction=ChatCompactionConfig(
             max_tokens=8192,
             keep_recent_tokens=12,
-            auto_compact_tokens=256 if automatic else None,
             summary_prompt_template=None
             if automatic
             else "Write a handoff. The user message budget is {{.KeepRecentTokens}} tokens.",

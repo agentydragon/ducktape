@@ -523,6 +523,36 @@ func TestSettingsRequireExplicitSupportedModelConfiguration(t *testing.T) {
 	}
 }
 
+func TestAutomaticCompactionThresholdBelongsToTheModel(t *testing.T) {
+	s := fixtureSettings()
+	model := s.Models["test-model"]
+	model.Responses.Dialect = responses.DialectLite
+	s.Models["legacy"] = model
+	model.AutoCompactTokens = new(250)
+	s.Models["test-model"] = model
+	s.LegacyAutoCompactTokens = new(100)
+	wire, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeSettings(strings.NewReader(string(wire)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]int{"test-model": 250, "legacy": 100} {
+		if got := decoded.Models[name].AutoCompactTokens; got == nil || *got != want {
+			t.Fatalf("model %s compaction threshold = %v, want %d", name, got, want)
+		}
+	}
+	if !model.Compatible(s.Models["legacy"]) {
+		t.Fatal("compaction threshold should not affect provider continuation compatibility")
+	}
+	model.Responses.Dialect = responses.DialectStandard
+	if err := model.Validate(); err == nil {
+		t.Fatal("accepted an automatic threshold for standard Responses")
+	}
+}
+
 func TestAnthropicSettingsResolveNamedConnectionAndEnforceControls(t *testing.T) {
 	s := fixtureSettings()
 	connection := s.Connections["provider"]
