@@ -156,7 +156,7 @@ for (const [opts, expected] of [
     { after: { "assets/helper.js": resource("assets/helper.js", "export const changed = true;") } },
     /URL or source changed/,
   ],
-  [{ helper: 'import * as editor from "../editor.js";' }, /expected a named import/],
+  [{ helper: 'import * as editor from "../editor.js";' }, /expected a named or default import/],
   [{ helper: 'export { api } from "../editor.js";' }, /unsupported re-export/],
   [{ helper: 'const next = () => import("../editor.js");' }, /nested dynamic import/],
   [{ helper: "await start();" }, /top-level `await`/],

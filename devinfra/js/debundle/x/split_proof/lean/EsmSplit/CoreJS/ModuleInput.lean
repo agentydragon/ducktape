@@ -43,9 +43,13 @@ def importDecl (importer : String) (j : Json) : Except String Import := do
   noAttributes j
   let specs ← j.getObjValAs? (List Json) "specifiers"
   let names ← specs.mapM fun sp => do
-    unless (← typ sp) == "ImportSpecifier" do throw "expected a named import"
-    return (← FromESTree.moduleExportName (← sp.getObjVal? "imported"),
-      ← FromESTree.identifier (← sp.getObjVal? "local"))
+    match ← typ sp with
+    | "ImportSpecifier" =>
+      return (← FromESTree.moduleExportName (← sp.getObjVal? "imported"),
+        ← FromESTree.identifier (← sp.getObjVal? "local"))
+    -- `import d from` imports the exported name `default`.
+    | "ImportDefaultSpecifier" => return ("default", ← FromESTree.identifier (← sp.getObjVal? "local"))
+    | _ => throw "expected a named or default import"
   return { source, names }
 
 end CoreJS.ModuleInput
