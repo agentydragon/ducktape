@@ -23,18 +23,18 @@ for (const [name, before, operand, expected, moved] of [
 ]) {
   const test = fixture(name, before, operand);
   const { dir, out, run } = test;
-  assert.equal(run(refusal).status, "rejected");
-  assert.match(run(refusal, "--host-contract", plain).reason, /unit 1 is not a local allocating declaration/);
+  assert.equal(run().status, "rejected");
+  assert.match(run("--host-contract", plain).reason, /unit 1 is not a local allocating declaration/);
   assert(!existsSync(out));
   if (name === "ordinary") {
-    const emitted = run(pivot, "--host-contract", stable);
+    const emitted = run("--host-contract", stable);
     assert.equal(emitted.status, "certified", JSON.stringify(emitted));
     assert.match(emitted.premises.join("\n"), /Math.*window\.Math.*PI.*4614256656552045848.*no observable effects/);
-    assert.deepEqual(run(pivot, "--check-output", "--host-contract", stable), emitted);
-    assert.equal(run(refusal, "--check-output", "--host-contract", plain).status, "rejected");
+    assert.deepEqual(run("--check-output", "--host-contract", stable), emitted);
+    assert.equal(run("--check-output", "--host-contract", plain).status, "rejected");
     assert.deepEqual(observe(path.join(out, "entry.mjs"), "result"), { result: moved });
   } else if (name === "coercion") {
-    assert.equal(run(refusal, "--host-contract", stable).status, "rejected");
+    assert.equal(run("--host-contract", stable).status, "rejected");
   }
   // The forced preview exposes what the unconditional move would do in a
   // deployment that violates the stated premise. Observe each in a fresh realm.

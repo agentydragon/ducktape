@@ -289,7 +289,7 @@ private def runSingleton (chunk : DeploymentChunk) (out work : System.FilePath)
   let src ← readBundle chunk.source work true timings (← IO.ofExcept chunk.sourceHash)
   let declarations := (CoreJS.DeclarationInput.decode src.program).toOption
   let part ← prepare chunk src work profile "bundle.mjs" timings declarations
-  let { original := program, plan := P, output } := part
+  let { original := program, bundle := _, spec := _, plan := P, output } := part
   let verify {α : Type} (providers : Json) (check : Json → IO (Except CertificationRefusal α)) :=
     certifyOutput [output] providers out work checkOnly timings check
   let providers := fun _ => timePhase timings "provider_loading" fun _ => do
