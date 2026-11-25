@@ -28,6 +28,20 @@ pub struct VendorImportRewrites {
 }
 
 impl VendorImportRewrites {
+    /// Apply the replacements collected from this file's import directives.
+    pub(crate) fn finish(
+        mut self,
+        body: &mut Vec<ModuleItem>,
+    ) -> BTreeMap<(ChunkId, String), usize> {
+        if !self.body_rewrites.is_empty() {
+            body.visit_mut_with(&mut PartialSwapIdentRewriter {
+                bindings: &self.body_rewrites,
+                references_by_symbol: &mut self.references_rewritten,
+            });
+        }
+        self.references_rewritten
+    }
+
     /// Construct replacement directives without choosing their position in the file.
     /// Facade paths are resolved in the caller's output-file coordinate system.
     pub fn materialize(
