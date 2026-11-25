@@ -1,6 +1,6 @@
-"""The reference docs every debundle skill ships."""
+"""Package debundle skills with their shared reference docs."""
 
-load("//skills:defs.bzl", "skill_mapping")
+load("//skills:defs.bzl", "skill_mapping", "skill_package")
 
 # Mirrors the source layout (README/SPEC at the crate root, docs/ below it) so the
 # docs' relative links resolve inside the installed skill; each skill's archive
@@ -54,7 +54,7 @@ _CONTRACT_EXAMPLE_MAPPINGS = [
     for mapping in _contract_example_mappings(scenario)
 ]
 
-DEBUNDLE_REFERENCES = [
+_DEBUNDLE_REFERENCES = [
     skill_mapping(
         srcs = [
             "//devinfra/js/debundle/skills/shared:initialization_contracts.md",
@@ -103,3 +103,10 @@ DEBUNDLE_REFERENCES = [
         prefix = "references/perf",
     ),
 ]
+
+def debundle_skill(name):
+    """Package a role's instructions with the debundle reference tree."""
+    skill_package(
+        name = name,
+        contents = [skill_mapping(srcs = ["SKILL.md"], preserve_paths = True)] + _DEBUNDLE_REFERENCES,
+    )
