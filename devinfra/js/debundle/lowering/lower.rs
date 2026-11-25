@@ -56,7 +56,6 @@ pub(super) const ENTRY_IMPORT_LOCAL_CONTRIBUTOR: &str = "entry import-local disa
 
 pub(super) struct LoweredChunk {
     pub(super) files: Vec<JsFile>,
-    pub(super) file_records: Vec<(String, FileRole)>,
     pub(super) applied: Vec<SelectedModuleLowering>,
     /// Per-symbol vendor-swap rewrite counts applied at construction
     /// time across this chunk's module bodies (see
@@ -67,8 +66,7 @@ pub(super) struct LoweredChunk {
 /// The exact entry and logical-module ASTs after import planning and body
 /// rewrites, ready for final file construction.
 pub(super) struct PreparedCandidateEmissionPlan<'a> {
-    files: Vec<JsFile>,
-    file_records: Vec<(String, FileRole)>,
+    entry: JsFile,
     modules: Vec<PreparedModuleEmission<'a>>,
     cross_chunk_import_aliases: Vec<(String, String)>,
 }
@@ -77,17 +75,14 @@ impl PreparedCandidateEmissionPlan<'_> {
     /// Header lines are file metadata, so they can lead the entry file
     /// without rebuilding any prepared body.
     pub(super) fn prepend_entry_header_lines(&mut self, prefix: Vec<String>) {
-        let entry = self
-            .files
-            .first_mut()
-            .expect("a candidate emission plan always contains its entry file");
-        entry.header_lines = [prefix, std::mem::take(&mut entry.header_lines)].concat();
+        let mut lines = prefix;
+        lines.append(&mut self.entry.header_lines);
+        self.entry.header_lines = lines;
     }
 
     pub(super) fn emit(self) -> LoweredChunk {
         let Self {
-            mut files,
-            mut file_records,
+            entry,
             modules,
             cross_chunk_import_aliases,
         } = self;
@@ -99,11 +94,11 @@ impl PreparedCandidateEmissionPlan<'_> {
                 .map(|module| GLOBALS.set(globals, || module.emit()))
                 .collect()
         });
+        let mut files = vec![entry];
         let mut applied = Vec::new();
         let mut vendor_reference_rewrites = BTreeMap::<(ChunkId, String), usize>::new();
         for output in module_outputs {
             files.push(output.file);
-            file_records.push(output.record);
             let mut lowering = output.lowering;
             lowering.cross_chunk_import_aliases = cross_chunk_import_aliases.clone();
             applied.push(lowering);
@@ -113,7 +108,6 @@ impl PreparedCandidateEmissionPlan<'_> {
         }
         LoweredChunk {
             files,
-            file_records,
             applied,
             vendor_reference_rewrites,
         }
@@ -643,7 +637,7 @@ pub(super) fn prepare_candidate_emission_plan<'output>(
         artifact_indexes,
     ));
 
-    let files = vec![JsFile {
+    let entry = JsFile {
         path: entry_file.to_string(),
         body: JsFileBody::Ast(ParsedJsModule {
             cm: runtime_ast.cm.clone(),
@@ -664,8 +658,7 @@ pub(super) fn prepare_candidate_emission_plan<'output>(
             role: FileRole::Entry,
             source_path: source_path.to_string(),
         },
-    }];
-    let file_records = vec![(entry_file.to_string(), FileRole::Entry)];
+    };
 
     // Filter chunk_renames down to entries the per-module emit path
     // should apply: bindings *not* claimed by any logical module.
@@ -725,8 +718,7 @@ pub(super) fn prepare_candidate_emission_plan<'output>(
     })?;
 
     Ok(PreparedCandidateEmissionPlan {
-        files,
-        file_records,
+        entry,
         modules,
         cross_chunk_import_aliases,
     })

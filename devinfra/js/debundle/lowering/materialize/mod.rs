@@ -50,7 +50,7 @@ use analysis_projection::{AnalysisProjection, ChunkGraphInputs};
 use anyhow::{Context, Result, bail, ensure};
 use artifact::paths::join_module_path;
 use artifact::reports::{ChunkValidationSummary, DirectoryDependencyFact, SelectedModuleLowering};
-use artifact::{ArtifactIndexes, ChunkBundle, FileRole, JsFile};
+use artifact::{ArtifactIndexes, ChunkBundle, JsFile};
 use chunk_analysis::build_chunk_graph;
 use frontend_elaboration::chunk_ast::{ChunkAstAnalysis, SourceExportIdentity};
 use frontend_elaboration::{FrontendChunk, MemberClaimProjection};
@@ -123,7 +123,6 @@ pub(super) struct MaterializedLogicalChunk {
     target_file: String,
     source_path: String,
     pub(super) files: Vec<JsFile>,
-    pub(super) file_records: Vec<(String, FileRole)>,
     pub(super) applied: Vec<SelectedModuleLowering>,
     pub(super) directory_dependency_facts: Vec<DirectoryDependencyFact>,
     pub(super) validation: ChunkValidationSummary,
@@ -1109,7 +1108,6 @@ pub(super) fn finish_logical_chunk(
     }
     let LoweredChunk {
         files,
-        file_records,
         applied,
         vendor_reference_rewrites,
     } = prepared_emission.emit();
@@ -1174,7 +1172,6 @@ pub(super) fn finish_logical_chunk(
             target_file: runtime_file.path.clone(),
             source_path: runtime_file.metadata.source_path.clone(),
             files,
-            file_records,
             applied,
             directory_dependency_facts,
             validation,
