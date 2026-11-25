@@ -41,7 +41,7 @@ if (runCase("imported-tag")) {
   const files = prepare(dir, {
     source: 'import { tag } from "./provider.mjs"; const value = tag`a\\x62${7}c`; export const result = value;',
     provider: `export function tag(strings) {
-      const copy = Array.from(strings);
+      const copy = Array.from(typeof strings === "string" ? [strings] : strings);
       if (copy === strings || copy.length !== 2 || copy[0] !== "ab" ||
           strings.raw[0] !== "a\\\\x62" || arguments.length !== 2 || arguments[1] !== 7) throw "tag";
       return copy[0] + arguments[1] + copy[1];
@@ -52,7 +52,10 @@ if (runCase("imported-tag")) {
   const contract = path.join(dir, "browser.json");
   writeFileSync(contract, JSON.stringify({ profile: "browser-page" }));
   const options = ["--host-contract", contract];
-  assertCertifiedResult({ ...lower(files.sourceFile, files.specFile, out, options), files, out }, "ab7c");
+  const checked = lower(files.sourceFile, files.specFile, out, options);
+  assertCertifiedResult({ ...checked, files, out }, "ab7c");
+  assert(checked.verdict.assumptions.some((a) => a.includes("intrinsic Array constructor")));
+  assert(checked.verdict.assumptions.some((a) => a.includes("intrinsic Array.from function")));
   const verify = () => lower(files.sourceFile, files.specFile, out, [...options, "--check-output"]);
   assert.equal(verify().verdict.status, "certified");
   const entry = path.join(out, "entry.mjs");
