@@ -202,8 +202,7 @@ func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *li
 		return sessionstore.TurnCell, nil
 	}
 	if frontier == nil {
-		// TODO: Codex rust-v0.162.1 keeps notify() outputs and user input in one arrival-ordered pending
-		// queue; this records a step's notify() outputs before its steering input (SPEC.md deviation).
+		// At a settled step, record its pending notify() outputs before applying user steering.
 		drained, err := r.store.DrainNotifications(ctx, owner)
 		if err != nil {
 			return "", err

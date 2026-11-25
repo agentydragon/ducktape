@@ -1466,23 +1466,6 @@ suffice, while a change learned outside a tool result and recovery into a new co
 communicate the state needed to continue. Include an encrypted reasoning item and verify
 that subsequent requests preserve the previously sampled items and their order exactly.
 
-### `CENTRAL_SAMPLER_NOTIFY_ORDER` — preserve the arrival order of explicit JS notifications and steering
-
-**Open; independent of handle notices.** Codex injects nonblank `notify(text)` as extra output
-of the originating `exec` on the active turn. The [sampler queue](../sampler/internal/sessionstore/notification.go)
-already commits a notification before acknowledging the host, but the
-[turn loop](../sampler/internal/residentruntime/session/turn.go) drains notifications before
-steering even when user input was admitted first. Give both a common per-session admission
-order in PostgreSQL; let the current lease owner consume eligible inputs at a settled step
-boundary, atomically with their context update. Preserve the originating call and output
-budget across a delayed drain. This does not require interrupting an in-flight provider request.
-
-**Exit:** compare provider input for both interleavings of user steering and explicit cell
-notification against the pinned CLI. Exercise owner loss around durable admission and drain:
-preserve already-committed output, fence stale writers, and neither repeat an effect nor
-attach an output to an unrelated call. Cover blank notifications, no active turn, abort,
-and a compacted context without the originating call.
-
 ### `CENTRAL_SAMPLER_COMPACTION_TIMELINE` — show when the sampler compacts context
 
 **Unscheduled.** Render sampler compaction as a timeline activity with start and terminal
