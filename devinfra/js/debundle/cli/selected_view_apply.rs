@@ -14,6 +14,26 @@ use spec::{LogicalModule, ModulePath, SourceMatchBinding, SourceMatchBindingDeta
 use crate::outcome::{GateOutcome, MutationAction, MutationOutcome, MutationVerb};
 use crate::source_unit_apply::{SelectorOverride, SourceUnitApplyOptions, SourceUnitApplyOutcome};
 
+pub(super) fn selected_provenance(
+    context: &VerifiedGraphSourceContext,
+    graph_path: &Path,
+    graph: &DependencyGraphInput,
+) -> Result<graph_provenance::GraphProvenance> {
+    let report = graph.report();
+    ensure!(
+        report.chunk_id == context.chunk_id()
+            && report.ownership_subset.as_deref() == context.selected_ownership(),
+        "selected graph does not match its verified chunk and ownership"
+    );
+    graph_provenance::read_program_provenance(
+        graph_path,
+        &report.program_graph,
+        &report.chunk_id,
+        report.ownership_subset.as_deref(),
+    )?
+    .context("selected-view editing requires graph provenance")
+}
+
 pub(super) fn run(
     stderr: &mut (dyn std::io::Write + Send),
     graph_path: &Path,
@@ -22,13 +42,9 @@ pub(super) fn run(
     options: SourceUnitApplyOptions<'_>,
 ) -> Result<SourceUnitApplyOutcome> {
     let change = prepare_change(context, graph, options)?;
-    let header = graph_provenance::read_graph_header(graph_path)?;
-    let provenance = header
-        .provenance
-        .as_ref()
-        .context("selected-view editing requires graph provenance")?;
+    let provenance = selected_provenance(context, graph_path, &change.graph)?;
     let request = crate::graph_transform_request(context)?;
-    let program = pipeline::SelectedOwnershipProgram::prepare(&request, context, provenance)?;
+    let program = pipeline::SelectedOwnershipProgram::prepare(&request, context, &provenance)?;
     let targets = BTreeSet::from([context.chunk_id().to_owned()]);
     command_diagnostics::run(stderr, |diagnostics| {
         program.with_preflight_session(targets, diagnostics, |session| {

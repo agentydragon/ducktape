@@ -547,26 +547,16 @@ fn preflight_selected_corpus(
         if proposal.search.status != peel::search::SearchStatus::Found {
             continue;
         }
-        if args.source_root.is_none()
-            || proposal
-                .input
-                .as_ref()
-                .expect("found proposal retains its graph")
-                .report()
-                .ownership_subset
-                .is_none()
-        {
+        let input = proposal
+            .input
+            .as_ref()
+            .expect("found proposal retains its graph");
+        if args.source_root.is_none() || input.report().ownership_subset.is_none() {
             preflight_one_proposal(args, proposal, stderr, Some(context));
             continue;
         }
-        let header = graph_provenance::read_graph_header(&proposal.graph)?;
-        ensure!(
-            header.chunk_id == proposal.chunk_id,
-            "graph chunk changed during proposal preparation"
-        );
-        let provenance = header
-            .provenance
-            .context("selected-view editing requires graph provenance")?;
+        let provenance =
+            crate::selected_view_apply::selected_provenance(context, &proposal.graph, input)?;
         let key = pipeline::SelectedOwnershipProgram::key(context, &provenance)?;
         match groups.entry(key) {
             std::collections::btree_map::Entry::Vacant(entry) => {
