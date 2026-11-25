@@ -1061,6 +1061,7 @@ fn prepare_transform(
 ) -> Result<(TransformSpec, PreparedTransform)> {
     let (roots, modules_directory) = provenance_roots(cli)?;
     let generation_command = canonical_generation_command(cli, options, &roots, loaded_analysis)?;
+    let source_root = roots.source.clone();
     let capture = InputCapture::start(roots, modules_directory, generation_command)?;
     if let Some(input) = &options.ownership_subset_input {
         anyhow::ensure!(
@@ -1122,13 +1123,6 @@ fn prepare_transform(
     if let TransformSpecSource::Tree(tree) = &cli.spec_source {
         capture.set_tree_scope(&tree.config_path, module_roots_by_chunk.clone())?;
     }
-    let source_root = match &cli.spec_source {
-        TransformSpecSource::Tree(tree) => tree.source_root.clone(),
-        TransformSpecSource::Flat { .. } => None,
-    }
-    .unwrap_or_else(|| std::env::current_dir().expect("current directory"));
-    let source_root = graph_provenance::absolute(&source_root)?;
-    capture.set_source_root(&source_root)?;
     validate_transform_spec(&spec)?;
     if let RunArtifacts::ReportsOnly { out_root } = &options.artifacts {
         preflight_roots(vec![out_root.clone()])?;

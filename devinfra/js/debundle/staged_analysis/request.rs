@@ -56,7 +56,6 @@ pub fn analyze_from_projection(
         None,
         std::env::args().collect(),
     )?;
-    capture.set_source_root(&source_root)?;
     let inputs = spec.inputs_under(&source_root);
     let artifact = load_js_chunks(&inputs.input_root, &inputs.js_list_path)?;
     let embedded_loaders: BTreeMap<String, spec::BunLoader> = match &inputs.embedded_loaders_path {

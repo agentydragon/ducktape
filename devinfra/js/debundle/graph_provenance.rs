@@ -448,18 +448,6 @@ impl InputCapture {
         })
     }
 
-    pub fn set_source_root(&self, path: &Path) -> Result<()> {
-        let path = absolute(path)?;
-        self.state
-            .lock()
-            .expect("capture lock")
-            .as_mut()
-            .expect("capture started")
-            .roots
-            .source = path;
-        Ok(())
-    }
-
     /// Record bytes already read by the caller so capture and parsing use the
     /// same snapshot. The subset is rooted separately because Bazel and local
     /// callers commonly keep it outside the spec tree.
