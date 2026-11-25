@@ -250,16 +250,35 @@ The linked statement implies `NormalEquivalent` over the worlds that satisfy its
 
 ### One proven checker
 
-**Now.** [`checkStructuralSchedule`](lean/EsmSplit/CoreJS/LinkedPivotCertificate.lean) carries a general theorem in its type and runs as compiled code. The assembled deployment checker proves placement over the decoded output alongside equivalence and public live-cell equality. Linked mode has no general checker: [`LinkedCertificate.lean`](lean/EsmSplit/CoreJS/LinkedCertificate.lean) writes a new Lean proof for each run, and a separate Lean process checks it. The singleton proof paths still rely on placement checks in the decoder.
+**Now.** [`checkStructuralSchedule`](lean/EsmSplit/CoreJS/LinkedPivotCertificate.lean) carries a general theorem in its type and runs as compiled code. The assembled deployment checker proves placement over the decoded output alongside equivalence and public live-cell equality. Linked mode has no general checker: [`LinkedCertificate.lean`](lean/EsmSplit/CoreJS/LinkedCertificate.lean) writes a new Lean proof for each run, and a separate Lean process checks it. Those proofs run both programs with the world left abstract. Equal calls to `World.step`, `globalTypeof`, `hostRef`, and `talk` reduce to equal stuck terms, but Lean elaborates that fact separately for each input. The singleton proof paths still rely on placement checks in the decoder.
 
-**Target.** The total `split` from the [target](#target). The planner runs inside it and stays unproved.
+**Target.** A compiled linked checker whose successful result carries [`ASTEquivalent`](lean/EsmSplit/CoreJS/LinkedCertificate/Proof.lean) for the decoded pair. Its general replay theorem covers world interactions, not only world-free runs. The total `split` from the [target](#target) can then select it alongside the other compiled strategies. The planner runs inside `split` and stays unproved.
+
+**Theorem and proof strategy.** Use symbolic replay with a realization theorem at the `World` boundary. A symbolic run carries the ordinary CoreJS state and a symbolic world state. Each call to `World.step`, `globalTypeof`, `hostRef`, or `talk` records its operation, arguments, and current symbolic world state. The response and next world state are symbolic terms keyed by that request. Repeating the same request from the same symbolic state reuses the same terms. This represents arbitrary answers and state changes without choosing one concrete host.
+
+For a fuel bound, symbolic agreement means both runs finish normally, make the same world requests in the same order with equal symbolic arguments, consume each shared answer in the same way, and have equal final CoreJS and symbolic world states. A symbolic value used to choose an unresolved branch is refused at first; later work can admit branches when it proves both runs make the same choice for every realization. `HostPremises` constrain symbolic `globalTypeof` and `hostRef` answers. If this replay is also used for a structural strategy, `StableIntrinsic.Worlds` supplies the corresponding stable-read constraints.
+
+The planned soundness statement is:
+
+```lean
+theorem SymbolicReplay.agreement_sound
+    (agrees : SymbolicReplay.agrees premises fuel source candidate) :
+    ∀ w, premises.Satisfied w →
+      normal (runProgram (premises.specialize w) fuel source) = true ∧
+      runProgram (premises.specialize w) fuel source =
+        runProgram (premises.specialize w) fuel candidate
+```
+
+The proof relates a symbolic run to `runProgram` by instantiating each recorded answer and state term with the result of the corresponding operation in `w`. Equal requests therefore share the same concrete answer and next world state, including through opaque conversations. The result equality and normal-completion fact give `EquivalentFor` via `of_host_evaluation`; the existing compiled export check supplies `SameExports`. Together with `LinkedInput.decodePair` and `certifyASTs`, this gives the compiled check's `ASTEquivalent` result. The theorem must be checked with `#print axioms` and may use only `propext`, `Classical.choice`, and `Quot.sound`.
+
+This choice keeps world-parametric reasoning at the interaction boundary. Requiring a world-free evaluator would reject programs whose two layouts make the same host calls. A monad-generic rewrite of `Eval.lean` would move the new abstraction through every evaluator operation before it could check those calls.
 
 **How.**
 
 1. Wrap planning and `checkStructuralSchedule` in `split`. The CLI emits ESTree for `Y`'s placement, and [checking the printed files](#check-the-printed-files) ties the files to `Y`.
 2. Carry `Places` through the proof paths for singleton inputs as they converge on the assembled deployment checker.
-3. Add whole-program evaluation to the checker as a proven justification: a symbolic evaluator with a soundness theorem, so a move can rest on evaluating the units it crosses, as linked mode does today.
-4. Retire per-run proof generation once the proven evaluator certifies the linked test corpus.
+3. Add symbolic replay and its realization theorem. Start with runs that make no world requests or only observations fixed by `HostPremises`; then cover matching `World.step`, `globalTypeof`, and `hostRef` requests, followed by matching `talk` conversations. Refuse unresolved symbolic branches until their agreement is proved.
+4. Run the compiled check before per-run proof generation. Keep generated proofs as a fallback for cases the symbolic checker cannot yet cover, report which path certified each case, and measure both paths on the linked test corpus. Keep current accepts and refusals unchanged. Retire per-run proof generation only after the compiled check covers every currently certified corpus case.
 
 **Done when.** The certified CLI calls only `split`, `split`'s type states the target theorem, and no split run starts Lean.
 
