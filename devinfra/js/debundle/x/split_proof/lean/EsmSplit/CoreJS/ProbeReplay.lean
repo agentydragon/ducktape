@@ -946,9 +946,36 @@ private def replaySuccessOwnData {source : World} (fuel : Nat) (base key : Val) 
       | _ => none
   | _, _ => none
 
+/-- Keep function and host identities on the existing fallback path. -/
+private def primitiveReplayValue : Val → Bool
+  | .undef | .null | .bool _ | .num _ | .str _ => true
+  | _ => false
+
+/- Until source-observation semantics are settled, enable the new logical
+rule only in schedules without functions, calls, host values or accessors. -/
 mutual
 
-private def checkReplayExpr {source : World} : (fuel : Nat) → (env : Env) → (expr : Expr) →
+private def primitiveLogicalExpr : Expr → Bool
+  | .undef | .null | .bool _ | .num _ | .str _ | .var _ => true
+  | .logical _ left right => primitiveLogicalExpr left && primitiveLogicalExpr right
+  | .obj props => primitiveLogicalProps props
+  | _ => false
+
+private def primitiveLogicalProps : List PropDef → Bool
+  | [] => true
+  | .init (.str _) value :: rest => primitiveLogicalExpr value && primitiveLogicalProps rest
+  | _ => false
+
+end
+
+private def primitiveLogicalStmt : Stmt → Bool
+  | .decl _ _ expr | .expr expr => primitiveLogicalExpr expr
+  | .varDecl _ => true
+  | _ => false
+
+mutual
+
+private def checkReplayExpr {source : World} (allowLogical : Bool) : (fuel : Nat) → (env : Env) → (expr : Expr) →
     (s : State source) → Option (ReplaySuccess (fun w => evalExpr (W := w) fuel env expr) s)
   | 0, _, _, _ => none
   | n + 1, env, expr, s =>
@@ -957,9 +984,33 @@ private def checkReplayExpr {source : World} : (fuel : Nat) → (env : Env) → 
         (fun _ => replay_evalReplayable (n + 1) env expr supported)
     else
       match expr with
+      | .logical op left right => do
+        guard allowLogical
+        let leftRun ← checkReplayExpr allowLogical n env left s
+        guard (primitiveReplayValue leftRun.value)
+        let decision ← replaySuccessOfEquivalent
+          (fun w => lift (W := w) (shortCircuits op leftRun.value)) leftRun.next
+          (fun _ => replay_lift (shortCircuits op leftRun.value))
+        let selected : ReplaySuccess
+            (fun w => if decision.value then (pure leftRun.value : M w Val) else evalExpr n env right)
+            decision.next ←
+          if stop : decision.value then
+            some (by simpa only [stop, ↓reduceIte] using replaySuccessOfPure leftRun.value decision.next)
+          else do
+            let rightRun ← checkReplayExpr allowLogical n env right decision.next
+            guard (primitiveReplayValue rightRun.value)
+            pure (by simpa only [stop, Bool.false_eq_true, ↓reduceIte] using rightRun)
+        let decisionStep := replaySuccessBind (f := fun w stop =>
+          if stop then (pure leftRun.value : M w Val) else evalExpr n env right) decision selected
+        let result := replaySuccessBind (f := fun w value => do
+          if ← lift (W := w) (shortCircuits op value) then pure value else evalExpr n env right)
+          leftRun decisionStep
+        have result' : ReplaySuccess (fun w => evalExpr (W := w) (n + 1) env (.logical op left right)) s := by
+          simpa only [evalExpr] using result
+        pure result'
       | .get object key => do
-        let objectRun ← checkReplayExpr n env object s
-        let keyRun ← checkReplayExpr n env key objectRun.next
+        let objectRun ← checkReplayExpr allowLogical n env object s
+        let keyRun ← checkReplayExpr allowLogical n env key objectRun.next
         let readRun ← replaySuccessOwnData n objectRun.value keyRun.value keyRun.next
         let keyStep := replaySuccessBind
           (f := fun w keyValue => getProp (callFn (W := w) n) objectRun.value keyValue) keyRun readRun
@@ -970,7 +1021,7 @@ private def checkReplayExpr {source : World} : (fuel : Nat) → (env : Env) → 
           simpa only [evalExpr] using result
         pure result'
       | .arr exprs => do
-        let elements ← checkReplayArgs n env exprs s
+        let elements ← checkReplayArgs allowLogical n env exprs s
         let allocated ← replaySuccessOfEquivalent (fun w => alloc (W := w) (arrayObject elements.value))
           elements.next (fun _ => replay_alloc (arrayObject elements.value))
         let allocation := replaySuccessBind (f := fun w addr => (pure (Val.obj addr) : M w Val))
@@ -985,7 +1036,7 @@ private def checkReplayExpr {source : World} : (fuel : Nat) → (env : Env) → 
         let allocated ← replaySuccessOfEquivalent
           (fun w => alloc (W := w) { proto := some objectProto, props := [] }) s
           (fun _ => replay_alloc { proto := some objectProto, props := [] })
-        let fields ← checkReplayProps n env allocated.value props allocated.next
+        let fields ← checkReplayProps allowLogical n env allocated.value props allocated.next
         let fieldStep := replaySuccessBind (f := fun w _ => (pure (Val.obj allocated.value) : M w Val))
           fields (replaySuccessOfPure (Val.obj allocated.value) fields.next)
         let result := replaySuccessBind (f := fun w addr => do
@@ -996,7 +1047,7 @@ private def checkReplayExpr {source : World} : (fuel : Nat) → (env : Env) → 
         pure result'
       | _ => none
 
-private def checkReplayArgs {source : World} : (fuel : Nat) → (env : Env) → (exprs : List Expr) →
+private def checkReplayArgs {source : World} (allowLogical : Bool) : (fuel : Nat) → (env : Env) → (exprs : List Expr) →
     (s : State source) → Option (ReplaySuccess (fun w => evalArgs (W := w) fuel env exprs) s)
   | 0, _, _, _ => none
   | _ + 1, _, [], s => some (replaySuccessOfPure [] s)
@@ -1004,8 +1055,8 @@ private def checkReplayArgs {source : World} : (fuel : Nat) → (env : Env) → 
     match argument : expr.argument with
     | (true, _) => none
     | (false, operand) => do
-      let head ← checkReplayExpr n env operand s
-      let tail ← checkReplayArgs n env rest head.next
+      let head ← checkReplayExpr allowLogical n env operand s
+      let tail ← checkReplayArgs allowLogical n env rest head.next
       let tailStep := replaySuccessBind
         (f := fun w values => (pure ([head.value] ++ values) : M w (List Val))) tail
         (replaySuccessOfPure ([head.value] ++ tail.value) tail.next)
@@ -1016,18 +1067,18 @@ private def checkReplayArgs {source : World} : (fuel : Nat) → (env : Env) → 
         simpa only [evalArgs, argument, Bool.false_eq_true, ↓reduceIte, M.pure_bind] using result
       pure result'
 
-private def checkReplayProps {source : World} : (fuel : Nat) → (env : Env) → (addr : Addr) →
+private def checkReplayProps {source : World} (allowLogical : Bool) : (fuel : Nat) → (env : Env) → (addr : Addr) →
     (props : List PropDef) → (s : State source) →
     Option (ReplaySuccess (fun w => evalProps (W := w) fuel env addr props) s)
   | 0, _, _, _, _ => none
   | _ + 1, _, _, [], s => some (replaySuccessOfPure () s)
   | 1, _, _, _ :: _, _ => none
   | n + 2, env, addr, .init (.str name) value :: rest, s => do
-    let init ← checkReplayExpr (n + 1) env value s
+    let init ← checkReplayExpr allowLogical (n + 1) env value s
     let created ← replaySuccessOfEquivalent
       (fun w => createData (W := w) addr (.str name) init.value) init.next
       (fun _ => replay_createData addr (.str name) init.value)
-    let tail ← checkReplayProps (n + 1) env addr rest created.next
+    let tail ← checkReplayProps allowLogical (n + 1) env addr rest created.next
     let createStep := replaySuccessBind (f := fun w _ => evalProps (W := w) (n + 1) env addr rest)
       created tail
     let result := replaySuccessBind (f := fun w initValue => do
@@ -1122,17 +1173,17 @@ private theorem replay_execReplayable {source target : World} (fuel : Nat) (env 
       intro _
       exact replay_pure Flow.normal
 
-private def checkReplayStmtExtra {source : World} : (fuel : Nat) → (env : Env) → (stmt : Stmt) →
+private def checkReplayStmtExtra {source : World} (allowLogical : Bool) : (fuel : Nat) → (env : Env) → (stmt : Stmt) →
     (s : State source) → Option (ReplaySuccess (fun w => execStmt (W := w) fuel env stmt) s)
   | n + 1, env, .expr expr, s => do
-    let evaluated ← checkReplayExpr n env expr s
+    let evaluated ← checkReplayExpr allowLogical n env expr s
     let result := replaySuccessBind (f := fun w _ => (pure Flow.normal : M w Flow))
       evaluated (replaySuccessOfPure Flow.normal evaluated.next)
     have result' : ReplaySuccess (fun w => execStmt (W := w) (n + 1) env (.expr expr)) s := by
       simpa only [execStmt] using result
     pure result'
   | n + 1, env, .decl kind name expr, s => do
-    let evaluated ← checkReplayExpr n env expr s
+    let evaluated ← checkReplayExpr allowLogical n env expr s
     let written ← replaySuccessOfEquivalent
       (fun w => if kind == .var then writeVar (W := w) env name evaluated.value
         else initVar (W := w) env name evaluated.value) evaluated.next
@@ -1150,19 +1201,19 @@ private def checkReplayStmtExtra {source : World} : (fuel : Nat) → (env : Env)
     pure result'
   | _, _, _, _ => none
 
-private def checkReplayStmt {source : World} (fuel : Nat) (env : Env) (stmt : Stmt) (s : State source) :
+private def checkReplayStmt {source : World} (allowLogical : Bool) (fuel : Nat) (env : Env) (stmt : Stmt) (s : State source) :
     Option (ReplaySuccess (fun w => execStmt (W := w) fuel env stmt) s) :=
   if let some supported := replayableStmtWitness env stmt then
     replaySuccessOfEquivalent (fun w => execStmt (W := w) fuel env stmt) s
       (fun _ => replay_execReplayable fuel env stmt supported.down)
-  else checkReplayStmtExtra fuel env stmt s
+  else checkReplayStmtExtra allowLogical fuel env stmt s
 
-private def checkReplayUnit {source : World} (fuel : Nat) (env : Env) (id : Nat) (stmt : Stmt)
+private def checkReplayUnit {source : World} (allowLogical : Bool) (fuel : Nat) (env : Env) (id : Nat) (stmt : Stmt)
     (s : State source) : Option (ReplaySuccess (fun w => runUnit (W := w) fuel env id stmt) s) := do
   let entered ← replaySuccessOfEquivalent
     (fun w => modifyState (W := w) fun state => { state with region := id + 1 }) s
     (fun _ => replay_modify (by intro state; rfl))
-  let executed ← checkReplayStmt fuel env stmt entered.next
+  let executed ← checkReplayStmt allowLogical fuel env stmt entered.next
   let exited ← replaySuccessOfEquivalent
     (fun w => modifyState (W := w) fun state => { state with region := 0 }) executed.next
     (fun _ => replay_modify (by intro state; rfl))
@@ -1179,13 +1230,13 @@ private def checkReplayUnit {source : World} (fuel : Nat) (env : Env) (id : Nat)
     simpa only [runUnit, inRegion] using result
   pure result'
 
-private def checkReplayUnits {source : World} (fuel : Nat) :
+private def checkReplayUnits {source : World} (allowLogical : Bool) (fuel : Nat) :
     (units : List LinkedUnit) → (s : State source) →
       Option (ReplaySuccess (fun w => runUnits (W := w) fuel units) s)
   | [], s => some (replaySuccessOfPure () s)
   | (id, stmt, env) :: rest, s => do
-    let head ← checkReplayUnit fuel env id stmt s
-    let tail ← checkReplayUnits fuel rest head.next
+    let head ← checkReplayUnit allowLogical fuel env id stmt s
+    let tail ← checkReplayUnits allowLogical fuel rest head.next
     let result := replaySuccessBind (f := fun w _ => runUnits (W := w) fuel rest) head tail
     have result' : ReplaySuccess (fun w => runUnits (W := w) fuel ((id, stmt, env) :: rest)) s := by
       simpa only [runUnits] using result
@@ -1264,7 +1315,7 @@ private theorem runUnits_replayable {source target : World} (fuel : Nat)
 
 /-- Check the operations reached by the concrete probe. Own data reads are
 checked against the current heap; unsupported reads retain the fallback. -/
-def replayPremisedDynamicWitness {premises : HostPremises} {p : Program} (fuel : Nat)
+def replayPremisedDynamicWitness {premises : HostPremises} {p : Program} (fuel : Nat) (allowLogical : Bool)
     (checked : CheckedLink p World.probe) :
     Option (PLift (∀ probeState,
       runProgram (premises.specialize World.probe) fuel p = .ok () probeState →
@@ -1273,7 +1324,9 @@ def replayPremisedDynamicWitness {premises : HostPremises} {p : Program} (fuel :
   let source := premises.specialize World.probe
   let sourceChecked : CheckedLink p source :=
     ⟨checked.linked, linkState source checked.ready, link_from_probe checked source⟩
-  let run ← checkReplayUnits fuel (unitsOf checked.linked) sourceChecked.ready
+  let units := unitsOf checked.linked
+  let safeLogical := allowLogical && units.all (fun unit => primitiveLogicalStmt unit.stmt)
+  let run ← checkReplayUnits safeLogical fuel units sourceChecked.ready
   return ⟨by
     intro probeState probeRun w
     let target := premises.specialize w
