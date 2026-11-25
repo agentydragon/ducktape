@@ -32,6 +32,30 @@ function run(programs, ast) {
     .map((line) => JSON.parse(line));
 }
 
+// Census counts concrete refusals even if structural mode could retain the unit.
+const concreteCensusSource = `import { imported } from "./provider.mjs";
+  const a = 1, b = imported;
+  ${Array.from({ length: 25 }, (_, i) => `const f${i} = 2 ** 3;`).join("\n")}
+  const date = new Date();
+  export { a };`;
+const concretePath = file(
+  "concrete-census.json",
+  JSON.stringify(dumpSource(concreteCensusSource, { includeOpaqueCaptures: true }))
+);
+const concreteBrowserContract = file("concrete-browser.json", JSON.stringify({ profile: "browser-page" }));
+const concreteCensus = (args = []) =>
+  JSON.parse(execFileSync(process.env.COREJS, ["--lowering-census", concretePath, ...args], { encoding: "utf8" }));
+const concreteEmpty = concreteCensus();
+const concreteBrowser = concreteCensus(["--host-contract", concreteBrowserContract]);
+assert.equal(concreteEmpty.units, 28);
+assert.equal(concreteBrowser.units, concreteEmpty.units);
+assert.equal(concreteBrowser.lowering_refusals.length, 25);
+assert.equal(concreteEmpty.lowering_refusals.length, 26);
+assert.deepEqual(
+  concreteBrowser.lowering_refusals.map(({ unit }) => unit),
+  Array.from({ length: 25 }, (_, i) => i + 3)
+);
+
 async function nodeOutcome(url) {
   try {
     await import(url);
@@ -40,6 +64,107 @@ async function nodeOutcome(url) {
     return ["throw", e instanceof Error ? e.name : e == null ? String(e) : `${typeof e}:${e}`];
   }
 }
+
+// The move census lowers the annotated source units through the linked rules.
+// The static field is allocation-only; the call is not. The exponentiation
+// initializer falls back to opaque, while top-level await is refused even as opaque.
+const censusSource = `
+  import { value } from "external-package";
+  function f() {}
+  function deferred() { return 2 ** 3; }
+  const a = 1, b = class { field = value; static field = 1; },
+    c = class { static field = console.log("effect"); };
+  const { x } = value;
+  const unmodeled = 2 ** 3;
+  await 1;
+  export { a };
+`;
+const censusJs = file("census.mjs", censusSource);
+const censusAst = JSON.parse(execFileSync(process.env.DUMP_AST, [censusJs, "--opaque-captures"], { encoding: "utf8" }));
+assert.deepEqual(censusAst, dumpSource(censusSource, { includeOpaqueCaptures: true }));
+assert.deepEqual(
+  JSON.parse(execFileSync(process.env.DUMP_AST, [censusJs], { encoding: "utf8" })),
+  dumpSource(censusSource)
+);
+const censusFile = file("census.json", JSON.stringify(censusAst));
+const census = JSON.parse(
+  execFileSync(process.env.COREJS, ["--moves-ast", censusFile, "--node-recording"], { encoding: "utf8" })
+);
+assert.equal(census.hostProfile, "node-recording");
+assert.deepEqual(
+  [census.units, census.inert, census.allocate, census.opaque, census.other, census.refused],
+  [8, 2, 2, 1, 3, 1]
+);
+assert.deepEqual([census.may_move, census.may_move_denominator], [4, 8]);
+assert.match(census.problems[0], /await/i);
+const censusConcrete = JSON.parse(
+  execFileSync(process.env.COREJS, ["--lowering-census", censusFile], { encoding: "utf8" })
+);
+const emptyMoves = JSON.parse(execFileSync(process.env.COREJS, ["--moves-ast", censusFile], { encoding: "utf8" }));
+assert.deepEqual(emptyMoves.lowering_refusals, censusConcrete.lowering_refusals);
+assert.equal(emptyMoves.unit_details.length, censusConcrete.units);
+
+// An ambient host read must not become allocation-only under production
+// profiles merely because recorded Node replay treats it as a host value.
+const globalsFile = file("census-globals.json", JSON.stringify(dumpSource("const a = Object, b = Math;")));
+function censusFor(args = []) {
+  return JSON.parse(execFileSync(process.env.COREJS, ["--moves-ast", globalsFile, ...args], { encoding: "utf8" }));
+}
+function contract(name, value) {
+  return file(`${name}.json`, JSON.stringify(value));
+}
+const emptyCensus = censusFor();
+assert.deepEqual([emptyCensus.hostProfile, emptyCensus.allocate, emptyCensus.opaque], ["empty", 0, 2]);
+const emptyPath = contract("empty", { profile: "empty" });
+assert.deepEqual(censusFor(["--host-contract", emptyPath]), emptyCensus);
+const ecmaPath = contract("ecma", { profile: "ecmascript" });
+const ecmaCensus = censusFor(["--host-contract", ecmaPath]);
+assert.deepEqual([ecmaCensus.hostProfile, ecmaCensus.allocate, ecmaCensus.opaque], ["ecmascript", 0, 1]);
+const browserPath = contract("browser", { profile: "browser-page" });
+const browserCensus = censusFor(["--host-contract", browserPath]);
+assert.deepEqual([browserCensus.hostProfile, browserCensus.allocate, browserCensus.opaque], ["browser-page", 0, 0]);
+const nodeCensus = censusFor(["--node-recording"]);
+assert.deepEqual([nodeCensus.hostProfile, nodeCensus.allocate, nodeCensus.opaque], ["node-recording", 2, 0]);
+const ecmaStable = contract("ecma-stable", {
+  profile: "ecmascript",
+  stableIntrinsicValues: ["Object.defineProperty@1"],
+});
+assert.deepEqual(censusFor(["--host-contract", ecmaStable]), ecmaCensus);
+const browserStable = contract("browser-stable", { profile: "browser-page", stableIntrinsicValues: ["Math.PI@1"] });
+assert.deepEqual(censusFor(["--host-contract", browserStable]), browserCensus);
+// Both reports use the certified contract reader and preserve the same
+// first refusals, including for supported stable-intrinsic contracts.
+for (const [contractPath, expected] of [
+  [ecmaStable, ecmaCensus],
+  [browserStable, browserCensus],
+]) {
+  const concrete = JSON.parse(
+    execFileSync(process.env.COREJS, ["--lowering-census", globalsFile, "--host-contract", contractPath], {
+      encoding: "utf8",
+    })
+  );
+  assert.equal(concrete.hostProfile, expected.hostProfile);
+  assert.deepEqual(concrete.lowering_refusals, expected.lowering_refusals);
+}
+const invalidContract = contract("invalid-stable", {
+  profile: "browser-page",
+  stableIntrinsicValues: ["Object.defineProperty@1"],
+});
+const malformedContract = file("malformed-contract.json", "{");
+for (const mode of ["--moves-ast", "--lowering-census"]) {
+  for (const invalidContractPath of [invalidContract, malformedContract]) {
+    const invalid = spawnSync(process.env.COREJS, [mode, globalsFile, "--host-contract", invalidContractPath]);
+    assert.notEqual(invalid.status, 0, `${mode} must reject malformed or mismatched contracts`);
+  }
+}
+
+const forbidden = contract("bad-profile", { profile: "node-recording" });
+assert.notEqual(spawnSync(process.env.COREJS, ["--moves-ast", globalsFile, "--host-contract", forbidden]).status, 0);
+assert.notEqual(
+  spawnSync(process.env.COREJS, ["--moves-ast", globalsFile, "--node-recording", "--host-contract", browserPath])
+    .status,
+  0
+);
 
 // Each seed builds a fresh module and binding chain. Throwing the last value
 // makes precision, shadowing and initialization observable in Node and CoreJS.
@@ -119,6 +244,32 @@ assert.deepEqual(
   await nodeOutcome(`data:text/javascript,${encodeURIComponent(taggedSource)}`)
 );
 
+// A named class expression has an immutable name binding throughout its body.
+// That binding is distinct from an outer binding with the same spelling.
+const namedClassSource = `
+  let Named = "outer";
+  const C = class Named {
+    static self = Named;
+    static fromArrow = () => Named;
+    static rejectsWrite() {
+      try { Named = 1; return false; }
+      catch (error) { return true; }
+    }
+    self() { return Named; }
+  };
+  console.log(C.self === C, C.fromArrow() === C, C.rejectsWrite(), new C().self() === C, Named, C.name);
+`;
+const [namedClass] = run([dumpSource(namedClassSource)], true);
+const namedClassNode = spawnSync(process.execPath, ["--input-type=module", "-e", namedClassSource], {
+  encoding: "utf8",
+});
+assert.equal(namedClassNode.status, 0, namedClassNode.stderr);
+assert.deepEqual(namedClass.out, namedClassNode.stdout.split("\n").slice(0, -1));
+assert.deepEqual(
+  [namedClass.end, namedClass.detail],
+  await nodeOutcome(`data:text/javascript,${encodeURIComponent(namedClassSource)}`)
+);
+
 // `corejs --ast` lowers under the recorded Node host: `console.log` output, the model's `Object`
 // functions, fresh symbols and undeclared names. Certification profiles still refuse these names.
 const hostSources = [
@@ -178,6 +329,46 @@ assert.deepEqual(
   [objectRest.end, objectRest.detail, objectRest.out],
   ["normal", "", objectRestNode.stdout.trimEnd().split("\n")]
 );
+
+// A destructured rest parameter iterates the newly packed array. Elisions still
+// step the iterator, and an unfinished iterator is closed before the body.
+const restArraySources = [
+  `function pick(head, ...[first, , third]) {
+     var first;
+     first = first + 1;
+     return [head, first, third, arguments.length];
+   }
+   const a = pick("head", 2, 3, 4, 5), b = pick("missing");
+   const arrow = (...[first, second]) => first + second;
+   console.log(pick.length, a[0], a[1], a[2], a[3], b[2], b[3], arrow.length, arrow(4, 3));`,
+  `let trace = "";
+   const proto = Object.getPrototypeOf([]);
+   delete proto[Symbol.iterator];
+   proto[Symbol.iterator] = function() {
+     trace += "I";
+     let index = 0;
+     return {
+       next() { trace += "N"; index += 1; return { value: index * 10, done: false }; },
+       return() { trace += "R"; return {}; }
+     };
+   };
+   const pick = (...[first, , third]) => first + third;
+   const empty = (...[]) => "body";
+   const answer = pick(1, 2, 3), body = empty();
+   console.log(answer, body, trace);`,
+];
+const restArray = run(
+  restArraySources.map((source) => ({ ...dumpSource(source), symbolConstructor: true, iteratorSymbol: true })),
+  true
+);
+for (const [i, source] of restArraySources.entries()) {
+  const printed = spawnSync(process.execPath, ["--input-type=module", "-e", source], { encoding: "utf8" });
+  assert.equal(printed.status, 0, printed.stderr);
+  assert.deepEqual(
+    [restArray[i].end, restArray[i].detail, restArray[i].out],
+    ["normal", "", printed.stdout.trimEnd().split("\n")]
+  );
+}
 
 // A callable in a parameter default comes before a callable in the body.
 // Distinct scripted results make both dispatch and lexical numbering observable.
@@ -504,7 +695,7 @@ assert.deepEqual(
   await nodeOutcome(pathToFileURL(path.join(defaultDir, "main.mjs")).href)
 );
 
-function certifyFixture(directory, args = []) {
+function certificationResult(directory, args = []) {
   const out = path.join(directory, "out");
   const hostAt = args.indexOf("--host-contract");
   const result = certifySplit({
@@ -513,8 +704,32 @@ function certifyFixture(directory, args = []) {
     out,
     ...(hostAt >= 0 ? { hostContract: args[hostAt + 1] } : {}),
   });
+  return { out, result };
+}
+
+function certifyFixture(directory, args = []) {
+  const { out, result } = certificationResult(directory, args);
   assert.equal(result.status, "certified", result.log);
   return import(pathToFileURL(path.join(out, "entry.mjs")).href);
+}
+
+// A named class expression's inner name must not enable deferred ambient Symbol references in
+// eager class evaluation. The production profile has no Symbol premise, so both forms refuse
+// during certification instead of producing a runtime unknown.
+for (const [name, source] of [
+  ["static-initializer", "export const C = class Named { static value = Symbol.iterator; };"],
+  ["heritage", "export const C = class Named extends Symbol.iterator {};"],
+]) {
+  const directory = path.join(dir, `class-unprofiled-symbol-${name}`);
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(path.join(directory, "bundle.mjs"), source);
+  writeFileSync(
+    path.join(directory, "spec.json"),
+    JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0"] } })
+  );
+  const { result } = certificationResult(directory);
+  assert.equal(result.status, "refused", source);
+  assert.match(result.reason, /unsupported ambient member Symbol\.iterator/, source);
 }
 
 // A certified split keeps `export default` in the entry and moves the binding it reads.

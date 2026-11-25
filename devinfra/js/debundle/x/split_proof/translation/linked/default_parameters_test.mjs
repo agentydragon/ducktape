@@ -161,7 +161,7 @@ for (const [name, expression, call, expected] of [
 for (const [name, expression, args, length, expected] of [
   ["nested-object", "({ x: { y = offset } }) => y", [{ x: {} }], 1, 7],
   ["array-pattern", "([x, y], z = offset) => x + y + z", [[1, 2]], 1, 10],
-  ["rest-pattern", "(...[x, y]) => x + y", [4, 3], 0, 7],
+  ["rest-default-pattern", "(...[x = 3]) => x + 1", [4], 0, 5],
 ]) {
   if (!includesCase(`parameter-${name}`)) continue;
   const source = `const offset = 7; const pick = ${expression}; export { pick };`;

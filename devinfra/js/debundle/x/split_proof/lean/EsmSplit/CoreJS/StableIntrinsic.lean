@@ -1,23 +1,8 @@
-import EsmSplit.CoreJS.Move
-import EsmSplit.CoreJS.HostProfile
+import EsmSplit.CoreJS.StableIntrinsicDescriptor
 
 namespace CoreJS
 
-/-- A stable global binding and one stable data property of its receiver. -/
-structure StableIntrinsic where
-  id : String
-  binding : String
-  owner : String
-  key : String
-  value : HostValue
-  deriving DecidableEq
-
 namespace StableIntrinsic
-
-def mathPI : StableIntrinsic := ⟨"Math.PI@1", "Math", "window.Math", "PI", .number 0x400921fb54442d18⟩
-
-def objectDefineProperty : StableIntrinsic :=
-  ⟨"Object.defineProperty@1", "Object", "intrinsic.Object", "defineProperty", .identity "intrinsic.Object.defineProperty"⟩
 
 /-- Neither observation changes host state. The binding must keep returning the
 same receiver throughout initialization, including across retained units. -/

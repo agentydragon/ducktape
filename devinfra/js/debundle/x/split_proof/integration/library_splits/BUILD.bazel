@@ -18,6 +18,7 @@ js_binary(
         "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
     ],
     entry_point = "prepare.mjs",
+    visibility = ["//devinfra/js/debundle/x/split_proof/integration/excalidraw:__pkg__"],
 )
 
 js_test(

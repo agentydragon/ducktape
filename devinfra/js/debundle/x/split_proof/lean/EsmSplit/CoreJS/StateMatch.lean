@@ -51,15 +51,25 @@ private def objMatch : MatchEq Obj
     let ⟨f⟩ ← scalarEq frozen frozen'
     return ⟨p ▸ ps ▸ c ▸ a ▸ r ▸ f ▸ rfl⟩
 
-/-- Match the complete linked state, including heap addresses, objects,
-bindings and the world's handed handles. The probe's private state is Unit. -/
-def probe : MatchEq (State World.probe)
-  | ⟨heap, cells, region, out, ⟨(), handed⟩⟩, ⟨heap', cells', region', out', ⟨(), handed'⟩⟩ => do
+/- Match a complete state, including heap addresses, objects, the host state,
+and the world's handed handles. -/
+def state {w : World} [DecidableEq w.σ] : MatchEq (State w)
+  | ⟨heap, cells, region, out, ⟨worldState, handed⟩⟩,
+    ⟨heap', cells', region', out', ⟨worldState', handed'⟩⟩ => do
     let ⟨h⟩ ← arrayMatch (arrayMatch objMatch) heap heap'
     let ⟨c⟩ ← scalarEq cells cells'
     let ⟨r⟩ ← scalarEq region region'
     let ⟨o⟩ ← scalarEq out out'
+    let ⟨w⟩ ← scalarEq worldState worldState'
     let ⟨i⟩ ← scalarEq handed handed'
-    return ⟨h ▸ c ▸ r ▸ o ▸ i ▸ rfl⟩
+    return ⟨h ▸ c ▸ r ▸ o ▸ w ▸ i ▸ rfl⟩
+
+/- The ordinary probe has Unit host state, so the generic matcher's equality
+instance is available without additional assumptions. -/
+def probe : MatchEq (State World.probe) := by
+  letI : DecidableEq World.probe.σ := by
+    change DecidableEq Unit
+    infer_instance
+  exact state
 
 end CoreJS.StateMatch
