@@ -97,7 +97,6 @@ for (const [name, source, reason] of [
     "const worker = value => `${value}`; export const result = worker({});",
     /object is converted to a primitive/,
   ],
-  ["tagged-template", "const worker = value => value; export const result = worker`raw`;", /TaggedTemplateExpression/],
 ]) {
   if (!runCase(name)) continue;
   const { verdict, out } = workerSplit(name, source);

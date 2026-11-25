@@ -125,6 +125,7 @@ function describe(v) {
   if (typeof v === "object" || typeof v === "function") return typeof v;
   if (typeof v === "symbol") {
     if (v === iteratorSymbol) return "symbol:Symbol(Symbol.iterator)";
+    if (v === hasInstanceSymbol) return "symbol:Symbol(Symbol.hasInstance)";
     if (v === toStringTagSymbol) return "symbol:Symbol(Symbol.toStringTag)";
     return "symbol";
   }
@@ -144,6 +145,7 @@ const isPrimitive = (v) => v === null || ["undefined", "boolean", "number", "str
 const isWellFormed = String.prototype.isWellFormed;
 const symbolConstructor = Symbol;
 const iteratorSymbol = Symbol.iterator;
+const hasInstanceSymbol = Symbol.hasInstance;
 const toStringTagSymbol = Symbol.toStringTag;
 
 function symbolObservations() {
@@ -156,6 +158,7 @@ function symbolObservations() {
   return {
     symbolConstructor: stableConstructor,
     iteratorSymbol: stableSymbol("iterator", iteratorSymbol),
+    hasInstanceSymbol: stableSymbol("hasInstance", hasInstanceSymbol),
     toStringTagSymbol: stableSymbol("toStringTag", toStringTagSymbol),
   };
 }
@@ -254,6 +257,7 @@ async function runFileInNode(file) {
     detail: ending.detail,
     world,
     iteratorSymbol: initialSymbols.iteratorSymbol && finalSymbols.iteratorSymbol,
+    hasInstanceSymbol: initialSymbols.hasInstanceSymbol && finalSymbols.hasInstanceSymbol,
     toStringTagSymbol: initialSymbols.toStringTagSymbol && finalSymbols.toStringTagSymbol,
     symbolConstructor: initialSymbols.symbolConstructor && finalSymbols.symbolConstructor,
   };
@@ -297,8 +301,9 @@ let modelSeconds = 0;
 function runModel(jobs) {
   if (jobs.length === 0) return;
   const input = path.join(work, "programs.jsonl");
-  const recordings = jobs.map(({ program, node: { world, iteratorSymbol, toStringTagSymbol, symbolConstructor } }) =>
-    JSON.stringify({ ...program, world, iteratorSymbol, toStringTagSymbol, symbolConstructor })
+  const recordings = jobs.map(
+    ({ program, node: { world, iteratorSymbol, hasInstanceSymbol, toStringTagSymbol, symbolConstructor } }) =>
+      JSON.stringify({ ...program, world, iteratorSymbol, hasInstanceSymbol, toStringTagSymbol, symbolConstructor })
   );
   writeFileSync(input, recordings.join("\n") + "\n");
   checkpoint(`CoreJS batch: ${jobs.map((j) => j.label).join("; ")}`);

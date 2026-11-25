@@ -175,3 +175,28 @@ assert.deepEqual(Object.keys(extra), ["bump", "step", "value"]);
 const ns = check(left, leak, leaked);
 assert.equal(ns.status, 1, ns.stdout);
 assert.match(ns.stderr, /provider\.mjs: entry exports resolve to different linked cells; extra 1: "step"/);
+
+// Both fragments put a tag at local ordinal one. Calls to the same site
+// share its frozen object; the provider and application have distinct sites.
+const tagDir = path.join(root, "joint-template-original");
+mkdirSync(tagDir);
+writeFileSync(
+  path.join(tagDir, "app.mjs"),
+  'import { providerSite } from "./provider.mjs";\nfunction appSite() { return (x => x)`same`; }\nexport { appSite, providerSite };'
+);
+writeFileSync(
+  path.join(tagDir, "provider.mjs"),
+  "const tag = x => x;\nfunction providerSite() { return tag`same`; }\nexport { providerSite };"
+);
+const tagApp = split("app.mjs", "app-template", [false, true, false], tagDir, true);
+const tagProvider = split("provider.mjs", "provider-template", [true, true, false], tagDir, true);
+const tagOutput = assemble("joint-template-output", tagApp, tagProvider);
+for (const directory of [tagDir, tagOutput]) {
+  const { appSite, providerSite } = await import(pathToFileURL(path.join(directory, "app.mjs")));
+  assert.equal(appSite(), appSite());
+  assert.equal(providerSite(), providerSite());
+  assert.notEqual(appSite(), providerSite());
+}
+const tagged = check(tagApp, tagProvider, tagOutput);
+assert.equal(tagged.status, 0, tagged.stderr);
+assert.equal(tagged.stdout.trim(), "certified");

@@ -56,7 +56,7 @@ private def batchGuard (a : Addr) (fields : List (String × Val)) (s : State W) 
     match s.objAt a, s.objAt objectProto with
     | some obj, some proto =>
       let keys := fields.map (fun f => PropertyKey.str f.1)
-      !obj.array && obj.proto == some objectProto && proto.proto.isNone &&
+      !obj.array && !obj.frozen && obj.proto == some objectProto && proto.proto.isNone &&
         excludes keys obj.props && excludes keys proto.props
     | _, _ => false
 
@@ -71,7 +71,7 @@ private theorem WriteTrace.forM {s t : State W} (trace : WriteTrace env x a s fi
 
 private theorem trace_exists {s : State W} (fields : List (String × Val))
     (bound : batchReceiver env x s = some a)
-    (obj : s.objAt a = some o) (ordinary : o.array = false)
+    (obj : s.objAt a = some o) (ordinary : o.array = false) (extensible : o.frozen = false)
     (proto : o.proto = some objectProto) (hne : objectProto ≠ a)
     (root : s.objAt objectProto = some p) (top : p.proto = none)
     (unique : (fields.map Prod.fst).Nodup)
@@ -86,7 +86,7 @@ private theorem trace_exists {s : State W} (fields : List (String × Val))
     let u := appendBatch a [(k, v)] s
     let add := appendProps [(k, v)]
     have put (call : Call W) : setProp call (.obj a) (.str k) v s = .ok () u := by
-      have run := setProp_many_fresh call [(k, v)] obj ordinary proto hne root top (by simp)
+      have run := setProp_many_fresh call [(k, v)] obj ordinary extensible proto hne root top (by simp)
         (fun f hf => fresh f (by simp_all)) (fun f hf => inherited f (by simp_all))
       change (setProp call (.obj a) (.str k) v >>= fun _ => pure ()) s = .ok () u at run
       cases outcome : setProp call (.obj a) (.str k) v s <;> simp [bind, pure, outcome] at run ⊢
@@ -98,7 +98,7 @@ private theorem trace_exists {s : State W} (fields : List (String × Val))
       intro f hf
       have diff : f.1 ≠ k := fun eq => unique.1 (eq ▸ List.mem_map_of_mem hf)
       simpa [add, appendProps, diff] using fresh f (by simp [hf])
-    obtain ⟨t, trace⟩ := ih (s := u) (o := add o) bound changed ordinary proto root' unique.2 fresh'
+    obtain ⟨t, trace⟩ := ih (s := u) (o := add o) bound changed ordinary extensible proto root' unique.2 fresh'
       (fun f hf => inherited f (by simp [hf]))
     exact ⟨t, .cons (batchReceiver_read bound) put trace⟩
 
@@ -115,13 +115,13 @@ private theorem checkedTrace {s : State W} (bound : batchReceiver env x s = some
     | none => simp [ho, hp] at objects
     | some parent =>
       simp only [ho, hp, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, Option.isNone_iff_eq_none] at objects
-      obtain ⟨⟨⟨⟨ordinary, proto⟩, top⟩, own⟩, inherited⟩ := objects
+      obtain ⟨⟨⟨⟨⟨ordinary, extensible⟩, proto⟩, top⟩, own⟩, inherited⟩ := objects
       have fresh := excludes_fresh own
       have inheritedAbsent : ∀ f ∈ fields, parent.props.lookup (PropertyKey.str f.1) = none :=
         fun f hf => lookup_none_iff_not_mem_keys.mpr (excludes_fresh inherited f hf)
-      obtain ⟨t, trace⟩ := trace_exists fields bound ho ordinary proto hne hp top unique fresh inheritedAbsent
+      obtain ⟨t, trace⟩ := trace_exists fields bound ho ordinary extensible proto hne hp top unique fresh inheritedAbsent
       let call : Call W := fun _ _ _ => outOfFuel
-      have aggregate := setProp_many_fresh call fields ho ordinary proto hne hp top unique fresh inheritedAbsent
+      have aggregate := setProp_many_fresh call fields ho ordinary extensible proto hne hp top unique fresh inheritedAbsent
       rw [trace.forM call] at aggregate
       have final : t = appendBatch a fields s := by
         exact Res.ok.inj aggregate |>.2

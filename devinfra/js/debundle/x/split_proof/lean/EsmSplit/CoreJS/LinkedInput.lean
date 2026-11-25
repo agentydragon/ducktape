@@ -21,33 +21,56 @@ private def typ (j : Json) := field j "type"
 
 /-- Reparsing can change offsets, literal spellings, and local binder indices. A module
 binding marked `T` can become an import marked `V`. The linker checks its actual cell. -/
-private partial def unitSyntax : Json → Json
+private partial def unitSyntax (j : Json) (taggedQuasi := false) : Json :=
+  match j with
   | .obj fields => Json.mkObj <| fields.toList.filterMap fun (k, v) =>
-    if ["start", "end", "loc", "range", "raw", "b"].contains k then none
+    if ["start", "end", "loc", "range", "b"].contains k || (k == "raw" && !taggedQuasi) then none
     else if k == "k" && (v == .str "T" || v == .str "V") then some (k, .str "T")
-    else some (k, unitSyntax v)
-  | .arr nodes => .arr (nodes.map unitSyntax)
-  | j => j
+    else
+      -- A tag observes segment spellings, including when the enclosing function is opaque.
+      let quasi := (k == "quasi" && fields.get? "type" == some (.str "TaggedTemplateExpression")) ||
+        (taggedQuasi && (k == "quasis" || k == "value"))
+      some (k, unitSyntax v quasi)
+  | .arr nodes => .arr (nodes.map fun node => unitSyntax node taggedQuasi)
+  | _ => j
 
-/-- Give each callable a stable part number within its original unit. The order
-comes from the unchanged syntax tree, independent of on-disk byte offsets. -/
-private partial def numberFunctions (unit : Nat) : Json → StateM Nat Json
+private structure TemplateSite where
+  unit : Nat
+  part : Nat
+  quasis : Json
+
+private def TemplateSite.binding (site : TemplateSite) := s!":template:{site.unit}:{site.part}"
+
+private structure Numbering where
+  callable : Nat := 1
+  templates : Array TemplateSite := #[]
+
+/-- Give callables and templates independent ordinals within the original unit.
+Emitters change offsets and module boundaries. Corresponding syntax retains these identities. -/
+private partial def numberSites (unit : Nat) : Json → StateM Numbering Json
   | .obj fields => do
     let site ← if (fields.get? "opaqueCaptures").isSome then do
-      let part ← get
-      modify (· + 1)
+      let part := (← get).callable
+      modify fun s => { s with callable := part + 1 }
       pure [(":opaque-unit", Lean.toJson unit), (":opaque-part", Lean.toJson part)]
     else pure []
+    let template ← if fields.get? "type" == some (.str "TaggedTemplateExpression") then do
+      let q := ((fields.get? "quasi").bind (fun q => (q.getObjVal? "quasis").toOption)).getD .null
+      let t : TemplateSite := ⟨unit, (← get).templates.size, q⟩
+      modify fun s => { s with templates := s.templates.push t }
+      pure [(":template-binding", Json.str t.binding)]
+    else pure []
     let children ← fields.toList.mapM fun (key, child) => do
-      pure (key, ← numberFunctions unit child)
-    return Json.mkObj (children ++ site)
-  | .arr children => return .arr (← children.mapM (numberFunctions unit))
+      pure (key, ← numberSites unit child)
+    return Json.mkObj (children ++ site ++ template)
+  | .arr children => return .arr (← children.mapM (numberSites unit))
   | j => pure j
 
 private structure Parsed where
   imports : List Import
   units : List (Nat × Stmt × Json)
   exports : List (Name × Name)
+  templates : List TemplateSite
 
 /-- Structural proofs can lower selected source units concretely and interpret the remaining whole units
 through their lexical capability lists. The ordinary linked checker lowers every unit concretely. -/
@@ -56,7 +79,7 @@ private inductive BodyFormat where
   | structural (pivots : Std.HashSet Nat) (location : LinkedDeployment.Access)
 
 private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (imports : List Name)
-    (origin : Nat) (providerSite : Option (String × Nat)) (j : Json) (exported : Bool) : Except String (Stmt × List Name) := do
+    (origin : Nat) (providerSite : Option (String × Nat)) (j : Json) (exported : Bool) : Except String (Stmt × List Name × List TemplateSite) := do
   if let .structural pivots location := format then
     unless pivots.contains origin do
       -- A whole-unit opaque hoist represents ordinary and async functions.
@@ -69,12 +92,12 @@ private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (impo
           | none => location.entryAccess.unitNames[origin]?
           | some (name, ordinal) => location.providers[name]?.bind fun a => a.unitNames[ordinal]?
         let s ← OpaqueInput.unit origin j names
-        return (s, if exported then (Lower.topDefs j).eraseDups else [])
-  let ast := ((numberFunctions origin j).run 1).1
+        return (s, (if exported then (Lower.topDefs j).eraseDups else []), [])
+  let (ast, sites) := (numberSites origin j).run {}
   if exported then
     let (bindings, s) ← FromESTree.linkedDeclaration imports ast profile
-    return (s, bindings)
-  return (← FromESTree.linkedUnit imports ast profile, [])
+    return (s, bindings, sites.templates.toList)
+  return (← FromESTree.linkedUnit imports ast profile, [], sites.templates.toList)
 
 private def parse (format : BodyFormat) (profile : HostProfile) (path : String) (nodes : Array Json)
     (base : Nat := 0) (origins : Option (Array Nat) := none) (provider : Bool := false) : Except String Parsed := do
@@ -85,8 +108,9 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
   let names := imports.toList.flatMap fun i => i.names.map Prod.snd
   let mut units := #[]
   let mut exports := #[]
+  let mut templates := #[]
   for (j, i) in nodes.zipIdx do
-    let decode (ast : Json) (exported : Bool) : Except String (Stmt × List Name) := do
+    let decode (ast : Json) (exported : Bool) : Except String (Stmt × List Name × List TemplateSite) := do
       let origin ← match origins with
         | none => pure (base + i)
         | some ids =>
@@ -107,13 +131,15 @@ private def parse (format : BodyFormat) (profile : HostProfile) (path : String) 
           exports := exports.push (← FromESTree.exportSpec sp)
       else
         unless specs.isEmpty do throw "expected an inline declaration export"
-        let (s, names) ← decode declaration true
+        let (s, names, sites) ← decode declaration true
+        templates := templates ++ sites.toArray
         units := units.push (i, s, declaration)
         for name in names do exports := exports.push (name, name)
     | _ =>
-      let (s, _) ← (decode j false).mapError fun why => s!"statement {i}: {why}"
+      let (s, _, sites) ← (decode j false).mapError fun why => s!"statement {i}: {why}"
+      templates := templates ++ sites.toArray
       units := units.push (i, s, j)
-  return { imports := imports.toList, units := units.toList, exports := exports.toList }
+  return { imports := imports.toList, units := units.toList, exports := exports.toList, templates := templates.toList }
 
 private def Parsed.numbered (p : Parsed) (name : String) (base : Nat) : Module where
   name := name
@@ -121,7 +147,8 @@ private def Parsed.numbered (p : Parsed) (name : String) (base : Nat) : Module w
   body := p.units.map fun (i, s, _) => (base + i, s)
   exports := p.exports
 
-private def readProviders (format : BodyFormat) (profile : HostProfile) (providers : List (String × Json)) (base : Nat) : Except String (List Module) := do
+private def readProviders (format : BodyFormat) (profile : HostProfile) (providers : List (String × Json)) (base : Nat) : Except String (List Module × List TemplateSite) := do
+  let mut templates := #[]
   let names := providers.map Prod.fst
   let mut modules := #[]
   let mut offset := base
@@ -130,12 +157,13 @@ private def readProviders (format : BodyFormat) (profile : HostProfile) (provide
     let p ← (parse format profile name nodes offset (provider := true)).mapError fun why => s!"{name}: {why}"
     for req in p.imports do
       unless names.contains req.source do throw s!"{name}: missing provider dependency {req.source}"
+    templates := templates ++ p.templates.toArray
     modules := modules.push (p.numbered name offset)
     offset := offset + nodes.size
-  return modules.toList
+  return (modules.toList, templates.toList)
 
 private def readSplit (format : BodyFormat) (profile : HostProfile) (files : Json) (P : EsmSplit.Plan) (providers : List String) (original : Parsed)
-    (originalSyntax : Std.HashMap Nat Json) (m : EsmSplit.Module) (base : Nat := 0) : Except String Module := do
+    (originalSyntax : Std.HashMap Nat Json) (m : EsmSplit.Module) (base : Nat := 0) : Except String (Module × List TemplateSite) := do
   let nodes ← ESTreeUnits.nodes (← files.getObjVal? m.name)
   let placed := m.stmts.filterMap fun i => originalSyntax[i]?.map (base + i, ·)
   let p ← parse format profile m.name nodes (origins := some (placed.map Prod.fst).toArray)
@@ -158,7 +186,44 @@ private def readSplit (format : BodyFormat) (profile : HostProfile) (files : Jso
   let body ← (p.units.zip placed).mapM fun ((_, actual, ast), (id, expected)) => do
     unless unitSyntax ast == unitSyntax expected do throw s!"emitted syntax differs from original unit {id}"
     return (id, actual)
-  return { name := m.name, imports := p.imports, body, exports := p.exports }
+  return ({ name := m.name, imports := p.imports, body, exports := p.exports }, p.templates)
+
+/-- Only the tag evaluator can name these bindings. The synthetic provider allocates each
+pair once per linked realm, before any consumer can call the tag, including a hoisted
+function invoked from an import cycle. Initializers contain only primitive literals and
+intrinsic array allocation. Sites with identical strings still receive distinct bindings. -/
+private def installTemplates (p : Program) (sites : List TemplateSite) : Except String Program := do
+  if sites.isEmpty then return p
+  let provider := ":corejs:template-objects"
+  if (p.find provider).isSome then throw "reserved template provider name"
+  let used := Std.HashSet.ofList (p.modules.flatMap fun m => m.body.flatMap fun (_, stmt) => stmt.free)
+  let live := (sites.filter fun site => used.contains site.binding).mergeSort fun a b =>
+    decide (a.unit < b.unit || (a.unit == b.unit && a.part ≤ b.part))
+  if live.isEmpty then return p
+  let names := live.map TemplateSite.binding
+  let table := Std.HashSet.ofList names
+  let mut body := #[]
+  for site in live do
+    let segments ← site.quasis.getArr?
+    if segments.isEmpty then throw "empty tagged template"
+    let mut raw := #[]
+    let mut cooked := #[]
+    for q in segments do
+      if ["rawWellFormed", "cookedWellFormed"].any (fun key => (q.getObjValAs? Bool key).toOption == some false) then
+        throw "tagged template contains an isolated UTF-16 surrogate"
+      let value ← q.getObjVal? "value"
+      raw := raw.push (.str (← field value "raw"))
+      let text ← value.getObjVal? "cooked"
+      let segment ← if text == .null then pure Expr.undef else Expr.str <$> text.getStr?
+      cooked := cooked.push segment
+    let array := Expr.prim (.templateArray true) (.prim (.templateArray false) raw.toList :: cooked.toList)
+    body := body.push (p.regions + body.size, Stmt.decl .const site.binding array)
+  let registry : Module := ⟨provider, [], body.toList, names.map fun name => (name, name)⟩
+  let modules := p.modules.map fun m =>
+    let needs := (m.body.flatMap fun (_, stmt) => stmt.free.filter table.contains).eraseDups
+    if needs.isEmpty then m else
+      { m with imports := { source := provider, names := needs.map fun name => (name, name) } :: m.imports }
+  return { p with modules := registry :: modules }
 
 private def explain : Abort → String
   | .error _ why | .unknown why => why
@@ -199,6 +264,8 @@ private structure Fragment where
   sourceModule : Module
   emitted : List Module
   unitCount : Nat
+  sourceTemplates : List TemplateSite
+  emittedTemplates : List TemplateSite
 
 private def decodeFragment (format : BodyFormat) (profile : HostProfile) (source files : Json) (P : EsmSplit.Plan)
     (sourcePath : String) (providerNames : List String) (base : Nat) : Except String Fragment := do
@@ -223,15 +290,17 @@ private def decodeFragment (format : BodyFormat) (profile : HostProfile) (source
   let originalSyntax := Std.HashMap.ofList (original.units.map fun (i, _, ast) => (i, ast))
   let split ← P.mods.mapM fun m =>
     (readSplit format profile files P providerNames original originalSyntax m base).mapError fun why => s!"{m.name}: {why}"
-  return ⟨original.numbered P.entry base, split, nodes.size⟩
+  return ⟨original.numbered P.entry base, split.map Prod.fst, nodes.size, original.templates, split.flatMap Prod.snd⟩
 
 private def decode (format : BodyFormat) (source providers files : Json) (P : EsmSplit.Plan)
     (profile : HostProfile) : Except String (Program × Program) := do
   let ps := (← providers.getObj?).toList
   let fragment ← decodeFragment format profile source files P "bundle.mjs" (ps.map Prod.fst) 0
-  let shared ← readProviders format profile ps fragment.unitCount
-  let before : Program := { entry := P.entry, modules := fragment.sourceModule :: shared }
-  let after : Program := { entry := P.entry, modules := fragment.emitted ++ shared }
+  let (shared, providerSites) ← readProviders format profile ps fragment.unitCount
+  let before ← installTemplates { entry := P.entry, modules := fragment.sourceModule :: shared }
+    (fragment.sourceTemplates ++ providerSites)
+  let after ← installTemplates { entry := P.entry, modules := fragment.emitted ++ shared }
+    (fragment.emittedTemplates ++ providerSites)
   let (before, after) ← match format with
     | .linked => pure (before, after)
     | .structural _ location =>
@@ -278,8 +347,8 @@ def decodeStaticSplits (app provider : StaticSplit) : Except String (Program × 
   let a ← decodeFragment .linked .empty app.source app.files app.plan app.plan.entry [provider.plan.entry] 0
   let b ← decodeFragment .linked .empty provider.source provider.files provider.plan provider.plan.entry
     [app.plan.entry] a.unitCount
-  let before : Program := ⟨app.plan.entry, [a.sourceModule, b.sourceModule]⟩
-  let after : Program := ⟨app.plan.entry, a.emitted ++ b.emitted⟩
+  let before ← installTemplates ⟨app.plan.entry, [a.sourceModule, b.sourceModule]⟩ (a.sourceTemplates ++ b.sourceTemplates)
+  let after ← installTemplates ⟨app.plan.entry, a.emitted ++ b.emitted⟩ (a.emittedTemplates ++ b.emittedTemplates)
   checkScopes before after
   return (before, after)
 
@@ -292,8 +361,9 @@ def program (source providers : Json) (profile : HostProfile := .empty) : Except
   let ps := (← providers.getObj?).toList
   for req in original.imports do
     unless ps.any (·.1 == req.source) do throw s!"missing original dependency {req.source}"
-  let shared ← readProviders .linked profile ps nodes.size
-  let p : Program := { entry := "main", modules := original.numbered "main" 0 :: shared }
+  let (shared, providerSites) ← readProviders .linked profile ps nodes.size
+  let p ← installTemplates { entry := "main", modules := original.numbered "main" 0 :: shared }
+    (original.templates ++ providerSites)
   let _ ← scopes p
   return p
 
