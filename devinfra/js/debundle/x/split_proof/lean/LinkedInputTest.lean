@@ -89,8 +89,8 @@ private def metadata (input : Json) : Except String Json := do
     unless hints == [0] do throw "expected only the concrete metadata reader"
     pure hints
   else pure [0]
-  let pair ← CoreJS.LinkedInput.decodeStructuralPair source (Json.mkObj []) files
-    plan hints .browserPage (some deployment)
+  let pair ← (CoreJS.LinkedInput.decodeStructuralPair source (Json.mkObj []) files
+    plan hints .browserPage (some deployment)).mapError CoreJS.LinkedBehavior.StructuralRefusal.reason
   let inspect (p : CoreJS.Program) : Except String Bool := do
     let some md := p.find "entry.mjs" | throw "missing entry"
     let some (_, .decl _ "read" (.func f)) := md.body.find? (fun (id, _) => id == 0)
