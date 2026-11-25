@@ -110,8 +110,9 @@ private def checkedDynamicPair (input : Json) : Except String Json := do
   let deployment : CoreJS.LinkedDeployment.Input :=
     ⟨"entry.mjs", {}, Json.mkObj [("lazy.mjs", targetAst)], resources⟩
   let plan : EsmSplit.Plan := { entry := "entry.mjs", mods := [⟨"entry.mjs", [0, 1, 2], [], []⟩] }
-  let pair ← CoreJS.LinkedInput.decodeStructuralPair source (Json.mkObj [])
-    (Json.mkObj [("entry.mjs", emitted)]) plan [1] .empty (some deployment)
+  let pair ← (CoreJS.LinkedInput.decodeStructuralPair source (Json.mkObj [])
+    (Json.mkObj [("entry.mjs", emitted)]) plan [1] .empty (some deployment)).mapError
+      CoreJS.LinkedBehavior.StructuralRefusal.reason
   let inspect (p : CoreJS.Program) : Except String (List String) := do
     let some entry := p.find "entry.mjs" | throw "missing entry"
     let some (_, .decl _ _ (.func fn)) := entry.body.find? (fun (id, _) => id == 1)
