@@ -411,6 +411,7 @@ py_test(
 
 py_test(
     name = "test_pid1_container",
+    size = "medium",
     srcs = ["test_pid1_container.py"],
     args = [
         "-p",
