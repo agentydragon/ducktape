@@ -232,9 +232,8 @@ func (r *Driver) advance(ctx context.Context, owner sessionstore.Owner, live *li
 	if conversation.API != config.API {
 		return "", protocol.ErrPrecondition
 	}
-	threshold := adapter.AutoCompactTokens(r.settings.AutoCompactTokens, conversation.Context())
-
-	if frontier == nil && threshold != nil && conversation.ContextTokens != nil && *conversation.ContextTokens >= *threshold {
+	if frontier == nil && config.AutoCompactTokens != nil && conversation.ContextTokens != nil &&
+		*conversation.ContextTokens >= *config.AutoCompactTokens && adapter.CanAutoCompact(conversation.Context()) {
 		if err := r.compact(ctx, owner, live, session.Model); err != nil {
 			return "", err
 		}

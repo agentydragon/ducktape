@@ -212,6 +212,7 @@ class ModelConfig(BaseModel):
     connection: str
     provider_model: str
     response_header_timeout_seconds: int | None = Field(default=None, gt=0, le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS)
+    auto_compact_tokens: int | None = Field(default=None, gt=0)
     api: Literal["responses", "anthropic_messages", "chat_completions"]
     responses: ResponsesConfig | None = None
     anthropic_messages: AnthropicMessagesConfig | None = None
@@ -251,6 +252,12 @@ class ModelConfig(BaseModel):
                 raise ValueError("Chat Completions cannot set options for another API")
             if self.exec_encoding != "json":
                 raise ValueError("chat_completions requires exec_encoding json")
+        if self.auto_compact_tokens is not None and not (
+            (self.responses is not None and self.responses.dialect == "lite")
+            or (self.anthropic_messages is not None and self.anthropic_messages.compaction is not None)
+            or self.chat_compaction is not None
+        ):
+            raise ValueError("auto_compact_tokens requires compaction support")
         return self
 
 

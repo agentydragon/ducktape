@@ -81,7 +81,7 @@ type protocolAdapter interface {
 	API() protocol.APIStyle
 	Prepare(*sessionstore.Session, protocol.SessionAttribution) *providerrequest.Preparation
 	Sample(context.Context, *http.Client, samplersettings.ConnectionConfig, []byte, protocol.EvidenceSink, providerAttribution, bool, protocol.ProviderHooks) (*sampleResult, error)
-	AutoCompactTokens(*int, protocol.Context) *int
+	CanAutoCompact(protocol.Context) bool
 	PrepareCompaction(*sessionstore.Conversation, *sessionstore.Session, protocol.SessionAttribution) (*compactionPlan, error)
 }
 
@@ -161,14 +161,9 @@ func readProviderCredential(connection samplersettings.ConnectionConfig) (string
 	return credential, nil
 }
 
-func (a responsesAdapter) AutoCompactTokens(fallback *int, _ protocol.Context) *int { return fallback }
+func (a responsesAdapter) CanAutoCompact(protocol.Context) bool { return true }
 
-func (a anthropicAdapter) AutoCompactTokens(_ *int, _ protocol.Context) *int {
-	if a.config.AnthropicMessages.Compaction == nil {
-		return nil
-	}
-	return a.config.AnthropicMessages.Compaction.AutoCompactTokens
-}
+func (a anthropicAdapter) CanAutoCompact(protocol.Context) bool { return true }
 
 func (a responsesAdapter) PrepareCompaction(c *sessionstore.Conversation, s *sessionstore.Session, attribution protocol.SessionAttribution) (*compactionPlan, error) {
 	return &compactionPlan{Preparation: &providerrequest.Preparation{
@@ -227,12 +222,9 @@ func (a chatAdapter) Sample(ctx context.Context, client *http.Client, connection
 	return &sampleResult{Records: []json.RawMessage{response.Record}, Audit: response.Audit, ContextTokens: response.ContextTokens}, nil
 }
 
-func (a chatAdapter) AutoCompactTokens(_ *int, state protocol.Context) *int {
+func (a chatAdapter) CanAutoCompact(state protocol.Context) bool {
 	config := a.config.ChatCompaction
-	if config != nil && config.AutoCompactTokens != nil && state.(*chatcompletions.Context).CanCompact(config.RecentTokenBudget()) {
-		return config.AutoCompactTokens
-	}
-	return nil
+	return state.(*chatcompletions.Context).CanCompact(config.RecentTokenBudget())
 }
 
 func (a chatAdapter) PrepareCompaction(c *sessionstore.Conversation, session *sessionstore.Session, _ protocol.SessionAttribution) (*compactionPlan, error) {

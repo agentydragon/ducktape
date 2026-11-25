@@ -35,14 +35,15 @@ type CompactionConfig struct {
 	MaxTokens        int  `json:"max_tokens"`
 	KeepRecentTokens *int `json:"keep_recent_tokens,omitempty"`
 	// CLEANUP(added 2026-11-24): Remove after staging has rolled out settings with keep_recent_tokens.
-	KeepRecentTurns       *int                   `json:"keep_recent_turns,omitempty"`
-	AutoCompactTokens     *int                   `json:"auto_compact_tokens,omitempty"`
-	SummaryPromptTemplate string                 `json:"summary_prompt_template,omitempty"`
-	Replacement           *CompactionReplacement `json:"replacement,omitempty"`
+	KeepRecentTurns *int `json:"keep_recent_turns,omitempty"`
+	// CLEANUP(added 2026-11-24): Remove after staging uses the model-level setting.
+	LegacyAutoCompactTokens *int                   `json:"auto_compact_tokens,omitempty"`
+	SummaryPromptTemplate   string                 `json:"summary_prompt_template,omitempty"`
+	Replacement             *CompactionReplacement `json:"replacement,omitempty"`
 }
 
 func (c CompactionConfig) Validate() error {
-	if c.MaxTokens <= 0 || c.AutoCompactTokens != nil && *c.AutoCompactTokens <= 0 {
+	if c.MaxTokens <= 0 || c.LegacyAutoCompactTokens != nil && *c.LegacyAutoCompactTokens <= 0 {
 		return errors.New("compaction max_tokens and auto_compact_tokens must be positive")
 	}
 	if (c.KeepRecentTokens == nil) == (c.KeepRecentTurns == nil) {
@@ -122,10 +123,7 @@ func (c *CompactionConfig) Compatible(other *CompactionConfig) bool {
 	if (c.Replacement == nil) != (other.Replacement == nil) || c.Replacement != nil && *c.Replacement != *other.Replacement {
 		return false
 	}
-	if c.AutoCompactTokens == nil || other.AutoCompactTokens == nil {
-		return c.AutoCompactTokens == other.AutoCompactTokens
-	}
-	return *c.AutoCompactTokens == *other.AutoCompactTokens
+	return true
 }
 
 type CompactionPlan struct {

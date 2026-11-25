@@ -127,7 +127,9 @@ func TestRuntimeCompactsWithLiveCellAndInFlightNestedTool(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	settings := providerSamplingSettings(server.URL, 1)
-	settings.AutoCompactTokens = new(50)
+	model := settings.Models["fixture-model"]
+	model.AutoCompactTokens = new(50)
+	settings.Models["fixture-model"] = model
 	settings.DirectExecutorTarget = listener.Addr().String()
 	settings.DirectExecutorInsecureLocaltest = true
 	manager, peers := newFakeCodeModeManager(t)
