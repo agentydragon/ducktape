@@ -161,13 +161,31 @@ def newTargetBindings (f : Func) (newTarget : Val) : List (Name × Binding) :=
     [(newTargetName, { value := some newTarget, mutable := false })]
   else []
 
+/-- CreateUnmappedArgumentsObject for strict ECMAScript code. Indexed data
+properties and length are independent of the formal parameter bindings. -/
+def strictArgumentsObject (vs : List Val) : Obj :=
+  let indices := vs.zipIdx.map fun (v, i) => (PropertyKey.str (toString i), Property.data v true true true)
+  let poison := Val.host "%ThrowTypeError%"
+  { proto := some objectProto, props := indices ++
+      [(PropertyKey.str "length", Property.data (.num (Float.ofNat vs.length)) true false true),
+       (PropertyKey.str "callee", Property.accessor poison poison false false),
+       (PropertyKey.wellKnownSymbol .iterator, Property.data (.host "Array.prototype.values") true false true)] }
+
+/-- Arrow functions resolve arguments through the environment captured at creation. -/
+def strictArgumentsBindings (f : Func) (vs : List Val) : M W (List (Name × Binding)) := do
+  if f.kind != .arrow && (freeStmts f.body).contains "arguments" then
+    let a ← alloc (strictArgumentsObject vs)
+    return [("arguments", { value := some (.obj a), mutable := true })]
+  return []
+
 /-- Enter a function body: the parameters, the `var` names, then the scope of the body. An arrow keeps the `this` it closed over. -/
 def enterFunction (f : Func) (closed : Env) (this : Val) (args : List Val)
     (newTarget : Val := .undef) : M W Env := do
+  let implicitArgs ← strictArgumentsBindings f args
   let params ← parameterBindings f args
   let vars := ((varNamesOf f.body).eraseDups.filter (!f.params.contains ·)).map fun x =>
     (x, { value := some .undef, mutable := true : Binding })
-  let env ← declare { closed with this := if f.kind == .arrow then closed.this else this } ((params ++ vars) ++ newTargetBindings f newTarget)
+  let env ← declare { closed with this := if f.kind == .arrow then closed.this else this } (((params ++ vars) ++ implicitArgs) ++ newTargetBindings f newTarget)
   enterBlock env f.body
 
 /-- The bindings of `names` as they are in `s`. -/
@@ -231,9 +249,9 @@ def initCapturedReceiver (env : Env) (receiver : Val) (captured : Bool) : M W Un
 captured receiver cell in its dead zone, so a superclass cannot read it via an
 arrow before returning. The synthetic declaration is never executed. -/
 def derivedScope (before : List Stmt) (args : Option (List Expr)) (body : Func) (captured : Bool) : Func :=
-  -- The argument list runs outside these statement lists but shares their new target cell.
-  let targetUse := if (freeSuperArgs args).contains newTargetName then [.expr (.var newTargetName)] else []
-  let statements := before ++ body.body ++ targetUse
+  -- super arguments share the constructor activation with both statement lists.
+  let implicitUses := [newTargetName, "arguments"].filter (freeSuperArgs args).contains
+  let statements := before ++ body.body ++ implicitUses.map (fun name => .expr (.var name))
   let statements := if captured then .decl .let_ derivedReceiverName .undef :: statements else statements
   match body with
   | .withRest name _ _ fixed rest _ => .withRest name .classCtor false fixed rest statements

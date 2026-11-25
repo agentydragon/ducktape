@@ -171,11 +171,6 @@ for (const [name, expression, args, length, expected] of [
 
 for (const [name, expression, reason] of [
   ["redeclared-parameter", "function (value = 1) { var value; return value; }", /body var overlaps default parameters/],
-  [
-    "implicit-arguments",
-    "function (value = arguments[0]) { return value; }",
-    /unsupported (?:implicit arguments reference|global arguments)/,
-  ],
 ]) {
   if (!includesCase(name)) continue;
   const { out, verdict, log } = sequentialSplit(

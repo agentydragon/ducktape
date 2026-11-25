@@ -89,7 +89,6 @@ private def reference (imports : List Name) (inFunction : Bool) (j : Json)
   | "T" => return .var x
   | "L" =>
     unless inFunction do throw s!"unexpected function-local name {x}"
-    if x == "arguments" then throw "unsupported implicit arguments reference"
     return .var x
   | "V" =>
     unless imports.contains x do throw s!"unlinked imported name {x}"
@@ -523,8 +522,6 @@ private def deferredFunction (j : Json) (kind : FuncKind) (name : Name) (self : 
   let .ok captures := j.getObjValAs? (List Name) "opaqueCaptures" | throw (refusal "missing capture list")
   let .ok code := j.getObjValAs? Nat ":opaque-unit" | throw (refusal "missing source unit")
   let .ok part := j.getObjValAs? Nat ":opaque-part" | throw (refusal "missing callable site")
-  -- CoreJS does not allocate the enclosing function's implicit arguments cell.
-  if captures.contains "arguments" then throw (refusal "captures the enclosing arguments cell")
   return .opaque name kind self arity code part captures (some reason)
 
 -- Every admitted body leaves the enumerated keys and prototype chain intact.
