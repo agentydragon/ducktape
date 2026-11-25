@@ -110,7 +110,7 @@ from cluster.cdk8s.agentplane.environment import (
     SessionDelegationProps,
     WebPushProps,
 )
-from cluster.cdk8s.agentplane.environment_sandbox import KeyFile
+from cluster.cdk8s.agentplane.environment_sandbox import EnvironmentSandboxTemplate, KeyFile
 from cluster.cdk8s.agentplane.generation import ManifestLayout
 from cluster.cdk8s.agentplane.kubernetes_account_ref import shared_diagnostics
 from cluster.cdk8s.agentplane.kubernetes_accounts import KubernetesAccount, KubernetesAccounts
@@ -236,12 +236,13 @@ _LITELLM_KEY_SECRET = "litellm-key-agentplane-staging"
 _ANTHROPIC_API_KEY_SECRET = "agentplane-staging-anthropic-api-key"
 _OIDC_SESSION_SECRET = "agentplane-staging-session-secret"
 _CONNECTION_SERVICE = mcp_edge.tls_service(STAGING_NAMESPACE)
-# staging's one Pod execution environment, and the ducktape tools image it runs; `image-pins/` selects
-# the published tag. Live Sandboxes and presets name this template, so it keeps the name it shipped with.
+# Keep the existing template and its claim spec for retained workspaces. New Sandboxes can
+# select the SSD template in the launch form.
 POD_TEMPLATE = "environment-tools"
+SSD_POD_TEMPLATE = "environment-tools-ssd"
 _RUNTIME_CATALOG = runtime_catalog(
     STAGING_APP_MODELS,
-    templates=(POD_TEMPLATE, environment_vm.NAME, environment_firecracker.NAME),
+    templates=(POD_TEMPLATE, SSD_POD_TEMPLATE, environment_vm.NAME, environment_firecracker.NAME),
     workspace_root_enforced_templates=(environment_vm.NAME, environment_firecracker.NAME),
     central_sampler_enabled=True,
 )
@@ -768,6 +769,15 @@ def chart(app: App, env: Environment = ENV) -> Chart:
         environment_template_name=POD_TEMPLATE,
         environment_tools_image=_ENVIRONMENT_TOOLS_IMAGE,
         environment_runtime_key_files=(_BUILDBUDDY_KEY,),
+    )
+    EnvironmentSandboxTemplate(
+        chart,
+        "runner-template-ssd",
+        env,
+        name=SSD_POD_TEMPLATE,
+        image=_ENVIRONMENT_TOOLS_IMAGE,
+        key_files=(_BUILDBUDDY_KEY,),
+        storage_class=piraeus_storage.SSD_LOCAL,
     )
     # Cluster-scoped and covering every Agentplane namespace; staging is the only environment.
     workload_certificate_admission.add_workload_certificate_admission(
