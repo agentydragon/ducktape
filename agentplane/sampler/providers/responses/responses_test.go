@@ -96,6 +96,47 @@ func TestProviderFailureDiagnosticsKeepEvents(t *testing.T) {
 	if got := string(wirefixture.MustMarshalJSON(t, known.Evidence)); !strings.Contains(got, `"events"`) || !strings.Contains(got, `"provider_error":{"code":"fixture"}`) {
 		t.Fatalf("provider failure diagnostics lost streamed events: %s", got)
 	}
+	if got := err.Error(); got != "The Responses API reported an error (fixture)." {
+		t.Fatalf("error = %q", got)
+	}
+}
+
+func TestResponsesStreamFailureMessages(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		terminal string
+		want     string
+	}{
+		{
+			name:     "context window",
+			terminal: `{"type":"response.failed","response":{"status":"failed","error":{"code":"context_too_large","message":"Your input exceeds the context window of this model. Please adjust your input and try again."}}}`,
+			want:     "Your input exceeds the context window of this model. Please adjust your input and try again. (context_too_large)",
+		},
+		{
+			name:     "top-level error",
+			terminal: `{"type":"error","code":"invalid_request","message":"Invalid input."}`,
+			want:     "Invalid input. (invalid_request)",
+		},
+		{
+			name:     "incomplete",
+			terminal: `{"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}}`,
+			want:     "The Responses API returned an incomplete response (max_output_tokens).",
+		},
+		{
+			name:     "missing diagnostic",
+			terminal: `{"type":"response.failed","response":{"status":"failed"}}`,
+			want:     "The Responses API reported a failed response.",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			stream := "data: " + `{"type":"response.created","response":{"instructions":"fixture prompt"}}` + "\n\ndata: " + test.terminal + "\n\n"
+			_, err := readStream(t.Context(), strings.NewReader(stream), nil, protocol.ProviderHooks{})
+			var known *protocol.KnownFailureError
+			if !errors.As(err, &known) || err.Error() != test.want {
+				t.Fatalf("error = %v, want known failure %q", err, test.want)
+			}
+		})
+	}
 }
 
 func TestProviderRetryableHTTPStatusesCarryRetryAfter(t *testing.T) {
