@@ -420,10 +420,16 @@ private def declStep (p : Facts) (id : Nat) (env : Env) (kind : DeclKind) (x : N
           exact ⟨val, m, by simpa only [State.cellAt_assign_other _ _ _ _ (bne_iff_ne.mp different)] using ext.cells _ _ binding,
             sh.transport witness (fun a o ho => ext.objs a o ho)⟩⟩
 
-private def step (p : Facts) : (u : LinkedUnit) → Step p u
+private def step (p : Facts) (recordPivots : Std.HashSet Nat) : (u : LinkedUnit) → Step p u
   | ⟨id, .decl kind x e, env⟩ =>
     match h : env.vars.lookup x, expr? p env e with
-    | some c, some ex => declStep p id env kind x e c h ex
+    | some c, some ex =>
+      -- Retained records can establish facts for later reads without moving.
+      -- One prefix may know their fields when the other does not.
+      let use := if (e matches .obj _) && !recordPivots.contains id then
+        { ex with replacement := e, same := fun _ _ _ => rfl }
+      else ex
+      declStep p id env kind x e c h use
     | _, _ => ⟨_, empty, fun _ _ _ => rfl, fun _ _ _ _ _ _ => empty_holds _⟩
   | ⟨_, .expr e, env⟩ =>
     match expr? p env e with
@@ -445,14 +451,14 @@ private def step (p : Facts) : (u : LinkedUnit) → Step p u
     | none => ⟨_, empty, fun _ _ _ => rfl, fun _ _ _ _ _ _ => empty_holds _⟩
   | u => ⟨u.stmt, empty, fun _ _ _ => rfl, fun _ _ _ _ _ _ => empty_holds _⟩
 
-private def normalize (p : Facts) (units : List LinkedUnit) :
+private def normalize (recordPivots : Std.HashSet Nat) (p : Facts) (units : List LinkedUnit) :
     (result : List LinkedUnit) × PLift (∀ {w} n (s final : State w), Holds p s →
       (runUnits n units s = .ok () final ↔ runUnits n result s = .ok () final)) :=
   match units with
   | [] => ⟨[], ⟨fun _ _ _ _ => Iff.rfl⟩⟩
   | u :: rest =>
-    let a := step p u
-    let ⟨tail, ⟨ih⟩⟩ := normalize a.after rest
+    let a := step p recordPivots u
+    let ⟨tail, ⟨ih⟩⟩ := normalize recordPivots a.after rest
     ⟨(u.id, a.stmt, u.env) :: tail, ⟨by
       intro w n s final hs
       obtain ⟨id, st, env⟩ := u
@@ -467,12 +473,12 @@ private def normalize (p : Facts) (units : List LinkedUnit) :
 
 /-- This proof concerns the actual linked units. It starts with no object
 facts. The probe only supplies domains of cells allocated by linking. -/
-def prepare (ready : State World.probe) (units : List LinkedUnit) :
+def prepare (recordPivots : Std.HashSet Nat) (ready : State World.probe) (units : List LinkedUnit) :
     (result : List LinkedUnit) × PLift (∀ w n (final : State w),
       runUnits n units (LinkedBehavior.linkState w ready) = .ok () final ↔
       runUnits n result (LinkedBehavior.linkState w ready) = .ok () final) :=
   let p : Facts := ⟨fun c => (ready.cellAt c).isSome, []⟩
-  let ⟨result, ⟨proof⟩⟩ := normalize p units
+  let ⟨result, ⟨proof⟩⟩ := normalize recordPivots p units
   ⟨result, ⟨fun w n final => proof n _ final ⟨fun _ h => h, by simp [p]⟩⟩⟩
 
 end CoreJS.PrefixProjection

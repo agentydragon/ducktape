@@ -77,3 +77,18 @@ for (const [name, source, moved, kept, before, after] of [
   assert.deepEqual(observe(test.files.sourceFile, "result"), before);
   assert.deepEqual(observe(path.join(preview, "entry.mjs"), "result"), after);
 }
+
+// The earlier table supplies an own field read. The retained allocation is
+// crossed by that read; only the source prefix knows its key at that point.
+const retained = fixture(
+  "retained-computed-key",
+  'globalThis.marker = 0; var key="k"; var table={value:1}; var other={[key]:2}; var result=table.value; export {key,table,other,result};',
+  ["#1", "#2", "#4"],
+  ["#0", "#3", "#5"]
+);
+const retainedVerdict = retained.run("linked-structural-moves");
+assert.equal(retainedVerdict.status, "certified");
+assert.deepEqual(retained.run("linked-structural-moves", "--check-output"), retainedVerdict);
+for (const f of [retained.files.sourceFile, path.join(retained.out, "entry.mjs")]) {
+  assert.deepEqual(observe(f, ["result", "other"]), { result: 1, other: { k: 2 } });
+}

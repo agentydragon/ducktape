@@ -274,7 +274,8 @@ private def checkRuns (intrinsics : List StableIntrinsic) (ready : State World.p
     simpa [List.map_map, Function.comp_def, PreparedUnit.ofUnit] using schedule.equivalent w hw n final⟩)
 
 /-- Select the rule from the linked schedules, then validate the witness in all worlds. -/
-def checkStructuralSchedule (intrinsics : List StableIntrinsic) (source candidate : Program) :
+def checkStructuralSchedule (intrinsics : List StableIntrinsic) (source candidate : Program)
+    (recordPivots : Std.HashSet Nat) :
     Except String (StructuralProof × PLift (NormalEquivalent (StableIntrinsic.Worlds intrinsics) source candidate ∧ SameExports source candidate)) := do
   let before ← (checkLink source).mapError ("original linker: " ++ ·)
   let after ← (checkLink candidate).mapError ("candidate linker: " ++ ·)
@@ -300,8 +301,8 @@ def checkStructuralSchedule (intrinsics : List StableIntrinsic) (source candidat
             (field matches .init (.var _) _) || (field matches .init _ (.var _)))
         | .decl _ _ (.binary op _ _) => op.numberArithmetic
         | _ => false) do throw why
-      let ⟨beforeUnits, ⟨left⟩⟩ := PrefixProjection.prepare before.ready sourceUnits
-      let ⟨afterUnits, ⟨right⟩⟩ := PrefixProjection.prepare before.ready candidateUnits
+      let ⟨beforeUnits, ⟨left⟩⟩ := PrefixProjection.prepare recordPivots before.ready sourceUnits
+      let ⟨afterUnits, ⟨right⟩⟩ := PrefixProjection.prepare recordPivots before.ready candidateUnits
       let (count, ⟨middle⟩) ← checkRuns intrinsics before.ready beforeUnits afterUnits
       pure (count, PLift.up (fun w hw n final =>
         (left w n final).trans ((middle w hw n final).trans (right w n final).symm)))
