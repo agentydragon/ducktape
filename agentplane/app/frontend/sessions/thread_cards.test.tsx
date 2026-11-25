@@ -664,22 +664,6 @@ describe("EntityCard", () => {
     }
   );
 
-  it("keeps a stored Responses event dump behind Evidence", async () => {
-    const container = await renderLifecycle({
-      case: "turnCompleted",
-      value: {
-        turnId: "test-failed-turn",
-        status: TurnStatus.FAILED,
-        error: 'map[events:[{response.created {"instructions":"fixture prompt"}}',
-      },
-    });
-    const row = container.querySelector('[data-thread-anchor="1"]')!;
-    expect(row.querySelector('[role="alert"]')?.textContent).toBe(
-      "Turn failed The Responses API failed. See Evidence for details."
-    );
-    expect(row.querySelector('button[aria-label="Evidence"]')).not.toBeNull();
-  });
-
   it("shows an interrupted turn's error dimmed beneath its line, not as an alert", async () => {
     const container = await renderLifecycle({
       case: "turnCompleted",

@@ -163,10 +163,6 @@ export function lifecyclePresentation(event: Event): LifecyclePresentation {
       return { label: "Turn started", prominent: false, diagnostic: null };
     case "turnCompleted": {
       const { status, error } = parsed.value;
-      if (status === TurnStatus.FAILED && error?.startsWith("map[events:[{response.")) {
-        // Older samplers stringified the entire Responses event map as a turn error.
-        return { ...TURN_OUTCOMES[status], diagnostic: "The Responses API failed. See Evidence for details." };
-      }
       const diagnostic = error || (status === TurnStatus.FAILED ? "The harness reported no error details." : null);
       return { ...TURN_OUTCOMES[status], diagnostic };
     }
