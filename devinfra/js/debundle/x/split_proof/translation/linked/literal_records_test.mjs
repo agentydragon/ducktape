@@ -181,12 +181,8 @@ assertWorkerResult(
 assertWorkerResult("record-duplicate", `const worker = () => ({ key: 1, "key": 2 }); export const result = worker();`, {
   key: 2,
 });
-{
-  const { verdict, out } = workerSplit(
-    "record-array-hole",
-    "const worker = () => ({ nested: { key: [, 1] } }); export const result = worker();"
-  );
-  assert.equal(verdict.status, "rejected");
-  assert.match(verdict.reason, /unsupported array hole/);
-  assert(!existsSync(out));
-}
+assertWorkerResult(
+  "record-array-hole",
+  "const worker = () => ({ nested: { key: [, 1] } }); export const result = worker();",
+  { nested: { key: [null, 1] } }
+);
