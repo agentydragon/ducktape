@@ -1727,21 +1727,6 @@ impl ChunkPlanBuilder {
             }
         }
 
-        let mut source_unit_export_surfaces = HashMap::<SourceUnitId, PublicExportSurface>::new();
-        for node in dependency_graph.iter_nodes() {
-            let location = layout.by_source_unit(node.id).with_context(|| {
-                format!("source unit {} has no checked syntax location", node.id.0)
-            })?;
-            let mut surface = PublicExportSurface::default();
-            for name in &node.declared {
-                surface.add_binding(name.0.to_string(), name.clone());
-            }
-            if let Some(exports) = source_exports_by_statement.get(&location.statement) {
-                surface.add_source_identities(exports);
-            }
-            source_unit_export_surfaces.insert(node.id, surface);
-        }
-
         let mut virtual_modules = BTreeSet::new();
         let mut candidate_modules =
             Vec::<(ModuleId, &BTreeSet<SourceUnitId>, PublicExportSurface)>::new();
@@ -1754,18 +1739,24 @@ impl ChunkPlanBuilder {
             virtual_modules.insert(module_id);
             let mut export_surface = PublicExportSurface::default();
             for source_unit in members.iter() {
-                let unit_surface =
-                    source_unit_export_surfaces
-                        .get(source_unit)
-                        .with_context(|| {
-                            format!("source unit {} has no export surface", source_unit.0)
-                        })?;
-                export_surface.merge(unit_surface);
-            }
-            candidate_modules.push((module_id, *members, export_surface));
-            for source_unit in members.iter() {
+                let node = dependency_graph.node(*source_unit).with_context(|| {
+                    format!("source unit {} has no export surface", source_unit.0)
+                })?;
+                let location = layout.by_source_unit(*source_unit).with_context(|| {
+                    format!(
+                        "source unit {} has no checked syntax location",
+                        source_unit.0
+                    )
+                })?;
+                for id in &node.declared {
+                    export_surface.add_binding(id.0.to_string(), id.clone());
+                }
+                if let Some(exports) = source_exports_by_statement.get(&location.statement) {
+                    export_surface.add_source_identities(exports);
+                }
                 source_unit_claims.push((*source_unit, module_id));
             }
+            candidate_modules.push((module_id, *members, export_surface));
         }
 
         let assignment = assemble_assignment_with_source_unit_claims(
