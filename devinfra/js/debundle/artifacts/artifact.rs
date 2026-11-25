@@ -390,7 +390,6 @@ pub struct ArtifactIndexes {
     chunk_source_paths: HashMap<ChunkId, String>,
     file_source_paths: HashMap<(ChunkId, String), String>,
     entry_files: HashMap<ChunkId, String>,
-    file_output_paths: HashMap<(ChunkId, String), String>,
     manifest_imports_by_target_chunk: HashMap<ChunkId, Vec<ResolvedManifestImport>>,
 }
 
@@ -402,7 +401,6 @@ impl ArtifactIndexes {
         let mut chunk_source_paths = HashMap::new();
         let mut file_source_paths = HashMap::new();
         let mut entry_files = HashMap::new();
-        let mut file_output_paths = HashMap::new();
 
         for (index, chunk_artifact) in artifact.chunks.iter().enumerate() {
             let chunk_id = chunk_artifact.chunk_id;
@@ -428,16 +426,15 @@ impl ArtifactIndexes {
                 let key = (chunk_id, file_path.clone());
                 file_source_paths.insert(key.clone(), file.metadata.source_path.clone());
                 let output_path = join_module_path(&[chunk_name, file_path]);
-                if let Some(existing) = output_path_index.insert(output_path.clone(), key.clone()) {
+                if let Some(existing) = output_path_index.insert(output_path.clone(), key) {
                     bail!(
                         "Duplicate artifact output path {output_path}: {}/{} and {}/{}",
                         artifact.chunk_table.name(existing.0),
                         existing.1,
                         chunk_name,
-                        key.1
+                        file_path
                     );
                 }
-                file_output_paths.insert(key, output_path);
             }
         }
 
@@ -447,7 +444,6 @@ impl ArtifactIndexes {
             chunk_source_paths,
             file_source_paths,
             entry_files,
-            file_output_paths,
             manifest_imports_by_target_chunk: HashMap::new(),
         };
         indexes.index_manifest_imports(artifact);
@@ -459,7 +455,7 @@ impl ArtifactIndexes {
         source: &str,
         caller_chunk_name: &str,
         caller_file: &str,
-    ) -> Option<(ChunkId, String)> {
+    ) -> Option<ResolvedImportReference> {
         if source.is_empty() || !source.starts_with('.') {
             return None;
         }
@@ -467,7 +463,13 @@ impl ArtifactIndexes {
             join_module_path(&[caller_chunk_name, module_path_dirname(caller_file).as_str()]);
         let resolved_path =
             normalize_module_path(&join_module_path(&[caller_dir.as_str(), source])).ok()?;
-        self.output_path_index.get(&resolved_path).cloned()
+        let (target_chunk_id, target_file) = self.output_path_index.get(&resolved_path)?;
+        Some(ResolvedImportReference {
+            kind: ImportReferenceKind::ArtifactPath,
+            target_chunk_id: *target_chunk_id,
+            target_file: target_file.clone(),
+            target_path: resolved_path,
+        })
     }
 
     pub fn resolve_runtime_import_reference(
@@ -478,23 +480,15 @@ impl ArtifactIndexes {
         chunk_table: &ChunkTable,
     ) -> Option<ResolvedImportReference> {
         let caller_chunk_name = chunk_table.name(caller_chunk_id);
-        if let Some((target_chunk_id, target_file)) =
-            self.resolve_artifact_output_reference(source, caller_chunk_name, caller_file)
-        {
-            let target_chunk_name = chunk_table.name(target_chunk_id);
-            let target_path = self
-                .file_output_paths
-                .get(&(target_chunk_id, target_file.clone()))
-                .cloned()
-                .unwrap_or_else(|| join_module_path(&[target_chunk_name, &target_file]));
-            return Some(ResolvedImportReference {
-                kind: ImportReferenceKind::ArtifactPath,
-                target_chunk_id,
-                target_file,
-                target_path,
-            });
-        }
-        self.resolve_source_path_reference(source, caller_chunk_id, caller_file, chunk_table)
+        self.resolve_artifact_output_reference(source, caller_chunk_name, caller_file)
+            .or_else(|| {
+                self.resolve_source_path_reference(
+                    source,
+                    caller_chunk_id,
+                    caller_file,
+                    chunk_table,
+                )
+            })
     }
 
     fn resolve_source_path_reference(
@@ -515,11 +509,7 @@ impl ArtifactIndexes {
         let target_chunk_id = self.source_chunk_index.get(&imported_source_path)?;
         let target_entry_file = self.entry_files.get(target_chunk_id)?.clone();
         let target_chunk_name = chunk_table.name(*target_chunk_id);
-        let path = self
-            .file_output_paths
-            .get(&(*target_chunk_id, target_entry_file.clone()))
-            .cloned()
-            .unwrap_or_else(|| join_module_path(&[target_chunk_name, &target_entry_file]));
+        let path = join_module_path(&[target_chunk_name, &target_entry_file]);
         Some(ResolvedImportReference {
             kind: ImportReferenceKind::SourcePath,
             target_chunk_id: *target_chunk_id,
