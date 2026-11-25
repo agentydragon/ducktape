@@ -9,7 +9,8 @@ use command_output::{infallible, write_report};
 use graph_provenance::CurrentRoots;
 use graph_provenance::VerifiedGraphSourceContext;
 use peel::OutputFormat;
-use transform_command::{ProjectAnalysisArgs, ProjectApplyArgs, ResolvePlacementArgs};
+use resolved_placement::ResolvePlacementArgs;
+use transform_command::{ProjectAnalysisArgs, ProjectApplyArgs};
 
 use selector_codemod::match_selector::{
     MatchSelectorConfig, render_match_selector_text, run_match_selector,

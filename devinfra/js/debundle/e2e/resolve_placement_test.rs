@@ -1,5 +1,5 @@
 //! A resolved selector assignment is input to a checker, not its verdict.
-use debundle_e2e_support::saved_analysis::{command, rejected_split};
+use debundle_e2e_support::saved_analysis::{command, command_with, rejected_split};
 use debundle_e2e_support::*;
 use serde_json::{Value, json};
 use std::fs;
@@ -23,7 +23,14 @@ fn resolve(opts: FixtureOpts<'_>, subset: Option<Value>) -> (CommandResult, Opti
         fs::write(&subset_path, subset.to_string()).unwrap();
         args.extend(["--ownership-subset", subset_path.to_str().unwrap()]);
     }
-    let run = command(&args);
+    let cli = command(&args);
+    let cli_bytes = fs::read(&out).ok();
+    if cli_bytes.is_some() {
+        fs::remove_file(&out).unwrap();
+    }
+    let run = command_with(&resolver_path(), &args[2..]);
+    assert_eq!(run.status.code(), cli.status.code(), "{}", run.stderr);
+    assert_eq!(fs::read(&out).ok(), cli_bytes);
     let result = out
         .exists()
         .then(|| serde_json::from_slice(&fs::read(out).unwrap()).unwrap());

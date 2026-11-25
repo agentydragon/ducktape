@@ -29,7 +29,6 @@ use crate::lower::{
     LoweredChunk, prepare_candidate_emission_plan,
 };
 use crate::naturalize::collect_plan_export_rename_intents;
-use crate::ownership_subset::{OwnershipSubset, SelectedModule};
 use crate::placement::EmissionPlacement;
 use crate::plans::ModulePlan;
 use crate::rename_ledger::{RenameLedger, SealValidation};
@@ -66,6 +65,7 @@ use output_layout::{
     EFFECT_TRANSLATION_VALIDATION_REPORT, EXPORT_REENTRY_REPORT, GATE_REJECTED_MARKER,
     SELECTOR_DIAGNOSTICS_REPORT, SPEC_LINT_REPORT, TRANSLATION_VALIDATION_REPORT,
 };
+use ownership_subset::{OwnershipSubset, SelectedModule};
 use report_io::JsonlReport;
 use spec::{ChunkRenames, UnassignedMode};
 use spec_resolution::LogicalRequest;

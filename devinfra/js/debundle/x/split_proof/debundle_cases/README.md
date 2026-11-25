@@ -28,13 +28,13 @@ For direct Node runs, first [install the translation dependencies](../translatio
 
 ```sh
 cp package.json.in package.json && npm ci --no-audit --no-fund
-node run_cases.mjs --out "$out/cases.jsonl"
+DEBUNDLE_RESOLVER=/absolute/path/to/debundle_resolve_placement node run_cases.mjs --out "$out/cases.jsonl"
 ```
 
 ## What the adapter does
 
 1. `acorn` parses the case's one chunk and `eslint-scope` supplies scope annotations. For placement proposals, the adapter numbers the top-level source units, counting each declarator in a top-level list separately. A block's unit includes the names its nested `var` declarations bind.
-2. The debundle spec becomes a `lowersplit` spec. `binding` selectors and hole-free `source_matches` and `anonymous_statements` templates (matched by exact AST shape) become source-unit ordinals. `import_order` becomes the import priority (`Spec.order`).
+2. The debundle spec becomes a `lowersplit` spec. The standalone Rust resolver solves the authored selectors. The adapter checks its source digest, chunk ID and unit census before using the returned owners. `import_order` becomes the import priority (`Spec.order`).
 3. Unclaimed statements follow `unassigned_mode`. With `inline_in_entry` they stay in the entry. With `catchall_file` the catchall module takes the unclaimed declarations, the unclaimed anonymous statements before its last statement, and everything when it is the only module.
    Later anonymous statements stay in the entry (debundle's rule: [`docs/design.md`](../../../docs/design.md)). An `export { … }` without a declaration always stays in the entry.
 4. `lowersplit --diagnostic … --force` derives its own source units from the annotated Program, checks the split, and writes an uncertified preview even when a check rejects it. This corpus compares diagnostic checker results with debundle's expected results; it does not certify the emitted files.
@@ -68,7 +68,7 @@ node run_cases.mjs --out "$out/cases.jsonl"
 | `emission/duplicate_declaration/repeated_var`, `emission/hoisted_var/repeated_statements`, `initialization/repeated_var_accessor/colocated`            | `UniqueDefs` | Two `var` declarations of one name. That is legal inside one module, and debundle keeps such sites together. `UniqueDefs` wants one declaration per name.                                                                                                                                          | checker (`Plan.lean`) |
 | `realizability/initialization_order/early_entry_importer_does_not_pull_scc_in_wrong_order`                                                             | `OrderOk`    | `mod_init` calls `readT`, which reads `T` from `mod_logger`. My plan has no import that makes `mod_logger` run first.                                                                                                                                                                              | splitter (`mkPlan`)   |
 
-## Why 109 entries do not run
+## Why 109 entries did not run in the initial baseline
 
 | Family                          | Entries | What is missing                                                                                                                                                                                                                                                                                         |
 | ------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

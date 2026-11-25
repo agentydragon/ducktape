@@ -86,8 +86,8 @@ def _resolve_placement_impl(ctx):
         ctx,
         inputs = depset(ctx.files.ownership_subset + fragment_files, transitive = [plan.inputs]),
         outputs = [out] + ([canonical] if canonical else []),
-        args = ["spec", "resolve-placement"] +
-               _spec_args(ctx, plan, ctx.label.name + ".unused") + plan.package_args +
+        tool = ctx.executable.resolver,
+        args = _spec_args(ctx, plan, ctx.label.name + ".unused") + plan.package_args +
                ["--chunk", shell.quote(ctx.attr.chunk), "--out", shell.quote(out.short_path)] +
                (["--ownership-subset", _shell_execroot_path(subset.path)] if subset else []) + extra_args,
         mnemonic = "DebundleResolvePlacement",
@@ -401,10 +401,10 @@ debundle_resolve_placement = rule(
             doc = "Selector-only YAML files mapped to canonical owners in chunk. New owners follow the shared priority.",
         ),
         "chunk": attr.string(mandatory = True),
-        "debundler": attr.label(
+        "resolver": attr.label(
             executable = True,
             cfg = "exec",
-            default = Label("//devinfra/js/debundle:debundler"),
+            default = Label("//devinfra/js/debundle:debundle_resolve_placement"),
         ),
         "ownership_subset": attr.label(allow_single_file = [".json"]),
     }),

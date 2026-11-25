@@ -655,8 +655,7 @@ fn run_debundle_cli(
             let keep_going = !args.fail_fast;
             let cli = args.context.resolve()?;
             let (ownership_subset, ownership_subset_input) = if let Some(path) = &ownership_subset {
-                let (subset, bytes) =
-                    lowering::ownership_subset::OwnershipSubset::read_with_bytes(path)?;
+                let (subset, bytes) = ownership_subset::OwnershipSubset::read_with_bytes(path)?;
                 (
                     Some(subset),
                     Some(pipeline::OwnershipSubsetInput {

@@ -1,10 +1,9 @@
 #[path = "apply_projection_codec.rs"]
 mod apply_projection_codec;
-mod resolved_placement;
-pub use resolved_placement::{ProposalFragment, resolve_placement};
+use transform_inputs::load_transform_spec_with_roots;
+pub use transform_inputs::{TransformRequest, TransformSpecSource, load_transform_spec_source};
 
 use artifact::load_js_chunks;
-use serde::{Deserialize, Serialize};
 use source_identity::ChunkId;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
@@ -21,18 +20,17 @@ use gate::{CandidateRelocationAssessmentReport, UnmatchedSpecClaim};
 use graph_provenance::{
     CurrentRoots, GraphProvenance, InputCapture, ProvenanceRoots, VerifiedGraphSourceContext,
 };
-use lowering::ownership_subset::OwnershipSubset;
 use lowering::{
     AnalysisMode, CandidateEmissionDraft, FullReportKind, GateRejectionPolicy,
     GraphReportSelection, MaterializeLogicalModulesOptions, MaterializeSpecInputs, Materialized,
     ReportEmission, materialize_logical_modules,
 };
 use output_layout::GLOBAL_RESOLUTION_REPORT;
+use ownership_subset::OwnershipSubset;
 use prepare_chunks::prepare_js_chunks;
 use reconstruction::{EmittablePlan, RejectedPlan, VendorManifestOutput, validate_reconstruction};
 use spec::{ChunkExportPurity, LogicalModule, NodeBuiltinModuleExt, TransformSpec};
-use spec_modules::read_flat_transform_spec;
-use spec_tree::{CompileSpecTreeOptions, compile_spec_tree_with_roots, graph_module_roots};
+use spec_tree::graph_module_roots;
 use vendor::{VendorPlanOptions, VendorResolutionPlan, build_vendor_resolution_plan};
 use write_tree::{RejectedArtifacts, WriteTreeInput, write_gate_rejected_marker, write_js_tree};
 
@@ -53,13 +51,6 @@ impl std::fmt::Display for GateRejected {
 }
 
 impl std::error::Error for GateRejected {}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TransformRequest {
-    pub spec_source: TransformSpecSource,
-    pub package_roots: HashMap<String, PathBuf>,
-    pub packages_root: Option<PathBuf>,
-}
 
 /// What a run writes once the pipeline checks have run. The checks themselves
 /// (selectors, realizability gate, final program validation) are the same in
@@ -130,13 +121,6 @@ pub struct TransformRunOptions {
 pub struct OwnershipSubsetInput {
     pub path: PathBuf,
     pub bytes: Vec<u8>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TransformSpecSource {
-    Flat { path: PathBuf },
-    Tree(CompileSpecTreeOptions),
 }
 
 /// Canonical input for apply runs that do not export replayable graphs.
@@ -1553,21 +1537,6 @@ fn canonical_generation_command(
         argv.extend(["--full-report-chunk".to_string(), chunk.clone()]);
     }
     Ok(argv)
-}
-
-pub fn load_transform_spec_source(source: &TransformSpecSource) -> Result<TransformSpec> {
-    Ok(load_transform_spec_with_roots(source)?.0)
-}
-
-fn load_transform_spec_with_roots(
-    source: &TransformSpecSource,
-) -> Result<(TransformSpec, BTreeMap<String, Vec<PathBuf>>)> {
-    match source {
-        TransformSpecSource::Flat { path } => {
-            Ok((read_flat_transform_spec(path)?, BTreeMap::new()))
-        }
-        TransformSpecSource::Tree(options) => compile_spec_tree_with_roots(options),
-    }
 }
 
 fn validate_transform_spec(spec: &TransformSpec) -> Result<()> {

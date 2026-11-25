@@ -34,7 +34,9 @@ an ambiguous run.
 
 Use `debundle spec resolve-placement --chunk CHUNK --out resolved.json` with the
 ordinary `--spec` or tree inputs to feed an independent split checker. The
-command solves the canonical selectors jointly across all configured chunks.
+Bazel rule `debundle_resolve_placement` invokes the standalone
+`//devinfra/js/debundle:debundle_resolve_placement` binary with the same flags.
+Both entry points solve the canonical selectors jointly across all configured chunks.
 An optional `--ownership-subset FILE` retains named modules, readable members,
 and authored anonymous statement indices **after** resolution. Unknown,
 ambiguous and conflicting claims fail the command even if the subset omits
