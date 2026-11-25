@@ -640,13 +640,13 @@ fn run_debundle_cli(
             full_report_chunks,
         }) => {
             if let Some(root) = &reports_only {
-                if let Some(out_root) = &args.context.auxiliary.out_root {
+                if let Some(out_root) = &args.context.source.tree.out_root {
                     anyhow::ensure!(
                         graph_provenance::absolute(root)? == graph_provenance::absolute(out_root)?,
                         "--reports-only and --out-root must name the same output root"
                     );
                 }
-                args.context.auxiliary.out_root = Some(root.clone());
+                args.context.source.tree.out_root = Some(root.clone());
             }
             let artifacts = reports_only.map_or(RunArtifacts::Program, |out_root| {
                 RunArtifacts::ReportsOnly { out_root }

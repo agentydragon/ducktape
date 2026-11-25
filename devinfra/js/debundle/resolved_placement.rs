@@ -10,7 +10,7 @@ use spec::{ModulePath, SourceMatchClaim, TransformSpec};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use transform_inputs::{TransformContextArgs, TransformSpecSource, load_transform_spec_source};
+use transform_inputs::{SpecSourceArgs, TransformSpecSource, load_transform_spec_source};
 
 #[derive(Serialize)]
 struct ResolvedPlacement {
@@ -425,7 +425,7 @@ fn placement_view(
 #[derive(Debug, ClapArgs)]
 pub struct ResolvePlacementArgs {
     #[command(flatten)]
-    context: TransformContextArgs,
+    context: SpecSourceArgs,
     /// Materialized chunk ID from the canonical spec.
     #[arg(long)]
     chunk: String,
@@ -447,7 +447,7 @@ impl ResolvePlacementArgs {
     pub fn run(self, stderr: &mut (dyn std::io::Write + Send)) -> Result<()> {
         command_diagnostics::run(stderr, |diagnostics| {
             resolve_placement(
-                &self.context.resolve()?.spec_source,
+                &self.context.resolve()?,
                 &self.chunk,
                 self.ownership_subset.as_deref(),
                 &self.out,
@@ -463,7 +463,7 @@ impl ResolvePlacementArgs {
 #[derive(Debug, ClapArgs)]
 pub struct ResolvePlacementsArgs {
     #[command(flatten)]
-    context: TransformContextArgs,
+    context: SpecSourceArgs,
     /// Materialized chunk IDs from the canonical spec; repeat to export a batch.
     #[arg(long, required = true, value_name = "CHUNK")]
     chunk: Vec<String>,
@@ -485,7 +485,7 @@ impl ResolvePlacementsArgs {
     pub fn run(self, stderr: &mut (dyn std::io::Write + Send)) -> Result<()> {
         command_diagnostics::run(stderr, |diagnostics| {
             resolve_placements(
-                &self.context.resolve()?.spec_source,
+                &self.context.resolve()?,
                 &self.chunk,
                 self.ownership_subset.as_deref(),
                 &self.out,
