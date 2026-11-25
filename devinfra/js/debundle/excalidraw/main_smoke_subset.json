@@ -1,0 +1,10 @@
+{
+  "modules": [
+    {
+      "chunk": "main",
+      "module": "packages/excalidraw/renderer/interactivescene",
+      "bindings": ["strokeEllipseWithRotation"],
+      "anonymous_statements": []
+    }
+  ]
+}
