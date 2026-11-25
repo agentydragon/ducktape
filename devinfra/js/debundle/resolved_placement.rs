@@ -1,15 +1,16 @@
 //! Export authored source-unit claims for consumers that provide their own checker.
-use super::{TransformRequest, load_transform_spec_source};
 use anyhow::{Context, Result, ensure};
 use artifact::load_js_chunks;
+use clap::Args as ClapArgs;
 use frontend_elaboration::{CanonicalOwnership, ClaimSelector, resolve_ownership};
-use lowering::ownership_subset::OwnershipSubset;
+use ownership_subset::OwnershipSubset;
 use prepare_chunks::prepare_js_chunks;
 use serde::{Deserialize, Serialize};
 use spec::{ModulePath, SourceMatchClaim, TransformSpec};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use transform_inputs::{TransformContextArgs, TransformSpecSource, load_transform_spec_source};
 
 #[derive(Serialize)]
 struct ResolvedPlacement<'a> {
@@ -104,7 +105,7 @@ fn assemble(spec: &mut TransformSpec, chunk: &str, fragments: &[ProposalFragment
 }
 
 pub fn resolve_placement(
-    cli: &TransformRequest,
+    source: &TransformSpecSource,
     chunk: &str,
     subset: Option<&Path>,
     out: &Path,
@@ -120,7 +121,7 @@ pub fn resolve_placement(
         canonical_out != Some(out),
         "canonical and selected outputs must be distinct"
     );
-    let mut spec = load_transform_spec_source(&cli.spec_source)?;
+    let mut spec = load_transform_spec_source(source)?;
     let chunk_ids = spec.materialize_chunk_ids();
     ensure!(
         chunk_ids.contains(chunk),
@@ -263,4 +264,42 @@ fn placement_view<'a>(
         import_order,
         units,
     })
+}
+
+/// Export one chunk's resolved ownership without invoking a split backend.
+#[derive(Debug, ClapArgs)]
+pub struct ResolvePlacementArgs {
+    #[command(flatten)]
+    context: TransformContextArgs,
+    /// Materialized chunk ID from the canonical spec.
+    #[arg(long)]
+    chunk: String,
+    /// Retain only these canonical modules, member names and anonymous indices.
+    #[arg(long)]
+    ownership_subset: Option<PathBuf>,
+    /// Append a source_matches-only fragment to OWNER in this chunk; repeat for multiple files.
+    #[arg(long, value_name = "OWNER=YAML")]
+    proposal_fragment: Vec<ProposalFragment>,
+    /// Also write the unfiltered view of this solve.
+    #[arg(long, requires = "ownership_subset")]
+    canonical_out: Option<PathBuf>,
+    /// Destination JSON file.
+    #[arg(long)]
+    out: PathBuf,
+}
+
+impl ResolvePlacementArgs {
+    pub fn run(self, stderr: &mut (dyn std::io::Write + Send)) -> Result<()> {
+        command_diagnostics::run(stderr, |diagnostics| {
+            resolve_placement(
+                &self.context.resolve()?.spec_source,
+                &self.chunk,
+                self.ownership_subset.as_deref(),
+                &self.out,
+                &self.proposal_fragment,
+                self.canonical_out.as_deref(),
+                diagnostics,
+            )
+        })
+    }
 }

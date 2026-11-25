@@ -1174,6 +1174,10 @@ pub fn analyzer_path() -> PathBuf {
     tool_path("DEBUNDLE_TEST_ANALYZER")
 }
 
+pub fn resolver_path() -> PathBuf {
+    tool_path("DEBUNDLE_TEST_RESOLVER")
+}
+
 pub fn projector_path() -> PathBuf {
     tool_path("DEBUNDLE_TEST_PROJECTOR")
 }

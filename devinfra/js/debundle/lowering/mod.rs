@@ -41,7 +41,6 @@ mod lower;
 mod materialize;
 mod module_output;
 mod naturalize;
-pub mod ownership_subset;
 mod placement;
 mod plans;
 mod reentry_report;

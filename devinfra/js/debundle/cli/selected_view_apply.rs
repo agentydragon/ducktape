@@ -6,7 +6,7 @@ use std::path::Path;
 use analysis::DependencyGraphInput;
 use anyhow::{Context, Result, bail, ensure};
 use graph_provenance::VerifiedGraphSourceContext;
-use lowering::ownership_subset::OwnershipSubset;
+use ownership_subset::OwnershipSubset;
 use peel::assignment::{AssignmentProblem, accepted};
 use selector_codemod::{SourceUnitSelectorRequest, SourceUnitSelectorSynthesis};
 use spec::{LogicalModule, ModulePath, SourceMatchBinding, SourceMatchBindingDetail};

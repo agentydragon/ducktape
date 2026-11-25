@@ -8,7 +8,6 @@ use super::outcome_sink::OutcomeSink;
 use crate::anonymous::ResolvedAnonymousStatement;
 use crate::exports::PublicExportSurface;
 use crate::imports::{ArtifactSourceImportResolutionCache, resolve_imported_binding};
-use crate::ownership_subset::SelectedModule;
 use crate::plans::ModulePlan;
 use crate::util::target_file_for_request;
 use analysis::assignment_assembly::assemble_assignment_with_source_unit_claims;
@@ -24,6 +23,7 @@ use frontend_elaboration::MemberClaimProjection;
 use frontend_elaboration::chunk_ast::{SourceExportIdentity, TopLevelDecl, binding_declaration};
 use frontend_elaboration::source_ast::RuntimeImportFacts;
 use gate::{EsmImportOrder, EsmImportSchedule};
+use ownership_subset::SelectedModule;
 use selector_outcome::{
     Declaration, Entity, EntityRef, Outcome, ResolvedBy, SelectorOutcome, SelectorOutcomeReport,
 };

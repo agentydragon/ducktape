@@ -1393,5 +1393,7 @@ exports_files(
 
 debundle_e2e_test(
     name = "resolve_placement_test",
+    data = ["//devinfra/js/debundle:debundle_resolve_placement"],
+    env = {"DEBUNDLE_TEST_RESOLVER": "$(rlocationpath //devinfra/js/debundle:debundle_resolve_placement)"},
     deps = ["@crates//:serde_json"],
 )

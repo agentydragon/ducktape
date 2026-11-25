@@ -5,13 +5,14 @@
 // `--keep <dir>` copies each translated case (bundle, translated spec, emitted modules, checker output) to `<dir>/<id>`.
 //
 // A case is `main.js` (one ESM chunk), a spec, and `expect.yaml` (accept or reject per spec). For every spec entry:
-//   1. translate the spec to a `lowersplit` spec: binding selectors and hole-free matches become statement numbers,
+//   1. translate the spec to a `lowersplit` spec: the Rust resolver supplies authored source-unit owners,
 //      unclaimed statements follow `unassigned_mode`, `import_order` becomes the import priority;
 //   2. `lowersplit --diagnostic --force` checks the split and writes the modules even when it rejects them;
 //   3. run the original and the emitted entry in Node;
 //   4. compare with the expectation.
 // What the adapter cannot translate is reported as `unsupported:<cause>`, not forced. One JSON line per spec entry.
 import { classify, rejectKind, wanted } from "./verdict.mjs";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import {
   constants,
@@ -34,6 +35,9 @@ import { dumpParsed } from "../translation/annotated_estree.mjs";
 import { parseModule, topLevelStatements } from "../translation/scope_metadata.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+const resolver = path.resolve(
+  process.env.DEBUNDLE_RESOLVER ?? "bazel-bin/devinfra/js/debundle/debundle_resolve_placement"
+);
 const lowersplit = path.resolve(process.env.LOWERSPLIT ?? path.join(here, "../lean/.lake/build/bin/lowersplit"));
 const args = process.argv.slice(2);
 const option = (name, fallback) => {
@@ -46,16 +50,6 @@ const outFile = path.resolve(option("out", path.join(here, "results/cases.jsonl"
 const keepDir = option("keep", null) && path.resolve(option("keep", null));
 
 // ---------------------------------------------------------------- source analysis
-
-const HOLES = /\b(ANYTHING|EXPR|STMT|ARGS|STMT_LIST|ARRAY_ELEMENTS|CASE_REST|DECLARATORS|SEQ_EXPRS)(_\w+)?\b/;
-
-/** Position-free AST for comparing a template with a statement; literals keep their values. */
-function shape(node) {
-  return JSON.stringify(node, (k, v) => {
-    if (["start", "end", "loc", "range", "raw"].includes(k)) return undefined;
-    return typeof v === "bigint" ? String(v) : v;
-  });
-}
 
 function boundNames(pattern, out) {
   switch (pattern?.type) {
@@ -133,19 +127,8 @@ function analyze(code) {
   const statements = topLevelStatements(parsed.ast).map(({ node }) => ({
     node,
     declared: declaredNames(node),
-    shape: shape(node),
   }));
   return { program: dumpParsed(parsed), statements };
-}
-
-/** The one statement a hole-free template parses to, as a shape string; `null` when it is not one statement. */
-function templateShape(text) {
-  try {
-    const body = acorn.parse(text, { ecmaVersion: "latest", sourceType: "module", ranges: true }).body;
-    return body.length === 1 ? shape(body[0]) : null;
-  } catch {
-    return null;
-  }
 }
 
 // ---------------------------------------------------------------- translation
@@ -164,52 +147,20 @@ const fileName = (module) => `${module.replace(/[^A-Za-z0-9_]+/g, "_")}.mjs`;
  * A `lowersplit` spec for one debundle spec of one chunk.
  * Statement numbers are explicit, so every statement is claimed exactly once.
  */
-function translate(spec, chunk, statements) {
+function translate(spec, chunk, statements, placement) {
   const logical = spec.logical_modules ?? {};
   if (Object.keys(logical).length > 1) throw new Unsupported("multi-chunk spec", Object.keys(logical).join(", "));
   const authored = logical[chunk] ?? {};
   for (const key of ["chunk_analysis_options", "chunk_export_purity"])
     if (spec[key]) throw new Unsupported(`spec option ${key}`);
 
-  const owner = new Array(statements.length).fill(null);
-  const claim = (i, module, why) => {
-    if (owner[i] !== null && owner[i] !== module)
-      throw new Unsupported(
-        "statement claimed by two modules",
-        `${why}: statement ${i} is in ${owner[i]} and ${module}`
-      );
-    owner[i] = module;
-  };
-
   for (const [module, body] of Object.entries(authored)) {
-    if (!body || typeof body !== "object") throw new Unsupported("module entry is not a mapping", module);
-    if (body.annotations) throw new Unsupported("annotations", module);
-    for (const member of body.members ?? []) {
-      const kinds = Object.keys(member.selector ?? {});
-      if (kinds.join() !== "binding") throw new Unsupported(`selector ${kinds.join("+") || "(none)"}`, module);
-      const { name, kind } = member.selector.binding;
-      if (kind === "import_specifier") throw new Unsupported("import specifier binding", name);
-      const hits = statements.flatMap((s, i) => (s.declared.includes(name) ? [i] : []));
-      if (hits.length === 0) throw new Unsupported("binding not found", name);
-      for (const i of hits) claim(i, module, `binding ${name}`);
-    }
-    const templates = [
-      ...(body.source_matches ?? []).map((m) => ({ text: m.match, what: "source_matches" })),
-      ...(body.anonymous_statements ?? []).map((a) => ({
-        text: a.match ?? a.source_match?.match,
-        what: "anonymous_statements",
-      })),
-    ];
-    for (const { text, what } of templates) {
-      if (typeof text !== "string") throw new Unsupported(`${what} without a template`, module);
-      if (HOLES.test(text)) throw new Unsupported(`${what} with syntactic holes`, module);
-      const wanted = templateShape(text);
-      if (wanted === null) throw new Unsupported(`${what} template is not one statement`, module);
-      const hits = statements.flatMap((s, i) => (s.shape === wanted ? [i] : []));
-      if (hits.length === 0) throw new Unsupported(`${what} matches no statement`, module);
-      for (const i of hits) claim(i, module, what);
-    }
+    if (body?.annotations) throw new Unsupported("annotations", module);
   }
+  if (placement.units.length !== statements.length || placement.units.some((row, i) => row.ordinal !== i)) {
+    throw new Error("resolver and checker disagree on source-unit ordinals");
+  }
+  const owner = placement.units.map((row) => row.owner);
 
   const mode = spec.unassigned_mode?.[chunk];
   const kind = typeof mode === "string" ? mode : mode?.kind;
@@ -357,7 +308,29 @@ function runCase(dir, specName, expected) {
     const spec = parseYaml(readFileSync(path.join(dir, specName), "utf8"));
     let plan;
     try {
-      plan = translate(spec, chunk, analysis.statements);
+      // Corpus specs omit the fixture input paths; preserve explicit overrides.
+      mkdirSync(path.join(stage, ".fixture"), { recursive: true });
+      writeFileSync(path.join(stage, ".fixture/js-files.txt"), inputs.join("\n") + "\n");
+      const flat = { ...spec, inputs: { input_root: ".", js_list_path: ".fixture/js-files.txt", ...spec.inputs } };
+      writeFileSync(path.join(stage, ".fixture/spec.json"), JSON.stringify(flat));
+      const resolveArgs = ["--spec", ".fixture/spec.json", "--chunk", chunk, "--out", ".fixture/placement.json"];
+      const result = run(resolver, resolveArgs, { cwd: stage });
+      if (result.code !== 0) {
+        const processFailure = describeProcessFailure("resolve-placement", resolver, resolveArgs, stage, result);
+        if (result.code === 1 && !result.failure) {
+          return {
+            ...record,
+            outcome: expectation === "reject:stderr" ? "refusal-test" : "unsupported:resolver refusal",
+            detail: processFailure.stderrTail,
+          };
+        }
+        return { ...record, outcome: "error:resolver", processFailure };
+      }
+      const placement = JSON.parse(readFileSync(path.join(stage, ".fixture/placement.json"), "utf8"));
+      if (placement.chunk_id !== chunk || placement.source_sha256 !== createHash("sha256").update(code).digest("hex")) {
+        throw new Error("resolved placement does not identify the checker input");
+      }
+      plan = translate(spec, chunk, analysis.statements, placement);
     } catch (error) {
       if (error instanceof Unsupported) return unsupported(error.cause, error.detail);
       throw error;

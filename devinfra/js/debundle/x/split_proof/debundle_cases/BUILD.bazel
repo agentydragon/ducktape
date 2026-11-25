@@ -6,13 +6,17 @@ js_binary(
     data = [
         "verdict.mjs",
         "//:node_modules/yaml",
+        "//devinfra/js/debundle:debundle_resolve_placement",
         "//devinfra/js/debundle/e2e:corpus_files",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
         "//devinfra/js/debundle/x/split_proof/translation:annotated_estree",
         "//devinfra/js/debundle/x/split_proof/translation:parser",
     ],
     entry_point = "run_cases.mjs",
-    env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},
+    env = {
+        "DEBUNDLE_RESOLVER": "$(rootpath //devinfra/js/debundle:debundle_resolve_placement)",
+        "LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)",
+    },
     tags = ["manual"],
 )
 

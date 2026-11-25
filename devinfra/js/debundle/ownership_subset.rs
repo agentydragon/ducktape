@@ -240,10 +240,7 @@ impl OwnershipSubset {
         Ok(())
     }
 
-    pub(super) fn placements_for_chunk(
-        &self,
-        chunk: &str,
-    ) -> Result<BTreeMap<ModulePath, LogicalModule>> {
+    pub fn placements_for_chunk(&self, chunk: &str) -> Result<BTreeMap<ModulePath, LogicalModule>> {
         let mut placements = BTreeMap::new();
         for (raw_path, module) in self.placements.get(chunk).into_iter().flatten() {
             let path = ModulePath::parse(raw_path, "").with_context(|| {
