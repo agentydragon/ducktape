@@ -861,6 +861,65 @@ theorem evalExpr_cond (n : Nat) (env : Env) (test yes no : Expr) (s : State W) :
 def construct (n : Nat) (callee : Val) (args : List Val) : M W Val :=
   constructTarget n callee callee args
 
+/-! ## Explicit global environment
+
+These operations are deliberately independent of lowering and host profiles. A caller supplies a
+complete ordinary global object and a declarative record; an exotic or partially known global object
+cannot be represented by silently leaving properties out. -/
+
+/-- Name resolution yields a reference, before evaluating an assignment's right-hand side. -/
+inductive GlobalReference where
+  | declarative (cell : Addr)
+  | object (object : Addr)
+  | unresolvable
+
+/-- Lexical bindings passed in `env` shadow the global declarative and object records. -/
+def resolveGlobal (env : Env) (global : GlobalEnv) (name : Name) : M W GlobalReference := do
+  match env.vars.lookup name <|> global.declarative.lookup name with
+  | some a => pure (.declarative a)
+  | none =>
+    let _ ← getObj global.object
+    if (← lookupProp global.object (.str name)).isSome then pure (.object global.object)
+    else pure .unresolvable
+
+/-- Read a resolved reference. A deleted object binding becomes unresolvable. -/
+def readGlobal (call : Call W) (name : Name) : GlobalReference → M W Val
+  | .declarative a => readVar ⟨[(name, a)], .undef, none⟩ name
+  | .object a => do
+    if (← lookupProp a (.str name)).isNone then throwErr .reference s!"{name} is not defined"
+    else getFrom call a (.obj a) (.str name)
+  | .unresolvable => throwErr .reference s!"{name} is not defined"
+
+/-- `typeof` suppresses only an unresolvable reference, not a TDZ or getter failure. -/
+def typeofGlobal (call : Call W) (name : Name) (ref : GlobalReference) : M W Val := do
+  match ref with
+  | .unresolvable => pure (.str "undefined")
+  | _ =>
+    let value ← readGlobal call name ref
+    pure (.str (← lift (typeOf (← getState) value)))
+
+/-- Strict assignment checks the binding again after evaluating the right-hand side. -/
+def writeGlobal (call : Call W) (name : Name) (ref : GlobalReference) (v : Val) : M W Unit := do
+  match ref with
+  | .declarative a => writeVar ⟨[(name, a)], .undef, none⟩ name v
+  | .object a =>
+    if (← lookupProp a (.str name)).isNone then throwErr .reference s!"{name} is not defined"
+    else setProp call (.obj a) (.str name) v
+  | .unresolvable => throwErr .reference s!"{name} is not defined"
+
+/-- Non-strict deletion of an environment binding; strict unqualified deletion is a syntax error. -/
+def deleteGlobal (name : Name) : GlobalReference → M W Bool
+  | .unresolvable => pure true
+  | .declarative _ => pure false
+  | .object a => do
+    match (← getObj a).props.lookup (.str name) with
+    | none => pure true
+    | some p =>
+      if p.configurable then
+        modifyObj a fun o => { o with props := o.props.filter (·.1 != .str name) }
+        pure true
+      else pure false
+
 /-! ## Programs
 
 **Regions.** The statement with identity `i` owns region `i + 1`: its bindings and, for a function declaration, its
