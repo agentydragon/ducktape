@@ -468,7 +468,10 @@ pub fn run_transform_with_projection(
             path,
             analysis_engine_sha256,
         }) => AnalysisMode::Load {
-            base: Box::new(AnalysisSpec::from_transform(&spec, &prepared.source_root)?),
+            base: Box::new(AnalysisSpec::from_transform(
+                &spec,
+                &prepared.provenance.roots.source,
+            )?),
             artifact: fs::read(path)
                 .with_context(|| format!("read analysis artifact {}", path.display()))?,
             analysis_engine_sha256: analysis_engine_sha256.to_string(),
@@ -563,7 +566,10 @@ pub fn assess_candidate_effect_relocation(
     let artifact = fs::read(analysis.path)
         .with_context(|| format!("read analysis artifact {}", analysis.path.display()))?;
     let mode = AnalysisMode::Load {
-        base: Box::new(AnalysisSpec::from_transform(&spec, &prepared.source_root)?),
+        base: Box::new(AnalysisSpec::from_transform(
+            &spec,
+            &prepared.provenance.roots.source,
+        )?),
         artifact,
         analysis_engine_sha256: analysis.analysis_engine_sha256.to_string(),
     };
@@ -627,9 +633,15 @@ pub fn project_analysis_and_apply(
     let options = audit_options();
     let (spec, prepared) = prepare_transform(cli, &options, None, None, None)?;
     if let Some((root, out)) = apply_out {
-        project_apply_from_spec(cli, root, out, spec.clone(), prepared.module_roots_by_chunk)?;
+        project_apply_from_spec(
+            cli,
+            root,
+            out,
+            spec.clone(),
+            prepared.provenance.module_roots_by_chunk.clone(),
+        )?;
     }
-    let base = AnalysisSpec::from_transform(&spec, &prepared.source_root)?;
+    let base = AnalysisSpec::from_transform(&spec, &prepared.provenance.roots.source)?;
     let artifact = prepared.source.into_artifact();
     let projection = frontend_elaboration::project_analysis(
         artifact,
@@ -651,9 +663,6 @@ struct PreparedTransform {
     provenance: GraphProvenance,
     /// Host loader per embedded input file.
     embedded_loaders: BTreeMap<String, spec::BunLoader>,
-    /// The root the spec's source paths resolve against.
-    source_root: PathBuf,
-    module_roots_by_chunk: BTreeMap<String, Vec<PathBuf>>,
 }
 
 /// Exact capture identity used to group selected corpus rows. Reuse is local
@@ -1032,7 +1041,6 @@ fn prepare_transform(
 ) -> Result<(TransformSpec, PreparedTransform)> {
     let (roots, modules_directory) = provenance_roots(cli)?;
     let generation_command = canonical_generation_command(cli, options, &roots, loaded_analysis)?;
-    let source_root = roots.source.clone();
     let capture = InputCapture::start(roots, modules_directory, generation_command)?;
     if let Some(input) = &options.ownership_subset_input {
         anyhow::ensure!(
@@ -1088,7 +1096,7 @@ fn prepare_transform(
             ))?;
     }
     if let TransformSpecSource::Tree(tree) = &cli.spec_source {
-        capture.set_tree_scope(&tree.config_path, module_roots_by_chunk.clone())?;
+        capture.set_tree_scope(&tree.config_path, module_roots_by_chunk)?;
     }
     validate_transform_spec(&spec)?;
     if let RunArtifacts::ReportsOnly { out_root } = &options.artifacts {
@@ -1136,8 +1144,6 @@ fn prepare_transform(
             vendor_plan: Arc::new(vendor_plan),
             provenance: graph_provenance,
             embedded_loaders,
-            source_root,
-            module_roots_by_chunk,
         },
     ))
 }
