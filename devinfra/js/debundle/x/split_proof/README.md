@@ -277,7 +277,7 @@ A logical expression in a static data property, such as `{mode: config.mode || "
 
 A linked `void` expression evaluates its operand and returns `undefined` on normal completion. Side effects and thrown exceptions from the operand are observable.
 
-Dense array literals, calls and constructors evaluate each ordinary or spread operand left to right. A spread operand consumes its synchronous iterator before evaluation proceeds to the next operand. The iterator model covers linked iterator methods and the native array iterator with its modeled next method. Array holes are rejected during lowering.
+Dense array literals, calls and constructors evaluate each ordinary or spread operand left to right. A spread operand consumes its synchronous iterator before evaluation proceeds to the next operand. The iterator model covers linked iterator methods and the native array iterator with its modeled next method. Sparse literals with primitive literals, including negative numeric literals, or unshadowed `undefined`, `NaN` and `Infinity` preserve missing own indices and array length. Sparse literals containing other binding reads, spreads or other expressions remain refusals.
 
 Untagged template literals use their cooked text and evaluate substitutions from left to right. CoreJS converts each primitive substitution to a string before evaluating the next expression. A linked initialization that needs object-to-primitive conversion reaches an unknown result and cannot certify.
 
