@@ -81,8 +81,8 @@ theorem copySpreadKeys_le {call call' : Call W} (h : Call.le call call') (target
     unfold copySpreadKeys
     repeat' first | exact ih | exact getFrom_le h _ _ _ | mono_step
 
-theorem copySpread_le {call call' : Call W} (h : Call.le call call') (target : Addr) (v : Val) :
-    copySpread call target v ⊑ copySpread call' target v := by
+theorem copySpread_le {call call' : Call W} (h : Call.le call call') (target : Addr) (excluded : List Name) (v : Val) :
+    copySpread call target excluded v ⊑ copySpread call' target excluded v := by
   cases v <;> unfold copySpread <;> repeat' first | exact copySpreadKeys_le h _ _ _ | mono_step
 
 theorem protoProp_le {call call' : Call W} (h : Call.le call call') (owner : String) (names : List String) (base : Val)
@@ -299,7 +299,7 @@ macro_rules
     | with_reducible exact ($h).loop _ _ _ _ _
     | with_reducible exact ($h).converse _ _ _
     | with_reducible exact attempt_le (perform_le ($h).callLe (fun f args => ($h).construct f f args) _ _ _)
-    | with_reducible exact copySpread_le ($h).callLe _ _
+    | with_reducible exact copySpread_le ($h).callLe _ _ _
     | with_reducible exact classParents_le ($h).callLe _
     | with_reducible exact evalStaticInitializers_le (fun e => ($h).expr _ e) _ _
     | with_reducible exact getProp_le ($h).callLe _ _

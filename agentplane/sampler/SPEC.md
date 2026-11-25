@@ -390,9 +390,8 @@ requests reasoning only when an effort is selected. The standard request adapter
 function results as strings, preserving multimodal content arrays and opaque provider items.
 In standard mode or with JSON exec encoding, repeated `notify()` outputs for a completed call
 become asynchronous developer messages identifying the original call, without modifying the
-durable Codex transcript. Standard mode has no compaction
-implementation: explicit compaction is rejected at admission, and automatic compaction fails the
-turn before sending a private provider request.
+durable Codex transcript. In standard Responses mode, the sampler rejects explicit compaction at
+admission and rejects automatic compaction settings at startup.
 
 Streamed `response.output_item.done` items are authoritative for execution and
 continuation, matching Codex. `response.completed.output` is retained as evidence
@@ -428,9 +427,11 @@ reasoning content when supplied and pairs each tool result with its native call 
 notifications use system messages. The route uses the provider's default reasoning setting.
 Image tool results become text notices.
 
-A Chat Completions route with `chat_compaction` supports manual compaction. Set
-`auto_compact_tokens` to trigger from the last streamed usage total. Newly appended input and tool
-results can exceed provider limits before another usage report.
+A model route that supports compaction can set `auto_compact_tokens` alongside its API and provider
+model. Before a new sample, the sampler compares the threshold to the last streamed usage total.
+Newly appended input and tool results can exceed provider limits before another usage report.
+
+A Chat Completions route with `chat_compaction` supports manual compaction.
 
 The summarizer receives the full active context, including earlier handoffs, assistant messages,
 reasoning and tool exchanges. The request reuses the system message and tool definitions, appends a
@@ -459,14 +460,19 @@ A prior handoff alone does not trigger another compaction.
 
 `chat_compaction.summary_prompt_template` and `chat_compaction.replacement.template` are Go text
 templates. Both receive `.KeepRecentTokens`. The replacement also receives `.Summary` and must
-include it verbatim. Choose `assistant` or `user` for the replacement role. Without custom
-templates, the sampler uses its built-in handoff prompt and assistant-message wrapper.
+include it verbatim. Choose `assistant` or `user` for the replacement role. During rollout, omitted
+templates use the built-in handoff prompt and assistant-message wrapper.
+
+After staging has rolled out a release with both templates explicitly configured for every Chat
+Completions model that enables compaction, require both fields and remove the built-in fallbacks.
+Before removing recovery support for omitted replacements, check that no pending compaction
+still uses the old representation.
 
 ```yaml
+auto_compact_tokens: 160000
 chat_compaction:
   max_tokens: 8192
   keep_recent_tokens: 16000
-  auto_compact_tokens: 160000
   summary_prompt_template: |
     Write a handoff for the conversation above with goals, decisions, and open work.
   replacement:

@@ -77,6 +77,7 @@ def anthropic_settings(
     *,
     max_tokens: int,
     compaction: AnthropicCompactionConfig | None = None,
+    auto_compact_tokens: int | None = None,
     prompt_cache: bool = False,
     per_message_effort: bool = False,
     cache_diagnostics: bool = False,
@@ -109,6 +110,7 @@ def anthropic_settings(
                     exec_encoding="json",
                     reasoning_efforts={"low", "high"},
                     anthropic_messages=provider_config,
+                    auto_compact_tokens=auto_compact_tokens,
                 )
             },
         }
@@ -510,7 +512,8 @@ async def test_live_anthropic_automatic_compaction_resumes_sampling(
         base,
         model,
         max_tokens=1200,
-        compaction=AnthropicCompactionConfig(max_tokens=1200, auto_compact_tokens=1, keep_recent_turns=0),
+        compaction=AnthropicCompactionConfig(max_tokens=1200, keep_recent_turns=0),
+        auto_compact_tokens=1,
     )
     request = create_request(tmp_path)
     request.spec.model = ROUTE

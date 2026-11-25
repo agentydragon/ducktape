@@ -79,6 +79,15 @@ def test_central_sampler_workload_and_cross_service_grants(staging_manifests: li
         "client_ca_file": workload_tls.TRUST_BUNDLE_FILE,
     }
     assert config["platform_instructions"]
+    chat_models = [model for model in config["models"].values() if model["api"] == "chat_completions"]
+    assert chat_models
+    for model in chat_models:
+        compaction = model["chat_compaction"]
+        assert "same system instructions and tool definitions" in compaction["summary_prompt_template"]
+        assert compaction["replacement"] == {
+            "role": "assistant",
+            "template": "Summary of earlier conversation:\n{{.Summary}}",
+        }
     llm_connection = config["connections"]["llm-ingress"]
     llm_service = llm_ingress.service(namespace)
     assert llm_connection["base_url"] == f"https://{llm_service.authority}"

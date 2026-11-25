@@ -22,6 +22,18 @@ def EquivalentFor (premises : HostPremises) (source candidate : Program) : Prop 
   else ∀ w, premises.Satisfied w →
       ∃ t : State w, Ends w source (.ok () t) ∧ Ends w candidate (.ok () t)
 
+/-- The linked claim gives the structural checker's statement over the worlds that satisfy
+the same host premises. Empty premises hold in every world. -/
+theorem EquivalentFor.normalEquivalent {premises : HostPremises} {source candidate : Program}
+    (h : EquivalentFor premises source candidate) :
+    NormalEquivalent premises.Satisfied source candidate := by
+  apply normalEquivalent_of_shared
+  intro w hw
+  unfold EquivalentFor at h
+  split at h
+  · exact h w
+  · exact h w hw
+
 theorem of_host_evaluation {premises : HostPremises} {source candidate : Program} (fuel : Nat)
     (checks : ∀ w, normal (runProgram (premises.specialize w) fuel source) = true ∧
       runProgram (premises.specialize w) fuel source =
@@ -67,6 +79,15 @@ theorem checkASTs_sound {profile premises source providers files plan original c
   cases h : certifyASTs profile premises source providers files plan original candidate semantics with
   | error why => rw [h] at accepted; contradiction
   | ok proof => exact proof.down
+
+/-- A linked verdict states the structural guarantee for the same decoded programs. -/
+theorem ASTEquivalent.normal {profile premises source providers files plan}
+    (h : ASTEquivalent profile premises source providers files plan) :
+    ∃ original candidate,
+      LinkedInput.decodePair source providers files plan profile = .ok (original, candidate) ∧
+      NormalEquivalent premises.Satisfied original candidate ∧ SameExports original candidate := by
+  obtain ⟨original, candidate, decoded, semantics, exports⟩ := h
+  exact ⟨original, candidate, decoded, semantics.normalEquivalent, exports⟩
 
 /-- Reduction used by the generated equation for a checked wide record. -/
 def evalQuotedRecordBody {W : World} (fields : List (String × String)) (props : List PropDef)

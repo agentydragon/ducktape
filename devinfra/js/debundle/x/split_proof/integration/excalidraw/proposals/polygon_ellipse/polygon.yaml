@@ -1,0 +1,33 @@
+# packages/math/polygon.ts, Excalidraw v0.18.1
+source_matches:
+  - match: |
+      function polygon(...points) { return polygonClose(points); }
+      function polygonFromPoints(points) { return polygonClose(points); }
+    bindings:
+      - polygon
+      - polygonFromPoints
+  - match: |
+      var polygonIncludesPoint = (p, poly) => {
+        let x = p[0], y = p[1], inside = !1;
+        for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+          let xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+          ((yi > y && yj <= y) || (yi <= y && yj > y)) && x < ((xj-xi)*(y-yi))/(yj-yi)+xi && (inside = !inside);
+        }
+        return inside;
+      }, pointOnPolygon = (p, poly, threshold = 1e-4) => {
+        let on = !1;
+        for (let i=0, last=poly.length-1; i<last; i++) if (pointOnLineSegment(p,lineSegment(poly[i],poly[i+1]),threshold)) {
+          on = !0;
+          break;
+        }
+        return on;
+      };
+    bindings:
+      - polygonIncludesPoint
+      - pointOnPolygon
+  - match: |
+      function polygonClose(poly) { return polygonIsClosed(poly) ? poly : [...poly, poly[0]]; }
+      function polygonIsClosed(poly) { return pointsEqual(poly[0], poly[poly.length-1]); }
+    bindings:
+      - polygonClose
+      - polygonIsClosed

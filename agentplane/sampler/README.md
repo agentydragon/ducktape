@@ -333,6 +333,7 @@ nested tools, executor, effect journal and History export.
       "provider_model": "claude-haiku-5-5",
       "api": "anthropic_messages",
       "exec_encoding": "json",
+      "auto_compact_tokens": 160000,
       "reasoning_efforts": ["low", "medium", "high", "xhigh", "max"],
       "anthropic_messages": {
         "max_tokens": 16384,
@@ -342,7 +343,7 @@ nested tools, executor, effect journal and History export.
         "per_message_effort": true,
         "strict_tool_input": true,
         "eager_input_streaming": true,
-        "compaction": { "max_tokens": 4096, "auto_compact_tokens": 160000, "keep_recent_turns": 1 }
+        "compaction": { "max_tokens": 4096, "keep_recent_turns": 1 }
       }
     }
   }
@@ -419,8 +420,7 @@ compaction, and leaves the provider to handle incompatible reasoning.
 If a Chat Completions route is removed, an idle, settled Session can switch to another Chat
 Completions route and replay its retained messages and tool calls. Other switches require the
 original route contract. See [the continuation rules](SPEC.md#model-changes). Standard routes
-reject manual compaction, and reaching the
-configured automatic compaction threshold fails the turn before any private compaction request.
+reject manual compaction at admission and automatic compaction settings at startup.
 Portable compaction is not implemented. Provider compatibility still needs live validation;
 scripted tests establish the sampler's protocol and execution behavior.
 

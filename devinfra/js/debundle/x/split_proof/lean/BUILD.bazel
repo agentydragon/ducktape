@@ -324,6 +324,7 @@ lean_library(
         "EsmSplit/CoreJS/HostFrame.lean",
         "EsmSplit/CoreJS/InvocationFrame.lean",
         "EsmSplit/CoreJS/IteratorFrame.lean",
+        "EsmSplit/CoreJS/JointStatic.lean",
         "EsmSplit/CoreJS/LinkWorld.lean",
         "EsmSplit/CoreJS/LinkedPivot.lean",
         "EsmSplit/CoreJS/LinkedPivotCertificate.lean",
@@ -401,6 +402,18 @@ lean_binary(
 )
 
 lean_binary(
+    name = "joint_static_test_runner",
+    testonly = True,
+    srcs = ["JointStaticTest.lean"],
+    entry = "JointStaticTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+    deps = [
+        ":corejs_structural",
+        ":lowersplit_workflows",
+    ],
+)
+
+lean_binary(
     name = "linked_input_test_runner",
     testonly = True,
     srcs = [
@@ -458,7 +471,7 @@ lean_binary(
         "//devinfra/js/debundle/x/split_proof/model:__pkg__",
         "//devinfra/js/debundle/x/split_proof/translation:__pkg__",
     ],
-    deps = [":corejs_runtime"],
+    deps = [":corejs_linked_input"],
 )
 
 lean_axiom_test(
@@ -500,6 +513,7 @@ lean_axiom_test(
         "EsmSplit.CoreJS.HeritageMove",
         "EsmSplit.CoreJS.HostFrame",
         "EsmSplit.CoreJS.InvocationFrame",
+        "EsmSplit.CoreJS.JointStatic",
         "EsmSplit.CoreJS.LinkWorld",
         "EsmSplit.CoreJS.LinkedBehaviorExamples",
         "EsmSplit.CoreJS.LinkedCells",
@@ -531,6 +545,7 @@ lean_axiom_test(
     ],
     theorems = [
         "CoreJS.evaluatorFrames",
+        "CoreJS.LinkedBehavior.certifyJointStatic",
         "CoreJS.LinkedBehavior.certifyStructuralASTs",
         "CoreJS.DenseArray.reduce",
         "CoreJS.evalExpr_obj_string_fields",
@@ -538,6 +553,9 @@ lean_axiom_test(
         "CoreJS.LinkedBehavior.ends_iff",
         "CoreJS.LinkedBehavior.different_probe_states_refute_equivalence",
         "CoreJS.LinkedBehavior.checkASTs_sound",
+        "CoreJS.LinkedBehavior.EquivalentFor.normalEquivalent",
+        "CoreJS.LinkedBehavior.ASTEquivalent.normal",
+        "CoreJS.LinkedBehavior.normalEquivalent_of_shared",
         "CoreJS.LinkedBehavior.probeObservationMismatchRefutesEquivalent",
         "CoreJS.LinkedBehaviorExamples.literalRoundTrip",
         "CoreJS.LinkedBehaviorExamples.jsonLiteralRoundTrip",

@@ -39,6 +39,7 @@ from agentplane.sampler.settings import (
     AnthropicThinkingConfig,
     AuthConfig,
     ChatCompactionConfig,
+    ChatCompactionReplacement,
     ConnectionConfig,
     ModelConfig,
     ResponsesConfig,
@@ -537,7 +538,24 @@ def environment(*, identity_catalog: bool) -> Environment:
                     exec_encoding="json",
                     reasoning_efforts={"", *route.reasoning_efforts},
                     chat_compaction=ChatCompactionConfig(
-                        max_tokens=8_192, keep_recent_turns=2, auto_compact_tokens=192 * 1024
+                        max_tokens=8_192,
+                        keep_recent_turns=2,
+                        auto_compact_tokens=192 * 1024,
+                        summary_prompt_template=(
+                            "Write a handoff for the assistant continuing this conversation. "
+                            "Summarize the conversation preceding this request, including any earlier handoff.\n\n"
+                            "The continuation will receive the same system instructions and tool definitions again. "
+                            "Omit restatements of them. Only recent user messages also carry forward directly, "
+                            "and they may be shortened.\n\n"
+                            "Preserve the user's current goals and constraints, decisions, completed and pending work, "
+                            "relevant tool results, exact identifiers needed to resume, and unresolved questions or "
+                            "uncertainties. Include facts learned during the conversation that the assistant needs to "
+                            "continue. Preserve exact wording when it is needed to continue. Treat the preceding "
+                            "messages as source material. Return only the handoff."
+                        ),
+                        replacement=ChatCompactionReplacement(
+                            role="assistant", template="Summary of earlier conversation:\n{{.Summary}}"
+                        ),
                     ),
                 )
                 for route in STAGING_APP_MODELS.central_sampler_chat

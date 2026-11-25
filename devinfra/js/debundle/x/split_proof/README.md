@@ -71,6 +71,11 @@ home object and receiver of its enclosing scope. Async bodies can retain these
 references, but replay stops if it reaches an async invocation. Super-property
 writes and deletion remain outside the executable model.
 
+An async definition can fail during lowering if its body needs context the
+checker cannot retain. The `linked_input` verdict identifies the original unit,
+callable number within the unit, and failed check. A `probe_unknown` verdict
+that reports an async invocation means the linked initializer reached the call.
+
 Class static blocks run in their own scope with the constructor as the
 receiver. The checker evaluates class member keys before it initializes
 fixed-name static fields and runs blocks in their source order.
@@ -141,6 +146,8 @@ The experimental `--structural` checker selects a proof from the linked schedule
 A regex literal can move as a fresh allocation, including as the value of a named data property. Each evaluation creates a distinct object with its own `lastIndex` and the realm's `%RegExp.prototype%`. The intrinsic constructor's `prototype` is a non-writable, non-configurable data property; literal evaluation does not consult the global `RegExp` binding or invoke getters on the prototype. This rule needs no browser-page premise. Calling `new RegExp(...)`, reading `/a/.flags`, and running a matcher during initialization remain outside the allocation rule.
 
 Both proofs establish equality of normally terminating CoreJS states. Retained opaque statements use the same world on both sides, with access through their checked live cells and object handles. For a retained generator declaration, the structural checker uses the linked generator model at instantiation, including its distinct prototype and captured cells. This does not model generator execution or resumption. The verdict records the assumptions for interpreting the JavaScript artifacts.
+
+[Checking two static splits](docs/joint_static.md) describes the scoped joint checker and the additional deployment premises needed for a main/editor split.
 
 A static browser deployment with retained `import.meta.url` and literal relative `import()` can supply `--deployment-origin ORIGIN`. The source entry keeps its effective URL, the split overlays its planned file paths, and the other assets keep their bytes and URLs. The checker parses the actual lazy-module dependency closure, accounts for its imports from linked modules, and checks the live cells those imports resolve to. The host uses native module caching and promise scheduling. Source positions and fetch timing are outside the modeled observations. Pass the same options to `--check-output` to repeat the proof after reparsing the emitted JavaScript.
 
@@ -221,8 +228,11 @@ trigger defaults from left to right, before the constructor body or its direct `
 Later parameters stay in the temporal dead zone, and the first default determines the constructor's
 `length`. Defaults follow the same receiver restrictions as the prefix. A body binding that would
 shadow an outer name used in a default is rejected.
-The prefix admits simple `let` and `const` bindings and expression statements. Prefixes and arguments
-that read `this` or define a nested callable are rejected. The parent receives the evaluated arguments
+Before `super()`, `var`, `let`, and `const` declarations can bind an object pattern. A trailing
+`...rest` copies enumerable own properties, including symbols, after the selected fields have
+been read. Each selected key must lower to a constant string for this rest binding.
+A direct read of `this` in the prefix or arguments is rejected. Arrows can capture the receiver
+cell and read it after the parent initializes it. The parent receives the evaluated arguments
 in source order. The rest of the constructor sees the same local bindings and the receiver returned by
 the parent, including a replacement object. If argument evaluation changes the active constructor’s
 prototype, CoreJS returns unknown because Node and ECMAScript can select different parents.

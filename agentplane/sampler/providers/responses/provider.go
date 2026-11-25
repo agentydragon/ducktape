@@ -270,11 +270,17 @@ func readStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 			}
 		case EventCompleted:
 			if event.Response == nil {
-				eventErr = &protocol.KnownFailureError{Evidence: map[string]any{"reason": "completion event has no response object", "events": result.Events}}
+				eventErr = &protocol.KnownFailureError{
+					Message:  "The Responses API completion event had no response object.",
+					Evidence: map[string]any{"reason": "completion event has no response object", "events": result.Events},
+				}
 				break
 			}
 			if status, present := event.Response.StatusValue(); present && status != "completed" {
-				eventErr = &protocol.KnownFailureError{Evidence: map[string]any{"reason": "unexpected terminal status", "response": event.Response, "events": result.Events}}
+				eventErr = &protocol.KnownFailureError{
+					Message:  responseFailureMessage(event),
+					Evidence: map[string]any{"reason": "unexpected terminal status", "response": event.Response, "events": result.Events},
+				}
 				break
 			}
 			// Like Codex, consume output_item.done items. Antigravity through LiteLLM can
@@ -283,7 +289,10 @@ func readStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 			semanticProgress = true
 			eventErr = errProviderComplete
 		case EventFailed, EventIncomplete, EventError:
-			eventErr = &protocol.KnownFailureError{Evidence: map[string]any{"terminal": event, "events": result.Events}}
+			eventErr = &protocol.KnownFailureError{
+				Message:  responseFailureMessage(event),
+				Evidence: map[string]any{"terminal": event, "events": result.Events},
+			}
 		}
 		if evidence != nil {
 			if err := protocol.RecordProviderEvidence(ctx, evidence, payload, semanticProgress, observations...); err != nil {
@@ -320,6 +329,46 @@ func readStream(ctx context.Context, reader io.Reader, evidence protocol.Evidenc
 		}
 	}
 	return nil, &protocol.ProviderTransientError{Cause: errors.New("provider stream ended without response.completed")}
+}
+
+// Only read diagnostic fields from the terminal event. Other fields can contain the request,
+// including its instructions. The journal retains the full event for inspection.
+func responseFailureMessage(event Event) string {
+	type diagnostic struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	var wire struct {
+		diagnostic
+		Error    diagnostic `json:"error"`
+		Response struct {
+			Error             diagnostic `json:"error"`
+			ProviderError     diagnostic `json:"provider_error"`
+			IncompleteDetails struct {
+				Reason string `json:"reason"`
+			} `json:"incomplete_details"`
+		} `json:"response"`
+	}
+	if err := json.Unmarshal(event.Raw, &wire); err == nil {
+		for _, detail := range []diagnostic{wire.Response.Error, wire.Response.ProviderError, wire.Error, wire.diagnostic} {
+			code, message := strings.TrimSpace(detail.Code), strings.TrimSpace(detail.Message)
+			switch {
+			case message != "" && code != "":
+				return fmt.Sprintf("%s (%s)", message, code)
+			case message != "":
+				return message
+			case code != "":
+				return fmt.Sprintf("The Responses API reported an error (%s).", code)
+			}
+		}
+		if reason := strings.TrimSpace(wire.Response.IncompleteDetails.Reason); reason != "" {
+			return fmt.Sprintf("The Responses API returned an incomplete response (%s).", reason)
+		}
+	}
+	if event.Type == EventIncomplete {
+		return "The Responses API returned an incomplete response."
+	}
+	return "The Responses API reported a failed response."
 }
 
 func providerItemIdentity(item Item) string {

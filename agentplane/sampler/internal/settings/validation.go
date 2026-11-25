@@ -270,7 +270,7 @@ func (s Settings) Validate() error {
 	if s.ShutdownBudgetTimeout()-s.ShutdownDrainTimeout() < 15*time.Second {
 		return invalidSetting("shutdown_budget_seconds,shutdown_drain_seconds", "must leave at least 15 seconds after shutdown_drain_seconds for cleanup")
 	}
-	if s.AutoCompactTokens != nil && *s.AutoCompactTokens <= 0 {
+	if s.LegacyAutoCompactTokens != nil && *s.LegacyAutoCompactTokens <= 0 {
 		return invalidSetting("auto_compact_tokens", "must be positive")
 	}
 	return nil

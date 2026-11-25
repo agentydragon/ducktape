@@ -29,9 +29,10 @@ const (
 	AuthTypeAnthropicAPIKey   AuthType = "anthropic_api_key"
 )
 
-// ModelConfig contains the wire and tool-call encodings supported by one model route.
+// ModelConfig contains the provider settings and sampler policy for one model route.
 type ModelConfig struct {
 	ResponseHeaderTimeoutSeconds *int                              `json:"response_header_timeout_seconds,omitempty"`
+	AutoCompactTokens            *int                              `json:"auto_compact_tokens,omitempty"`
 	Connection                   string                            `json:"connection"`
 	ProviderModel                string                            `json:"provider_model"`
 	API                          protocol.APIStyle                 `json:"api"`
@@ -102,7 +103,23 @@ func (c ModelConfig) Validate() error {
 	default:
 		return invalidSetting("api", "model api must be responses, anthropic_messages, or chat_completions")
 	}
+	if c.AutoCompactTokens != nil && (*c.AutoCompactTokens <= 0 || !c.SupportsCompaction()) {
+		return invalidSetting("auto_compact_tokens", "must be positive and requires compaction support")
+	}
 	return nil
+}
+
+func (c ModelConfig) SupportsCompaction() bool {
+	switch c.API {
+	case protocol.APIStyleResponses:
+		return c.Responses.Dialect == responses.DialectLite
+	case protocol.APIStyleAnthropicMessages:
+		return c.AnthropicMessages != nil && c.AnthropicMessages.Compaction != nil
+	case protocol.APIStyleChatCompletions:
+		return c.ChatCompaction != nil
+	default:
+		return false
+	}
 }
 
 func (c ModelConfig) Compatible(other ModelConfig) bool {

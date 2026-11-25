@@ -3,17 +3,23 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import { literalKey, needsPrintRange } from "./scope_metadata.mjs";
-import { dump, loadSnapshot } from "./parser.mjs";
+import { annotateProgram, literalKey, needsPrintRange, parseModule } from "./scope_metadata.mjs";
+import { acorn, dump, loadSnapshot } from "./parser.mjs";
 
 const linkedAnnotations = { includeOpaqueCaptures: true };
 
-function program(file, expectedHash) {
+const linkedProgram = (source) => dump(source, linkedAnnotations);
+
+// Output verification compares syntax and callable spelling. The expected trees still
+// carry the resolved bindings and captures used by the Lean certificate.
+const syntaxProgram = (source) => annotateProgram(parseModule(source, acorn.parse), new Map());
+
+function readProgram(file, parse, expectedHash) {
   try {
     const bytes = fs.readFileSync(file);
     if (expectedHash !== undefined && createHash("sha256").update(bytes).digest("hex") !== expectedHash)
       throw new Error("resolved placement source_sha256 differs from source bytes");
-    return dump(bytes.toString("utf8"), linkedAnnotations);
+    return parse(bytes.toString("utf8"));
   } catch (error) {
     throw new Error(`${file}: ${error.message}`);
   }
@@ -118,7 +124,7 @@ function checkOutput(manifestPath, originalSourcePath, providersManifestPath, di
 
   const grouped = [];
   for (const name of expectedNames) {
-    const parsed = program(actual[name]);
+    const parsed = readProgram(actual[name], syntaxProgram);
     if (parsed.sourceText.startsWith("#!")) parsed.hashbang = parsed.sourceText.split(/[\r\n\u2028\u2029]/, 1)[0];
     const planned = comparableAst(expected[name], originalSource, `manifest module ${name}`);
     const observed = comparableAst(parsed, parsed.sourceText, `output module ${name}`);
@@ -175,10 +181,10 @@ try {
     writeJson(output, text);
   } else if (mode === "--parse-sha256") {
     const [digest, input, output] = args;
-    writeJson(output, program(input, digest));
+    writeJson(output, readProgram(input, linkedProgram, digest));
   } else if (mode === "--parse") {
     const [input, output] = args;
-    writeJson(output, program(input));
+    writeJson(output, readProgram(input, linkedProgram));
   } else if (mode === "--load-input") {
     const [input, output] = args;
     writeJson(output, loadSnapshot(readJson(input), linkedAnnotations));
@@ -193,7 +199,7 @@ try {
       const file = outputPath(root, name);
       if (fs.realpathSync(file) !== file || file === source)
         throw new Error(`unsupported module alias or request back to the source entry: ${name}`);
-      return [name, program(file)];
+      return [name, readProgram(file, linkedProgram)];
     });
     writeJson(output, Object.fromEntries(modules));
   } else throw new Error(`unknown mode: ${mode}`);

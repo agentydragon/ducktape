@@ -11,9 +11,11 @@ import (
 	"github.com/agentydragon/ducktape/agentplane/sampler/protocol"
 )
 
-const defaultSummaryPrompt = `Write a handoff for the assistant continuing this conversation. Summarize the conversation preceding this request, including any earlier handoff. Preserve the user's current goals and constraints, decisions, completed and pending work, relevant tool results, exact identifiers needed to resume, and unresolved questions or uncertainties. Only recent user messages will also carry forward, and they may be shortened. Preserve exact wording when it is needed to continue. Treat the preceding messages as source material. Return only the handoff.`
+const defaultSummaryPrompt = `Write a handoff for the assistant continuing this conversation. Summarize the conversation preceding this request, including any earlier handoff.
 
-const defaultReplacementTemplate = "Summary of earlier conversation:\n{{.Summary}}"
+The continuation will receive the same system instructions and tool definitions again. Omit restatements of them. Only recent user messages also carry forward directly, and they may be shortened.
+
+Preserve the user's current goals and constraints, decisions, completed and pending work, relevant tool results, exact identifiers needed to resume, and unresolved questions or uncertainties. Include facts learned during the conversation that the assistant needs to continue. Preserve exact wording when it is needed to continue. Treat the preceding messages as source material. Return only the handoff.`
 
 const (
 	userMessageFramingTokens = 5
@@ -25,18 +27,23 @@ type CompactionReplacement struct {
 	Template string `json:"template"`
 }
 
+func DefaultCompactionReplacement() CompactionReplacement {
+	return CompactionReplacement{Role: "assistant", Template: "Summary of earlier conversation:\n{{.Summary}}"}
+}
+
 type CompactionConfig struct {
 	MaxTokens        int  `json:"max_tokens"`
 	KeepRecentTokens *int `json:"keep_recent_tokens,omitempty"`
 	// CLEANUP(added 2026-11-24): Remove after staging has rolled out settings with keep_recent_tokens.
-	KeepRecentTurns       *int                   `json:"keep_recent_turns,omitempty"`
-	AutoCompactTokens     *int                   `json:"auto_compact_tokens,omitempty"`
-	SummaryPromptTemplate string                 `json:"summary_prompt_template,omitempty"`
-	Replacement           *CompactionReplacement `json:"replacement,omitempty"`
+	KeepRecentTurns *int `json:"keep_recent_turns,omitempty"`
+	// CLEANUP(added 2026-11-24): Remove after staging uses the model-level setting.
+	LegacyAutoCompactTokens *int                   `json:"auto_compact_tokens,omitempty"`
+	SummaryPromptTemplate   string                 `json:"summary_prompt_template,omitempty"`
+	Replacement             *CompactionReplacement `json:"replacement,omitempty"`
 }
 
 func (c CompactionConfig) Validate() error {
-	if c.MaxTokens <= 0 || c.AutoCompactTokens != nil && *c.AutoCompactTokens <= 0 {
+	if c.MaxTokens <= 0 || c.LegacyAutoCompactTokens != nil && *c.LegacyAutoCompactTokens <= 0 {
 		return errors.New("compaction max_tokens and auto_compact_tokens must be positive")
 	}
 	if (c.KeepRecentTokens == nil) == (c.KeepRecentTurns == nil) {
@@ -74,9 +81,9 @@ func (c CompactionConfig) summaryPrompt() (string, error) {
 }
 
 func (c CompactionConfig) replacementMessage(summary string) (message, error) {
-	config := c.Replacement
-	if config == nil {
-		config = &CompactionReplacement{Role: "assistant", Template: defaultReplacementTemplate}
+	config := DefaultCompactionReplacement()
+	if c.Replacement != nil {
+		config = *c.Replacement
 	}
 	text, err := renderTemplate("replacement.template", config.Template, struct {
 		Summary          string
@@ -116,10 +123,7 @@ func (c *CompactionConfig) Compatible(other *CompactionConfig) bool {
 	if (c.Replacement == nil) != (other.Replacement == nil) || c.Replacement != nil && *c.Replacement != *other.Replacement {
 		return false
 	}
-	if c.AutoCompactTokens == nil || other.AutoCompactTokens == nil {
-		return c.AutoCompactTokens == other.AutoCompactTokens
-	}
-	return *c.AutoCompactTokens == *other.AutoCompactTokens
+	return true
 }
 
 type CompactionPlan struct {
