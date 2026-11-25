@@ -204,7 +204,7 @@ private def linkedObjectPattern (j : Json) (binding : Json → Except String α)
     return (key, ← p.getObjVal? "value" >>= binding)
 
 private def linkedPatternIdentifier (binder : Json → Except String Name) (target : Json) : Except String Name := do
-  unless (← field target "type") == "Identifier" do throw "expected an identifier in object pattern"
+  unless (← field target "type") == "Identifier" do throw "expected an identifier in binding pattern"
   binder target
 
 private def splitBindingDefault (j : Json) : Except String (Json × Option Json) := do
@@ -230,6 +230,16 @@ private def linkedObjectRestParameter (j : Json) : Except String (List (Name × 
     if fallback.isSome then throw "unsupported default in object rest parameter"
     return (key, name)
   return (fields, rest)
+
+/-- Flat rest-array bindings still use the array iterator, including for elisions. -/
+private def linkedRestArrayPattern (j : Json) : Except String BindingPattern := do
+  unless (← field j "type") == "ArrayPattern" do throw "expected an array rest pattern"
+  let elements ← j.getObjValAs? (List Json) "elements"
+  let items ← elements.mapM fun elem => do
+    if elem == .null then return none
+    let name ← linkedPatternIdentifier localBinding elem
+    return some (.name name)
+  return .array items none
 
 private def hasObjectParameterDefault (param : Json) : Bool :=
   (field param "type").toOption == some "ObjectPattern" &&
@@ -1004,12 +1014,21 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
           initializers := initializers.push (.decl .var x (.get (.var slot) (.str key)))
     | "RestElement" =>
       let target ← param.getObjVal? "argument"
-      unless i + 1 == parameters.size && tags.toList.all (fun t => t == "Identifier" || t == "RestElement") &&
-          (← field target "type") == "Identifier" do
-        return .complete (← deferPattern "rest requires a terminal identifier and fixed identifier parameters")
-      let x ← localBinding target
-      rest := some x
-      bound := bound.push x
+      unless i + 1 == parameters.size && tags.toList.all (fun t => t == "Identifier" || t == "RestElement") do
+        return .complete (← deferPattern "rest requires a terminal binding and fixed identifier parameters")
+      match ← field target "type" with
+      | "Identifier" =>
+        let x ← localBinding target
+        rest := some x
+        bound := bound.push x
+      | "ArrayPattern" =>
+        let pattern ← match linkedRestArrayPattern target with
+          | .ok pattern => pure pattern
+          | .error reason => return .complete (← deferPattern reason)
+        rest := some slot
+        bound := bound ++ pattern.names.toArray
+        initializers := initializers.push (.bind .var pattern (.var slot))
+      | _ => return .complete (← deferPattern "unsupported rest parameter binding")
     | "ArrayPattern" => return .complete (← deferPattern "unsupported function parameter ArrayPattern")
     | other => throw s!"unsupported function parameter {other}"
   unless bound.toList.Nodup do throw "duplicate function parameter"
@@ -1039,7 +1058,8 @@ private partial def linkedFunctionParts (profile : HostProfile) (imports : List 
     return .defaults slots.toList arity initializers.toList stmts
   -- Static keys and identifier targets have no parameter expressions. The reads
   -- run before the body, using the same mutable cells as any body var redeclarations.
-  if let some restName := rest then return .complete (.withRest name kind self slots.toList restName stmts)
+  if let some restName := rest then
+    return .complete (.withRest name kind self slots.toList restName (initializers.toList ++ stmts))
   if initializers.isEmpty then return .complete (.mk name kind self slots.toList stmts)
   return .objectBindings slots.toList initializers.toList stmts
 

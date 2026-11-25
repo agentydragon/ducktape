@@ -203,6 +203,46 @@ assert.deepEqual(
   ["normal", "", objectRestNode.stdout.trimEnd().split("\n")]
 );
 
+// A destructured rest parameter iterates the newly packed array. Elisions still
+// step the iterator, and an unfinished iterator is closed before the body.
+const restArraySources = [
+  `function pick(head, ...[first, , third]) {
+     var first;
+     first = first + 1;
+     return [head, first, third, arguments.length];
+   }
+   const a = pick("head", 2, 3, 4, 5), b = pick("missing");
+   const arrow = (...[first, second]) => first + second;
+   console.log(pick.length, a[0], a[1], a[2], a[3], b[2], b[3], arrow.length, arrow(4, 3));`,
+  `let trace = "";
+   const proto = Object.getPrototypeOf([]);
+   delete proto[Symbol.iterator];
+   proto[Symbol.iterator] = function() {
+     trace += "I";
+     let index = 0;
+     return {
+       next() { trace += "N"; index += 1; return { value: index * 10, done: false }; },
+       return() { trace += "R"; return {}; }
+     };
+   };
+   const pick = (...[first, , third]) => first + third;
+   const empty = (...[]) => "body";
+   const answer = pick(1, 2, 3), body = empty();
+   console.log(answer, body, trace);`,
+];
+const restArray = run(
+  restArraySources.map((source) => ({ ...dumpSource(source), symbolConstructor: true, iteratorSymbol: true })),
+  true
+);
+for (const [i, source] of restArraySources.entries()) {
+  const printed = spawnSync(process.execPath, ["--input-type=module", "-e", source], { encoding: "utf8" });
+  assert.equal(printed.status, 0, printed.stderr);
+  assert.deepEqual(
+    [restArray[i].end, restArray[i].detail, restArray[i].out],
+    ["normal", "", printed.stdout.trimEnd().split("\n")]
+  );
+}
+
 // A callable in a parameter default comes before a callable in the body.
 // Distinct scripted results make both dispatch and lexical numbering observable.
 const scriptedSource =

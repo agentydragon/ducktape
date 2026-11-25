@@ -217,6 +217,8 @@ Sparse array literals with constant elements now lower with absent index propert
 
 Flat object-rest parameters remove the first refusal in Excalidraw `main.js` unit 1379, exposing a dynamic `import()` refusal behind it. They therefore gain no fully lowerable public unit on their own (BuildBuddy census `68a818fb-4a6b-4a11-8125-522a8fd874b1`); E2's location-sensitive import work is needed before that unit can lower. A synthetic split exercising the pattern is certified and checked against Node.
 
+Flat array-destructuring rest parameters remove the first refusal in Excalidraw `main.js` unit 44, exposing an `import.meta` refusal behind it. They therefore gain no fully lowerable public unit on their own (BuildBuddy census `0d142118-9846-4982-a426-eb6d38217078`); the E2 location work is needed before that unit can lower. A synthetic split exercising the pattern is certified and checked against Node.
+
 **Target.** `LinkedInput` with the linked `FromESTree` rules is the only lowering. Keeping a unit opaque is one of its results, chosen per unit, with captures checked the same way in both graphs.
 
 **How.**
