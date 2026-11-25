@@ -508,30 +508,56 @@ pub struct ResolvedImportedPrimitiveArraySpreadInput {
     pub spread_token_spans: Vec<Span>,
 }
 
-/// Additional captured-value assertions required by an inferred proof.
-/// Structural source evidence stays on the proof's existing source identity.
-/// Empty dependencies add no captured-value premise; the analysis's baseline
-/// native and host assumptions still apply independently.
-#[derive(Debug, Clone, Default, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
-pub struct ProofDependencies {
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub value_inputs: BTreeSet<ValueInputRef>,
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub native_operation_inputs: BTreeSet<NativeOperationInputRef>,
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub initializer_call_effect_inputs: BTreeSet<InitializerCallEffectInputRef>,
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub imported_primitive_array_spread_inputs: BTreeSet<ImportedPrimitiveArraySpreadInputRef>,
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub descriptor_copy_authors: BTreeSet<DescriptorCopyAuthorRef>,
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub argument_inputs: BTreeSet<ArgumentInputRef>,
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub host_behavior: BTreeSet<HostBehaviorKey>,
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub program_premises: BTreeSet<ProgramPremiseKey>,
-    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
-    pub no_accessor_install_callables: BTreeSet<NoAccessorInstallRef>,
+// Declare each proof category once so union, difference and emptiness always
+// cover the same typed sets as serialization.
+macro_rules! proof_dependencies {
+    ($($field:ident: $atom:ty),+ $(,)?) => {
+        /// Additional captured-value assertions required by an inferred proof.
+        /// Structural source evidence stays on the proof's existing source identity.
+        /// Empty dependencies add no captured-value premise; the analysis's baseline
+        /// native and host assumptions still apply independently.
+        #[derive(Debug, Clone, Default, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
+        pub struct ProofDependencies {
+            $(
+                #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+                pub $field: BTreeSet<$atom>,
+            )+
+        }
+
+        impl ProofDependencies {
+            /// Atoms in this contribution that the receiving judgment does not yet have.
+            pub(crate) fn difference(&self, current: &Self) -> Self {
+                Self { $($field: self.$field.difference(&current.$field).cloned().collect()),+ }
+            }
+
+            pub fn is_empty(&self) -> bool {
+                $(self.$field.is_empty())&&+
+            }
+
+            pub fn extend(&mut self, other: &Self) {
+                if !other.is_empty() {
+                    $(self.$field.extend(other.$field.iter().cloned());)+
+                }
+            }
+
+            #[cfg(test)]
+            pub(crate) fn atom_count(&self) -> usize {
+                0 $(+ self.$field.len())+
+            }
+        }
+    };
+}
+
+proof_dependencies! {
+    value_inputs: ValueInputRef,
+    native_operation_inputs: NativeOperationInputRef,
+    initializer_call_effect_inputs: InitializerCallEffectInputRef,
+    imported_primitive_array_spread_inputs: ImportedPrimitiveArraySpreadInputRef,
+    descriptor_copy_authors: DescriptorCopyAuthorRef,
+    argument_inputs: ArgumentInputRef,
+    host_behavior: HostBehaviorKey,
+    program_premises: ProgramPremiseKey,
+    no_accessor_install_callables: NoAccessorInstallRef,
 }
 
 /// A stable source module export cell that contributed to an imported
@@ -612,94 +638,6 @@ impl HostBehaviorKey {
             spec::HostModule::Node(builtin) => Self::ReentryFreeBuiltinModule(builtin),
             spec::HostModule::Bun(bun) => Self::ReentryFreeBunModule(bun),
         }
-    }
-}
-
-impl ProofDependencies {
-    /// Atoms in this contribution that the receiving judgment does not yet have.
-    pub(crate) fn difference(&self, current: &Self) -> Self {
-        Self {
-            value_inputs: self
-                .value_inputs
-                .difference(&current.value_inputs)
-                .cloned()
-                .collect(),
-            native_operation_inputs: self
-                .native_operation_inputs
-                .difference(&current.native_operation_inputs)
-                .cloned()
-                .collect(),
-            initializer_call_effect_inputs: self
-                .initializer_call_effect_inputs
-                .difference(&current.initializer_call_effect_inputs)
-                .cloned()
-                .collect(),
-            imported_primitive_array_spread_inputs: self
-                .imported_primitive_array_spread_inputs
-                .difference(&current.imported_primitive_array_spread_inputs)
-                .cloned()
-                .collect(),
-            descriptor_copy_authors: self
-                .descriptor_copy_authors
-                .difference(&current.descriptor_copy_authors)
-                .cloned()
-                .collect(),
-            argument_inputs: self
-                .argument_inputs
-                .difference(&current.argument_inputs)
-                .cloned()
-                .collect(),
-            host_behavior: self
-                .host_behavior
-                .difference(&current.host_behavior)
-                .copied()
-                .collect(),
-            program_premises: self
-                .program_premises
-                .difference(&current.program_premises)
-                .copied()
-                .collect(),
-            no_accessor_install_callables: self
-                .no_accessor_install_callables
-                .difference(&current.no_accessor_install_callables)
-                .cloned()
-                .collect(),
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.value_inputs.is_empty()
-            && self.native_operation_inputs.is_empty()
-            && self.initializer_call_effect_inputs.is_empty()
-            && self.imported_primitive_array_spread_inputs.is_empty()
-            && self.descriptor_copy_authors.is_empty()
-            && self.argument_inputs.is_empty()
-            && self.host_behavior.is_empty()
-            && self.program_premises.is_empty()
-            && self.no_accessor_install_callables.is_empty()
-    }
-
-    pub fn extend(&mut self, other: &Self) {
-        if other.is_empty() {
-            return;
-        }
-        self.value_inputs.extend(other.value_inputs.iter().cloned());
-        self.native_operation_inputs
-            .extend(other.native_operation_inputs.iter().cloned());
-        self.initializer_call_effect_inputs
-            .extend(other.initializer_call_effect_inputs.iter().cloned());
-        self.imported_primitive_array_spread_inputs
-            .extend(other.imported_primitive_array_spread_inputs.iter().cloned());
-        self.descriptor_copy_authors
-            .extend(other.descriptor_copy_authors.iter().cloned());
-        self.argument_inputs
-            .extend(other.argument_inputs.iter().cloned());
-        self.host_behavior
-            .extend(other.host_behavior.iter().copied());
-        self.program_premises
-            .extend(other.program_premises.iter().copied());
-        self.no_accessor_install_callables
-            .extend(other.no_accessor_install_callables.iter().cloned());
     }
 }
 
