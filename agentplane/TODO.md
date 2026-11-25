@@ -28,3 +28,15 @@
       Options: keep them failed, rebuild their projection from validated binary History (verify first
       that every input decodes and the projection is reconstructible), or retire them. A rebuild or
       retirement needs separate operator authorization.
+- [ ] Run the Claude harness in the exec server's container. The Codex app-server keeps its own
+      container and executes commands through the exec server it is pointed at
+      (`CODEX_EXEC_SERVER_URL`), in the executor container. A Claude harness in a Pod runs in its own
+      runner container with its direct Bash children, sharing that container's memory budget
+      ([execution isolation](env/runtime/execution/ISOLATION.md)). Claude assumes in many places that
+      it shares a filesystem with the commands it launches, so its commands cannot simply be routed
+      through the exec server. Investigate moving the harness into the executor container instead, so
+      every harness's commands run in one environment, with a resource boundary inside the container
+      (for example per-harness and per-command cgroups) keeping the harness and the executor outside
+      their commands' memory budget. On 2026-11-25 an eight-Session staging sandbox's executor (2 GiB
+      limit) was OOM-killed, which fenced the backend and dropped every Session's in-flight commands
+      (PR #19996 raised the limit).
