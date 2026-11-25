@@ -47,6 +47,11 @@ _DIFFERENTIAL_ENV = {
 }
 
 js_test(
+    name = "error_allocation_host_test",
+    entry_point = "error_allocation_host_test.mjs",
+)
+
+js_test(
     name = "error_realm_differential_test",
     data = ["//devinfra/js/debundle/x/split_proof/lean:error_realm_test_runner"],
     entry_point = "error_realm_differential.mjs",
