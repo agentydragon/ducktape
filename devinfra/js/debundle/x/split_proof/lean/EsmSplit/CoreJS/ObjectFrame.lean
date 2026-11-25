@@ -96,8 +96,8 @@ theorem evalProps_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env
     (getter : ∀ f base, SafeVal A f → SafeVal A base →
       ReachFrame r R cells A (SafeVal A) (callFn n f base [] : M W Val))
     (eval : ∀ e, ReachFrame r R cells A (SafeVal A) (evalExpr n env e : M W Val))
-    (make : ∀ home : Addr, A (.obj home) → ∀ f,
-      ReachFrame r R cells A (SafeVal A) (makeFunc { env with home := some home } f : M W Val))
+    (make : ∀ home : Addr, A (.obj home) → ∀ key : PropertyKey, ∀ affix : String, ∀ f,
+      ReachFrame r R cells A (SafeVal A) (makeClassMethod env home key affix f : M W Val))
     (rest : ∀ ps, ReachFrame r R cells A (fun _ => True) (evalProps n env a ps : M W Unit))
     (ps : List PropDef) :
     ReachFrame r R cells A (fun _ => True) (evalProps (n + 1) env a ps : M W Unit) := by
@@ -118,14 +118,14 @@ theorem evalProps_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env
       intro kv _
       apply (reachFrame_toKey r R cells A kv).bind
       intro key _
-      exact (make a ha f).bind fun value hv =>
+      exact (make a ha key "" f).bind fun value hv =>
         (reachFrame_createData away ha key value hv).bind fun _ _ => rest tail
     | getter k f =>
       apply (eval k).bind
       intro kv _
       apply (reachFrame_toKey r R cells A kv).bind
       intro key _
-      apply (make a ha f).bind
+      apply (make a ha key "get " f).bind
       intro getter safe
       exact (reachFrame_defineOwn away ha key _ ⟨descriptorNone_safe, descriptorField_safe safe, descriptorNone_safe⟩).bind
         fun _ _ => rest tail
@@ -134,7 +134,7 @@ theorem evalProps_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env
       intro kv _
       apply (reachFrame_toKey r R cells A kv).bind
       intro key _
-      apply (make a ha f).bind
+      apply (make a ha key "set " f).bind
       intro setter safe
       exact (reachFrame_defineOwn away ha key _ ⟨descriptorNone_safe, descriptorNone_safe, descriptorField_safe safe⟩).bind
         fun _ _ => rest tail

@@ -173,13 +173,20 @@ assertWorkerResult("record-spread", "const worker = () => ({ ...worker }); expor
 assertWorkerResult("record-computed", 'const worker = () => ({ ["key"]: 1 }); export const result = worker();', {
   key: 1,
 });
-for (const [name, expr, reason] of [
-  ["computed-getter", '({ get ["key"]() { return 1; } })', /accessor named by a computed key/],
-  ["record-duplicate", '({ key: 1, "key": 2 })', /duplicate object property/],
-  ["record-array-hole", "({ nested: { key: [, 1] } })", /unsupported array hole/],
-]) {
-  const { verdict, out } = workerSplit(name, `const worker = () => ${expr}; export const result = worker();`);
+assertWorkerResult(
+  "computed-getter",
+  `const worker = () => ({ get ["key"]() { return 1; } }); export const result = worker();`,
+  { key: 1 }
+);
+assertWorkerResult("record-duplicate", `const worker = () => ({ key: 1, "key": 2 }); export const result = worker();`, {
+  key: 2,
+});
+{
+  const { verdict, out } = workerSplit(
+    "record-array-hole",
+    "const worker = () => ({ nested: { key: [, 1] } }); export const result = worker();"
+  );
   assert.equal(verdict.status, "rejected");
-  assert.match(verdict.reason, reason, name);
+  assert.match(verdict.reason, /unsupported array hole/);
   assert(!existsSync(out));
 }

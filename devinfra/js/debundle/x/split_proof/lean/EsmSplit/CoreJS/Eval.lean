@@ -569,13 +569,13 @@ def evalProps : Nat → Env → Addr → List PropDef → M W Unit
       createData a key (← evalExpr n env v)
     | .method k f =>
       let key ← toKey (← evalExpr n env k)
-      createData a key (← makeFunc { env with home := some a } f)
+      createData a key (← makeClassMethod env a key "" f)
     | .getter k f =>
       let key ← toKey (← evalExpr n env k)
-      defineOwn a key { get := some (← makeFunc { env with home := some a } f), enumerable := some true, configurable := some true }
+      defineOwn a key { get := some (← makeClassMethod env a key "get " f), enumerable := some true, configurable := some true }
     | .setter k f =>
       let key ← toKey (← evalExpr n env k)
-      defineOwn a key { set := some (← makeFunc { env with home := some a } f), enumerable := some true, configurable := some true }
+      defineOwn a key { set := some (← makeClassMethod env a key "set " f), enumerable := some true, configurable := some true }
     | .spread source excluded => copySpread (callFn n) a excluded (← evalExpr n env source)
     | .proto v =>
       match ← evalExpr n env v with

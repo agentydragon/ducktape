@@ -183,6 +183,188 @@ for (const [i, { source, reason }] of guardedScripts.entries()) {
   assert.match(guardedResults[i].detail, reason, source);
 }
 
+// Duplicate definitions update one property without moving its original position.
+// Spread invokes the final getters in key order, exposing that the first key stays first.
+// Accessors also merge opposite halves and replace data descriptors.
+const duplicateSource = `
+  let getterOrder = "";
+  const record = {
+    first: 0,
+    get after() { getterOrder = getterOrder + "a"; return "after"; },
+    get replaced() { return "old getter"; },
+    replaced: "data",
+    winner: 1,
+    winner: 3,
+    get first() { getterOrder = getterOrder + "f"; return "first getter"; },
+    get pair() { return this.saved; },
+    set pair(value) { this.saved = value; },
+    saved: "initial"
+  };
+  const copy = { ...record };
+  record.pair = "updated";
+  console.log(getterOrder, copy.first, copy.after, copy.replaced, record.winner, record.pair, record.saved);
+`;
+const [duplicate] = run([dumpSource(duplicateSource)], true);
+const duplicateNode = spawnSync(process.execPath, ["--input-type=module", "-e", duplicateSource], {
+  encoding: "utf8",
+});
+assert.equal(duplicateNode.status, 0, duplicateNode.stderr);
+assert.deepEqual(
+  [duplicate.end, duplicate.detail, duplicate.out],
+  ["normal", "", duplicateNode.stdout.split("\n").slice(0, -1)]
+);
+assert.deepEqual(duplicate.out, ["fa first getter after data 3 updated updated"]);
+
+// Computed object and class methods/accessors evaluate keys in source order.
+// ToPropertyKey preserves strings and well-known symbols and converts numbers,
+// booleans, and null to strings. Object-to-primitive coercion is not modeled.
+const computedSource = `
+  let trace = "";
+  const mark = (step, value) => { trace = trace + step; return value; };
+  const record = {
+    [mark("a", "data")]: mark("A", "value"),
+    [mark("b", 1)]() { return this.label; },
+    label: "object",
+    get [mark("c", "slot")]() { return this.saved; },
+    set [mark("d", "slot")](value) { this.saved = value; },
+    [mark("e", true)]() { return this.label; },
+    [mark("f", null)]() { return this.label; },
+    [mark("g", Symbol.iterator)]() { return "object symbol"; }
+  };
+  record.slot = "saved";
+  class Box {
+    [mark("h", 2)]() { return this.value; }
+    get [mark("i", "slot")]() { return this.value; }
+    set [mark("j", "slot")](value) { this.value = value; }
+    [mark("k", Symbol.iterator)]() { return this.value; }
+    constructor() { this.value = "class"; }
+  }
+  const box = new Box();
+  box.slot = "updated";
+  console.log(
+    trace,
+    record.data, record[1](), record[1].name, record.true(), record.true.name,
+    record.null(), record.null.name, record.slot,
+    record[Symbol.iterator](), record[Symbol.iterator].name,
+    box[2](), Box.prototype[2].name, box.slot,
+    box[Symbol.iterator](), Box.prototype[Symbol.iterator].name
+  );
+`;
+const [computed] = run([{ ...dumpSource(computedSource), symbolConstructor: true, iteratorSymbol: true }], true);
+const computedNode = spawnSync(process.execPath, ["--input-type=module", "-e", computedSource], {
+  encoding: "utf8",
+});
+assert.equal(computedNode.status, 0, computedNode.stderr);
+assert.deepEqual(
+  [computed.end, computed.detail, computed.out],
+  ["normal", "", computedNode.stdout.split("\n").slice(0, -1)]
+);
+assert.deepEqual(computed.out, [
+  "aAbcdefghijk value object 1 object true object null saved object symbol [Symbol.iterator] updated 2 updated updated [Symbol.iterator]",
+]);
+
+// Object-to-primitive conversion remains an explicit runtime unknown. It is
+// not a lowering refusal, and Node can execute the same computed property.
+const coercionSource = `
+  const key = { toString() { return "dynamic"; } };
+  const record = { [key]: "value" };
+  console.log(record.dynamic);
+`;
+const [coercion] = run([dumpSource(coercionSource)], true);
+assert.deepEqual([coercion.end, coercion.detail], ["unknown", "an object is converted to a primitive"]);
+const coercionNode = spawnSync(process.execPath, ["--input-type=module", "-e", coercionSource], {
+  encoding: "utf8",
+});
+assert.equal(coercionNode.status, 0, coercionNode.stderr);
+assert.equal(coercionNode.stdout, "value\n");
+
+// The default production profile lowers the same syntax with local keys and no host premise.
+const productionSource = `export const result = (() => {
+  let getterOrder = "";
+  const record = {
+    first: 0,
+    get second() { getterOrder = getterOrder + "s"; return "second"; },
+    get first() { getterOrder = getterOrder + "f"; return "first"; },
+    get replace() { return "getter"; },
+    replace: "data",
+    winner: 1,
+    winner: 3,
+    get pair() { return this.saved; },
+    set pair(value) { this.saved = value; },
+    saved: "initial"
+  };
+  const copy = { ...record };
+  record.pair = "updated";
+  const objectKey = "read";
+  const object = {
+    [objectKey]() { return record.winner; },
+    get [2]() { return this.value; },
+    set [2](value) { this.value = value; }
+  };
+  object[2] = "object";
+  const name = "speak";
+  const Box = class {
+    [name]() { return record.winner; }
+    get [1]() { return this.value; }
+    set [1](value) { this.value = value; }
+  };
+  const box = new Box();
+  box[1] = "updated";
+  return [getterOrder, copy.first, copy.second, copy.replace, record.winner, record.pair,
+    object.read(), object.read.name, object[2], box.speak(), box.speak.name, box[1]];
+})();`;
+const productionDir = path.join(dir, "computed-production");
+mkdirSync(productionDir, { recursive: true });
+writeFileSync(path.join(productionDir, "bundle.mjs"), productionSource);
+writeFileSync(
+  path.join(productionDir, "spec.json"),
+  JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0"] } })
+);
+const production = await certifyFixture(productionDir);
+const productionReference = await import(`data:text/javascript,${encodeURIComponent(productionSource)}#production`);
+assert.deepEqual(production.result, productionReference.result);
+assert.deepEqual(production.result, [
+  "fs",
+  "first",
+  "second",
+  "data",
+  3,
+  "updated",
+  3,
+  "read",
+  "object",
+  3,
+  "speak",
+  "updated",
+]);
+
+// The browser-page production profile supplies the well-known symbol intrinsics.
+const browserSymbolDir = path.join(dir, "computed-browser-symbol");
+mkdirSync(browserSymbolDir, { recursive: true });
+const browserSymbolSource = `export const result = (() => {
+  const iterator = Symbol.iterator;
+  const object = { [iterator]() { return this.value; }, value: "object" };
+  class Box {
+    [iterator]() { return this.value; }
+    constructor() { this.value = "class"; }
+  }
+  const box = new Box();
+  return [object[iterator](), object[iterator].name, box[iterator](), Box.prototype[iterator].name];
+})();`;
+writeFileSync(path.join(browserSymbolDir, "bundle.mjs"), browserSymbolSource);
+writeFileSync(
+  path.join(browserSymbolDir, "spec.json"),
+  JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["#0"] } })
+);
+const browserContract = path.join(browserSymbolDir, "host.json");
+writeFileSync(browserContract, JSON.stringify({ profile: "browser-page" }));
+const browserSymbols = await certifyFixture(browserSymbolDir, ["--host-contract", browserContract]);
+const browserSymbolReference = await import(
+  `data:text/javascript,${encodeURIComponent(browserSymbolSource)}#browser-symbol`
+);
+assert.deepEqual(browserSymbols.result, browserSymbolReference.result);
+assert.deepEqual(browserSymbols.result, ["object", "[Symbol.iterator]", "class", "[Symbol.iterator]"]);
+
 // The line names its entry, so a provider can import the entry back.
 const cycleFiles = {
   "main.mjs": 'import { read } from "./reader.mjs"; export const value = 7; console.log(read());',
@@ -254,10 +436,10 @@ assert.deepEqual(
   await nodeOutcome(pathToFileURL(path.join(defaultDir, "main.mjs")).href)
 );
 
-function certifyFixture(directory) {
+function certifyFixture(directory, args = []) {
   const out = path.join(directory, "out");
   const manifest = writeDeployment(path.join(directory, "bundle.mjs"), path.join(directory, "spec.json"), out);
-  const result = spawnSync(process.env.LOWERSPLIT, [manifest, out], { encoding: "utf8" });
+  const result = spawnSync(process.env.LOWERSPLIT, [manifest, out, ...args], { encoding: "utf8" });
   assert.equal(result.status, 0, result.error?.message ?? result.stdout + result.stderr);
   const verdict = JSON.parse(result.stdout.trim().split("\n").at(-1));
   assert.equal(verdict.status, "certified", result.stdout + result.stderr);

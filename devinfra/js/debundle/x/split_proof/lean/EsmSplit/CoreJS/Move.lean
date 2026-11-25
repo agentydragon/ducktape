@@ -518,7 +518,7 @@ theorem allocOnly_local (r : Nat) (R : Addr → Prop) (n : Nat) :
           rename_i key
           unfold evalProps
           refine (local_evalExpr_str n env key).bind' fun _ => (local_lift _).bind' fun name => ?_
-          refine (local_makeFunc _ f).bind' fun _ => (local_defineOwn ha name _).bind' fun _ => ?_
+          refine (local_makeClassMethod env a name "" f).bind' fun _ => (local_defineOwn ha name _).bind' fun _ => ?_
           exact ihP env a ps he (by simpa [readsNowProps] using hw) ha
         | getter | setter | proto | spread => simp only [allocOnlyProps, Bool.false_eq_true] at he
 
