@@ -290,6 +290,33 @@ lean_library(
 )
 
 lean_library(
+    name = "shared_provider_boundary",
+    srcs = ["EsmSplit/CoreJS/SharedProviderBoundary.lean"],
+    deps = [
+        ":corejs_certificate_support",
+        ":static_provider_boundary",
+    ],
+)
+
+lean_axiom_test(
+    name = "shared_provider_boundary_axioms_test",
+    imports = ["EsmSplit.CoreJS.SharedProviderBoundary"],
+    theorems = [
+        "CoreJS.LinkedBehavior.runUnits_append",
+        "CoreJS.LinkedBehavior.SharedProvider.run_eq",
+        "CoreJS.LinkedBehavior.SharedProvider.sameExports",
+        "CoreJS.SharedProviderBoundaryExamples.opaqueProvider_allOutcomes",
+        "CoreJS.SharedProviderBoundaryExamples.fixedGraph_allOutcomes",
+        "CoreJS.SharedProviderBoundaryExamples.opaqueProvider_sameExports",
+        "CoreJS.SharedProviderBoundaryExamples.wrongAlias_rejected",
+        "CoreJS.SharedProviderBoundaryExamples.wrongAlias_witness",
+        "CoreJS.SharedProviderBoundaryExamples.providerThrow_stops_importers",
+        "CoreJS.SharedProviderBoundaryExamples.wrongAlias_changes_run",
+    ],
+    deps = [":shared_provider_boundary"],
+)
+
+lean_library(
     name = "corejs_linked_input",
     srcs = [
         "EsmSplit/CertificateData.lean",
