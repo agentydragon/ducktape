@@ -53,6 +53,12 @@ class IngressSettings(BaseModel):
         "History readers support these block kinds.",
     )
 
+    deduplicate_tool_catalogs: bool = Field(
+        default=False,
+        exclude_if=lambda value: not value,
+        description="Share exact JavaScript execute catalogs in new journal writes. Enable after all History readers support catalog references.",
+    )
+
     @field_serializer("writer_namespaces")
     def sorted_writer_namespaces(self, value: frozenset[str]) -> list[str]:
         return sorted(value)

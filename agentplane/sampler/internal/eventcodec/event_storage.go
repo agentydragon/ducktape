@@ -4,9 +4,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"io"
-
-	eventlogpb "github.com/agentydragon/ducktape/agentplane/proto/event_log"
-	"google.golang.org/protobuf/proto"
 )
 
 // Historical journal bytes also exist in History, whose duplicate checks compare
@@ -31,14 +28,6 @@ func Encode(wire []byte) ([]byte, error) {
 		return wire, nil
 	}
 	return compressed.Bytes(), nil
-}
-
-func Decode(wire []byte, entry *eventlogpb.EventEntry) error {
-	wire, err := Uncompress(wire)
-	if err != nil {
-		return err
-	}
-	return proto.Unmarshal(wire, entry)
 }
 
 func Uncompress(wire []byte) ([]byte, error) {

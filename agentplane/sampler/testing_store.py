@@ -2,14 +2,21 @@
 
 import gzip
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
+from hashlib import sha256
 from itertools import batched
 from typing import Any
 
 from sqlalchemy import bindparam, text
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from agentplane.proto import event_log_pb2
+
+# Private sampler wire envelope in internal/sessionstore/event_catalog.go.
+_CATALOG_MARKER = b"\x0fCAT\x01"
+_CATALOG_KEY_END = len(_CATALOG_MARKER) + 32
+_CATALOG_HEADER_END = _CATALOG_KEY_END + 4
 
 
 @dataclass(frozen=True)
@@ -361,26 +368,53 @@ class Store:
                     },
                 )
             ).all()
-        decoded = []
-        for first, last, entry in entries:
-            raw = bytes(entry)
-            if raw.startswith(b"\x1f\x8b"):
+            frames = []
+            for first, last, entry in entries:
+                raw = bytes(entry)
+                if first == last:
+                    frames.append(raw)
+                    continue
+                # Block framing is specified in migration 0021.
                 raw = gzip.decompress(raw)
-            if first == last:
-                decoded.append(event_log_pb2.EventEntry.FromString(raw))
-                continue
-            # Block framing is specified in migration 0021.
-            offset = 0
-            for cursor in range(first, last + 1):
-                size = int.from_bytes(raw[offset : offset + 4], "big")
-                offset += 4
-                assert size > 0
-                assert offset + size <= len(raw)
-                if after < cursor <= after + limit:
-                    decoded.append(event_log_pb2.EventEntry.FromString(raw[offset : offset + size]))
-                offset += size
-            assert offset == len(raw)
-        return decoded
+                offset = 0
+                for cursor in range(first, last + 1):
+                    size = int.from_bytes(raw[offset : offset + 4], "big")
+                    offset += 4
+                    assert size > 0
+                    assert offset + size <= len(raw)
+                    if after < cursor <= after + limit:
+                        frames.append(raw[offset : offset + size])
+                    offset += size
+                assert offset == len(raw)
+            return await _decode_events(connection, frames)
+
+
+async def _decode_events(connection: AsyncConnection, entries: Iterable[bytes]) -> list[event_log_pb2.EventEntry]:
+    decoded = []
+    catalogs: dict[bytes, bytes] = {}
+    for entry in entries:
+        raw = bytes(entry)
+        if raw.startswith(b"\x1f\x8b"):
+            raw = gzip.decompress(raw)
+        if raw.startswith(_CATALOG_MARKER):
+            assert len(raw) >= _CATALOG_HEADER_END, "truncated tool catalog reference"
+            digest = raw[len(_CATALOG_MARKER) : _CATALOG_KEY_END]
+            if digest not in catalogs:
+                catalog = await connection.scalar(
+                    text("SELECT payload FROM sampler_content WHERE id=:id AND kind='javascript_tool_catalog'"),
+                    {"id": digest.hex()},
+                )
+                assert catalog is not None, "journal entry references a missing tool catalog"
+                catalogs[digest] = bytes(catalog)
+                # Match the exact-content hash in internal/content/content.go.
+                expected = sha256(b"agentplane/provider-content/v1\x00javascript_tool_catalog\x00" + catalogs[digest])
+                assert expected.digest() == digest, "stored tool catalog disagrees with its digest"
+            offset = int.from_bytes(raw[_CATALOG_KEY_END:_CATALOG_HEADER_END], "big")
+            raw = raw[_CATALOG_HEADER_END:]
+            assert offset <= len(raw), "tool catalog offset exceeds shortened journal entry length"
+            raw = raw[:offset] + catalogs[digest] + raw[offset:]
+        decoded.append(event_log_pb2.EventEntry.FromString(raw))
+    return decoded
 
 
 # The protobuf-generated stubs import google.protobuf directly.

@@ -1,0 +1,24 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+package(default_visibility = [
+    "//agentplane/history_service:__subpackages__",
+    "//agentplane/sampler:__subpackages__",
+])
+
+go_library(
+    name = "eventcatalog",
+    srcs = ["catalog.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/eventcatalog",
+    deps = ["//agentplane/proto:event_log_go_proto"],
+)
+
+go_test(
+    name = "eventcatalog_test",
+    srcs = ["catalog_test.go"],
+    embed = [":eventcatalog"],
+    deps = [
+        "//agentplane/proto:event_go_proto",
+        "//agentplane/proto:event_log_go_proto",
+        "@org_golang_google_protobuf//proto",
+    ],
+)

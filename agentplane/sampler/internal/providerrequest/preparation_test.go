@@ -17,7 +17,7 @@ import (
 type memoryContent map[content.ContentID]content.StoredContent
 
 func (m memoryContent) PutContent(kind content.ContentKind, payload json.RawMessage) (content.ContentID, error) {
-	stored, err := content.CanonicalContent(kind, payload)
+	stored, err := content.PrepareContent(kind, payload)
 	if err != nil {
 		return "", err
 	}

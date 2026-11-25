@@ -110,7 +110,7 @@ func AssertJSONEqual(t testing.TB, want, got []byte) {
 type MemoryContent map[content.ContentID]content.StoredContent
 
 func (m MemoryContent) PutContent(kind content.ContentKind, payload json.RawMessage) (content.ContentID, error) {
-	stored, err := content.CanonicalContent(kind, payload)
+	stored, err := content.PrepareContent(kind, payload)
 	if err != nil {
 		return "", err
 	}

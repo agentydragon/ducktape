@@ -146,7 +146,7 @@ func compactEvents(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, options
 	for _, kind := range liveCompactionKinds(options) {
 		for {
 			rows, err := tx.QueryContext(ctx, `SELECT payload FROM session_event
-				WHERE session_id=$1 AND kind=$2 AND compactable
+				WHERE session_id=$1 AND kind=$2 AND compactable AND catalog_id IS NULL
 				ORDER BY cursor LIMIT $3`, sessionID, kind, blockEntries)
 			if err != nil {
 				return err
@@ -206,7 +206,7 @@ func eventReferences(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, after
 	}
 	var references []eventReference
 	readRaw := func(kind *historypb.EventKind) error {
-		query := `SELECT cursor,kind,octet_length(payload) FROM session_event WHERE session_id=$1 AND cursor>$2 AND cursor<=$3`
+		query := `SELECT cursor,kind,octet_length(payload)+COALESCE(catalog_size,0) FROM session_event WHERE session_id=$1 AND cursor>$2 AND cursor<=$3`
 		args := []any{sessionID, after, through, limit}
 		if kind != nil {
 			query += " AND kind=$5"
@@ -322,7 +322,11 @@ func loadEntries(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, reference
 	}
 	byCursor := map[uint64]*eventlogpb.EventEntry{}
 	if len(cursors) > 0 {
-		rows, err := tx.QueryContext(ctx, `SELECT payload FROM session_event WHERE session_id=$1 AND cursor=ANY($2)`, sessionID, pq.Array(cursors))
+		rows, err := tx.QueryContext(ctx, `SELECT CASE WHEN e.catalog_id IS NULL THEN e.payload
+			ELSE overlay(e.payload placing c.payload from e.catalog_offset+1 for 0) END
+			FROM session_event e LEFT JOIN session_event_catalog c
+				ON c.session_id=e.session_id AND c.digest=e.catalog_id
+			WHERE e.session_id=$1 AND e.cursor=ANY($2)`, sessionID, pq.Array(cursors))
 		if err != nil {
 			return nil, err
 		}
@@ -422,7 +426,7 @@ func ReadEntry(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, cursor uint
 func CountEventPayloads(ctx context.Context, tx *sql.Tx, sessionID uuid.UUID, first, last uint64) (int64, int64, error) {
 	var count, size int64
 	err := tx.QueryRowContext(ctx, `SELECT count(*),COALESCE(sum(size),0) FROM (
-		SELECT octet_length(payload) AS size FROM session_event WHERE session_id=$1 AND cursor BETWEEN $2 AND $3
+		SELECT octet_length(payload)+COALESCE(catalog_size,0) AS size FROM session_event WHERE session_id=$1 AND cursor BETWEEN $2 AND $3
 		UNION ALL
 		SELECT e.size FROM session_event_block b CROSS JOIN LATERAL unnest(b.cursors,b.sizes) e(cursor,size)
 		WHERE b.session_id=$1 AND b.first_cursor<=$3 AND b.last_cursor>=$2 AND e.cursor BETWEEN $2 AND $3

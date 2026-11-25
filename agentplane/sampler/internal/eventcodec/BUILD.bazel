@@ -9,8 +9,4 @@ go_library(
         "event_storage.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/sampler/internal/eventcodec",
-    deps = [
-        "//agentplane/proto:event_log_go_proto",
-        "@org_golang_google_protobuf//proto",
-    ],
 )

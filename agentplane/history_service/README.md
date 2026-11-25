@@ -203,6 +203,18 @@ defines pagination, replay, atomicity and rollout requirements.
 This packs retained events; it does not share bodies across raw history and projection tables or
 backfill old Sessions. Ordinary insertion/deletion still generates WAL.
 
+### JavaScript tool catalogs
+
+`ingress.deduplicate_tool_catalogs` shares exact `enabled_tools` bytes in new JavaScript execute
+events within each Session. It defaults to false. History reconstructs the original event before
+replay comparisons and reads. Catalog references stay in ordinary event rows, and follow limits
+count the reconstructed sizes. History keeps its own catalog copies so retained reads work while
+the sampler is offline.
+
+Deploy a compatible image to every History replica before enabling writes. To roll back after
+activation, disable the setting and keep a compatible reader image for the retained references.
+The sampler has a separate [write setting](../sampler/README.md#running).
+
 ### Historical packing
 
 The same service image supports `history-service compact-history --session UUID --dry-run` and

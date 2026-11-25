@@ -36,7 +36,9 @@ func rollbackServiceWriterMigration(t *testing.T, db *sql.DB) {
 	execute(t, db, `ALTER TABLE session_history ADD CONSTRAINT history_writer_one_kind
 		CHECK (writer_uid IS NULL OR writer_identity_uid IS NULL)`)
 	execute(t, db, `ALTER TABLE session_history DROP COLUMN writer_service_uri`)
-	execute(t, db, `DELETE FROM history_service_goose_version WHERE version_id=19`)
+	execute(t, db, `ALTER TABLE session_event DROP COLUMN catalog_id, DROP COLUMN catalog_offset, DROP COLUMN catalog_size`)
+	execute(t, db, `DROP TABLE session_event_catalog`)
+	execute(t, db, `DELETE FROM history_service_goose_version WHERE version_id>=19`)
 }
 
 func TestHistoryBaselineCreatesUsableHistory(t *testing.T) {

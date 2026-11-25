@@ -98,6 +98,15 @@ inherited rolling profile. To roll back to a pre-migration image, stop new write
 pre-migration database backup before starting it; an image-only rollback cannot write provider
 intents under the new required-metadata constraint.
 
+`deduplicate_tool_catalogs` defaults to false. When enabled, the sampler shares exact
+`enabled_tools` bytes across Sessions for new, unfragmented JavaScript execute requests with
+catalogs of at least 1 KiB. Catalogs use a dedicated kind in `sampler_content`. Provider content
+keeps its canonical JSON encoding and is read through its existing content IDs. The sampler
+restores original journal entries for recovery, admin reads and History export.
+
+Roll out compatible sampler images before enabling writes. After activation, disabling the setting
+stops new references. Retained references still require compatible journal readers.
+
 `//agentplane/sampler/cmd:service_image` packages the service and pinned code-mode host.
 The [k3s acceptance scenarios](../system_tests/README.md#central-sampler) run that image in its
 own Pod, migrate before serving, and use service SVIDs over mTLS for

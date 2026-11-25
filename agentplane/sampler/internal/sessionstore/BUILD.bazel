@@ -9,6 +9,7 @@ go_library(
         "content_request.go",
         "contentdb.go",
         "conversations.go",
+        "event_catalog.go",
         "event_journal.go",
         "evidence.go",
         "execution.go",
@@ -39,6 +40,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/sampler/internal/sessionstore",
     visibility = ["//agentplane/sampler:__subpackages__"],
     deps = [
+        "//agentplane/eventcatalog",
         "//agentplane/harness_host:harness_host_go_proto",
         "//agentplane/postgres",
         "//agentplane/postgres/lease",
@@ -82,6 +84,7 @@ go_test(
         "compact_journal_test.go",
         "content_store_integration_test.go",
         "environment_context_test.go",
+        "event_catalog_integration_test.go",
         "event_journal_test.go",
         "exporter_test.go",
         "host_status_test.go",

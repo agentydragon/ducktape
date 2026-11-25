@@ -359,6 +359,11 @@ class Settings(BaseModel):
         le=MAX_EXECUTOR_INITIALIZE_TIMEOUT_SECONDS,
         description="Maximum setup script duration; the service uses 3600 seconds when omitted.",
     )
+    deduplicate_tool_catalogs: bool = Field(
+        default=False,
+        exclude_if=lambda value: not value,
+        description="Share exact JavaScript execute catalogs in new journal writes. Enable after all sampler readers support catalog references.",
+    )
     rpc_timeout_seconds: int = Field(gt=0)
     code_mode_observation_timeout_seconds: int | None = Field(
         default=None,

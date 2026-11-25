@@ -6,11 +6,11 @@ import (
 )
 
 func TestContentIDsIgnoreObjectOrderAndPreserveNumbers(t *testing.T) {
-	first, err := CanonicalContent(ContentKind("fixture/item"), []byte(`{"type":"message","extra":900719925474099312345,"nested":{"b":2,"a":1}}`))
+	first, err := PrepareContent(ContentKind("fixture/item"), []byte(`{"type":"message","extra":900719925474099312345,"nested":{"b":2,"a":1}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	reordered, err := CanonicalContent(ContentKind("fixture/item"), []byte(`{ "nested": {"a":1,"b":2}, "extra":900719925474099312345,"type":"message"}`))
+	reordered, err := PrepareContent(ContentKind("fixture/item"), []byte(`{ "nested": {"a":1,"b":2}, "extra":900719925474099312345,"type":"message"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,7 +20,7 @@ func TestContentIDsIgnoreObjectOrderAndPreserveNumbers(t *testing.T) {
 	if !bytes.Contains(first.Payload, []byte("900719925474099312345")) {
 		t.Fatal("content hashing rounded provider number")
 	}
-	otherKind, err := CanonicalContent(ContentKind("fixture/part"), first.Payload)
+	otherKind, err := PrepareContent(ContentKind("fixture/part"), first.Payload)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,13 +34,39 @@ func TestContentIDsIgnoreObjectOrderAndPreserveNumbers(t *testing.T) {
 }
 
 func TestContentIDsRejectInvalidKindsAndTrailingJSON(t *testing.T) {
-	if _, err := CanonicalContent(ContentKind(""), []byte(`{}`)); err == nil {
+	if _, err := PrepareContent(ContentKind(""), []byte(`{}`)); err == nil {
 		t.Fatal("empty content kind accepted")
 	}
 	for _, raw := range []string{`{}`, `{} {}`, `{} garbage`} {
-		_, err := CanonicalContent(ContentKind("fixture/item"), []byte(raw))
+		_, err := PrepareContent(ContentKind("fixture/item"), []byte(raw))
 		if (err == nil) != (raw == `{}`) {
 			t.Fatalf("content %q error=%v", raw, err)
 		}
+	}
+}
+
+func TestJavaScriptCatalogContentPreservesExactJSON(t *testing.T) {
+	original := []byte(`[ {"description":"\u003c","tool":"example"} ]`)
+	equivalent := []byte(`[{"tool":"example","description":"<"}]`)
+	first, err := PrepareContent(ContentJavaScriptToolCatalog, original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := PrepareContent(ContentJavaScriptToolCatalog, equivalent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID == second.ID || !bytes.Equal(first.Payload, original) || !bytes.Equal(second.Payload, equivalent) {
+		t.Fatal("catalog identity or payload normalized exact JSON")
+	}
+	if err := VerifyContent(first); err != nil {
+		t.Fatal(err)
+	}
+	first.Payload = equivalent
+	if VerifyContent(first) == nil {
+		t.Fatal("another spelling of the same JSON passed exact verification")
+	}
+	if _, err := PrepareContent(ContentJavaScriptToolCatalog, []byte(`{"name":"test"}`)); err == nil {
+		t.Fatal("non-array tool catalog accepted")
 	}
 }
