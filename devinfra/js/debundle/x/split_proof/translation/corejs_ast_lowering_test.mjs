@@ -161,6 +161,29 @@ const cycleNode = spawnSync(process.execPath, [path.join(cycleDir, "main.mjs")],
 assert.equal(cycleNode.status, 0, cycleNode.stderr);
 assert.deepEqual([cycle.end, cycle.out], ["normal", cycleNode.stdout.split("\n").slice(0, -1)]);
 
+// Every assignment form on an imported binding reads it, then throws TypeError on the write.
+const frozenFiles = {
+  "main.mjs": [
+    'import { n, zero } from "./m.mjs";',
+    'try { n = 5; } catch (e) { console.log("assign", n); }',
+    'try { n++; } catch (e) { console.log("update", n); }',
+    'try { n += (console.log("right side runs"), 1); } catch (e) { console.log("compound", n); }',
+    "console.log(n ||= 7, n);",
+    'try { zero ||= 7; } catch (e) { console.log("logical", zero); }',
+  ].join("\n"),
+  "m.mjs": "export let n = 1; export let zero = 0;",
+};
+const frozenDir = path.join(dir, "frozen");
+mkdirSync(frozenDir, { recursive: true });
+for (const [name, text] of Object.entries(frozenFiles)) writeFileSync(path.join(frozenDir, name), text);
+const [frozen] = run(
+  [{ ...dumpSource(frozenFiles["main.mjs"]), providers: { "m.mjs": dumpSource(frozenFiles["m.mjs"]) } }],
+  true
+);
+const frozenNode = spawnSync(process.execPath, [path.join(frozenDir, "main.mjs")], { encoding: "utf8" });
+assert.equal(frozenNode.status, 0, frozenNode.stderr);
+assert.deepEqual([frozen.end, frozen.out], ["normal", frozenNode.stdout.split("\n").slice(0, -1)]);
+
 const spec = file("spec.json", JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs": ["a", "b"] } }));
 function split(source, args = []) {
   const ast = file("bundle.json", JSON.stringify(dumpSource(source)));
