@@ -284,6 +284,8 @@ fn run_modules_check(
             .as_str()
             .to_string();
     }
+    let residual_units_extracted = problem.residual_gain(&candidate);
+    let existing_units_moved = problem.existing_units_moved(&candidate);
     let graph_accepted = accepted(&validation);
     let selector_realization_error = if graph_accepted && !args.graph_only {
         let realization = (|| {
@@ -293,7 +295,7 @@ fn run_modules_check(
                 .context("executable plan check requires --source-root for selector preflight")?;
             preflight_assignment(
                 stderr,
-                &input,
+                input,
                 &args.common.dependency_graph_path,
                 &args.common.modules_root,
                 source_root,
@@ -339,8 +341,8 @@ fn run_modules_check(
         },
         changes,
         import_order,
-        residual_units_extracted: problem.residual_gain(&candidate),
-        existing_units_moved: problem.existing_units_moved(&candidate),
+        residual_units_extracted,
+        existing_units_moved,
         validation: validation.report,
         selector_realization_error,
     };
@@ -466,7 +468,7 @@ fn preview_options<'a>(
 
 fn preflight_assignment(
     stderr: &mut (dyn std::io::Write + Send),
-    input: &analysis::DependencyGraphInput,
+    input: analysis::DependencyGraphInput,
     graph: &Path,
     modules_root: &Path,
     source_root: &Path,
@@ -475,7 +477,7 @@ fn preflight_assignment(
 ) -> Result<()> {
     preview.assignments = physical_plan_changes(
         preview.assignments,
-        input,
+        &input,
         preview.tree_config,
         modules_root,
         source_context,
@@ -484,6 +486,7 @@ fn preflight_assignment(
         stderr,
         modules_root,
         graph,
+        input,
         source_root,
         source_context,
         preview,
@@ -519,7 +522,7 @@ fn preflight_one_proposal(
         stderr,
         proposal
             .input
-            .as_ref()
+            .take()
             .expect("found proposal retains its graph"),
         &proposal.graph,
         modules_root,
@@ -533,7 +536,6 @@ fn preflight_one_proposal(
     ) {
         reject_selector_realization(&mut proposal.search, &error);
     }
-    proposal.input = None;
 }
 
 fn take_proposal_plan(proposal: &mut ConstructedProposal) -> Result<Option<AssignmentPlan>> {
