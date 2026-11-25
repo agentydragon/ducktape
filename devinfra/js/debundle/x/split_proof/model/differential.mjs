@@ -330,12 +330,6 @@ async function runNode(jobs) {
   }
 }
 
-/** A translated module as a program of its own, statement `j` with the identity `j`. */
-const single = (t) => ({
-  entry: "main",
-  modules: [{ name: "main", imports: [], exports: [], ids: t.ids.map((_, j) => j), tokens: t.tokens }],
-});
-
 let modelSeconds = 0;
 /** What `corejs` (with `args`) answers for each of `lines`, one call. */
 function runCorejs(args, lines, label) {
@@ -550,23 +544,10 @@ const allOpaqueCases = bindingOnly
         ...Array.from({ length: count }, (_, i) => generatedOpaqueClassCase(firstSeed + i)),
       ];
 for (const c of allOpaqueCases) {
-  const translated = coreOf(c.source);
-  const bodies = translated.opaqueBodies ?? [];
-  assert(translated.opaque.length > 0 || bodies.length > 0, `opaque case ${c.name}: no statement or body is opaque`);
-  if (c.bodyParts) {
-    assert.equal(translated.opaque.length, 0, `opaque class case ${c.name}: class creation became an opaque statement`);
-    assert.deepEqual(
-      bodies.map(({ id, part }) => `${id}/${part}`).sort(),
-      [...c.bodyParts].sort(),
-      `opaque class case ${c.name}: deferred bodies must retain their lexical part identities`
-    );
-  } else {
-    assert(translated.opaque.length > 0, `opaque statement case ${c.name}: no statement is opaque`);
-  }
   jobs.push({
     label: `opaque: ${c.name}`,
     source: c.source,
-    program: { ...single(translated), scripts: scriptsOf(c) },
+    ast: { ...astOf(c.source), scripts: scriptsOf(c, { recorded: true }) },
     expectEnd: c.end ?? "normal",
     set: null,
     opaqueCase: c,
@@ -733,10 +714,20 @@ function specsFor(units, next) {
 /** `source` as a one-module program whose statements have the numbers `lowersplit` gives them. */
 function splitInputFor(job) {
   if (job.splitInput) return job.splitInput;
-  const scripts = job.program?.scripts;
+  const scripts = job.opaqueCase && scriptsOf(job.opaqueCase);
   const { dump, core, units } = splitInputs(job.source, { opaque: Boolean(scripts) });
   const program = { entry: "main", modules: [{ name: "main", imports: [], ...core }] };
-  if (scripts) program.scripts = scripts;
+  if (scripts) {
+    const { name, bodyParts } = job.opaqueCase;
+    const bodies = core.opaqueBodies.map(({ id, part }) => `${id}/${part}`);
+    if (bodyParts) {
+      assert.equal(core.opaque.length, 0, `opaque class case ${name}: class creation became an opaque statement`);
+      assert.deepEqual(bodies.sort(), [...bodyParts].sort(), `opaque class case ${name}: callable identities changed`);
+    } else {
+      assert(core.opaque.length > 0, `opaque statement case ${name}: no statement is opaque`);
+    }
+    program.scripts = scripts;
+  }
   job.splitInput = { dump, units, bundle: { program, units: unitsOf(core) } };
   return job.splitInput;
 }
@@ -892,7 +883,7 @@ function split(job, bundle, dump, kind, spec, named) {
     assert(slice?.startsWith("moves"), `${label}: the required move is outside the proved moves slice: ${slice}`);
   }
   try {
-    const scripts = job.program?.scripts;
+    const scripts = bundle.program.scripts;
     const program = scripts
       ? { ...coreProgramOf(entry, { ids: modules }), scripts }
       : toCoreProgram(entry, { ids: modules });

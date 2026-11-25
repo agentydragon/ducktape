@@ -364,9 +364,11 @@ def report {calls : List Recorded} {scripts : Scripts} {refs : List (HostRef × 
     ("left", s.world.state.left.length), ("handed", s.world.handed.size),
     ("state", toString (hash (showState s)))]).compress
 
-def runLine (fuel : Nat) (line : String) (decode := Decode.program) : String :=
-  match Json.parse line >>= fun j =>
-    do pure (← decode j, ← Decode.world j, ← Decode.scripts j, ← Decode.hostRefs j) with
+def runLine (fuel : Nat) (line : String)
+    (decode : Json → Scripts → Except String Program := fun j _ => Decode.program j) : String :=
+  match Json.parse line >>= fun j => do
+    let scripts ← Decode.scripts j
+    pure (← decode j scripts, ← Decode.world j, scripts, ← Decode.hostRefs j) with
   | .error msg => report [] (initialState (replay [] []) 0) "malformed" msg
   | .ok (program, calls, scripts, refs) =>
     let order := program.evalOrder

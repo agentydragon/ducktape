@@ -1,13 +1,8 @@
-// Programs with statements outside the model's syntax, for `differential.mjs`. The front end makes those statements
-// opaque (`to_core.mjs`, option `opaque`), and the model's world runs them from a script (`Run.lean`): for each part
-// of the opaque code of a statement, the requests the world makes. A script has to do what the JavaScript does, so the
-// model and Node print the same and end the same way; each case is also split into consecutive modules, and the split
-// must end in the bundle's state.
-//
-// `scripts` maps `"identity/part"` to requests `[op, operand…]`. Part 0 is the statement; part `k` is its `k`-th
-// function declaration, then the functions it makes when it only makes functions (no part 0 then), or a function the
-// world made with `newFunction`. A binding is named by its position in the statement's names: what it declares, then
-// its functions, then the other names it mentions, in source order.
+// These programs compare Node with worlds that answer requests for opaque code.
+// A script key is "unit/part". Part zero stands for the whole unit. Callable
+// parts count every function in lexical order, including modeled functions.
+// A script can also give a part number to a function it creates via a request.
+// Variable request slots refer to the cells the lowering gives the script.
 // An operand is a primitive (`["u"]`, `["n"]`, `["b", true]`, `["d", bits]`, `["s", text]`) or a register,
 // `["r", k]`: register 0 is the callee, 1 is `this`, then the arguments, then the answer to each request in turn.
 import { bits } from "./to_core.mjs";
@@ -238,6 +233,7 @@ export const opaqueCases = [
       const [last] = [Object.getOwnPropertyNames(box).at(-1)];
       console.log(first, last);
     `,
+    recordedSlots: { "1/0": { 2: 1 }, "4/0": { 2: 1 } }, // Drop the ambient Object slot.
     scripts: {
       "1/0": [
         ["readVar", 2],
@@ -259,6 +255,7 @@ export const opaqueCases = [
       const [first] = [Object.getOwnPropertyNames(box)[0]];
       console.log(first);
     `,
+    recordedSlots: { "1/0": { 2: 1 } }, // Drop the ambient Object slot.
     scripts: {
       "1/0": [
         ["readVar", 2],
@@ -351,6 +348,7 @@ export const opaqueCases = [
       const [made, inherited] = [Object.create(base), base.inherited];
       console.log(made.inherited, inherited, Object.getPrototypeOf(made) === base);
     `,
+    recordedSlots: { "1/0": { 3: 2 } }, // Drop the ambient Object slot.
     scripts: {
       "1/0": [
         ["readVar", 3],
@@ -514,6 +512,7 @@ export const opaqueCases = [
       console.log(count, box.v);
     `,
     // names of statement 2: count, box
+    recordedSlots: { "2/0": { 0: 1, 1: 0 } }, // Whole-unit captures sort by name.
     scripts: {
       "2/0": [
         ["readVar", 0],
@@ -560,9 +559,22 @@ export const opaqueCases = [
   },
 ];
 
-/** The scripts of a case as `corejs` reads them. */
-export const scriptsOf = (c) =>
-  Object.entries(c.scripts).map(([key, steps]) => {
+/** Recorded ESTree lowering supplies only captured cells. The diagnostic split
+ * runner still uses the slots from the JavaScript lowering. */
+export function scriptsOf(c, { recorded = false } = {}) {
+  const scripts = { ...c.scripts };
+  if (recorded)
+    for (const key of c.bodyParts ?? []) scripts[key] ??= [["unknown", `unexpected invocation of opaque body ${key}`]];
+  return Object.entries(scripts).map(([key, steps]) => {
     const [code, part] = key.split("/").map(Number);
-    return { code, part, steps, expectedKeys: c.expectedKeys?.[key] ?? [] };
+    const slots = recorded && c.recordedSlots?.[key];
+    const requests = slots
+      ? steps.map((step) =>
+          ["readVar", "initVar", "writeVar"].includes(step[0])
+            ? [step[0], slots[step[1]] ?? step[1], ...step.slice(2)]
+            : step
+        )
+      : steps;
+    return { code, part, steps: requests, expectedKeys: c.expectedKeys?.[key] ?? [] };
   });
+}

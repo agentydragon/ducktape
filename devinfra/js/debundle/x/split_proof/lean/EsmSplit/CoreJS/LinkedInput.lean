@@ -46,14 +46,24 @@ private structure Numbering where
   callable : Nat := 1
   templates : Array TemplateSite := #[]
 
-/-- Give callables and templates independent ordinals within the original unit.
-Emitters change offsets and module boundaries. Corresponding syntax retains these identities. -/
-private partial def numberSites (unit : Nat) : Json → StateM Numbering Json
+private partial def callableOffsets (j : Json) (offsets : Array (Option Nat)) : Array (Option Nat) :=
+  let offsets := if (j.getObjVal? "opaqueCaptures").isOk then
+    offsets.push (j.getObjValAs? Nat "start").toOption
+  else offsets
+  (Lower.children j).foldl (fun acc child => callableOffsets child acc) offsets
+
+/-- Give callables lexical ordinals within the original unit. Template sites use a
+separate namespace. Both identities survive printing and reparsing. -/
+private partial def annotateSites (unit : Nat) (parts : Std.HashMap Nat Nat)
+    (scripts : Std.HashSet (Nat × Nat)) : Json → StateM Numbering Json
   | .obj fields => do
     let site ← if (fields.get? "opaqueCaptures").isSome then do
-      let part := (← get).callable
-      modify fun s => { s with callable := part + 1 }
-      pure [(":opaque-unit", Lean.toJson unit), (":opaque-part", Lean.toJson part)]
+      let fallback := (← get).callable
+      modify fun s => { s with callable := fallback + 1 }
+      let offset := (fields.get? "start").bind (·.getNat?.toOption)
+      let part := (offset.bind (fun offset => parts[offset]?)).getD fallback
+      pure [(":opaque-unit", Lean.toJson unit), (":opaque-part", Lean.toJson part),
+        (":opaque-scripted", Lean.toJson (scripts.contains (unit, part)))]
     else pure []
     let template ← if fields.get? "type" == some (.str "TaggedTemplateExpression") then do
       let q := ((fields.get? "quasi").bind (fun q => (q.getObjVal? "quasis").toOption)).getD .null
@@ -62,10 +72,18 @@ private partial def numberSites (unit : Nat) : Json → StateM Numbering Json
       pure [(":template-binding", Json.str t.binding)]
     else pure []
     let children ← fields.toList.mapM fun (key, child) => do
-      pure (key, ← numberSites unit child)
+      pure (key, ← annotateSites unit parts scripts child)
     return Json.mkObj (children ++ site ++ template)
-  | .arr children => return .arr (← children.mapM (numberSites unit))
+  | .arr children => return .arr (← children.mapM (annotateSites unit parts scripts))
   | j => pure j
+
+private def numberSites (unit : Nat) (scripts : Std.HashSet (Nat × Nat)) (j : Json) : Json × Numbering :=
+  let offsets := callableOffsets j #[]
+  let starts := (offsets.toList.filterMap id).mergeSort
+  let parts := Std.HashMap.ofList (starts.zipIdx.map fun (offset, index) => (offset, index + 1))
+  -- Compact AST fixtures without ranges still have a deterministic traversal.
+  let parts := if parts.size == offsets.size then parts else {}
+  (annotateSites unit parts scripts j).run {}
 
 private structure Parsed where
   imports : List Import
@@ -73,28 +91,37 @@ private structure Parsed where
   exports : List (Name × Name)
   templates : List TemplateSite
 
-/-- Structural proofs can lower selected source units concretely and interpret the remaining whole units
-through their lexical capability lists. The ordinary linked checker lowers every unit concretely. -/
+/-- A structural proof retains non-pivots. A recorded replay retains a unit
+with a part-zero script and can script individual callable bodies. -/
 private inductive BodyFormat where
   | linked
   | structural (pivots : Std.HashSet Nat) (location : LinkedDeployment.Access)
+  | recorded (scripts : Std.HashSet (Nat × Nat))
+
+private def BodyFormat.scripts : BodyFormat → Std.HashSet (Nat × Nat)
+  | .recorded scripts => scripts
+  | _ => {}
 
 private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (imports : List Name)
     (origin : Nat) (providerSite : Option (String × Nat)) (j : Json) (exported : Bool) : Except String (Stmt × List Name × List TemplateSite) := do
-  if let .structural pivots location := format then
+  let retain (loaderNames : Option (List Name)) := do
+    let s ← OpaqueInput.unit origin j loaderNames
+    return (s, (if exported then (Lower.topDefs j).eraseDups else []), [])
+  match format with
+  | .structural pivots location =>
     unless pivots.contains origin do
-      -- A whole-unit opaque hoist represents ordinary and async functions.
-      -- Generator declarations need their own intrinsic and fresh prototype.
-      -- Lower the declaration by the same numbered, capture-checked path as a pivot.
+      -- Generators need their own intrinsic and fresh prototype.
       if Lower.typ j == "FunctionDeclaration" && Lower.flag j "generator" then
         if let some why := Lower.outsideModel false j then throw why
       else
         let names := match providerSite with
           | none => location.entryAccess.unitNames[origin]?
           | some (name, ordinal) => (location.forModule name).unitNames[ordinal]?
-        let s ← OpaqueInput.unit origin j names
-        return (s, (if exported then (Lower.topDefs j).eraseDups else []), [])
-  let (ast, sites) := (numberSites origin j).run {}
+        return ← retain names
+  | .recorded scripts =>
+    if scripts.contains (origin, 0) then return ← retain none
+  | .linked => pure ()
+  let (ast, sites) := numberSites origin format.scripts j
   if exported then
     let (bindings, s) ← FromESTree.linkedDeclaration imports ast profile
     return (s, bindings, sites.templates.toList)
@@ -105,7 +132,8 @@ private def BodyFormat.lowerDefault (format : BodyFormat) (profile : HostProfile
     (origin : Nat) (j : Json) : Except String (Stmt × Name × List TemplateSite) := do
   if let .structural pivots _ := format then
     unless pivots.contains origin do throw "unsupported opaque default export"
-  let (ast, sites) := (numberSites origin j).run {}
+  if format.scripts.contains (origin, 0) then throw "unsupported opaque default export"
+  let (ast, sites) := numberSites origin format.scripts j
   let (name, s) ← FromESTree.linkedDefaultExport imports ast profile
   return (s, name, sites.templates.toList)
 
@@ -322,7 +350,7 @@ private def decode (format : BodyFormat) (source providers files : Json) (P : Es
   let after ← installTemplates { entry := P.entry, modules := fragment.emitted ++ shared }
     (fragment.emittedTemplates ++ providerSites)
   let (before, after) ← match format with
-    | .linked => pure (before, after)
+    | .linked | .recorded _ => pure (before, after)
     | .structural _ location =>
       pure (← location.attach before, ← location.attach after)
   checkScopes before after
@@ -354,17 +382,17 @@ structure StaticSplit where
   files : Json
   plan : EsmSplit.Plan
 
-/-- Lower an unsplit module graph with the linked rules. The entry module is named `entry`, and a
-provider may import it back. Its units keep their source ordinals, and provider units follow them.
-Linking checks the same scopes and exports as `decodePair`. -/
-def program (source providers : Json) (profile : HostProfile := .empty) (entry : String := "main") :
+/-- Lower and link an unsplit graph for the recorded Node world. Source ordinals
+include the entry's import and export syntax. Provider ordinals follow the entry. -/
+def program (source providers : Json) (scripts : Std.HashSet (Nat × Nat)) (entry : String := "main") :
     Except String Program := do
   let nodes ← ESTreeUnits.nodes source
-  let original ← parse .linked profile entry nodes
+  let format := BodyFormat.recorded scripts
+  let original ← parse format .nodeRecording entry nodes
   let ps := (← providers.getObj?).toList
   for req in original.imports do
     unless ps.any (·.1 == req.source) do throw s!"missing original dependency {req.source}"
-  let (shared, providerSites) ← readProviders .linked profile ps nodes.size [entry]
+  let (shared, providerSites) ← readProviders format .nodeRecording ps nodes.size [entry]
   let p ← installTemplates { entry, modules := original.numbered entry 0 :: shared }
     (original.templates ++ providerSites)
   let _ ← scopes p

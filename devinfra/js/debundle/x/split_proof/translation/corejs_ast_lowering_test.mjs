@@ -140,6 +140,48 @@ for (const [i, source] of hostSources.entries()) {
   );
 }
 
+// A callable in a parameter default comes before a callable in the body.
+// Distinct scripted results make both dispatch and lexical numbering observable.
+const scriptedSource =
+  'const f = (callback = () => "param") => { const inside = () => "body"; return callback() + ":" + inside(); }; throw f();';
+const scripted = dumpSource(scriptedSource, { includeOpaqueCaptures: true });
+const [withoutScripts, withScripts] = run(
+  [
+    scripted,
+    {
+      ...scripted,
+      scripts: [
+        { code: 0, part: 2, steps: [["done", ["s", "first"]]] },
+        { code: 0, part: 3, steps: [["done", ["s", "second"]]] },
+      ],
+    },
+  ],
+  true
+);
+assert.deepEqual(
+  [withoutScripts.end, withoutScripts.detail],
+  await nodeOutcome(`data:text/javascript,${encodeURIComponent(scriptedSource)}`)
+);
+assert.deepEqual([withScripts.end, withScripts.detail], ["throw", "string:first:second"]);
+
+const guardedScripts = [
+  { source: 'eval("value");', part: 0, reason: /direct .eval./ },
+  { source: "await 1;", part: 0, reason: /top-level .await./ },
+  { source: "function f() { return import.meta.url; }", part: 1, reason: /lexical context/ },
+  { source: 'function f() { return import("./module.mjs"); }', part: 1, reason: /lexical context/ },
+];
+const guardedResults = run(
+  guardedScripts.map(({ source, part }) => ({
+    ...dumpSource(source, { includeOpaqueCaptures: true }),
+    scripts: [{ code: 0, part, steps: [] }],
+  })),
+  true
+);
+for (const [i, { source, reason }] of guardedScripts.entries()) {
+  assert.equal(guardedResults[i].end, "malformed", source);
+  assert.match(guardedResults[i].detail, reason, source);
+}
+
 // The line names its entry, so a provider can import the entry back.
 const cycleFiles = {
   "main.mjs": 'import { read } from "./reader.mjs"; export const value = 7; console.log(read());',

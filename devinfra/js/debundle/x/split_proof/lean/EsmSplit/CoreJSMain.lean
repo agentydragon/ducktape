@@ -7,8 +7,8 @@ def main (args : List String) : IO UInt32 := do
   match args with
   | ["--ast", file] =>
     for line in (← IO.FS.lines file) do
-      IO.println (CoreJS.runLine 100000 line fun j =>
+      IO.println (CoreJS.runLine 100000 line fun j scripts =>
         CoreJS.LinkedInput.program j ((j.getObjVal? "providers").toOption.getD (Lean.Json.mkObj []))
-          .nodeRecording ((j.getObjValAs? String "entry").toOption.getD "main"))
+          (Std.HashSet.ofList (scripts.map Prod.fst)) ((j.getObjValAs? String "entry").toOption.getD "main"))
     pure 0
   | _ => CoreJS.main args
