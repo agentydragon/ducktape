@@ -23,7 +23,6 @@ go_library(
     ],
     deps = [
         "//agentplane/proto:event_go_proto",
-        "//agentplane/sampler/internal/executionstate",
     ],
 )
 

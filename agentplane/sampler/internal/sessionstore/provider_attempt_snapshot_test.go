@@ -42,7 +42,7 @@ func installSnapshotFixtureCompaction(t *testing.T, store *Store, owner Owner) {
 func beginSnapshotFixture(t *testing.T, store *Store, owner Owner, source *Conversation) (string, []byte, *ProviderAttemptSnapshot) {
 	t.Helper()
 	request, preparation := providerAttemptTestPreparation(PendingIntentSampling)
-	id, wire, snapshot, err := store.BeginPreparedSampling(t.Context(), owner, source, &ExecutionState{}, request, preparation, providerAttemptTestPolicy())
+	id, wire, snapshot, err := store.BeginPreparedSampling(t.Context(), owner, source, request, preparation, providerAttemptTestPolicy())
 	if err != nil || id == "" || len(wire) == 0 || snapshot == nil {
 		t.Fatalf("begin prepared sampling: id=%q wire=%d bytes snapshot=%v err=%v", id, len(wire), snapshot != nil, err)
 	}
@@ -107,17 +107,19 @@ func TestPreparedSamplingParity(t *testing.T) {
 				if err := store.SetExecutorSession(t.Context(), owner, "fixture-executor-session", &shell); err != nil {
 					t.Fatal(err)
 				}
+				if err := store.CellResult(t.Context(), owner, "fixture-live-cell", executionstate.CellLive); err != nil {
+					t.Fatal(err)
+				}
 				before := snapshotFixtureCursor(t, store, session.ID)
-				state := &ExecutionState{Cells: []LiveCell{{ID: "fixture-live-cell", Status: executionstate.CellLive}}}
 				request, preparation := providerAttemptTestPreparation(PendingIntentSampling)
 				var snapshot *ProviderAttemptSnapshot
 				var id string
 				var wire []byte
 				if prepared {
 					source := snapshotFixtureRead(t, store, owner)
-					id, wire, snapshot, err = store.BeginPreparedSampling(t.Context(), owner, source, state, request, preparation, providerAttemptTestPolicy())
+					id, wire, snapshot, err = store.BeginPreparedSampling(t.Context(), owner, source, request, preparation, providerAttemptTestPolicy())
 				} else {
-					if _, err := store.PrepareSamplingContext(t.Context(), owner, state); err != nil {
+					if _, err := store.PrepareSamplingContext(t.Context(), owner); err != nil {
 						t.Fatal(err)
 					}
 					id, wire, err = store.Begin(t.Context(), owner, request, preparation, providerAttemptTestPolicyPointer())
@@ -170,8 +172,8 @@ func TestPreparedSamplingParity(t *testing.T) {
 				}
 				t.Fatalf("request byte counts differ: old=%d prepared=%d", len(old.wire), len(prepared.wire))
 			}
-			if !bytes.Contains(prepared.wire, []byte("fixture-live-cell")) || !bytes.Contains(prepared.wire, []byte("/fixture/bash")) {
-				t.Fatal("prepared request omitted environment or execution context")
+			if bytes.Contains(prepared.wire, []byte("fixture-live-cell")) || !bytes.Contains(prepared.wire, []byte("/fixture/bash")) {
+				t.Fatal("prepared request added a live-handle notice or omitted the environment update")
 			}
 			if !sameNativeContext(old.conversation.Transcript, prepared.conversation.Transcript) ||
 				!sameNativeContext(old.conversation.Context(), prepared.conversation.Context()) ||

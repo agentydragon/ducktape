@@ -278,6 +278,15 @@ continuation are checkpointed in PostgreSQL. Lost live cells and unresolved effe
 continuation; executor operations whose transport outcome is unknown are settled as abandoned and
 remain inspectable without blocking the JavaScript cell, model step, or Session. Model-facing `exec`
 and `wait`, yielded process handles, stdin and external interrupts use the pinned upstream protocol.
+For an ordinary step, the originating `exec` or `wait` result reports the outcome: a yield includes
+the opaque cell ID, and completion, failure or termination is reported in the paired result.
+`tools.exec_command` returns a running process's `session_id` to JavaScript for
+`tools.write_stdin`; the cell can include that ID in its own output if the model needs it.
+There is no separate inventory at startup, yield or settlement. See the recorded
+[Codex rust-v0.162.1 yield/wait requests][codex-yield-wait].
+
+[codex-yield-wait]: https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/core/tests/suite/code_mode.rs#L4812-L4964
+
 If `process/read` loses its transport after observing output, its nested tool promise rejects with a
 JSON rejection string containing the original failure, `remote_outcome: unknown`,
 `automatic_replay: false`, the last observed `after_seq` cursor, process and executor intent IDs,
@@ -414,7 +423,7 @@ same source, such as an environment diff in the transcript and a full rendering 
 context. The projection on each entry identifies a diff or shortened user text. Provider requests
 use the native payload. Current `notify()` output uses its existing tool-call and cell provenance.
 
-The native API packages receive execution snapshots and a provider-neutral evidence sink. Each
+The native API packages receive a provider-neutral evidence sink. Each
 stream event and its derived History observations commit atomically before parsing continues;
 evidence failure stops the stream without acknowledging the pending effect.
 Each provider-evidence write also requires its sampling or compaction intent to remain the current
@@ -653,8 +662,10 @@ cannot apply a frozen summary to a different suffix.
 Compaction takes a settled provider context. Yielded cells can keep using their existing host and
 finish nested tools under the lease that dispatched them. Compaction writes no cell or executor
 state. One transaction installs the replacement with the environment current at commit and the
-notifications queued during the summary request. The next sampling request injects a fresh
-execution-handle snapshot, including an empty snapshot if all handles have settled.
+notifications queued during the summary request. That transaction also appends one snapshot of the
+current model-visible execution handles to the replacement context, since compaction may discard
+the tool outputs that introduced the handles. The snapshot is empty if all handles have settled;
+an opaque summary can still refer to them. Later samples use ordinary tool results for changes.
 Other provider failures are permanent. Permanent failure or exhausted attempts atomically fails
 only the original command and turn, leaving the Session usable and known live cells/processes
 intact. Unresolved native effects prevent this settlement, except for effects that a live cell
@@ -1005,13 +1016,10 @@ A new owner can abandon an unfinished provider intent while old-owner writes rem
 Proven host loss prepares fresh model-visible reset context while preserving step ancestry,
 attempt count and budget. There is no elapsed turn deadline.
 
-Before sampling, the first snapshot of model-visible execution handles and subsequent changes
-append as native notices, after the
-applicable input/tool results. Unchanged snapshots do not append; disappearance emits an empty
-snapshot. Snapshot comparison uses sampler-owned context controls and deterministic handle ordering,
-not matching visible message text. Compaction requires a fresh snapshot in its replacement active
-context before the next request. This retains prior request prefixes instead of replacing an early
-execution-state message.
+Sampling appends new records without editing the sampled prefix, including historical handle
+notices and encrypted reasoning. Prepared requests still replay their original records and controls.
+Compaction writes its deterministically ordered snapshot only to the new active context. The
+snapshot record, origin and control formats stay readable by older samplers for rollback.
 
 Compaction atomically verifies the expected active context and lease before replacing it and
 settling its intent/command. It never rewrites the transcript. New responses append to both the

@@ -572,11 +572,7 @@ func TestRuntimeReconcilesLostProviderOwnerWithFreshSamplingContext(t *testing.T
 	if err := store.StampCodeHostInstance(t.Context(), oldOwner, priorHostID); err != nil {
 		t.Fatal(err)
 	}
-	state, err := store.ExecutionState(t.Context(), oldOwner)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := store.PrepareSamplingContext(t.Context(), oldOwner, state); err != nil {
+	if _, err := store.PrepareSamplingContext(t.Context(), oldOwner); err != nil {
 		t.Fatal(err)
 	}
 	settings := providerSamplingSettings(server.URL, 1)
@@ -620,6 +616,13 @@ func TestRuntimeReconcilesLostProviderOwnerWithFreshSamplingContext(t *testing.T
 	}
 	if !strings.Contains(string(freshWire), "The JavaScript host that held this Session's store()/load() values has been lost") {
 		t.Fatalf("fresh provider request omitted the host-loss notice: %s", freshWire)
+	}
+	if bytes.Contains(freshWire, []byte("Active execution handles: ")) {
+		t.Fatalf("host loss added an inventory alongside the reset notice: %s", freshWire)
+	}
+	retained, err := store.LoadProviderRequest(t.Context(), session.ID, "fixture-account", intentID)
+	if err != nil || !bytes.Equal(retained.Body, frozenWire) {
+		t.Fatalf("host loss changed the frozen historical request: err=%v", err)
 	}
 	waitProviderAttemptStatus(t, store, sessionstore.IntentSampling, commandID, 1, string(sessionstore.IntentResultAbandoned))
 	waitProviderCommandOutcome(t, store, session.ID, commandID, samplerpb.CommandOutcome_COMMAND_OUTCOME_APPLIED)

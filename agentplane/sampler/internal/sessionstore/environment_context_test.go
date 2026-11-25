@@ -69,7 +69,7 @@ func TestEnvironmentContextPrecedesTurnInputAndFollowsChanges(t *testing.T) {
 	if err := store.SetExecutorSession(t.Context(), owner, "fixture-executor-session", &bash); err != nil {
 		t.Fatal(err)
 	}
-	conversation, err := store.PrepareSamplingContext(t.Context(), owner, &ExecutionState{})
+	conversation, err := store.PrepareSamplingContext(t.Context(), owner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestEnvironmentContextPrecedesTurnInputAndFollowsChanges(t *testing.T) {
 	if !strings.Contains(latestEnvironment, "<shell>bash</shell>") {
 		t.Fatalf("learned shell was not rendered before sampling: %q", latestEnvironment)
 	}
-	unchanged, err := store.PrepareSamplingContext(t.Context(), owner, &ExecutionState{})
+	unchanged, err := store.PrepareSamplingContext(t.Context(), owner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestCompactionRefreshesEnvironmentInNativeOrder(t *testing.T) {
 			if err := store.SetExecutorSession(ctx, owner, "original-executor", new("bash")); err != nil {
 				t.Fatal(err)
 			}
-			original, err := store.PrepareSamplingContext(ctx, owner, nil)
+			original, err := store.PrepareSamplingContext(ctx, owner)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -230,7 +230,7 @@ func TestCompactionRefreshesEnvironmentInNativeOrder(t *testing.T) {
 			store.now = func() time.Time { return today }
 			// Read the persisted roots and check that an unchanged next step adds no
 			// second environment message.
-			prepared, err := store.PrepareSamplingContext(ctx, owner, nil)
+			prepared, err := store.PrepareSamplingContext(ctx, owner)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -238,8 +238,9 @@ func TestCompactionRefreshesEnvironmentInNativeOrder(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(got) != len(tc.records)+2 || !strings.Contains(string(got[len(got)-1]), lostExecutorSessionNotice) {
-				t.Fatalf("replacement did not contain the environment and executor-loss notice: %s", got)
+			if len(got) != len(tc.records)+3 || !strings.Contains(string(got[len(got)-2]), lostExecutorSessionNotice) ||
+				!strings.Contains(string(got[len(got)-1]), `Active execution handles: {\"cells\":[],\"processes\":[]}`) {
+				t.Fatalf("replacement did not contain the environment, executor-loss notice and empty compaction snapshot: %s", got)
 			}
 			if content := checkEnvironment(got[tc.envIndex], "/fixture", "2026-01-03", "zsh"); strings.Contains(content, "bash") {
 				t.Fatalf("replacement environment contains the old shell: %s", content)
@@ -279,7 +280,7 @@ func TestCompactionRefreshesEnvironmentInNativeOrder(t *testing.T) {
 			// Ordinary replay keeps the replacement; only a real environment change
 			// appends a new record, after the context already visible to the model.
 			today = today.AddDate(0, 0, 1)
-			update, err := store.PrepareSamplingContext(ctx, owner, nil)
+			update, err := store.PrepareSamplingContext(ctx, owner)
 			if err != nil {
 				t.Fatal(err)
 			}

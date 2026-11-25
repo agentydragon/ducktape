@@ -962,13 +962,32 @@ private def primitiveReplayValue : Val → Bool
   | .undef | .null | .bool _ | .num _ | .str _ => true
   | _ => false
 
-/- Until source-observation semantics are settled, enable the new logical
-rule only in schedules without functions, calls, host values or accessors. -/
+/- A literal can make the entire right operand unreachable. Use the same
+short-circuit operation as the evaluator, rather than classifying the syntax
+in that operand: it creates no functions or other values when it is skipped.
+The replay witness below still checks the actual decision in each schedule. -/
+private def literalShortCircuits (op : LogOp) (expr : Expr) : Bool :=
+  let value : Option Val := match expr with
+    | .undef => some .undef
+    | .null => some .null
+    | .bool b => some (.bool b)
+    | .num n => some (.num n)
+    | .str s => some (.str s)
+    | _ => none
+  match value with
+  | some v => match shortCircuits op v with
+    | .ok true => true
+    | _ => false
+  | none => false
+
+/- Reached syntax remains restricted to primitives, binding reads and plain
+records, keeping functions, host values and accessors on the fallback path. -/
 mutual
 
 private def primitiveLogicalExpr : Expr → Bool
   | .undef | .null | .bool _ | .num _ | .str _ | .var _ => true
-  | .logical _ left right => primitiveLogicalExpr left && primitiveLogicalExpr right
+  | .logical op left right =>
+      primitiveLogicalExpr left && (literalShortCircuits op left || primitiveLogicalExpr right)
   | .obj props => primitiveLogicalProps props
   | _ => false
 

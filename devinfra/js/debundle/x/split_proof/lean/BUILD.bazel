@@ -284,6 +284,39 @@ lean_library(
 )
 
 lean_library(
+    name = "static_provider_boundary",
+    srcs = ["EsmSplit/CoreJS/StaticProviderBoundary.lean"],
+    deps = [":corejs_certificate_support"],
+)
+
+lean_library(
+    name = "shared_provider_boundary",
+    srcs = ["EsmSplit/CoreJS/SharedProviderBoundary.lean"],
+    deps = [
+        ":corejs_certificate_support",
+        ":static_provider_boundary",
+    ],
+)
+
+lean_axiom_test(
+    name = "shared_provider_boundary_axioms_test",
+    imports = ["EsmSplit.CoreJS.SharedProviderBoundary"],
+    theorems = [
+        "CoreJS.LinkedBehavior.runUnits_append",
+        "CoreJS.LinkedBehavior.SharedProvider.run_eq",
+        "CoreJS.LinkedBehavior.SharedProvider.sameExports",
+        "CoreJS.SharedProviderBoundaryExamples.opaqueProvider_allOutcomes",
+        "CoreJS.SharedProviderBoundaryExamples.fixedGraph_allOutcomes",
+        "CoreJS.SharedProviderBoundaryExamples.opaqueProvider_sameExports",
+        "CoreJS.SharedProviderBoundaryExamples.wrongAlias_rejected",
+        "CoreJS.SharedProviderBoundaryExamples.wrongAlias_witness",
+        "CoreJS.SharedProviderBoundaryExamples.providerThrow_stops_importers",
+        "CoreJS.SharedProviderBoundaryExamples.wrongAlias_changes_run",
+    ],
+    deps = [":shared_provider_boundary"],
+)
+
+lean_library(
     name = "corejs_linked_input",
     srcs = [
         "EsmSplit/CertificateData.lean",
@@ -433,6 +466,31 @@ lean_binary(
 )
 
 lean_binary(
+    name = "provider_input_boundary_test_runner",
+    testonly = True,
+    srcs = ["ProviderInputBoundaryTest.lean"],
+    entry = "ProviderInputBoundaryTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/translation/linked:__pkg__"],
+    deps = [
+        ":corejs_linked_input",
+        ":corejs_structural",
+        ":shared_provider_boundary",
+    ],
+)
+
+lean_axiom_test(
+    name = "provider_input_boundary_axioms_test",
+    srcs = ["ProviderInputBoundaryTest.lean"],
+    imports = ["ProviderInputBoundaryTest"],
+    theorems = ["ProviderBoundaryFixture.certify"],
+    deps = [
+        ":corejs_linked_input",
+        ":corejs_structural",
+        ":shared_provider_boundary",
+    ],
+)
+
+lean_binary(
     name = "joint_static_test_runner",
     testonly = True,
     srcs = ["JointStaticTest.lean"],
@@ -498,6 +556,15 @@ lean_binary(
     testonly = True,
     srcs = ["ErrorRealmTest.lean"],
     entry = "ErrorRealmTest.lean",
+    visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
+    deps = [":corejs_runtime"],
+)
+
+lean_binary(
+    name = "global_env_test_runner",
+    testonly = True,
+    srcs = ["GlobalEnvTest.lean"],
+    entry = "GlobalEnvTest.lean",
     visibility = ["//devinfra/js/debundle/x/split_proof/model:__pkg__"],
     deps = [":corejs_runtime"],
 )
@@ -581,6 +648,7 @@ lean_axiom_test(
         "EsmSplit.CoreJS.Split",
         "EsmSplit.CoreJS.StateMatch",
         "EsmSplit.CoreJS.StatementFrame",
+        "EsmSplit.CoreJS.StaticProviderBoundary",
         "EsmSplit.CoreJS.StructuralCertificate",
         "EsmSplit.CoreJS.WrapperLinked",
         "EsmSplit.CoreJS.WrapperMove",
@@ -607,6 +675,15 @@ lean_axiom_test(
         "CoreJS.LinkedBehaviorExamples.jsonLiteralRoundTrip",
         "CoreJS.LinkedBehaviorExamples.sharedJsonLiteralRoundTrip",
         "CoreJS.LinkedBehaviorExamples.movedClosure",
+        "CoreJS.StaticProviderBoundary.liveCells",
+        "CoreJS.StaticProviderBoundary.providerPrefix",
+        "CoreJS.StaticProviderBoundary.importerContinuation",
+        "CoreJS.StaticProviderBoundary.linkedBoundary",
+        "CoreJS.StaticProviderBoundary.allOutcomes",
+        "CoreJS.StaticProviderBoundary.sameExports",
+        "CoreJS.StaticProviderBoundary.wrongAlias",
+        "CoreJS.StaticProviderBoundary.effectfulOnce",
+        "CoreJS.StaticProviderBoundary.wrongAlias_changes_run",
         "CoreJS.reachFrame_fromWorld",
         "CoreJS.reachFrame_hostCall",
         "CoreJS.reachFrame_observeGlobalTypeof",
@@ -846,6 +923,7 @@ lean_axiom_test(
         ":corejs_runtime",
         ":corejs_structural",
         ":planner",
+        ":static_provider_boundary",
     ],
 )
 
@@ -962,4 +1040,78 @@ lean_test(
 py_library(
     name = "strategy_census_wrapper",
     srcs = ["strategy_census_wrapper.py"],
+)
+
+lean_axiom_test(
+    name = "shared_stack_string_axioms_test",
+    srcs = ["EsmSplit/CoreJS/SharedStackString.lean"],
+    imports = ["EsmSplit.CoreJS.SharedStackString"],
+    theorems = [
+        "CoreJS.SharedStackString.movedWrite",
+        "CoreJS.SharedStackString.mutantLookup",
+        "CoreJS.SharedStackString.mutantDistinguished",
+        "CoreJS.SharedStackString.protoKeyExample",
+        "CoreJS.SharedStackString.overrideThrows",
+        "CoreJS.SharedStackString.isolatedSurrogateRefused",
+    ],
+    deps = [":corejs_runtime"],
+)
+
+lean_axiom_test(
+    name = "intrinsic_error_reference_axioms_test",
+    srcs = [
+        "EsmSplit/CoreJS/IntrinsicErrorReference.lean",
+        "EsmSplit/CoreJS/StackReadBoundary.lean",
+    ],
+    imports = ["EsmSplit.CoreJS.IntrinsicErrorReference"],
+    theorems = [
+        "CoreJS.IntrinsicErrorReference.successHasOrigin",
+        "CoreJS.IntrinsicErrorReference.unsupportedHasNoOrigin",
+        "CoreJS.IntrinsicErrorReference.aliasAllocation",
+        "CoreJS.IntrinsicErrorReference.shadowRejected",
+        "CoreJS.IntrinsicErrorReference.lookalikeRejected",
+        "CoreJS.IntrinsicErrorReference.alternateTargetRejected",
+        "CoreJS.IntrinsicErrorReference.hostThrowRetained",
+        "CoreJS.IntrinsicErrorReference.prototypeThrowRetained",
+        "CoreJS.IntrinsicErrorReference.productionStillUnknown",
+    ],
+    deps = [":corejs_certificate_support"],
+)
+
+lean_axiom_test(
+    name = "stack_read_boundary_axioms_test",
+    srcs = ["EsmSplit/CoreJS/StackReadBoundary.lean"],
+    imports = ["EsmSplit.CoreJS.StackReadBoundary"],
+    theorems = [
+        "CoreJS.StackReadBoundary.getPropAt",
+        "CoreJS.StackReadBoundary.twoReadsAt",
+        "CoreJS.StackReadBoundary.evalReadAt",
+        "CoreJS.StackReadBoundary.receiverThrow",
+        "CoreJS.StackReadBoundary.evalReceiverEffect",
+        "CoreJS.StackReadBoundary.sampleReached",
+        "CoreJS.StackReadBoundary.overrideRetained",
+        "CoreJS.StackReadBoundary.errorConstructionUnknown",
+        "CoreJS.StackReadBoundary.engineErrorReadUnknown",
+    ],
+    deps = [":corejs_runtime"],
+)
+
+lean_axiom_test(
+    name = "stack_read_composition_axioms_test",
+    srcs = [
+        "EsmSplit/CoreJS/SharedStackString.lean",
+        "EsmSplit/CoreJS/StackReadBoundary.lean",
+        "EsmSplit/CoreJS/StackReadComposition.lean",
+    ],
+    imports = ["EsmSplit.CoreJS.StackReadComposition"],
+    theorems = [
+        "CoreJS.StackReadComposition.movedWithReachedReads",
+        "CoreJS.StackReadComposition.exampleWithOverride",
+        "CoreJS.StackReadComposition.syntheticIdentityOnly",
+        "CoreJS.StackReadComposition.aliasShadowAndLookalike",
+        "CoreJS.StackReadComposition.ordinaryPrototypeLookalike",
+        "CoreJS.StackReadComposition.aliasConstructionUnknown",
+        "CoreJS.StackReadComposition.shadowConstructionUnknown",
+    ],
+    deps = [":corejs_runtime"],
 )

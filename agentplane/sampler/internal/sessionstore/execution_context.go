@@ -3,7 +3,6 @@ package sessionstore
 import (
 	"cmp"
 	"encoding/json"
-	"reflect"
 	"slices"
 	"strings"
 
@@ -29,10 +28,9 @@ type (
 	}
 )
 
-func (s *Store) appendExecutionState(objects content.ContentWriter, conversation *Conversation, state *protocol.ExecutionState) error {
-	if state == nil {
-		return nil
-	}
+// appendExecutionSnapshot records the handles at compaction commit in the replacement
+// context. An empty snapshot is meaningful here: a summary can mention retired handles.
+func (s *Store) appendExecutionSnapshot(objects content.ContentWriter, conversation *Conversation, native protocol.Context, state *ExecutionState) error {
 	snapshot := modelExecutionSnapshot{Cells: []modelCell{}, Processes: []modelProcess{}}
 	for _, cell := range state.Cells {
 		snapshot.Cells = append(snapshot.Cells, modelCell{cell.ID, cell.Status})
@@ -48,40 +46,25 @@ func (s *Store) appendExecutionState(objects content.ContentWriter, conversation
 	}
 	slices.SortFunc(snapshot.Cells, func(a, b modelCell) int { return strings.Compare(a.CellID, b.CellID) })
 	slices.SortFunc(snapshot.Processes, func(a, b modelProcess) int { return cmp.Compare(a.SessionID, b.SessionID) })
-	if conversation.executionSnapshots == nil {
-		conversation.executionSnapshots = map[protocol.Context]*modelExecutionSnapshot{}
-	}
-	var sourceID, notice string
-	return conversation.apply(func(native protocol.Context) error {
-		previous := conversation.executionSnapshots[native]
-		// A missing baseline is unknown, including after migration or compaction.
-		if reflect.DeepEqual(previous, &snapshot) {
-			return nil
-		}
-		if notice == "" {
-			if s.contextSourceWrites {
-				var err error
-				sourceID, err = putRecordObject(objects, ExecutionSnapshotObject{
-					ConversationID: conversation.ID, modelExecutionSnapshot: snapshot,
-				})
-				if err != nil {
-					return err
-				}
-			}
-			raw, err := json.Marshal(snapshot)
-			if err != nil {
-				return err
-			}
-			notice = "Active execution handles: " + string(raw)
-		}
-		var origin protocol.RecordOrigin
-		if sourceID != "" {
-			origin = protocol.RecordOrigin{Kind: protocol.RecordOriginExecutionSnapshot, ObjectID: sourceID}
-		}
-		if err := native.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: notice}}, origin); err != nil {
+	var origin protocol.RecordOrigin
+	if s.contextSourceWrites {
+		sourceID, err := putRecordObject(objects, ExecutionSnapshotObject{
+			ConversationID: conversation.ID, modelExecutionSnapshot: snapshot,
+		})
+		if err != nil {
 			return err
 		}
-		conversation.executionSnapshots[native] = &snapshot
-		return nil
-	})
+		origin = protocol.RecordOrigin{Kind: protocol.RecordOriginExecutionSnapshot, ObjectID: sourceID}
+	}
+	raw, err := json.Marshal(snapshot)
+	if err != nil {
+		return err
+	}
+	if err := native.AppendNotice([]protocol.ContentPart{{Type: "input_text", Text: "Active execution handles: " + string(raw)}}, origin); err != nil {
+		return err
+	}
+	// Preserve the control format for historical request replay and for an older
+	// sampler that resumes this context after rollback.
+	conversation.executionSnapshots[native] = &snapshot
+	return nil
 }

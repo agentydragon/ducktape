@@ -419,6 +419,19 @@ func (s *Store) FinishCompaction(ctx context.Context, owner Owner, intentID stri
 		if _, err := s.settleNotifications(ctx, tx, conversation, session, true); err != nil {
 			return err
 		}
+		// Compaction can discard the outputs that introduced live handles. Capture
+		// their current state under the same owner fence as the replacement.
+		state, err := readExecutionState(ctx, tx, conversation.ID)
+		if err != nil {
+			return err
+		}
+		snapshotObjects := newContentDB(ctx, tx)
+		if err := s.appendExecutionSnapshot(snapshotObjects, conversation, conversation.ActiveContext, state); err != nil {
+			return err
+		}
+		if err := snapshotObjects.Save(); err != nil {
+			return err
+		}
 		if err := s.updateConversation(ctx, tx, conversation); err != nil {
 			return err
 		}

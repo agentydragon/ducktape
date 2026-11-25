@@ -94,6 +94,14 @@ def Env.capture (env : Env) (names : List Name) : Env where
   this := env.this
   home := env.home
 
+/-- A global environment's declarative bindings and object environment share one heap.
+The supplied object must be an ordinary modeled object with a complete property snapshot.
+`globalThis` can differ from that object (for example, a host global-this proxy). -/
+structure GlobalEnv where
+  declarative : List (Name × Addr)
+  object : Addr
+  globalThis : Val
+
 /-- What a callable object runs. `fields` are the instance fields of a class constructor. -/
 inductive Code where
   /-- An implicit derived constructor forwards to its current internal prototype. -/
@@ -452,9 +460,21 @@ def regexpGetters : List (String × RegExpGetter) := [
 
 def arrayIteratorProto : Addr := ⟨0, regexpProto.index + 1 + regexpGetters.length⟩
 
-/-- The first constructor and its prototype have distinct realm identities. -/
-def errorProto : Addr := ⟨0, arrayIteratorProto.index + 1⟩
-def errorConstructor : Addr := ⟨0, errorProto.index + 1⟩
+/-- Slots reserved after the existing prototype objects. The global object is host-owned. -/
+inductive RealmSlot where
+  | errorPrototype | errorConstructor | globalObject
+  deriving DecidableEq, BEq, Repr
+
+/-- The same ordered list determines addresses and materializes the corresponding objects. -/
+def realmSlots : List RealmSlot := [.errorPrototype, .errorConstructor, .globalObject]
+
+def realmSlotAddr (slot : RealmSlot) (_present : realmSlots.contains slot = true) : Addr :=
+  ⟨0, arrayIteratorProto.index + 1 + realmSlots.idxOf slot⟩
+
+def errorProto : Addr := realmSlotAddr .errorPrototype (by decide)
+def errorConstructor : Addr := realmSlotAddr .errorConstructor (by decide)
+/-- An empty synthetic global object. Hosts must supply a complete snapshot before use. -/
+def globalObject : Addr := realmSlotAddr .globalObject (by decide)
 
 def arrayIteratorPrototype : Obj :=
   { proto := some iteratorProto, props := hostMembers "ArrayIterator.prototype" ["next"] ++ [stringTag "Array Iterator"] }
@@ -491,6 +511,12 @@ def errorConstructorObject : Obj :=
     ("name", .data (.str "Error") false false true),
     ("prototype", .data (.obj errorProto) false false false)] }
 
+/-- Materialize the reserved slots in the same order used by `realmSlotAddr`. -/
+def realmSlotObject : RealmSlot → Obj
+  | .errorPrototype => errorPrototype
+  | .errorConstructor => errorConstructorObject
+  | .globalObject => { proto := none, props := [] }
+
 /-- The intrinsic prototypes, with every member a value of the host. `Function.prototype` is itself callable. -/
 def builtins : Array Obj := #[
   { proto := none, props := hostMembers "Object.prototype" objectProtoNames ++ [hostAccessor "Object.prototype" "__proto__"] },
@@ -503,7 +529,11 @@ def builtins : Array Obj := #[
     props := ("length", .data (.num 0) true false false) ::
       (hostMembers "Array.prototype" arrayProtoNames ++ [hostIterator "Array.prototype.values"]) },
   asyncFunctionPrototype, iteratorPrototype, generatorPrototype, generatorFunctionPrototype,
-  asyncIteratorPrototype, asyncGeneratorPrototype, asyncGeneratorFunctionPrototype, regexpPrototype] ++ (regexpGetters.map fun (k, g) => regexpGetterObject k g).toArray ++ #[arrayIteratorPrototype, errorPrototype, errorConstructorObject]
+  asyncIteratorPrototype, asyncGeneratorPrototype, asyncGeneratorFunctionPrototype, regexpPrototype] ++ (regexpGetters.map fun (k, g) => regexpGetterObject k g).toArray ++ #[arrayIteratorPrototype] ++ (realmSlots.map realmSlotObject).toArray
+
+#guard builtins.size == arrayIteratorProto.index + 1 + realmSlots.length
+#guard realmSlots.eraseDups.length == realmSlots.length
+#guard errorProto != errorConstructor && errorProto != globalObject && errorConstructor != globalObject
 
 /-! ## The host functions the world answers for -/
 

@@ -24,7 +24,7 @@ func TestProtocolEventsDoNotLoadRetainedConversationItems(t *testing.T) {
 
 func TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction(t *testing.T) {
 	store, session, owner := claimedSession(t)
-	if _, err := store.PrepareSamplingContext(t.Context(), owner, nil); err != nil {
+	if _, err := store.PrepareSamplingContext(t.Context(), owner); err != nil {
 		t.Fatal(err)
 	}
 	for _, input := range []string{"first input", "second input"} {
@@ -87,8 +87,9 @@ func TestConversationTranscriptIsAppendOnlyAcrossInputAndCompaction(t *testing.T
 		t.Fatal(err)
 	}
 	compacted := testsupport.ResponsesItems(t, conversation.Context())
-	if len(compacted) == 0 || compacted[len(compacted)-1].EncryptedContent != "opaque" {
-		t.Fatalf("compacted context=%#v", compacted)
+	if len(compacted) != 3 || compacted[1].EncryptedContent != "opaque" ||
+		!bytes.Contains(compacted[2].Content, []byte("Active execution handles: ")) {
+		t.Fatal("compacted context should contain the current environment, opaque summary and compaction snapshot")
 	}
 }
 

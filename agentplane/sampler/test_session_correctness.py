@@ -11,6 +11,7 @@ import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from itertools import pairwise
 from pathlib import Path
 from typing import Any, TypeVar, override
 
@@ -722,6 +723,7 @@ async def test_stale_json_exec_cell_id_is_a_tool_error_with_live_process(
     endpoint: Endpoint, config: Settings, store: Store, tmp_path: Path
 ) -> None:
     release = tmp_path / "release-background-process"
+    sampled_inputs: list[list[dict[str, Any]]] = []
 
     def function_output_text(body: dict[str, Any], call_id: str) -> str:
         matches = [
@@ -751,6 +753,7 @@ async def test_stale_json_exec_cell_id_is_a_tool_error_with_live_process(
         process_id: int | None = None
         try:
             async with await endpoint.next() as exchange:
+                sampled_inputs.append(exchange.request.body["input"])
                 process_arguments = {
                     "cmd": f"while [ ! -f {shlex.quote(str(release))} ]; do sleep 0.01; done; printf retained-output",
                     "yield_time_ms": 1,
@@ -766,6 +769,7 @@ async def test_stale_json_exec_cell_id_is_a_tool_error_with_live_process(
                 )
 
             async with await endpoint.next() as exchange:
+                sampled_inputs.append(exchange.request.body["input"])
                 start_output = function_output_text(exchange.request.body, "start-process")
                 match = re.search(r"process=(\d+)", start_output)
                 assert match is not None, start_output
@@ -788,6 +792,7 @@ async def test_stale_json_exec_cell_id_is_a_tool_error_with_live_process(
                 )
 
             async with await endpoint.next() as exchange:
+                sampled_inputs.append(exchange.request.body["input"])
                 invalid_output = function_output_text(exchange.request.body, "stale-cell-id")
                 assert "known live cell_id" in invalid_output
                 assert "process session_id is not accepted" in invalid_output
@@ -823,6 +828,7 @@ async def test_stale_json_exec_cell_id_is_a_tool_error_with_live_process(
                 )
 
             async with await endpoint.next() as exchange:
+                sampled_inputs.append(exchange.request.body["input"])
                 valid_output = function_output_text(exchange.request.body, "valid-after-stale")
                 assert "Script completed" in valid_output
                 assert "state=preserved" in valid_output
@@ -852,15 +858,18 @@ async def test_stale_json_exec_cell_id_is_a_tool_error_with_live_process(
                 timeout_s=None,
             )
             async with await endpoint.next() as exchange:
-                active_handles = json.dumps(exchange.request.body["input"])
-                assert "Active execution handles" in active_handles
-                assert str(process_id) in active_handles
+                sampled_inputs.append(exchange.request.body["input"])
+                assert f"process={process_id}" in function_output_text(exchange.request.body, "valid-after-stale")
                 await exchange.send(
                     *response_stream([Message("The next input still works.")], model="test-model").events
                 )
             assert (
                 await turn_completed(stub, request.session_id, "after-stale-json-cell")
             ).status == event_pb2.TURN_STATUS_COMPLETED
+            for earlier, later in pairwise(sampled_inputs):
+                assert later[: len(earlier)] == earlier
+            snapshot_counts = [json.dumps(items).count("Active execution handles: ") for items in sampled_inputs]
+            assert snapshot_counts == [0, 0, 0, 0, 0]
         finally:
             release.write_text("")
             if process_id is not None:

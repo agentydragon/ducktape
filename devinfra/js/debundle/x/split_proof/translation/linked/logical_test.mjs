@@ -68,7 +68,7 @@ for (const [operator, shortCircuit, evaluateRight] of cases) {
         forcePreview(files, candidate);
       } else {
         assert.equal(verdict.status, "certified", log);
-        assert.equal(verdict.strategy, operator === "||" ? "generated-proof" : "compiled-replay-premised", log);
+        assert.equal(verdict.strategy, "compiled-replay-premised", log);
         assert.deepEqual(observe(files.sourceFile, "result"), { result: wrap(left) });
       }
       assert.deepEqual(moduleEvaluationOrder(candidate, spec.entry), [...spec.order, spec.entry]);

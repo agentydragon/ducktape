@@ -1,10 +1,6 @@
 package protocol
 
-import (
-	"encoding/json"
-
-	"github.com/agentydragon/ducktape/agentplane/sampler/internal/executionstate"
-)
+import "encoding/json"
 
 type APIStyle string
 
@@ -87,24 +83,6 @@ func ContextRecords(records []json.RawMessage, origin RecordOrigin) []ContextRec
 	}
 	return out
 }
-
-// ExecutionState contains only the handles visible to a model.
-type ExecutionState struct {
-	Cells     []ActiveCell
-	Processes []ActiveProcess
-}
-type (
-	ActiveCell struct {
-		ID     string
-		Status executionstate.CellStatus
-	}
-	ActiveProcess struct {
-		ModelSessionID *int
-		Status         executionstate.ProcessStatus
-		TTY            bool
-		ExitCode       *int
-	}
-)
 
 type SessionAttribution struct {
 	SessionID string

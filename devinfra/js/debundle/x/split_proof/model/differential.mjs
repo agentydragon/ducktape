@@ -149,7 +149,6 @@ const unitCount = (source) =>
  * listed program that lowers.
  */
 const linkedRefusals = new Map([
-  ["case classes: methods, accessors, fields and statics, and the names they give", /unexpected function-local name/],
   [
     "modules: var destructuring exports each binding and retains the original receiver",
     /repeated local or imported binding/,
