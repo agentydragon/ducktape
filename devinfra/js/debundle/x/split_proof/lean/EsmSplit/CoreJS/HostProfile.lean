@@ -92,6 +92,8 @@ def assumptions (p : HostPremises) : List String :=
       | .property receiver key => receiver ++ "." ++ key
     let result := if ref == .property "Symbol" "iterator" && identity == "Symbol.iterator" then
       "the well-known iterator symbol"
+    else if ref == .property "Symbol" "asyncIterator" && identity == "Symbol.asyncIterator" then
+      "the well-known asyncIterator symbol"
     else if ref == .property "Symbol" "hasInstance" && identity == "Symbol.hasInstance" then
       "the well-known hasInstance symbol"
     else if ref == .property "Symbol" "toStringTag" && identity == "Symbol.toStringTag" then

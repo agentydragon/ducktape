@@ -1077,7 +1077,7 @@ private partial def linkedDerivedConstructor (profile : HostProfile) (imports : 
     checkFunctionOverlap body
     return (initializers ++ before, args, .withDefaults name .classCtor false slots arity body)
 
-/-- Public, static-name class elements with default or explicit derived constructors. -/
+/-- Class elements with default or explicit derived constructors. -/
 private partial def linkedClass (profile : HostProfile) (imports : List Name) (inFunction : Bool) (hint : Name) (j : Json) :
     Except String Expr := do
   let id ← j.getObjVal? "id"
@@ -1125,11 +1125,12 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
         brands := brands.push (.field false make (.prim (.privateSlot .addMethod) [table, .this, .var binding]))
       continue
     let (key, keyExpr) ← if ← member.getObjValAs? Bool "computed" then do
-      if let some sym := (ambientSymbolMember? keyNode).bind WellKnownSymbol.ofMember? then
-        unless tag == "MethodDefinition" && profile == .browserPage do throw "unsupported computed class key"
-        -- SetFunctionName wraps a symbol’s description in brackets.
-        pure (s!"[{sym.description}]", Expr.prim (.wellKnownSymbol sym) [])
-      else if tag == "PropertyDefinition" && !static && (← field keyNode "type") == "Identifier" &&
+      if tag == "MethodDefinition" then
+        if let some sym := (ambientSymbolMember? keyNode).bind WellKnownSymbol.ofMember? then
+          unless profile == .browserPage do throw "unsupported computed class key"
+          pure (s!"[{sym.description}]", Expr.prim (.wellKnownSymbol sym) [])
+        else pure ("", ← linkedExpr profile imports inFunction "" keyNode)
+      else if !static && (← field keyNode "type") == "Identifier" &&
           (field keyNode "k").toOption.any (["L", "T", "V"].contains ·) then
         if ← isAnonymousDefinition value then throw "unsupported function or class named by a computed field key"
         pure ("", ← reference imports inFunction keyNode profile)

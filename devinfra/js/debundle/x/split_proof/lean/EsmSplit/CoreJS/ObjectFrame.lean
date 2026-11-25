@@ -156,8 +156,8 @@ theorem evalProps_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env
 theorem evalMembers_reachFrame_step {r R cells A n} (away : Away r R A) (env : Env) {proto c : Addr}
     (hp : A (.obj proto)) (hc : A (.obj c))
     (eval : ∀ e, ReachFrame r R cells A (SafeVal A) (evalExpr n env e : M W Val))
-    (make : ∀ home : Addr, A (.obj home) → ∀ f,
-      ReachFrame r R cells A (SafeVal A) (makeFunc { env with home := some home } f : M W Val))
+    (make : ∀ home : Addr, A (.obj home) → ∀ key affix f,
+      ReachFrame r R cells A (SafeVal A) (makeClassMethod env home key affix f : M W Val))
     (rest : ∀ ms, ReachFrame r R cells A (fun _ => True) (evalMembers n env proto c ms : M W _))
     (ms : List ClassMember) :
     ReachFrame r R cells A (fun _ => True) (evalMembers (n + 1) env proto c ms : M W _) := by
@@ -175,7 +175,7 @@ theorem evalMembers_reachFrame_step {r R cells A n} (away : Away r R A) (env : E
       intro kv _
       apply (reachFrame_toKey r R cells A kv).bind
       intro key _
-      apply (make _ (hs static) f).bind
+      apply (make _ (hs static) key "" f).bind
       intro v hv
       apply (reachFrame_defineOwn away (hs static) key _
         ⟨descriptorField_safe hv, descriptorNone_safe, descriptorNone_safe⟩).bind
@@ -186,7 +186,7 @@ theorem evalMembers_reachFrame_step {r R cells A n} (away : Away r R A) (env : E
       intro kv _
       apply (reachFrame_toKey r R cells A kv).bind
       intro key _
-      apply (make _ (hs static) f).bind
+      apply (make _ (hs static) key "get " f).bind
       intro v hv
       apply (reachFrame_defineOwn away (hs static) key _
         ⟨descriptorNone_safe, descriptorField_safe hv, descriptorNone_safe⟩).bind
@@ -197,7 +197,7 @@ theorem evalMembers_reachFrame_step {r R cells A n} (away : Away r R A) (env : E
       intro kv _
       apply (reachFrame_toKey r R cells A kv).bind
       intro key _
-      apply (make _ (hs static) f).bind
+      apply (make _ (hs static) key "set " f).bind
       intro v hv
       apply (reachFrame_defineOwn away (hs static) key _
         ⟨descriptorNone_safe, descriptorNone_safe, descriptorField_safe hv⟩).bind

@@ -193,10 +193,17 @@ for (const [name, source, expectedReason] of [
     "const B = class extends null { constructor() { super(); super(); } }; export const result = 1;",
     /super|derived constructor/i,
   ],
-  ["computed", "const B = class { ['x']() {} }; export const result = 1;", /computed class key/],
 ]) {
   const test = sequentialSplit(name, source, { "class.mjs": ["#0"], [entry]: ["#1"] }, ["class.mjs"]);
   assert.equal(test.verdict.status, "rejected", test.log);
   assert.match(test.verdict.reason, expectedReason);
   assert(!existsSync(test.out));
 }
+
+const literalMethod = sequentialSplit(
+  "computed-literal-method",
+  "const B = class { ['x']() { return this; } }; export const result = B.prototype.x.name === 'x' && B.prototype.x() === B.prototype;",
+  { "class.mjs": ["#0"], [entry]: ["#1"] },
+  ["class.mjs"]
+);
+assertCertifiedResult(literalMethod, true);
