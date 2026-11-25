@@ -11,7 +11,7 @@ because authored graph options and module ownership belong to that stage.
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load("@bazel_skylib//lib:shell.bzl", "shell")
-load(":directory_artifact.bzl", "single_directory")
+load(":directory_artifact.bzl", "named_package_roots", "single_directory")
 
 # Sync: `GATE_REJECTED_EXIT_CODE` in `pipeline.rs`.
 _GATE_REJECTED_EXIT_CODE = 3
@@ -317,7 +317,7 @@ def _spec_plan(ctx):
         ]
 
     package_args = []
-    for pkg_label, pkg_name in ctx.attr.package_roots.items():
+    for pkg_name, pkg_label in named_package_roots(ctx.attr.package_roots).items():
         pkg_dir = paths.relativize(single_directory(pkg_label).path, bin_dir)
         package_args += [
             shell.quote("--package-root"),

@@ -2,7 +2,7 @@
 
 load("@bazel_skylib//lib:shell.bzl", "shell")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
-load(":directory_artifact.bzl", "single_directory")
+load(":directory_artifact.bzl", "named_package_roots", "single_directory")
 
 _DEBUNDLER = Label("@ducktape//devinfra/js/debundle:debundler")
 _LAUNCHER = Label("//devinfra/js/debundle:debundle_cli.sh")
@@ -146,12 +146,7 @@ def debundle_cli(
         subset_file = native.package_relative_label(str(ownership_subset))
         args.extend(["--ownership-subset-root", _runfile_arg(data, subset_file)])
 
-    package_names = {}
-    for index, (package_root, package_name) in enumerate(package_roots.items()):
-        if package_name in package_names:
-            fail("package_roots contains duplicate package name {!r}".format(package_name))
-        package_names[package_name] = True
-
+    for index, (package_name, package_root) in enumerate(named_package_roots(package_roots).items()):
         root_label = native.package_relative_label(str(package_root))
         root_tree = _checked_tree(name + "__package_{}".format(index), root_label, testonly)
         args.extend([
