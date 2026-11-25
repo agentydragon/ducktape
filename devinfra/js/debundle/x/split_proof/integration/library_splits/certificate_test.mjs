@@ -5,6 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { topLevelStatements } from "../../translation/scope_metadata.mjs";
 import { spec } from "./gen_spec.mjs";
+import { writeDeployment } from "../../translation/testing/deployment_manifest.mjs";
 import { smoke } from "./smoke.mjs";
 
 const results = [];
@@ -41,7 +42,8 @@ function extract(n, unit) {
 function inputs(source, name, placement) {
   const file = path.join(tmp, name + ".json");
   writeFileSync(file, JSON.stringify(placement));
-  return [source, file, path.join(tmp, name)];
+  const out = path.join(tmp, name);
+  return [writeDeployment(source, file, out), out];
 }
 
 for (const source of process.argv.slice(2)) {
@@ -63,13 +65,13 @@ for (const source of process.argv.slice(2)) {
     if (verdict.status === "rejected") {
       // A refusal without an observed difference is inconclusive.
       assert.equal(verdict.scope, "linked-structural");
-      assert(!existsSync(args[2]));
+      assert(!existsSync(args[1]));
       assert.equal(strategy, "advance-second", JSON.stringify(verdict));
       results.push({ library, strategy, outcome: "unknown", reason: verdict.reason });
     } else {
       if (strategy === "advance-function") assert.equal(verdict.scope, "linked-structural-pivot");
       assert.deepEqual(certificate([...args, "--check-output"]), verdict);
-      assert.deepEqual(await smoke(library, path.join(args[2], placement.entry)), baseline);
+      assert.deepEqual(await smoke(library, path.join(args[1], placement.entry)), baseline);
       results.push({ library, strategy, outcome: "certified", scope: verdict.scope });
     }
   }
@@ -87,7 +89,7 @@ for (const source of process.argv.slice(2)) {
       /Object\.defineProperty@1:.*intrinsic\.Object\.defineProperty.*no observable effects/
     );
     assert.deepEqual(certificate([...args, "--check-output"]), verdict);
-    assert.deepEqual(await smoke(library, path.join(args[2], placement.entry)), baseline);
+    assert.deepEqual(await smoke(library, path.join(args[1], placement.entry)), baseline);
     results.push({
       library,
       strategy: "advance-second-portable",
@@ -108,9 +110,10 @@ const placement = extract(3, 1);
 const args = inputs(source, "early-read", placement);
 const refused = certificate(args);
 assert.equal(refused.status, "rejected");
-assert(!existsSync(args[2]));
+assert(!existsSync(args[1]));
 const preview = path.join(tmp, "uncertified-preview");
-run(["--diagnostic", source, args[1], preview, "--force"]);
+const rendered = run(["--diagnostic", args[0], preview, "--force"]);
+assert(existsSync(path.join(preview, placement.entry)), rendered.stdout + rendered.stderr);
 const before = await import(pathToFileURL(source));
 const after = await import(pathToFileURL(path.join(preview, placement.entry)));
 assert.deepEqual(Object.keys(before), ["current", "observed"]);

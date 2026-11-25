@@ -6,6 +6,7 @@ import { strict as assert } from "node:assert";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { writeDeployment } from "./testing/deployment_manifest.mjs";
 import { acorn, dump } from "./parser.mjs";
 
 const temp = process.env.TEST_TMPDIR;
@@ -29,7 +30,9 @@ function footprints(name, code) {
   );
   const out = path.join(temp, name);
   mkdirSync(out, { recursive: true });
-  const split = spawnSync(process.env.LOWERSPLIT, ["--diagnostic", input, spec, out], { encoding: "utf8" });
+  const split = spawnSync(process.env.LOWERSPLIT, ["--diagnostic", writeDeployment(input, spec, out), out], {
+    encoding: "utf8",
+  });
   assert.equal(split.status, 0, `${split.stdout}\n${split.stderr}`);
   const counted = Number(split.stdout.match(/(\d+) touch the world/)?.[1]);
   return { effects, counted };

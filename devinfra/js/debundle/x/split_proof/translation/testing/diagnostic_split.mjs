@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { writeDeployment } from "./deployment_manifest.mjs";
 import { dump } from "../parser.mjs";
 
 export const run = (binary, args) => spawnSync(binary, args, { encoding: "utf8" });
@@ -26,5 +27,5 @@ export function prepareSideSplit(name, code, selectedSide) {
 }
 
 export function lowerDiagnostic({ input, spec, dir }, ...flags) {
-  return run(process.env.LOWERSPLIT, ["--diagnostic", input, spec, dir, ...flags]);
+  return run(process.env.LOWERSPLIT, ["--diagnostic", writeDeployment(input, spec, dir), dir, ...flags]);
 }

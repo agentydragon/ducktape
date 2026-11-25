@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { writeDeployment } from "../testing/deployment_manifest.mjs";
 import path from "node:path";
 
 const root = path.join(process.env.TEST_TMPDIR, "staged-ast-gate");
@@ -18,7 +19,7 @@ writeFileSync(spec, JSON.stringify({ entry: "entry.mjs", modules: { "entry.mjs":
 writeFileSync(host, JSON.stringify({ profile: "browser-page" }));
 
 function certify(checkOutput) {
-  const args = [source, spec, out, "--require", "normal-completion", "--host-contract", host];
+  const args = [writeDeployment(source, spec, out), out, "--require", "normal-completion", "--host-contract", host];
   if (checkOutput) args.push("--check-output");
   const run = spawnSync(process.env.LOWERSPLIT, args, { encoding: "utf8" });
   assert.equal(run.status, 0, run.stdout + run.stderr);

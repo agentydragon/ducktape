@@ -9,7 +9,7 @@ use command_output::{infallible, write_report};
 use graph_provenance::CurrentRoots;
 use graph_provenance::VerifiedGraphSourceContext;
 use peel::OutputFormat;
-use resolved_placement::ResolvePlacementArgs;
+use resolved_placement::{ResolvePlacementArgs, ResolvePlacementsArgs};
 use transform_command::{ProjectAnalysisArgs, ProjectApplyArgs};
 
 use selector_codemod::match_selector::{
@@ -175,6 +175,9 @@ enum SpecNsCommand {
     ProjectAnalysis(ProjectAnalysisArgs),
     /// Resolve canonical ownership selectors and export one chunk's source-unit assignment.
     ResolvePlacement(ResolvePlacementArgs),
+    /// Resolve canonical ownership selectors once and export several chunks' source-unit assignments.
+    #[command(name = "resolve-placements")]
+    ResolvePlacements(ResolvePlacementsArgs),
     /// Internal Bazel action API for canonical apply inputs.
     #[command(hide = true)]
     ProjectApply(ProjectApplyArgs),
@@ -537,6 +540,7 @@ pub(super) fn run(
         SpecNsCommand::Lint(args) => crate::spec_lint::run(stderr, args, output),
         SpecNsCommand::ProjectAnalysis(args) => args.run(stderr),
         SpecNsCommand::ResolvePlacement(args) => args.run(stderr),
+        SpecNsCommand::ResolvePlacements(args) => args.run(stderr),
         SpecNsCommand::ProjectApply(args) => args.run(),
         SpecNsCommand::ProposeCommutations(p) => crate::propose_commutations::run(
             p,

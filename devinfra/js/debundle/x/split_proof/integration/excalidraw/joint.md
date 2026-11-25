@@ -1,33 +1,17 @@
-# Joint main and editor deployment trial
+# Certified Excalidraw deployment
 
-Run `bbr test //devinfra/js/debundle/x/split_proof/integration/excalidraw:joint_deployment_test`.
-The input is one named binding from each canonical Rust placement:
-`strokeEllipseWithRotation` from main and `centerScrollOn` from editor. The
-fixture checks both source digests, resolves their original filenames from
-[the pinned static closure](main_static_sha256.json), and retains each original
-public path. The generated private modules have distinct paths.
+Run `bbr test //devinfra/js/debundle/x/split_proof/integration/excalidraw:excalidraw_certified_browser_smoke`.
 
-The test stages both planned outputs in one directory and copies each of the
-seven unchanged static providers once. It checks the complete file set and
-compares each split's syntax and callable source spelling against that split's
-original source. It reparses the staged files for the proof. Lazy resources
-outside the overlay still come from the original bundle.
+One [ownership subset](../../../../excalidraw/deployment_smoke_subset.json)
+selects `strokeEllipseWithRotation` from main and 365 editor bindings. Rust
+exports canonical and selected placements from the same selector solve. Lean
+checks their source digests and original unit identities, stages both splits
+and the seven fixed static providers, reparses the complete output, and
+certifies one initialization schedule rooted at `main.js`.
 
-[The proof](../../lean/EsmSplit/CoreJS/JointStatic.lean) uses a single graph
-rooted at main.js. Original ordinals occupy disjoint ranges for main, editor,
-then the shared providers in path order. Emitted units keep their original
-identities. Each opaque unit receives the loader cells of its own original
-referrer and ordinal. Both layouts use the same checked resource inventory;
-location-sensitive units stay at their original effective URLs. The checker
-compares the actual public cells at both original paths and certifies the
-whole initialization schedule.
-
-The verdict is equality of normal CoreJS final states under the browser-page
-interpretation, the native metadata record initialization premise and the
-fixed empty import map. It assumes the indicated origin and paths resolve to
-these assets with one module record per effective URL. The test's undeclared
-outputs contain both selected placements, the proof log and `inventory.json`:
-source hashes and effective URLs, linked unit ranges, per-referrer loader
-imports and metadata, and the staged file hashes. This trial has no browser
-runtime assertion. The separate single-chunk Chromium tests exercise their
-respective deployments.
+The proof checks both original public namespaces under the recorded
+browser-page, native metadata, stable `Math.PI@1`, and empty import-map
+premises. A separate disk check verifies the same deployment. Chromium loads
+the original and checked trees in fresh contexts, exercises drawing and undo,
+and checks extracted renderer, editor, and geometry functions. Lazy files
+outside the static overlay resolve against the original bundle.

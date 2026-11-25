@@ -6,6 +6,7 @@ import path from "node:path";
 import { dump } from "./parser.mjs";
 import { topLevelStatements } from "./scope_metadata.mjs";
 import { generateAstBundle } from "./testing/ast_generator.mjs";
+import { writeDeployment } from "./testing/deployment_manifest.mjs";
 import { lcg32 } from "../seeded_random.mjs";
 
 const tmp = process.env.TEST_TMPDIR;
@@ -110,7 +111,7 @@ if (process.argv[2] !== "--worker") {
       writeFileSync(path.join(dir, "source.mjs"), source);
       writeFileSync(path.join(dir, "ast.json"), JSON.stringify(program));
       writeFileSync(path.join(dir, "spec.json"), JSON.stringify({ entry: "entry.mjs", modules, order }));
-      const args = ["--diagnostic", path.join(dir, "ast.json"), path.join(dir, "spec.json"), dir];
+      const args = ["--diagnostic", writeDeployment(path.join(dir, "ast.json"), path.join(dir, "spec.json"), dir), dir];
       const checked = run(process.env.LOWERSPLIT, args);
       writeFileSync(path.join(dir, "checker.log"), checked.stdout + checked.stderr);
       if (checked.status === 0) {

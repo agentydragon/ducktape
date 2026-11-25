@@ -90,7 +90,7 @@ private def BodyFormat.lower (format : BodyFormat) (profile : HostProfile) (impo
       else
         let names := match providerSite with
           | none => location.entryAccess.unitNames[origin]?
-          | some (name, ordinal) => location.providers[name]?.bind fun a => a.unitNames[ordinal]?
+          | some (name, ordinal) => (location.forModule name).unitNames[ordinal]?
         let s ← OpaqueInput.unit origin j names
         return (s, (if exported then (Lower.topDefs j).eraseDups else []), [])
   let (ast, sites) := (numberSites origin j).run {}
@@ -353,24 +353,6 @@ structure StaticSplit where
   files : Json
   plan : EsmSplit.Plan
 
-/-- Decode two static splits into one pair of programs rooted at the application.
-Only these original modules exist. No loader, metadata, dynamic import or host
-identity premises are supplied. Fully lower both sets of units; use the same
-origin range for a source unit, its allocations and its emitted callable sites. -/
-def decodeStaticSplits (app provider : StaticSplit) : Except String (Program × Program) := do
-  let paths := (app.plan.mods ++ provider.plan.mods).map (·.name)
-  unless paths.Nodup do throw "joint output path collision"
-  for chunk in [app, provider] do
-    unless (← ModuleLocation.uses chunk.plan.entry chunk.source).isEmpty do
-      throw s!"{chunk.plan.entry}: joint static split requires location-independent units"
-  let a ← decodeFragment .linked .empty app.source app.files app.plan app.plan.entry [provider.plan.entry] 0
-  let b ← decodeFragment .linked .empty provider.source provider.files provider.plan provider.plan.entry
-    [app.plan.entry] a.unitCount
-  let before ← installTemplates ⟨app.plan.entry, [a.sourceModule, b.sourceModule]⟩ (a.sourceTemplates ++ b.sourceTemplates)
-  let after ← installTemplates ⟨app.plan.entry, a.emitted ++ b.emitted⟩ (a.emittedTemplates ++ b.emittedTemplates)
-  checkScopes before after
-  return (before, after)
-
 /-- Lower an unsplit module graph with the linked rules. The entry module is named `entry`, and a
 provider may import it back. Its units keep their source ordinals, and provider units follow them.
 Linking checks the same scopes and exports as `decodePair`. -/
@@ -387,36 +369,49 @@ def program (source providers : Json) (profile : HostProfile := .empty) (entry :
   let _ ← scopes p
   return p
 
-/-- Lower both changed chunks against the same closure of providers and
-loader capabilities. The split provider keeps its original referrer and
-local ordinal even when its executable unit ID is rebased. -/
-def decodeJointDeployment (app provider : StaticSplit) (shared : Json) (inputs : LinkedDeployment.Input)
-    (profile : HostProfile) : Except String (Program × Program) := do
-  let names := (app.plan.mods ++ provider.plan.mods).map (·.name)
-  unless names.Nodup do throw "joint output path collision"
-  let others := (← shared.getObj?).toList
-  let otherNames := others.map Prod.fst
-  unless !names.any otherNames.contains do throw "shared provider overlaps joint output"
-  unless inputs.entry == app.plan.entry do throw "joint deployment root differs"
-  let access ← LinkedDeployment.check inputs app.source
-    (.mkObj ((provider.plan.entry, provider.source) :: others)) app.plan
-  let resources (path : String) := inputs.before[path]?
-  -- 'check' above already collected this provider's capabilities in the app
-  -- graph. Check that the editor split leaves its location-sensitive sites
-  -- in that very referrer, and that its new routes are fresh too.
-  let _ ← ModuleLocation.check provider.source provider.plan.entry provider.plan resources resources inputs.options
-  let moved (p : EsmSplit.Plan) (base : Nat) := Std.HashSet.ofList <|
-    (p.mods.filter (fun m => m.name != p.entry)).flatMap fun m => m.stmts.map (base + ·)
-  let a ← decodeFragment (.structural (moved app.plan 0) access) profile app.source app.files app.plan
-    app.plan.entry (provider.plan.entry :: otherNames) 0
-  let b ← decodeFragment (.structural (moved provider.plan a.unitCount) access) profile provider.source provider.files provider.plan
-    provider.plan.entry (app.plan.entry :: otherNames) a.unitCount (some provider.plan.entry)
-  let (fixed, fixedSites) ← readProviders (.structural {} access) profile others (a.unitCount + b.unitCount)
-    [app.plan.entry, provider.plan.entry]
-  let before ← installTemplates ⟨app.plan.entry, a.sourceModule :: b.sourceModule :: fixed⟩
-    (a.sourceTemplates ++ b.sourceTemplates ++ fixedSites)
-  let after ← installTemplates ⟨app.plan.entry, a.emitted ++ b.emitted ++ fixed⟩
-    (a.emittedTemplates ++ b.emittedTemplates ++ fixedSites)
+/-- Public paths are the original module records, including unchanged dependencies.
+The candidate can also contain private files and model-only helper modules. -/
+def publicPaths (parts : List StaticSplit) (shared : Json) : Except String (List String) := do
+  return parts.map (·.plan.entry) ++ (← shared.getObj?).toList.map Prod.fst
+
+/-- Decode all placements in one namespace. IDs follow the input list and the
+sorted fixed-file map, independently of either graph's evaluation order. In
+structural mode each fragment's hints and capabilities use its local ordinals. -/
+def decodeDeployment (entry : String) (parts : List StaticSplit) (shared : Json)
+    (inputs : Option LinkedDeployment.Input) (profile : HostProfile)
+    (hints : String → List Nat) : Except String (Program × Program) := do
+  let fixedFiles := (← shared.getObj?).toList
+  let originals ← publicPaths parts shared
+  let outputs := parts.flatMap fun part => part.plan.mods.map (·.name)
+  let all := outputs ++ fixedFiles.map Prod.fst
+  EsmSplit.validateModulePaths (entry :: originals ++ all)
+  unless originals.Nodup && all.Nodup do throw "joint output path collision"
+  unless originals.contains entry do throw s!"missing deployment root: {entry}"
+  let access ← match inputs with
+    | some snapshot => do
+      unless snapshot.entry == entry do throw "deployment root differs"
+      LinkedDeployment.checkGraph snapshot (parts.map fun p => (p.source, p.plan)) shared
+    | none => do
+      for (path, ast) in parts.map (fun p => (p.plan.entry, p.source)) ++ fixedFiles do
+        unless (← ModuleLocation.uses path ast).isEmpty do
+          throw s!"{path}: joint static split requires location-independent units"
+      pure {}
+  let format (ids : List Nat) : BodyFormat :=
+    if inputs.isSome then .structural (Std.HashSet.ofList ids) access else .linked
+  let mut fragments := #[]
+  let mut base := 0
+  for part in parts do
+    let name := part.plan.entry
+    let f ← (decodeFragment (format ((hints name).map (base + ·))) profile part.source part.files part.plan
+      name (originals.erase name) base (some name)).mapError fun why => s!"{name}: {why}"
+    fragments := fragments.push f
+    base := base + f.unitCount
+  let (fixed, fixedSites) ← readProviders (format []) profile fixedFiles base (parts.map (·.plan.entry))
+  let fs := fragments.toList
+  let before ← installTemplates ⟨entry, fs.map (·.sourceModule) ++ fixed⟩
+    (fs.flatMap (·.sourceTemplates) ++ fixedSites)
+  let after ← installTemplates ⟨entry, fs.flatMap (·.emitted) ++ fixed⟩
+    (fs.flatMap (·.emittedTemplates) ++ fixedSites)
   let before ← access.attach before
   let after ← access.attach after
   checkScopes before after

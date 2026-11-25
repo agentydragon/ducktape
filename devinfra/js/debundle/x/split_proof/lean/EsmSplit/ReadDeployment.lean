@@ -18,33 +18,21 @@ private def absoluteOrigin (text : String) : Bool := Id.run do
   | [host, port] => return validHost host && port.toNat?.any fun n => n > 0 && n ≤ 65535
   | _ => return false
 
-def readDeployment (program providers : Json) (bundlePath work : System.FilePath)
-    (origin : String) (P : EsmSplit.Plan) (options : ModuleLocation.BrowserOptions := {}) : IO LinkedDeployment.Input := do
+def readDeployment (entry : String) (originals : List (String × Json)) (root work : System.FilePath)
+    (origin : String) (options : ModuleLocation.BrowserOptions := {}) : IO LinkedDeployment.Input := do
   unless absoluteOrigin origin do throw (IO.userError "deployment origin must be an HTTP(S) origin without a path")
-  unless bundlePath.extension == some "js" || bundlePath.extension == some "mjs" do
-    throw (IO.userError "deployment checks require the original JavaScript file")
-  let some entry := bundlePath.fileName | throw (IO.userError "source module is missing a filename")
-  let source ← IO.ofExcept (program.getObjValAs? String "sourceText")
-  let uses ← IO.ofExcept (ModuleLocation.entryUses program entry source options)
-  let staticProviders ← IO.ofExcept providers.getObj?
-  let linked := Std.HashSet.ofList (entry :: staticProviders.toList.map Prod.fst)
-  let root := bundlePath.parent.getD "."
-  for module in P.mods do
-    if module.name != entry && (← (root / module.name).pathExists) then
-      throw (IO.userError s!"output path already exists: {module.name}")
   let asset (name text : String) : ModuleLocation.Resource := { effectiveUrl := origin ++ "/" ++ name, source := text }
-  let mut resources := Std.HashMap.ofList [(entry, asset entry source)]
+  let mut resources : Std.HashMap String ModuleLocation.Resource := {}
   let mut parsed : Array (String × Json) := #[]
-  let mut seen := linked
-  let targets := fun (sites : Array (Nat × ModuleLocation.Use)) => sites.filterMap fun (_, use) =>
-    match use with | .dynamicImport _ target => some target | _ => none
-  let mut frontier := targets uses
-  for (name, ast) in staticProviders.toList do
+  let mut seen := Std.HashSet.ofList (originals.map Prod.fst)
+  let mut frontier := #[]
+  for (name, ast) in originals do
     let text ← IO.ofExcept (ast.getObjValAs? String "sourceText")
     let res := asset name text
     resources := resources.insert name res
     let sites ← IO.ofExcept ((ModuleLocation.providerUses ast name res options).mapError fun why => s!"{name}: {why}")
-    frontier := frontier ++ targets sites
+    for (_, use) in sites do
+      if let .dynamicImport _ target := use then frontier := frontier.push target
   while !frontier.isEmpty do
     let mut requests := #[]
     for name in frontier do
@@ -52,7 +40,7 @@ def readDeployment (program providers : Json) (bundlePath work : System.FilePath
         seen := seen.insert name
         requests := requests.push name
     if requests.isEmpty then break
-    let batch ← readModules bundlePath work requests
+    let batch ← readModules root work requests
     frontier := #[]
     for name in requests do
       let ast ← IO.ofExcept (batch.getObjVal? name)

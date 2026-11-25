@@ -21,6 +21,7 @@ structure ModuleAccess where
   nativeUrl : Option String := none
 
 structure Access where
+  entry : String := ""
   entryAccess : ModuleAccess := {}
   providers : Std.HashMap String ModuleAccess := {}
 
@@ -55,20 +56,39 @@ private def checkSites (inputs : Input) (name : String) (linked : List String)
         unitNames := access.unitNames.insert id ((NativeRecord.slot :: access.unitNames[id]?.getD []).eraseDups) }
   return { access with imports := access.imports.reverse }
 
-def check (inputs : Input) (source providers : Json) (plan : EsmSplit.Plan) : Except String Access := do
+/-- Collect loader and metadata capabilities against the complete original graph. Each
+changed referrer is checked with its own placement. A fixed referrer, including a
+fixed root, retains the same path and bytes in the deployment overlay. -/
+def checkGraph (inputs : Input) (changed : List (Json × EsmSplit.Plan)) (providers : Json) :
+    Except String Access := do
   let resources (name : String) := inputs.before[name]?
-  let sites ← ModuleLocation.check source inputs.entry plan resources resources inputs.options
   let files := (← providers.getObj?).toList
-  let linked := plan.entry :: files.map Prod.fst
-  let entryAccess ← checkSites inputs plan.entry linked sites
-  let mut others := ∅
+  let linked := changed.map (fun (_, plan) => plan.entry) ++ files.map Prod.fst
+  let outputs := changed.flatMap (fun (_, plan) => plan.mods.map (·.name))
+  unless (outputs ++ files.map Prod.fst).Nodup do throw "deployment output path collision"
+  unless linked.contains inputs.entry do throw "missing deployment root"
+  -- Distinct linked module records and external scripts require distinct loader identities.
+  unless (inputs.before.toList.map (fun (_, r) => r.effectiveUrl)).Nodup do
+    throw "deployment resource paths alias the same effective URL"
+  let mut records : Std.HashMap String ModuleAccess := {}
+  for (source, plan) in changed do
+    let sites ← (ModuleLocation.check source plan.entry plan resources resources inputs.options).mapError
+      fun why => s!"{plan.entry}: {why}"
+    let access ← (checkSites inputs plan.entry linked sites).mapError fun why => s!"{plan.entry}: {why}"
+    records := records.insert plan.entry access
   for (name, file) in files do
-    if (plan.find name).isSome then throw s!"provider overlaps emitted module: {name}"
     let some res := resources name | throw s!"missing provider resource: {name}"
     let uses ← (ModuleLocation.providerUses file name res inputs.options).mapError fun why => s!"{name}: {why}"
     let access ← (checkSites inputs name linked uses).mapError fun why => s!"{name}: {why}"
-    others := others.insert name access
-  return {entryAccess, providers := others}
+    records := records.insert name access
+  return {entry := inputs.entry, entryAccess := records[inputs.entry]?.getD {}, providers := records.erase inputs.entry}
+
+def check (inputs : Input) (source providers : Json) (plan : EsmSplit.Plan) : Except String Access := do
+  unless inputs.entry == plan.entry do throw "deployment root differs from split entry"
+  checkGraph inputs [(source, plan)] providers
+
+def Access.forModule (access : Access) (name : String) : ModuleAccess :=
+  if name == access.entry then access.entryAccess else access.providers[name]?.getD {}
 
 /-- Add the capability aliases to their referring modules. Preserve the actual
 order even when a lazy dependency re-enters through a provider or the entry. -/

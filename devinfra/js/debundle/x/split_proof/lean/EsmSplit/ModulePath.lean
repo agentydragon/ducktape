@@ -72,15 +72,14 @@ private def safeRelativeRequest (source : String) : Bool := Id.run do
       unless alpha || digit || c == '.' || c == '_' || c == '-' || c == '~' do return false
   return true
 
-/-- Rebase a source-relative request when its generated importer is nested below the output root. The original
-bundle is treated as living at that root: `./dep.js` from `nested/entry.js` becomes `../dep.js`. -/
-def rebaseRelativeRequest (modulePath source : String) : Except String String := do
-  unless modulePath.contains '/' && source.startsWith "." do return source
+/-- Rebase a relative request from the original bundle's directory to the generated referrer's directory. -/
+def rebaseRelativeRequest (fromFile modulePath source : String) : Except String String := do
+  unless (fromFile.splitOn "/").dropLast != (modulePath.splitOn "/").dropLast && source.startsWith "." do return source
   unless safeRelativeRequest source do
-    throw s!"relative request `{source}` cannot be represented safely from nested output module `{modulePath}`"
-  let target := normalizePathFrom "bundle.mjs" source
+    throw s!"relative request `{source}` cannot be represented safely from output module `{modulePath}`"
+  let target := normalizePathFrom fromFile source
   if target.isEmpty || target == "." then
-    throw s!"relative request `{source}` does not name a file from nested output module `{modulePath}`"
+    throw s!"relative request `{source}` does not name a file from output module `{modulePath}`"
   return relativeUrlSpecifier modulePath target
 
 end EsmSplit

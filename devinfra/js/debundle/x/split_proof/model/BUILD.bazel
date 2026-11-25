@@ -24,6 +24,7 @@ eslint_test(
 )
 
 _DIFFERENTIAL_DATA = [
+    "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
     "cases.mjs",
     "generate.mjs",
     "module_cases.mjs",

@@ -46,6 +46,7 @@ js_binary(
         "//devinfra/js/debundle/x/split_proof/lean:lower",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
         "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
     ],
     entry_point = "run_splits.mjs",
     env = {
@@ -82,6 +83,7 @@ js_test(
         "//devinfra/js/debundle/x/split_proof:seeded_random",
         "//devinfra/js/debundle/x/split_proof/lean:lowersplit",
         "//devinfra/js/debundle/x/split_proof/translation:scope_metadata",
+        "//devinfra/js/debundle/x/split_proof/translation/testing:deployment_manifest",
     ],
     entry_point = "certificate_test.mjs",
     env = {"LOWERSPLIT": "$(rootpath //devinfra/js/debundle/x/split_proof/lean:lowersplit)"},

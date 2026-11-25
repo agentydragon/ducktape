@@ -13,7 +13,8 @@ node fuzz.mjs --count 300 --seed 3                    # tree fuzzer
 node frontend.mjs bundle <bundle.js> --out bundle.json
 ../lean/.lake/build/bin/lower bundle.json --premises premises.json              # a footprint per unit, as JSON lines
 ../lean/.lake/build/bin/translate bundle.json output.json cert.json --premises premises.json [--table t.json]
-../lean/.lake/build/bin/lowersplit --diagnostic ast.json spec.json outdir [--premises premises.json | --footprints footprints.jsonl] [--plan plan.json]
+jq '{entry, chunks:[{path:.entry, source:"ast.json", spec:"spec.json"}]}' spec.json > deployment.json
+../lean/.lake/build/bin/lowersplit --diagnostic deployment.json outdir [--premises premises.json | --footprints footprints.jsonl] [--plan plan.json]
 ```
 
 This is a diagnostic invocation. Plan output and any emitted files are uncertified previews, even when the structural checks pass.

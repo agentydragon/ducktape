@@ -1,26 +1,10 @@
 # Certified main.js renderer split
 
-Run the bounded manual target:
-
-```sh
-bbr test //devinfra/js/debundle/x/split_proof/integration/excalidraw:excalidraw_certified_main_browser_smoke
-```
-
-The [named subset](../../../../excalidraw/main_smoke_subset.json) selects only
-`strokeEllipseWithRotation` in `packages/excalidraw/renderer/interactivescene`.
-Rust resolves the full canonical main spec; the test checks the selected and canonical owner for ordinal 1486 and retains the other 1,627 units in the entry.
-[SHA-256 pins](main_static_sha256.json) cover original `main.js` and all eight static providers, including the unchanged editor.
-The source and copied providers must match the pins, and the browser must receive the expected bytes.
-
-Lean certifies the original deployment at the live browser origin, with the `browser-page` profile,
-`native-browser-record@1` and the fixed `empty@1` import map. It then reparses the published files and repeats the certificate.
-Both verdicts must agree at `normal-completion` with a single structural move.
-Chromium loads the original and the split at the same URLs in fresh contexts. Both mount the editor, draw a rectangle,
-enable Undo, retain the empty main namespace, and show the Mermaid dialog with the expected unmapped import rejection.
-The split's renderer export must issue `beginPath`, `ellipse` with the supplied center, radii and angle, and `stroke` in order.
-The [durable main and editor smoke run](https://app.buildbuddy.io/invocation/aac13792-9965-4c30-b606-7420f07cf32d) exercised both cases.
-
-A next named trial is `packages/excalidraw/history::HistoryChangedEvent`. It resolves to unit 1196 in this source; it has not been certified by this fixture.
+The main selection moves `strokeEllipseWithRotation` from the canonical
+renderer owner. It now runs in the [joint deployment smoke](joint.md).
+[SHA-256 pins](main_static_sha256.json) identify the original main source and
+its static closure. The renderer probe checks the issued `beginPath`,
+`ellipse`, and `stroke` calls.
 
 ## Earlier proof boundaries
 

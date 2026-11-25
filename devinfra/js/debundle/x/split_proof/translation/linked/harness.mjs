@@ -4,6 +4,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { parse } from "acorn";
+import { writeDeployment } from "../testing/deployment_manifest.mjs";
 import { generate } from "astring";
 
 export const root = process.env.TEST_TMPDIR;
@@ -138,7 +139,7 @@ export function observe(file, exportNames) {
 }
 
 export function lower(source, spec, out, extra = [], scope = "linked-programs") {
-  const result = spawnSync(process.env.LOWERSPLIT, [source, spec, out, ...extra], {
+  const result = spawnSync(process.env.LOWERSPLIT, [writeDeployment(source, spec, out), out, ...extra], {
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
   });
@@ -209,7 +210,7 @@ export function moduleEvaluationOrder(directory, entry) {
 export function forcePreview(files, directory) {
   const preview = spawnSync(
     process.env.LOWERSPLIT,
-    ["--diagnostic", files.sourceFile, files.specFile, directory, "--force"],
+    ["--diagnostic", writeDeployment(files.sourceFile, files.specFile, directory), directory, "--force"],
     { encoding: "utf8" }
   );
   assert([0, 1].includes(preview.status), preview.error?.message ?? preview.stdout + preview.stderr);

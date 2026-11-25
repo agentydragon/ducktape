@@ -5,7 +5,7 @@ namespace CoreJS.LinkedBehavior
 
 /-- Lower every source unit that overtakes a smaller ordinal in the planned
 order. These hints select syntax to lower; the proof checks the linked orders. -/
-private def pivotHints (source : Lean.Json) (plan : EsmSplit.Plan) : Except String (List Nat) := do
+def pivotHints (source : Lean.Json) (plan : EsmSplit.Plan) : Except String (List Nat) := do
   let nodes ← ESTreeUnits.nodes source
   let body := nodes.map fun j =>
     match (j.getObjValAs? String "type").toOption with
@@ -43,7 +43,7 @@ private partial def numericNames (node : Lean.Json) : List String :=
 /-- Lower nearby prefix units, including an unmoved producer, on a second
 attempt. The hint only selects ASTs: the prefix proof checks actual linked
 cells and every intervening step in both complete schedules. -/
-private def projectionHints (source : Lean.Json) (pivots : List Nat) : Except String (List Nat) := do
+def projectionHints (source : Lean.Json) (pivots : List Nat) : Except String (List Nat) := do
   let nodes ← ESTreeUnits.nodes source
   let mut extra := #[]
   for id in pivots do
@@ -73,6 +73,17 @@ def StructuralASTEquivalent (profile : HostProfile) (offered used : List StableI
     LinkedInput.decodeStructuralPair source providers files plan pivots profile deployment = .ok (original, candidate) ∧
     NormalEquivalent (StableIntrinsic.Worlds used) original candidate ∧ SameExports original candidate
 
+/-- Only a concretely lowered initializer can use one of the offered host values. -/
+def usedIntrinsics (offered : List StableIntrinsic) (original : Program) : List StableIntrinsic :=
+  offered.filter fun d => original.modules.any fun m => m.body.any fun u =>
+    match u.2 with
+    | .decl _ _ e => (d.evalValue? e).isSome
+    | _ => false
+
+theorem usedIntrinsics_subset (offered : List StableIntrinsic) (original : Program) :
+    usedIntrinsics offered original ⊆ offered :=
+  fun _ h => (List.mem_filter.mp h).1
+
 /-- Compute the certificate directly with the executable, proof-carrying
 checks. The proof relates the same concrete ASTs later sent to the printer. -/
 private def certifyWith (recordPivots : Std.HashSet Nat) (pivots : List Nat) (profile : HostProfile) (offered : List StableIntrinsic) (source providers files : Lean.Json)
@@ -83,14 +94,9 @@ private def certifyWith (recordPivots : Std.HashSet Nat) (pivots : List Nat) (pr
   match decoded : LinkedInput.decodeStructuralPair source providers files plan pivots profile deployment with
   | .error reason => throw reason
   | .ok (original, candidate) =>
-    -- Only concrete declarations can need a host premise. Retained whole
-    -- units (including all providers) remain opaque under this decoder.
-    let used := offered.filter fun d => original.modules.any fun m => m.body.any fun u =>
-      match u.2 with
-      | .decl _ _ e => (d.evalValue? e).isSome
-      | _ => false
+    let used := usedIntrinsics offered original
     let (method, ⟨certified⟩) ← checkStructuralSchedule used original candidate recordPivots
-    return ⟨used, method, ⟨(fun _ h => (List.mem_filter.mp h).1), pivots, original, candidate, decoded, certified⟩⟩
+    return ⟨used, method, ⟨usedIntrinsics_subset offered original, pivots, original, candidate, decoded, certified⟩⟩
 
 def certifyStructuralASTs (profile : HostProfile) (offered : List StableIntrinsic) (source providers files : Lean.Json)
     (plan : EsmSplit.Plan) (deployment : Option LinkedDeployment.Input) :

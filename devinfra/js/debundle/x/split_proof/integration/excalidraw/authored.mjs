@@ -4,6 +4,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { gunzipSync } from "node:zlib";
 import { assertSelectedSourceUnits } from "../../translation/testing/ast_assertions.mjs";
+import { writeDeployment } from "../../translation/testing/deployment_manifest.mjs";
 import { splitInputs } from "../../translation/split_dump.mjs";
 
 const chunks = process.env.EXCALIDRAW_INPUTS.split(" ").find((file) => file.endsWith("/chunks"));
@@ -61,8 +62,7 @@ for (const [chunk, spec] of [
     process.env.LOWERSPLIT,
     [
       "--diagnostic",
-      ast,
-      spec,
+      writeDeployment(ast, spec, rendered),
       rendered,
       "--corejs",
       model,

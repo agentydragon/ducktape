@@ -2,11 +2,13 @@ import EsmSplit.LowerSplit.Certified
 import EsmSplit.LowerSplit.Diagnostic
 
 /-!
-# AST + spec in; modules, verdict and a kernel certificate out.
+# Certify and publish a JavaScript deployment.
 
-    lowersplit <bundle.mjs|bundle.json> <spec.json> <outdir> [--require <all-outcomes|normal-completion>] [--resolved-placement CHUNK] [--check-output] [--host-contract PROFILE.json] [--structural [--deployment-origin ORIGIN]]
-    lowersplit --diagnostic <bundle.mjs|bundle.json> <spec.json> <outdir> [--lean <Generated.lean> [--namespace NAME] [--variant SPEC]... [--control SPEC]...] [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]
+    lowersplit <deployment.json> <outdir> [--require <all-outcomes|normal-completion>] [--check-output] [--host-contract PROFILE.json] [--structural [--deployment-origin ORIGIN]]
+    lowersplit --diagnostic <deployment.json> <outdir> [--lean <Generated.lean> [--namespace NAME] [--variant SPEC]... [--control SPEC]...] [--premises <file> | --footprints <file>] [--plan <file> [--all-conflicts]] [--corejs <program.json>] [--move-report <file>] [--force]
 
+The manifest names the entry and each original chunk, with a source file and an optional placement or spec.
+A singleton authored split accepts an annotated ESTree snapshot as its source.
 JavaScript source and annotated ESTree dumps share the Acorn parser and scope/literal metadata.
 Certified mode checks the requested CoreJS guarantee before publication.
 With --check-output, it reparses the existing tree before running the proof.

@@ -11,25 +11,27 @@ failed=0
 
 row() {
   local label=$1 bundle=$2 blocks=$3 copies=${4:-1}
-  local dir dimensions statements modules status=0 verdict
+  local dir dimensions statements modules deployment status=0 verdict
   dir=$(mktemp -d "$work/row.XXXXXX")
   dimensions=$(
     node --input-type=module - "$bundle" "$blocks" "$copies" "$dir/spec.json" <<'JS'
 import { readFileSync, writeFileSync } from "node:fs";
 import { spec } from "../integration/library_splits/gen_spec.mjs";
 import { topLevelStatements } from "../translation/scope_metadata.mjs";
+import { writeDeployment } from "../translation/testing/deployment_manifest.mjs";
+import path from "node:path";
 
 const [bundle, blocks, copies, output] = process.argv.slice(2);
 const program = JSON.parse(readFileSync(bundle, "utf8"));
 const statements = topLevelStatements(program).length * Number(copies);
 const placement = spec(statements, "blocks", [blocks]);
 writeFileSync(output, JSON.stringify(placement));
-console.log(statements, Object.keys(placement.modules).length);
+console.log(statements, Object.keys(placement.modules).length, writeDeployment(bundle, output, path.join(path.dirname(output), "out")));
 JS
   )
-  read -r statements modules <<<"$dimensions"
+  read -r statements modules deployment <<<"$dimensions"
 
-  local -a command=("$lowersplit" --diagnostic "$bundle" "$dir/spec.json" "$dir/out")
+  local -a command=("$lowersplit" --diagnostic "$deployment" "$dir/out")
   local rejection="rejected; nothing written"
   if [[ $# -eq 4 ]]; then
     command=("${REPLICATE_PLAN:-../lean/.lake/build/bin/replicate_plan}" "$bundle" "$dir/spec.json" "$copies")
