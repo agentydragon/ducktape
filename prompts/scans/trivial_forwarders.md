@@ -158,8 +158,6 @@ removing it.
 
 ```bash
 # Run on entire codebase (from the repository root)
-python -m prompts.scans.scan_single_line_functions . > single_line_functions.json
-# or
 bb run //prompts/scans:scan_single_line_functions_bin -- . > single_line_functions.json
 
 # Pretty-print summary
@@ -202,7 +200,7 @@ cat single_line_functions.json | jq '.by_file'
 
 1. Process single-line function scanner output (MANDATORY Step 0)
 2. For each candidate, analyze:
-   - **Call count**: How many times is it called? (vulture, grep, AST)
+   - **Call count**: How many times is it called? (grep, AST)
    - **Complexity**: Would inlining make call sites more complex?
    - **Architecture**: Is this a facade, interface implementation, or API boundary?
    - **Purpose**: Does it consolidate logic or just shuffle calls?

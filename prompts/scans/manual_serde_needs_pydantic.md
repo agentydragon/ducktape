@@ -205,7 +205,7 @@ Use Pydantic when you have:
 
 ## Detection Strategy
 
-**MANDATORY first step**: From the repository root, run `python -m prompts.scans.scan_manual_serde` and process ALL output.
+**MANDATORY first step**: From the repository root, run `bb run //prompts/scans:scan_manual_serde_bin -- .` and process ALL output.
 
 - This scan is **required** - do not skip this step
 - You **must** read and handle the complete scan output (can pipe to temp file)
@@ -238,16 +238,13 @@ Use Pydantic when you have:
 
 ```bash
 # Run from the repository root.
-# Run on entire codebase
-python -m prompts.scans.scan_manual_serde . > serde_scan.json
-# Or run the Bazel binary:
 bb run //prompts/scans:scan_manual_serde_bin -- . > serde_scan.json
 
 # Run on specific directory
-python -m prompts.scans.scan_manual_serde path/to/module > module_serde.json
+bb run //prompts/scans:scan_manual_serde_bin -- path/to/module > module_serde.json
 
 # Pretty-print summary
-python -m prompts.scans.scan_manual_serde . 2>&1 | grep "===" -A 10
+bb run //prompts/scans:scan_manual_serde_bin -- . 2>&1 | grep "===" -A 10
 ```
 
 **Output structure**:

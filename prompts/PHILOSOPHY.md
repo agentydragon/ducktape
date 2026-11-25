@@ -57,7 +57,7 @@ Different automated tools have different reliability profiles:
 
 ```text
 1. Understand the issue pattern and its characteristics
-2. Run automated scans to gather candidates (grep/AST/ruff/vulture/etc.)
+2. Run automated scans to gather candidates (grep/AST/ruff/etc.)
 3. Understand recall/precision of each tool for this pattern
 4. Verify candidates with appropriate scrutiny:
    - High precision: light verification
@@ -229,7 +229,7 @@ Automated scans should be **mentioned as hints only** when:
 ```markdown
 ## Detection Strategy
 
-**MANDATORY first step**: From the repository root, run `python -m prompts.scans.scan_error_handling` to find ALL exception handlers.
+**MANDATORY first step**: From the repository root, run `bb run //prompts/scans:scan_error_handling_bin -- .` to find ALL exception handlers.
 
 - Surfaces concrete candidates - forces you to review each exception handler
 - Prevents claiming "looks fine" without examining actual code

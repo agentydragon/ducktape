@@ -322,8 +322,6 @@ the implementation looks obvious to you.
 context. From the repository root:
 
 ```bash
-python -m prompts.scans.scan_comments . > comments_scan.json
-# or
 bb run //prompts/scans:scan_comments_bin -- . > comments_scan.json
 ```
 
