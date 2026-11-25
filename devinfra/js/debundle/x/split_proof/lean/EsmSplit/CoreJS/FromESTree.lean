@@ -95,6 +95,7 @@ private def reference (imports : List Name) (inFunction : Bool) (j : Json)
     return .var x
   | "G" =>
     if (profile.bindingIdentity x).isSome then return .prim (.globalRef x) []
+    if profile.recordedHostValue x then return .host x
     -- A successful typeof guard does not establish what a direct lookup would do.
     if profile.opaqueBinding x then
       return .prim (.opaqueAmbientRef x) []
@@ -102,7 +103,9 @@ private def reference (imports : List Name) (inFunction : Bool) (j : Json)
     | "undefined" => return .undef
     | "Infinity" => return .num Num.inf
     | "NaN" => return .num Num.nan
-    | _ => throw s!"unsupported global {x}"
+    | _ =>
+      if profile.undeclaredGlobal x then return .var x
+      throw s!"unsupported global {x}"
   | k => throw s!"unsupported binding class {k}"
 
 private def unary (op : String) (argument : Json) (lower : Unit → Except String Expr) :
@@ -643,7 +646,7 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
   | "CoreJSNewTarget" => return .var newTargetName
   | "MemberExpression" =>
     if let some sym := (ambientSymbolMember? j).bind WellKnownSymbol.ofMember? then
-      if profile == .browserPage then return .prim (.wellKnownSymbol sym) []
+      if profile.ambientSymbols then return .prim (.wellKnownSymbol sym) []
       if inFunction then return .prim (.opaqueAmbientMemberRef "Symbol" sym.member) []
     let lower := linkedExpr profile imports inFunction ""
     if let some name := privateMember? j then
@@ -833,13 +836,20 @@ private partial def linkedExpr (profile : HostProfile) (imports : List Name) (in
           -- Observe the constructor and method before evaluating the argument. On the
           -- supported fresh-realm template iterable, Array.from creates a mutable copy.
           return .seq (.prim .checkArrayFrom []) (.arr [.spreadArg (.prim .templateIterable [← lower source])])
-    if profile == .browserPage && (field callee "type").toOption == some "Identifier" &&
+    if profile.ambientSymbols && (field callee "type").toOption == some "Identifier" &&
         (field callee "k").toOption == some "G" && (identifier callee).toOption == some "Symbol" then
       match args with
       | [] => return .prim .freshSymbol []
       | [arg] =>
         if let .ok description := stringLiteral arg then return .prim .freshSymbol [.str description]
       | _ => pure ()
+    if (field callee "type").toOption == some "MemberExpression" && !(callee.getObjValAs? Bool "computed").toOption.getD true then
+      let owner ← callee.getObjVal? "object"
+      if (field owner "type").toOption == some "Identifier" && (field owner "k").toOption == some "G" then
+        if let some p := profile.recordedPrim (← identifier owner) (← identifier (← callee.getObjVal? "property")) then
+          if args.any (fun a => (field a "type").toOption == some "SpreadElement") then
+            throw "unsupported spread argument to a recorded host primitive"
+          return .prim p (← args.mapM lower)
     match ← field callee "type" with
     | "MemberExpression" =>
       if let some name := privateMember? callee then
@@ -1127,7 +1137,7 @@ private partial def linkedClass (profile : HostProfile) (imports : List Name) (i
     let (key, keyExpr) ← if ← member.getObjValAs? Bool "computed" then do
       if tag == "MethodDefinition" then
         if let some sym := (ambientSymbolMember? keyNode).bind WellKnownSymbol.ofMember? then
-          unless profile == .browserPage do throw "unsupported computed class key"
+          unless profile.ambientSymbols do throw "unsupported computed class key"
           pure (s!"[{sym.description}]", Expr.prim (.wellKnownSymbol sym) [])
         else pure ("", ← linkedExpr profile imports inFunction "" keyNode)
       else if !static && (← field keyNode "type") == "Identifier" &&
